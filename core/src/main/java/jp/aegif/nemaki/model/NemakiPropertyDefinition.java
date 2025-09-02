@@ -144,20 +144,12 @@ public class NemakiPropertyDefinition extends NodeBase {
 	private String applySafetyContaminationCheck(String originalPropertyId, PropertyDefinition<?> propertyDefinition) {
 		
 		
-		// STRATEGY 1: Check if this looks like a custom property (contains namespace)
+		// STRATEGY 1: Check if this looks like a namespace property (contains colon)
 		if (originalPropertyId != null && originalPropertyId.contains(":")) {
 			
-			// STRATEGY 1a: Custom properties (non-CMIS namespace) should preserve their ID
-			if (originalPropertyId.startsWith("tck:") || 
-				(!originalPropertyId.startsWith("cmis:") && originalPropertyId.contains(":"))) {
-				
-				return originalPropertyId;
-			}
-			
-			// STRATEGY 1b: CMIS system properties should preserve their ID
-			if (originalPropertyId.startsWith("cmis:")) {
-				return originalPropertyId;
-			}
+			// STRATEGY 1a: All namespace properties should preserve their original ID
+			// This includes CMIS standard properties (cmis:*) and custom properties (custom:*, vendor:*, tck:*, etc.)
+			return originalPropertyId;
 		}
 		
 		// STRATEGY 2: Use LocalName as fallback if it looks like a proper property ID
@@ -175,7 +167,7 @@ public class NemakiPropertyDefinition extends NodeBase {
 	 * from PropertyCore reuse during type reconstruction.
 	 * 
 	 * The issue: PropertyDefinitionCore may have been reused with a different property ID
-	 * (e.g., tck:boolean gets assigned cmis:name's PropertyCore), causing contamination.
+	 * (e.g., custom:boolean gets assigned cmis:name's PropertyCore), causing contamination.
 	 * 
 	 * @param detail The property detail containing the original intended property metadata
 	 * @param core The property core that may contain a contaminated property ID
@@ -183,10 +175,10 @@ public class NemakiPropertyDefinition extends NodeBase {
 	 */
 	private String determineCorrectPropertyId(NemakiPropertyDefinitionDetail detail, NemakiPropertyDefinitionCore core) {
 		
-		// CRITICAL FIX: TCK プロパティの絶対保護 (最優先)
-		// TCKプロパティは絶対に変更しない
-		if (detail != null && detail.getLocalName() != null && detail.getLocalName().startsWith("tck:")) {
-			return detail.getLocalName(); // 絶対に変更しない
+		// CRITICAL FIX: Custom namespace properties protection (CMIS standard compliant)
+		// All custom namespace properties (custom:, vendor:, tck:, etc.) should preserve their original ID
+		if (detail != null && detail.getLocalName() != null && detail.getLocalName().contains(":") && !detail.getLocalName().startsWith("cmis:")) {
+			return detail.getLocalName(); // Preserve custom namespace properties
 		}
 		
 		// STRATEGY 1: Use detail's localName as the intended property ID
@@ -222,10 +214,15 @@ public class NemakiPropertyDefinition extends NodeBase {
 		if (core != null) {
 			String corePropertyId = core.getPropertyId();
 			if (corePropertyId != null && !corePropertyId.trim().isEmpty()) {
-				// Validate it's not obviously contaminated (e.g., tck: properties in CMIS core)
-				if (!corePropertyId.startsWith("tck:") || (detail != null && detail.getLocalName() != null && detail.getLocalName().startsWith("tck:"))) {
-					return corePropertyId;
+				// Validate it's not obviously contaminated (custom namespace properties should not be in CMIS core)
+				// Generic check: if detail has custom namespace but core has CMIS namespace, it's contaminated
+				if (detail != null && detail.getLocalName() != null && 
+					detail.getLocalName().contains(":") && !detail.getLocalName().startsWith("cmis:") &&
+					corePropertyId.startsWith("cmis:")) {
+					// This is contamination - custom property got CMIS core
+					return detail.getLocalName(); // Use detail's correct namespace ID
 				}
+				return corePropertyId;
 			}
 		}
 		
@@ -299,8 +296,8 @@ public class NemakiPropertyDefinition extends NodeBase {
 		// Detect contamination pattern for validation
 		boolean isContamination = false;
 		if (this.propertyId != null && propertyId != null) {
-			// Check if this looks like a contamination (tck: -> cmis: change)
-			if (this.propertyId.startsWith("tck:") && propertyId.startsWith("cmis:")) {
+			// Check if this looks like a contamination (custom namespace -> cmis: change)
+			if (this.propertyId.contains(":") && !this.propertyId.startsWith("cmis:") && propertyId.startsWith("cmis:")) {
 				isContamination = true;
 			}
 		}

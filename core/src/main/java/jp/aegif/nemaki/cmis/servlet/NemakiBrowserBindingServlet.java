@@ -2363,8 +2363,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> propDef = entry.getValue();
                     
                     
-                    // DETECT CONTAMINATION: Check if custom TCK property got assigned wrong CMIS property ID
-                    if (propDef.getLocalName() != null && propDef.getLocalName().startsWith("tck:") && 
+                    // DETECT CONTAMINATION: Check if custom namespace property got assigned wrong CMIS property ID
+                    if (propDef.getLocalName() != null && 
+                        propDef.getLocalName().contains(":") && !propDef.getLocalName().startsWith("cmis:") && 
                         propDef.getId() != null && propDef.getId().startsWith("cmis:")) {
                         
                         contaminationDetected = true;
@@ -2374,7 +2375,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     // Also check for LocalName/Id mismatch (another contamination pattern)
                     if (propDef.getLocalName() != null && propDef.getId() != null && 
                         !propDef.getLocalName().equals(propDef.getId()) &&
-                        propDef.getLocalName().startsWith("tck:") && propDef.getId().startsWith("cmis:")) {
+                        propDef.getLocalName().contains(":") && !propDef.getLocalName().startsWith("cmis:") && 
+                        propDef.getId().startsWith("cmis:")) {
                         
                         contaminationDetected = true;
                         contaminationMapping.put(propDef.getId(), propDef.getLocalName());
@@ -2398,7 +2400,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                             for (Map.Entry<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> entry : originalPropertyDefs.entrySet()) {
                                 org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> propDef = entry.getValue();
                                 
-                                if (propDef.getLocalName() != null && propDef.getLocalName().startsWith("tck:") && 
+                                if (propDef.getLocalName() != null && 
+                                    propDef.getLocalName().contains(":") && !propDef.getLocalName().startsWith("cmis:") && 
                                     propDef.getId() != null && propDef.getId().startsWith("cmis:")) {
                                     
                                     // CONTAMINATION FIX: Create corrected property definition with proper ID

@@ -1731,9 +1731,16 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	private void addPropertyDefinitionCore(String propertyId, String queryName,
 			PropertyType propertyType, Cardinality cardinality) {
 		// Add property definition core with contamination prevention
-		boolean isTckProperty = propertyId != null && propertyId.startsWith("tck:");
-		if (isTckProperty) {
-			}
+		boolean isCustomProperty = propertyId != null && propertyId.contains(":") && !propertyId.startsWith("cmis:");
+		if (isCustomProperty) {
+			// COMPREHENSIVE DEBUG: Custom namespace property detected - full contamination trace
+			System.err.println("=== CUSTOM NAMESPACE PROPERTY DETECTED ===");
+			System.err.println("Custom Property ID: " + propertyId);
+			System.err.println("Custom Query Name: " + queryName);
+			System.err.println("TCK Property Type: " + propertyType);
+			System.err.println("TCK Cardinality: " + cardinality);
+			System.err.println("=== END TCK DETECTION ===");
+		}
 		
 		if (log.isTraceEnabled()) {
 			log.trace("Adding property definition core: " + propertyId + " (queryName: " + queryName + ")");
@@ -1742,8 +1749,24 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL CONTAMINATION FIX: Prevent PropertyDefinition object sharing between maps
 		// Create property definition if not exists by propertyId
 		if (!propertyDefinitionCoresByPropertyId.containsKey(propertyId)) {
-				
+			
+			System.err.println("=== CREATING NEW PROPERTY CORE ===");
+			System.err.println("Creating new core for propertyId: " + propertyId);
+			System.err.println("queryName: " + queryName);
+			System.err.println("propertyType: " + propertyType);
+			System.err.println("cardinality: " + cardinality);
+			
 			PropertyDefinition<?> core = DataUtil.createPropDefCore(propertyId, queryName, propertyType, cardinality);
+			
+			// COMPREHENSIVE DEBUG: Verify created core object
+			if (core != null) {
+				System.err.println("Created core - ID: " + core.getId());
+				System.err.println("Created core - QueryName: " + core.getQueryName()); 
+				System.err.println("Created core - Type: " + core.getPropertyType());
+				System.err.println("Created core object hash: " + System.identityHashCode(core));
+			} else {
+				System.err.println("ERROR: DataUtil.createPropDefCore returned NULL for propertyId: " + propertyId);
+			}
 			
 			// Create defensive copies to prevent contamination
 				
@@ -1752,17 +1775,72 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			PropertyDefinition<?> coreForPropertyIdMap = DataUtil.clonePropertyDefinition(core);
 			PropertyDefinition<?> coreForQueryNameMap = DataUtil.clonePropertyDefinition(core);
 			
+			// COMPREHENSIVE DEBUG: Verify cloning worked correctly
+			System.err.println("=== CLONE VERIFICATION ===");
+			System.err.println("Original core hash: " + System.identityHashCode(core));
+			System.err.println("PropertyId map clone hash: " + System.identityHashCode(coreForPropertyIdMap));
+			System.err.println("QueryName map clone hash: " + System.identityHashCode(coreForQueryNameMap));
+			
+			if (coreForPropertyIdMap != null) {
+				System.err.println("PropertyId clone - ID: " + coreForPropertyIdMap.getId());
+				System.err.println("PropertyId clone - QueryName: " + coreForPropertyIdMap.getQueryName());
+				System.err.println("PropertyId clone - Type: " + coreForPropertyIdMap.getPropertyType());
+			} else {
+				System.err.println("ERROR: PropertyId clone is NULL!");
+			}
+			
+			if (coreForQueryNameMap != null) {
+				System.err.println("QueryName clone - ID: " + coreForQueryNameMap.getId());
+				System.err.println("QueryName clone - QueryName: " + coreForQueryNameMap.getQueryName());
+				System.err.println("QueryName clone - Type: " + coreForQueryNameMap.getPropertyType());
+			} else {
+				System.err.println("ERROR: QueryName clone is NULL!");
+			}
+			
+			// Verify objects are different instances
+			boolean sameAsOriginal1 = (core == coreForPropertyIdMap);
+			boolean sameAsOriginal2 = (core == coreForQueryNameMap);
+			boolean sameAsEachOther = (coreForPropertyIdMap == coreForQueryNameMap);
+			
+			System.err.println("Clone identity check:");
+			System.err.println("  PropertyId clone == original: " + sameAsOriginal1 + " (should be false)");
+			System.err.println("  QueryName clone == original: " + sameAsOriginal2 + " (should be false)");
+			System.err.println("  Clones == each other: " + sameAsEachOther + " (should be false)");
+			System.err.println("=== END CLONE VERIFICATION ===");
+			
 			// Store separate copies to prevent contamination
 							
 			// Store separate copies in each map - CONTAMINATION IMPOSSIBLE
 			propertyDefinitionCoresByPropertyId.put(propertyId, coreForPropertyIdMap);
 			propertyDefinitionCoresByQueryName.put(queryName, coreForQueryNameMap);
 			
-			 
-				
-			// Handle TCK properties
-			if (isTckProperty) {
-							}
+			// COMPREHENSIVE DEBUG: Verify storage
+			PropertyDefinition<?> storedInPropertyIdMap = propertyDefinitionCoresByPropertyId.get(propertyId);
+			PropertyDefinition<?> storedInQueryNameMap = propertyDefinitionCoresByQueryName.get(queryName);
+			
+			System.err.println("=== STORAGE VERIFICATION ===");
+			System.err.println("Stored in PropertyId map - hash: " + System.identityHashCode(storedInPropertyIdMap));
+			System.err.println("Stored in QueryName map - hash: " + System.identityHashCode(storedInQueryNameMap));
+			
+			if (storedInPropertyIdMap != null) {
+				System.err.println("PropertyId map stored - ID: " + storedInPropertyIdMap.getId());
+				System.err.println("PropertyId map stored - QueryName: " + storedInPropertyIdMap.getQueryName());
+			}
+			
+			if (storedInQueryNameMap != null) {
+				System.err.println("QueryName map stored - ID: " + storedInQueryNameMap.getId());
+				System.err.println("QueryName map stored - QueryName: " + storedInQueryNameMap.getQueryName());
+			}
+			System.err.println("=== END STORAGE VERIFICATION ===");
+			
+			// Handle custom namespace properties
+			if (isCustomProperty) {
+				System.err.println("=== CUSTOM NAMESPACE PROPERTY FINAL VERIFICATION ===");
+				System.err.println("Custom namespace property stored successfully:");
+				System.err.println("  PropertyId: " + propertyId + " -> " + (storedInPropertyIdMap != null ? storedInPropertyIdMap.getId() : "NULL"));
+				System.err.println("  QueryName: " + queryName + " -> " + (storedInQueryNameMap != null ? storedInQueryNameMap.getId() : "NULL"));
+				System.err.println("=== END TCK FINAL VERIFICATION ===");
+			}
 			
 			if (log.isDebugEnabled()) {
 				log.debug("Created new property core: " + propertyId + " (queryName: " + queryName + ")");
@@ -1790,7 +1868,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			}
 			
 			// Track existing properties 
-			if (isTckProperty) {
+			if (isCustomProperty) {
 				PropertyDefinition<?> existingInPropertyIdMap = propertyDefinitionCoresByPropertyId.get(propertyId);
 				PropertyDefinition<?> existingInQueryNameMap = propertyDefinitionCoresByQueryName.get(queryName);
 				
@@ -1962,25 +2040,25 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					if (propertyId != null) {
 						if (propertyId.equals("cmis:name") && propertyType == PropertyType.BOOLEAN) {
 							isContaminated = true;
-							expectedType = "STRING (should be tck:boolean)";
+							expectedType = "STRING (contamination detected with custom property type)";
 						} else if (propertyId.equals("cmis:description") && propertyType == PropertyType.ID) {
 							isContaminated = true;
-							expectedType = "STRING (should be tck:id)";
+							expectedType = "STRING (contamination detected with custom property type)";
 						} else if (propertyId.equals("cmis:objectId") && propertyType == PropertyType.INTEGER) {
 							isContaminated = true;
-							expectedType = "ID (should be tck:integer)";
+							expectedType = "ID (contamination detected with custom property type)";
 						} else if (propertyId.equals("cmis:baseTypeId") && propertyType == PropertyType.DATETIME) {
 							isContaminated = true;
-							expectedType = "ID (should be tck:datetime)";
+							expectedType = "ID (contamination detected with custom property type)";
 						} else if (propertyId.equals("cmis:objectTypeId") && propertyType == PropertyType.DECIMAL) {
 							isContaminated = true;
-							expectedType = "ID (should be tck:decimal)";
+							expectedType = "ID (contamination detected with custom property type)";
 						} else if (propertyId.equals("cmis:secondaryObjectTypeIds") && propertyType == PropertyType.HTML) {
 							isContaminated = true;
-							expectedType = "ID (should be tck:html)";
+							expectedType = "ID (contamination detected with custom property type)";
 						} else if (propertyId.equals("cmis:creationDate") && propertyType == PropertyType.URI) {
 							isContaminated = true;
-							expectedType = "DATETIME (should be tck:uri)";
+							expectedType = "DATETIME (contamination detected with custom property type)";
 						}
 					}
 					
@@ -2580,9 +2658,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				return PropertyType.INTEGER;
 		}
 		
-		// TCK Custom Properties - type inference from naming convention
-		if (propertyId.startsWith("tck:")) {
-			String typePart = propertyId.substring(4); // Remove "tck:" prefix
+		// Custom namespace properties - generic type inference from naming convention
+		if (propertyId.contains(":") && !propertyId.startsWith("cmis:")) {
+			String[] parts = propertyId.split(":");
+			if (parts.length > 1) {
+				String typePart = parts[parts.length - 1]; // Get the last part after colon
 			if (typePart.equals("boolean")) {
 				return PropertyType.BOOLEAN;
 			} else if (typePart.equals("id")) {
@@ -2599,6 +2679,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				return PropertyType.URI;
 			} else {
 				return PropertyType.STRING;
+			}
 			}
 		}
 		

@@ -654,30 +654,30 @@ public class DataUtil {
 	public static PropertyDefinition<?> createPropDefCore(String id,
 			String queryName, PropertyType propertyType, Cardinality cardinality) {
 		
-		// CRITICAL FIX: 入力パラメータの汚染チェック追加
+		// CRITICAL FIX: Namespace-based property validation (CMIS standard compliant)
 		if (id != null && queryName != null) {
-			// TCKプロパティのqueryName不整合検出ロジック実装
-			if (id.startsWith("tck:") && !queryName.equals(id)) {
-				// TCKプロパティはID = queryNameであるべき
-				System.err.println("WARNING: TCK property ID/queryName mismatch detected: ID=" + id + ", queryName=" + queryName);
-				// 不整合を修正：TCKプロパティはID = queryName
+			// For custom namespace properties (any namespace:propertyName format)
+			// ensure consistent ID and queryName when they should match
+			if (id.contains(":") && !queryName.equals(id)) {
+				// Log inconsistency for any namespace property
+				if (log.isDebugEnabled()) {
+					log.debug("Property ID/queryName inconsistency detected: ID=" + id + ", queryName=" + queryName);
+				}
+				// For namespace properties, prefer ID over queryName for consistency
 				queryName = id;
 			}
 			
-			// 逆のパターンも検出：queryNameがtck:なのにIDが異なる
-			if (queryName.startsWith("tck:") && !id.equals(queryName)) {
-				System.err.println("WARNING: TCK property queryName/ID mismatch detected: queryName=" + queryName + ", ID=" + id);
-				// 不整合を修正：TCKプロパティはqueryName = ID
+			// Reverse pattern: queryName has namespace but ID doesn't match
+			if (queryName.contains(":") && !id.equals(queryName)) {
+				if (log.isDebugEnabled()) {
+					log.debug("Property queryName/ID inconsistency detected: queryName=" + queryName + ", ID=" + id);
+				}
+				// For namespace properties, ensure ID matches queryName
 				id = queryName;
-			}
-			
-			// CMIS系プロパティの基本検証
-			if (id.startsWith("cmis:") && !queryName.startsWith("cmis:")) {
-				System.err.println("WARNING: CMIS property namespace mismatch: ID=" + id + ", queryName=" + queryName);
 			}
 		}
 		
-		// CRITICAL FIX: CMIS 1.1 inherited flag - CMIS基本プロパティはinherited=true
+		// CRITICAL FIX: CMIS 1.1 inherited flag - CMIS standard properties are inherited from base types
 		boolean inherited = false;
 		if (id != null && id.startsWith("cmis:")) {
 			inherited = true;  // CMIS standard properties are inherited from base types

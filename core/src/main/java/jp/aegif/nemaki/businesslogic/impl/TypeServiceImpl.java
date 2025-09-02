@@ -329,12 +329,11 @@ public class TypeServiceImpl implements TypeService{
 
 		// Determine if this is a custom property (non-CMIS namespace)
 		boolean isCustomProperty = originalPropertyId != null && 
-			(originalPropertyId.startsWith("tck:") || 
-			 (!originalPropertyId.startsWith("cmis:") && originalPropertyId.contains(":")));
+			originalPropertyId.contains(":") && !originalPropertyId.startsWith("cmis:");
 		
 		log.debug("CUSTOM PROPERTY DETECTION: " + isCustomProperty);
-		log.debug("Property ID starts with tck:: " + (originalPropertyId != null && originalPropertyId.startsWith("tck:")));
-		log.debug("Property ID contains :: " + (originalPropertyId != null && originalPropertyId.contains(":")));
+		log.debug("Property ID contains namespace: " + (originalPropertyId != null && originalPropertyId.contains(":")));
+		log.debug("Property ID (full): " + originalPropertyId);
 		log.debug("Property ID starts with cmis:: " + (originalPropertyId != null && originalPropertyId.startsWith("cmis:")));
 		
 		String coreNodeId = "";
