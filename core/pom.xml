@@ -212,7 +212,7 @@
 			<artifactId>chemistry-opencmis-commons-impl</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
 			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/nemaki-opencmis-1.1.0-jakarta/chemistry-opencmis-commons/chemistry-opencmis-commons-impl/target/chemistry-opencmis-commons-impl-1.1.0-nemakiware.jar</systemPath>
+			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-commons-impl-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
 
 		<dependency>
@@ -220,7 +220,7 @@
 			<artifactId>chemistry-opencmis-commons-api</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
 			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/nemaki-opencmis-1.1.0-jakarta/chemistry-opencmis-commons/chemistry-opencmis-commons-api/target/chemistry-opencmis-commons-api-1.1.0-nemakiware.jar</systemPath>
+			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-commons-api-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
 
 		<dependency>
@@ -228,7 +228,7 @@
 			<artifactId>chemistry-opencmis-server-support</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
 			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/nemaki-opencmis-1.1.0-jakarta/chemistry-opencmis-server/chemistry-opencmis-server-support/target/chemistry-opencmis-server-support-1.1.0-nemakiware.jar</systemPath>
+			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-server-support-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
 
 		<!-- OpenCMIS dependencies set to compile - JARs provided by self-build strategy -->
@@ -237,7 +237,7 @@
 			<artifactId>chemistry-opencmis-server-bindings</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
 			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/nemaki-opencmis-1.1.0-jakarta/chemistry-opencmis-server/chemistry-opencmis-server-bindings/target/chemistry-opencmis-server-bindings-1.1.0-nemakiware.jar</systemPath>
+			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-server-bindings-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
 
 		<dependency>
