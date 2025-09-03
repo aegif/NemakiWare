@@ -937,19 +937,50 @@ private PropertyDefinition<?> createDefaultPropDef(String repositoryId,
 		boolean queryable, boolean orderable, List<?> defaultValue, boolean inherited) {
 	PropertyDefinition<?> result = null;
 
-	// Default values
+	// Default values with CMIS 1.1 compliance
 	String localName = id;
 	String localNameSpace = getNameSpace(repositoryId);
-	String queryName = id;
-	String displayName = id;
+	String queryName = localName;  // CMIS 1.1: queryName must equal localName
+	String displayName = null;  // Let DataUtil generate human-readable displayName
 	String description = id;
 	boolean openChoice = false;
+	
+	// CRITICAL FIX: Ensure Updatability has proper default value when null
+	if (updatability == null) {
+		// CMIS 1.1 default: most properties are read-only unless explicitly writable
+		updatability = Updatability.READONLY;
+	}
+
+	// Type-specific attribute configuration for CMIS 1.1 compliance
+	Long maxLength = null;
+	if (datatype == PropertyType.STRING) {
+		// Set appropriate maxLength for key STRING properties
+		switch (id) {
+			case PropertyIds.NAME:
+				maxLength = 255L;  // CMIS standard limit for object names
+				break;
+			case PropertyIds.CREATED_BY:
+			case PropertyIds.LAST_MODIFIED_BY:
+				maxLength = 128L;  // User ID limit
+				break;
+			case PropertyIds.PATH:
+				maxLength = 2048L; // Path length limit
+				break;
+			case PropertyIds.CONTENT_STREAM_MIME_TYPE:
+				maxLength = 127L;  // MIME type length
+				break;
+			case PropertyIds.CONTENT_STREAM_FILE_NAME:
+				maxLength = 255L;  // File name length
+				break;
+			// Other STRING properties use unlimited length (null)
+		}
+	}
 
 	result = DataUtil.createPropDef(id, localName, localNameSpace,
 			queryName, displayName, description, datatype, cardinality,
 			updatability, required, queryable, inherited, null, openChoice,
 			orderable, defaultValue, null, null, null, null, null, null,
-			null);
+			maxLength);
 
 	return result;
 }

@@ -107,8 +107,19 @@ public class NemakiPropertyDefinition extends NodeBase {
 		
 		setLocalName(detail.getLocalName());
 		setLocalNameSpace(detail.getLocalNameSpace());
-		setQueryName(core.getQueryName());
-		setDisplayName(detail.getDisplayName());
+		
+		// CRITICAL CMIS 1.1 COMPLIANCE FIX: Apply DataUtil compliance to constructor
+		// The core.getQueryName() may not be CMIS 1.1 compliant, so we need to ensure consistency
+		String coreQueryName = core.getQueryName();
+		String localName = detail.getLocalName();
+		String finalQueryName = jp.aegif.nemaki.util.DataUtil.ensureCmis11QueryNameCompliance(coreQueryName, localName);
+		setQueryName(finalQueryName);
+		
+		// CRITICAL CMIS 1.1 COMPLIANCE FIX: Apply DataUtil displayName logic
+		String detailDisplayName = detail.getDisplayName();
+		String finalDisplayName = jp.aegif.nemaki.util.DataUtil.ensureCmis11DisplayNameCompliance(detailDisplayName, intendedPropertyId);
+		setDisplayName(finalDisplayName);
+		
 		setDescription(detail.getDescription());
 		setPropertyType(core.getPropertyType());
 		setCardinality(core.getCardinality());
@@ -240,8 +251,17 @@ public class NemakiPropertyDefinition extends NodeBase {
 		setPropertyId(correctedPropertyId);
 		setLocalName(propertyDefinition.getLocalName());
 		setLocalNameSpace(propertyDefinition.getLocalNamespace());
-		setQueryName(propertyDefinition.getQueryName());
-		setDisplayName(propertyDefinition.getQueryName());
+		
+		// CRITICAL CMIS 1.1 COMPLIANCE FIX: Apply DataUtil compliance to PropertyDefinition constructor
+		String originalQueryName = propertyDefinition.getQueryName();
+		String localName = propertyDefinition.getLocalName();
+		String finalQueryName = jp.aegif.nemaki.util.DataUtil.ensureCmis11QueryNameCompliance(originalQueryName, localName);
+		setQueryName(finalQueryName);
+		
+		// CRITICAL CMIS 1.1 COMPLIANCE FIX: Apply DataUtil displayName logic (NOT queryName!)
+		String originalDisplayName = propertyDefinition.getDisplayName();
+		String finalDisplayName = jp.aegif.nemaki.util.DataUtil.ensureCmis11DisplayNameCompliance(originalDisplayName, correctedPropertyId);
+		setDisplayName(finalDisplayName);
 		setPropertyType(propertyDefinition.getPropertyType());
 		setCardinality(propertyDefinition.getCardinality());
 		setUpdatability(propertyDefinition.getUpdatability());

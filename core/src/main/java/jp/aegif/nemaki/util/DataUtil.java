@@ -447,6 +447,78 @@ public class DataUtil {
 		}
 	}
 
+	/**
+	 * Extract local name from property ID (after ':' character)
+	 * Example: "cmis:name" → "name"
+	 */
+	private static String extractLocalName(String propertyId) {
+		if (propertyId != null && propertyId.contains(":")) {
+			return propertyId.substring(propertyId.indexOf(":") + 1);
+		}
+		return propertyId;
+	}
+
+	/**
+	 * Generate human-readable display name from property ID
+	 * Example: "cmis:name" → "Name", "user_id" → "User Id"
+	 */
+	private static String generateDisplayName(String propertyId) {
+		if (propertyId == null) return "Unknown Property";
+		
+		// Extract local name and convert to title case
+		String localName = extractLocalName(propertyId);
+		StringBuilder displayName = new StringBuilder();
+		
+		boolean capitalizeNext = true;
+		for (char c : localName.toCharArray()) {
+			if (c == '_' || c == '-') {
+				displayName.append(' ');
+				capitalizeNext = true;
+			} else if (capitalizeNext) {
+				displayName.append(Character.toUpperCase(c));
+				capitalizeNext = false;
+			} else {
+				displayName.append(Character.toLowerCase(c));
+			}
+		}
+		
+		return displayName.toString();
+	}
+	
+	/**
+	 * CMIS 1.1 COMPLIANCE HELPER: Ensure queryName equals localName for CMIS 1.1 standard
+	 * Applied during PropertyDefinition reconstruction from Core/Detail objects
+	 * 
+	 * @param coreQueryName QueryName from PropertyDefinitionCore (may be inconsistent)
+	 * @param localName LocalName from PropertyDefinitionDetail (authoritative)
+	 * @return CMIS 1.1 compliant queryName (equals localName)
+	 */
+	public static String ensureCmis11QueryNameCompliance(String coreQueryName, String localName) {
+		// CMIS 1.1 COMPLIANCE: queryName MUST equal localName
+		if (localName != null && !localName.trim().isEmpty()) {
+			return localName;  // Use localName as authoritative
+		}
+		// Fallback to core queryName if localName is null
+		return coreQueryName;
+	}
+	
+	/**
+	 * CMIS 1.1 COMPLIANCE HELPER: Ensure proper displayName handling for reconstructed PropertyDefinitions
+	 * Applied during PropertyDefinition reconstruction from Core/Detail objects
+	 * 
+	 * @param detailDisplayName DisplayName from PropertyDefinitionDetail (may be null)
+	 * @param propertyId PropertyId for displayName generation when needed
+	 * @return Properly formatted displayName (existing or generated)
+	 */
+	public static String ensureCmis11DisplayNameCompliance(String detailDisplayName, String propertyId) {
+		// CMIS 1.1 COMPLIANCE: Only generate displayName when not provided
+		if (detailDisplayName != null && !detailDisplayName.trim().isEmpty()) {
+			return detailDisplayName;  // Use existing displayName (no conversion)
+		}
+		// Generate human-readable displayName only when null
+		return generateDisplayName(propertyId);
+	}
+
 	public static PropertyDefinition<?> createPropBooleanDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
@@ -621,8 +693,17 @@ public class DataUtil {
 		// Set default value if not set(null)
 		localName = (localName == null) ? id : localName;
 		localNameSpace = (localNameSpace == null) ? NAMESPACE : localNameSpace;
-		queryName = (queryName == null) ? id : queryName;
-		displayName = (displayName == null) ? id : displayName;
+		
+		// CMIS 1.1 COMPLIANCE CRITICAL FIX: queryName MUST ALWAYS equal localName
+		// Previous bug: Only applied when queryName==null, but CMIS 1.1 requires ALWAYS
+		queryName = localName;  // Force CMIS 1.1 compliance - no conditional logic
+		
+		// DisplayName: Adopt directly provided value, generate only when null
+		if (displayName == null) {
+			displayName = generateDisplayName(id);  // Human-readable format generation
+		}
+		// If displayName is directly provided, use as-is (no conversion)
+		
 		description = (description == null) ? id : description;
 
 		// Set base attributes
