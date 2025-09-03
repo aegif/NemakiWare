@@ -691,8 +691,9 @@ public class DataUtil {
 	}
 
 	/**
-	 * CRITICAL CONTAMINATION FIX: Create defensive copy of PropertyDefinition to prevent object sharing
-	 * This prevents modifications to one PropertyDefinition reference from affecting other references
+	 * COMPLETE CONTAMINATION PREVENTION: Complete defensive copy of PropertyDefinition
+	 * Implements deep cloning of all fields including complex objects and type-specific values
+	 * to prevent any object sharing that could lead to contamination.
 	 */
 	public static PropertyDefinition<?> clonePropertyDefinition(PropertyDefinition<?> original) {
 		if (original == null) {
@@ -700,7 +701,22 @@ public class DataUtil {
 		}
 		
 		try {
-			// Create new PropertyDefinition with same properties but different object reference
+			// Deep clone choices if present
+			List<jp.aegif.nemaki.model.Choice> clonedChoices = null;
+			if (original.getChoices() != null && !original.getChoices().isEmpty()) {
+				clonedChoices = deepCloneChoices(original.getChoices());
+			}
+			
+			// Deep clone default values if present
+			List<Object> clonedDefaultValue = null;
+			if (original.getDefaultValue() != null) {
+				clonedDefaultValue = new ArrayList<Object>(original.getDefaultValue());
+			}
+			
+			// Extract type-specific values based on PropertyType
+			Map<String, Object> typeSpecificValues = extractTypeSpecificValues(original);
+			
+			// Create complete defensive copy with all fields
 			return createPropDef(
 				original.getId(),
 				original.getLocalName(),
@@ -714,22 +730,123 @@ public class DataUtil {
 				original.isRequired(),
 				original.isQueryable(),
 				original.isInherited(),
-				null, // choices - complex object, skip for now
+				clonedChoices,
 				original.isOpenChoice(),
 				original.isOrderable(),
-				original.getDefaultValue(),
-				null, // minValue - type-specific, handle separately
-				null, // maxValue - type-specific, handle separately
-				null, // resolution - DateTime specific
-				null, // decimalPrecision - Decimal specific
-				null, // decimalMinValue - Decimal specific
-				null, // decimalMaxValue - Decimal specific
-				null  // maxLength - String specific
+				clonedDefaultValue,
+				typeSpecificValues.get("minValue"),
+				typeSpecificValues.get("maxValue"),
+				typeSpecificValues.get("resolution"),
+				typeSpecificValues.get("decimalPrecision"),
+				typeSpecificValues.get("decimalMinValue"),
+				typeSpecificValues.get("decimalMaxValue"),
+				typeSpecificValues.get("maxLength")
 			);
 		} catch (Exception e) {
-			// Return original object as fallback
+			// Log cloning failure for debugging
+			log.error("CRITICAL: PropertyDefinition cloning failed for " + 
+				(original.getId() != null ? original.getId() : "unknown") + ": " + e.getMessage(), e);
+			
+			// Return original as fallback but this indicates a serious problem
 			return original;
 		}
+	}
+
+	/**
+	 * Deep clone choices to prevent reference sharing
+	 */
+	private static List<jp.aegif.nemaki.model.Choice> deepCloneChoices(List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>> originalChoices) {
+		if (originalChoices == null) {
+			return null;
+		}
+		
+		List<jp.aegif.nemaki.model.Choice> clonedChoices = new ArrayList<jp.aegif.nemaki.model.Choice>();
+		for (org.apache.chemistry.opencmis.commons.definitions.Choice<?> choice : originalChoices) {
+			// Clone choice values
+			List<Object> clonedValues = choice.getValue() != null ? 
+				new ArrayList<Object>(choice.getValue()) : null;
+			
+			// Recursively clone sub-choices
+			List<jp.aegif.nemaki.model.Choice> clonedSubChoices = choice.getChoice() != null ? 
+				deepCloneChoices(choice.getChoice()) : null;
+			
+			// Create new Choice instance
+			jp.aegif.nemaki.model.Choice clonedChoice = new jp.aegif.nemaki.model.Choice(
+				choice.getDisplayName(),
+				clonedValues,
+				clonedSubChoices
+			);
+			clonedChoices.add(clonedChoice);
+		}
+		return clonedChoices;
+	}
+
+	/**
+	 * Extract all type-specific values based on PropertyType to ensure complete cloning
+	 */
+	private static Map<String, Object> extractTypeSpecificValues(PropertyDefinition<?> original) {
+		Map<String, Object> typeSpecificValues = new HashMap<String, Object>();
+		
+		switch (original.getPropertyType()) {
+			case INTEGER:
+				if (original instanceof org.apache.chemistry.opencmis.commons.definitions.PropertyIntegerDefinition) {
+					org.apache.chemistry.opencmis.commons.definitions.PropertyIntegerDefinition intDef = 
+						(org.apache.chemistry.opencmis.commons.definitions.PropertyIntegerDefinition) original;
+					if (intDef.getMinValue() != null) {
+						typeSpecificValues.put("minValue", intDef.getMinValue());
+					}
+					if (intDef.getMaxValue() != null) {
+						typeSpecificValues.put("maxValue", intDef.getMaxValue());
+					}
+				}
+				break;
+				
+			case DECIMAL:
+				if (original instanceof org.apache.chemistry.opencmis.commons.definitions.PropertyDecimalDefinition) {
+					org.apache.chemistry.opencmis.commons.definitions.PropertyDecimalDefinition decDef = 
+						(org.apache.chemistry.opencmis.commons.definitions.PropertyDecimalDefinition) original;
+					if (decDef.getPrecision() != null) {
+						typeSpecificValues.put("decimalPrecision", decDef.getPrecision());
+					}
+					if (decDef.getMinValue() != null) {
+						typeSpecificValues.put("decimalMinValue", decDef.getMinValue());
+					}
+					if (decDef.getMaxValue() != null) {
+						typeSpecificValues.put("decimalMaxValue", decDef.getMaxValue());
+					}
+				}
+				break;
+				
+			case STRING:
+			case HTML:
+			case ID:
+			case URI:
+				if (original instanceof org.apache.chemistry.opencmis.commons.definitions.PropertyStringDefinition) {
+					org.apache.chemistry.opencmis.commons.definitions.PropertyStringDefinition strDef = 
+						(org.apache.chemistry.opencmis.commons.definitions.PropertyStringDefinition) original;
+					if (strDef.getMaxLength() != null) {
+						typeSpecificValues.put("maxLength", strDef.getMaxLength());
+					}
+				}
+				break;
+				
+			case DATETIME:
+				if (original instanceof org.apache.chemistry.opencmis.commons.definitions.PropertyDateTimeDefinition) {
+					org.apache.chemistry.opencmis.commons.definitions.PropertyDateTimeDefinition dateDef = 
+						(org.apache.chemistry.opencmis.commons.definitions.PropertyDateTimeDefinition) original;
+					if (dateDef.getDateTimeResolution() != null) {
+						typeSpecificValues.put("resolution", dateDef.getDateTimeResolution());
+					}
+				}
+				break;
+				
+			case BOOLEAN:
+			default:
+				// No additional type-specific values for BOOLEAN
+				break;
+		}
+		
+		return typeSpecificValues;
 	}
 
 	public static ObjectData copyObjectData(ObjectData objectData) {
