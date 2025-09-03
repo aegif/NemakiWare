@@ -72,7 +72,61 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     @Override
     public void init() throws ServletException {
         super.init();
-        log.info("NEMAKI SERVLET: NemakiBrowserBindingServlet initialized");
+        
+        // CRITICAL DEBUG: Comprehensive servlet initialization logging
+        System.err.println("*** NEMAKI SERVLET INIT: Starting NemakiBrowserBindingServlet initialization ***");
+        System.out.println("*** NEMAKI SERVLET INIT: Starting NemakiBrowserBindingServlet initialization ***");
+        
+        try {
+            // Log ClassLoader information
+            ClassLoader classLoader = this.getClass().getClassLoader();
+            System.err.println("*** SERVLET INIT: ClassLoader: " + classLoader.getClass().getName());
+            System.err.println("*** SERVLET INIT: Parent ClassLoader: " + 
+                (classLoader.getParent() != null ? classLoader.getParent().getClass().getName() : "null"));
+            
+            // Log servlet configuration
+            String servletName = getServletName();
+            System.err.println("*** SERVLET INIT: Servlet Name: " + servletName);
+            System.err.println("*** SERVLET INIT: Servlet Class: " + this.getClass().getName());
+            System.err.println("*** SERVLET INIT: Parent Class: " + this.getClass().getSuperclass().getName());
+            
+            // Log servlet context information
+            jakarta.servlet.ServletContext servletContext = getServletContext();
+            System.err.println("*** SERVLET INIT: ServletContext: " + servletContext.getClass().getName());
+            System.err.println("*** SERVLET INIT: Context Path: " + servletContext.getContextPath());
+            
+            // Log initialization parameters
+            java.util.Enumeration<String> paramNames = getInitParameterNames();
+            System.err.println("*** SERVLET INIT: Initialization Parameters:");
+            while (paramNames.hasMoreElements()) {
+                String paramName = paramNames.nextElement();
+                String paramValue = getInitParameter(paramName);
+                System.err.println("***   " + paramName + " = " + paramValue);
+            }
+            
+            // Log servlet mapping information
+            java.util.Collection<String> mappings = servletContext.getServletRegistration(servletName).getMappings();
+            System.err.println("*** SERVLET INIT: URL Mappings: " + mappings);
+            
+            // Log method override detection
+            try {
+                java.lang.reflect.Method serviceMethod = this.getClass().getDeclaredMethod("service", 
+                    jakarta.servlet.http.HttpServletRequest.class, jakarta.servlet.http.HttpServletResponse.class);
+                System.err.println("*** SERVLET INIT: service() method override: " + 
+                    serviceMethod.getDeclaringClass().getName());
+            } catch (NoSuchMethodException e) {
+                System.err.println("*** SERVLET INIT: service() method NOT overridden in this class");
+            }
+            
+            log.info("NEMAKI SERVLET: NemakiBrowserBindingServlet initialization completed successfully");
+            System.err.println("*** NEMAKI SERVLET INIT: Initialization completed successfully ***");
+            
+        } catch (Exception e) {
+            System.err.println("*** SERVLET INIT ERROR: " + e.getMessage() + " ***");
+            e.printStackTrace();
+            log.error("NEMAKI SERVLET: Initialization failed", e);
+            throw new ServletException("NemakiBrowserBindingServlet initialization failed", e);
+        }
     }
 
     /**
@@ -795,6 +849,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             } else if ("content".equals(cmisselector)) {
                 result = handleContentOperation(service, repositoryId, objectId, request, response);
                 return; // Content operation handles response directly
+            } else if ("typeDefinition".equals(cmisselector)) {
+                // CRITICAL FIX: Handle typeDefinition requests to apply inherited flag corrections
+                result = handleTypeDefinitionOperation(service, repositoryId, request);
             } else {
                 // For other selectors, fall back to standard OpenCMIS dispatcher
                 super.service(wrappedRequest, response);
@@ -905,6 +962,36 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         );
         
         return allowableActions;
+    }
+    
+    /**
+     * Handle typeDefinition operation - equivalent to getTypeDefinition CMIS service call
+     * This method handles typeDefinition cmisselector requests with inherited flag corrections.
+     */
+    private Object handleTypeDefinitionOperation(CmisService service, String repositoryId, HttpServletRequest request) {
+        // Parse parameters
+        String typeId = HttpUtils.getStringParameter(request, "typeId");
+        
+        if (typeId == null || typeId.trim().isEmpty()) {
+            throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
+                "typeId parameter is required for typeDefinition operation");
+        }
+        
+        System.err.println("*** HANDLE TYPE DEFINITION: Processing typeId='" + typeId + "' ***");
+        
+        // Call CMIS service to get TypeDefinition
+        org.apache.chemistry.opencmis.commons.definitions.TypeDefinition typeDefinition = service.getTypeDefinition(
+            repositoryId, typeId, null
+        );
+        
+        // CRITICAL FIX: Apply inherited flag corrections before returning
+        // This ensures CMIS standard properties have inherited=true for CMIS 1.1 compliance
+        if (typeDefinition != null) {
+            typeDefinition = correctInheritedFlags(typeDefinition);
+            System.err.println("*** HANDLE TYPE DEFINITION: Applied inherited flag corrections to type '" + typeId + "' ***");
+        }
+        
+        return typeDefinition;
     }
     
     /**
