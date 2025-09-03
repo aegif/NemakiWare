@@ -474,6 +474,84 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             System.err.println("*** SERVICE DEBUG FINAL: routeCmisAction returned FALSE - delegating to parent service ***");
         }
         
+        // ===============================
+        // CRITICAL FIX: Handle repository-level typeDefinition requests  
+        // ===============================
+        if ("GET".equals(method) && queryString != null) {
+            String cmisselector = request.getParameter("cmisselector");
+            String typeId = request.getParameter("typeId");
+            
+            // Debug parameter extraction
+            System.err.println("*** PARAMETER DEBUG: queryString='" + queryString + "' ***");
+            System.err.println("*** PARAMETER DEBUG: cmisselector='" + cmisselector + "' ***");
+            System.err.println("*** PARAMETER DEBUG: typeId='" + typeId + "' ***");
+            
+            // Also try manual parsing as fallback
+            if (cmisselector == null && queryString.contains("cmisselector=")) {
+                try {
+                    String[] params = queryString.split("&");
+                    for (String param : params) {
+                        if (param.startsWith("cmisselector=")) {
+                            cmisselector = param.substring("cmisselector=".length());
+                            System.err.println("*** PARAMETER DEBUG: Manually parsed cmisselector='" + cmisselector + "' ***");
+                        } else if (param.startsWith("typeId=")) {
+                            typeId = java.net.URLDecoder.decode(param.substring("typeId=".length()), "UTF-8");
+                            System.err.println("*** PARAMETER DEBUG: Manually parsed typeId='" + typeId + "' ***");
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("*** PARAMETER DEBUG: Manual parsing error: " + e.getMessage() + " ***");
+                }
+            }
+            
+            if ("typeDefinition".equals(cmisselector) && typeId != null) {
+                System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION: Processing typeId='" + typeId + "' at repository level ***");
+                System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION: pathInfo='" + pathInfo + "', queryString='" + queryString + "' ***");
+                
+                try {
+                    // Extract repository ID from pathInfo
+                    String repositoryId = null;
+                    if (pathInfo != null) {
+                        String[] pathParts = pathInfo.split("/");
+                        if (pathParts.length > 1) {
+                            repositoryId = pathParts[1];
+                        }
+                    }
+                    
+                    if (repositoryId != null) {
+                        System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION: Extracted repositoryId='" + repositoryId + "' ***");
+                        
+                        // Create call context for CMIS service operations
+                        CallContext callContext = createContext(getServletContext(), request, response, null);
+                        CmisService service = getServiceFactory().getService(callContext);
+                        
+                        System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION: Calling handleTypeDefinitionOperation ***");
+                        
+                        // Handle the typeDefinition request directly
+                        Object result = handleTypeDefinitionOperation(service, repositoryId, request);
+                        
+                        // Convert result to JSON and write response
+                        writeJsonResponse(response, result);
+                        
+                        System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION: Successfully completed for typeId='" + typeId + "' ***");
+                        return; // Don't delegate to parent - we handled it completely
+                    } else {
+                        System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION ERROR: Repository ID extraction failed from pathInfo='" + pathInfo + "' ***");
+                    }
+                } catch (Exception e) {
+                    System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION EXCEPTION: " + e.getMessage() + " ***");
+                    e.printStackTrace();
+                    log.error("Error in repository-level typeDefinition handling", e);
+                    try {
+                        writeErrorResponse(response, e);
+                    } catch (Exception writeEx) {
+                        log.error("Failed to write error response: " + writeEx.getMessage());
+                    }
+                    return;
+                }
+            }
+        }
+        
         // CRITICAL FIX: Handle OpenCMIS 1.2.0-SNAPSHOT strict selector validation for TCK compatibility
         
         try {
