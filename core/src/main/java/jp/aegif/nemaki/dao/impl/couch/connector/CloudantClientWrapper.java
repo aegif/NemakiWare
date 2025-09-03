@@ -455,8 +455,17 @@ public class CloudantClientWrapper {
 				throw new IllegalArgumentException("Document must have '_id' field for update");
 			}
 			
+			// CRITICAL FIX: Type-safe JSON processing instead of naive round-trip conversion
+			// OLD PROBLEMATIC APPROACH:
+			//   String jsonString = mapper.writeValueAsString(document);
+			//   Document doc = mapper.readValue(jsonString, Document.class);
+			// PROBLEM: Type information lost during JSON serialization, especially Gson LazilyParsedNumber
+			// 
+			// NEW APPROACH: Pre-process document to ensure type safety before JSON conversion
+			Map<String, Object> typeSafeDocument = normalizeDataTypes(document);
+			
 			ObjectMapper mapper = getObjectMapper();
-			String jsonString = mapper.writeValueAsString(document);
+			String jsonString = mapper.writeValueAsString(typeSafeDocument);
 			com.ibm.cloud.cloudant.v1.model.Document doc = mapper.readValue(jsonString, com.ibm.cloud.cloudant.v1.model.Document.class);
 
 			PutDocumentOptions options = new PutDocumentOptions.Builder()
@@ -1010,7 +1019,16 @@ public class CloudantClientWrapper {
 			documentMap = convertPropertiesArrayToMap(documentMap);
 			documentMap = convertTypeDefinitionPropertiesToMap(documentMap);
 			
-			String jsonString = mapper.writeValueAsString(documentMap);
+			// CRITICAL FIX: Type-safe JSON processing instead of naive round-trip conversion  
+			// OLD PROBLEMATIC APPROACH:
+			//   String jsonString = mapper.writeValueAsString(documentMap);
+			//   Document doc = mapper.readValue(jsonString, Document.class);
+			// PROBLEM: Type information lost during JSON serialization, especially Gson LazilyParsedNumber
+			//
+			// NEW APPROACH: Pre-process document to ensure type safety before JSON conversion
+			Map<String, Object> typeSafeDocumentMap = normalizeDataTypes(documentMap);
+			
+			String jsonString = mapper.writeValueAsString(typeSafeDocumentMap);
 			com.ibm.cloud.cloudant.v1.model.Document doc = mapper.readValue(jsonString, com.ibm.cloud.cloudant.v1.model.Document.class);
 
 			PutDocumentOptions options = new PutDocumentOptions.Builder()
@@ -1665,5 +1683,94 @@ public class CloudantClientWrapper {
 			log.error("Error creating/updating view '" + viewName + "' in design document '" + designDocId + "'", e);
 			throw new RuntimeException("Failed to create/update view: " + viewName, e);
 		}
+	}
+	
+	/**
+	 * CRITICAL FIX: Normalize data types to prevent JSON conversion issues
+	 * 
+	 * This method addresses the core issue of type inconsistencies when data passes through
+	 * multiple JSON processing libraries:
+	 * 1. Cloudant SDK uses Gson internally (LazilyParsedNumber for numbers)
+	 * 2. NemakiWare uses Jackson ObjectMapper for serialization
+	 * 3. OpenCMIS uses its own JSONConverter for CMIS-compliant output
+	 * 
+	 * The problem occurs when Gson's LazilyParsedNumber objects are serialized by Jackson
+	 * and then processed by OpenCMIS, causing type conversion errors and property contamination.
+	 * 
+	 * This method normalizes all data types to Java standard types before JSON processing.
+	 */
+	private Map<String, Object> normalizeDataTypes(Map<String, Object> document) {
+		Map<String, Object> normalized = new java.util.HashMap<>();
+		
+		for (Map.Entry<String, Object> entry : document.entrySet()) {
+			String key = entry.getKey();
+			Object value = entry.getValue();
+			
+			normalized.put(key, normalizeValue(value));
+		}
+		
+		return normalized;
+	}
+	
+	/**
+	 * CRITICAL FIX: Normalize individual values to prevent type conversion issues
+	 * 
+	 * This method handles the specific conversion issues between JSON libraries:
+	 * - Gson's LazilyParsedNumber → Java Number types  
+	 * - Complex nested structures (Maps, Lists)
+	 * - Preserves null values and proper types
+	 */
+	@SuppressWarnings("unchecked")
+	private Object normalizeValue(Object value) {
+		if (value == null) {
+			return null;
+		}
+		
+		// Handle Gson's LazilyParsedNumber - the root cause of type conversion issues
+		if (value.getClass().getName().contains("LazilyParsedNumber")) {
+			// Convert LazilyParsedNumber to proper Java numeric type
+			String stringValue = value.toString();
+			try {
+				// Try to parse as Long first (most common case)
+				if (!stringValue.contains(".")) {
+					return Long.parseLong(stringValue);
+				} else {
+					// Parse as Double for decimal values
+					return Double.parseDouble(stringValue);
+				}
+			} catch (NumberFormatException e) {
+				// Fallback to string if parsing fails
+				log.warn("Failed to parse LazilyParsedNumber: " + stringValue + ", using string value");
+				return stringValue;
+			}
+		}
+		
+		// Handle nested Maps recursively
+		if (value instanceof Map) {
+			return normalizeDataTypes((Map<String, Object>) value);
+		}
+		
+		// Handle Lists recursively  
+		if (value instanceof java.util.List) {
+			java.util.List<?> list = (java.util.List<?>) value;
+			java.util.List<Object> normalizedList = new java.util.ArrayList<>();
+			for (Object item : list) {
+				normalizedList.add(normalizeValue(item));
+			}
+			return normalizedList;
+		}
+		
+		// Handle Arrays recursively
+		if (value instanceof Object[]) {
+			Object[] array = (Object[]) value;
+			Object[] normalizedArray = new Object[array.length];
+			for (int i = 0; i < array.length; i++) {
+				normalizedArray[i] = normalizeValue(array[i]);
+			}
+			return normalizedArray;
+		}
+		
+		// For all other types (String, Boolean, proper Number types), return as-is
+		return value;
 	}
 }

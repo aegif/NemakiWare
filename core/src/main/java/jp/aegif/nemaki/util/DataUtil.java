@@ -704,7 +704,10 @@ public class DataUtil {
 			// Deep clone choices if present
 			List<jp.aegif.nemaki.model.Choice> clonedChoices = null;
 			if (original.getChoices() != null && !original.getChoices().isEmpty()) {
-				clonedChoices = deepCloneChoices(original.getChoices());
+				@SuppressWarnings("unchecked")
+				List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>> originalChoices = 
+					(List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>>) original.getChoices();
+				clonedChoices = deepCloneChoices(originalChoices);
 			}
 			
 			// Deep clone default values if present
@@ -734,13 +737,13 @@ public class DataUtil {
 				original.isOpenChoice(),
 				original.isOrderable(),
 				clonedDefaultValue,
-				typeSpecificValues.get("minValue"),
-				typeSpecificValues.get("maxValue"),
-				typeSpecificValues.get("resolution"),
-				typeSpecificValues.get("decimalPrecision"),
-				typeSpecificValues.get("decimalMinValue"),
-				typeSpecificValues.get("decimalMaxValue"),
-				typeSpecificValues.get("maxLength")
+				(Long) typeSpecificValues.get("minValue"),
+				(Long) typeSpecificValues.get("maxValue"),
+				(Resolution) typeSpecificValues.get("resolution"),
+				(DecimalPrecision) typeSpecificValues.get("decimalPrecision"),
+				(BigDecimal) typeSpecificValues.get("decimalMinValue"),
+				(BigDecimal) typeSpecificValues.get("decimalMaxValue"),
+				(Long) typeSpecificValues.get("maxLength")
 			);
 		} catch (Exception e) {
 			// Log cloning failure for debugging
@@ -767,8 +770,13 @@ public class DataUtil {
 				new ArrayList<Object>(choice.getValue()) : null;
 			
 			// Recursively clone sub-choices
-			List<jp.aegif.nemaki.model.Choice> clonedSubChoices = choice.getChoice() != null ? 
-				deepCloneChoices(choice.getChoice()) : null;
+			List<jp.aegif.nemaki.model.Choice> clonedSubChoices = null;
+			if (choice.getChoice() != null) {
+				@SuppressWarnings("unchecked")
+				List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>> subChoices = 
+					(List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>>) choice.getChoice();
+				clonedSubChoices = deepCloneChoices(subChoices);
+			}
 			
 			// Create new Choice instance
 			jp.aegif.nemaki.model.Choice clonedChoice = new jp.aegif.nemaki.model.Choice(

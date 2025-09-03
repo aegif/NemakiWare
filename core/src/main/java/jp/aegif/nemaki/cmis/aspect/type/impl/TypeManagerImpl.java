@@ -1411,7 +1411,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					specificProperties.add(property);
 				} else {
 					// Log NULL property creation to track down the root cause
-									log.error("CRITICAL: NULL PropertyDefinition created for property ID: " + p.getPropertyId() + ", Property Type: " + p.getPropertyType() + ". Skipping addition to prevent JSON serialization errors");
+									log.error("CRITICAL: NULL PropertyDefinition created for property ID: " + originalCore.getPropertyId() + ", Property Type: " + originalCore.getPropertyType() + ". Skipping addition to prevent JSON serialization errors");
 				}
 			}
 		}
@@ -1445,7 +1445,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * @param parentType The parent type this property comes from
 	 * @return true if the property should be marked as inherited=true, false otherwise
 	 */
-	private boolean shouldBeInherited(PropertyDefinition<?> property, AbstractTypeDefinition parentType) {
+	private static boolean shouldBeInherited(PropertyDefinition<?> property, AbstractTypeDefinition parentType) {
 		if (property == null || property.getId() == null) {
 			return false; // Safety: null properties should not be inherited
 		}
@@ -2016,7 +2016,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * @param propertyDetailId The detail ID for debugging
 	 * @return The authoritative property ID that should be used for this property
 	 */
-	private String determineAuthoritativePropertyId(NemakiPropertyDefinitionDetail detail, 
+	private static String determineAuthoritativePropertyId(NemakiPropertyDefinitionDetail detail, 
 			NemakiPropertyDefinitionCore originalCore, String repositoryId, String propertyDetailId) {
 		
 		// STRATEGY 1: Use detail's localName as the primary authoritative source
@@ -2029,20 +2029,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			return detail.getDisplayName();
 		}
 		
-		// STRATEGY 3: For CMIS system properties, reconstruct from database query to avoid contamination
-		// This ensures we get the original property ID from the database, not from a reused core object
-		if (originalCore != null) {
-			try {
-				// Query the database directly for the original property core by its document ID
-				NemakiPropertyDefinitionCore freshFromDb = typeService.getPropertyDefinitionCore(repositoryId, originalCore.getId());
-				if (freshFromDb != null && freshFromDb.getPropertyId() != null) {
-					// Validate this looks like a CMIS system property (most reliable fallback)
-					if (freshFromDb.getPropertyId().startsWith("cmis:")) {
-						return freshFromDb.getPropertyId();
-					}
-				}
-			} catch (Exception e) {
-				log.warn("Failed to refresh property core from database for ID: " + originalCore.getId(), e);
+		// STRATEGY 3: Use original core's property ID directly if it looks valid
+		// Simplified to avoid database dependency in static context
+		if (originalCore != null && originalCore.getPropertyId() != null && !originalCore.getPropertyId().trim().isEmpty()) {
+			// If it looks like a valid CMIS property, use it directly
+			String corePropertyId = originalCore.getPropertyId();
+			if (corePropertyId.startsWith("cmis:") || corePropertyId.contains(":")) {
+				return corePropertyId;
 			}
 		}
 		
@@ -2057,7 +2050,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * Generate a fallback property ID when all other strategies fail
 	 * This ensures we never return null or empty property IDs which would violate CMIS requirements
 	 */
-	private String generateFallbackPropertyId(NemakiPropertyDefinitionDetail detail, String propertyDetailId) {
+	private static String generateFallbackPropertyId(NemakiPropertyDefinitionDetail detail, String propertyDetailId) {
 		// Try to construct from available detail information
 		if (detail != null) {
 			// Use detail's creation timestamp and a safe prefix
@@ -2803,7 +2796,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * CRITICAL CONTAMINATION FIX: Determine correct PropertyType from PropertyID
 	 * This method uses trusted PropertyID to derive correct PropertyType without contamination
 	 */
-	private PropertyType determinePropertyTypeFromPropertyId(String propertyId) {
+	private static PropertyType determinePropertyTypeFromPropertyId(String propertyId) {
 		if (propertyId == null) {
 			return PropertyType.STRING; // Default fallback
 		}
@@ -2882,7 +2875,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * CRITICAL CONTAMINATION FIX: Determine correct Cardinality from PropertyID
 	 * This method uses trusted PropertyID to derive correct Cardinality without contamination
 	 */
-	private Cardinality determineCardinalityFromPropertyId(String propertyId) {
+	private static Cardinality determineCardinalityFromPropertyId(String propertyId) {
 		if (propertyId == null) {
 			return Cardinality.SINGLE; // Default fallback
 		}
