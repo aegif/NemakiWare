@@ -1192,6 +1192,31 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(repositoryInfo, "", "NemakiWare", false);
                     
                 writer.write(jsonObject.toJSONString());
+            } else if (result instanceof org.apache.chemistry.opencmis.commons.definitions.TypeDefinition) {
+                // CRITICAL FIX: Handle TypeDefinition with inherited flag correction for CMIS 1.1 compliance
+                // ROOT CAUSE: Jackson ObjectMapper doesn't understand CMIS inherited flag semantics
+                // SOLUTION: Preprocess TypeDefinition to set inherited=true for CMIS standard properties before JSON conversion
+                org.apache.chemistry.opencmis.commons.definitions.TypeDefinition typeDefinition = 
+                    (org.apache.chemistry.opencmis.commons.definitions.TypeDefinition) result;
+                
+                try {
+                    // Create a corrected TypeDefinition with proper inherited flags
+                    org.apache.chemistry.opencmis.commons.definitions.TypeDefinition correctedTypeDef = 
+                        correctInheritedFlags(typeDefinition);
+                    
+                    // Use OpenCMIS JSONConverter for proper CMIS 1.1 JSON serialization
+                    org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonObject = 
+                        org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(correctedTypeDef, null);
+                        
+                    writer.write(jsonObject.toJSONString());
+                } catch (Exception typeDefException) {
+                    // Fallback to Jackson if OpenCMIS conversion fails
+                    System.err.println("WARNING: TypeDefinition OpenCMIS conversion failed, using Jackson fallback: " + 
+                        typeDefException.getMessage());
+                    com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    String json = objectMapper.writeValueAsString(result);
+                    writer.write(json);
+                }
             } else {
                 // For other types, use Jackson as fallback but this should be rare
                 // MOST Browser Binding responses should be ObjectData, ObjectInFolderList, ObjectList, or RepositoryInfo
@@ -2918,6 +2943,87 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             System.err.println("*** CRITICAL STACK TRACE ERROR: Could not get CmisService: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
             e.printStackTrace();
             throw new RuntimeException("CmisService not available", e);
+        }
+    }
+    
+    /**
+     * CRITICAL FIX: Correct inherited flags for TypeDefinition PropertyDefinitions to ensure CMIS 1.1 compliance
+     * ROOT CAUSE: NemakiPropertyDefinition defaults inherited=false, but CMIS standard properties should be inherited=true
+     * SOLUTION: Create a corrected TypeDefinition with proper inherited flags for JSON serialization
+     * 
+     * @param originalTypeDef The original TypeDefinition with potentially incorrect inherited flags
+     * @return A corrected TypeDefinition with proper inherited flags for CMIS standard properties
+     */
+    private org.apache.chemistry.opencmis.commons.definitions.TypeDefinition correctInheritedFlags(
+            org.apache.chemistry.opencmis.commons.definitions.TypeDefinition originalTypeDef) {
+        
+        System.err.println("*** INHERITED FLAG CORRECTION: Processing TypeDefinition '" + originalTypeDef.getId() + "' ***");
+        
+        try {
+            // Check if this is a mutable TypeDefinition (most OpenCMIS implementations are)
+            if (originalTypeDef instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) {
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition mutableTypeDef = 
+                    (org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) originalTypeDef;
+                
+                // Get current property definitions
+                Map<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> propertyDefs = 
+                    mutableTypeDef.getPropertyDefinitions();
+                    
+                if (propertyDefs != null) {
+                    // Create corrected property definitions map
+                    Map<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> correctedPropertyDefs = 
+                        new java.util.LinkedHashMap<>();
+                    
+                    int cmisPropertiesCount = 0;
+                    int correctionsMade = 0;
+                    
+                    for (Map.Entry<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> entry : propertyDefs.entrySet()) {
+                        String propertyId = entry.getKey();
+                        org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> propDef = entry.getValue();
+                        
+                        // Check if this is a CMIS standard property that should be inherited
+                        if (propertyId != null && propertyId.startsWith("cmis:")) {
+                            cmisPropertiesCount++;
+                            
+                            // Check if inherited flag is incorrectly set to false
+                            if (propDef.isInherited() != null && !propDef.isInherited()) {
+                                // CRITICAL FIX: Create corrected PropertyDefinition with inherited=true
+                                if (propDef instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition) {
+                                    @SuppressWarnings("unchecked")
+                                    org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition<Object> mutablePropDef = 
+                                        (org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition<Object>) propDef;
+                                    
+                                    // Set inherited flag to true for CMIS standard properties
+                                    mutablePropDef.setIsInherited(true);
+                                    correctionsMade++;
+                                    
+                                    System.err.println("*** INHERITED FLAG CORRECTION: Set '" + propertyId + "' inherited=true ***");
+                                }
+                            }
+                        }
+                        
+                        // Add property definition to corrected map (either original or corrected)
+                        correctedPropertyDefs.put(propertyId, propDef);
+                    }
+                    
+                    System.err.println("*** INHERITED FLAG CORRECTION: Processed " + cmisPropertiesCount + " CMIS properties, made " + correctionsMade + " corrections ***");
+                    
+                    // Update the TypeDefinition with corrected property definitions
+                    mutableTypeDef.setPropertyDefinitions(correctedPropertyDefs);
+                }
+                
+                return mutableTypeDef;
+            } else {
+                System.err.println("*** INHERITED FLAG CORRECTION: TypeDefinition is not mutable (type: " + 
+                    originalTypeDef.getClass().getSimpleName() + "), using as-is ***");
+                return originalTypeDef;
+            }
+            
+        } catch (Exception correctionException) {
+            System.err.println("*** INHERITED FLAG CORRECTION ERROR: " + correctionException.getMessage() + " ***");
+            correctionException.printStackTrace();
+            // Return original TypeDefinition if correction fails
+            return originalTypeDef;
         }
     }
     
