@@ -2295,6 +2295,21 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			}
 		}
 
+		// CRITICAL DEBUG: Log property definitions from getTypeDefinition path
+		if (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null) {
+			log.debug("getTypeDefinition: DIRECT PATH - typeId=" + typeDefinition.getId() + 
+				" has " + typeDefinition.getPropertyDefinitions().size() + " property definitions");
+			for (Map.Entry<String, PropertyDefinition<?>> entry : typeDefinition.getPropertyDefinitions().entrySet()) {
+				PropertyDefinition<?> prop = entry.getValue();
+				log.debug("  DIRECT: " + entry.getKey() + " -> " + prop.getId() + 
+					" (type=" + prop.getPropertyType() + 
+					", inherited=" + prop.isInherited() + ")");
+			}
+		} else {
+			log.debug("getTypeDefinition: DIRECT PATH - typeId=" + (typeDefinition != null ? typeDefinition.getId() : "null") + 
+				" has NULL property definitions");
+		}
+
 		return typeDefinition;
 	}
 
@@ -2466,10 +2481,39 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			boolean includePropertyDefinitions) {
 		if (depth == 0)
 			return;
-		if (includePropertyDefinitions) {
-			result.add(tdc);
+			
+		if (tdc != null && tdc.getTypeDefinition() != null) {
+			log.debug("flattenTypeDefinitionContainer: Processing typeId=" + tdc.getTypeDefinition().getId() + 
+				", includePropertyDefinitions=" + includePropertyDefinitions);
+			
+			if (includePropertyDefinitions) {
+				// CRITICAL DEBUG: Log property definitions from getTypesDescendants path
+				TypeDefinition td = tdc.getTypeDefinition();
+				if (td.getPropertyDefinitions() != null) {
+					log.debug("flattenTypeDefinitionContainer: DESCENDANTS PATH - typeId=" + td.getId() + 
+						" has " + td.getPropertyDefinitions().size() + " property definitions");
+					for (Map.Entry<String, PropertyDefinition<?>> entry : td.getPropertyDefinitions().entrySet()) {
+						PropertyDefinition<?> prop = entry.getValue();
+						log.debug("  DESCENDANTS: " + entry.getKey() + " -> " + prop.getId() + 
+							" (type=" + prop.getPropertyType() + 
+							", inherited=" + prop.isInherited() + ")");
+					}
+				} else {
+					log.debug("flattenTypeDefinitionContainer: DESCENDANTS PATH - typeId=" + td.getId() + " has NULL property definitions");
+				}
+				
+				result.add(tdc);
+			} else {
+				log.debug("flattenTypeDefinitionContainer: Property definitions will be removed for typeId=" + tdc.getTypeDefinition().getId());
+				result.add(removePropertyDefinition(tdc));
+			}
 		} else {
-			result.add(removePropertyDefinition(tdc));
+			log.warn("flattenTypeDefinitionContainer: tdc or typeDefinition is null");
+			if (includePropertyDefinitions) {
+				result.add(tdc);
+			} else {
+				result.add(removePropertyDefinition(tdc));
+			}
 		}
 
 		List<TypeDefinitionContainer> children = tdc.getChildren();

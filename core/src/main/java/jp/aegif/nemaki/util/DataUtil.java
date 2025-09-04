@@ -358,7 +358,9 @@ public class DataUtil {
 						cardinality, updatability, inherited, required,
 						queryable, orderable, choices, openChoice,
 						convertListType(BigDecimal.class, defaultValue),
-						DecimalPrecision.BITS64, null, null);
+						DecimalPrecision.BITS64, 
+						new BigDecimal("-999999999.99"), // 適切な DECIMAL minValue
+						new BigDecimal("999999999.99"));  // 適切な DECIMAL maxValue
 				break;
 			case HTML:
 				result = createPropHtmlDef(id, localName, localNameSpace,
@@ -379,15 +381,17 @@ public class DataUtil {
 						queryName, displayName, description, datatype,
 						cardinality, updatability, inherited, required,
 						queryable, orderable, choices, openChoice,
-						convertListType(BigInteger.class, defaultValue), null,
-						null);
+						convertListType(BigInteger.class, defaultValue), 
+						BigInteger.valueOf(Integer.MIN_VALUE), // 適切な INTEGER minValue
+						BigInteger.valueOf(Integer.MAX_VALUE)); // 適切な INTEGER maxValue
 				break;
 			case STRING:
 				result = createPropStringDef(id, localName, localNameSpace,
 						queryName, displayName, description, datatype,
 						cardinality, updatability, inherited, required,
 						queryable, orderable, choices, openChoice,
-						convertListType(String.class, defaultValue), null);
+						convertListType(String.class, defaultValue), 
+						BigInteger.valueOf(4000)); // 適切な STRING maxLength デフォルト
 				break;
 			case URI:
 				result = createPropUriDef(id, localName, localNameSpace,
@@ -694,9 +698,18 @@ public class DataUtil {
 		localName = (localName == null) ? id : localName;
 		localNameSpace = (localNameSpace == null) ? NAMESPACE : localNameSpace;
 		
-		// CMIS 1.1 COMPLIANCE CRITICAL FIX: queryName MUST ALWAYS equal localName
-		// Previous bug: Only applied when queryName==null, but CMIS 1.1 requires ALWAYS
-		queryName = localName;  // Force CMIS 1.1 compliance - no conditional logic
+		// CMIS 1.1 COMPLIANCE CRITICAL FIX (CORRECTED): 
+		// queryName MUST equal localName ONLY for SYSTEM properties (cmis:*)
+		// Custom properties (tck:*, custom:*, etc.) should preserve original queryName
+		if (id != null && id.startsWith("cmis:")) {
+			// System CMIS properties: Force CMIS 1.1 compliance
+			queryName = localName;
+			System.out.println("*** CMIS 1.1 COMPLIANCE: System property " + id + " queryName set to localName: " + localName + " ***");
+		} else {
+			// Custom properties: Preserve original queryName if provided, fallback to localName only if null
+			queryName = (queryName == null) ? localName : queryName;
+			System.out.println("*** CUSTOM PROPERTY: " + id + " preserving queryName: " + queryName + " (localName: " + localName + ") ***");
+		}
 		
 		// DisplayName: Adopt directly provided value, generate only when null
 		if (displayName == null) {
