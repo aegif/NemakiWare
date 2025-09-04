@@ -135,4 +135,34 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 	public void setInherited(boolean inherited) {
 		this.inherited = inherited;
 	}
+	
+	/**
+	 * CRITICAL FIX: Create a deep clone of this PropertyDefinitionCore instance.
+	 * This method ensures complete object identity separation to prevent contamination
+	 * between property definitions returned by different CMIS operations.
+	 * 
+	 * @return a completely independent deep clone of this instance
+	 */
+	public NemakiPropertyDefinitionCore deepClone() {
+		NemakiPropertyDefinitionCore clone = new NemakiPropertyDefinitionCore();
+		
+		// Clone base NodeBase properties
+		clone.setId(this.getId());
+		clone.setType(this.getType());
+		clone.setCreated(this.getCreated());
+		clone.setCreator(this.getCreator());
+		clone.setModified(this.getModified());
+		clone.setModifier(this.getModifier());
+		clone.setRevision(this.getRevision());
+		
+		// CRITICAL FIX: Clone PropertyDefinitionCore-specific fields with new instances
+		// These fields MUST be independent to prevent contamination
+		clone.setPropertyId(this.propertyId != null ? new String(this.propertyId) : null);
+		clone.setPropertyType(this.propertyType); // PropertyType is enum, safe to share
+		clone.setQueryName(this.queryName != null ? new String(this.queryName) : null);
+		clone.setCardinality(this.cardinality); // Cardinality is enum, safe to share
+		clone.setInherited(this.inherited); // boolean primitive, safe to copy
+		
+		return clone;
+	}
 }

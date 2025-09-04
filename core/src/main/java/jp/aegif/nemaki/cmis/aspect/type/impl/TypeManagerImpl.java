@@ -1928,10 +1928,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			
 			// Create defensive copies to prevent contamination
 				
-			// CRITICAL FIX: Create defensive copies to prevent cross-contamination between maps
-			// Each map gets its own PropertyDefinition object to prevent shared state issues
-			PropertyDefinition<?> coreForPropertyIdMap = DataUtil.clonePropertyDefinition(core);
-			PropertyDefinition<?> coreForQueryNameMap = DataUtil.clonePropertyDefinition(core);
+			// CRITICAL FIX: Create completely independent PropertyDefinition instances
+			// Use separate createPropDefCore calls to ensure complete object isolation
+			PropertyDefinition<?> coreForPropertyIdMap = DataUtil.createPropDefCore(propertyId, queryName, propertyType, cardinality);
+			PropertyDefinition<?> coreForQueryNameMap = DataUtil.createPropDefCore(propertyId, queryName, propertyType, cardinality);
 			
 			// COMPREHENSIVE DEBUG: Verify cloning worked correctly
 			System.err.println("=== CLONE VERIFICATION ===");
@@ -2329,7 +2329,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			String repositoryId, String typeId,
 			boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
 		
-		// CMIS compliance: Log includePropertyDefinitions parameter
+		// CRITICAL DEBUG: TCKテストの実行パス調査
+		log.info("*** getTypesChildren ENTRY: repositoryId=" + repositoryId + 
+		         ", typeId=" + typeId + 
+		         ", includePropertyDefinitions=" + includePropertyDefinitions +
+		         ", maxItems=" + maxItems + 
+		         ", skipCount=" + skipCount + " ***");
 						
 		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
@@ -2348,6 +2353,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		}
 
 		if (typeId == null) {
+			// CRITICAL DEBUG: Base types path
+			log.info("*** getTypesChildren: Processing base types (typeId=null) ***");
+			
 			// CRITICAL FIX: Simplified and corrected base types paging logic
 			int currentIndex = 0;
 			int returnedCount = 0;
@@ -2365,6 +2373,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				
 				TypeDefinitionContainer type = basetypes.get(key);
 				TypeDefinition typeDef = type.getTypeDefinition();
+				
+				// CRITICAL DEBUG: Property definition processing for base types
+				log.debug("getTypesChildren: Processing base type '" + key + "', includePropertyDefinitions=" + includePropertyDefinitions);
 				
 				// CRITICAL CMIS COMPLIANCE FIX: Use copyTypeDefinitionWithoutProperties when includePropertyDefinitions=false
 					if (!includePropertyDefinitions) {
@@ -2388,11 +2399,17 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			result.setHasMoreItems(hasMore);
 			result.setNumItems(BigInteger.valueOf(totalItems));
 		} else {
+			// CRITICAL DEBUG: Child types path
+			log.info("*** getTypesChildren: Processing child types for typeId='" + typeId + "' ***");
+			
 			TypeDefinitionContainer tc = types.get(typeId);
 			if ((tc == null) || (tc.getChildren() == null)) {
+				log.debug("getTypesChildren: No children found for typeId='" + typeId + "', returning empty result");
 				return result;
 			}
 
+			log.debug("getTypesChildren: Found " + tc.getChildren().size() + " children for typeId='" + typeId + "'");
+			
 			for (TypeDefinitionContainer child : tc.getChildren()) {
 				if (skip > 0) {
 					skip--;
@@ -2400,6 +2417,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				}
 
 				TypeDefinition typeDef = child.getTypeDefinition();
+				String childTypeId = typeDef.getId();
+				
+				// CRITICAL DEBUG: Property definition processing for child types
+				log.debug("getTypesChildren: Processing child type '" + childTypeId + "', includePropertyDefinitions=" + includePropertyDefinitions);
 				
 				// CRITICAL CMIS COMPLIANCE FIX: Use copyTypeDefinitionWithoutProperties when includePropertyDefinitions=false
 					if (!includePropertyDefinitions) {
@@ -2423,6 +2444,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			result.setNumItems(BigInteger.valueOf(tc.getChildren().size()));
 		}
 
+		// CRITICAL DEBUG: Final result summary
+		log.info("*** getTypesChildren EXIT: repositoryId=" + repositoryId + 
+		         ", typeId=" + typeId + 
+		         ", returned " + result.getList().size() + " type definitions" +
+		         ", includePropertyDefinitions=" + includePropertyDefinitions + " ***");
+
 		// NOTE: includePropertyDefinitions is now properly handled above using copyTypeDefinitionWithoutProperties
 		return result;
 	}
@@ -2435,6 +2462,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			String typeId, BigInteger depth, Boolean includePropertyDefinitions) {
 		
 		// CMIS compliance: Log parameters
+		log.debug("getTypesDescendants ENTRY: repositoryId=" + repositoryId + 
+		         ", typeId=" + typeId + 
+		         ", depth=" + depth + 
+		         ", includePropertyDefinitions=" + includePropertyDefinitions);
 							
 		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
@@ -2454,31 +2485,40 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		boolean ipd = (includePropertyDefinitions == null ? false
 				: includePropertyDefinitions.booleanValue());
 		
+		log.debug("getTypesDescendants: ipd (includePropertyDefinitions boolean) = " + ipd);
 	
 		if (typeId == null) {
-				flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_FOLDER.value()), result,
-					d, ipd);
+			log.debug("getTypesDescendants: Processing all base types (typeId is null)");
+			log.debug("getTypesDescendants: Calling flattenTypeDefinitionContainer for CMIS_FOLDER, ipd=" + ipd);
+			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_FOLDER.value()), result,
+					d, ipd, repositoryId);
+			log.debug("getTypesDescendants: Calling flattenTypeDefinitionContainer for CMIS_DOCUMENT, ipd=" + ipd);
 			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_DOCUMENT.value()), result,
-					d, ipd);
+					d, ipd, repositoryId);
 			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_RELATIONSHIP.value()),
-					result, d, ipd);
+					result, d, ipd, repositoryId);
 			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_POLICY.value()), result,
-					d, ipd);
+					d, ipd, repositoryId);
 			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_ITEM.value()), result, d,
-					ipd);
+					ipd, repositoryId);
 			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_SECONDARY.value()),
-					result, d, ipd);
+					result, d, ipd, repositoryId);
 		} else {
-				TypeDefinitionContainer tdc = types.get(typeId);
-			flattenTypeDefinitionContainer(tdc, result, d, ipd);
+			TypeDefinitionContainer tdc = types.get(typeId);
+			flattenTypeDefinitionContainer(tdc, result, d, ipd, repositoryId);
 		}
 
-			return result;
+		return result;
 	}
 
 	private void flattenTypeDefinitionContainer(TypeDefinitionContainer tdc,
 			List<TypeDefinitionContainer> result, int depth,
-			boolean includePropertyDefinitions) {
+			boolean includePropertyDefinitions, String repositoryId) {
+		log.debug("flattenTypeDefinitionContainer ENTRY: depth=" + depth + 
+		         ", includePropertyDefinitions=" + includePropertyDefinitions + 
+		         ", repositoryId=" + repositoryId + 
+		         ", typeId=" + (tdc != null && tdc.getTypeDefinition() != null ? tdc.getTypeDefinition().getId() : "null"));
+		         
 		if (depth == 0)
 			return;
 			
@@ -2487,22 +2527,35 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				", includePropertyDefinitions=" + includePropertyDefinitions);
 			
 			if (includePropertyDefinitions) {
-				// CRITICAL DEBUG: Log property definitions from getTypesDescendants path
-				TypeDefinition td = tdc.getTypeDefinition();
-				if (td.getPropertyDefinitions() != null) {
-					log.debug("flattenTypeDefinitionContainer: DESCENDANTS PATH - typeId=" + td.getId() + 
-						" has " + td.getPropertyDefinitions().size() + " property definitions");
-					for (Map.Entry<String, PropertyDefinition<?>> entry : td.getPropertyDefinitions().entrySet()) {
-						PropertyDefinition<?> prop = entry.getValue();
-						log.debug("  DESCENDANTS: " + entry.getKey() + " -> " + prop.getId() + 
-							" (type=" + prop.getPropertyType() + 
-							", inherited=" + prop.isInherited() + ")");
-					}
-				} else {
-					log.debug("flattenTypeDefinitionContainer: DESCENDANTS PATH - typeId=" + td.getId() + " has NULL property definitions");
-				}
+				// CRITICAL FIX: Use the same TypeDefinition path as getTypeDefinition() method
+				// This ensures both methods return consistent PropertyDefinition instances
+				String typeId = tdc.getTypeDefinition().getId();
 				
-				result.add(tdc);
+				// CRITICAL FIX: Get TypeDefinition through getTypeDefinition() method
+				// This ensures contamination detection logic is applied consistently
+				TypeDefinition consistentTypeDefinition = this.getTypeDefinition(repositoryId, typeId);
+				
+				if (consistentTypeDefinition != null) {
+					log.debug("flattenTypeDefinitionContainer: CONSISTENCY FIX - Using getTypeDefinition() path for typeId=" + typeId + " in repository=" + repositoryId);
+					
+					// Create a new TypeDefinitionContainer with the consistent TypeDefinition
+					TypeDefinitionContainer consistentContainer = new TypeDefinitionContainerImpl(consistentTypeDefinition);
+					
+					// Preserve the children hierarchy
+					if (tdc.getChildren() != null) {
+						List<TypeDefinitionContainer> children = new ArrayList<TypeDefinitionContainer>();
+						for (TypeDefinitionContainer child : tdc.getChildren()) {
+							children.add(child);
+						}
+						((TypeDefinitionContainerImpl) consistentContainer).setChildren(children);
+					}
+					
+					result.add(consistentContainer);
+				} else {
+					log.warn("flattenTypeDefinitionContainer: CONSISTENCY WARNING - getTypeDefinition() returned null for typeId=" + typeId);
+					// Fall back to original container
+					result.add(tdc);
+				}
 			} else {
 				log.debug("flattenTypeDefinitionContainer: Property definitions will be removed for typeId=" + tdc.getTypeDefinition().getId());
 				result.add(removePropertyDefinition(tdc));
@@ -2520,7 +2573,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (CollectionUtils.isNotEmpty(children)) {
 			for (TypeDefinitionContainer child : children) {
 				flattenTypeDefinitionContainer(child, result, depth - 1,
-						includePropertyDefinitions);
+						includePropertyDefinitions, repositoryId);
 			}
 		}
 	}

@@ -785,8 +785,19 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	@Override
 	public TypeDefinitionList getTypeChildren(String repositoryId, String typeId, Boolean includePropertyDefinitions,
 			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
-		return repositoryService.getTypeChildren(getCallContext(), repositoryId, typeId, includePropertyDefinitions,
+		log.info("*** CmisService.getTypeChildren ENTRY: repositoryId=" + repositoryId + 
+				 ", typeId=" + typeId + 
+				 ", includePropertyDefinitions=" + includePropertyDefinitions +
+				 ", maxItems=" + maxItems + 
+				 ", skipCount=" + skipCount + " ***");
+		
+		TypeDefinitionList result = repositoryService.getTypeChildren(getCallContext(), repositoryId, typeId, includePropertyDefinitions,
 				maxItems, skipCount, null);
+		
+		log.info("*** CmisService.getTypeChildren EXIT: returned " + 
+				 (result != null && result.getList() != null ? result.getList().size() : "null") + " type definitions ***");
+		
+		return result;
 	}
 
 	/**

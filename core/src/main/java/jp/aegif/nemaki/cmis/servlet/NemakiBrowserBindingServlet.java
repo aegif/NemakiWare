@@ -550,6 +550,45 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     return;
                 }
             }
+            
+            // ===============================
+            // CRITICAL FIX: Handle repository-level typeChildren requests  
+            // ===============================
+            if ("typeChildren".equals(cmisselector)) {
+                System.err.println("*** REPOSITORY LEVEL TYPE CHILDREN: Processing typeChildren at repository level ***");
+                System.err.println("*** REPOSITORY LEVEL TYPE CHILDREN: pathInfo='" + pathInfo + "', queryString='" + queryString + "' ***");
+                
+                try {
+                    // Extract repository ID from pathInfo
+                    String repositoryId = null;
+                    if (pathInfo != null) {
+                        String[] pathParts = pathInfo.split("/");
+                        if (pathParts.length > 1) {
+                            repositoryId = pathParts[1];
+                        }
+                    }
+                    
+                    if (repositoryId != null) {
+                        System.err.println("*** REPOSITORY LEVEL TYPE CHILDREN: Calling handleRepositoryLevelRequestWithoutSelector for repositoryId='" + repositoryId + "' ***");
+                        
+                        // Call the repository-level handling with the request that has cmisselector=typeChildren
+                        handleRepositoryLevelRequestWithoutSelector(request, response, repositoryId);
+                        return;
+                    } else {
+                        System.err.println("*** REPOSITORY LEVEL TYPE CHILDREN: Could not extract repository ID from pathInfo: " + pathInfo + " ***");
+                    }
+                } catch (Exception e) {
+                    System.err.println("*** REPOSITORY LEVEL TYPE CHILDREN EXCEPTION: " + e.getMessage() + " ***");
+                    e.printStackTrace();
+                    log.error("Error in repository-level typeChildren handling", e);
+                    try {
+                        writeErrorResponse(response, e);
+                    } catch (Exception writeEx) {
+                        log.error("Failed to write error response: " + writeEx.getMessage());
+                    }
+                    return;
+                }
+            }
         }
         
         // CRITICAL FIX: Handle OpenCMIS 1.2.0-SNAPSHOT strict selector validation for TCK compatibility
@@ -1520,58 +1559,94 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         final String inferredSelector;
         
-        // Infer the appropriate cmisselector based on parameters
-        if (typeId != null && !typeId.isEmpty()) {
-            if (depth != null) {
-                inferredSelector = "typeDescendants";
-            } else {
-                inferredSelector = "typeDefinition";
-            }
-        } else if (parentTypeId != null || 
-                   includePropertyDefinitions != null || 
-                   (maxItems != null && skipCount != null)) {
-            // Likely typeChildren request
-            inferredSelector = "typeChildren";
+        // CRITICAL FIX: Check for existing cmisselector first before inference
+        String existingSelector = HttpUtils.getStringParameter(request, "cmisselector");
+        
+        // ENHANCED DEBUG: Show what we actually got
+        System.err.println("*** CMISSELECTOR DEBUG: existingSelector = '" + existingSelector + "' ***");
+        System.err.println("*** CMISSELECTOR DEBUG: request.getParameter('cmisselector') = '" + request.getParameter("cmisselector") + "' ***");
+        
+        if (existingSelector != null && !existingSelector.isEmpty()) {
+            // Use existing cmisselector from request - don't override it with inference
+            inferredSelector = existingSelector;
+            log.info("NEMAKI FIX: Using existing cmisselector: " + inferredSelector);
+            System.err.println("*** CMISSELECTOR FIX: Using existing cmisselector: " + inferredSelector + " ***");
         } else {
-            // Default case
-            inferredSelector = "repositoryInfo";
+            // Infer the appropriate cmisselector based on parameters only if none exists
+            if (typeId != null && !typeId.isEmpty()) {
+                if (depth != null) {
+                    inferredSelector = "typeDescendants";
+                } else {
+                    inferredSelector = "typeDefinition";
+                }
+            } else if (parentTypeId != null || 
+                       includePropertyDefinitions != null || 
+                       (maxItems != null && skipCount != null)) {
+                // Likely typeChildren request
+                inferredSelector = "typeChildren";
+            } else {
+                // Default case
+                inferredSelector = "repositoryInfo";
+            }
         }
         
         log.info("NEMAKI FIX: Inferred cmisselector: " + inferredSelector + " based on parameters");
         System.out.println("NEMAKI FIX: Inferred cmisselector: " + inferredSelector + " based on parameters");
         
-        // Create a wrapper that adds the cmisselector parameter
-        HttpServletRequestWrapper wrappedRequest = new HttpServletRequestWrapper(request) {
-            @Override
-            public String getParameter(String name) {
-                if ("cmisselector".equals(name)) {
-                    return inferredSelector;
-                }
-                return super.getParameter(name);
-            }
-            
-            @Override
-            public java.util.Map<String, String[]> getParameterMap() {
-                java.util.Map<String, String[]> paramMap = new java.util.HashMap<String, String[]>(super.getParameterMap());
-                paramMap.put("cmisselector", new String[]{inferredSelector});
-                return paramMap;
-            }
-            
-            @Override
-            public String getQueryString() {
-                String originalQuery = super.getQueryString();
-                String selectorParam = "cmisselector=" + inferredSelector;
-                
-                if (originalQuery == null || originalQuery.isEmpty()) {
-                    return selectorParam;
-                } else {
-                    return selectorParam + "&" + originalQuery;
-                }
-            }
-        };
+        // CRITICAL FIX: Only create wrapper if we actually inferred a new cmisselector
+        final HttpServletRequest requestToUse;
         
-        // Delegate to the parent servlet with the wrapped request that includes cmisselector
-        super.service(wrappedRequest, response);
+        if (existingSelector != null && !existingSelector.isEmpty()) {
+            // Use original request if cmisselector already exists
+            requestToUse = request;
+            System.err.println("*** REQUEST WRAPPER FIX: Using original request with existing cmisselector: " + existingSelector + " ***");
+        } else {
+            // Create wrapper only when we need to add inferred cmisselector
+            System.err.println("*** REQUEST WRAPPER FIX: Creating wrapper to add inferred cmisselector: " + inferredSelector + " ***");
+            requestToUse = new HttpServletRequestWrapper(request) {
+                @Override
+                public String getParameter(String name) {
+                    if ("cmisselector".equals(name)) {
+                        return inferredSelector;
+                    }
+                    return super.getParameter(name);
+                }
+                
+                @Override
+                public java.util.Map<String, String[]> getParameterMap() {
+                    java.util.Map<String, String[]> paramMap = new java.util.HashMap<String, String[]>(super.getParameterMap());
+                    paramMap.put("cmisselector", new String[]{inferredSelector});
+                    return paramMap;
+                }
+                
+                @Override
+                public String getQueryString() {
+                    String originalQuery = super.getQueryString();
+                    String selectorParam = "cmisselector=" + inferredSelector;
+                    
+                    if (originalQuery == null || originalQuery.isEmpty()) {
+                        return selectorParam;
+                    } else {
+                        return selectorParam + "&" + originalQuery;
+                    }
+                }
+            };
+        }
+        
+        // Delegate to the parent servlet with the appropriate request
+        log.info("*** NEMAKI DEBUG: About to call super.service() with selector: " + inferredSelector + " ***");
+        System.out.println("*** NEMAKI DEBUG: About to call super.service() with selector: " + inferredSelector + " ***");
+        
+        try {
+            super.service(requestToUse, response);
+            
+            log.info("*** NEMAKI DEBUG: super.service() completed successfully for selector: " + inferredSelector + " ***");
+            System.out.println("*** NEMAKI DEBUG: super.service() completed successfully for selector: " + inferredSelector + " ***");
+        } catch (Exception e) {
+            log.error("*** NEMAKI DEBUG: Exception in super.service() for selector: " + inferredSelector + " - " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***", e);
+            System.out.println("*** NEMAKI DEBUG: Exception in super.service() for selector: " + inferredSelector + " - " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
+            throw e;
+        }
         
         log.info("NEMAKI FIX: Successfully handled repository-level request with inferred selector: " + inferredSelector);
         System.out.println("NEMAKI FIX: Successfully handled repository-level request with inferred selector: " + inferredSelector);
@@ -2633,6 +2708,13 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // Create the type definition
             org.apache.chemistry.opencmis.commons.definitions.TypeDefinition createdType = 
                 cmisService.createType(repositoryId, typeDefinition, null);
+
+            // *** INHERITED FLAG CONSISTENCY FIX ***
+            // Apply same INHERITED FLAG CORRECTION as getTypeDefinition to ensure consistent inherited flags
+            // ROOT CAUSE: createType returns inherited=false, getTypeDefinition returns inherited=true
+            // SOLUTION: Apply correctInheritedFlags() to createType result for TCK consistency
+            createdType = correctInheritedFlags(createdType);
+            System.err.println("*** CREATE TYPE CONSISTENCY: Applied INHERITED FLAG CORRECTION to maintain consistency with getTypeDefinition ***");
             
             
             // Return success response with type definition in JSON format

@@ -99,11 +99,24 @@ public class RepositoryServiceImpl implements RepositoryService,
 			String repositoryId, String typeId,
 			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 		
+		log.info("*** RepositoryServiceImpl.getTypeChildren ENTRY: repositoryId=" + repositoryId + 
+				 ", typeId=" + typeId + 
+				 ", includePropertyDefinitions=" + includePropertyDefinitions +
+				 ", maxItems=" + maxItems + 
+				 ", skipCount=" + skipCount + " ***");
+		
 		// Handle null Boolean conversion to primitive boolean (default to false per CMIS spec)
 		boolean includeProps = (includePropertyDefinitions == null) ? false : includePropertyDefinitions.booleanValue();
 
-		return typeManager.getTypesChildren(callContext, repositoryId,
+		log.info("*** RepositoryServiceImpl.getTypeChildren: Calling typeManager.getTypesChildren with includeProps=" + includeProps + " ***");
+
+		TypeDefinitionList result = typeManager.getTypesChildren(callContext, repositoryId,
 				typeId, includeProps, maxItems, skipCount);
+
+		log.info("*** RepositoryServiceImpl.getTypeChildren EXIT: returned " + 
+				 (result != null && result.getList() != null ? result.getList().size() : "null") + " type definitions ***");
+
+		return result;
 	}
 
 	@Override
