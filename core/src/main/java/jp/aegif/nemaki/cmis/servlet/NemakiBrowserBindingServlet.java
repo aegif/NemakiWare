@@ -3194,6 +3194,32 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     }
     
     /**
+     * CRITICAL HELPER: Determine if a type ID represents a CMIS base type
+     * 
+     * CMIS 1.1 Specification defines 5 base types:
+     * - cmis:document
+     * - cmis:folder  
+     * - cmis:relationship
+     * - cmis:policy
+     * - cmis:item (optional, CMIS 1.1+)
+     * 
+     * @param typeId The type ID to check
+     * @return true if typeId is a CMIS base type, false otherwise
+     */
+    private boolean isBaseType(String typeId) {
+        if (typeId == null) {
+            return false;
+        }
+        
+        // Check against all CMIS base type IDs
+        return "cmis:document".equals(typeId) ||
+               "cmis:folder".equals(typeId) ||
+               "cmis:relationship".equals(typeId) ||
+               "cmis:policy".equals(typeId) ||
+               "cmis:item".equals(typeId);
+    }
+    
+    /**
      * CRITICAL FIX: Correct inherited flags for TypeDefinition PropertyDefinitions to ensure CMIS 1.1 compliance
      * ROOT CAUSE: NemakiPropertyDefinition defaults inherited=false, but CMIS standard properties should be inherited=true
      * SOLUTION: Create a corrected TypeDefinition with proper inherited flags for JSON serialization
@@ -3212,6 +3238,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition mutableTypeDef = 
                     (org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) originalTypeDef;
                 
+                // CRITICAL FIX: Determine if this is a base type using CMIS 1.1 specification
+                String typeId = originalTypeDef.getId();
+                boolean isBaseType = isBaseType(typeId);
+                
+                System.err.println("*** INHERITED FLAG CORRECTION: TypeDefinition '" + typeId + "' isBaseType=" + isBaseType + " ***");
+                
                 // Get current property definitions
                 Map<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> propertyDefs = 
                     mutableTypeDef.getPropertyDefinitions();
@@ -3228,23 +3260,27 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         String propertyId = entry.getKey();
                         org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> propDef = entry.getValue();
                         
-                        // Check if this is a CMIS standard property that should be inherited
+                        // Check if this is a CMIS standard property
                         if (propertyId != null && propertyId.startsWith("cmis:")) {
                             cmisPropertiesCount++;
                             
-                            // Check if inherited flag is incorrectly set to false
-                            if (propDef.isInherited() != null && !propDef.isInherited()) {
-                                // CRITICAL FIX: Create corrected PropertyDefinition with inherited=true
+                            // CRITICAL FIX: Apply CMIS 1.1 specification logic for inherited flags
+                            // For base types: CMIS properties are NOT inherited (they define them) -> inherited=false
+                            // For subtypes: CMIS properties ARE inherited (they inherit from parents) -> inherited=true
+                            boolean shouldBeInherited = !isBaseType;  // Inverted logic: base types should NOT inherit
+                            
+                            if (propDef.isInherited() != null && propDef.isInherited() != shouldBeInherited) {
+                                // Create corrected PropertyDefinition with proper inherited flag
                                 if (propDef instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition) {
                                     @SuppressWarnings("unchecked")
                                     org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition<Object> mutablePropDef = 
                                         (org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition<Object>) propDef;
                                     
-                                    // Set inherited flag to true for CMIS standard properties
-                                    mutablePropDef.setIsInherited(true);
+                                    // Set inherited flag according to CMIS 1.1 specification
+                                    mutablePropDef.setIsInherited(shouldBeInherited);
                                     correctionsMade++;
                                     
-                                    System.err.println("*** INHERITED FLAG CORRECTION: Set '" + propertyId + "' inherited=true ***");
+                                    System.err.println("*** INHERITED FLAG CORRECTION: Set '" + propertyId + "' inherited=" + shouldBeInherited + " (was: " + propDef.isInherited() + ") ***");
                                 }
                             }
                         }

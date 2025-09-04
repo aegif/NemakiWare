@@ -117,6 +117,12 @@ public class TypeManagerImpl implements TypeManager {
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
 	private final Set<String> typesBeingDeleted = new HashSet<>();
+	
+	// ENHANCEMENT: Track deletion timestamps for timeout-based cleanup
+	private final Map<String, Long> typesDeletionTimestamps = new HashMap<>();
+	
+	// TIMEOUT: Maximum time a type can remain in "being deleted" state (5 minutes)
+	private static final long DELETION_TIMEOUT_MS = 5 * 60 * 1000L;
 
 	// /////////////////////////////////////////////////
 	// Constructor
@@ -192,8 +198,19 @@ public class TypeManagerImpl implements TypeManager {
 	@Override
 	public void markTypeBeingDeleted(String typeId) {
 		synchronized (initLock) {
+			// CRITICAL ENHANCEMENT: Add timestamp for timeout detection
+			long currentTime = System.currentTimeMillis();
 			typesBeingDeleted.add(typeId);
-			log.debug("Marked type as being deleted: " + typeId);
+			typesDeletionTimestamps.put(typeId, currentTime);
+			
+			log.debug("NEMAKI TYPE DELETION: Marked type as being deleted: " + typeId + " at timestamp: " + currentTime);
+			log.debug("NEMAKI TYPE DELETION: Total types currently being deleted: " + typesBeingDeleted.size());
+			log.debug("NEMAKI TYPE DELETION: Types being deleted: " + typesBeingDeleted);
+			
+			// CRITICAL DEBUG: Log stack trace to see who is marking types for deletion
+			if (log.isDebugEnabled()) {
+				log.debug("NEMAKI TYPE DELETION: Stack trace for markTypeBeingDeleted call:", new Exception("Stack trace"));
+			}
 		}
 	}
 	
@@ -203,8 +220,55 @@ public class TypeManagerImpl implements TypeManager {
 	@Override
 	public void unmarkTypeBeingDeleted(String typeId) {
 		synchronized (initLock) {
-			typesBeingDeleted.remove(typeId);
-			log.debug("Unmarked type being deleted: " + typeId);
+			boolean wasRemoved = typesBeingDeleted.remove(typeId);
+			Long timestamp = typesDeletionTimestamps.remove(typeId);
+			
+			if (wasRemoved) {
+				long duration = timestamp != null ? System.currentTimeMillis() - timestamp : 0;
+				log.debug("NEMAKI TYPE DELETION: Successfully unmarked type being deleted: " + typeId + " (duration: " + duration + "ms)");
+			} else {
+				log.warn("NEMAKI TYPE DELETION: WARNING - Attempted to unmark type that was not marked as being deleted: " + typeId);
+			}
+			log.debug("NEMAKI TYPE DELETION: Total types still being deleted: " + typesBeingDeleted.size());
+			log.debug("NEMAKI TYPE DELETION: Remaining types being deleted: " + typesBeingDeleted);
+		}
+	}
+	
+	/**
+	 * CRITICAL ENHANCEMENT: Clean up timed-out types that have been stuck in "being deleted" state
+	 * This prevents memory leaks and race condition deadlocks
+	 */
+	public void cleanupTimedOutTypes() {
+		synchronized (initLock) {
+			long currentTime = System.currentTimeMillis();
+			List<String> timedOutTypes = new ArrayList<>();
+			
+			// Find types that have exceeded timeout duration
+			for (Map.Entry<String, Long> entry : typesDeletionTimestamps.entrySet()) {
+				String typeId = entry.getKey();
+				Long timestamp = entry.getValue();
+				
+				if (timestamp != null && (currentTime - timestamp) > DELETION_TIMEOUT_MS) {
+					timedOutTypes.add(typeId);
+				}
+			}
+			
+			// Clean up timed-out types
+			if (!timedOutTypes.isEmpty()) {
+				log.warn("NEMAKI TYPE DELETION: Found " + timedOutTypes.size() + " timed-out types - cleaning up to prevent deadlock");
+				
+				for (String typeId : timedOutTypes) {
+					Long timestamp = typesDeletionTimestamps.get(typeId);
+					long duration = timestamp != null ? (currentTime - timestamp) : 0;
+					
+					log.warn("NEMAKI TYPE DELETION: Cleaning up timed-out type: " + typeId + " (stuck for " + duration + "ms)");
+					
+					typesBeingDeleted.remove(typeId);
+					typesDeletionTimestamps.remove(typeId);
+				}
+				
+				log.debug("NEMAKI TYPE DELETION: Cleanup complete - remaining types being deleted: " + typesBeingDeleted.size());
+			}
 		}
 	}
 	
@@ -1483,10 +1547,27 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		String propertyId = property.getId();
 		
-		// STRATEGY 1: CMIS system properties (cmis:*) are always inherited
-		// These are fundamental CMIS properties that define the content model
+		// STRATEGY 1: CMIS system properties (cmis:*) inheritance depends on parent type
+		// CRITICAL FIX: Base types DEFINE CMIS properties (inherited=false)
+		//               Derived types INHERIT CMIS properties (inherited=true)
 		if (propertyId.startsWith("cmis:")) {
-			return true;
+			if (parentType != null) {
+				String parentTypeId = parentType.getId();
+				// Check if parent is a base type
+				boolean isParentBaseType = BaseTypeId.CMIS_DOCUMENT.value().equals(parentTypeId) ||
+										   BaseTypeId.CMIS_FOLDER.value().equals(parentTypeId) ||
+										   BaseTypeId.CMIS_RELATIONSHIP.value().equals(parentTypeId) ||
+										   BaseTypeId.CMIS_POLICY.value().equals(parentTypeId) ||
+										   BaseTypeId.CMIS_ITEM.value().equals(parentTypeId) ||
+										   BaseTypeId.CMIS_SECONDARY.value().equals(parentTypeId);
+				
+				// Base types DEFINE CMIS properties (inherited=false)
+				// Derived types INHERIT CMIS properties (inherited=true)  
+				return !isParentBaseType;
+			}
+			
+			// Safety fallback: if parentType is null, assume not inherited
+			return false;
 		}
 		
 		// STRATEGY 2: Custom namespace properties should typically NOT be inherited
@@ -2178,6 +2259,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public TypeDefinition getTypeDefinition(String repositoryId, String typeId) {
 		ensureInitialized();
+		
+		// CRITICAL ENHANCEMENT: Cleanup timed-out types before processing
+		cleanupTimedOutTypes();
 		
 		// Type cache lookup for deletion
 		log.debug("NEMAKI TYPE DEBUG: TypeManager.getTypeDefinition called - repositoryId=" + repositoryId + ", typeId=" + typeId);

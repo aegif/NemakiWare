@@ -209,4 +209,10 @@ public interface TypeManager{
      * @param typeId the type ID that was deleted
      */
     void unmarkTypeBeingDeleted(String typeId);
+    
+    /**
+     * CRITICAL ENHANCEMENT: Clean up timed-out types that have been stuck in "being deleted" state
+     * This prevents memory leaks and race condition deadlocks
+     */
+    void cleanupTimedOutTypes();
 }

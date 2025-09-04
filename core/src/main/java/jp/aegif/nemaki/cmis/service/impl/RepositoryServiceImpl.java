@@ -314,23 +314,41 @@ public class RepositoryServiceImpl implements RepositoryService,
 		log.debug("deleteType called: repositoryId=" + repositoryId + ", typeId=" + typeId + ", user=" + (callContext != null ? callContext.getUsername() : "null"));
 		
 		// CRITICAL FIX: Mark type as being deleted to prevent infinite recursion
-		if (typeManager != null) {
-			typeManager.markTypeBeingDeleted(typeId);
+		boolean typeMarked = false;
+		try {
+			if (typeManager != null) {
+				typeManager.markTypeBeingDeleted(typeId);
+				typeMarked = true;
+				log.debug("Type marked as being deleted: " + typeId);
+			}
+		} catch (Exception markException) {
+			log.error("CRITICAL ERROR: Failed to mark type as being deleted: " + typeId, markException);
+			// Continue processing even if marking fails - don't block deletion
 		}
 		
-		// Force direct TypeService call
+		// Force direct TypeService call with enhanced exception safety
 		try {
 			if (typeService == null) {
 				log.warn("typeService is null - attempting Spring context lookup");
-				org.springframework.web.context.WebApplicationContext context = 
-					org.springframework.web.context.support.WebApplicationContextUtils.getWebApplicationContext(
-						((org.springframework.web.context.WebApplicationContext) org.springframework.web.context.ContextLoader.getCurrentWebApplicationContext()).getServletContext());
-				typeService = (jp.aegif.nemaki.businesslogic.TypeService) context.getBean("TypeService");
-				log.debug("TypeService retrieved from Spring context: " + (typeService != null ? "SUCCESS" : "FAILED"));
+				try {
+					org.springframework.web.context.WebApplicationContext context = 
+						org.springframework.web.context.support.WebApplicationContextUtils.getWebApplicationContext(
+							((org.springframework.web.context.WebApplicationContext) org.springframework.web.context.ContextLoader.getCurrentWebApplicationContext()).getServletContext());
+					typeService = (jp.aegif.nemaki.businesslogic.TypeService) context.getBean("TypeService");
+					log.debug("TypeService retrieved from Spring context: " + (typeService != null ? "SUCCESS" : "FAILED"));
+				} catch (Exception contextException) {
+					log.error("Failed to retrieve TypeService from Spring context", contextException);
+					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("TypeService initialization failed: " + contextException.getMessage(), contextException);
+				}
 			}
 			
-			typeService.deleteTypeDefinition(repositoryId, typeId);
-			log.debug("typeService.deleteTypeDefinition completed successfully");
+			try {
+				typeService.deleteTypeDefinition(repositoryId, typeId);
+				log.debug("typeService.deleteTypeDefinition completed successfully");
+			} catch (Exception deletionException) {
+				log.error("Type deletion failed for typeId: " + typeId, deletionException);
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("Type deletion failed: " + deletionException.getMessage(), deletionException);
+			}
 			
 			// CRITICAL FIX: Remove duplicate cache refresh - TypeService handles caching internally
 			// Problem: typeManager.refreshTypes() was causing infinite recursion during type deletion
@@ -343,11 +361,26 @@ public class RepositoryServiceImpl implements RepositoryService,
 			return;
 		} catch (Exception e) {
 			log.error("Error in deleteType: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
-			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("Type deletion failed: " + e.getMessage(), e);
+			throw e; // Re-throw to ensure finally block executes
 		} finally {
-			// CRITICAL FIX: Always unmark type being deleted to prevent memory leak
-			if (typeManager != null) {
-				typeManager.unmarkTypeBeingDeleted(typeId);
+			// CRITICAL ENHANCEMENT: Robust cleanup with nested exception handling
+			if (typeMarked && typeManager != null) {
+				try {
+					typeManager.unmarkTypeBeingDeleted(typeId);
+					log.debug("Type unmarked successfully: " + typeId);
+				} catch (Exception unmarkException) {
+					// CRITICAL: Never let cleanup exceptions prevent the main operation from completing
+					log.error("CRITICAL ERROR: Failed to unmark type being deleted: " + typeId + " - this may cause memory leak", unmarkException);
+					
+					// Attempt secondary cleanup via timeout mechanism
+					try {
+						log.warn("Attempting secondary cleanup via timeout mechanism for: " + typeId);
+						typeManager.cleanupTimedOutTypes();
+					} catch (Exception timeoutCleanupException) {
+						log.error("Secondary cleanup also failed for: " + typeId, timeoutCleanupException);
+						// At this point, we rely on the timeout mechanism during next getTypeDefinition call
+					}
+				}
 			}
 		}
 	}
