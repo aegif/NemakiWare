@@ -8,6 +8,9 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.context.annotation.DependsOn;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
 
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
@@ -18,6 +21,16 @@ import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.util.PropertyManager;
 
+/**
+ * PRIORITY 4: Bean initialization order adjustment for PropertyDefinitionDetail initialization guarantee
+ * 
+ * @Component - Registers as Spring Bean for automatic dependency injection
+ * @Order(100) - Executes after core services are initialized (higher numbers execute later)  
+ * @DependsOn - Ensures required dependencies are initialized before PatchService execution
+ */
+@Component
+@Order(100)
+@DependsOn({"typeService", "typeManager", "repositoryInfoMap", "propertyManager", "connectorPool"})
 public class PatchService {
 	private static final Log log = LogFactory.getLog(PatchService.class);
 	private RepositoryInfoMap repositoryInfoMap;
@@ -82,6 +95,10 @@ public class PatchService {
 			// This addresses the root cause of PropertyDefinitionCore contamination
 			initializeSystemPropertyDefinitionDetails();
 			
+			// PRIORITY 4: TypeManager cache forced update for TCK compliance
+			// This ensures that PropertyDefinitionDetail changes are immediately reflected in type cache
+			invalidateTypeManagerCaches();
+			
 			// TODO: Initialize test users for QA and development (requires principalService injection)
 			log.info("Test user initialization skipped - requires principalService dependency");
 			
@@ -142,6 +159,43 @@ public class PatchService {
 		} catch (Exception e) {
 			log.error("❌ Failed to initialize system PropertyDefinitionDetail records", e);
 			// Continue with startup even if this fails
+		}
+	}
+	
+	/**
+	 * PRIORITY 4: Force TypeManager cache invalidation for TCK compliance
+	 * This ensures that PropertyDefinitionDetail changes are immediately reflected in type definitions
+	 * and resolves Browser Binding JSON serialization issues with property definitions
+	 */
+	private void invalidateTypeManagerCaches() {
+		log.info("=== PRIORITY 4: TypeManager cache forced update for TCK compliance ===");
+		
+		if (typeManager == null) {
+			log.error("TypeManager not injected - cannot invalidate type caches");
+			return;
+		}
+		
+		if (repositoryInfoMap == null) {
+			log.error("RepositoryInfoMap not injected - cannot iterate repositories for cache invalidation");
+			return;
+		}
+		
+		try {
+			// Force invalidate TypeManager cache for all repositories
+			for (String repositoryId : repositoryInfoMap.keys()) {
+				log.info("Invalidating TypeManager cache for repository: " + repositoryId);
+				
+				// Force TypeManager to reload type definitions from database
+				// This ensures PropertyDefinitionDetail changes are reflected immediately
+				typeManager.invalidateTypeCache(repositoryId);
+				
+				log.info("✅ TypeManager cache invalidated for repository: " + repositoryId);
+			}
+			
+			log.info("✅ All TypeManager caches invalidated successfully - TCK compliance enhanced");
+		} catch (Exception e) {
+			log.error("❌ Failed to invalidate TypeManager caches", e);
+			// Continue with startup even if cache invalidation fails
 		}
 	}
 	

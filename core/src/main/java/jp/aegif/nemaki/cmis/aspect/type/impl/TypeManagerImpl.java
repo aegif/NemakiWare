@@ -43,6 +43,7 @@ import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
+import jp.aegif.nemaki.model.Choice;  // Use NemakiWare Choice instead of OpenCMIS Choice
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -86,6 +87,7 @@ import org.apache.chemistry.opencmis.commons.definitions.PropertyDecimalDefiniti
 import org.apache.chemistry.opencmis.commons.definitions.PropertyIdDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyHtmlDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyUriDefinition;
+// REMOVED: import org.apache.chemistry.opencmis.commons.definitions.Choice; - causes type conflict with jp.aegif.nemaki.model.Choice
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ChoiceImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDefinitionImpl;
@@ -1667,6 +1669,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		/**
 		 * CRITICAL: Creates a completely fresh, uncontaminated PropertyDefinition
 		 * using defensive copying and contamination prevention strategies.
+		 * 
+		 * ENHANCED TCK COMPLIANCE: Explicitly sets all TCK-required attributes
+		 * including queryName, localName, displayName, choices, defaultValue, etc.
 		 */
 		public PropertyDefinition<?> build() {
 			if (detail == null || originalCore == null) {
@@ -1685,7 +1690,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			// STEP 2: Establish authoritative property ID (contamination-free)
 			String authoritativePropertyId = determineAuthoritativePropertyId(detail, originalCore, repositoryId, propertyDetailId);
 			freshCore.setPropertyId(authoritativePropertyId);
-			freshCore.setQueryName(authoritativePropertyId);
+			
+			// STEP 2-A: TCK COMPLIANCE - Explicit queryName setting
+			// QueryName should be the same as propertyId for CMIS compliance
+			String tckCompliantQueryName = authoritativePropertyId;
+			freshCore.setQueryName(tckCompliantQueryName);
 			
 			// STEP 3: Determine trusted type information
 			PropertyType trustedPropertyType = determinePropertyTypeFromPropertyId(authoritativePropertyId);
@@ -1720,20 +1729,97 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			// STEP 5: Create unified PropertyDefinition with fresh objects
 			NemakiPropertyDefinition unified = new NemakiPropertyDefinition(freshCore, detail);
 			
+			// STEP 6-A: TCK COMPLIANCE - Enhanced attribute extraction and validation
+			
+			// TCK COMPLIANCE: localName handling with fallbacks
+			String tckLocalName = unified.getLocalName();
+			if (tckLocalName == null || tckLocalName.trim().isEmpty()) {
+				// Fallback 1: Use property ID without namespace prefix
+				if (authoritativePropertyId.contains(":")) {
+					tckLocalName = authoritativePropertyId.substring(authoritativePropertyId.lastIndexOf(":") + 1);
+				} else {
+					tckLocalName = authoritativePropertyId;
+				}
+			}
+			
+			// TCK COMPLIANCE: displayName handling with intelligent defaults
+			String tckDisplayName = unified.getDisplayName();
+			if (tckDisplayName == null || tckDisplayName.trim().isEmpty()) {
+				// Fallback 1: Use localName as displayName
+				if (tckLocalName != null && !tckLocalName.trim().isEmpty()) {
+					tckDisplayName = tckLocalName;
+				} else {
+					// Fallback 2: Use property ID
+					tckDisplayName = authoritativePropertyId;
+				}
+			}
+			
+			// TCK COMPLIANCE: description handling
+			String tckDescription = unified.getDescription();
+			if (tckDescription == null || tckDescription.trim().isEmpty()) {
+				// Generate meaningful description for TCK compliance
+				tckDescription = "Property: " + authoritativePropertyId + " (Type: " + trustedPropertyType + ")";
+			}
+			
+			// TCK COMPLIANCE: localNamespace handling
+			String tckLocalNameSpace = unified.getLocalNameSpace();
+			if (tckLocalNameSpace == null || tckLocalNameSpace.trim().isEmpty()) {
+				// Extract namespace from property ID if available
+				if (authoritativePropertyId.contains(":")) {
+					tckLocalNameSpace = authoritativePropertyId.substring(0, authoritativePropertyId.indexOf(":"));
+				} else {
+					// Default namespace for non-namespaced properties
+					tckLocalNameSpace = "custom";
+				}
+			}
+			
+			// TCK COMPLIANCE: choices handling - ensure non-null and use NemakiWare Choice type
+			List<Choice> tckChoices = unified.getChoices();
+			if (tckChoices == null) {
+				// TCK requires non-null choices list, even if empty
+				tckChoices = new ArrayList<Choice>();
+			}
+			
+			// TCK COMPLIANCE: defaultValue handling - convert to List<?> as expected by DataUtil.createPropDef
+			List<?> tckDefaultValue = null;
+			if (unified.getDefaultValue() != null) {
+				if (unified.getDefaultValue() instanceof List) {
+					tckDefaultValue = (List<?>) unified.getDefaultValue();
+				} else {
+					// Convert single value to List
+					List<Object> singleValueList = new ArrayList<>();
+					singleValueList.add(unified.getDefaultValue());
+					tckDefaultValue = singleValueList;
+				}
+			}
+			// For TCK compliance, defaultValue can be null but should be consistent with PropertyType
+			
 			// STEP 6: Create final PropertyDefinition using DataUtil for consistency
+			// Enhanced with all TCK-compliant attributes explicitly set
 			return DataUtil.createPropDef(
-				unified.getPropertyId(), unified.getLocalName(),
-				unified.getLocalNameSpace(), unified.getQueryName(),
-				unified.getDisplayName(), unified.getDescription(),
-				unified.getPropertyType(), unified.getCardinality(),
-				unified.getUpdatability(), unified.isRequired(), 
-				unified.isQueryable(), shouldInherit,
-				unified.getChoices(), unified.isOpenChoice(),
-				unified.isOrderable(), unified.getDefaultValue(), 
-				unified.getMinValue(), unified.getMaxValue(), 
-				unified.getResolution(), unified.getDecimalPrecision(),
-				unified.getDecimalMinValue(), unified.getDecimalMaxValue(), 
-				unified.getMaxLength());
+				authoritativePropertyId,        // propertyId (authoritative)
+				tckLocalName,                  // localName (TCK compliant)
+				tckLocalNameSpace,             // localNameSpace (TCK compliant)
+				tckCompliantQueryName,         // queryName (TCK compliant) 
+				tckDisplayName,                // displayName (TCK compliant)
+				tckDescription,                // description (TCK compliant)
+				trustedPropertyType,           // propertyType (validated)
+				trustedCardinality,            // cardinality (validated)
+				unified.getUpdatability(),     // updatability (preserved)
+				unified.isRequired(),          // required (preserved)
+				unified.isQueryable(),         // queryable (preserved)
+				shouldInherit,                 // inherited (CMIS 1.1 compliant)
+				tckChoices,                    // choices (TCK compliant non-null)
+				unified.isOpenChoice(),        // openChoice (preserved)
+				unified.isOrderable(),         // orderable (preserved)
+				tckDefaultValue,               // defaultValue (TCK compliant)
+				unified.getMinValue(),         // minValue (preserved)
+				unified.getMaxValue(),         // maxValue (preserved)
+				unified.getResolution(),       // resolution (preserved)
+				unified.getDecimalPrecision(), // decimalPrecision (preserved)
+				unified.getDecimalMinValue(),  // decimalMinValue (preserved)
+				unified.getDecimalMaxValue(),  // decimalMaxValue (preserved)
+				unified.getMaxLength());       // maxLength (preserved)
 		}
 	}
 
@@ -3621,5 +3707,29 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		// Default: SINGLE cardinality for all other properties
 		return Cardinality.SINGLE;
+	}
+	
+	/**
+	 * PRIORITY 4: Invalidate type cache for TCK compliance
+	 * Forces TypeManager to reload type definitions from database
+	 * Ensures PropertyDefinitionDetail changes are reflected immediately
+	 */
+	@Override
+	public void invalidateTypeCache(String repositoryId) {
+		if (repositoryId == null || repositoryId.trim().isEmpty()) {
+			log.warn("Cannot invalidate type cache for null or empty repositoryId");
+			return;
+		}
+		
+		log.info("Invalidating type cache for repository: " + repositoryId);
+		
+		try {
+			// Use existing cache invalidation infrastructure
+			invalidateTypeDefinitionCache(repositoryId);
+			
+			log.info("✅ Type cache invalidated successfully for repository: " + repositoryId);
+		} catch (Exception e) {
+			log.error("❌ Failed to invalidate type cache for repository: " + repositoryId, e);
+		}
 	}
 }

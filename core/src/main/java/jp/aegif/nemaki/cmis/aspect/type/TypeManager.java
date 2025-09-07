@@ -215,4 +215,13 @@ public interface TypeManager{
      * This prevents memory leaks and race condition deadlocks
      */
     void cleanupTimedOutTypes();
+    
+    /**
+     * PRIORITY 4: Invalidate type cache for TCK compliance
+     * Forces TypeManager to reload type definitions from database
+     * Ensures PropertyDefinitionDetail changes are reflected immediately
+     * 
+     * @param repositoryId repository ID to invalidate cache for
+     */
+    void invalidateTypeCache(String repositoryId);
 }
