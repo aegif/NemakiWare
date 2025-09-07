@@ -1815,7 +1815,15 @@ public final class JSONConverter {
         }
 
         JSONObject result = new JSONObject();
-        result.put(JSON_TYPESCONTAINER_TYPE, convert(container.getTypeDefinition(), dateTimeFormat));
+        
+        // CRITICAL FIX: Add null safety check for container.getTypeDefinition()
+        TypeDefinition typeDefinition = container.getTypeDefinition();
+        if (typeDefinition != null) {
+            result.put(JSON_TYPESCONTAINER_TYPE, convert(typeDefinition, dateTimeFormat));
+        } else {
+            // Log warning but continue - graceful degradation for null type definitions
+            System.err.println("WARNING: TypeDefinitionContainer has null TypeDefinition - skipping type conversion");
+        }
 
         if (isNotEmpty(container.getChildren())) {
             JSONArray children = new JSONArray();

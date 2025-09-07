@@ -232,7 +232,7 @@ public abstract class AbstractBrowserServiceCall extends AbstractServiceCall {
     }
 
     public Properties createNewProperties(ControlParser controlParser, TypeCache typeCache) {
-        // ENHANCED DEBUG: Method entry tracking
+        // Enhanced debug: Method entry tracking
         System.out.println("ENHANCED DEBUG: createNewProperties() method called");
         
         Map<String, List<String>> properties = controlParser.getProperties();
@@ -277,10 +277,10 @@ public abstract class AbstractBrowserServiceCall extends AbstractServiceCall {
                 propDef = attemptBaseTypeFallback(property.getKey(), objectTypeIdsValues, typeCache);
                 
                 if (propDef == null) {
-                    // CRITICAL STACK TRACE: Debug unknown property issue for secondaryTypesTest
-                    System.out.println("CRITICAL STACK TRACE: Unknown property key: '" + property.getKey() + "'");
-                    System.out.println("CRITICAL STACK TRACE: Property value: " + property.getValue());
-                    System.out.println("CRITICAL STACK TRACE: Available properties in typeCache:");
+                    // CRITICAL ERROR: Debug unknown property issue for TCK tests
+                    System.err.println("CRITICAL: Unknown property key: '" + property.getKey() + "'");
+                    System.err.println("CRITICAL: Property value: " + property.getValue());
+                    System.err.println("CRITICAL: Available properties in typeCache - investigation required");
                     
                     throw new CmisInvalidArgumentException(property.getKey() + " is unknown!");
                 } else {
@@ -428,14 +428,28 @@ public abstract class AbstractBrowserServiceCall extends AbstractServiceCall {
                 }
             }
             if (propDef == null) {
-                // CRITICAL STACK TRACE: Debug unknown property issue in createUpdateProperties
-                System.out.println("CRITICAL STACK TRACE: createUpdateProperties() - Unknown property key: '" + property.getKey() + "'");
-                System.out.println("CRITICAL STACK TRACE: createUpdateProperties() - Property value: " + property.getValue());
-                System.out.println("CRITICAL STACK TRACE: createUpdateProperties() - typeId: " + typeId);
-                System.out.println("CRITICAL STACK TRACE: createUpdateProperties() - secondaryTypeIds: " + secondaryTypeIds);
-                System.out.println("CRITICAL STACK TRACE: createUpdateProperties() - objectIds: " + objectIds);
+                System.out.println("TCK FALLBACK: createUpdateProperties() - Property '" + property.getKey() + "' not found, attempting comprehensive fallback...");
                 
-                throw new CmisInvalidArgumentException(property.getKey() + " is unknown!");
+                // COMPREHENSIVE FALLBACK PROCESSING: Use same strategy as createNewProperties
+                List<String> typeIdList = null;
+                if (typeId != null) {
+                    typeIdList = new ArrayList<String>();
+                    typeIdList.add(typeId);
+                }
+                propDef = attemptBaseTypeFallback(property.getKey(), typeIdList, typeCache);
+                
+                if (propDef == null) {
+                    // CRITICAL STACK TRACE: Debug unknown property issue in createUpdateProperties
+                    System.out.println("CRITICAL STACK TRACE: createUpdateProperties() - Unknown property key: '" + property.getKey() + "'");
+                    System.out.println("CRITICAL STACK TRACE: createUpdateProperties() - Property value: " + property.getValue());
+                    System.out.println("CRITICAL STACK TRACE: createUpdateProperties() - typeId: " + typeId);
+                    System.out.println("CRITICAL STACK TRACE: createUpdateProperties() - secondaryTypeIds: " + secondaryTypeIds);
+                    System.out.println("CRITICAL STACK TRACE: createUpdateProperties() - objectIds: " + objectIds);
+                    
+                    throw new CmisInvalidArgumentException(property.getKey() + " is unknown!");
+                } else {
+                    System.out.println("TCK FALLBACK: createUpdateProperties() - Successfully recovered property '" + property.getKey() + "' from comprehensive fallback");
+                }
             }
 
             result.addProperty(createPropertyData(propDef, property.getValue()));
