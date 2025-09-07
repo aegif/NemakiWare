@@ -107,13 +107,54 @@ public class ServerTypeCacheImpl implements TypeCache {
 
     @Override
     public PropertyDefinition<?> getPropertyDefinition(String propId) {
+        // Phase 1: Search in existing cached type definitions
         for (TypeDefinition typeDef : typeDefinitions.values()) {
             PropertyDefinition<?> propDef = typeDef.getPropertyDefinitions().get(propId);
             if (propDef != null) {
+                System.out.println("DEBUG: Found property " + propId + " in cached type " + typeDef.getId());
                 return propDef;
             }
         }
-
+        
+        // Phase 2: Force-load CMIS base types if cache is empty/incomplete
+        System.out.println("DEBUG: Property " + propId + " not found in cached types (" + typeDefinitions.size() + " types). Force-loading base types...");
+        String[] baseTypes = {"cmis:document", "cmis:folder", "cmis:relationship", "cmis:policy"};
+        for (String baseTypeId : baseTypes) {
+            if (!typeDefinitions.containsKey(baseTypeId)) {
+                System.out.println("DEBUG: Loading base type: " + baseTypeId);
+                getTypeDefinition(baseTypeId); // This will cache the type definition
+            }
+        }
+        
+        // Phase 3: Search again in newly loaded base types
+        for (TypeDefinition typeDef : typeDefinitions.values()) {
+            PropertyDefinition<?> propDef = typeDef.getPropertyDefinitions().get(propId);
+            if (propDef != null) {
+                System.out.println("DEBUG: Found property " + propId + " in force-loaded type " + typeDef.getId());
+                return propDef;
+            }
+        }
+        
+        // Phase 4: Dynamic property generation for standard CMIS properties
+        System.out.println("DEBUG: Property " + propId + " still not found. Attempting dynamic generation...");
+        PropertyDefinition<?> dynamicProp = createStandardCmisPropertyDefinition(propId);
+        if (dynamicProp != null) {
+            System.out.println("DEBUG: Successfully generated dynamic property definition for " + propId);
+            return dynamicProp;
+        }
+        
+        System.out.println("WARNING: Could not resolve property definition for " + propId + " - this may cause TCK test failures");
+        return null;
+    }
+    
+    /**
+     * Create standard CMIS property definitions dynamically as fallback
+     * when they cannot be found in cached type definitions
+     */
+    private PropertyDefinition<?> createStandardCmisPropertyDefinition(String propId) {
+        // For now, return null - this method can be enhanced later if needed
+        // The main fix is the cache force-loading in Phase 2 above
+        System.out.println("DEBUG: Dynamic property generation not yet implemented for " + propId);
         return null;
     }
 }

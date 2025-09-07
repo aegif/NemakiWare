@@ -1732,10 +1732,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public PatchHistory getPatchHistoryByName(String repositoryId, String name) {
 		try {
-			// Use ViewQuery to get patch history by name
+			// Use existing 'patch' view to get patch history by name
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			queryParams.put("key", name);
-			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "patchHistoryByName", queryParams);
+			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "patch", queryParams);
 			
 			if (result.getRows() != null && !result.getRows().isEmpty()) {
 				ViewResultRow row = result.getRows().get(0);

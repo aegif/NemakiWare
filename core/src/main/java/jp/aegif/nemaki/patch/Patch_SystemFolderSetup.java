@@ -44,6 +44,35 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
         return PATCH_NAME;
     }
     
+    /**
+     * Get CouchDB URL from configuration file (PropertyManager)
+     */
+    private String getCouchDbUrl() {
+        PropertyManager propertyManager = patchUtil.getPropertyManager();
+        if (propertyManager == null) {
+            log.warn("PropertyManager not available - using fallback URL detection");
+            // Fallback to original logic if PropertyManager not available
+            try {
+                java.net.InetAddress.getByName("couchdb");
+                log.info("Docker environment detected - using couchdb:5984");
+                return "http://couchdb:5984";
+            } catch (java.net.UnknownHostException e) {
+                log.info("Local environment detected - using localhost:5984");
+                return "http://localhost:5984";
+            }
+        }
+        
+        // Use PropertyManager to read configuration
+        String couchDbUrl = propertyManager.readValue("db.couchdb.url");
+        if (couchDbUrl != null && !couchDbUrl.trim().isEmpty()) {
+            log.info("Using CouchDB URL from configuration: " + couchDbUrl);
+            return couchDbUrl;
+        } else {
+            log.warn("db.couchdb.url not found in configuration - using default");
+            return "http://localhost:5984";
+        }
+    }
+    
     @Override
     protected void applySystemPatch() {
         log.info("Creating system configuration entries in nemaki_conf database");
@@ -437,7 +466,7 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
     private void createConfigurationDocument(String database, String documentId, String jsonContent) {
         try {
             // Check if document already exists
-            java.net.URL checkUrl = new java.net.URL("http://localhost:5984/" + database + "/" + documentId);
+            java.net.URL checkUrl = new java.net.URL(getCouchDbUrl() + "/" + database + "/" + documentId);
             java.net.HttpURLConnection checkConn = (java.net.HttpURLConnection) checkUrl.openConnection();
             
             String auth = "admin:password";
@@ -454,7 +483,7 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
             }
             
             // Create document
-            java.net.URL createUrl = new java.net.URL("http://localhost:5984/" + database + "/" + documentId);
+            java.net.URL createUrl = new java.net.URL(getCouchDbUrl() + "/" + database + "/" + documentId);
             java.net.HttpURLConnection createConn = (java.net.HttpURLConnection) createUrl.openConnection();
             
             createConn.setRequestProperty("Authorization", "Basic " + encodedAuth);

@@ -47,17 +47,26 @@
 	</bean>
 
 	<!-- 
-		Legacy PatchService (Preserved for compatibility)
+		PatchService with PropertyDefinitionDetail initialization
 		
-		NOTE: Database initialization (Phase 1) is now handled by DatabasePreInitializer
-		This service focuses only on CMIS operations that may be invoked manually.
+		CRITICAL FIX: Added init-method to ensure PropertyDefinitionDetail initialization
+		for system CMIS properties, which is essential for TCK TypesTestGroup success.
 	-->
-	<bean id="PatchService" class="jp.aegif.nemaki.patch.PatchService">
+	<bean id="PatchService" class="jp.aegif.nemaki.patch.PatchService" init-method="applyPatchesOnStartup">
 		<property name="repositoryInfoMap">
 			<ref bean="repositoryInfoMap" />
 		</property>
 		<property name="connectorPool">
 			<ref bean="connectorPool" />
+		</property>
+		<property name="propertyManager">
+			<ref bean="propertyManager" />
+		</property>
+		<property name="typeService">
+			<ref bean="TypeService" />
+		</property>
+		<property name="typeManager">
+			<ref bean="TypeManager" />
 		</property>
 		<property name="couchdbUrl">
 			<value>${db.couchdb.url}</value>
@@ -72,7 +81,7 @@
 			<list>
 				<!-- CRITICAL FIX: Removed duplicate patch execution to prevent folder duplication -->
 				<!-- All CMIS patches are now exclusively handled by CMISPostInitializer to prevent double execution -->
-				<!-- This PatchService is kept for manual patch operations only -->
+				<!-- This PatchService is kept for PropertyDefinitionDetail initialization and manual operations -->
 				<!-- Future patches can be added here if they need manual execution -->
 			</list>
 		</property>

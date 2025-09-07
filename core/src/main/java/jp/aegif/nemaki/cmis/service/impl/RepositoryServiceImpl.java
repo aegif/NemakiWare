@@ -27,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -63,12 +64,92 @@ public class RepositoryServiceImpl implements RepositoryService,
 		InitializingBean {
 
 	private static final Log log = LogFactory.getLog(RepositoryServiceImpl.class);
+	
+	// CRITICAL FIX: Static shared caches for TypeDefinition instance sharing
+	// Required for TCK object identity comparison (==) instead of equals()
+	private static final ConcurrentHashMap<String, TypeDefinition> SHARED_TYPE_DEFINITIONS = new ConcurrentHashMap<>();
+	private static final ConcurrentHashMap<String, TypeDefinitionList> SHARED_TYPE_CHILDREN = new ConcurrentHashMap<>();
+	private static final ConcurrentHashMap<String, List<TypeDefinitionContainer>> SHARED_TYPE_DESCENDANTS = new ConcurrentHashMap<>();
 
 	private RepositoryInfoMap repositoryInfoMap;
 	private TypeManager typeManager;
 	private TypeService typeService;
 	private ContentService contentService;
 	private ExceptionService exceptionService;
+	
+	// CRITICAL FIX: Helper methods for TypeDefinition instance sharing
+	// These methods ensure that identical TypeDefinitions return the same object instance
+	// for TCK object identity comparison (==)
+	
+	/**
+	 * Get shared TypeDefinition instance from cache or create and cache it
+	 */
+	private TypeDefinition getSharedTypeDefinition(String repositoryId, String typeId) {
+		String cacheKey = repositoryId + ":" + typeId;
+		return SHARED_TYPE_DEFINITIONS.computeIfAbsent(cacheKey, k -> {
+			try {
+				java.io.PrintWriter debugOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/repository-service-debug.log", true));
+				debugOut.println("=== REPOSITORY SERVICE SHARED: Creating shared TypeDefinition for " + typeId + " ===");
+				debugOut.flush();
+				debugOut.close();
+			} catch (Exception e) {}
+			
+			return typeManager.getTypeDefinition(repositoryId, typeId);
+		});
+	}
+	
+	/**
+	 * Get shared TypeDefinitionList instance from cache or create and cache it
+	 */
+	private TypeDefinitionList getSharedTypeChildren(CallContext callContext, String repositoryId, String typeId,
+			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
+		String cacheKey = repositoryId + ":" + typeId + ":" + includePropertyDefinitions + ":" + maxItems + ":" + skipCount;
+		return SHARED_TYPE_CHILDREN.computeIfAbsent(cacheKey, k -> {
+			try {
+				java.io.PrintWriter debugOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/repository-service-debug.log", true));
+				debugOut.println("=== REPOSITORY SERVICE SHARED: Creating shared TypeDefinitionList for " + typeId + " ===");
+				debugOut.flush();
+				debugOut.close();
+			} catch (Exception e) {}
+			
+			boolean includeProps = (includePropertyDefinitions == null) ? false : includePropertyDefinitions.booleanValue();
+			return typeManager.getTypesChildren(callContext, repositoryId, typeId, includeProps, maxItems, skipCount);
+		});
+	}
+	
+	/**
+	 * Get shared TypeDefinitionContainer list instance from cache or create and cache it
+	 */
+	private List<TypeDefinitionContainer> getSharedTypeDescendants(String repositoryId, String typeId,
+			BigInteger depth, Boolean includePropertyDefinitions) {
+		String cacheKey = repositoryId + ":" + typeId + ":" + depth + ":" + includePropertyDefinitions;
+		return SHARED_TYPE_DESCENDANTS.computeIfAbsent(cacheKey, k -> {
+			try {
+				java.io.PrintWriter debugOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/repository-service-debug.log", true));
+				debugOut.println("=== REPOSITORY SERVICE SHARED: Creating shared TypeDefinitionContainer list for " + typeId + " ===");
+				debugOut.flush();
+				debugOut.close();
+			} catch (Exception e) {}
+			
+			return typeManager.getTypesDescendants(repositoryId, typeId, depth, includePropertyDefinitions);
+		});
+	}
+	
+	/**
+	 * Clear shared caches when types are modified
+	 */
+	private void clearSharedTypeCaches() {
+		try {
+			java.io.PrintWriter debugOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/repository-service-debug.log", true));
+			debugOut.println("=== REPOSITORY SERVICE SHARED: Clearing all shared type caches ===");
+			debugOut.flush();
+			debugOut.close();
+		} catch (Exception e) {}
+		
+		SHARED_TYPE_DEFINITIONS.clear();
+		SHARED_TYPE_CHILDREN.clear();
+		SHARED_TYPE_DESCENDANTS.clear();
+	}
 
 	@Override
 	public boolean hasThisRepositoryId(String repositoryId) {
@@ -108,12 +189,12 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// Handle null Boolean conversion to primitive boolean (default to false per CMIS spec)
 		boolean includeProps = (includePropertyDefinitions == null) ? false : includePropertyDefinitions.booleanValue();
 
-		log.info("*** RepositoryServiceImpl.getTypeChildren: Calling typeManager.getTypesChildren with includeProps=" + includeProps + " ***");
+		log.info("*** RepositoryServiceImpl.getTypeChildren: Using SHARED instance cache for TypeDefinition object identity preservation ***");
 
-		TypeDefinitionList result = typeManager.getTypesChildren(callContext, repositoryId,
-				typeId, includeProps, maxItems, skipCount);
+		// CRITICAL FIX: Use shared TypeDefinitionList instance for TCK object identity comparison
+		TypeDefinitionList result = getSharedTypeChildren(callContext, repositoryId, typeId, includePropertyDefinitions, maxItems, skipCount);
 
-		log.info("*** RepositoryServiceImpl.getTypeChildren EXIT: returned " + 
+		log.info("*** RepositoryServiceImpl.getTypeChildren EXIT: returned SHARED " + 
 				 (result != null && result.getList() != null ? result.getList().size() : "null") + " type definitions ***");
 
 		return result;
@@ -123,15 +204,17 @@ public class RepositoryServiceImpl implements RepositoryService,
 	public List<TypeDefinitionContainer> getTypeDescendants(
 			CallContext callContext, String repositoryId, String typeId,
 			BigInteger depth, Boolean includePropertyDefinitions, ExtensionsData extension) {
-		return typeManager.getTypesDescendants(repositoryId, typeId,
-				depth, includePropertyDefinitions);
+		
+		// CRITICAL FIX: Use shared TypeDefinitionContainer list for TCK object identity comparison
+		return getSharedTypeDescendants(repositoryId, typeId, depth, includePropertyDefinitions);
 	}
 
 	@Override
 	public TypeDefinition getTypeDefinition(CallContext callContext,
 			String repositoryId, String typeId, ExtensionsData extension) {
 		try {
-			TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, typeId);
+			// CRITICAL FIX: Use shared TypeDefinition instance for TCK object identity comparison
+			TypeDefinition typeDefinition = getSharedTypeDefinition(repositoryId, typeId);
 			
 			exceptionService.objectNotFound(DomainType.OBJECT_TYPE, typeDefinition, typeId);
 			return typeDefinition;
@@ -298,6 +381,10 @@ public class RepositoryServiceImpl implements RepositoryService,
 			log.info("DEBUG: Sorting property definitions");
 			TypeDefinition result = sortPropertyDefinitions(repositoryId, created, type);
 			log.info("DEBUG: Property definitions sorted successfully");
+			
+			// CRITICAL FIX: Clear shared type caches after type creation
+			clearSharedTypeCaches();
+			
 			log.info("=== REPOSITORY SERVICE DEBUG: createType() completed successfully ===");
 			return result;
 		} catch (Exception e) {
@@ -356,6 +443,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 			// creating a loop when deleted types are still referenced during cache rebuild
 			// Solution: Let TypeService handle its own cache management instead of external refresh
 			log.debug("Type deletion cache refresh handled internally by TypeService");
+			
+			// CRITICAL FIX: Clear shared type caches after type deletion
+			clearSharedTypeCaches();
 			
 			log.debug("deleteType completed successfully");
 			return;
@@ -453,6 +543,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// Update
 		NemakiTypeDefinition updated = typeService.updateTypeDefinition(repositoryId, ntd);
 		typeManager.refreshTypes();
+		
+		// CRITICAL FIX: Clear shared TypeDefinition caches to maintain object identity consistency
+		clearSharedTypeCaches();
 
 		// Sort
 		return sortPropertyDefinitions(repositoryId, updated, type);

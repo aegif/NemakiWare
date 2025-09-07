@@ -16,20 +16,50 @@ import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
+import jp.aegif.nemaki.util.PropertyManager;
 
 public class PatchService {
 	private static final Log log = LogFactory.getLog(PatchService.class);
 	private RepositoryInfoMap repositoryInfoMap;
 	private CloudantClientPool connectorPool;
+	private PropertyManager propertyManager;
 	
 	// NEW: Required dependencies for PropertyDefinitionDetail creation
 	private TypeService typeService;
 	private TypeManager typeManager;
 	
-	// Configuration properties for database initialization
-	private String couchdbUrl = "http://localhost:5984";
+	// Configuration properties for database initialization - Docker environment compatible
+	private String couchdbUrl = getCouchDbUrl();
 	private String couchdbUsername = "admin";
 	private String couchdbPassword = "password";
+	
+	/**
+	 * Get CouchDB URL from configuration file (PropertyManager)
+	 */
+	private String getCouchDbUrl() {
+		if (propertyManager == null) {
+			log.warn("PropertyManager not injected - using fallback URL detection");
+			// Fallback to original logic if PropertyManager not available
+			try {
+				java.net.InetAddress.getByName("couchdb");
+				log.info("Docker environment detected - using couchdb:5984");
+				return "http://couchdb:5984";
+			} catch (java.net.UnknownHostException e) {
+				log.info("Local environment detected - using localhost:5984");
+				return "http://localhost:5984";
+			}
+		}
+		
+		// Use PropertyManager to read configuration
+		String couchDbUrl = propertyManager.readValue("db.couchdb.url");
+		if (couchDbUrl != null && !couchDbUrl.trim().isEmpty()) {
+			log.info("Using CouchDB URL from configuration: " + couchDbUrl);
+			return couchDbUrl;
+		} else {
+			log.warn("db.couchdb.url not found in configuration - using default");
+			return "http://localhost:5984";
+		}
+	}
 
 	private List<AbstractNemakiPatch> patchList;
 	
@@ -314,6 +344,11 @@ public class PatchService {
 	public void setTypeManager(TypeManager typeManager) {
 		log.debug("setTypeManager called with " + (typeManager != null ? typeManager.getClass().getName() : "null"));
 		this.typeManager = typeManager;
+	}
+	
+	public void setPropertyManager(PropertyManager propertyManager) {
+		log.debug("setPropertyManager called with " + (propertyManager != null ? propertyManager.getClass().getName() : "null"));
+		this.propertyManager = propertyManager;
 	}
 	
 	// Setters for configuration properties
