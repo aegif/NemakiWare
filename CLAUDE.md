@@ -1062,6 +1062,62 @@ curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmissele
 
 **DO NOT ATTEMPT TO RESOLVE** these systemPath warnings - they are part of the approved Jakarta EE conversion strategy.
 
+### CMIS Basic Type Missing Issue - RECURRING PROBLEM ⚠️
+
+**Symptom**: Browser Binding or AtomPub returns HTTP 404 "objectNotFound" for basic CMIS types like `cmis:document`, `cmis:folder`, `cmis:secondary`, `cmis:policy`
+
+**Diagnostic Rule - CRITICAL**: **ALWAYS verify AtomPub vs Browser Binding consistency**
+```bash
+# Step 1: Test AtomPub first
+curl -s -u admin:admin "http://localhost:8080/core/atom/bedroom/type?id=cmis:document" -w "\nHTTP Status: %{http_code}\n"
+
+# Step 2: Test Browser Binding (same resource)
+curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom/type?typeId=cmis:document&cmisselector=typeDefinition"
+
+# Step 3: If both fail → System-wide basic type missing issue
+# Step 4: If only Browser Binding fails → Browser Binding specific issue
+```
+
+**Expected TCK-Compliant CMIS Type Structure**:
+- **cmis:document**: 25+ property definitions (objectId, name, createdBy, contentStreamLength, isImmutable, versionLabel, etc.)
+- **cmis:folder**: 14+ property definitions (objectId, name, createdBy, path, parentId, allowedChildObjectTypeIds, etc.)  
+- **cmis:secondary**: 11+ property definitions (basic CMIS system properties)
+- **cmis:policy**: 12+ property definitions (policyText, basic system properties)
+
+**Root Cause Analysis**:
+1. **Database Reset Side Effects**: Complete database reset removes both contaminating custom types AND basic system types
+2. **Incomplete Initialization**: PatchService or database dump loading fails to restore basic CMIS type definitions
+3. **Design Document Missing**: CouchDB `_design/_repo` document may be missing critical type definition views
+
+**Standard Recovery Procedure**:
+```bash
+# 1. Verify database initialization status
+curl -s -u admin:password "http://localhost:5984/bedroom/_design/_repo" | jq '.views | keys'
+
+# 2. Check document count (should be ~90+ after proper initialization)
+curl -s -u admin:password "http://localhost:5984/bedroom" | jq '.doc_count'
+
+# 3. If basic types missing, force re-initialization
+cd /Users/ishiiakinori/NemakiWare/docker
+docker compose -f docker-compose-simple.yml restart core
+sleep 60
+
+# 4. Verify basic types restored
+for type in "cmis:document" "cmis:folder" "cmis:secondary" "cmis:policy"; do
+  echo -n "$type: "
+  curl -s -o /dev/null -w "%{http_code}" -u admin:admin "http://localhost:8080/core/atom/bedroom/type?id=$type"
+  echo
+done
+```
+
+**Prevention Strategy**:
+- **Pre-Reset Backup**: Always backup type definitions before database operations
+- **Post-Reset Verification**: Mandatory verification of all 4 basic CMIS types after any database reset
+- **Initialization Monitoring**: Monitor PatchService logs for successful dump file loading
+- **Staged Recovery**: Test individual type restoration before full TCK execution
+
+**Status**: **RECURRING ISSUE** - Requires standardized diagnostic approach for consistent resolution
+
 ## Troubleshooting
 
 ### Container Startup Issues

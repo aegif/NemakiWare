@@ -150,43 +150,123 @@ public class TypeManagerImpl implements TypeManager {
 	// Constructor
 	// /////////////////////////////////////////////////
 	public void init() {
+		// AGGRESSIVE DIAGNOSTIC: Force output to System.err to bypass logging config
+		System.err.println("*** CRITICAL STACK TRACE: TypeManagerImpl.init() START ***");
+		System.err.println("*** Thread: " + Thread.currentThread().getName() + " ***");
+		System.err.println("*** Spring Context State: CHECKING ***");
+		
+		// Stack trace to see who's calling (or not calling) this method
+		StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+		System.err.println("*** CALL STACK TRACE: ***");
+		for (int i = 0; i < Math.min(10, stack.length); i++) {
+			System.err.println("    " + i + ": " + stack[i].toString());
+		}
+		
+		log.info("*** CRITICAL DIAGNOSIS: TypeManagerImpl.init() called ***");
+		System.out.println("*** DEBUG OUTPUT: TypeManagerImpl.init() called ***");
+		
+		// Log current state
+		System.err.println("*** CURRENT STATE: initialized=" + initialized + ", TYPES=" + (TYPES != null ? "NOT_NULL" : "NULL") + " ***");
+		
 		// Check if already initialized to avoid duplicate initialization
 		if (initialized) {
+			log.info("*** DIAGNOSIS: init() skipped - already initialized ***");
+			System.err.println("*** DIAGNOSIS: init() skipped - already initialized ***");
 			return;
 		}
 		
 		synchronized (initLock) {
+			System.err.println("*** ENTERING SYNCHRONIZED BLOCK ***");
+			
 			if (initialized) {
+				log.info("*** DIAGNOSIS: init() skipped - already initialized (synchronized) ***");
+				System.err.println("*** DIAGNOSIS: Double-check - already initialized in sync block ***");
 				return;
 			}
 			
-			initGlobalTypes();
-			
-			basetypes = new HashMap<String, TypeDefinitionContainer>();
-			subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
-			propertyDefinitionCoresByPropertyId = new HashMap<String, PropertyDefinition<?>>();
-			propertyDefinitionCoresByQueryName = new HashMap<String, PropertyDefinition<?>>();
+			try {
+				log.info("*** DIAGNOSIS: Starting TypeManagerImpl initialization process ***");
+				System.err.println("*** CALLING initGlobalTypes() ***");
+				initGlobalTypes();
+				System.err.println("*** initGlobalTypes() COMPLETED ***");
+				
+				basetypes = new HashMap<String, TypeDefinitionContainer>();
+				subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
+				propertyDefinitionCoresByPropertyId = new HashMap<String, PropertyDefinition<?>>();
+				propertyDefinitionCoresByQueryName = new HashMap<String, PropertyDefinition<?>>();
 
-			generate();
-			initialized = true;
+				log.info("*** DIAGNOSIS: About to call generate() for all repositories ***");
+				System.err.println("*** CALLING generate() ***");
+				generate();
+				System.err.println("*** generate() COMPLETED ***");
+				log.info("*** DIAGNOSIS: generate() completed - marking as initialized ***");
+				
+				initialized = true;
+				System.err.println("*** INITIALIZATION MARKED COMPLETE ***");
+				
+			} catch (Exception e) {
+				System.err.println("*** INITIALIZATION FAILED WITH EXCEPTION: " + e.getMessage() + " ***");
+				e.printStackTrace(System.err);
+				throw e;
+			}
 		}
+		log.info("*** CRITICAL DIAGNOSIS: TypeManagerImpl.init() completed successfully ***");
+		System.err.println("*** CRITICAL STACK TRACE: TypeManagerImpl.init() END ***");
 	}
 	
 	private void ensureInitialized() {
+		log.info("*** DIAGNOSIS: ensureInitialized() called - initialized=" + initialized + " ***");
+		
 		if (!initialized) {
+			log.info("*** DIAGNOSIS: Not initialized - acquiring lock to initialize ***");
 			synchronized (initLock) {
 				if (!initialized) {
+					log.info("*** DIAGNOSIS: Still not initialized in synchronized block - calling init() ***");
 					init();
+				} else {
+					log.info("*** DIAGNOSIS: Already initialized by another thread ***");
 				}
 			}
+		} else {
+			log.info("*** DIAGNOSIS: Already initialized - skipping init() ***");
 		}
+		
+		log.info("*** DIAGNOSIS: ensureInitialized() completed - initialized=" + initialized + " ***");
 	}
 
 	private void initGlobalTypes(){
+		log.info("*** CRITICAL DIAGNOSIS: initGlobalTypes() called ***");
+		
+		// CRITICAL DEBUG: repositoryInfoMap状態診断
+		if (repositoryInfoMap == null) {
+			log.error("*** CRITICAL ISSUE: repositoryInfoMap is NULL - DI not working ***");
+			throw new RuntimeException("repositoryInfoMap is NULL - Spring DI failure");
+		}
+		
+		log.info("*** DIAGNOSIS: repositoryInfoMap found, checking available keys ***");
+		java.util.Set<String> repoKeys = repositoryInfoMap.keys();
+		log.info("*** DIAGNOSIS: Available repository keys: " + repoKeys + " ***");
+		log.info("*** DIAGNOSIS: Number of repositories: " + (repoKeys != null ? repoKeys.size() : "NULL") + " ***");
+		
+		// Check specifically for "bedroom"
+		boolean hasBedroomRepo = (repoKeys != null && repoKeys.contains("bedroom"));
+		log.info("*** DIAGNOSIS: Contains 'bedroom' repository: " + hasBedroomRepo + " ***");
+		
+		if (repoKeys == null || repoKeys.isEmpty()) {
+			log.error("*** CRITICAL ISSUE: repositoryInfoMap.keys() returned empty/null ***");
+			throw new RuntimeException("No repositories found in repositoryInfoMap");
+		}
+		
 		TYPES = new HashMap<String, Map<String,TypeDefinitionContainer>>();
-		for(String key : repositoryInfoMap.keys()){
+		for(String key : repoKeys){
+			log.info("*** DIAGNOSIS: Initializing TYPES cache for repository: " + key + " ***");
 			TYPES.put(key, new HashMap<String, TypeDefinitionContainer>());
 		}
+		
+		// Verify TYPES initialization
+		log.info("*** DIAGNOSIS: TYPES cache initialized with keys: " + TYPES.keySet() + " ***");
+		boolean hasBedroomTypes = TYPES.containsKey("bedroom");
+		log.info("*** DIAGNOSIS: TYPES cache contains 'bedroom': " + hasBedroomTypes + " ***");
 	}
 	
 	private void generate(){
