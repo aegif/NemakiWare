@@ -2424,6 +2424,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 case "deleteContentStream":
                     return handleDeleteContentOperation(request, response, pathInfo);
                     
+                // CRITICAL FIX: Add getTypeChildren routing for TCK compliance
+                case "getTypeChildren":
+                case "getTypesChildren":
+                    System.err.println("*** CMIS ROUTER: Routing getTypeChildren/getTypesChildren action ***");
+                    return handleGetTypeChildrenOperation(request, response, pathInfo, method);
+                    
                 default:
                     System.err.println("*** CMIS ROUTER: Action '" + cmisaction + "' not handled by router - delegating to parent ***");
                     return false; // Let parent handle other actions
@@ -2435,6 +2441,126 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 writeErrorResponse(response, e);
             } catch (Exception errorWriteException) {
                 System.err.println("*** CMIS ROUTER: Failed to write error response: " + errorWriteException.getMessage() + " ***");
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            }
+            return true; // We handled the error
+        }
+    }
+    
+    /**
+     * Handle POST cmisaction=getTypeChildren by converting to GET cmisselector=typeChildren
+     * and delegating to existing typeChildren processing logic.
+     * 
+     * CRITICAL TCK FIX: TCK sends POST with cmisaction=getTypeChildren but existing code
+     * expects GET with cmisselector=typeChildren. This method bridges that gap.
+     */
+    private boolean handleGetTypeChildrenOperation(HttpServletRequest request, HttpServletResponse response, 
+                                                 String pathInfo, String method) throws IOException, ServletException {
+        
+        System.err.println("*** HANDLE GET TYPE CHILDREN: Processing POST cmisaction=getTypeChildren ***");
+        System.err.println("*** HANDLE GET TYPE CHILDREN: Method=" + method + ", PathInfo=" + pathInfo + " ***");
+        
+        try {
+            // Extract repository ID from pathInfo
+            String repositoryId = null;
+            if (pathInfo != null) {
+                String[] pathParts = pathInfo.split("/");
+                if (pathParts.length > 1) {
+                    repositoryId = pathParts[1];
+                }
+            }
+            
+            if (repositoryId == null) {
+                System.err.println("*** HANDLE GET TYPE CHILDREN ERROR: Could not extract repository ID from pathInfo: " + pathInfo + " ***");
+                writeErrorResponse(response, new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
+                    "Repository ID required for getTypeChildren operation"));
+                return true;
+            }
+            
+            System.err.println("*** HANDLE GET TYPE CHILDREN: Extracted repositoryId='" + repositoryId + "' ***");
+            
+            // Extract parameters from POST request
+            String typeId = request.getParameter("typeId");
+            String includePropertyDefinitions = request.getParameter("includePropertyDefinitions");
+            String maxItems = request.getParameter("maxItems");
+            String skipCount = request.getParameter("skipCount");
+            
+            System.err.println("*** HANDLE GET TYPE CHILDREN: Parameters - typeId='" + typeId + 
+                             "', includePropertyDefinitions='" + includePropertyDefinitions + 
+                             "', maxItems='" + maxItems + "', skipCount='" + skipCount + "' ***");
+            
+            // CRITICAL CONVERSION: Create wrapper request that converts POST cmisaction=getTypeChildren 
+            // to GET cmisselector=typeChildren for compatibility with existing processing logic
+            HttpServletRequestWrapper wrappedRequest = new HttpServletRequestWrapper(request) {
+                @Override
+                public String getMethod() {
+                    return "GET"; // Convert POST to GET for cmisselector processing
+                }
+                
+                @Override
+                public String getParameter(String name) {
+                    if ("cmisselector".equals(name)) {
+                        return "typeChildren"; // Convert cmisaction to cmisselector
+                    }
+                    if ("cmisaction".equals(name)) {
+                        return null; // Remove cmisaction parameter for GET processing
+                    }
+                    return super.getParameter(name);
+                }
+                
+                @Override
+                public java.util.Map<String, String[]> getParameterMap() {
+                    java.util.Map<String, String[]> paramMap = new java.util.HashMap<String, String[]>(super.getParameterMap());
+                    
+                    // Add cmisselector=typeChildren
+                    paramMap.put("cmisselector", new String[]{"typeChildren"});
+                    
+                    // Remove cmisaction parameter
+                    paramMap.remove("cmisaction");
+                    
+                    return paramMap;
+                }
+                
+                @Override
+                public String getQueryString() {
+                    // Rebuild query string for GET processing
+                    StringBuilder queryBuilder = new StringBuilder();
+                    queryBuilder.append("cmisselector=typeChildren");
+                    
+                    if (typeId != null && !typeId.isEmpty()) {
+                        queryBuilder.append("&typeId=").append(typeId);
+                    }
+                    if (includePropertyDefinitions != null && !includePropertyDefinitions.isEmpty()) {
+                        queryBuilder.append("&includePropertyDefinitions=").append(includePropertyDefinitions);
+                    }
+                    if (maxItems != null && !maxItems.isEmpty()) {
+                        queryBuilder.append("&maxItems=").append(maxItems);
+                    }
+                    if (skipCount != null && !skipCount.isEmpty()) {
+                        queryBuilder.append("&skipCount=").append(skipCount);
+                    }
+                    
+                    return queryBuilder.toString();
+                }
+            };
+            
+            System.err.println("*** HANDLE GET TYPE CHILDREN: Delegating to existing typeChildren processing with converted request ***");
+            
+            // Delegate to parent servlet with the converted request
+            // This will trigger the existing cmisselector=typeChildren processing at line 557
+            super.service(wrappedRequest, response);
+            
+            System.err.println("*** HANDLE GET TYPE CHILDREN: Successfully completed POST->GET conversion and delegation ***");
+            return true; // We handled the request completely
+            
+        } catch (Exception e) {
+            System.err.println("*** HANDLE GET TYPE CHILDREN EXCEPTION: " + e.getMessage() + " ***");
+            e.printStackTrace();
+            
+            try {
+                writeErrorResponse(response, e);
+            } catch (Exception writeEx) {
+                System.err.println("*** HANDLE GET TYPE CHILDREN: Failed to write error response: " + writeEx.getMessage() + " ***");
                 response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
             }
             return true; // We handled the error
