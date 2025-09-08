@@ -552,7 +552,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
             
             // ===============================
-            // CRITICAL FIX: Handle repository-level typeChildren requests  
+            // CRITICAL FIX: Handle repository-level typeChildren requests with proper typeId parameter processing
             // ===============================
             if ("typeChildren".equals(cmisselector)) {
                 System.err.println("*** REPOSITORY LEVEL TYPE CHILDREN: Processing typeChildren at repository level ***");
@@ -568,8 +568,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         }
                     }
                     
+                    // CRITICAL FIX: Extract typeId parameter from query string
+                    String requestedTypeId = request.getParameter("typeId");
+                    System.err.println("*** TYPE CHILDREN PARAMETER FIX: typeId parameter = '" + requestedTypeId + "' ***");
+                    
                     if (repositoryId != null) {
                         System.err.println("*** REPOSITORY LEVEL TYPE CHILDREN: Calling handleRepositoryLevelRequestWithoutSelector for repositoryId='" + repositoryId + "' ***");
+                        
+                        // IMPORTANT: For CMIS compliance, when typeId is null, we should return base types only
+                        // This is the expected behavior for cmisselector=typeChildren without typeId parameter
+                        System.err.println("*** TYPE CHILDREN FIX: typeId='" + requestedTypeId + "' - this will fetch " + (requestedTypeId == null ? "base types" : "child types of " + requestedTypeId) + " ***");
                         
                         // Call the repository-level handling with the request that has cmisselector=typeChildren
                         handleRepositoryLevelRequestWithoutSelector(request, response, repositoryId);

@@ -33,11 +33,15 @@ import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.impl.TypeCache;
 import org.apache.chemistry.opencmis.commons.server.CmisService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Temporary type cache used for one call.
  */
 public class ServerTypeCacheImpl implements TypeCache {
+
+    private static final Logger log = LoggerFactory.getLogger(ServerTypeCacheImpl.class);
 
     private final String repositoryId;
     private final CmisService service;
@@ -120,11 +124,11 @@ public class ServerTypeCacheImpl implements TypeCache {
         }
         
         // Phase 2: Force-load CMIS base types if cache is empty/incomplete
-        System.out.println("DEBUG: Property " + propId + " not found in cached types (" + typeDefinitions.size() + " types). Force-loading base types...");
+        log.debug("Property {} not found in cached types ({} types). Force-loading base types...", propId, typeDefinitions.size());
         String[] baseTypes = {"cmis:document", "cmis:folder", "cmis:relationship", "cmis:policy"};
         for (String baseTypeId : baseTypes) {
             if (!typeDefinitions.containsKey(baseTypeId)) {
-                System.out.println("DEBUG: Loading base type: " + baseTypeId);
+                log.debug("Loading base type: {}", baseTypeId);
                 getTypeDefinition(baseTypeId); // This will cache the type definition
             }
         }
@@ -133,20 +137,20 @@ public class ServerTypeCacheImpl implements TypeCache {
         for (TypeDefinition typeDef : typeDefinitions.values()) {
             PropertyDefinition<?> propDef = typeDef.getPropertyDefinitions().get(propId);
             if (propDef != null) {
-                System.out.println("DEBUG: Found property " + propId + " in force-loaded type " + typeDef.getId());
+                log.debug("Found property {} in force-loaded type {}", propId, typeDef.getId());
                 return propDef;
             }
         }
         
         // Phase 4: Dynamic property generation for standard CMIS properties
-        System.out.println("DEBUG: Property " + propId + " still not found. Attempting dynamic generation...");
+        log.debug("Property {} still not found. Attempting dynamic generation...", propId);
         PropertyDefinition<?> dynamicProp = createStandardCmisPropertyDefinition(propId);
         if (dynamicProp != null) {
-            System.out.println("DEBUG: Successfully generated dynamic property definition for " + propId);
+            log.debug("Successfully generated dynamic property definition for: {}", propId);
             return dynamicProp;
         }
         
-        System.out.println("WARNING: Could not resolve property definition for " + propId + " - this may cause TCK test failures");
+        log.warn("Could not resolve property definition for: {} - this may cause TCK test failures", propId);
         return null;
     }
     
@@ -155,24 +159,24 @@ public class ServerTypeCacheImpl implements TypeCache {
      * when they cannot be found in cached type definitions
      */
     private PropertyDefinition<?> createStandardCmisPropertyDefinition(String propId) {
-        System.out.println("DEBUG: Creating dynamic property definition for " + propId);
+        log.debug("Creating dynamic property definition for: {}", propId);
         
         // Standard CMIS properties with their types - comprehensive coverage for TCK compliance
         switch (propId) {
             // Base object properties (cmis:document, cmis:folder, cmis:relationship, cmis:policy)
-            case "cmis:objectId":
+            case PropertyIds.OBJECT_ID:
                 return createPropertyDefinition(propId, PropertyType.ID, "Object ID", "The object ID", 
                         Cardinality.SINGLE, Updatability.READONLY, true, false, false);
                 
-            case "cmis:baseTypeId":
+            case PropertyIds.BASE_TYPE_ID:
                 return createPropertyDefinition(propId, PropertyType.ID, "Base Type ID", "The base type ID",
                         Cardinality.SINGLE, Updatability.READONLY, true, false, false);
                         
-            case "cmis:objectTypeId":
+            case PropertyIds.OBJECT_TYPE_ID:
                 return createPropertyDefinition(propId, PropertyType.ID, "Object Type ID", "The object type ID",
                         Cardinality.SINGLE, Updatability.READONLY, true, false, false);
                         
-            case "cmis:name":
+            case PropertyIds.NAME:
                 return createPropertyDefinition(propId, PropertyType.STRING, "Name", "The object name",
                         Cardinality.SINGLE, Updatability.READWRITE, true, false, false);
                         
@@ -306,7 +310,7 @@ public class ServerTypeCacheImpl implements TypeCache {
             final String displayName, final String description, final Cardinality cardinality, 
             final Updatability updatability, final boolean required, final boolean queryable, final boolean orderable) {
         
-        System.out.println("DEBUG: Created dynamic property definition: " + id + " (" + propertyType + ")");
+        log.debug("Created dynamic property definition: {} ({})", id, propertyType);
         
         // Create anonymous PropertyDefinition implementation to avoid dependency issues
         return new PropertyDefinition<Object>() {
