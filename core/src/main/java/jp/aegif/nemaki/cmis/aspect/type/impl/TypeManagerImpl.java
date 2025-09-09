@@ -2366,7 +2366,35 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	public TypeDefinitionContainer getTypeById(String repositoryId, String typeId) {
 		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
-		return types.get(typeId);
+		
+		// CRITICAL FIX: Handle missing repository type cache - dynamic initialization
+		if (types == null) {
+			synchronized (initLock) {
+				// Double-check after acquiring lock
+				types = TYPES.get(repositoryId);
+				if (types == null) {
+					// Initialize TYPES map if completely null
+					if (TYPES == null) {
+						TYPES = new HashMap<String, Map<String,TypeDefinitionContainer>>();
+					}
+					
+					// Create empty type cache for this repository
+					TYPES.put(repositoryId, new HashMap<String, TypeDefinitionContainer>());
+					
+					// Force generate base types for this specific repository
+					try {
+						generate(repositoryId);
+					} catch (Exception e) {
+						log.error("Failed to generate base types for repository: " + repositoryId, e);
+					}
+					
+					// Get the newly generated types
+					types = TYPES.get(repositoryId);
+				}
+			}
+		}
+		
+		return types != null ? types.get(typeId) : null;
 	}
 
 	@Override
@@ -2374,10 +2402,39 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		
-		for (Entry<String, TypeDefinitionContainer> entry : types.entrySet()) {
-			if (entry.getValue().getTypeDefinition().getQueryName()
-					.equals(typeQueryName))
-				return entry.getValue().getTypeDefinition();
+		// CRITICAL FIX: Handle missing repository type cache - dynamic initialization
+		if (types == null) {
+			synchronized (initLock) {
+				// Double-check after acquiring lock
+				types = TYPES.get(repositoryId);
+				if (types == null) {
+					// Initialize TYPES map if completely null
+					if (TYPES == null) {
+						TYPES = new HashMap<String, Map<String,TypeDefinitionContainer>>();
+					}
+					
+					// Create empty type cache for this repository
+					TYPES.put(repositoryId, new HashMap<String, TypeDefinitionContainer>());
+					
+					// Force generate base types for this specific repository
+					try {
+						generate(repositoryId);
+					} catch (Exception e) {
+						log.error("Failed to generate base types for repository: " + repositoryId, e);
+					}
+					
+					// Get the newly generated types
+					types = TYPES.get(repositoryId);
+				}
+			}
+		}
+		
+		if (types != null) {
+			for (Entry<String, TypeDefinitionContainer> entry : types.entrySet()) {
+				if (entry.getValue().getTypeDefinition().getQueryName()
+						.equals(typeQueryName))
+					return entry.getValue().getTypeDefinition();
+			}
 		}
 		return null;
 	}
@@ -2387,11 +2444,40 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		
+		// CRITICAL FIX: Handle missing repository type cache - dynamic initialization
+		if (types == null) {
+			synchronized (initLock) {
+				// Double-check after acquiring lock
+				types = TYPES.get(repositoryId);
+				if (types == null) {
+					// Initialize TYPES map if completely null
+					if (TYPES == null) {
+						TYPES = new HashMap<String, Map<String,TypeDefinitionContainer>>();
+					}
+					
+					// Create empty type cache for this repository
+					TYPES.put(repositoryId, new HashMap<String, TypeDefinitionContainer>());
+					
+					// Force generate base types for this specific repository
+					try {
+						generate(repositoryId);
+					} catch (Exception e) {
+						log.error("Failed to generate base types for repository: " + repositoryId, e);
+					}
+					
+					// Get the newly generated types
+					types = TYPES.get(repositoryId);
+				}
+			}
+		}
+		
 		List<TypeDefinitionContainer> typeRoots = new ArrayList<TypeDefinitionContainer>();
-		// iterate types map and return a list collecting the root types:
-		for (TypeDefinitionContainer typeDef : types.values()) {
-			if (typeDef.getTypeDefinition().getParentTypeId() == null) {
-				typeRoots.add(typeDef);
+		if (types != null) {
+			// iterate types map and return a list collecting the root types:
+			for (TypeDefinitionContainer typeDef : types.values()) {
+				if (typeDef.getTypeDefinition().getParentTypeId() == null) {
+					typeRoots.add(typeDef);
+				}
 			}
 		}
 		return typeRoots;
@@ -2465,10 +2551,52 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		}
 		
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+		
+		// CRITICAL FIX: Handle missing repository type cache - dynamic initialization
 		if (types == null) {
-			log.error("NEMAKI TYPE ERROR: No type cache found for repository: " + repositoryId);
-			log.error("No type cache found for repository: " + repositoryId);
-			return null;
+			log.warn("*** CRITICAL FIX: No type cache found for repository: " + repositoryId + " - triggering dynamic initialization ***");
+			System.err.println("*** CRITICAL FIX: No type cache for " + repositoryId + " - forcing repository-specific initialization ***");
+			
+			synchronized (initLock) {
+				// Double-check after acquiring lock
+				types = TYPES.get(repositoryId);
+				if (types == null) {
+					log.warn("*** DYNAMIC INIT: Creating missing TYPES entry for repository: " + repositoryId + " ***");
+					System.err.println("*** DYNAMIC INIT: Creating TYPES entry for: " + repositoryId + " ***");
+					
+					// Initialize TYPES map if completely null
+					if (TYPES == null) {
+						log.error("*** CRITICAL ERROR: TYPES map is completely null - forcing global initialization ***");
+						TYPES = new HashMap<String, Map<String,TypeDefinitionContainer>>();
+					}
+					
+					// Create empty type cache for this repository
+					TYPES.put(repositoryId, new HashMap<String, TypeDefinitionContainer>());
+					
+					// Force generate base types for this specific repository
+					log.warn("*** DYNAMIC INIT: Generating base types for repository: " + repositoryId + " ***");
+					System.err.println("*** DYNAMIC INIT: Generating base types for: " + repositoryId + " ***");
+					
+					try {
+						generate(repositoryId);
+						log.info("*** DYNAMIC INIT: Successfully generated base types for repository: " + repositoryId + " ***");
+						System.err.println("*** DYNAMIC INIT SUCCESS: Base types generated for: " + repositoryId + " ***");
+					} catch (Exception e) {
+						log.error("*** DYNAMIC INIT ERROR: Failed to generate base types for repository: " + repositoryId + " - error: " + e.getMessage() + " ***");
+						System.err.println("*** DYNAMIC INIT ERROR: Failed to generate base types for: " + repositoryId + " - " + e.getMessage());
+						e.printStackTrace(System.err);
+					}
+					
+					// Get the newly generated types
+					types = TYPES.get(repositoryId);
+				}
+			}
+			
+			// Final check - if still null after generation, something went seriously wrong
+			if (types == null) {
+				log.error("*** CRITICAL ERROR: Failed to create type cache for repository: " + repositoryId + " even after dynamic initialization ***");
+				return null;
+			}
 		}
 		
 		log.debug("NEMAKI TYPE DEBUG: Total types in cache for repository " + repositoryId + ": " + types.size());
@@ -2903,6 +3031,33 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 							
 		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+		
+		// CRITICAL FIX: Handle missing repository type cache - dynamic initialization
+		if (types == null) {
+			synchronized (initLock) {
+				// Double-check after acquiring lock
+				types = TYPES.get(repositoryId);
+				if (types == null) {
+					// Initialize TYPES map if completely null
+					if (TYPES == null) {
+						TYPES = new HashMap<String, Map<String,TypeDefinitionContainer>>();
+					}
+					
+					// Create empty type cache for this repository
+					TYPES.put(repositoryId, new HashMap<String, TypeDefinitionContainer>());
+					
+					// Force generate base types for this specific repository
+					try {
+						generate(repositoryId);
+					} catch (Exception e) {
+						log.error("Failed to generate base types for repository: " + repositoryId, e);
+					}
+					
+					// Get the newly generated types
+					types = TYPES.get(repositoryId);
+				}
+			}
+		}
 		
 		List<TypeDefinitionContainer> result = new ArrayList<TypeDefinitionContainer>();
 
