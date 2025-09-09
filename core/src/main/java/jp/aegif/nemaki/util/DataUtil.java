@@ -264,7 +264,9 @@ public class DataUtil {
 				original.getUpdatability(),
 				original.isRequired() != null ? original.isRequired() : false,
 				original.isQueryable() != null ? original.isQueryable() : true,
-				original.isInherited() != null ? original.isInherited() : false,
+				// CRITICAL FIX: Preserve the inherited flag from the original property
+				// Don't default to false - preserve the actual inheritance state
+				original.isInherited(),
 				convertChoices(original.getChoices()),
 				original.isOpenChoice() != null ? original.isOpenChoice() : false,
 				original.isOrderable() != null ? original.isOrderable() : false,

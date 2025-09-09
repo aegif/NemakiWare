@@ -121,26 +121,26 @@ public class TypeManagerImpl implements TypeManager {
 	 */
 	// Map of all types
 	//private Map<String, TypeDefinitionContainer> types;
-	// CRITICAL FIX: TYPES must be static to be shared across all instances
-	private static Map<String, Map<String, TypeDefinitionContainer>> TYPES;
+	// CRITICAL FIX: Reverted from static - each instance should maintain its own type cache
+	private Map<String, Map<String, TypeDefinitionContainer>> TYPES;
 
 	// Map of all base types
-	// CRITICAL FIX: basetypes must be static to be shared across all instances
-	private static Map<String, TypeDefinitionContainer> basetypes;
+	// CRITICAL FIX: Reverted from static - instance-specific base types
+	private Map<String, TypeDefinitionContainer> basetypes;
 
 	// Map of subtype-specific property
-	// CRITICAL FIX: subTypeProperties must be static to be shared across all instances
-	private static Map<String, List<PropertyDefinition<?>>> subTypeProperties;
+	// CRITICAL FIX: Reverted from static - instance-specific subtype properties
+	private Map<String, List<PropertyDefinition<?>>> subTypeProperties;
 
 	// FUNDAMENTAL FIX: Separate Maps to prevent key collisions between propertyId and queryName
-	// CRITICAL FIX: Property definition maps must be static to be shared across all instances
-	private static Map<String, PropertyDefinition<?>> propertyDefinitionCoresByPropertyId;
-	private static Map<String, PropertyDefinition<?>> propertyDefinitionCoresByQueryName;
+	// CRITICAL FIX: Reverted from static - instance-specific property definitions
+	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresByPropertyId;
+	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresByQueryName;
 	
 	// Flag to track initialization
-	// CRITICAL FIX: initialized flag must be static to be shared across all instances
-	private static volatile boolean initialized = false;
-	private static final Object initLock = new Object();
+	// CRITICAL FIX: Reverted from static - instance-specific initialization state
+	private volatile boolean initialized = false;
+	private final Object initLock = new Object();
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
 	private final Set<String> typesBeingDeleted = new HashSet<>();
@@ -540,6 +540,12 @@ public class TypeManagerImpl implements TypeManager {
 			propertyDefinitionCoresByQueryName.clear();
 			propertyDefinitionCoresByPropertyId = new HashMap<String, PropertyDefinition<?>>();
 			propertyDefinitionCoresByQueryName = new HashMap<String, PropertyDefinition<?>>();
+
+			// CRITICAL FIX: Clear shared TypeDefinition and PropertyDefinition caches to prevent stale references
+			// This ensures getTypeDefinition() and getTypesDescendants() use the same instances after refresh
+			SHARED_TYPE_DEFINITIONS.clear();
+			SHARED_PROPERTY_DEFINITIONS.clear();
+			log.info("Cleared SHARED_TYPE_DEFINITIONS and SHARED_PROPERTY_DEFINITIONS caches to ensure consistency after refresh");
 
 			log.info("Starting cache regeneration...");
 			
@@ -2073,9 +2079,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
-		addBasePropertyDefinitions(repositoryId, type);
-		addDocumentPropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:document itself)
+		if (BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+			addDocumentPropertyDefinitions(repositoryId, type);
+		}
 
 		// Add specific attributes
 		ContentStreamAllowed contentStreamAllowed = (nemakiType
@@ -2102,9 +2112,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
-		addBasePropertyDefinitions(repositoryId, type);
-		addFolderPropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:folder itself)
+		if (BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+			addFolderPropertyDefinitions(repositoryId, type);
+		}
 
 		return type;
 	}
@@ -2121,9 +2135,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
-		addBasePropertyDefinitions(repositoryId, type);
-		addRelationshipPropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:relationship itself)
+		if (BaseTypeId.CMIS_RELATIONSHIP.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+			addRelationshipPropertyDefinitions(repositoryId, type);
+		}
 
 		// Set specific attributes
 		type.setAllowedSourceTypes(nemakiType.getAllowedSourceTypes());
@@ -2144,9 +2162,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
-		addBasePropertyDefinitions(repositoryId, type);
-		addPolicyPropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:policy itself)
+		if (BaseTypeId.CMIS_POLICY.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+			addPolicyPropertyDefinitions(repositoryId, type);
+		}
 
 		return type;
 	}
@@ -2163,8 +2185,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
-		addBasePropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:item itself)
+		if (BaseTypeId.CMIS_ITEM.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+		}
 
 		return type;
 	}
@@ -2181,8 +2207,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: Add all base CMIS properties (Secondary types require base properties)
-		addBasePropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:secondary itself)
+		if (BaseTypeId.CMIS_SECONDARY.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+		}
 
 		return type;
 	}
