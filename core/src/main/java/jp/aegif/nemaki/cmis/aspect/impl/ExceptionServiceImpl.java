@@ -223,10 +223,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 		// Each base type has specific requirements per CMIS specification
 		BaseTypeId baseTypeId = type.getBaseTypeId();
 		
-		if (baseTypeId == BaseTypeId.CMIS_SECONDARY) {
-			msg = "Secondary types cannot be created directly. Secondary types are system-defined and managed automatically.";
-			throw new CmisInvalidArgumentException(msg + " [objectTypeId = " + type.getId() + "]", HTTP_STATUS_CODE_400);
-		}
+		// CMIS 1.1 allows creation of custom secondary types
+		// Removed the restriction on secondary type creation
 		
 		// BaseTypeId-specific default value validation
 		if (baseTypeId == BaseTypeId.CMIS_FOLDER && type.isFileable() != null && type.isFileable()) {
