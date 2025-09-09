@@ -275,12 +275,15 @@ public class NemakiPropertyDefinition extends NodeBase {
 		
 		setDefaultValue(new ArrayList<Object>(propertyDefinition.getDefaultValue()));
 		
-		// CRITICAL FIX: Set inherited flag based on property namespace
-		// CMIS standard properties (cmis:*) are inherited, custom properties are not
-		if (correctedPropertyId != null && correctedPropertyId.startsWith("cmis:")) {
-			setInherited(true);  // CMIS standard properties are inherited
+		// CRITICAL FIX: Preserve the inherited flag from the original property definition
+		// The inherited flag should be determined by the type hierarchy, not by property ID prefix
+		// A property is inherited if it comes from a parent type, regardless of its ID
+		Boolean inheritedFlag = propertyDefinition.isInherited();
+		if (inheritedFlag != null) {
+			setInherited(inheritedFlag);
 		} else {
-			setInherited(false); // Custom properties are not inherited
+			// Default to false if not specified - properties are not inherited by default
+			setInherited(false);
 		}
 
 	}
