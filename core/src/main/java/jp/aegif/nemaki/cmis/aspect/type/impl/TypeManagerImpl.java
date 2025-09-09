@@ -151,23 +151,15 @@ public class TypeManagerImpl implements TypeManager {
 	// TIMEOUT: Maximum time a type can remain in "being deleted" state (5 minutes)
 	private static final long DELETION_TIMEOUT_MS = 5 * 60 * 1000L;
 
-	// Static initializer block to debug class loading and INITIALIZE static fields
+	// Static initializer block to debug class loading
 	static {
 		System.err.println("=== STATIC INITIALIZER: TypeManagerImpl class loaded ===");
 		System.err.println("=== ClassLoader: " + TypeManagerImpl.class.getClassLoader() + " ===");
 		System.err.println("=== ClassLoader Type: " + TypeManagerImpl.class.getClassLoader().getClass().getName() + " ===");
 		System.err.println("=== ClassLoader HashCode: " + System.identityHashCode(TypeManagerImpl.class.getClassLoader()) + " ===");
 		System.err.println("=== Thread: " + Thread.currentThread().getName() + " ===");
-		
-		// CRITICAL FIX: Initialize static fields in static block
-		// This ensures they are non-null when instances are created
-		System.err.println("=== INITIALIZING STATIC FIELDS IN STATIC BLOCK ===");
-		TYPES = new ConcurrentHashMap<>();
-		basetypes = new ConcurrentHashMap<>();
-		subTypeProperties = new ConcurrentHashMap<>();
-		propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
-		propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
-		System.err.println("=== STATIC FIELDS INITIALIZED: TYPES=" + (TYPES != null) + ", basetypes=" + (basetypes != null) + " ===");
+		// NOTE: Removed field initialization from static block as these are instance fields
+		System.err.println("=== STATIC BLOCK COMPLETED ===");
 	}
 
 	// /////////////////////////////////////////////////
@@ -177,16 +169,18 @@ public class TypeManagerImpl implements TypeManager {
 		System.err.println("*** TypeManagerImpl CONSTRUCTOR called - instance: " + this.hashCode() + " ***");
 		System.err.println("*** ClassLoader: " + this.getClass().getClassLoader() + " ***");
 		System.err.println("*** ClassLoader Name: " + this.getClass().getClassLoader().getClass().getName() + " ***");
+		
+		// Initialize instance fields
+		TYPES = new ConcurrentHashMap<>();
+		basetypes = new ConcurrentHashMap<>();
+		subTypeProperties = new ConcurrentHashMap<>();
+		propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
+		propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
+		
 		System.err.println("*** TYPES at construction: " + (TYPES != null ? "EXISTS with " + TYPES.size() + " repositories" : "NULL") + " ***");
 		System.err.println("*** TYPES identity at construction: " + System.identityHashCode(TYPES) + " ***");
 		System.err.println("*** initialized flag: " + initialized + " ***");
-		
-		// Static fields should already be initialized by static block
-		if (TYPES == null) {
-			System.err.println("*** ERROR: TYPES is null in constructor - this should not happen! ***");
-		} else {
-			System.err.println("*** TYPES exists with " + TYPES.size() + " repositories ***");
-		}
+		System.err.println("*** Instance fields initialized successfully ***");
 	}
 	
 	public void init() {
@@ -1804,40 +1798,22 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL FIX: Base types DEFINE CMIS properties (inherited=false)
 		//               Derived types INHERIT CMIS properties (inherited=true)
 		if (propertyId.startsWith("cmis:")) {
-			if (parentType != null) {
-				String parentTypeId = parentType.getId();
-				// Check if parent is a base type
-				boolean isParentBaseType = BaseTypeId.CMIS_DOCUMENT.value().equals(parentTypeId) ||
-										   BaseTypeId.CMIS_FOLDER.value().equals(parentTypeId) ||
-										   BaseTypeId.CMIS_RELATIONSHIP.value().equals(parentTypeId) ||
-										   BaseTypeId.CMIS_POLICY.value().equals(parentTypeId) ||
-										   BaseTypeId.CMIS_ITEM.value().equals(parentTypeId) ||
-										   BaseTypeId.CMIS_SECONDARY.value().equals(parentTypeId);
-				
-				// Base types DEFINE CMIS properties (inherited=false)
-				// Derived types INHERIT CMIS properties (inherited=true)  
-				return !isParentBaseType;
-			}
-			
-			// Safety fallback: if parentType is null, assume not inherited
-			return false;
+			// CMIS properties in derived types are ALWAYS inherited
+			// They come from parent type (either base type or another derived type)
+			// Only the base types themselves define CMIS properties with inherited=false
+			// Since this method is called when copying from parent to child,
+			// the child should mark these as inherited=true
+			return true;
 		}
 		
-		// STRATEGY 2: Custom namespace properties should typically NOT be inherited
-		// Custom properties (tck:, custom:, vendor:, etc.) are usually type-specific
-		// and should not automatically propagate to child types
+		// STRATEGY 2: Custom namespace properties
+		// When copying properties from parent to child, ALL properties from parent
+		// should be marked as inherited=true in the child type
+		// This includes custom properties like nemaki:* that are defined in parent
 		if (propertyId.contains(":") && !propertyId.startsWith("cmis:")) {
-			// Check if this is a well-known custom namespace that might need inheritance
-			// Most test and custom properties should not be inherited by default
-			if (propertyId.startsWith("tck:") || 
-			    propertyId.startsWith("test:") || 
-			    propertyId.startsWith("custom:") ||
-			    propertyId.startsWith("vendor:")) {
-				return false; // Test and custom properties are type-specific
-			}
-			
-			// For other custom namespaces, default to false for safety
-			return false;
+			// Since this method is called when copying from parent to child,
+			// ALL properties from parent should be marked as inherited in child
+			return true;
 		}
 		
 		// STRATEGY 3: Non-namespaced properties (legacy or malformed IDs)
