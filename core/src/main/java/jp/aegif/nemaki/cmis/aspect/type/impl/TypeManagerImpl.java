@@ -151,12 +151,42 @@ public class TypeManagerImpl implements TypeManager {
 	// TIMEOUT: Maximum time a type can remain in "being deleted" state (5 minutes)
 	private static final long DELETION_TIMEOUT_MS = 5 * 60 * 1000L;
 
+	// Static initializer block to debug class loading and INITIALIZE static fields
+	static {
+		System.err.println("=== STATIC INITIALIZER: TypeManagerImpl class loaded ===");
+		System.err.println("=== ClassLoader: " + TypeManagerImpl.class.getClassLoader() + " ===");
+		System.err.println("=== ClassLoader Type: " + TypeManagerImpl.class.getClassLoader().getClass().getName() + " ===");
+		System.err.println("=== ClassLoader HashCode: " + System.identityHashCode(TypeManagerImpl.class.getClassLoader()) + " ===");
+		System.err.println("=== Thread: " + Thread.currentThread().getName() + " ===");
+		
+		// CRITICAL FIX: Initialize static fields in static block
+		// This ensures they are non-null when instances are created
+		System.err.println("=== INITIALIZING STATIC FIELDS IN STATIC BLOCK ===");
+		TYPES = new ConcurrentHashMap<>();
+		basetypes = new ConcurrentHashMap<>();
+		subTypeProperties = new ConcurrentHashMap<>();
+		propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
+		propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
+		System.err.println("=== STATIC FIELDS INITIALIZED: TYPES=" + (TYPES != null) + ", basetypes=" + (basetypes != null) + " ===");
+	}
+
 	// /////////////////////////////////////////////////
 	// Constructor
 	// /////////////////////////////////////////////////
 	public TypeManagerImpl() {
 		System.err.println("*** TypeManagerImpl CONSTRUCTOR called - instance: " + this.hashCode() + " ***");
-		System.err.println("*** TYPES at construction: " + (TYPES != null ? "EXISTS with keys " + TYPES.keySet() : "NULL") + " ***");
+		System.err.println("*** ClassLoader: " + this.getClass().getClassLoader() + " ***");
+		System.err.println("*** ClassLoader Name: " + this.getClass().getClassLoader().getClass().getName() + " ***");
+		System.err.println("*** TYPES at construction: " + (TYPES != null ? "EXISTS with " + TYPES.size() + " repositories" : "NULL") + " ***");
+		System.err.println("*** TYPES identity at construction: " + System.identityHashCode(TYPES) + " ***");
+		System.err.println("*** initialized flag: " + initialized + " ***");
+		
+		// Static fields should already be initialized by static block
+		if (TYPES == null) {
+			System.err.println("*** ERROR: TYPES is null in constructor - this should not happen! ***");
+		} else {
+			System.err.println("*** TYPES exists with " + TYPES.size() + " repositories ***");
+		}
 	}
 	
 	public void init() {
@@ -200,16 +230,32 @@ public class TypeManagerImpl implements TypeManager {
 				initGlobalTypes();
 				System.err.println("*** initGlobalTypes() COMPLETED ***");
 				
-				basetypes = new HashMap<String, TypeDefinitionContainer>();
-				subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
-				propertyDefinitionCoresByPropertyId = new HashMap<String, PropertyDefinition<?>>();
-				propertyDefinitionCoresByQueryName = new HashMap<String, PropertyDefinition<?>>();
+						// Clear the maps instead of recreating them (they're already ConcurrentHashMaps)
+				basetypes.clear();
+				subTypeProperties.clear();
+				propertyDefinitionCoresByPropertyId.clear();
+				propertyDefinitionCoresByQueryName.clear();
+				
+				// CRITICAL DEBUG: Log TYPES state during initialization
+				System.err.println("*** INIT STATE: Before generate() - TYPES keys: " + TYPES.keySet() + " ***");
 
 				log.info("*** DIAGNOSIS: About to call generate() for all repositories ***");
 				System.err.println("*** CALLING generate() ***");
 				generate();
 				System.err.println("*** generate() COMPLETED ***");
 				log.info("*** DIAGNOSIS: generate() completed - marking as initialized ***");
+				
+				// CRITICAL: Verify TYPES is populated before marking as initialized
+				if (TYPES == null || TYPES.isEmpty()) {
+					System.err.println("*** CRITICAL ERROR: TYPES is empty at end of init()! ***");
+					throw new RuntimeException("TYPES map is empty after initialization");
+				}
+				
+				System.err.println("*** FINAL TYPES STATE: " + TYPES.keySet() + " with sizes: ***");
+				for (String repo : TYPES.keySet()) {
+					Map<String, TypeDefinitionContainer> repoTypes = TYPES.get(repo);
+					System.err.println("***   " + repo + ": " + (repoTypes != null ? repoTypes.size() : 0) + " types ***");
+				}
 				
 				initialized = true;
 				System.err.println("*** INITIALIZATION MARKED COMPLETE ***");
@@ -241,7 +287,18 @@ public class TypeManagerImpl implements TypeManager {
 			log.info("*** DIAGNOSIS: Already initialized - skipping init() ***");
 		}
 		
-		log.info("*** DIAGNOSIS: ensureInitialized() completed - initialized=" + initialized + " ***");
+		// CRITICAL FIX: Verify TYPES is properly populated after initialization
+		if (TYPES == null || TYPES.isEmpty()) {
+			System.err.println("*** CRITICAL ERROR: TYPES is empty after initialization! ***");
+			log.error("*** CRITICAL ERROR: TYPES is empty after initialization! ***");
+			// Force re-initialization
+			synchronized (initLock) {
+					initialized = false;
+					init();
+			}
+		}
+		
+		log.info("*** DIAGNOSIS: ensureInitialized() completed - initialized=" + initialized + ", TYPES keys=" + (TYPES != null ? TYPES.keySet() : "null") + " ***");
 	}
 
 	private void initGlobalTypes(){
@@ -274,11 +331,11 @@ public class TypeManagerImpl implements TypeManager {
 			throw new RuntimeException("No repositories found in repositoryInfoMap");
 		}
 		
-		// CRITICAL FIX: Do not recreate TYPES map, reuse existing or create if null
+		// TYPES should already be initialized by static block
 		if (TYPES == null) {
-			System.err.println("*** DIAGNOSIS: Creating new TYPES map (first initialization) ***");
-			log.info("*** DIAGNOSIS: Creating new TYPES map (first initialization) ***");
-			// CRITICAL FIX: Use ConcurrentHashMap for thread safety
+			System.err.println("*** WARNING: TYPES was null despite static initialization - recreating ***");
+			log.warn("*** WARNING: TYPES was null despite static initialization - recreating ***");
+			// Emergency fallback - should not happen
 			TYPES = new ConcurrentHashMap<String, Map<String,TypeDefinitionContainer>>();
 		} else {
 			System.err.println("*** DIAGNOSIS: Clearing existing TYPES map (refresh operation) ***");
@@ -292,20 +349,24 @@ public class TypeManagerImpl implements TypeManager {
 			}
 		}
 		
-		// Ensure all repositories have a type map
+		// CRITICAL FIX: Ensure all repositories have a type map and preserve existing entries
 		for(String key : repoKeys){
+			// Always ensure repository has an entry, even if empty
 			if (!TYPES.containsKey(key)) {
 				System.err.println("*** DIAGNOSIS: Adding new TYPES cache for repository: " + key + " ***");
 				log.info("*** DIAGNOSIS: Adding new TYPES cache for repository: " + key + " ***");
-				// CRITICAL FIX: Use ConcurrentHashMap for thread safety
 				TYPES.put(key, new ConcurrentHashMap<String, TypeDefinitionContainer>());
 			} else {
 				// Repository already exists, ensure it has a map
-				if (TYPES.get(key) == null) {
+				Map<String, TypeDefinitionContainer> existingMap = TYPES.get(key);
+				if (existingMap == null) {
 					System.err.println("*** DIAGNOSIS: Re-initializing null TYPES cache for repository: " + key + " ***");
 					log.info("*** DIAGNOSIS: Re-initializing null TYPES cache for repository: " + key + " ***");
-					// CRITICAL FIX: Use ConcurrentHashMap for thread safety
 					TYPES.put(key, new ConcurrentHashMap<String, TypeDefinitionContainer>());
+				} else {
+					// Clear existing map but keep the reference
+					System.err.println("*** DIAGNOSIS: Clearing existing repository cache for: " + key + " ***");
+					existingMap.clear();
 				}
 			}
 		}
@@ -341,8 +402,11 @@ public class TypeManagerImpl implements TypeManager {
 					repoTypes.keySet().stream().limit(3).collect(java.util.stream.Collectors.toList()) + " ***");
 			}
 		}
-		// CRITICAL: Log TYPES map identity
+		// CRITICAL: Log TYPES map identity and verify it's not empty
 		System.err.println("*** TYPES map object identity: " + System.identityHashCode(TYPES) + " ***");
+		if (TYPES.isEmpty()) {
+			System.err.println("*** WARNING: generate() completed but TYPES is empty! ***");
+		}
 	}
 	
 	private void generate(String repositoryId) {
@@ -2528,6 +2592,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL DEBUG: Entry point logging
 		System.err.println("*** getTypeDefinition CALLED: repo=" + repositoryId + ", type=" + typeId + " ***");
 		System.err.println("*** THIS INSTANCE: " + this.hashCode() + " ***");
+		System.err.println("*** ClassLoader: " + this.getClass().getClassLoader() + " ***");
+		System.err.println("*** ClassLoader Identity: " + System.identityHashCode(this.getClass().getClassLoader()) + " ***");
 		System.err.println("*** TYPES MAP: " + (TYPES != null ? "EXISTS" : "NULL") + " ***");
 		if (TYPES != null) {
 			System.err.println("*** TYPES KEYS: " + TYPES.keySet() + " ***");
