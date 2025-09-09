@@ -121,21 +121,26 @@ public class TypeManagerImpl implements TypeManager {
 	 */
 	// Map of all types
 	//private Map<String, TypeDefinitionContainer> types;
-	private Map<String, Map<String, TypeDefinitionContainer>> TYPES;
+	// CRITICAL FIX: TYPES must be static to be shared across all instances
+	private static Map<String, Map<String, TypeDefinitionContainer>> TYPES;
 
 	// Map of all base types
-	private Map<String, TypeDefinitionContainer> basetypes;
+	// CRITICAL FIX: basetypes must be static to be shared across all instances
+	private static Map<String, TypeDefinitionContainer> basetypes;
 
 	// Map of subtype-specific property
-	private Map<String, List<PropertyDefinition<?>>> subTypeProperties;
+	// CRITICAL FIX: subTypeProperties must be static to be shared across all instances
+	private static Map<String, List<PropertyDefinition<?>>> subTypeProperties;
 
 	// FUNDAMENTAL FIX: Separate Maps to prevent key collisions between propertyId and queryName
-	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresByPropertyId;
-	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresByQueryName;
+	// CRITICAL FIX: Property definition maps must be static to be shared across all instances
+	private static Map<String, PropertyDefinition<?>> propertyDefinitionCoresByPropertyId;
+	private static Map<String, PropertyDefinition<?>> propertyDefinitionCoresByQueryName;
 	
 	// Flag to track initialization
-	private volatile boolean initialized = false;
-	private final Object initLock = new Object();
+	// CRITICAL FIX: initialized flag must be static to be shared across all instances
+	private static volatile boolean initialized = false;
+	private static final Object initLock = new Object();
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
 	private final Set<String> typesBeingDeleted = new HashSet<>();
@@ -149,6 +154,11 @@ public class TypeManagerImpl implements TypeManager {
 	// /////////////////////////////////////////////////
 	// Constructor
 	// /////////////////////////////////////////////////
+	public TypeManagerImpl() {
+		System.err.println("*** TypeManagerImpl CONSTRUCTOR called - instance: " + this.hashCode() + " ***");
+		System.err.println("*** TYPES at construction: " + (TYPES != null ? "EXISTS with keys " + TYPES.keySet() : "NULL") + " ***");
+	}
+	
 	public void init() {
 		// AGGRESSIVE DIAGNOSTIC: Force output to System.err to bypass logging config
 		System.err.println("*** CRITICAL STACK TRACE: TypeManagerImpl.init() START ***");
@@ -235,47 +245,116 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void initGlobalTypes(){
+		System.err.println("*** CRITICAL DIAGNOSIS: initGlobalTypes() called ***");
 		log.info("*** CRITICAL DIAGNOSIS: initGlobalTypes() called ***");
 		
 		// CRITICAL DEBUG: repositoryInfoMap状態診断
 		if (repositoryInfoMap == null) {
+			System.err.println("*** CRITICAL ISSUE: repositoryInfoMap is NULL - DI not working ***");
 			log.error("*** CRITICAL ISSUE: repositoryInfoMap is NULL - DI not working ***");
 			throw new RuntimeException("repositoryInfoMap is NULL - Spring DI failure");
 		}
 		
+		System.err.println("*** DIAGNOSIS: repositoryInfoMap found, checking available keys ***");
 		log.info("*** DIAGNOSIS: repositoryInfoMap found, checking available keys ***");
 		java.util.Set<String> repoKeys = repositoryInfoMap.keys();
+		System.err.println("*** DIAGNOSIS: Available repository keys: " + repoKeys + " ***");
 		log.info("*** DIAGNOSIS: Available repository keys: " + repoKeys + " ***");
+		System.err.println("*** DIAGNOSIS: Number of repositories: " + (repoKeys != null ? repoKeys.size() : "NULL") + " ***");
 		log.info("*** DIAGNOSIS: Number of repositories: " + (repoKeys != null ? repoKeys.size() : "NULL") + " ***");
 		
 		// Check specifically for "bedroom"
 		boolean hasBedroomRepo = (repoKeys != null && repoKeys.contains("bedroom"));
+		System.err.println("*** DIAGNOSIS: Contains 'bedroom' repository: " + hasBedroomRepo + " ***");
 		log.info("*** DIAGNOSIS: Contains 'bedroom' repository: " + hasBedroomRepo + " ***");
 		
 		if (repoKeys == null || repoKeys.isEmpty()) {
+			System.err.println("*** CRITICAL ISSUE: repositoryInfoMap.keys() returned empty/null ***");
 			log.error("*** CRITICAL ISSUE: repositoryInfoMap.keys() returned empty/null ***");
 			throw new RuntimeException("No repositories found in repositoryInfoMap");
 		}
 		
-		TYPES = new HashMap<String, Map<String,TypeDefinitionContainer>>();
+		// CRITICAL FIX: Do not recreate TYPES map, reuse existing or create if null
+		if (TYPES == null) {
+			System.err.println("*** DIAGNOSIS: Creating new TYPES map (first initialization) ***");
+			log.info("*** DIAGNOSIS: Creating new TYPES map (first initialization) ***");
+			// CRITICAL FIX: Use ConcurrentHashMap for thread safety
+			TYPES = new ConcurrentHashMap<String, Map<String,TypeDefinitionContainer>>();
+		} else {
+			System.err.println("*** DIAGNOSIS: Clearing existing TYPES map (refresh operation) ***");
+			log.info("*** DIAGNOSIS: Clearing existing TYPES map (refresh operation) ***");
+			// Clear each repository's type map instead of replacing the entire TYPES map
+			for (String key : TYPES.keySet()) {
+				Map<String, TypeDefinitionContainer> repositoryTypes = TYPES.get(key);
+				if (repositoryTypes != null) {
+					repositoryTypes.clear();
+				}
+			}
+		}
+		
+		// Ensure all repositories have a type map
 		for(String key : repoKeys){
-			log.info("*** DIAGNOSIS: Initializing TYPES cache for repository: " + key + " ***");
-			TYPES.put(key, new HashMap<String, TypeDefinitionContainer>());
+			if (!TYPES.containsKey(key)) {
+				System.err.println("*** DIAGNOSIS: Adding new TYPES cache for repository: " + key + " ***");
+				log.info("*** DIAGNOSIS: Adding new TYPES cache for repository: " + key + " ***");
+				// CRITICAL FIX: Use ConcurrentHashMap for thread safety
+				TYPES.put(key, new ConcurrentHashMap<String, TypeDefinitionContainer>());
+			} else {
+				// Repository already exists, ensure it has a map
+				if (TYPES.get(key) == null) {
+					System.err.println("*** DIAGNOSIS: Re-initializing null TYPES cache for repository: " + key + " ***");
+					log.info("*** DIAGNOSIS: Re-initializing null TYPES cache for repository: " + key + " ***");
+					// CRITICAL FIX: Use ConcurrentHashMap for thread safety
+					TYPES.put(key, new ConcurrentHashMap<String, TypeDefinitionContainer>());
+				}
+			}
 		}
 		
 		// Verify TYPES initialization
-		log.info("*** DIAGNOSIS: TYPES cache initialized with keys: " + TYPES.keySet() + " ***");
+		System.err.println("*** DIAGNOSIS: TYPES cache initialized/refreshed with keys: " + TYPES.keySet() + " ***");
+		log.info("*** DIAGNOSIS: TYPES cache initialized/refreshed with keys: " + TYPES.keySet() + " ***");
 		boolean hasBedroomTypes = TYPES.containsKey("bedroom");
+		System.err.println("*** DIAGNOSIS: TYPES cache contains 'bedroom': " + hasBedroomTypes + " ***");
 		log.info("*** DIAGNOSIS: TYPES cache contains 'bedroom': " + hasBedroomTypes + " ***");
 	}
 	
 	private void generate(){
+		// CRITICAL FIX: Ensure TYPES map has entries for all repositories before generating types
 		for(String key : repositoryInfoMap.keys()){
+			// Make sure the repository has a types map
+			if (!TYPES.containsKey(key)) {
+				System.err.println("*** CRITICAL FIX: Adding missing TYPES entry for repository: " + key + " ***");
+				log.info("*** CRITICAL FIX: Adding missing TYPES entry for repository: " + key + " ***");
+				// CRITICAL FIX: Use ConcurrentHashMap for thread safety
+				TYPES.put(key, new ConcurrentHashMap<String, TypeDefinitionContainer>());
+			}
 			generate(key);
 		}
+		
+		// Debug: Log final state
+		System.err.println("*** generate() COMPLETE - TYPES keys: " + TYPES.keySet() + " ***");
+		for (String repo : TYPES.keySet()) {
+			Map<String, TypeDefinitionContainer> repoTypes = TYPES.get(repo);
+			System.err.println("*** Repository " + repo + " has " + (repoTypes != null ? repoTypes.size() : 0) + " types ***");
+			if (repoTypes != null && repoTypes.size() > 0) {
+				System.err.println("*** First few type IDs in " + repo + ": " + 
+					repoTypes.keySet().stream().limit(3).collect(java.util.stream.Collectors.toList()) + " ***");
+			}
+		}
+		// CRITICAL: Log TYPES map identity
+		System.err.println("*** TYPES map object identity: " + System.identityHashCode(TYPES) + " ***");
 	}
 	
 	private void generate(String repositoryId) {
+		System.err.println("*** generate(" + repositoryId + ") START ***");
+		
+		// Ensure this repository has a types map
+		if (!TYPES.containsKey(repositoryId)) {
+			System.err.println("*** WARNING: TYPES missing entry for " + repositoryId + ", adding now ***");
+			// CRITICAL FIX: Use ConcurrentHashMap for thread safety
+			TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
+		}
+		
 		// Generate basetypes
 		addDocumentType(repositoryId);
 		addFolderType(repositoryId);
@@ -289,6 +368,8 @@ public class TypeManagerImpl implements TypeManager {
 
 		// Generate property definition cores
 		buildPropertyDefinitionCores(repositoryId);
+		
+		System.err.println("*** generate(" + repositoryId + ") END - types count: " + TYPES.get(repositoryId).size() + " ***");
 	}
 
 	// /////////////////////////////////////////////////
@@ -2444,7 +2525,34 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	@Override
 	public TypeDefinition getTypeDefinition(String repositoryId, String typeId) {
+		// CRITICAL DEBUG: Entry point logging
+		System.err.println("*** getTypeDefinition CALLED: repo=" + repositoryId + ", type=" + typeId + " ***");
+		System.err.println("*** THIS INSTANCE: " + this.hashCode() + " ***");
+		System.err.println("*** TYPES MAP: " + (TYPES != null ? "EXISTS" : "NULL") + " ***");
+		if (TYPES != null) {
+			System.err.println("*** TYPES KEYS: " + TYPES.keySet() + " ***");
+			System.err.println("*** TYPES map object identity: " + System.identityHashCode(TYPES) + " ***");
+		}
+		System.err.println("*** initialized flag: " + initialized + " ***");
+		
 		ensureInitialized();
+		
+		// DEBUG: Check TYPES state after ensureInitialized
+		System.err.println("*** AFTER ensureInitialized: ***");
+		System.err.println("*** TYPES: " + (TYPES != null ? "NOT NULL" : "NULL") + " ***");
+		if (TYPES != null) {
+			System.err.println("*** TYPES.keySet(): " + TYPES.keySet() + " ***");
+			System.err.println("*** TYPES.size(): " + TYPES.size() + " ***");
+			if (TYPES.containsKey(repositoryId)) {
+				Map<String, TypeDefinitionContainer> repoTypes = TYPES.get(repositoryId);
+				System.err.println("*** Repository " + repositoryId + " types: " + (repoTypes != null ? repoTypes.size() : "NULL") + " ***");
+				if (repoTypes != null && repoTypes.size() > 0) {
+					System.err.println("*** First few types: " + repoTypes.keySet().stream().limit(3).collect(java.util.stream.Collectors.toList()) + " ***");
+				}
+			} else {
+				System.err.println("*** Repository " + repositoryId + " NOT FOUND in TYPES ***");
+			}
+		}
 		
 		// CRITICAL ENHANCEMENT: Cleanup timed-out types before processing
 		cleanupTimedOutTypes();
@@ -2464,8 +2572,15 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			System.err.println("Failed to write TCK execution path log: " + e.getMessage());
 		}
 		
-		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+		// MORE DEBUG
+		System.err.println("*** AFTER ensureInitialized: TYPES=" + (TYPES != null ? "EXISTS" : "NULL") + " ***");
+		if (TYPES != null) {
+			System.err.println("*** TYPES KEYS AFTER INIT: " + TYPES.keySet() + " ***");
+		}
+		
+		Map<String, TypeDefinitionContainer> types = TYPES != null ? TYPES.get(repositoryId) : null;
 		if (types == null) {
+			System.err.println("*** ERROR: No type cache for " + repositoryId + ", TYPES=" + TYPES + " ***");
 			log.error("NEMAKI TYPE ERROR: No type cache found for repository: " + repositoryId);
 			log.error("No type cache found for repository: " + repositoryId);
 			return null;
@@ -2662,12 +2777,21 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		}
 						
 		ensureInitialized();
+		
+		// DEBUG: Log TYPES state before accessing
+		System.err.println("*** BEFORE TYPES.get: ***");
+		System.err.println("*** TYPES identity: " + System.identityHashCode(TYPES) + " ***");
+		System.err.println("*** TYPES keys: " + (TYPES != null ? TYPES.keySet() : "NULL") + " ***");
+		System.err.println("*** TYPES size: " + (TYPES != null ? TYPES.size() : "NULL") + " ***");
+		
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+		System.err.println("*** TYPES.get(" + repositoryId + ") returned: " + (types != null ? "NOT NULL with size " + types.size() : "NULL") + " ***");
 		
 		// CRITICAL FIX: Handle missing repository type cache - dynamic initialization
 		if (types == null) {
 			log.warn("*** CRITICAL FIX: No type cache found for repository: " + repositoryId + " - triggering dynamic initialization ***");
 			System.err.println("*** CRITICAL FIX: No type cache for " + repositoryId + " - forcing repository-specific initialization ***");
+			System.err.println("*** THIS SHOULD NOT HAPPEN if generate() already ran! ***");
 			
 			synchronized (initLock) {
 				// Double-check after acquiring lock
@@ -2679,11 +2803,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					// Initialize TYPES map if completely null
 					if (TYPES == null) {
 						log.error("*** CRITICAL ERROR: TYPES map is completely null - forcing global initialization ***");
-						TYPES = new HashMap<String, Map<String,TypeDefinitionContainer>>();
+						// CRITICAL FIX: Use ConcurrentHashMap for thread safety
+						TYPES = new ConcurrentHashMap<String, Map<String,TypeDefinitionContainer>>();
 					}
 					
 					// Create empty type cache for this repository
-					TYPES.put(repositoryId, new HashMap<String, TypeDefinitionContainer>());
+					// CRITICAL FIX: Use ConcurrentHashMap for thread safety
+					TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
 					
 					// Force generate base types for this specific repository
 					log.warn("*** DYNAMIC INIT: Generating base types for repository: " + repositoryId + " ***");
@@ -3686,6 +3812,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	private void addTypeInternal(Map<String, TypeDefinitionContainer> types,
 			AbstractTypeDefinition type) {
 		if (type == null) {
+			return;
+		}
+		
+		// CRITICAL FIX: Null check for types map
+		if (types == null) {
+			System.err.println("*** ERROR: addTypeInternal called with null types map for type: " + type.getId() + " ***");
+			log.error("*** ERROR: addTypeInternal called with null types map for type: " + type.getId() + " ***");
 			return;
 		}
 
