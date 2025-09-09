@@ -121,26 +121,26 @@ public class TypeManagerImpl implements TypeManager {
 	 */
 	// Map of all types
 	//private Map<String, TypeDefinitionContainer> types;
-	// CRITICAL FIX: TYPES must be static to be shared across all instances
-	private static Map<String, Map<String, TypeDefinitionContainer>> TYPES;
+	// CRITICAL FIX: Reverted from static - each instance should maintain its own type cache
+	private Map<String, Map<String, TypeDefinitionContainer>> TYPES;
 
 	// Map of all base types
-	// CRITICAL FIX: basetypes must be static to be shared across all instances
-	private static Map<String, TypeDefinitionContainer> basetypes;
+	// CRITICAL FIX: Reverted from static - instance-specific base types
+	private Map<String, TypeDefinitionContainer> basetypes;
 
 	// Map of subtype-specific property
-	// CRITICAL FIX: subTypeProperties must be static to be shared across all instances
-	private static Map<String, List<PropertyDefinition<?>>> subTypeProperties;
+	// CRITICAL FIX: Reverted from static - instance-specific subtype properties
+	private Map<String, List<PropertyDefinition<?>>> subTypeProperties;
 
 	// FUNDAMENTAL FIX: Separate Maps to prevent key collisions between propertyId and queryName
-	// CRITICAL FIX: Property definition maps must be static to be shared across all instances
-	private static Map<String, PropertyDefinition<?>> propertyDefinitionCoresByPropertyId;
-	private static Map<String, PropertyDefinition<?>> propertyDefinitionCoresByQueryName;
+	// CRITICAL FIX: Reverted from static - instance-specific property definitions
+	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresByPropertyId;
+	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresByQueryName;
 	
 	// Flag to track initialization
-	// CRITICAL FIX: initialized flag must be static to be shared across all instances
-	private static volatile boolean initialized = false;
-	private static final Object initLock = new Object();
+	// CRITICAL FIX: Reverted from static - instance-specific initialization state
+	private volatile boolean initialized = false;
+	private final Object initLock = new Object();
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
 	private final Set<String> typesBeingDeleted = new HashSet<>();
