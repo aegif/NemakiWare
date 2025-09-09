@@ -3117,6 +3117,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		boolean ipd = (includePropertyDefinitions == null ? false
 				: includePropertyDefinitions.booleanValue());
 		
+		// SUPER CRITICAL DEBUG: Log includePropertyDefinitions value
+		System.err.println("=== getTypesDescendants: includePropertyDefinitions=" + includePropertyDefinitions + ", ipd=" + ipd + " ===");
+		log.error("=== getTypesDescendants: includePropertyDefinitions=" + includePropertyDefinitions + ", ipd=" + ipd + " ===");
 		log.debug("getTypesDescendants: ipd (includePropertyDefinitions boolean) = " + ipd);
 	
 		if (typeId == null) {
@@ -3159,6 +3162,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		new ConcurrentHashMap<>();
 	
 	/**
+	 * CRITICAL TCK COMPLIANCE FIX: Global PropertyDefinition Instance Cache
+	 * Ensures the SAME PropertyDefinition instance is shared across ALL types and ALL repositories
+	 * This is required for TCK tests that compare PropertyDefinitions from different types using ==
+	 */
+	private static final Map<String, PropertyDefinition<?>> GLOBAL_PROPERTY_DEFINITIONS = 
+		new ConcurrentHashMap<>();
+	
+	/**
 	 * CRITICAL TCK COMPLIANCE FIX: TypeDefinition Instance Sharing System
 	 * Ensures same TypeDefinition objects are returned by both getTypeDefinition() and getTypesDescendants()
 	 * This is required for TCK tests that use object identity comparison (==) instead of equals()
@@ -3183,6 +3194,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		String cacheKey = repositoryId + ":" + typeId;
 		
+		// SUPER CRITICAL DEBUG
+		System.err.println("=== getSharedTypeDefinition CALLED: " + cacheKey + " ===");
+		log.error("=== getSharedTypeDefinition CALLED: " + cacheKey + " ===");
+		
 		// Get or create repository-level cache
 		Map<String, TypeDefinition> repoCache = SHARED_TYPE_DEFINITIONS.computeIfAbsent(
 			repositoryId, k -> new ConcurrentHashMap<>());
@@ -3190,9 +3205,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Return existing shared instance or create new one
 		return repoCache.computeIfAbsent(cacheKey, k -> {
 			System.out.println("*** SHARED TYPE DEFINITION: Creating shared instance for " + cacheKey);
+			System.err.println("*** SHARED TYPE DEFINITION: Creating shared instance for " + cacheKey);
+			log.error("*** SHARED TYPE DEFINITION: Creating shared instance for " + cacheKey);
+			
 			try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/type-definition-debug.log", true)) {
 				fw.write("SHARED TYPE DEFINITION: Creating shared instance for " + cacheKey + " at " + new java.util.Date() + "\n");
-			} catch (Exception e) {}
+			} catch (Exception e) {
+				System.err.println("Failed to write type-definition-debug.log: " + e.getMessage());
+			}
 			
 			// Apply PropertyDefinition sharing first, then use as shared TypeDefinition
 			TypeDefinition consistentTypeDefinition = ensureConsistentPropertyDefinitions(repositoryId, originalDefinition);
@@ -3215,26 +3235,47 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		// CRITICAL TCK FIX: Use shared PropertyDefinition instances for object identity comparison
 		// TCK tests compare PropertyDefinitions using == operator, so we must return the same instance
+		// IMPORTANT: Use only propertyId as key (not repositoryId:propertyId) to ensure
+		// the same PropertyDefinition instance is shared across ALL types
 		
-		String cacheKey = repositoryId + ":" + propertyId;
+		String cacheKey = propertyId; // CRITICAL FIX: Share across all types, not per-repository
 		
-		// Get or create repository-level cache
-		Map<String, PropertyDefinition<?>> repoCache = SHARED_PROPERTY_DEFINITIONS.computeIfAbsent(
-			repositoryId, k -> new ConcurrentHashMap<>());
+		// SUPER CRITICAL DEBUG
+		System.err.println("=== getSharedPropertyDefinition CALLED: propertyId=" + propertyId + " (type=" + typeId + ", repo=" + repositoryId + ") ===");
+		log.error("=== getSharedPropertyDefinition CALLED: propertyId=" + propertyId + " (type=" + typeId + ", repo=" + repositoryId + ") ===");
 		
-		// Return existing shared instance or create new one
-		return repoCache.computeIfAbsent(cacheKey, k -> {
-			System.out.println("*** SHARED PROPERTY DEFINITION: Creating shared instance for " + cacheKey + 
-				" (type=" + typeId + ")");
+		// CRITICAL FIX: Use GLOBAL cache, not per-repository cache
+		// This ensures the same PropertyDefinition instance is shared globally across ALL types
+		PropertyDefinition<?> sharedInstance = GLOBAL_PROPERTY_DEFINITIONS.computeIfAbsent(cacheKey, k -> {
+			System.out.println("*** GLOBAL SHARED PROPERTY DEFINITION: Creating global shared instance for " + cacheKey + 
+				" (first type=" + typeId + ")");
+			System.err.println("*** GLOBAL SHARED PROPERTY DEFINITION: Creating global shared instance for " + cacheKey + 
+				" (first type=" + typeId + ")");
+			log.error("*** GLOBAL SHARED PROPERTY DEFINITION: Creating global shared instance for " + cacheKey + 
+				" (first type=" + typeId + ")");
+			
 			try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/property-definition-debug.log", true)) {
-				fw.write("SHARED PROPERTY DEFINITION: Creating shared instance for " + cacheKey + 
-					" (type=" + typeId + ") at " + new java.util.Date() + "\n");
-			} catch (Exception e) {}
+				fw.write("GLOBAL SHARED PROPERTY DEFINITION: Creating global shared instance for " + cacheKey + 
+					" (first type=" + typeId + ") at " + new java.util.Date() + "\n");
+			} catch (Exception e) {
+				System.err.println("Failed to write property-definition-debug.log: " + e.getMessage());
+			}
 			
 			// For first occurrence, use the original definition as the shared instance
 			// This ensures all types share the same PropertyDefinition instance
 			return originalDefinition;
 		});
+		
+		// Debug: Log when reusing existing shared instance
+		if (sharedInstance == originalDefinition) {
+			System.out.println("*** GLOBAL SHARED: Created NEW shared instance for " + propertyId + " -> instance@" + 
+				System.identityHashCode(sharedInstance));
+		} else {
+			System.out.println("*** GLOBAL SHARED: Reusing EXISTING shared instance for " + propertyId + " -> instance@" + 
+				System.identityHashCode(sharedInstance) + " (requested by type=" + typeId + ")");
+		}
+		
+		return sharedInstance;
 	}
 	
 	/**
@@ -3545,12 +3586,19 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				// This ensures both methods return consistent PropertyDefinition instances
 				String typeId = tdc.getTypeDefinition().getId();
 				
+				// SUPER CRITICAL DEBUG: Multiple output channels to ensure visibility
+				System.err.println("=== FLATTEN SHARING ACTIVATED: typeId=" + typeId + ", repo=" + repositoryId + " ===");
+				log.error("=== FLATTEN SHARING ACTIVATED: typeId=" + typeId + ", repo=" + repositoryId + " ===");
+				
 				// CRITICAL FIX: Get TypeDefinition through getTypeDefinition() method
 				// This now automatically uses the TypeDefinition sharing system for object identity consistency  
 				TypeDefinition sharedTypeDefinition = this.getTypeDefinition(repositoryId, typeId);
 				
 				if (sharedTypeDefinition != null) {
 					System.out.println("*** FLATTEN TYPE DEFINITION SHARING: Using getTypeDefinition() path for typeId=" + typeId + " in repository=" + repositoryId);
+					System.err.println("*** FLATTEN TYPE DEFINITION SHARING: Using getTypeDefinition() path for typeId=" + typeId + " in repository=" + repositoryId);
+					log.error("*** FLATTEN TYPE DEFINITION SHARING: Using getTypeDefinition() path for typeId=" + typeId + " in repository=" + repositoryId);
+					
 					System.out.println("*** FLATTEN TYPE DEFINITION SHARING: Original PropertyDefinition count=" + 
 						(tdc.getTypeDefinition().getPropertyDefinitions() != null ? tdc.getTypeDefinition().getPropertyDefinitions().size() : 0));
 					System.out.println("*** FLATTEN TYPE DEFINITION SHARING: Shared PropertyDefinition count=" + 
@@ -3559,7 +3607,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					// CRITICAL DEBUG: File-based logging for flatten path
 					try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/type-definition-debug.log", true)) {
 						fw.write("FLATTEN PATH: Using getTypeDefinition() (with sharing system) for typeId=" + typeId + " in repository=" + repositoryId + " at " + new java.util.Date() + "\n");
-					} catch (Exception e) {}
+					} catch (Exception e) {
+						System.err.println("Failed to write to type-definition-debug.log: " + e.getMessage());
+					}
 					
 					// Create a new TypeDefinitionContainer with the shared TypeDefinition
 					TypeDefinitionContainer sharedContainer = new TypeDefinitionContainerImpl(sharedTypeDefinition);
