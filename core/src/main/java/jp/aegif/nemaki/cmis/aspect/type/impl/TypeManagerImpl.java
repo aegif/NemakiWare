@@ -151,23 +151,13 @@ public class TypeManagerImpl implements TypeManager {
 	// TIMEOUT: Maximum time a type can remain in "being deleted" state (5 minutes)
 	private static final long DELETION_TIMEOUT_MS = 5 * 60 * 1000L;
 
-	// Static initializer block to debug class loading and INITIALIZE static fields
+	// Static initializer block for debugging class loading only
 	static {
 		System.err.println("=== STATIC INITIALIZER: TypeManagerImpl class loaded ===");
 		System.err.println("=== ClassLoader: " + TypeManagerImpl.class.getClassLoader() + " ===");
 		System.err.println("=== ClassLoader Type: " + TypeManagerImpl.class.getClassLoader().getClass().getName() + " ===");
 		System.err.println("=== ClassLoader HashCode: " + System.identityHashCode(TypeManagerImpl.class.getClassLoader()) + " ===");
 		System.err.println("=== Thread: " + Thread.currentThread().getName() + " ===");
-		
-		// CRITICAL FIX: Initialize static fields in static block
-		// This ensures they are non-null when instances are created
-		System.err.println("=== INITIALIZING STATIC FIELDS IN STATIC BLOCK ===");
-		TYPES = new ConcurrentHashMap<>();
-		basetypes = new ConcurrentHashMap<>();
-		subTypeProperties = new ConcurrentHashMap<>();
-		propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
-		propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
-		System.err.println("=== STATIC FIELDS INITIALIZED: TYPES=" + (TYPES != null) + ", basetypes=" + (basetypes != null) + " ===");
 	}
 
 	// /////////////////////////////////////////////////
@@ -177,16 +167,16 @@ public class TypeManagerImpl implements TypeManager {
 		System.err.println("*** TypeManagerImpl CONSTRUCTOR called - instance: " + this.hashCode() + " ***");
 		System.err.println("*** ClassLoader: " + this.getClass().getClassLoader() + " ***");
 		System.err.println("*** ClassLoader Name: " + this.getClass().getClassLoader().getClass().getName() + " ***");
-		System.err.println("*** TYPES at construction: " + (TYPES != null ? "EXISTS with " + TYPES.size() + " repositories" : "NULL") + " ***");
-		System.err.println("*** TYPES identity at construction: " + System.identityHashCode(TYPES) + " ***");
 		System.err.println("*** initialized flag: " + initialized + " ***");
 		
-		// Static fields should already be initialized by static block
-		if (TYPES == null) {
-			System.err.println("*** ERROR: TYPES is null in constructor - this should not happen! ***");
-		} else {
-			System.err.println("*** TYPES exists with " + TYPES.size() + " repositories ***");
-		}
+		// Initialize instance fields in constructor
+		TYPES = new ConcurrentHashMap<>();
+		basetypes = new ConcurrentHashMap<>();
+		subTypeProperties = new ConcurrentHashMap<>();
+		propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
+		propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
+		
+		System.err.println("*** Instance fields initialized - TYPES=" + (TYPES != null) + ", basetypes=" + (basetypes != null) + " ***");
 	}
 	
 	public void init() {
