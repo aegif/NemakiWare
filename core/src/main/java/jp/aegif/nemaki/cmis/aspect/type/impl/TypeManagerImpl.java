@@ -2427,16 +2427,16 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				log.trace("Property core already exists: " + propertyId);
 			}
 			
-			// Ensure queryName mapping exists for existing property with defensive copy
+			// Ensure queryName mapping exists for existing property 
+			// SINGLETON FIX: Use the same instance - no cloning needed since TypeManagerImpl is singleton
 			PropertyDefinition<?> existingCore = propertyDefinitionCoresByPropertyId.get(propertyId);
 			if (existingCore != null && !propertyDefinitionCoresByQueryName.containsKey(queryName)) {
 					
-				// CRITICAL FIX: Clone existing PropertyDefinition to prevent cross-contamination
-				PropertyDefinition<?> clonedCoreForQueryName = DataUtil.clonePropertyDefinition(existingCore);
-				propertyDefinitionCoresByQueryName.put(queryName, clonedCoreForQueryName);
-				
-	 
-				// CRITICAL FIX: Clone existing PropertyDefinition to prevent cross-contamination completed
+				// TCK FIX: Use the SAME instance for both maps to preserve object identity
+				// TypeManagerImpl is a singleton, so no defensive copying is needed
+				propertyDefinitionCoresByQueryName.put(queryName, existingCore);
+				System.out.println("*** TCK FIX: Using SAME PropertyDefinition instance for queryName " + queryName + 
+					" -> instance@" + System.identityHashCode(existingCore) + " (propertyId=" + propertyId + ")");
 				
 				if (log.isTraceEnabled()) {
 					log.trace("Added queryName mapping for existing property: " + queryName + " -> " + propertyId);
@@ -3233,49 +3233,15 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		if (originalDefinition == null) return null;
 		
-		// CRITICAL TCK FIX: Use shared PropertyDefinition instances for object identity comparison
-		// TCK tests compare PropertyDefinitions using == operator, so we must return the same instance
-		// IMPORTANT: Use only propertyId as key (not repositoryId:propertyId) to ensure
-		// the same PropertyDefinition instance is shared across ALL types
+		// CRITICAL TCK FIX: TypeManagerImpl is singleton, so just return the original instance
+		// No need for complex sharing systems - just use the same PropertyDefinition instances
+		// TCK tests compare PropertyDefinitions using == operator
 		
-		String cacheKey = propertyId; // CRITICAL FIX: Share across all types, not per-repository
+		System.out.println("*** SINGLETON FIX: Returning original PropertyDefinition instance for " + propertyId + 
+			" -> instance@" + System.identityHashCode(originalDefinition) + " (type=" + typeId + ")");
 		
-		// SUPER CRITICAL DEBUG
-		System.err.println("=== getSharedPropertyDefinition CALLED: propertyId=" + propertyId + " (type=" + typeId + ", repo=" + repositoryId + ") ===");
-		log.error("=== getSharedPropertyDefinition CALLED: propertyId=" + propertyId + " (type=" + typeId + ", repo=" + repositoryId + ") ===");
-		
-		// CRITICAL FIX: Use GLOBAL cache, not per-repository cache
-		// This ensures the same PropertyDefinition instance is shared globally across ALL types
-		PropertyDefinition<?> sharedInstance = GLOBAL_PROPERTY_DEFINITIONS.computeIfAbsent(cacheKey, k -> {
-			System.out.println("*** GLOBAL SHARED PROPERTY DEFINITION: Creating global shared instance for " + cacheKey + 
-				" (first type=" + typeId + ")");
-			System.err.println("*** GLOBAL SHARED PROPERTY DEFINITION: Creating global shared instance for " + cacheKey + 
-				" (first type=" + typeId + ")");
-			log.error("*** GLOBAL SHARED PROPERTY DEFINITION: Creating global shared instance for " + cacheKey + 
-				" (first type=" + typeId + ")");
-			
-			try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/property-definition-debug.log", true)) {
-				fw.write("GLOBAL SHARED PROPERTY DEFINITION: Creating global shared instance for " + cacheKey + 
-					" (first type=" + typeId + ") at " + new java.util.Date() + "\n");
-			} catch (Exception e) {
-				System.err.println("Failed to write property-definition-debug.log: " + e.getMessage());
-			}
-			
-			// For first occurrence, use the original definition as the shared instance
-			// This ensures all types share the same PropertyDefinition instance
-			return originalDefinition;
-		});
-		
-		// Debug: Log when reusing existing shared instance
-		if (sharedInstance == originalDefinition) {
-			System.out.println("*** GLOBAL SHARED: Created NEW shared instance for " + propertyId + " -> instance@" + 
-				System.identityHashCode(sharedInstance));
-		} else {
-			System.out.println("*** GLOBAL SHARED: Reusing EXISTING shared instance for " + propertyId + " -> instance@" + 
-				System.identityHashCode(sharedInstance) + " (requested by type=" + typeId + ")");
-		}
-		
-		return sharedInstance;
+		// Simply return the original instance - no copying, no caching needed
+		return originalDefinition;
 	}
 	
 	/**
