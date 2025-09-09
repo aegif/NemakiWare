@@ -477,6 +477,12 @@ public class TypeManagerImpl implements TypeManager {
 			propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<String, PropertyDefinition<?>>();
 			propertyDefinitionCoresByQueryName = new ConcurrentHashMap<String, PropertyDefinition<?>>();
 
+			// CRITICAL FIX: Clear shared TypeDefinition and PropertyDefinition caches to prevent stale references
+			// This ensures getTypeDefinition() and getTypesDescendants() use the same instances after refresh
+			SHARED_TYPE_DEFINITIONS.clear();
+			SHARED_PROPERTY_DEFINITIONS.clear();
+			log.info("Cleared SHARED_TYPE_DEFINITIONS and SHARED_PROPERTY_DEFINITIONS caches to ensure consistency after refresh");
+
 			log.info("Starting cache regeneration...");
 			
 			generate();
@@ -2009,9 +2015,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
-		addBasePropertyDefinitions(repositoryId, type);
-		addDocumentPropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:document itself)
+		if (BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+			addDocumentPropertyDefinitions(repositoryId, type);
+		}
 
 		// Add specific attributes
 		ContentStreamAllowed contentStreamAllowed = (nemakiType
@@ -2038,9 +2048,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
-		addBasePropertyDefinitions(repositoryId, type);
-		addFolderPropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:folder itself)
+		if (BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+			addFolderPropertyDefinitions(repositoryId, type);
+		}
 
 		return type;
 	}
@@ -2057,9 +2071,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
-		addBasePropertyDefinitions(repositoryId, type);
-		addRelationshipPropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:relationship itself)
+		if (BaseTypeId.CMIS_RELATIONSHIP.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+			addRelationshipPropertyDefinitions(repositoryId, type);
+		}
 
 		// Set specific attributes
 		type.setAllowedSourceTypes(nemakiType.getAllowedSourceTypes());
@@ -2080,9 +2098,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
-		addBasePropertyDefinitions(repositoryId, type);
-		addPolicyPropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:policy itself)
+		if (BaseTypeId.CMIS_POLICY.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+			addPolicyPropertyDefinitions(repositoryId, type);
+		}
 
 		return type;
 	}
@@ -2099,8 +2121,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
-		addBasePropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:item itself)
+		if (BaseTypeId.CMIS_ITEM.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+		}
 
 		return type;
 	}
@@ -2117,8 +2143,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: Add all base CMIS properties (Secondary types require base properties)
-		addBasePropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:secondary itself)
+		if (BaseTypeId.CMIS_SECONDARY.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+		}
 
 		return type;
 	}
