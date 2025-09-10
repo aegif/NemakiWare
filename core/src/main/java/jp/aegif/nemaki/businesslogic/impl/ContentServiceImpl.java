@@ -1757,7 +1757,6 @@ public class ContentServiceImpl implements ContentService {
 		}
 	}
 
-	// TODO updatable CMIS properties are hard-coded.
 	private void setUpdatePropertyValue(String repositoryId, Content content, PropertyData<?> propertyData,
 			Properties properties) {
 		if (propertyData.getId().equals(PropertyIds.NAME)) {

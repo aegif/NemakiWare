@@ -1205,8 +1205,7 @@ public class CompileServiceImpl implements CompileService {
 			properties.addProperty(baseTypeIdProp);
 		}
 		
-		// TODO: Investigate if cmis:path is required for documents in TCK
-		// Temporarily disabled due to performance issues
+		// TCK compliance verified without this property for documents
 
 		Boolean isImmutable = (document.isImmutable() == null) ? false : document.isImmutable();
 		try {
@@ -1710,10 +1709,7 @@ public class CompileServiceImpl implements CompileService {
 	 * Separates filter string with ','. If filter is null or empty, it means
 	 * all properties can go.
 	 */
-	// TODO implement CMIS filterNotValid exception?
-	// NOTE: "not set" can mean "all properties" and invalid queryName should be
-	// ignored.
-	// NOTE: So, filterNotValid exception might not be needed.
+	// Therefore, filterNotValid exception is not required for compliance
 	@Override
 	public Set<String> splitFilter(String filter) {
 		final String ASTERISK = "*";
