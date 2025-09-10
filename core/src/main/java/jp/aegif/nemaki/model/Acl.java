@@ -50,10 +50,7 @@ public class Acl {
 	}
 
 	public List<Ace> getAllAces(){
-		//TODO local overwrites inherited
-		List<Ace> merged = new ArrayList<Ace>(inheritedAces);
-		merged.addAll(localAces);
-		return merged;
+		return getMergedAces();
 	}
 
 	public List<Ace>getPropagatingAces(){
