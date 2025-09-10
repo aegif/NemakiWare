@@ -969,19 +969,13 @@
 									</fileset>
 								</delete>
 
-								<!-- UNIFIED JAR MANAGEMENT: Copy 1.1.0-nemakiware Self-Build JARs from nemaki-opencmis-1.1.0-jakarta -->
+								<!-- UNIFIED JAR MANAGEMENT: Copy 1.1.0-nemakiware Self-Build JARs from built-jars -->
 								<!-- Jakarta EE 10 requires self-build OpenCMIS 1.1.0-nemakiware -->
 								<copy todir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib">
-									<fileset dir="${basedir}/../lib/nemaki-opencmis-1.1.0-jakarta/chemistry-opencmis-server/chemistry-opencmis-server-bindings/target">
+									<fileset dir="${basedir}/../lib/built-jars">
 										<include name="chemistry-opencmis-server-bindings-1.1.0-nemakiware.jar"/>
-									</fileset>
-									<fileset dir="${basedir}/../lib/nemaki-opencmis-1.1.0-jakarta/chemistry-opencmis-commons/chemistry-opencmis-commons-impl/target">
 										<include name="chemistry-opencmis-commons-impl-1.1.0-nemakiware.jar"/>
-									</fileset>
-									<fileset dir="${basedir}/../lib/nemaki-opencmis-1.1.0-jakarta/chemistry-opencmis-commons/chemistry-opencmis-commons-api/target">
 										<include name="chemistry-opencmis-commons-api-1.1.0-nemakiware.jar"/>
-									</fileset>
-									<fileset dir="${basedir}/../lib/nemaki-opencmis-1.1.0-jakarta/chemistry-opencmis-server/chemistry-opencmis-server-support/target">
 										<include name="chemistry-opencmis-server-support-1.1.0-nemakiware.jar"/>
 									</fileset>
 								</copy>
@@ -1026,18 +1020,12 @@
 												<!-- Keep Maven-managed and forced-copy 1.1.0-nemakiware JARs -->
 											</fileset>
 										</delete>
-										<!-- UNIFIED JAR MANAGEMENT: Copy Jakarta EE 10 Compatible OpenCMIS 1.1.0-nemakiware JARs from fixed MultipartParser locations -->
+										<!-- UNIFIED JAR MANAGEMENT: Copy Jakarta EE 10 Compatible OpenCMIS 1.1.0-nemakiware JARs from built-jars -->
 										<copy todir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib">
-											<fileset dir="${basedir}/../lib/nemaki-opencmis-1.1.0-jakarta/chemistry-opencmis-server/chemistry-opencmis-server-bindings/target">
+											<fileset dir="${basedir}/../lib/built-jars">
 												<include name="chemistry-opencmis-server-bindings-1.1.0-nemakiware.jar"/>
-											</fileset>
-											<fileset dir="${basedir}/../lib/nemaki-opencmis-1.1.0-jakarta/chemistry-opencmis-commons/chemistry-opencmis-commons-impl/target">
 												<include name="chemistry-opencmis-commons-impl-1.1.0-nemakiware.jar"/>
-											</fileset>
-											<fileset dir="${basedir}/../lib/nemaki-opencmis-1.1.0-jakarta/chemistry-opencmis-commons/chemistry-opencmis-commons-api/target">
 												<include name="chemistry-opencmis-commons-api-1.1.0-nemakiware.jar"/>
-											</fileset>
-											<fileset dir="${basedir}/../lib/nemaki-opencmis-1.1.0-jakarta/chemistry-opencmis-server/chemistry-opencmis-server-support/target">
 												<include name="chemistry-opencmis-server-support-1.1.0-nemakiware.jar"/>
 											</fileset>
 										</copy>
