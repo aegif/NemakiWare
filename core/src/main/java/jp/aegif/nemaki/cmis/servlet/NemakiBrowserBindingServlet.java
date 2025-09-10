@@ -37,6 +37,7 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedExceptio
 import org.apache.chemistry.opencmis.commons.impl.Constants;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.server.CmisService;
+import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.server.impl.browser.AbstractBrowserServiceCall;
 import org.apache.chemistry.opencmis.server.impl.browser.BrowserCallContextImpl;
@@ -2904,14 +2905,51 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             System.err.println("*** SET CONTENT HANDLER: Setting content for object: " + objectId + " ***");
             
-            // TODO: Extract content stream from request (multipart or form parameter)
-            // For now, return not implemented
-            response.setStatus(HttpServletResponse.SC_NOT_IMPLEMENTED);
+            // Extract content stream from request using existing methods
+            org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = null;
+            
+            String contentType = request.getContentType();
+            if (contentType != null && contentType.startsWith("multipart/form-data")) {
+                contentStream = extractContentStreamFromMultipartParameters(request);
+            } else if (contentType != null && contentType.startsWith("application/x-www-form-urlencoded")) {
+                contentStream = extractContentStreamFromFormParameters(request, "setContentStream");
+            }
+            
+            if (contentStream == null) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                response.setContentType("application/json");
+                response.setCharacterEncoding("UTF-8");
+                try (java.io.PrintWriter writer = response.getWriter()) {
+                    writer.write("{\"exception\":\"invalidArgument\",\"message\":\"Content stream is required for setContent operation\"}");
+                }
+                return true;
+            }
+            
+            // Get CMIS service and call setContentStream
+            org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
+            CmisService cmisService = getCmisService(callContext);
+            
+            // Extract overwrite flag parameter
+            String overwriteFlagStr = request.getParameter("overwriteFlag");
+            boolean overwriteFlag = (overwriteFlagStr != null) ? Boolean.parseBoolean(overwriteFlagStr) : true;
+            
+            // Call the service layer
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder = 
+                new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> changeTokenHolder = 
+                new org.apache.chemistry.opencmis.commons.spi.Holder<String>(request.getParameter("changeToken"));
+                
+            cmisService.setContentStream(repositoryId, objectIdHolder, overwriteFlag, changeTokenHolder, contentStream, null);
+            
+            System.err.println("*** SET CONTENT HANDLER: Content stream set successfully for object: " + objectId + " ***");
+            
+            // Return success response
+            response.setStatus(HttpServletResponse.SC_OK);
             response.setContentType("application/json");
             response.setCharacterEncoding("UTF-8");
             
             try (java.io.PrintWriter writer = response.getWriter()) {
-                writer.write("{\"exception\":\"notSupported\",\"message\":\"setContent operation not yet implemented in CMIS router\"}");
+                writer.write("{}"); // Empty JSON response indicates success
             }
             
             return true; // We handled the response
