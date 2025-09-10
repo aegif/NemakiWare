@@ -894,8 +894,10 @@ public class TypeManagerImpl implements TypeManager {
 		secondaryType.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
 		secondaryType.setDescription(description);
 		// CMIS 1.1 SPECIFICATION COMPLIANCE: Secondary types must NOT be creatable per CMIS specification
-		// Secondary types are attached to other objects, not created independently - configuration correctly sets false
-		secondaryType.setIsCreatable(typeMutabilityCanCreate);
+		// Secondary types are attached to other objects, not created independently
+		// isCreatable must always be false for secondary types (objects cannot be created with secondary type as primary type)
+		// Note: typeMutability.canCreate controls whether new type definitions can be created, not object instances
+		secondaryType.setIsCreatable(false);
 		secondaryType.setIsFileable(false);
 		secondaryType.setIsQueryable(queryable);
 		secondaryType.setIsControllablePolicy(false);
