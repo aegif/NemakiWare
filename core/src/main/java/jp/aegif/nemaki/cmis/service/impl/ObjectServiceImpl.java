@@ -782,18 +782,24 @@ public class ObjectServiceImpl implements ObjectService {
 		String sourceId = DataUtil.getIdProperty(properties, PropertyIds.SOURCE_ID);
 		if (sourceId != null) {
 			Content source = contentService.getContent(repositoryId, sourceId);
-			if (source == null)
+			if (source == null) {
+				exceptionService.objectNotFound(jp.aegif.nemaki.util.constant.DomainType.OBJECT, source, sourceId);
+			} else {
 				exceptionService.constraintAllowedSourceTypes(td, source);
-			exceptionService.permissionDenied(callContext, repositoryId,
-					PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE, source);
+				exceptionService.permissionDenied(callContext, repositoryId,
+						PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE, source);
+			}
 		}
 		String targetId = DataUtil.getIdProperty(properties, PropertyIds.TARGET_ID);
 		if (targetId != null) {
 			Content target = contentService.getContent(repositoryId, targetId);
-			if (target == null)
+			if (target == null) {
+				exceptionService.objectNotFound(jp.aegif.nemaki.util.constant.DomainType.OBJECT, target, targetId);
+			} else {
 				exceptionService.constraintAllowedTargetTypes(td, target);
-			exceptionService.permissionDenied(callContext, repositoryId,
-					PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET, target);
+				exceptionService.permissionDenied(callContext, repositoryId,
+						PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET, target);
+			}
 		}
 
 		exceptionService.constraintBaseTypeId(repositoryId, properties, BaseTypeId.CMIS_RELATIONSHIP);
