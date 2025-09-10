@@ -77,11 +77,8 @@ public class CouchTypeDefinition extends CouchNodeBase {
 	public CouchTypeDefinition(Map<String, Object> properties) {
 		super(properties); // 親クラスのMapコンストラクタを呼び出し（必須最初の文）
 		
-		System.err.println("=== COUCH TYPE DEFINITION CONSTRUCTOR START ===");
 		try {
 			if (properties != null) {
-				System.err.println("Properties map size: " + properties.size());
-				System.err.println("Properties keys: " + properties.keySet());
 				// CRITICAL FIX: typeId vs queryName schema inconsistency
 				// Old system types (nemaki:*) have no typeId field - use queryName as fallback
 				// New TCK types have both typeId and queryName fields
@@ -89,7 +86,6 @@ public class CouchTypeDefinition extends CouchNodeBase {
 				if (this.typeId == null || this.typeId.isEmpty()) {
 					// Fallback to queryName for old system types
 					this.typeId = (String) properties.get("queryName");
-					System.err.println("SCHEMA FIX: Using queryName as typeId: " + this.typeId);
 				}
 				
 				// 文字列フィールドの処理
@@ -101,32 +97,23 @@ public class CouchTypeDefinition extends CouchNodeBase {
 				this.description = (String) properties.get("description");
 				
 				// BaseTypeId列挙型の処理（CouchDB形式からCMIS形式に変換）
-				System.err.println("Processing BaseTypeId...");
 				if (properties.containsKey("baseId")) {
 					String baseIdStr = (String) properties.get("baseId");
-					System.err.println("Found baseId: " + baseIdStr);
 					if (baseIdStr != null) {
 						try {
 							// CouchDB形式（CMIS_ITEM）からCMIS形式（cmis:item）に変換
 							String cmisFormat = convertToNormalizedBaseTypeId(baseIdStr);
-							System.err.println("Converted to CMIS format: " + cmisFormat);
 							this.baseId = BaseTypeId.fromValue(cmisFormat);
-							System.err.println("BaseTypeId conversion successful: " + this.baseId);
 						} catch (Exception e) {
-							System.err.println("BaseTypeId conversion failed with: " + e.getClass().getSimpleName() + ": " + e.getMessage());
 							// フォールバック：元の値を試す
 							try {
 								this.baseId = BaseTypeId.fromValue(baseIdStr);
-								System.err.println("BaseTypeId fallback successful: " + this.baseId);
 							} catch (Exception e2) {
 								// 無効な値の場合は無視（ログに記録すべき）
-								System.err.println("Warning: Invalid BaseTypeId value: " + baseIdStr);
-								System.err.println("Exception: " + e2.getClass().getSimpleName() + ": " + e2.getMessage());
+								System.err.println("ERROR: Invalid BaseTypeId value: " + baseIdStr + " - " + e2.getMessage());
 							}
 						}
 					}
-				} else {
-					System.err.println("No baseId field found");
 				}
 				
 				// Boolean型フィールドの処理
@@ -173,19 +160,11 @@ public class CouchTypeDefinition extends CouchNodeBase {
 				}
 				
 				// List型フィールドの処理
-				System.err.println("Processing properties field...");
 				if (properties.containsKey("properties")) {
 					Object value = properties.get("properties");
-					System.err.println("Properties field type: " + (value != null ? value.getClass().getSimpleName() : "null"));
-					System.err.println("Properties field value: " + value);
 					if (value instanceof List) {
 						this.properties = (List<String>) value;
-						System.err.println("Properties field processed as List with size: " + this.properties.size());
-					} else {
-						System.err.println("Properties field is not a List - skipping");
 					}
-				} else {
-					System.err.println("No properties field found");
 				}
 				if (properties.containsKey("allowedSourceTypes")) {
 					Object value = properties.get("allowedSourceTypes");
@@ -200,14 +179,7 @@ public class CouchTypeDefinition extends CouchNodeBase {
 					}
 				}
 			}
-			System.err.println("=== COUCH TYPE DEFINITION CONSTRUCTOR END SUCCESS ===");
 		} catch (Exception e) {
-			System.err.println("=== COUCH TYPE DEFINITION CONSTRUCTOR EXCEPTION ===");
-			System.err.println("Exception type: " + e.getClass().getSimpleName());
-			System.err.println("Exception message: " + e.getMessage());
-			System.err.println("Properties map: " + (properties != null ? properties.keySet() : "null"));
-			e.printStackTrace(System.err);
-			System.err.println("=== END EXCEPTION DETAILS ===");
 			// Re-throw to ensure this object is not created successfully
 			throw new RuntimeException("CouchTypeDefinition constructor failed", e);
 		}

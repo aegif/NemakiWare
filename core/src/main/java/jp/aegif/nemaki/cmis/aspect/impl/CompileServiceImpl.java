@@ -268,19 +268,14 @@ public class CompileServiceImpl implements CompileService {
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includeAcl) {
 
-		// CRITICAL DEBUG: Add detailed debugging for BaseTypeId checking
-		System.err.println("=== filterObjectData CALLED: includeAllowableActions=" + includeAllowableActions + 
-			" objectId=" + (fullObjectData != null && fullObjectData.getId() != null ? fullObjectData.getId() : "null") + " ===");
-		
-		if (fullObjectData != null) {
-			System.err.println("=== BaseTypeId DEBUG: value=" + fullObjectData.getBaseTypeId() 
-				+ " toString=" + (fullObjectData.getBaseTypeId() != null ? fullObjectData.getBaseTypeId().toString() : "null") + " ===");
-			System.err.println("=== BaseTypeId Comparison: CMIS_DOCUMENT=" + BaseTypeId.CMIS_DOCUMENT 
-				+ " CMIS_FOLDER=" + BaseTypeId.CMIS_FOLDER + " ===");
-			System.err.println("=== BaseTypeId equals CMIS_DOCUMENT: " 
-				+ (fullObjectData.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) + " ===");
-			System.err.println("=== BaseTypeId equals CMIS_FOLDER: " 
-				+ (fullObjectData.getBaseTypeId() == BaseTypeId.CMIS_FOLDER) + " ===");
+		// Debug logging for BaseTypeId checking
+		if (log.isDebugEnabled()) {
+			log.debug("filterObjectData called: includeAllowableActions=" + includeAllowableActions + 
+				" objectId=" + (fullObjectData != null && fullObjectData.getId() != null ? fullObjectData.getId() : "null"));
+			
+			if (fullObjectData != null) {
+				log.debug("BaseTypeId: " + fullObjectData.getBaseTypeId());
+			}
 		}
 
 		// Deep copy ObjectData
@@ -300,22 +295,30 @@ public class CompileServiceImpl implements CompileService {
 		// Check if this is a Document - Documents must always have AllowableActions for TCK compliance  
 		if (fullObjectData.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
 			shouldKeepAllowableActions = true;
-			System.err.println("CMIS COMPLIANCE FIX: Document object - keeping AllowableActions for CMIS 1.1 compliance, objectId=" + fullObjectData.getId());
+			if (log.isDebugEnabled()) {
+				log.debug("Document object - keeping AllowableActions for CMIS 1.1 compliance, objectId=" + fullObjectData.getId());
+			}
 		}
 		
 		// Check if this is a Folder - Folders must always have AllowableActions for TCK compliance
 		if (fullObjectData.getBaseTypeId() == BaseTypeId.CMIS_FOLDER) {
 			shouldKeepAllowableActions = true;
-			System.err.println("CMIS COMPLIANCE FIX: Folder object - keeping AllowableActions for CMIS 1.1 compliance, objectId=" + fullObjectData.getId());
+			if (log.isDebugEnabled()) {
+				log.debug("Folder object - keeping AllowableActions for CMIS 1.1 compliance, objectId=" + fullObjectData.getId());
+			}
 		}
 
 		// Filter Allowable actions with CMIS 1.1 compliance
 		// Only remove AllowableActions for non-CMIS base types or when explicitly requested AND it's not a base type
 		if (!shouldKeepAllowableActions && includeAllowableActions != null && !includeAllowableActions.booleanValue()) {
 			result.setAllowableActions(null);
-			System.err.println("CMIS COMPLIANCE: Removed AllowableActions for non-base type object, objectId=" + fullObjectData.getId());
+			if (log.isDebugEnabled()) {
+				log.debug("CMIS COMPLIANCE: Removed AllowableActions for non-base type object, objectId=" + fullObjectData.getId());
+			}
 		} else {
-			System.err.println("CMIS COMPLIANCE: Kept AllowableActions for CMIS compliance - baseTypeId=" + fullObjectData.getBaseTypeId() + ", objectId=" + fullObjectData.getId());
+			if (log.isDebugEnabled()) {
+				log.debug("CMIS COMPLIANCE: Kept AllowableActions for CMIS compliance - baseTypeId=" + fullObjectData.getBaseTypeId() + ", objectId=" + fullObjectData.getId());
+			}
 		}
 
 		// Filter Acl
@@ -1126,14 +1129,12 @@ public class CompileServiceImpl implements CompileService {
 			log.debug("=== END TCK DEBUG ===");
 		}
 		
-		// FORCE TCK DEBUG: Always output properties for document objects
-		if ("cmis:document".equals(content.getType()) && content.getName() != null) {
-			System.err.println("=== TCK PROPERTIES AFTER COMPILATION (Object: " + content.getName() + ", ID: " + content.getId() + ") ===");
+		if (log.isDebugEnabled() && "cmis:document".equals(content.getType()) && content.getName() != null) {
+			log.debug("TCK PROPERTIES AFTER COMPILATION (Object: " + content.getName() + ", ID: " + content.getId() + ")");
 			for (PropertyData<?> prop : properties.getPropertyList()) {
 				Object value = prop.getFirstValue();
-				System.err.println("  " + prop.getId() + " = " + value + " (type: " + (value != null ? value.getClass().getSimpleName() : "null") + ")");
+				log.debug("  " + prop.getId() + " = " + value + " (type: " + (value != null ? value.getClass().getSimpleName() : "null") + ")");
 			}
-			System.err.println("=== END TCK PROPERTIES DEBUG ===");
 		}
 
 		// TODO If subType properties is not registered in DB, return void
@@ -1261,12 +1262,12 @@ public class CompileServiceImpl implements CompileService {
 		DocumentTypeDefinition dtdf = (DocumentTypeDefinition) tdf;
 		ContentStreamAllowed csa = dtdf.getContentStreamAllowed();
 		
-		// CRITICAL DEBUG: Add comprehensive debug logging for content length issue
-		System.err.println("*** DEBUG setCmisAttachmentProperties ***");
-		System.err.println("  - Document: " + document.getName() + " (ID: " + document.getId() + ")");
-		System.err.println("  - ContentStreamAllowed: " + csa);
-		System.err.println("  - AttachmentNodeId: " + document.getAttachmentNodeId());
-		System.err.println("  - Document type: " + document.getObjectType());
+		// DEBUG: Log attachment properties processing when debug enabled
+		if (log.isDebugEnabled()) {
+			log.debug("setCmisAttachmentProperties - Document: " + document.getName() + " (ID: " + document.getId() + 
+				"), ContentStreamAllowed: " + csa + ", AttachmentNodeId: " + document.getAttachmentNodeId() + 
+				", Document type: " + document.getObjectType());
+		}
 		
 		// CLOUDANT SDK FIX: Improved attachment handling with _rev consistency
 		if (log.isDebugEnabled()) {
@@ -1276,12 +1277,10 @@ public class CompileServiceImpl implements CompileService {
 		if (ContentStreamAllowed.REQUIRED == csa
 				|| ContentStreamAllowed.ALLOWED == csa && StringUtils.isNotBlank(document.getAttachmentNodeId())) {
 
-			System.err.println("  - Condition met: REQUIRED or (ALLOWED + has attachmentId)");
 			attachment = getAttachmentWithRetry(repositoryId, document.getAttachmentNodeId(), document.getId());
 
 			if (attachment == null) {
 				// CLOUDANT SDK FIX: Handle null attachment with proper logging and CMIS compliance
-				System.err.println("  - Attachment is NULL");
 				if (log.isDebugEnabled()) {
 					log.debug("Attachment not found for document " + document.getId() + " (attachmentId=" + document.getAttachmentNodeId() + ")");
 				}

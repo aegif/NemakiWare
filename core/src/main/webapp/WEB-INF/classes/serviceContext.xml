@@ -84,7 +84,7 @@
         </property>
     </bean>
 
-    <bean id="TypeManager" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="TypeManager" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.aspect.type.TypeManager
@@ -108,7 +108,7 @@
     </bean>
 
     <!-- CMIS Service Beans -->
-    <bean id="RepositoryService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="RepositoryService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.service.RepositoryService
@@ -140,7 +140,7 @@
         </property>
     </bean>
 
-    <bean id="NavigationService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="NavigationService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.service.NavigationService
@@ -176,7 +176,7 @@
         <property name="propertyManager" ref="propertyManager" />
     </bean>
 
-    <bean id="ObjectService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="ObjectService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.service.ObjectService
@@ -220,7 +220,7 @@
         </property>
     </bean>
 
-    <bean id="ObjectServiceInternal" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="ObjectServiceInternal" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.service.ObjectServiceInternal
@@ -246,7 +246,7 @@
         </property>
     </bean>
 
-    <bean id="DiscoveryService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="DiscoveryService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.service.DiscoveryService
@@ -273,7 +273,7 @@
         </property>
     </bean>
 
-    <bean id="VersioningService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="VersioningService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.service.VersioningService
@@ -303,7 +303,7 @@
         </property>
     </bean>
 
-    <bean id="RelationshipService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="RelationshipService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.service.RelationshipService
@@ -335,7 +335,7 @@
         </property>
     </bean>
 
-    <bean id="PolicyService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="PolicyService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.service.PolicyService
@@ -364,7 +364,7 @@
         </property>
     </bean>
 
-    <bean id="AclService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="AclService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.service.AclService</value>
@@ -401,7 +401,7 @@
 
 
     <!-- CMIS Service Beans(Utility) -->
-    <bean id="AuthenticationService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="AuthenticationService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.factory.auth.AuthenticationService
@@ -434,7 +434,7 @@
         </property>
     </bean>
 
-    <bean id="TokenService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="TokenService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.factory.auth.TokenService
@@ -461,7 +461,7 @@
         </property>
     </bean>
 
-    <bean id="CompileService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="CompileService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.aspect.CompileService
@@ -503,7 +503,7 @@
         </property>
     </bean>
 
-    <bean id="PermissionService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="PermissionService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.aspect.PermissionService
@@ -533,7 +533,7 @@
         </property>
     </bean>
 
-    <bean id="ExceptionService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="ExceptionService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.aspect.ExceptionService
@@ -574,7 +574,7 @@
 
 
     <!-- Search Engine Beans -->
-    <bean id="QueryProcessor" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="QueryProcessor" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.cmis.aspect.query.QueryProcessor</value>
@@ -694,7 +694,7 @@
     </bean>
 
     <!-- Thread Lock -->
-    <bean id="ThreadLockService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="ThreadLockService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
         <property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.util.lock.ThreadLockService

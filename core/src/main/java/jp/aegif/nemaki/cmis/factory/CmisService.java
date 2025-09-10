@@ -486,24 +486,9 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	public String createFolder(String repositoryId, Properties properties, String folderId, List<String> policies,
 			Acl addAces, Acl removeAces, ExtensionsData extension) {
 		
-		System.err.println("!!! CMIS SERVICE CREATEFOLDER: CALLED !!!");
-		System.err.println("!!! REPOSITORY ID: " + repositoryId + " !!!");
-		System.err.println("!!! FOLDER ID: " + folderId + " !!!");
-		System.err.println("!!! OBJECT SERVICE: " + (objectService != null ? objectService.getClass().getName() : "NULL") + " !!!");
-		System.err.println("!!! OBJECT SERVICE HASH: " + (objectService != null ? objectService.hashCode() : "NULL") + " !!!");
-		
-		if (properties != null) {
-			String objectTypeId = properties.getProperties() != null && properties.getProperties().get("cmis:objectTypeId") != null 
-				? properties.getProperties().get("cmis:objectTypeId").getFirstValue().toString() : "NULL";
-			String name = properties.getProperties() != null && properties.getProperties().get("cmis:name") != null 
-				? properties.getProperties().get("cmis:name").getFirstValue().toString() : "NULL";
-			System.err.println("!!! OBJECT TYPE ID: " + objectTypeId + " !!!");
-			System.err.println("!!! FOLDER NAME: " + name + " !!!");
-		} else {
-			System.err.println("!!! PROPERTIES IS NULL !!!");
+		if (log.isDebugEnabled()) {
+			log.debug("Creating folder in repository: " + repositoryId + ", parent folder: " + folderId);
 		}
-		
-		System.err.println("!!! CALLING OBJECTSERVICE.CREATEFOLDER() !!!");
 		
 		return objectService.createFolder(getCallContext(), repositoryId, properties, folderId, policies, addAces,
 				removeAces, extension);
@@ -908,37 +893,32 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 
 	@Override
 	public TypeDefinition createType(String repositoryId, TypeDefinition type, ExtensionsData extension) {
-		System.err.println("=== CMIS SERVICE CREATE TYPE CALLED ===");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("Type ID: " + (type != null ? type.getId() : "null"));
-		System.err.println("CallContext: " + (getCallContext() != null ? getCallContext().getUsername() : "null"));
+		if (log.isDebugEnabled()) {
+			log.debug("Creating type in repository: " + repositoryId + ", type ID: " + (type != null ? type.getId() : "null"));
+		}
 		
 		try {
 			TypeDefinition result = repositoryService.createType(getCallContext(), repositoryId, type, extension);
-			System.err.println("CmisService.createType completed successfully");
+			if (log.isDebugEnabled()) {
+				log.debug("Type creation completed successfully for type: " + (type != null ? type.getId() : "null"));
+			}
 			return result;
 		} catch (Exception e) {
-			System.err.println("EXCEPTION in CmisService.createType: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-			e.printStackTrace();
+			log.error("Exception in createType for repository " + repositoryId + ": " + e.getMessage(), e);
 			throw e;
 		}
 	}
 
 	@Override
 	public void deleteType(String repositoryId, String typeId, ExtensionsData extension) {
-		System.err.println("=== CMIS SERVICE DELETE TYPE CALLED ===");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("Type ID: " + typeId);
-		System.err.println("CallContext: " + (getCallContext() != null ? getCallContext().getUsername() : "null"));
-		System.err.println("RepositoryService: " + (repositoryService != null ? repositoryService.getClass().getName() : "NULL"));
+		log.debug("CMIS Service deleteType called - Repository: " + repositoryId + 
+			", Type: " + typeId + ", User: " + (getCallContext() != null ? getCallContext().getUsername() : "null"));
 		
 		try {
-			System.err.println("=== CALLING repositoryService.deleteType ===");
 			repositoryService.deleteType(getCallContext(), repositoryId, typeId, extension);
-			System.err.println("=== CmisService.deleteType completed successfully ===");
+			log.debug("CmisService.deleteType completed successfully for type: " + typeId);
 		} catch (Exception e) {
-			System.err.println("EXCEPTION in CmisService.deleteType: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-			e.printStackTrace();
+			log.error("Exception in CmisService.deleteType for type " + typeId + ": " + e.getMessage(), e);
 			throw e;
 		}
 	}

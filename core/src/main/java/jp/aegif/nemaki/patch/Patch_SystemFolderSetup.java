@@ -190,7 +190,7 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                 // Get CloudantClientWrapper directly from patch util
                 jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client = patchUtil.getConnectorPool().getClient(repositoryId);
                 if (client == null) {
-                    System.err.println("=== PATCH ERROR: Could not get Cloudant client for repository: " + repositoryId);
+                    log.error("Could not get Cloudant client for repository: " + repositoryId);
                     return null;
                 }
                 
@@ -257,7 +257,6 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                                                     systemFolder.setName(name);
                                                     return systemFolder;
                                                 } else {
-                                                    System.err.println("=== PATCH ERROR: Found .system folder but objectId is null or empty");
                                                     log.error("Found .system folder but objectId is null or empty - cannot use this folder");
                                                 }
                                             }
@@ -273,7 +272,6 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                                                     systemFolder.setName(name);
                                                     return systemFolder;
                                                 } else {
-                                                    System.err.println("=== PATCH ERROR: Found System folder but objectId is null or empty");
                                                     log.error("Found System folder but objectId is null or empty - cannot use this folder");
                                                 }
                                             }
@@ -290,9 +288,7 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                                     log.info("PATCH DEBUG: Document is null");
                                 }
                             } catch (Exception docEx) {
-                                System.err.println("=== PATCH ERROR: Error processing document: " + docEx.getMessage());
                                 log.warn("Error processing document in system folder search", docEx);
-                                docEx.printStackTrace();
                             }
                         }
                     }
@@ -306,16 +302,12 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                 return null;
                 
             } catch (Exception directEx) {
-                System.err.println("=== PATCH ERROR: Direct CouchDB query failed: " + directEx.getMessage());
                 log.error("Direct CouchDB query failed, system folder detection not possible during initialization", directEx);
-                directEx.printStackTrace();
                 return null;
             }
             
         } catch (Exception e) {
-            System.err.println("=== PATCH ERROR: Error checking for existing System folder: " + e.getMessage());
             log.warn("Error checking for existing System folder", e);
-            e.printStackTrace();
             return null;
         }
     }

@@ -529,7 +529,7 @@ private ContentService getContentServiceSafe() {
 
 	//TODO this is a copy & paste method.
 	private Folder getOrCreateSystemSubFolder(String repositoryId, String name){
-		System.err.println("=== CRITICAL DEBUG: getOrCreateSystemSubFolder called with repositoryId=" + repositoryId + ", name=" + name + " ===");
+		log.debug("getOrCreateSystemSubFolder called with repositoryId=" + repositoryId + ", name=" + name);
 		ContentService service = getContentService();
 		if (service == null) {
 			throw new RuntimeException("ContentService not available - dependency injection failed");
@@ -911,9 +911,9 @@ private ContentService getContentServiceSafe() {
 		// Delete a user
 		if (status) {
 			try {
-				System.err.println("=== DEBUG: Attempting to delete user with ID: " + user.getId() + " ===");
+				log.debug("Attempting to delete user with ID: " + user.getId());
 				getContentService().delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
-				System.err.println("=== DEBUG: User deletion completed successfully ===");
+				log.debug("User deletion completed successfully");
 			} catch (Exception ex) {
 				ex.printStackTrace();
 				status = false;

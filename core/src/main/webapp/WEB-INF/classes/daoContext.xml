@@ -6,7 +6,7 @@
 		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 
 	<!-- DAO Service Beans (without non-cached implementation) -->
-	<bean id="ContentDaoService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="ContentDaoService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.dao.ContentDaoService</value>
@@ -25,7 +25,7 @@
 		</property>
 	</bean>
 	
-	<bean id="PrincipalDaoService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="PrincipalDaoService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.dao.PrincipalDaoService</value>

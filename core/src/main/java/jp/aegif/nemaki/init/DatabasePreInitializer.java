@@ -130,7 +130,6 @@ public class DatabasePreInitializer {
             log.info("=== DATABASE PRE-INITIALIZATION (Phase 1) COMPLETED ===");
             
         } catch (Exception e) {
-            System.err.println("Phase 1 database pre-initialization failed: " + e.getMessage());
             log.error("Phase 1 database pre-initialization failed", e);
             // Don't fail the entire startup - let Phase 2 handle missing data gracefully
             log.warn("Continuing startup - Phase 2 may need to handle missing database setup");

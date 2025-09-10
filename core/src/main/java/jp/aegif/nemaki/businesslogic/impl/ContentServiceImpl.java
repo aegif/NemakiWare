@@ -536,26 +536,12 @@ public class ContentServiceImpl implements ContentService {
 	log.debug("=== ATOMIC DOCUMENT CREATION START ===");
 	log.debug("Repository: {}, ContentStream: {}", repositoryId, (contentStream != null ? "PROVIDED" : "NULL"));
 	
-	// SECONDARY TYPES TEST DEBUG - Critical tracking for attachmentNodeId
-	System.err.println("=== SECONDARY TYPES TEST DEBUG - DOCUMENT CREATION START ===");
-	if (properties != null) {
+	if (log.isDebugEnabled() && properties != null) {
 		Object objectTypeId = properties.getProperties().get("cmis:objectTypeId");
 		Object name = properties.getProperties().get("cmis:name");
 		Object secondaryTypeIds = properties.getProperties().get("cmis:secondaryObjectTypeIds");
-		System.err.println("Document Name: " + (name != null ? name : "NULL"));
-		System.err.println("Object Type ID: " + (objectTypeId != null ? objectTypeId : "NULL"));
-		System.err.println("Secondary Type IDs: " + (secondaryTypeIds != null ? secondaryTypeIds : "NULL"));
-		if (contentStream != null) {
-			long length = contentStream.getLength();
-			BigInteger bigLength = contentStream.getBigLength();
-			System.err.println("ContentStream provided: YES");
-			System.err.println("  - ContentStream filename: " + contentStream.getFileName());
-			System.err.println("  - ContentStream getLength(): " + length);
-			System.err.println("  - ContentStream getBigLength(): " + bigLength);
-			System.err.println("  - ContentStream MimeType: " + contentStream.getMimeType());
-		} else {
-			System.err.println("ContentStream provided: NO");
-		}
+		log.debug("Creating document - Name: {}, Type: {}, SecondaryTypes: {}, ContentStream: {}", 
+			name, objectTypeId, secondaryTypeIds, (contentStream != null ? "provided" : "none"));
 	}
 	
 	Document atomicResult = null;
@@ -571,36 +557,13 @@ public class ContentServiceImpl implements ContentService {
 		
 		log.debug("ContentStreamAllowed: {}, ContentStream provided: {}", csa, (contentStream != null));
 		
-		// CRITICAL DEBUG: TCK Attachment Creation Condition Analysis
-		System.err.println("=== TCK ATTACHMENT CREATION CONDITION DEBUG ===");
-		System.err.println("Document Type: " + d.getObjectType());
-		System.err.println("ContentStreamAllowed value: " + csa);
-		System.err.println("ContentStream is null: " + (contentStream == null));
-		if (contentStream != null) {
-			System.err.println("ContentStream length: " + contentStream.getLength());
-			System.err.println("ContentStream mimeType: " + contentStream.getMimeType());
-			System.err.println("ContentStream filename: " + contentStream.getFileName());
-		}
-		System.err.println("Type definition: " + tdf.getId() + " (displayName: " + tdf.getDisplayName() + ")");
-		System.err.println("Calling method context: " + Thread.currentThread().getStackTrace()[1].getMethodName());
-		
 		// CMIS 1.1 SPECIFICATION COMPLIANT: Evaluate attachment creation conditions correctly
 		boolean conditionA = (csa == ContentStreamAllowed.REQUIRED);
-		boolean conditionB = (csa == ContentStreamAllowed.ALLOWED && contentStream != null); // RESTORED: Correct CMIS 1.1 spec
+		boolean conditionB = (csa == ContentStreamAllowed.ALLOWED && contentStream != null);
 		boolean overallCondition = conditionA || conditionB;
 		
-		System.err.println("Condition A (csa == REQUIRED): " + conditionA);
-		System.err.println("Condition B (csa == ALLOWED && contentStream != null): " + conditionB + " [CMIS 1.1 SPEC COMPLIANT]");
-		System.err.println("Overall condition (A || B): " + overallCondition);
-		
-		if (overallCondition) {
-			System.err.println("✅ ATTACHMENT CREATION: Condition MET - will create attachment");
-		} else {
-			System.err.println("❌ ATTACHMENT CREATION: Condition NOT MET - will NOT create attachment");
-			System.err.println("ℹ️  This will result in document.attachmentNodeId = null (NORMAL for ALLOWED without ContentStream)");
-			System.err.println("ℹ️  CMIS 1.1 spec: ALLOWED documents can exist without ContentStream");
-		}
-		System.err.println("=== END TCK ATTACHMENT CREATION CONDITION DEBUG ===");
+		log.debug("Attachment creation evaluation - Type: {}, ContentStreamAllowed: {}, ContentStream: {}, WillCreateAttachment: {}", 
+			d.getObjectType(), csa, (contentStream != null ? "provided" : "null"), overallCondition);
 		
 		// PHASE 2: Atomic Attachment creation (CMIS 1.1 SPECIFICATION COMPLIANT)
 		if (csa == ContentStreamAllowed.REQUIRED || (csa == ContentStreamAllowed.ALLOWED && contentStream != null)) {
@@ -609,9 +572,7 @@ public class ContentServiceImpl implements ContentService {
 			d.setAttachmentNodeId(createdAttachmentId);
 			log.debug("Created AttachmentId atomically: {}", createdAttachmentId);
 			
-			System.err.println("=== PHASE 2 DEBUG - ATTACHMENT CREATION ===");
-			System.err.println("Created AttachmentId: " + createdAttachmentId);
-			System.err.println("Set Document.attachmentNodeId to: " + d.getAttachmentNodeId());
+		log.debug("Created AttachmentId: {}, set Document.attachmentNodeId to: {}", createdAttachmentId, d.getAttachmentNodeId());
 			
 			// Preview creation (optional - failure won't affect main operation)
 			if (isPreviewEnabled()) {
@@ -630,34 +591,28 @@ public class ContentServiceImpl implements ContentService {
 		
 		// PHASE 4: Atomic Document creation (single CouchDB write)
 		log.debug("PHASE 4: Creating document atomically with versionSeriesId: {}", d.getVersionSeriesId());
-		System.err.println("=== PHASE 4 DEBUG - BEFORE DAO CREATE ===");
-		System.err.println("Document.attachmentNodeId before DAO: " + d.getAttachmentNodeId());
+	log.debug("Document.attachmentNodeId before DAO: {}", d.getAttachmentNodeId());
 		
 		atomicResult = contentDaoService.create(repositoryId, d);
 		createdDocumentId = atomicResult.getId();
 		log.debug("Created Document atomically: {} with revision: {}", createdDocumentId, atomicResult.getRevision());
 		
-		System.err.println("=== PHASE 4 DEBUG - AFTER DAO CREATE ===");
-		System.err.println("Created Document ID: " + createdDocumentId);
-		System.err.println("atomicResult.attachmentNodeId: " + atomicResult.getAttachmentNodeId());
+	log.debug("Created Document ID: {}, atomicResult.attachmentNodeId: {}", createdDocumentId, atomicResult.getAttachmentNodeId());
 		
-		// PHASE 5: Version series update (if required)
-		System.err.println("=== PHASE 5 DEBUG - VERSION SERIES UPDATE ===");
-		System.err.println("VersioningState: " + versioningState);
-		System.err.println("atomicResult.attachmentNodeId BEFORE version series update: " + atomicResult.getAttachmentNodeId());
+	// PHASE 5: Version series update (if required)
+	log.debug("VersioningState: {}, atomicResult.attachmentNodeId BEFORE version series update: {}", versioningState, atomicResult.getAttachmentNodeId());
+	
+	if (versioningState == VersioningState.CHECKEDOUT) {
+		updateVersionSeriesWithPwcAtomic(callContext, repositoryId, vs, atomicResult);
+		log.debug("atomicResult.attachmentNodeId AFTER version series update: {}", atomicResult.getAttachmentNodeId());
+	}
 		
-		if (versioningState == VersioningState.CHECKEDOUT) {
-			updateVersionSeriesWithPwcAtomic(callContext, repositoryId, vs, atomicResult);
-			System.err.println("atomicResult.attachmentNodeId AFTER version series update: " + atomicResult.getAttachmentNodeId());
-		}
-		
-		// PHASE 6: Change event and indexing (non-critical operations)
-		System.err.println("=== PHASE 6 DEBUG - CHANGE EVENT ===");
-		System.err.println("atomicResult.attachmentNodeId BEFORE change event: " + atomicResult.getAttachmentNodeId());
-		
-		writeChangeEvent(callContext, repositoryId, atomicResult, ChangeType.CREATED);
-		
-		System.err.println("atomicResult.attachmentNodeId AFTER change event: " + atomicResult.getAttachmentNodeId());
+	// PHASE 6: Change event and indexing (non-critical operations)
+	log.debug("atomicResult.attachmentNodeId BEFORE change event: {}", atomicResult.getAttachmentNodeId());
+	
+	writeChangeEvent(callContext, repositoryId, atomicResult, ChangeType.CREATED);
+	
+	log.debug("atomicResult.attachmentNodeId AFTER change event: {}", atomicResult.getAttachmentNodeId());
 		
 		// Solr indexing (failure won't affect main operation)
 		try {

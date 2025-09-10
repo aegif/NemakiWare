@@ -657,7 +657,6 @@ public class TypeResource extends ResourceBase {
 			log.error("[TYPERESOURCE] Dependencies status - TypeService null: " + (typeService == null) + ", TypeManager null: " + (typeManager == null));
 
 			if (is == null) {
-				System.err.println("[TYPERESOURCE] ERROR: InputStream is null - multipart data not received");
 				log.error("[TYPERESOURCE] ERROR: InputStream is null - multipart data not received");
 				addErrMsg(errMsg, "types", "noDataReceived");
 				result = makeResult(false, result, errMsg);
@@ -685,12 +684,10 @@ public class TypeResource extends ResourceBase {
 		}
 
 			try {
-				System.err.println("[TYPERESOURCE] Starting XML parsing...");
 				log.info("Starting XML parsing...");
 				parse(repositoryId, is);
 				log.info("XML parsing completed successfully");
 				
-				System.err.println("[TYPERESOURCE] Starting type creation...");
 				log.info("Starting type creation...");
 				create(repositoryId);
 				log.info("Type creation completed successfully");
@@ -708,8 +705,6 @@ public class TypeResource extends ResourceBase {
 				return result.toJSONString();
 			}
 		} catch (Exception globalException) {
-			System.err.println("[TYPERESOURCE] GLOBAL EXCEPTION in register method: " + globalException.getMessage());
-			globalException.printStackTrace();
 			log.error("[TYPERESOURCE] Global exception in register method", globalException);
 			addErrMsg(errMsg, "types", "globalException");
 			result = makeResult(false, result, errMsg);
@@ -732,12 +727,12 @@ public class TypeResource extends ResourceBase {
 			if (parsed instanceof JSONObject) {
 				// Single type definition
 				JSONObject typeJson = (JSONObject) parsed;
-				System.err.println("[TYPERESOURCE] Parsing single type definition");
+				log.debug("[TYPERESOURCE] Parsing single type definition");
 				parseJsonTypeDefinition(repositoryId, typeJson);
 			} else if (parsed instanceof JSONArray) {
 				// Multiple type definitions
 				JSONArray typesArray = (JSONArray) parsed;
-				System.err.println("[TYPERESOURCE] Parsing multiple type definitions: " + typesArray.size());
+				log.debug("[TYPERESOURCE] Parsing multiple type definitions: " + typesArray.size());
 				for (Object typeObj : typesArray) {
 					if (typeObj instanceof JSONObject) {
 						parseJsonTypeDefinition(repositoryId, (JSONObject) typeObj);
@@ -747,25 +742,19 @@ public class TypeResource extends ResourceBase {
 				throw new Exception("Invalid JSON format - expected object or array");
 			}
 			
-			System.err.println("[TYPERESOURCE] JSON parsing completed");
-			System.err.println("[TYPERESOURCE] typeMaps size after JSON parsing: " + typeMaps.size());
-			System.err.println("[TYPERESOURCE] coreMaps size after JSON parsing: " + coreMaps.size());
-			System.err.println("[TYPERESOURCE] detailMaps size after JSON parsing: " + detailMaps.size());
+			log.debug("JSON parsing completed - typeMaps: " + typeMaps.size() + ", coreMaps: " + coreMaps.size() + ", detailMaps: " + detailMaps.size());
 			
 		} catch (Exception e) {
-			System.err.println("[TYPERESOURCE] JSON parsing error: " + e.getMessage());
-			e.printStackTrace();
+			log.error("JSON parsing error: " + e.getMessage(), e);
 			throw new Exception("Failed to parse JSON type definition: " + e.getMessage(), e);
 		}
 		
-		System.err.println("[TYPERESOURCE] === PARSE JSON METHOD COMPLETED ===");
 	}
 	
 	/**
 	 * Parse individual JSON type definition and convert to internal format
 	 */
 	private void parseJsonTypeDefinition(String repositoryId, JSONObject typeJson) throws Exception {
-		System.err.println("[TYPERESOURCE] === PARSING JSON TYPE DEFINITION ===");
 		
 		// Extract basic type information
 		String typeId = (String) typeJson.get("id");
@@ -778,7 +767,7 @@ public class TypeResource extends ResourceBase {
 			return;
 		}
 		
-		System.err.println("[TYPERESOURCE] Processing type: " + typeId);
+		log.debug("Processing type: " + typeId);
 		
 		// Check if type already exists
 		if (existType(repositoryId, typeId)) {
@@ -849,26 +838,20 @@ public class TypeResource extends ResourceBase {
 		List<String> propertyIds = new ArrayList<String>();
 		JSONObject propertyDefinitions = (JSONObject) typeJson.get("propertyDefinitions");
 		if (propertyDefinitions != null && !propertyDefinitions.isEmpty()) {
-			System.err.println("[TYPERESOURCE] Processing " + propertyDefinitions.size() + " property definitions");
+			log.debug("Processing " + propertyDefinitions.size() + " property definitions for type: " + typeId);
 			propertyIds = parseJsonPropertyDefinitions(repositoryId, typeId, propertyDefinitions);
-		} else {
-			System.err.println("[TYPERESOURCE] No property definitions found for type: " + typeId);
 		}
 		
-		// CRITICAL: Set properties list to NemakiTypeDefinition
-		System.err.println("[TYPERESOURCE] Property IDs for type " + typeId + ": " + propertyIds);
+		// Set properties list to NemakiTypeDefinition
 		if (propertyIds != null && !propertyIds.isEmpty()) {
 			tdf.setProperties(propertyIds);
-			System.err.println("[TYPERESOURCE] Set " + propertyIds.size() + " properties to type: " + typeId);
-		} else {
-			System.err.println("[TYPERESOURCE] No properties found for type: " + typeId);
+			log.debug("Set " + propertyIds.size() + " properties to type: " + typeId);
 		}
 		
 		// Add to type maps
 		typeMaps.put(typeId, tdf);
 		
-		System.err.println("[TYPERESOURCE] Successfully parsed JSON type: " + typeId);
-		System.err.println("[TYPERESOURCE] === JSON TYPE DEFINITION PARSING COMPLETED ===");
+		log.debug("Successfully parsed JSON type: " + typeId);
 	}
 	
 	/**

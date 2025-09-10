@@ -61,8 +61,7 @@ public class PatchUtil {
 			return applied;
 			
 		} catch (Exception e) {
-			System.err.println("Error checking patch history for '" + name + "': " + e.getMessage());
-			e.printStackTrace();
+			org.apache.commons.logging.LogFactory.getLog(PatchUtil.class).error("Error checking patch history for '" + name + "': " + e.getMessage(), e);
 			// In case of error, assume patch is not applied to allow re-execution
 			return false;
 		}
@@ -86,8 +85,7 @@ public class PatchUtil {
 			
 			System.out.println("Patch history for '" + name + "' successfully created/updated");
 		} catch (Exception e) {
-			System.err.println("Error creating patch history for '" + name + "': " + e.getMessage());
-			e.printStackTrace();
+			org.apache.commons.logging.LogFactory.getLog(PatchUtil.class).error("Error creating patch history for '" + name + "': " + e.getMessage(), e);
 		}
 	}
 

@@ -84,27 +84,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// ///////////////////////////////////////
 	@Override
 	public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
-		System.err.println("=== CACHED CONTENT DAO GET TYPE DEFINITIONS ===");
-		System.err.println("Repository ID: " + repositoryId);
+		log.debug("Getting type definitions for repository: " + repositoryId);
 		
 		NemakiCache<List<NemakiTypeDefinition>> typeCache = nemakiCachePool.get(repositoryId).getTypeCache();
 		List<NemakiTypeDefinition> v = typeCache.get("typedefs");
 
 		if (v != null) {
-			System.err.println("Found cached typedefs: " + v.size() + " types");
-			// TEMPORARILY FORCE CACHE MISS TO TEST COUCH DAO DIRECTLY
-			System.err.println("DEBUG: FORCING CACHE MISS TO TEST COUCH DAO DIRECTLY");
-			// return v;
+			log.debug("Found cached typedefs: " + v.size() + " types");
+			return v;
 		}
 
-		System.err.println("No cached typedefs, calling nonCachedContentDaoService...");
+		log.debug("No cached typedefs, calling nonCachedContentDaoService");
 		List<NemakiTypeDefinition> result = nonCachedContentDaoService.getTypeDefinitions(repositoryId);
-		System.err.println("Result from nonCachedContentDaoService: " + (result != null ? result.size() + " types" : "null"));
 
 		if (CollectionUtils.isEmpty(result)) {
 			return null;
 		} else {
-			System.err.println("Caching " + result.size() + " types for repository: " + repositoryId);
+			log.debug("Caching " + result.size() + " types for repository: " + repositoryId);
 			typeCache.put(new Element("typedefs", result));
 			return result;
 		}
@@ -133,7 +129,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public NemakiTypeDefinition createTypeDefinition(String repositoryId, NemakiTypeDefinition typeDefinition) {
-		System.err.println("=== CACHED DAO: createTypeDefinition called for repositoryId: " + repositoryId + " ===");
+		log.debug("createTypeDefinition called for repositoryId: " + repositoryId);
 		
 		NemakiTypeDefinition nt = nonCachedContentDaoService.createTypeDefinition(repositoryId, typeDefinition);
 		
@@ -150,15 +146,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("typeManager");
 			
 			if (typeManager != null) {
-				System.err.println("=== CACHED DAO: Refreshing TypeManager cache after type creation ===");
+				log.debug("Refreshing TypeManager cache after type creation");
 				typeManager.refreshTypes();
-				System.err.println("=== CACHED DAO: TypeManager cache refresh completed ===");
+				log.debug("TypeManager cache refresh completed");
 			} else {
-				System.err.println("=== CACHED DAO ERROR: TypeManager not found in SpringContext ===");
+				log.error("TypeManager not found in SpringContext");
 			}
 		} catch (Exception e) {
-			System.err.println("=== CACHED DAO ERROR: Failed to refresh TypeManager cache: " + e.getMessage() + " ===");
-			e.printStackTrace();
+			log.error("Failed to refresh TypeManager cache: " + e.getMessage(), e);
 		}
 		
 		return nt;

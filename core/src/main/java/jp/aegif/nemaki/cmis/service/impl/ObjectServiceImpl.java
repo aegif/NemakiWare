@@ -165,12 +165,6 @@ public class ObjectServiceImpl implements ObjectService {
 	public ContentStream getContentStream(CallContext callContext, String repositoryId, String objectId,
 			String streamId, BigInteger offset, BigInteger length) {
 		
-		// CRITICAL DEBUG: Public getContentStream method entry
-		System.err.println(">>> PUBLIC getContentStream() METHOD CALLED <<<");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("Object ID: " + objectId);
-		System.err.println("Stream ID: " + streamId);
-		
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
@@ -202,24 +196,11 @@ public class ObjectServiceImpl implements ObjectService {
 	// obligatory.
 	private ContentStream getContentStreamInternal(String repositoryId, Content content, BigInteger rangeOffset,
 			BigInteger rangeLength) {
-		// CRITICAL DEBUG: Method entry point verification
-		System.err.println("!!! getContentStreamInternal() METHOD CALLED !!!");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("Content ID: " + (content != null ? content.getId() : "NULL"));
-		System.err.println("Content Type: " + (content != null ? content.getClass().getSimpleName() : "NULL"));
-		
 		if (!content.isDocument()) {
 			exceptionService.constraint(content.getId(),
 					"getContentStream cannnot be invoked to other than document type.");
 		}
 		Document document = (Document) content;
-		
-		// Enhanced debugging for TCK failures
-		System.err.println("=== GET CONTENT STREAM INTERNAL DEBUG ===");
-		System.err.println("Document ID: " + document.getId());
-		System.err.println("Document Name: " + document.getName());
-		System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
-		System.err.println("Repository ID: " + repositoryId);
 		
 		// CRITICAL CMIS 1.1 SPECIFICATION FIX: Check constraints FIRST
 		// This will throw appropriate exceptions for:
@@ -232,17 +213,8 @@ public class ObjectServiceImpl implements ObjectService {
 		// Per CMIS 1.1 Section 2.1.10.1: If a document has no content stream, return null
 		// This is reached only for ALLOWED documents (REQUIRED would have thrown exception above)
 		if (document.getAttachmentNodeId() == null) {
-			System.err.println("=== CMIS STANDARD COMPLIANCE ===");
-			System.err.println("ALLOWED document has no attachment (AttachmentNodeId is null)");
-			System.err.println("Document ID: " + document.getId());
-			System.err.println("Document Name: " + document.getName());
-			System.err.println("Per CMIS 1.1 Section 2.1.10.1: Returning null for documents without content streams");
-			System.err.println("✅ TCK FIX: This is correct behavior for ALLOWED documents");
-			System.err.println("=== END CMIS STANDARD COMPLIANCE ===");
 			return null;
 		}
-		System.err.println("=== CONSTRAINT CHECK COMPLETED SUCCESSFULLY ===");
-		System.err.println("=== DEBUG: About to start attachment retrieval process ===");
 		
 		// After constraint check passes, get attachment
 		System.err.println("=== BEFORE CONTENTSERVICE.GETATTACHMENT() CALL ===");

@@ -244,32 +244,38 @@
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-impl</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>compile</scope>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-client-impl-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-api</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>compile</scope>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-client-api-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-bindings</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>compile</scope>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-client-bindings-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
 
 		<!-- Jakarta EE JAX-WS Runtime (Metro RI) -->
 
 		<!-- Updated to 1.1.0 Jakarta version - test-util removed as it's not directly used -->
+		<!-- Temporarily commented out until JAR is built
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-test-tck</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>test</scope>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-test-tck-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
+		-->
 
 		<!-- ANTLR runtime dependency for OpenCMIS query parsing -->
 		<dependency>

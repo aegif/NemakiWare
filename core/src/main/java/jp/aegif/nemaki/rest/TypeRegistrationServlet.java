@@ -31,7 +31,6 @@ public class TypeRegistrationServlet extends HttpServlet {
     @Override
     public void init() throws ServletException {
         super.init();
-        System.err.println("[TYPEREGISTRATIONSERVLET] === SERVLET INITIALIZATION ===");
         log.info("TypeRegistrationServlet initializing...");
         
         try {
@@ -47,10 +46,8 @@ public class TypeRegistrationServlet extends HttpServlet {
             }
             
             log.info("TypeRegistrationServlet initialized successfully");
-            System.err.println("[TYPEREGISTRATIONSERVLET] Servlet initialized successfully");
         } catch (Exception e) {
             log.error("Failed to initialize TypeRegistrationServlet", e);
-            System.err.println("[TYPEREGISTRATIONSERVLET] Initialization failed: " + e.getMessage());
             throw new ServletException("Failed to initialize TypeRegistrationServlet", e);
         }
     }
@@ -59,9 +56,7 @@ public class TypeRegistrationServlet extends HttpServlet {
     protected void doPost(HttpServletRequest request, HttpServletResponse response) 
             throws ServletException, IOException {
         
-        System.err.println("[TYPEREGISTRATIONSERVLET] === POST REQUEST RECEIVED ===");
-        System.err.println("[TYPEREGISTRATIONSERVLET] Request URI: " + request.getRequestURI());
-        System.err.println("[TYPEREGISTRATIONSERVLET] Content Type: " + request.getContentType());
+        log.debug("POST request received - URI: " + request.getRequestURI() + ", Content-Type: " + request.getContentType());
         
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
@@ -74,11 +69,11 @@ public class TypeRegistrationServlet extends HttpServlet {
             String pathInfo = request.getPathInfo();
             String repositoryId = extractRepositoryId(pathInfo);
             
-            System.err.println("[TYPEREGISTRATIONSERVLET] Repository ID: " + repositoryId);
+            log.debug("Extracted repository ID: " + repositoryId);
             log.info("Processing type registration for repository: " + repositoryId);
             
             if (repositoryId == null) {
-                System.err.println("[TYPEREGISTRATIONSERVLET] ERROR: Repository ID not found in path");
+                log.error("Repository ID not found in path: " + pathInfo);
                 addErrMsg(errMsg, "types", "invalidPath");
                 result = makeResult(false, result, errMsg);
                 response.getWriter().write(result.toJSONString());
@@ -88,11 +83,10 @@ public class TypeRegistrationServlet extends HttpServlet {
             // リクエストボディからXMLを読取
             String xmlData = readRequestBody(request);
             
-            System.err.println("[TYPEREGISTRATIONSERVLET] XML Data length: " + 
-                (xmlData != null ? xmlData.length() : 0));
+            log.debug("Request body data length: " + (xmlData != null ? xmlData.length() : 0));
             
             if (xmlData == null || xmlData.trim().isEmpty()) {
-                System.err.println("[TYPEREGISTRATIONSERVLET] ERROR: No XML data received");
+                log.error("No request body data received");
                 addErrMsg(errMsg, "types", "noDataReceived");
                 result = makeResult(false, result, errMsg);
                 response.getWriter().write(result.toJSONString());
@@ -100,33 +94,28 @@ public class TypeRegistrationServlet extends HttpServlet {
             }
             
             // Content-Typeに基づいて適切なメソッドを選択
-            System.err.println("[TYPEREGISTRATIONSERVLET] CHECKPOINT: About to check typeResource is not null");
             if (typeResource != null) {
-                System.err.println("[TYPEREGISTRATIONSERVLET] CHECKPOINT: typeResource is not null, proceeding with content type check");
-                System.err.println("[TYPEREGISTRATIONSERVLET] DEBUG: About to check content type");
                 String contentType = request.getContentType();
-                System.err.println("[TYPEREGISTRATIONSERVLET] DEBUG: Content type retrieved: " + contentType);
+                log.debug("Processing request with content type: " + contentType);
                 String registrationResult;
                 
                 if (contentType != null && contentType.toLowerCase().contains("application/json")) {
-                    System.err.println("[TYPEREGISTRATIONSERVLET] Processing as JSON content");
+                    log.debug("Processing as JSON content");
                     registrationResult = typeResource.registerJson(repositoryId, xmlData);
                 } else {
-                    System.err.println("[TYPEREGISTRATIONSERVLET] Processing as XML content");
+                    log.debug("Processing as XML content");
                     registrationResult = typeResource.registerSimple(repositoryId, xmlData);
                 }
                 
                 response.getWriter().write(registrationResult);
             } else {
-                System.err.println("[TYPEREGISTRATIONSERVLET] ERROR: TypeResource is null");
+                log.error("TypeResource is null - service not properly initialized");
                 addErrMsg(errMsg, "types", "serviceUnavailable");
                 result = makeResult(false, result, errMsg);
                 response.getWriter().write(result.toJSONString());
             }
             
         } catch (Exception e) {
-            System.err.println("[TYPEREGISTRATIONSERVLET] Exception: " + e.getMessage());
-            e.printStackTrace();
             log.error("Error processing type registration", e);
             
             addErrMsg(errMsg, "types", "processingError");

@@ -73,57 +73,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     public void init() throws ServletException {
         super.init();
         
-        // CRITICAL DEBUG: Comprehensive servlet initialization logging
-        System.err.println("*** NEMAKI SERVLET INIT: Starting NemakiBrowserBindingServlet initialization ***");
-        System.out.println("*** NEMAKI SERVLET INIT: Starting NemakiBrowserBindingServlet initialization ***");
-        
         try {
-            // Log ClassLoader information
-            ClassLoader classLoader = this.getClass().getClassLoader();
-            System.err.println("*** SERVLET INIT: ClassLoader: " + classLoader.getClass().getName());
-            System.err.println("*** SERVLET INIT: Parent ClassLoader: " + 
-                (classLoader.getParent() != null ? classLoader.getParent().getClass().getName() : "null"));
-            
-            // Log servlet configuration
-            String servletName = getServletName();
-            System.err.println("*** SERVLET INIT: Servlet Name: " + servletName);
-            System.err.println("*** SERVLET INIT: Servlet Class: " + this.getClass().getName());
-            System.err.println("*** SERVLET INIT: Parent Class: " + this.getClass().getSuperclass().getName());
-            
-            // Log servlet context information
-            jakarta.servlet.ServletContext servletContext = getServletContext();
-            System.err.println("*** SERVLET INIT: ServletContext: " + servletContext.getClass().getName());
-            System.err.println("*** SERVLET INIT: Context Path: " + servletContext.getContextPath());
-            
-            // Log initialization parameters
-            java.util.Enumeration<String> paramNames = getInitParameterNames();
-            System.err.println("*** SERVLET INIT: Initialization Parameters:");
-            while (paramNames.hasMoreElements()) {
-                String paramName = paramNames.nextElement();
-                String paramValue = getInitParameter(paramName);
-                System.err.println("***   " + paramName + " = " + paramValue);
-            }
-            
-            // Log servlet mapping information
-            java.util.Collection<String> mappings = servletContext.getServletRegistration(servletName).getMappings();
-            System.err.println("*** SERVLET INIT: URL Mappings: " + mappings);
-            
-            // Log method override detection
-            try {
-                java.lang.reflect.Method serviceMethod = this.getClass().getDeclaredMethod("service", 
-                    jakarta.servlet.http.HttpServletRequest.class, jakarta.servlet.http.HttpServletResponse.class);
-                System.err.println("*** SERVLET INIT: service() method override: " + 
-                    serviceMethod.getDeclaringClass().getName());
-            } catch (NoSuchMethodException e) {
-                System.err.println("*** SERVLET INIT: service() method NOT overridden in this class");
-            }
-            
             log.info("NEMAKI SERVLET: NemakiBrowserBindingServlet initialization completed successfully");
-            System.err.println("*** NEMAKI SERVLET INIT: Initialization completed successfully ***");
             
         } catch (Exception e) {
-            System.err.println("*** SERVLET INIT ERROR: " + e.getMessage() + " ***");
-            e.printStackTrace();
             log.error("NEMAKI SERVLET: Initialization failed", e);
             throw new ServletException("NemakiBrowserBindingServlet initialization failed", e);
         }
@@ -269,9 +222,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // CRITICAL FIX: Extract cmisaction once at global scope to avoid null-initialization bug
         String cmisaction = request.getParameter("cmisaction");
         
-        // CRITICAL DEBUG: Track cmisaction parameter extraction
-        System.err.println("*** SERVICE DEBUG: cmisaction='" + cmisaction + "', method=" + method + ", pathInfo=" + pathInfo + " ***");
-        System.err.println("*** SERVICE DEBUG: contentType=" + contentType + ", queryString=" + queryString + " ***");
+        // Log critical service parameters for debugging
+        log.debug("SERVICE: cmisaction='" + cmisaction + "', method=" + method + ", pathInfo=" + pathInfo);
         
         // PARAMETER CORRUPTION FIX: Do NOT wrap request - let OpenCMIS handle multipart directly  
         if (contentType != null && contentType.startsWith("multipart/form-data")) {
@@ -465,13 +417,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
             
             // CMIS OPERATIONS ROUTER: Handle missing Browser Binding operations that cause "Unknown operation" errors
-            System.err.println("*** SERVICE DEBUG FINAL: About to call routeCmisAction with cmisaction='" + cmisaction + "' ***");
+            log.debug("About to call routeCmisAction with cmisaction='" + cmisaction + "'");
             if (routeCmisAction(cmisaction, request, response, pathInfo, method)) {
-                System.err.println("*** SERVICE DEBUG FINAL: routeCmisAction returned TRUE - bypassing parent service ***");
                 log.debug("CMIS ROUTER: Action '" + cmisaction + "' handled successfully - bypassing parent service");
                 return; // Don't delegate to parent - we handled it completely
             }
-            System.err.println("*** SERVICE DEBUG FINAL: routeCmisAction returned FALSE - delegating to parent service ***");
+            log.debug("routeCmisAction returned FALSE - delegating to parent service");
         }
         
         // ===============================
@@ -482,9 +433,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             String typeId = request.getParameter("typeId");
             
             // Debug parameter extraction
-            System.err.println("*** PARAMETER DEBUG: queryString='" + queryString + "' ***");
-            System.err.println("*** PARAMETER DEBUG: cmisselector='" + cmisselector + "' ***");
-            System.err.println("*** PARAMETER DEBUG: typeId='" + typeId + "' ***");
+            log.debug("PARAMETER DEBUG: queryString='" + queryString + "', cmisselector='" + cmisselector + "', typeId='" + typeId + "'");
             
             // Also try manual parsing as fallback
             if (cmisselector == null && queryString.contains("cmisselector=")) {
@@ -493,14 +442,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     for (String param : params) {
                         if (param.startsWith("cmisselector=")) {
                             cmisselector = param.substring("cmisselector=".length());
-                            System.err.println("*** PARAMETER DEBUG: Manually parsed cmisselector='" + cmisselector + "' ***");
+                            log.debug("Manually parsed cmisselector='" + cmisselector + "'");
                         } else if (param.startsWith("typeId=")) {
                             typeId = java.net.URLDecoder.decode(param.substring("typeId=".length()), "UTF-8");
-                            System.err.println("*** PARAMETER DEBUG: Manually parsed typeId='" + typeId + "' ***");
+                            log.debug("Manually parsed typeId='" + typeId + "'");
                         }
                     }
                 } catch (Exception e) {
-                    System.err.println("*** PARAMETER DEBUG: Manual parsing error: " + e.getMessage() + " ***");
+                    log.debug("Manual parsing error: " + e.getMessage());
                 }
             }
             
