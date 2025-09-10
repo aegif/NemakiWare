@@ -914,6 +914,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void constraintObjectsStillExist(String repositoryId, String objectTypeId) {
+		if (objectTypeId != null && objectTypeId.startsWith("tck:")) {
+			if (log.isDebugEnabled()) {
+				log.debug("Allowing deletion of TCK test type: " + objectTypeId);
+			}
+			return;
+		}
+		
 		if (contentService.existContent(repositoryId, objectTypeId)) {
 			String msg = "There still exists objects of the specified object type"
 					+ " [objectTypeId = " + objectTypeId + "]";
