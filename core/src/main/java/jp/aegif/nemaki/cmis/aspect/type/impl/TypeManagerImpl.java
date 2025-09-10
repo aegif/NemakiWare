@@ -281,44 +281,34 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void initGlobalTypes(){
-		System.err.println("*** CRITICAL DIAGNOSIS: initGlobalTypes() called ***");
-		log.info("*** CRITICAL DIAGNOSIS: initGlobalTypes() called ***");
+		if (log.isDebugEnabled()) {
+			log.debug("initGlobalTypes() called");
+		}
 		
-		// CRITICAL DEBUG: repositoryInfoMap状態診断
 		if (repositoryInfoMap == null) {
-			System.err.println("*** CRITICAL ISSUE: repositoryInfoMap is NULL - DI not working ***");
-			log.error("*** CRITICAL ISSUE: repositoryInfoMap is NULL - DI not working ***");
+			log.error("repositoryInfoMap is NULL - DI not working");
 			throw new RuntimeException("repositoryInfoMap is NULL - Spring DI failure");
 		}
 		
-		System.err.println("*** DIAGNOSIS: repositoryInfoMap found, checking available keys ***");
-		log.info("*** DIAGNOSIS: repositoryInfoMap found, checking available keys ***");
 		java.util.Set<String> repoKeys = repositoryInfoMap.keys();
-		System.err.println("*** DIAGNOSIS: Available repository keys: " + repoKeys + " ***");
-		log.info("*** DIAGNOSIS: Available repository keys: " + repoKeys + " ***");
-		System.err.println("*** DIAGNOSIS: Number of repositories: " + (repoKeys != null ? repoKeys.size() : "NULL") + " ***");
-		log.info("*** DIAGNOSIS: Number of repositories: " + (repoKeys != null ? repoKeys.size() : "NULL") + " ***");
-		
-		// Check specifically for "bedroom"
-		boolean hasBedroomRepo = (repoKeys != null && repoKeys.contains("bedroom"));
-		System.err.println("*** DIAGNOSIS: Contains 'bedroom' repository: " + hasBedroomRepo + " ***");
-		log.info("*** DIAGNOSIS: Contains 'bedroom' repository: " + hasBedroomRepo + " ***");
+		if (log.isDebugEnabled()) {
+			log.debug("Available repository keys: " + repoKeys + ", count: " + (repoKeys != null ? repoKeys.size() : "NULL"));
+		}
 		
 		if (repoKeys == null || repoKeys.isEmpty()) {
-			System.err.println("*** CRITICAL ISSUE: repositoryInfoMap.keys() returned empty/null ***");
-			log.error("*** CRITICAL ISSUE: repositoryInfoMap.keys() returned empty/null ***");
+			log.error("repositoryInfoMap.keys() returned empty/null");
 			throw new RuntimeException("No repositories found in repositoryInfoMap");
 		}
 		
-		// TYPES should already be initialized by static block
+		// TYPES should already be initialized by constructor
 		if (TYPES == null) {
-			System.err.println("*** WARNING: TYPES was null despite static initialization - recreating ***");
-			log.warn("*** WARNING: TYPES was null despite static initialization - recreating ***");
+			log.warn("TYPES was null despite constructor initialization - recreating");
 			// Emergency fallback - should not happen
 			TYPES = new ConcurrentHashMap<String, Map<String,TypeDefinitionContainer>>();
 		} else {
-			System.err.println("*** DIAGNOSIS: Clearing existing TYPES map (refresh operation) ***");
-			log.info("*** DIAGNOSIS: Clearing existing TYPES map (refresh operation) ***");
+			if (log.isDebugEnabled()) {
+				log.debug("Clearing existing TYPES map (refresh operation)");
+			}
 			// Clear each repository's type map instead of replacing the entire TYPES map
 			for (String key : TYPES.keySet()) {
 				Map<String, TypeDefinitionContainer> repositoryTypes = TYPES.get(key);
@@ -332,29 +322,39 @@ public class TypeManagerImpl implements TypeManager {
 		for(String key : repoKeys){
 			// Always ensure repository has an entry, even if empty
 			if (!TYPES.containsKey(key)) {
-				System.err.println("*** DIAGNOSIS: Adding new TYPES cache for repository: " + key + " ***");
+				if (log.isDebugEnabled()) {
+					log.debug("Adding new TYPES cache for repository: " + key);
+				}
 				log.info("*** DIAGNOSIS: Adding new TYPES cache for repository: " + key + " ***");
 				TYPES.put(key, new ConcurrentHashMap<String, TypeDefinitionContainer>());
 			} else {
 				// Repository already exists, ensure it has a map
 				Map<String, TypeDefinitionContainer> existingMap = TYPES.get(key);
 				if (existingMap == null) {
-					System.err.println("*** DIAGNOSIS: Re-initializing null TYPES cache for repository: " + key + " ***");
+					if (log.isDebugEnabled()) {
+						log.debug("Re-initializing null TYPES cache for repository: " + key);
+					}
 					log.info("*** DIAGNOSIS: Re-initializing null TYPES cache for repository: " + key + " ***");
 					TYPES.put(key, new ConcurrentHashMap<String, TypeDefinitionContainer>());
 				} else {
 					// Clear existing map but keep the reference
-					System.err.println("*** DIAGNOSIS: Clearing existing repository cache for: " + key + " ***");
+					if (log.isDebugEnabled()) {
+						log.debug("Clearing existing repository cache for: " + key);
+					}
 					existingMap.clear();
 				}
 			}
 		}
 		
 		// Verify TYPES initialization
-		System.err.println("*** DIAGNOSIS: TYPES cache initialized/refreshed with keys: " + TYPES.keySet() + " ***");
+		if (log.isDebugEnabled()) {
+			log.debug("TYPES cache initialized/refreshed with keys: " + TYPES.keySet());
+		}
 		log.info("*** DIAGNOSIS: TYPES cache initialized/refreshed with keys: " + TYPES.keySet() + " ***");
 		boolean hasBedroomTypes = TYPES.containsKey("bedroom");
-		System.err.println("*** DIAGNOSIS: TYPES cache contains 'bedroom': " + hasBedroomTypes + " ***");
+		if (log.isDebugEnabled()) {
+			log.debug("TYPES cache contains 'bedroom': " + hasBedroomTypes);
+		}
 		log.info("*** DIAGNOSIS: TYPES cache contains 'bedroom': " + hasBedroomTypes + " ***");
 	}
 	
@@ -363,7 +363,9 @@ public class TypeManagerImpl implements TypeManager {
 		for(String key : repositoryInfoMap.keys()){
 			// Make sure the repository has a types map
 			if (!TYPES.containsKey(key)) {
-				System.err.println("*** CRITICAL FIX: Adding missing TYPES entry for repository: " + key + " ***");
+				if (log.isDebugEnabled()) {
+					log.debug("Adding missing TYPES entry for repository: " + key);
+				}
 				log.info("*** CRITICAL FIX: Adding missing TYPES entry for repository: " + key + " ***");
 				// CRITICAL FIX: Use ConcurrentHashMap for thread safety
 				TYPES.put(key, new ConcurrentHashMap<String, TypeDefinitionContainer>());
@@ -372,19 +374,20 @@ public class TypeManagerImpl implements TypeManager {
 		}
 		
 		// Debug: Log final state
-		System.err.println("*** generate() COMPLETE - TYPES keys: " + TYPES.keySet() + " ***");
-		for (String repo : TYPES.keySet()) {
-			Map<String, TypeDefinitionContainer> repoTypes = TYPES.get(repo);
-			System.err.println("*** Repository " + repo + " has " + (repoTypes != null ? repoTypes.size() : 0) + " types ***");
-			if (repoTypes != null && repoTypes.size() > 0) {
-				System.err.println("*** First few type IDs in " + repo + ": " + 
-					repoTypes.keySet().stream().limit(3).collect(java.util.stream.Collectors.toList()) + " ***");
+		if (log.isDebugEnabled()) {
+			log.debug("generate() COMPLETE - TYPES keys: " + TYPES.keySet());
+			for (String repo : TYPES.keySet()) {
+				Map<String, TypeDefinitionContainer> repoTypes = TYPES.get(repo);
+				log.debug("Repository " + repo + " has " + (repoTypes != null ? repoTypes.size() : 0) + " types");
+				if (repoTypes != null && repoTypes.size() > 0) {
+					log.debug("First few type IDs in " + repo + ": " + 
+						repoTypes.keySet().stream().limit(3).collect(java.util.stream.Collectors.toList()));
+				}
 			}
+			log.debug("TYPES map object identity: " + System.identityHashCode(TYPES));
 		}
-		// CRITICAL: Log TYPES map identity and verify it's not empty
-		System.err.println("*** TYPES map object identity: " + System.identityHashCode(TYPES) + " ***");
 		if (TYPES.isEmpty()) {
-			System.err.println("*** WARNING: generate() completed but TYPES is empty! ***");
+			log.warn("generate() completed but TYPES is empty!");
 		}
 	}
 	
@@ -2952,13 +2955,18 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				
 				// CRITICAL CMIS COMPLIANCE FIX: Use copyTypeDefinitionWithoutProperties when includePropertyDefinitions=false
 					if (!includePropertyDefinitions) {
-						System.err.println("*** BASE TYPE: Skipping properties for " + key + " (includePropertyDefinitions=false) ***");
+						if (log.isDebugEnabled()) {
+				log.debug("BASE TYPE: Skipping properties for " + key + " (includePropertyDefinitions=false)");
+			}
 						typeDef = jp.aegif.nemaki.util.DataUtil.copyTypeDefinitionWithoutProperties(typeDef);
 				} else {
-						System.err.println("*** BASE TYPE: CALLING ensureConsistentPropertyDefinitions for " + key + " ***");
-						System.out.println("*** BASE TYPE ensureConsistentPropertyDefinitions ENTRY for " + key + " ***");
+						if (log.isDebugEnabled()) {
+							log.debug("BASE TYPE: Calling ensureConsistentPropertyDefinitions for " + key);
+						}
 						typeDef = ensureConsistentPropertyDefinitions(repositoryId, typeDef);
-						System.err.println("*** BASE TYPE: ensureConsistentPropertyDefinitions COMPLETED for " + key + " ***");
+						if (log.isDebugEnabled()) {
+							log.debug("BASE TYPE: ensureConsistentPropertyDefinitions completed for " + key);
+						}
 				}
 	 
 					// TypeDefinition prepared for response
@@ -2977,36 +2985,37 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			result.setNumItems(BigInteger.valueOf(totalItems));
 		} else {
 			// CRITICAL DEBUG: Child types path
-			log.info("*** getTypesChildren: Processing child types for typeId='" + typeId + "' ***");
-			System.err.println("*** CHILD TYPES PATH: Processing typeId='" + typeId + "' ***");
-			System.out.println("*** CHILD TYPES PATH: Processing typeId='" + typeId + "' ***");
+			if (log.isDebugEnabled()) {
+				log.debug("getTypesChildren: Processing child types for typeId='" + typeId + "'");
+			}
 			
-			// CRITICAL DEBUG: Container lookup detailed analysis
-			TypeDefinitionContainer tc = types.get(typeId);
-			System.err.println("*** CONTAINER LOOKUP: tc = " + (tc != null ? "NOT NULL" : "NULL") + " for typeId='" + typeId + "' ***");
+		TypeDefinitionContainer tc = types.get(typeId);
+		if (log.isDebugEnabled()) {
+			log.debug("Container lookup: tc = " + (tc != null ? "NOT NULL" : "NULL") + " for typeId='" + typeId + "'");
+		}
 			
 			if (tc == null) {
-				System.err.println("*** EARLY RETURN CAUSE: tc is NULL for typeId='" + typeId + "' ***");
-				System.out.println("*** EARLY RETURN CAUSE: tc is NULL for typeId='" + typeId + "' ***");
-				log.debug("getTypesChildren: TypeDefinitionContainer is NULL for typeId='" + typeId + "', returning empty result");
+				if (log.isDebugEnabled()) {
+					log.debug("getTypesChildren: TypeDefinitionContainer is NULL for typeId='" + typeId + "', returning empty result");
+				}
 				return result;
 			}
 			
-			// CRITICAL DEBUG: Children analysis
-			System.err.println("*** CHILDREN ANALYSIS: tc.getChildren() = " + (tc.getChildren() != null ? "NOT NULL (size=" + tc.getChildren().size() + ")" : "NULL") + " ***");
+		if (log.isDebugEnabled()) {
+			log.debug("Children analysis: tc.getChildren() = " + (tc.getChildren() != null ? "NOT NULL (size=" + tc.getChildren().size() + ")" : "NULL"));
+		}
 			
 			if (tc.getChildren() == null) {
-				System.err.println("*** EARLY RETURN CAUSE: tc.getChildren() is NULL for typeId='" + typeId + "' ***");
-				System.out.println("*** EARLY RETURN CAUSE: tc.getChildren() is NULL for typeId='" + typeId + "' ***");
-				log.debug("getTypesChildren: Children list is NULL for typeId='" + typeId + "', returning empty result");
+				if (log.isDebugEnabled()) {
+					log.debug("getTypesChildren: Children list is NULL for typeId='" + typeId + "', returning empty result");
+				}
 				return result;
 			}
 			
-			// CRITICAL DEBUG: Children count analysis
-			if (tc.getChildren().size() == 0) {
-				System.err.println("*** EARLY RETURN CAUSE: tc.getChildren() is EMPTY (size=0) for typeId='" + typeId + "' ***");
-				System.out.println("*** EARLY RETURN CAUSE: tc.getChildren() is EMPTY (size=0) for typeId='" + typeId + "' ***");
-				log.debug("getTypesChildren: Children list is EMPTY for typeId='" + typeId + "', returning empty result");
+		if (tc.getChildren().size() == 0) {
+				if (log.isDebugEnabled()) {
+					log.debug("getTypesChildren: Children list is EMPTY for typeId='" + typeId + "', returning empty result");
+				}
 				return result;
 			}
 
@@ -3116,10 +3125,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 		// CRITICAL DEBUG: File-based logging for getTypesDescendants exit
 		log.info("*** TCK PATH TRACKING: getTypesDescendants EXIT: Returned " + result.size() + " TypeDefinitionContainer objects ***");
-		try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/tck-execution-path.log", true)) {
-			fw.write("getTypesDescendants EXIT: Returned " + result.size() + " TypeDefinitionContainer objects\n");
-			fw.write("=== END getTypesDescendants ===\n\n");
-		} catch (Exception e) {}
 
 		return result;
 	}
@@ -3163,10 +3168,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		// Return existing shared instance or create new one
 		return repoCache.computeIfAbsent(cacheKey, k -> {
-			System.out.println("*** SHARED TYPE DEFINITION: Creating shared instance for " + cacheKey);
-			try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/type-definition-debug.log", true)) {
-				fw.write("SHARED TYPE DEFINITION: Creating shared instance for " + cacheKey + " at " + new java.util.Date() + "\n");
-			} catch (Exception e) {}
+			if (log.isDebugEnabled()) {
+				log.debug("Creating shared TypeDefinition instance for " + cacheKey);
+			}
 			
 			// Apply PropertyDefinition sharing first, then use as shared TypeDefinition
 			TypeDefinition consistentTypeDefinition = ensureConsistentPropertyDefinitions(repositoryId, originalDefinition);
@@ -3202,12 +3206,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		// Return existing shared instance or create new one
 		return repoCache.computeIfAbsent(cacheKey, k -> {
-			System.out.println("*** SHARED PROPERTY DEFINITION: Creating shared instance for " + cacheKey + 
-				" (type=" + typeId + ")");
-			try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/property-definition-debug.log", true)) {
-				fw.write("SHARED PROPERTY DEFINITION: Creating shared instance for " + cacheKey + 
-					" (type=" + typeId + ") at " + new java.util.Date() + "\n");
-			} catch (Exception e) {}
+			if (log.isDebugEnabled()) {
+				log.debug("Creating shared PropertyDefinition instance for " + cacheKey + " (type=" + typeId + ")");
+			}
 			
 			// For first occurrence, use the original definition as the shared instance
 			// This ensures all types share the same PropertyDefinition instance
@@ -3227,34 +3228,18 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		String typeId = typeDefinition.getId();
 		
 		// CRITICAL DEBUG: TypeDefinition型の実態調査
-		System.out.println("*** TYPE DEFINITION INVESTIGATION: typeId=" + typeId + 
-			", actual class=" + typeDefinition.getClass().getName() + 
-			", identity hash=" + System.identityHashCode(typeDefinition));
-		System.out.println("*** TYPE DEFINITION INVESTIGATION: instanceof AbstractTypeDefinition = " + 
-			(typeDefinition instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition));
-		System.out.println("*** TYPE DEFINITION INVESTIGATION: class hierarchy:");
-		Class<?> clazz = typeDefinition.getClass();
-		while (clazz != null) {
-			System.out.println("***   - " + clazz.getName());
-			clazz = clazz.getSuperclass();
-		}
-		System.out.println("*** TYPE DEFINITION INVESTIGATION: interfaces:");
-		for (Class<?> intf : typeDefinition.getClass().getInterfaces()) {
-			System.out.println("***   - " + intf.getName());
+		if (log.isDebugEnabled()) {
+			log.debug("Type definition investigation for " + typeId + ": class=" + typeDefinition.getClass().getName() + 
+				", instanceof AbstractTypeDefinition=" + (typeDefinition instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition));
 		}
 		
-		// CRITICAL DEBUG: File-based logging for investigation
-		try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/type-definition-investigation.log", true)) {
-			fw.write("TYPE INVESTIGATION: typeId=" + typeId + 
-				", class=" + typeDefinition.getClass().getName() + 
-				", instanceof AbstractTypeDefinition=" + (typeDefinition instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) + 
-				" at " + new java.util.Date() + "\n");
-		} catch (Exception e) {}
 		
 		Map<String, PropertyDefinition<?>> originalProps = typeDefinition.getPropertyDefinitions();
 		
 		if (originalProps == null || originalProps.isEmpty()) {
-			System.out.println("*** CONSISTENCY SYSTEM: No properties to process for type " + typeId);
+			if (log.isDebugEnabled()) {
+				log.debug("No properties to process for type " + typeId);
+			}
 			return typeDefinition;
 		}
 		
@@ -3273,17 +3258,15 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			sharedCount++;
 			
 			// Log CMIS property sharing specifically
-			if (propertyId.startsWith("cmis:")) {
-				System.out.println("*** SHARED PROPERTY: " + propertyId + " -> instance@" + 
+			if (propertyId.startsWith("cmis:") && log.isDebugEnabled()) {
+				log.debug("SHARED PROPERTY: " + propertyId + " -> instance@" + 
 					System.identityHashCode(sharedProp) + " for type " + typeId);
 			}
 		}
 		
-		System.out.println("*** CONSISTENCY SYSTEM: Applied sharing to " + sharedCount + 
-			" properties for type " + typeId);
-		try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/property-definition-debug.log", true)) {
-			fw.write("CONSISTENCY SYSTEM: Applied sharing to " + sharedCount + " properties for type " + typeId + " at " + new java.util.Date() + "\n");
-		} catch (Exception e) {}
+		if (log.isDebugEnabled()) {
+			log.debug("CONSISTENCY SYSTEM: Applied sharing to " + sharedCount + " properties for type " + typeId);
+		}
 		
 		// CRITICAL FIX: Modify original TypeDefinition instance directly to preserve object identity
 		// TCK compliance requires both getTypeDefinition() and getTypesDescendants() to return 
@@ -3294,14 +3277,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				((org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) typeDefinition)
 					.setPropertyDefinitions(sharedProps);
 				
-				System.out.println("*** CRITICAL FIX: Modified original TypeDefinition instance directly for " + typeId + 
-					" - preserving object identity for TCK compliance");
-					
-				// CRITICAL DEBUG: File-based logging for direct modification
-				try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/type-definition-identity-fix.log", true)) {
-					fw.write("IDENTITY FIX: Modified original TypeDefinition@" + System.identityHashCode(typeDefinition) + 
-						" for typeId=" + typeId + " at " + new java.util.Date() + "\n");
-				} catch (Exception logEx) {}
+				if (log.isDebugEnabled()) {
+					log.debug("CRITICAL FIX: Modified original TypeDefinition instance directly for " + typeId + 
+						" - preserving object identity for TCK compliance");
+				}
 				
 				return typeDefinition; // Return the SAME instance
 			}
@@ -3347,16 +3326,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				TypeDefinition sharedTypeDefinition = this.getTypeDefinition(repositoryId, typeId);
 				
 				if (sharedTypeDefinition != null) {
-					System.out.println("*** FLATTEN TYPE DEFINITION SHARING: Using getTypeDefinition() path for typeId=" + typeId + " in repository=" + repositoryId);
-					System.out.println("*** FLATTEN TYPE DEFINITION SHARING: Original PropertyDefinition count=" + 
-						(tdc.getTypeDefinition().getPropertyDefinitions() != null ? tdc.getTypeDefinition().getPropertyDefinitions().size() : 0));
-					System.out.println("*** FLATTEN TYPE DEFINITION SHARING: Shared PropertyDefinition count=" + 
+					if (log.isDebugEnabled()) {
+						log.debug("FLATTEN TYPE DEFINITION SHARING: Using getTypeDefinition() path for typeId=" + typeId + " in repository=" + repositoryId);
+						log.debug("FLATTEN TYPE DEFINITION SHARING: Original PropertyDefinition count=" + 
+							(tdc.getTypeDefinition().getPropertyDefinitions() != null ? tdc.getTypeDefinition().getPropertyDefinitions().size() : 0));
+						log.debug("FLATTEN TYPE DEFINITION SHARING: Shared PropertyDefinition count=" +
 						(sharedTypeDefinition.getPropertyDefinitions() != null ? sharedTypeDefinition.getPropertyDefinitions().size() : 0));
-					
-					// CRITICAL DEBUG: File-based logging for flatten path
-					try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/type-definition-debug.log", true)) {
-						fw.write("FLATTEN PATH: Using getTypeDefinition() (with sharing system) for typeId=" + typeId + " in repository=" + repositoryId + " at " + new java.util.Date() + "\n");
-					} catch (Exception e) {}
+					}
 					
 					// Create a new TypeDefinitionContainer with the shared TypeDefinition
 					TypeDefinitionContainer sharedContainer = new TypeDefinitionContainerImpl(sharedTypeDefinition);

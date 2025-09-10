@@ -1622,15 +1622,29 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		for (String secondaryTypeId : ids) {
-			org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = getTypeManager()
-					.getTypeDefinition(repositoryId, secondaryTypeId);
-			Aspect aspect = new Aspect();
-			aspect.setName(secondaryTypeId);
+			if (secondaryTypeId != null && !secondaryTypeId.trim().isEmpty()) {
+				try {
+					org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = getTypeManager()
+							.getTypeDefinition(repositoryId, secondaryTypeId);
+					
+					if (td != null && td.getBaseTypeId() == org.apache.chemistry.opencmis.commons.enums.BaseTypeId.CMIS_SECONDARY) {
+						Aspect aspect = new Aspect();
+						aspect.setName(secondaryTypeId);
 
-			List<Property> props = injectPropertyValue(td.getPropertyDefinitions().values(), properties, content);
-
-			aspect.setProperties(props);
-			aspects.add(aspect);
+						List<Property> props = injectPropertyValue(td.getPropertyDefinitions().values(), properties, content);
+						aspect.setProperties(props);
+						aspects.add(aspect);
+					} else {
+						if (log.isDebugEnabled()) {
+							log.debug("Secondary type {} is not valid or not a secondary type", secondaryTypeId);
+						}
+					}
+				} catch (Exception e) {
+					if (log.isDebugEnabled()) {
+						log.debug("Secondary type {} not found or invalid: {}", secondaryTypeId, e.getMessage());
+					}
+				}
+			}
 		}
 		return aspects;
 	}

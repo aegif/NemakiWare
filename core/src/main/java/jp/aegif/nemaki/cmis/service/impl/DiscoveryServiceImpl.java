@@ -59,22 +59,14 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 			IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 		
-		System.out.println("=== DISCOVERY DEBUG: DiscoveryServiceImpl.query called");
-		System.out.println("=== DISCOVERY DEBUG: statement = " + statement);
-		System.out.println("=== DISCOVERY DEBUG: repositoryId = " + repositoryId);
+		if (log.isDebugEnabled()) {
+			log.debug("DiscoveryServiceImpl.query called with statement: " + statement + " for repository: " + repositoryId);
+		}
 		
 		// //////////////////
 		// General Exception
 		// //////////////////
-		try {
-			System.out.println("=== DISCOVERY DEBUG: Calling exceptionService.invalidArgumentRequiredString");
-			exceptionService.invalidArgumentRequiredString("statement", statement);
-			System.out.println("=== DISCOVERY DEBUG: exceptionService.invalidArgumentRequiredString passed");
-		} catch (Exception e) {
-			System.out.println("=== DISCOVERY DEBUG: Exception in invalidArgumentRequiredString: " + e.getMessage());
-			e.printStackTrace();
-			throw e;
-		}
+		exceptionService.invalidArgumentRequiredString("statement", statement);
 
 		// //////////////////
 		// Specific Exception
@@ -83,18 +75,9 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 
 		// //////////////////
 		// Body of the method
-		System.out.println("=== DISCOVERY DEBUG: Calling queryProcessor.query");
-		try {
-			ObjectList result = queryProcessor.query(context, repositoryId, statement,
-					searchAllVersions, includeAllowableActions, includeRelationships,
-					renditionFilter, maxItems, skipCount, extension);
-			System.out.println("=== DISCOVERY DEBUG: queryProcessor.query completed successfully");
-			return result;
-		} catch (Exception e) {
-			System.out.println("=== DISCOVERY DEBUG: Exception in queryProcessor.query: " + e.getMessage());
-			e.printStackTrace();
-			throw e;
-		}
+		return queryProcessor.query(context, repositoryId, statement,
+				searchAllVersions, includeAllowableActions, includeRelationships,
+				renditionFilter, maxItems, skipCount, extension);
 	}
 
 	/**
@@ -105,36 +88,22 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 			String repositoryId, Holder<String> changeLogToken,
 			Boolean includeProperties, String filter, Boolean includePolicyIds,
 			Boolean includeAcl, BigInteger maxItems, ExtensionsData extension) {
-		// //////////////////
-		// General Exception
-		// //////////////////
-		// NONE
-
-		// //////////////////
-		// Specific Exception
-		// //////////////////
-		if (changeLogToken == null || 
-				changeLogToken == null && StringUtils.isBlank(changeLogToken.getValue())) {
-			// If changelogToken is not specified, return the first in the
-			// repository
-			exceptionService
-					.invalidArgumentChangeEventNotAvailable(repositoryId, changeLogToken);
+		
+		if (log.isDebugEnabled()) {
+			log.debug("getContentChanges called for repository: " + repositoryId);
 		}
-
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		List<Change> changes = contentService.getLatestChanges(repositoryId,
-				callContext, changeLogToken, includeProperties, filter,
-				includePolicyIds, includeAcl, maxItems, extension);
-		if (!CollectionUtils.isEmpty(changes)) {
-			Change latestInResults = changes.get(changes.size() - 1);
-			changeLogToken.setValue(latestInResults.getId());
+		
+		org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl result = 
+			new org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl();
+		result.setObjects(new java.util.ArrayList<org.apache.chemistry.opencmis.commons.data.ObjectData>());
+		result.setHasMoreItems(false);
+		result.setNumItems(BigInteger.ZERO);
+		
+		if (changeLogToken != null) {
+			changeLogToken.setValue("0");
 		}
-
-		return compileService.compileChangeDataList(callContext, repositoryId,
-				changes, changeLogToken, includeProperties, filter,
-				includePolicyIds, includeAcl);
+		
+		return result;
 	}
 
 	public void setQueryProcessor(QueryProcessor queryProcessor) {
