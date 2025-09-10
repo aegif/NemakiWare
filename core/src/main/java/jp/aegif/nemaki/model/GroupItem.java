@@ -45,19 +45,31 @@ public class GroupItem extends Item{
 	public void setGroupId(String groupId) {
 		this.groupId = groupId;
 	}
-	@SuppressWarnings("unchecked")
 	public List<String> getUsers() {
 		Property users = getSubTypeProperty("nemaki:users");
 		if(users != null && users.getValue() != null && users.getValue() instanceof List){
-			return (List<String>)(users.getValue());
+			List<?> rawList = (List<?>) users.getValue();
+			List<String> result = new ArrayList<>();
+			for (Object item : rawList) {
+				if (item instanceof String) {
+					result.add((String) item);
+				}
+			}
+			return result;
 		}
 		return new ArrayList<>();
 	}
-	@SuppressWarnings("unchecked")
 	public List<String> getGroups() {
 		Property groups = getSubTypeProperty("nemaki:groups");
 		if(groups != null && groups.getValue() != null && groups.getValue() instanceof List){
-			return (List<String>)(groups.getValue());
+			List<?> rawList = (List<?>) groups.getValue();
+			List<String> result = new ArrayList<>();
+			for (Object item : rawList) {
+				if (item instanceof String) {
+					result.add((String) item);
+				}
+			}
+			return result;
 		}
 		return new ArrayList<>();
 	}
