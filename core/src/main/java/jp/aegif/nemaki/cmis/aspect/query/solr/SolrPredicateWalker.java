@@ -33,6 +33,9 @@ import java.util.Set;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Folder;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
@@ -68,6 +71,8 @@ import org.apache.solr.common.SolrDocumentList;
  *
  */
 public class SolrPredicateWalker{
+
+	private static final Log log = LogFactory.getLog(SolrPredicateWalker.class);
 
 	private final String repositoryId;
 	private final SolrUtil solrUtil;
@@ -480,7 +485,7 @@ public class SolrPredicateWalker{
 					}
 				}
 			} catch (SolrServerException | IOException e) {
-				System.err.println("Error during IN_TREE descendant search: " + e.getMessage());
+				log.error("Error during IN_TREE descendant search: " + e.getMessage(), e);
 				break; // Stop recursion on error
 			}
 			

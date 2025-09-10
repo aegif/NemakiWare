@@ -153,21 +153,18 @@ public class TypeManagerImpl implements TypeManager {
 
 	// Static initializer block for debugging class loading only
 	static {
-		System.err.println("=== STATIC INITIALIZER: TypeManagerImpl class loaded ===");
-		System.err.println("=== ClassLoader: " + TypeManagerImpl.class.getClassLoader() + " ===");
-		System.err.println("=== ClassLoader Type: " + TypeManagerImpl.class.getClassLoader().getClass().getName() + " ===");
-		System.err.println("=== ClassLoader HashCode: " + System.identityHashCode(TypeManagerImpl.class.getClassLoader()) + " ===");
-		System.err.println("=== Thread: " + Thread.currentThread().getName() + " ===");
+		if (log.isDebugEnabled()) {
+			log.debug("TypeManagerImpl class loaded - ClassLoader: " + TypeManagerImpl.class.getClassLoader());
+		}
 	}
 
 	// /////////////////////////////////////////////////
 	// Constructor
 	// /////////////////////////////////////////////////
 	public TypeManagerImpl() {
-		System.err.println("*** TypeManagerImpl CONSTRUCTOR called - instance: " + this.hashCode() + " ***");
-		System.err.println("*** ClassLoader: " + this.getClass().getClassLoader() + " ***");
-		System.err.println("*** ClassLoader Name: " + this.getClass().getClassLoader().getClass().getName() + " ***");
-		System.err.println("*** initialized flag: " + initialized + " ***");
+		if (log.isDebugEnabled()) {
+			log.debug("TypeManagerImpl constructor called - instance: " + this.hashCode());
+		}
 		
 		// Initialize instance fields in constructor
 		TYPES = new ConcurrentHashMap<>();
@@ -175,65 +172,44 @@ public class TypeManagerImpl implements TypeManager {
 		subTypeProperties = new ConcurrentHashMap<>();
 		propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
 		propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
-		
-		System.err.println("*** Instance fields initialized - TYPES=" + (TYPES != null) + ", basetypes=" + (basetypes != null) + " ***");
 	}
 	
 	public void init() {
-		// AGGRESSIVE DIAGNOSTIC: Force output to System.err to bypass logging config
-		System.err.println("*** CRITICAL STACK TRACE: TypeManagerImpl.init() START ***");
-		System.err.println("*** Thread: " + Thread.currentThread().getName() + " ***");
-		System.err.println("*** Spring Context State: CHECKING ***");
+		log.info("TypeManagerImpl.init() called");
 		
-		// Stack trace to see who's calling (or not calling) this method
-		StackTraceElement[] stack = Thread.currentThread().getStackTrace();
-		System.err.println("*** CALL STACK TRACE: ***");
-		for (int i = 0; i < Math.min(10, stack.length); i++) {
-			System.err.println("    " + i + ": " + stack[i].toString());
+		if (log.isDebugEnabled()) {
+			log.debug("Thread: " + Thread.currentThread().getName());
+			log.debug("Current state: initialized=" + initialized + ", TYPES=" + (TYPES != null ? "NOT_NULL" : "NULL"));
 		}
-		
-		log.info("*** CRITICAL DIAGNOSIS: TypeManagerImpl.init() called ***");
-		System.out.println("*** DEBUG OUTPUT: TypeManagerImpl.init() called ***");
-		
-		// Log current state
-		System.err.println("*** CURRENT STATE: initialized=" + initialized + ", TYPES=" + (TYPES != null ? "NOT_NULL" : "NULL") + " ***");
 		
 		// Check if already initialized to avoid duplicate initialization
 		if (initialized) {
-			log.info("*** DIAGNOSIS: init() skipped - already initialized ***");
-			System.err.println("*** DIAGNOSIS: init() skipped - already initialized ***");
+			log.debug("init() skipped - already initialized");
 			return;
 		}
 		
 		synchronized (initLock) {
-			System.err.println("*** ENTERING SYNCHRONIZED BLOCK ***");
-			
 			if (initialized) {
-				log.info("*** DIAGNOSIS: init() skipped - already initialized (synchronized) ***");
-				System.err.println("*** DIAGNOSIS: Double-check - already initialized in sync block ***");
+				log.debug("init() skipped - already initialized (synchronized)");
 				return;
 			}
 			
 			try {
-				log.info("*** DIAGNOSIS: Starting TypeManagerImpl initialization process ***");
-				System.err.println("*** CALLING initGlobalTypes() ***");
+				log.info("Starting TypeManagerImpl initialization process");
 				initGlobalTypes();
-				System.err.println("*** initGlobalTypes() COMPLETED ***");
 				
-						// Clear the maps instead of recreating them (they're already ConcurrentHashMaps)
+				// Clear the maps instead of recreating them (they're already ConcurrentHashMaps)
 				basetypes.clear();
 				subTypeProperties.clear();
 				propertyDefinitionCoresByPropertyId.clear();
 				propertyDefinitionCoresByQueryName.clear();
 				
-				// CRITICAL DEBUG: Log TYPES state during initialization
-				System.err.println("*** INIT STATE: Before generate() - TYPES keys: " + TYPES.keySet() + " ***");
+				if (log.isDebugEnabled()) {
+					log.debug("Before generate() - TYPES keys: " + TYPES.keySet());
+				}
 
-				log.info("*** DIAGNOSIS: About to call generate() for all repositories ***");
-				System.err.println("*** CALLING generate() ***");
 				generate();
-				System.err.println("*** generate() COMPLETED ***");
-				log.info("*** DIAGNOSIS: generate() completed - marking as initialized ***");
+				log.info("generate() completed - marking as initialized");
 				
 				// CRITICAL: Verify TYPES is populated before marking as initialized
 				if (TYPES == null || TYPES.isEmpty()) {

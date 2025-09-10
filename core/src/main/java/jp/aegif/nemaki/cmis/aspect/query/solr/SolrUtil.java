@@ -116,34 +116,21 @@ public class SolrUtil {
 		String url = getSolrUrl();
 		log.info("Creating Solr client for URL: " + url);
 		
-		// Force debug output to verify this method is called
-		System.err.println("=== SOLR DEBUG: getSolrClient() called with URL: " + url);
-		
-		try {
-			java.io.FileWriter fw = new java.io.FileWriter("/tmp/solr-debug.log", true);
-			fw.write(java.time.LocalDateTime.now() + ": getSolrClient() called with URL: " + url + "\n");
-			fw.close();
-		} catch (Exception e) {
-			// Ignore file write errors
-		}
-		
 		// Skip Http2SolrClient for Jakarta EE compatibility - use HttpSolrClient directly
 		log.debug("Using HttpSolrClient for Jakarta EE compatibility - skipping Http2SolrClient");
-		System.err.println("=== SOLR DEBUG: Skipping Http2SolrClient for Jakarta EE, using HttpSolrClient directly");
 		
 		// Fallback to HttpSolrClient for compatibility
 		try {
 			log.debug("Attempting HttpSolrClient fallback");
-			System.err.println("=== SOLR DEBUG: Creating HttpSolrClient fallback with URL: " + url);
 			@SuppressWarnings("deprecation")
 			HttpSolrClient client = new HttpSolrClient.Builder(url)
 				.withConnectionTimeout(30000)
 				.withSocketTimeout(30000)
 				.build();
-			System.err.println("=== SOLR DEBUG: HttpSolrClient fallback created successfully");
+			log.debug("HttpSolrClient created successfully for URL: {}", url);
 			return client;
 		} catch (Exception e) {
-			System.err.println("=== SOLR DEBUG: HttpSolrClient fallback failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+			log.error("HttpSolrClient creation failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
 			e.printStackTrace();
 			log.error("All Solr client implementations failed: " + e.getMessage(), e);
 		}
@@ -218,7 +205,6 @@ public class SolrUtil {
 		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
 
 		log.info("Solr indexing force setting: " + force);
-		System.err.println("Solr indexing force setting: " + force);  // For QA test verification
 
 		if (!force) {
 			log.info("Solr indexing is disabled (force=false), skipping indexing");
@@ -229,7 +215,6 @@ public class SolrUtil {
 		CompletableFuture.runAsync(() -> {
 			try {
 				log.info("Starting async Solr indexing for document: " + content.getId());
-				System.err.println("Starting async Solr indexing for document: " + content.getId());  // For QA test verification
 				SolrClient solrClient = getSolrClient();
 				
 				if (solrClient == null) {
