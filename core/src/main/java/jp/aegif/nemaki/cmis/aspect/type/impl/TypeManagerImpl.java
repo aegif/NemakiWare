@@ -421,9 +421,83 @@ public class TypeManagerImpl implements TypeManager {
 		addSubTypes(repositoryId);
 
 		// Generate property definition cores
-		buildPropertyDefinitionCores(repositoryId);
+		this.buildPropertyDefinitionCores(repositoryId);
 		
 		System.err.println("*** generate(" + repositoryId + ") END - types count: " + TYPES.get(repositoryId).size() + " ***");
+	}
+
+	private void buildPropertyDefinitionCores(String repositoryId) {
+		// Initialize property definition cores
+		
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
+		// CMIS default property cores
+		Map<String, PropertyDefinition<?>> d = types.get(BaseTypeId.CMIS_DOCUMENT.value())
+				.getTypeDefinition().getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> f = types.get(BaseTypeId.CMIS_FOLDER.value())
+				.getTypeDefinition().getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> r = types.get(BaseTypeId.CMIS_RELATIONSHIP.value())
+				.getTypeDefinition().getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> p = types.get(BaseTypeId.CMIS_POLICY.value())
+				.getTypeDefinition().getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> i = types.get(BaseTypeId.CMIS_ITEM.value())
+				.getTypeDefinition().getPropertyDefinitions();
+
+		// Base type collections initialized
+
+		copyToPropertyDefinitionCore(d);
+		copyToPropertyDefinitionCore(f);
+		copyToPropertyDefinitionCore(r);
+		copyToPropertyDefinitionCore(p);
+		copyToPropertyDefinitionCore(i);
+
+		// PropertyDefinitionCore maps populated
+
+		// Subtype property cores(consequently includes secondary property cores)
+		List<NemakiPropertyDefinitionCore> subTypeCores = typeService
+				.getPropertyDefinitionCores(repositoryId);
+		
+		// Subtype property cores loaded
+		
+		if (CollectionUtils.isNotEmpty(subTypeCores)) {
+			int processedCount = 0;
+			int skippedCount = 0;
+			
+			for (NemakiPropertyDefinitionCore sc : subTypeCores) {
+				// Process PropertyDefinitionCore
+					
+				// CRITICAL FIX: Skip corrupted PropertyDefinitionCore records with NULL values
+				// This prevents NULL property IDs from contaminating the system during initialization
+				if (sc == null) {
+					log.warn("Skipping NULL PropertyDefinitionCore record for repository: " + repositoryId);
+					skippedCount++;
+					continue;
+				}
+				
+				if (sc.getPropertyId() == null || sc.getPropertyType() == null || 
+					sc.getQueryName() == null || sc.getCardinality() == null) {
+					log.warn("Skipping corrupted PropertyDefinitionCore with NULL fields");
+					log.warn("Skipping corrupted PropertyDefinitionCore record with NULL fields: " +
+						"propertyId=" + sc.getPropertyId() + 
+						", propertyType=" + sc.getPropertyType() + 
+						", queryName=" + sc.getQueryName() + 
+						", cardinality=" + sc.getCardinality() + 
+						", id=" + sc.getId() + 
+						" for repository: " + repositoryId);
+					skippedCount++;
+					continue;
+				}
+				
+				// Add property definition core
+				// Only process valid PropertyDefinitionCore records
+				addPropertyDefinitionCore(sc.getPropertyId(),
+						sc.getQueryName(), sc.getPropertyType(),
+						sc.getCardinality());
+				
+				processedCount++;
+			}
+		}
+		// PropertyDefinitionCore population completed
 	}
 
 	// /////////////////////////////////////////////////
@@ -1514,6 +1588,168 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		return null;
 	}
 
+	private DocumentTypeDefinitionImpl buildDocumentTypeDefinitionFromDB(
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
+		DocumentTypeDefinitionImpl type = new DocumentTypeDefinitionImpl();
+		
+		// CRITICAL FIX: Add null safety for parent type lookup with baseId fallback
+		// Same issue as in validation methods - parentId may be null for new custom types
+		String parentId = nemakiType.getParentId();
+		String baseId = nemakiType.getBaseId() != null ? nemakiType.getBaseId().value() : null;
+		String targetParentId = (parentId != null) ? parentId : baseId;
+		
+		TypeDefinitionContainer parentContainer = types.get(targetParentId);
+		if (parentContainer == null) {
+			log.error("Parent type container not found for ID: " + targetParentId + ". Available types: " + types.keySet());
+			throw new RuntimeException("Parent type not found: " + targetParentId);
+		}
+		
+		DocumentTypeDefinitionImpl parentType = (DocumentTypeDefinitionImpl) parentContainer.getTypeDefinition();
+
+		// Set base attributes, and properties(with specific properties
+		// included)
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
+
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:document itself)
+		if (BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+			addDocumentPropertyDefinitions(repositoryId, type);
+		}
+
+		// Add specific attributes
+		ContentStreamAllowed contentStreamAllowed = (nemakiType
+				.getContentStreamAllowed() == null) ? parentType
+				.getContentStreamAllowed() : nemakiType
+				.getContentStreamAllowed();
+		type.setContentStreamAllowed(contentStreamAllowed);
+		boolean versionable = (nemakiType.isVersionable() == null) ? parentType
+				.isVersionable() : nemakiType.isVersionable();
+		type.setIsVersionable(versionable);
+
+		return type;
+	}
+
+	private FolderTypeDefinitionImpl buildFolderTypeDefinitionFromDB(
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
+		FolderTypeDefinitionImpl type = new FolderTypeDefinitionImpl();
+		FolderTypeDefinitionImpl parentType = (FolderTypeDefinitionImpl) types
+				.get(nemakiType.getParentId()).getTypeDefinition();
+
+		// Set base attributes, and properties(with specific properties
+		// included)
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
+
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:folder itself)
+		if (BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+			addFolderPropertyDefinitions(repositoryId, type);
+		}
+
+		return type;
+	}
+
+	private RelationshipTypeDefinitionImpl buildRelationshipTypeDefinitionFromDB(
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
+		RelationshipTypeDefinitionImpl type = new RelationshipTypeDefinitionImpl();
+		RelationshipTypeDefinitionImpl parentType = (RelationshipTypeDefinitionImpl) types
+				.get(nemakiType.getParentId()).getTypeDefinition();
+
+		// Set base attributes, and properties(with specific properties
+		// included)
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
+
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:relationship itself)
+		if (BaseTypeId.CMIS_RELATIONSHIP.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+			addRelationshipPropertyDefinitions(repositoryId, type);
+		}
+
+		// Set specific attributes
+		type.setAllowedSourceTypes(nemakiType.getAllowedSourceTypes());
+		type.setAllowedTargetTypes(nemakiType.getAllowedTargetTypes());
+
+		return type;
+	}
+
+	private PolicyTypeDefinitionImpl buildPolicyTypeDefinitionFromDB(
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
+		PolicyTypeDefinitionImpl type = new PolicyTypeDefinitionImpl();
+		PolicyTypeDefinitionImpl parentType = (PolicyTypeDefinitionImpl) types
+				.get(nemakiType.getParentId()).getTypeDefinition();
+
+		// Set base attributes, and properties(with specific properties
+		// included)
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
+
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:policy itself)
+		if (BaseTypeId.CMIS_POLICY.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+			addPolicyPropertyDefinitions(repositoryId, type);
+		}
+
+		return type;
+	}
+
+	private ItemTypeDefinitionImpl buildItemTypeDefinitionFromDB(
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
+		ItemTypeDefinitionImpl type = new ItemTypeDefinitionImpl();
+		ItemTypeDefinitionImpl parentType = (ItemTypeDefinitionImpl) types.get(
+				nemakiType.getParentId()).getTypeDefinition();
+
+		// Set base attributes, and properties(with specific properties
+		// included)
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
+
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:item itself)
+		if (BaseTypeId.CMIS_ITEM.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+		}
+
+		return type;
+	}
+
+	private SecondaryTypeDefinitionImpl buildSecondaryTypeDefinitionFromDB(
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
+		SecondaryTypeDefinitionImpl type = new SecondaryTypeDefinitionImpl();
+		SecondaryTypeDefinitionImpl parentType = nemakiType.getParentId() != null ? 
+				(SecondaryTypeDefinitionImpl) types.get(nemakiType.getParentId()).getTypeDefinition() : null;
+
+		// Set base attributes, and properties(with specific properties
+		// included)
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
+
+		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
+		// They are already inherited from parent type with correct inherited flags
+		// Only add these for base types (cmis:secondary itself)
+		if (BaseTypeId.CMIS_SECONDARY.value().equals(nemakiType.getTypeId())) {
+			addBasePropertyDefinitions(repositoryId, type);
+		}
+
+		return type;
+	}
+
 	/**
 	 * Get BaseTypeId-specific default values per CMIS 1.1 specification
 	 * Based on nemakiware-basetype.properties configuration
@@ -1732,14 +1968,27 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					continue;
 				}
 
-				// ARCHITECTURAL REDESIGN: Use unified PropertyDefinitionBuilder
-				// This eliminates the complex Core+Detail construction logic that was causing contamination
-				PropertyDefinition<?> property = PropertyDefinitionBuilder
-					.forRepository(repositoryId)
-					.withDetail(propertyDetailId, detail)
-					.withCore(originalCore)
-					.withParentType(parentType)
-					.build();
+				// CRITICAL FIX: Use existing PropertyDefinition instances - no cloning or rebuilding
+				// TCK tests require object identity (== comparison) to pass
+				// Create NemakiPropertyDefinition using existing core and detail
+				NemakiPropertyDefinition p = new NemakiPropertyDefinition(originalCore, detail);
+				
+				// Determine if property is inherited (properties from parent types are inherited)
+				boolean isInherited = parentType != null && 
+					parentType.getPropertyDefinitions() != null && 
+					parentType.getPropertyDefinitions().containsKey(p.getPropertyId());
+				
+				PropertyDefinition<?> property = DataUtil.createPropDef(
+					p.getPropertyId(), p.getLocalName(),
+					p.getLocalNameSpace(), p.getQueryName(),
+					p.getDisplayName(), p.getDescription(),
+					p.getPropertyType(), p.getCardinality(),
+					p.getUpdatability(), p.isRequired(), p.isQueryable(),
+					isInherited, p.getChoices(), p.isOpenChoice(),
+					p.isOrderable(), p.getDefaultValue(), p.getMinValue(),
+					p.getMaxValue(), p.getResolution(),
+					p.getDecimalPrecision(), p.getDecimalMinValue(),
+					p.getDecimalMaxValue(), p.getMaxLength());
 
 				// CRITICAL FIX: Only add to properties map if property is NOT NULL
 				// This prevents NULL PropertyDefinition objects from being serialized in JSON responses
@@ -1853,198 +2102,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * 2. PREVENTS CONTAMINATION: No shared references between properties
 	 * 3. MANAGES INHERITANCE: Consistent inheritance flag determination
 	 * 4. SIMPLIFIES CREATION: Single builder interface instead of multiple constructors
-	 * 5. ENSURES CONSISTENCY: All PropertyDefinitions created through same logic
-	 * 
-	 * This replaces the complex Core + Detail + Unified three-layer architecture
-	 * with a streamlined builder pattern that eliminates contamination sources.
-	 */
-	public static class PropertyDefinitionBuilder {
-		private String repositoryId;
-		private String propertyDetailId;
-		private NemakiPropertyDefinitionDetail detail;
-		private NemakiPropertyDefinitionCore originalCore;
-		private AbstractTypeDefinition parentType;
-		
-		private PropertyDefinitionBuilder(String repositoryId) {
-			this.repositoryId = repositoryId;
-		}
-		
-		public static PropertyDefinitionBuilder forRepository(String repositoryId) {
-			return new PropertyDefinitionBuilder(repositoryId);
-		}
-		
-		public PropertyDefinitionBuilder withDetail(String propertyDetailId, NemakiPropertyDefinitionDetail detail) {
-			this.propertyDetailId = propertyDetailId;
-			this.detail = detail;
-			return this;
-		}
-		
-		public PropertyDefinitionBuilder withCore(NemakiPropertyDefinitionCore originalCore) {
-			this.originalCore = originalCore;
-			return this;
-		}
-		
-		public PropertyDefinitionBuilder withParentType(AbstractTypeDefinition parentType) {
-			this.parentType = parentType;
-			return this;
-		}
-		
-		/**
-		 * CRITICAL: Creates a completely fresh, uncontaminated PropertyDefinition
-		 * using defensive copying and contamination prevention strategies.
-		 * 
-		 * ENHANCED TCK COMPLIANCE: Explicitly sets all TCK-required attributes
-		 * including queryName, localName, displayName, choices, defaultValue, etc.
-		 */
-		public PropertyDefinition<?> build() {
-			if (detail == null || originalCore == null) {
-				throw new IllegalStateException("Both detail and core must be provided");
-			}
-			
-			// STEP 1: Create completely fresh Core to prevent contamination
-			NemakiPropertyDefinitionCore freshCore = new NemakiPropertyDefinitionCore();
-			freshCore.setId(originalCore.getId());
-			freshCore.setType(originalCore.getType());
-			freshCore.setCreated(originalCore.getCreated());
-			freshCore.setCreator(originalCore.getCreator());
-			freshCore.setModified(originalCore.getModified());
-			freshCore.setModifier(originalCore.getModifier());
-			
-			// STEP 2: Establish authoritative property ID (contamination-free)
-			String authoritativePropertyId = determineAuthoritativePropertyId(detail, originalCore, repositoryId, propertyDetailId);
-			freshCore.setPropertyId(authoritativePropertyId);
-			
-			// STEP 2-A: TCK COMPLIANCE - Explicit queryName setting
-			// QueryName should be the same as propertyId for CMIS compliance
-			String tckCompliantQueryName = authoritativePropertyId;
-			freshCore.setQueryName(tckCompliantQueryName);
-			
-			// STEP 3: Determine trusted type information
-			PropertyType trustedPropertyType = determinePropertyTypeFromPropertyId(authoritativePropertyId);
-			Cardinality trustedCardinality = determineCardinalityFromPropertyId(authoritativePropertyId);
-			freshCore.setPropertyType(trustedPropertyType);
-			freshCore.setCardinality(trustedCardinality);
-			
-			// STEP 4: Set inheritance flag using precise CMIS 1.1 logic
-			// For properties being constructed from Core+Detail, they are typically NOT inherited
-			// unless explicitly determined otherwise
-			boolean shouldInherit = false;
-			if (parentType != null) {
-				// Create a temporary PropertyDefinition for inheritance checking
-				NemakiPropertyDefinition tempProp = new NemakiPropertyDefinition(freshCore, detail);
-				PropertyDefinition<?> tempPropDef = DataUtil.createPropDef(
-					tempProp.getPropertyId(), tempProp.getLocalName(),
-					tempProp.getLocalNameSpace(), tempProp.getQueryName(),
-					tempProp.getDisplayName(), tempProp.getDescription(),
-					tempProp.getPropertyType(), tempProp.getCardinality(),
-					tempProp.getUpdatability(), tempProp.isRequired(), 
-					tempProp.isQueryable(), false, // temporarily false
-					tempProp.getChoices(), tempProp.isOpenChoice(),
-					tempProp.isOrderable(), tempProp.getDefaultValue(), 
-					tempProp.getMinValue(), tempProp.getMaxValue(), 
-					tempProp.getResolution(), tempProp.getDecimalPrecision(),
-					tempProp.getDecimalMinValue(), tempProp.getDecimalMaxValue(), 
-					tempProp.getMaxLength());
-				shouldInherit = shouldBeInherited(tempPropDef, parentType);
-			}
-			freshCore.setInherited(shouldInherit);
-			
-			// STEP 5: Create unified PropertyDefinition with fresh objects
-			NemakiPropertyDefinition unified = new NemakiPropertyDefinition(freshCore, detail);
-			
-			// STEP 6-A: TCK COMPLIANCE - Enhanced attribute extraction and validation
-			
-			// TCK COMPLIANCE: localName handling with fallbacks
-			String tckLocalName = unified.getLocalName();
-			if (tckLocalName == null || tckLocalName.trim().isEmpty()) {
-				// Fallback 1: Use property ID without namespace prefix
-				if (authoritativePropertyId.contains(":")) {
-					tckLocalName = authoritativePropertyId.substring(authoritativePropertyId.lastIndexOf(":") + 1);
-				} else {
-					tckLocalName = authoritativePropertyId;
-				}
-			}
-			
-			// TCK COMPLIANCE: displayName handling with intelligent defaults
-			String tckDisplayName = unified.getDisplayName();
-			if (tckDisplayName == null || tckDisplayName.trim().isEmpty()) {
-				// Fallback 1: Use localName as displayName
-				if (tckLocalName != null && !tckLocalName.trim().isEmpty()) {
-					tckDisplayName = tckLocalName;
-				} else {
-					// Fallback 2: Use property ID
-					tckDisplayName = authoritativePropertyId;
-				}
-			}
-			
-			// TCK COMPLIANCE: description handling
-			String tckDescription = unified.getDescription();
-			if (tckDescription == null || tckDescription.trim().isEmpty()) {
-				// Generate meaningful description for TCK compliance
-				tckDescription = "Property: " + authoritativePropertyId + " (Type: " + trustedPropertyType + ")";
-			}
-			
-			// TCK COMPLIANCE: localNamespace handling
-			String tckLocalNameSpace = unified.getLocalNameSpace();
-			if (tckLocalNameSpace == null || tckLocalNameSpace.trim().isEmpty()) {
-				// Extract namespace from property ID if available
-				if (authoritativePropertyId.contains(":")) {
-					tckLocalNameSpace = authoritativePropertyId.substring(0, authoritativePropertyId.indexOf(":"));
-				} else {
-					// Default namespace for non-namespaced properties
-					tckLocalNameSpace = "custom";
-				}
-			}
-			
-			// TCK COMPLIANCE: choices handling - ensure non-null and use NemakiWare Choice type
-			List<Choice> tckChoices = unified.getChoices();
-			if (tckChoices == null) {
-				// TCK requires non-null choices list, even if empty
-				tckChoices = new ArrayList<Choice>();
-			}
-			
-			// TCK COMPLIANCE: defaultValue handling - convert to List<?> as expected by DataUtil.createPropDef
-			List<?> tckDefaultValue = null;
-			if (unified.getDefaultValue() != null) {
-				if (unified.getDefaultValue() instanceof List) {
-					tckDefaultValue = (List<?>) unified.getDefaultValue();
-				} else {
-					// Convert single value to List
-					List<Object> singleValueList = new ArrayList<>();
-					singleValueList.add(unified.getDefaultValue());
-					tckDefaultValue = singleValueList;
-				}
-			}
-			// For TCK compliance, defaultValue can be null but should be consistent with PropertyType
-			
-			// STEP 6: Create final PropertyDefinition using DataUtil for consistency
-			// Enhanced with all TCK-compliant attributes explicitly set
-			return DataUtil.createPropDef(
-				authoritativePropertyId,        // propertyId (authoritative)
-				tckLocalName,                  // localName (TCK compliant)
-				tckLocalNameSpace,             // localNameSpace (TCK compliant)
-				tckCompliantQueryName,         // queryName (TCK compliant) 
-				tckDisplayName,                // displayName (TCK compliant)
-				tckDescription,                // description (TCK compliant)
-				trustedPropertyType,           // propertyType (validated)
-				trustedCardinality,            // cardinality (validated)
-				unified.getUpdatability(),     // updatability (preserved)
-				unified.isRequired(),          // required (preserved)
-				unified.isQueryable(),         // queryable (preserved)
-				shouldInherit,                 // inherited (CMIS 1.1 compliant)
-				tckChoices,                    // choices (TCK compliant non-null)
-				unified.isOpenChoice(),        // openChoice (preserved)
-				unified.isOrderable(),         // orderable (preserved)
-				tckDefaultValue,               // defaultValue (TCK compliant)
-				unified.getMinValue(),         // minValue (preserved)
-				unified.getMaxValue(),         // maxValue (preserved)
-				unified.getResolution(),       // resolution (preserved)
-				unified.getDecimalPrecision(), // decimalPrecision (preserved)
-				unified.getDecimalMinValue(),  // decimalMinValue (preserved)
-				unified.getDecimalMaxValue(),  // decimalMaxValue (preserved)
-				unified.getMaxLength());       // maxLength (preserved)
-		}
-	}
 
 	private DocumentTypeDefinitionImpl buildDocumentTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
@@ -2209,6 +2266,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		return type;
 	}
 
+	// MOVED TO LINE 429 - duplicate method commented out
+	/*
 	private void buildPropertyDefinitionCores(String repositoryId) {
 		// Initialize property definition cores
 		
@@ -2281,12 +2340,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 						sc.getCardinality());
 				
 				processedCount++;
-				}
-			
-					}
-		
-			// PropertyDefinitionCore population completed
+			}
 		}
+		// PropertyDefinitionCore population completed
+	}
+	*/
 
 	private void copyToPropertyDefinitionCore(
 			Map<String, PropertyDefinition<?>> map) {
@@ -2360,51 +2418,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				System.err.println("ERROR: DataUtil.createPropDefCore returned NULL for propertyId: " + propertyId);
 			}
 			
-			// Create defensive copies to prevent contamination
-				
-			// CRITICAL FIX: Create completely independent PropertyDefinition instances
-			// Use separate createPropDefCore calls to ensure complete object isolation
-			PropertyDefinition<?> coreForPropertyIdMap = DataUtil.createPropDefCore(propertyId, queryName, propertyType, cardinality);
-			PropertyDefinition<?> coreForQueryNameMap = DataUtil.createPropDefCore(propertyId, queryName, propertyType, cardinality);
+			// CRITICAL FIX: Use the SAME instance in both maps
+			// TCK tests require object identity (== comparison) to pass
+			// TypeManagerImpl is a singleton, so sharing instances is safe
 			
-			// COMPREHENSIVE DEBUG: Verify cloning worked correctly
-			System.err.println("=== CLONE VERIFICATION ===");
-			System.err.println("Original core hash: " + System.identityHashCode(core));
-			System.err.println("PropertyId map clone hash: " + System.identityHashCode(coreForPropertyIdMap));
-			System.err.println("QueryName map clone hash: " + System.identityHashCode(coreForQueryNameMap));
-			
-			if (coreForPropertyIdMap != null) {
-				System.err.println("PropertyId clone - ID: " + coreForPropertyIdMap.getId());
-				System.err.println("PropertyId clone - QueryName: " + coreForPropertyIdMap.getQueryName());
-				System.err.println("PropertyId clone - Type: " + coreForPropertyIdMap.getPropertyType());
-			} else {
-				System.err.println("ERROR: PropertyId clone is NULL!");
-			}
-			
-			if (coreForQueryNameMap != null) {
-				System.err.println("QueryName clone - ID: " + coreForQueryNameMap.getId());
-				System.err.println("QueryName clone - QueryName: " + coreForQueryNameMap.getQueryName());
-				System.err.println("QueryName clone - Type: " + coreForQueryNameMap.getPropertyType());
-			} else {
-				System.err.println("ERROR: QueryName clone is NULL!");
-			}
-			
-			// Verify objects are different instances
-			boolean sameAsOriginal1 = (core == coreForPropertyIdMap);
-			boolean sameAsOriginal2 = (core == coreForQueryNameMap);
-			boolean sameAsEachOther = (coreForPropertyIdMap == coreForQueryNameMap);
-			
-			System.err.println("Clone identity check:");
-			System.err.println("  PropertyId clone == original: " + sameAsOriginal1 + " (should be false)");
-			System.err.println("  QueryName clone == original: " + sameAsOriginal2 + " (should be false)");
-			System.err.println("  Clones == each other: " + sameAsEachOther + " (should be false)");
-			System.err.println("=== END CLONE VERIFICATION ===");
-			
-			// Store separate copies to prevent contamination
-							
-			// Store separate copies in each map - CONTAMINATION IMPOSSIBLE
-			propertyDefinitionCoresByPropertyId.put(propertyId, coreForPropertyIdMap);
-			propertyDefinitionCoresByQueryName.put(queryName, coreForQueryNameMap);
+			// Store the SAME instance in both maps - this is required for TCK compliance
+			propertyDefinitionCoresByPropertyId.put(propertyId, core);
+			propertyDefinitionCoresByQueryName.put(queryName, core);
 			
 			// COMPREHENSIVE DEBUG: Verify storage
 			PropertyDefinition<?> storedInPropertyIdMap = propertyDefinitionCoresByPropertyId.get(propertyId);
@@ -2443,16 +2463,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				log.trace("Property core already exists: " + propertyId);
 			}
 			
-			// Ensure queryName mapping exists for existing property with defensive copy
+			// Ensure queryName mapping exists for existing property - share the same instance
 			PropertyDefinition<?> existingCore = propertyDefinitionCoresByPropertyId.get(propertyId);
 			if (existingCore != null && !propertyDefinitionCoresByQueryName.containsKey(queryName)) {
 					
-				// CRITICAL FIX: Clone existing PropertyDefinition to prevent cross-contamination
-				PropertyDefinition<?> clonedCoreForQueryName = DataUtil.clonePropertyDefinition(existingCore);
-				propertyDefinitionCoresByQueryName.put(queryName, clonedCoreForQueryName);
-				
-	 
-				// CRITICAL FIX: Clone existing PropertyDefinition to prevent cross-contamination completed
+				// CRITICAL FIX: DO NOT clone PropertyDefinition - share the same instance
+				// TCK tests require object identity (== comparison) to pass
+				// TypeManagerImpl is a singleton, so sharing instances is safe
+				propertyDefinitionCoresByQueryName.put(queryName, existingCore);
 				
 				if (log.isTraceEnabled()) {
 					log.trace("Added queryName mapping for existing property: " + queryName + " -> " + propertyId);
@@ -2463,11 +2481,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			if (isCustomProperty) {
 				PropertyDefinition<?> existingInPropertyIdMap = propertyDefinitionCoresByPropertyId.get(propertyId);
 				PropertyDefinition<?> existingInQueryNameMap = propertyDefinitionCoresByQueryName.get(queryName);
-				
-						}
+			}
 		}
-		
-		}
+	}
 	
 	/**
 	 * CRITICAL CONTAMINATION FIX: Determine authoritative property ID without relying on potentially contaminated core objects
