@@ -455,8 +455,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
             
             if ("typeDefinition".equals(cmisselector) && typeId != null) {
-                System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION: Processing typeId='" + typeId + "' at repository level ***");
-                System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION: pathInfo='" + pathInfo + "', queryString='" + queryString + "' ***");
+                log.debug("Processing typeDefinition for typeId: " + typeId + " at repository level");
                 
                 try {
                     // Extract repository ID from pathInfo
@@ -469,13 +468,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     }
                     
                     if (repositoryId != null) {
-                        System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION: Extracted repositoryId='" + repositoryId + "' ***");
+                        log.debug("Extracted repositoryId: " + repositoryId + " for typeDefinition operation");
                         
                         // Create call context for CMIS service operations
                         CallContext callContext = createContext(getServletContext(), request, response, null);
                         CmisService service = getServiceFactory().getService(callContext);
                         
-                        System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION: Calling handleTypeDefinitionOperation ***");
                         
                         // Handle the typeDefinition request directly
                         Object result = handleTypeDefinitionOperation(service, repositoryId, request);
@@ -483,14 +481,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         // Convert result to JSON and write response
                         writeJsonResponse(response, result);
                         
-                        System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION: Successfully completed for typeId='" + typeId + "' ***");
+                        log.debug("Successfully completed typeDefinition operation for typeId: " + typeId);
                         return; // Don't delegate to parent - we handled it completely
                     } else {
-                        System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION ERROR: Repository ID extraction failed from pathInfo='" + pathInfo + "' ***");
+                        log.warn("Repository ID extraction failed from pathInfo: " + pathInfo);
                     }
                 } catch (Exception e) {
-                    System.err.println("*** REPOSITORY LEVEL TYPE DEFINITION EXCEPTION: " + e.getMessage() + " ***");
-                    e.printStackTrace();
                     log.error("Error in repository-level typeDefinition handling", e);
                     try {
                         writeErrorResponse(response, e);
@@ -505,8 +501,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // CRITICAL FIX: Handle repository-level typeChildren requests with proper typeId parameter processing
             // ===============================
             if ("typeChildren".equals(cmisselector)) {
-                System.err.println("*** REPOSITORY LEVEL TYPE CHILDREN: Processing typeChildren at repository level ***");
-                System.err.println("*** REPOSITORY LEVEL TYPE CHILDREN: pathInfo='" + pathInfo + "', queryString='" + queryString + "' ***");
+                log.debug("Processing typeChildren at repository level");
                 
                 try {
                     // Extract repository ID from pathInfo
@@ -520,14 +515,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     
                     // CRITICAL FIX: Extract typeId parameter from query string
                     String requestedTypeId = request.getParameter("typeId");
-                    System.err.println("*** TYPE CHILDREN PARAMETER FIX: typeId parameter = '" + requestedTypeId + "' ***");
+                    log.debug("TypeChildren operation - typeId parameter: " + requestedTypeId);
                     
                     if (repositoryId != null) {
-                        System.err.println("*** REPOSITORY LEVEL TYPE CHILDREN: Calling handleRepositoryLevelRequestWithoutSelector for repositoryId='" + repositoryId + "' ***");
+                        log.debug("Calling handleRepositoryLevelRequestWithoutSelector for repositoryId: " + repositoryId);
                         
                         // IMPORTANT: For CMIS compliance, when typeId is null, we should return base types only
                         // This is the expected behavior for cmisselector=typeChildren without typeId parameter
-                        System.err.println("*** TYPE CHILDREN FIX: typeId='" + requestedTypeId + "' - this will fetch " + (requestedTypeId == null ? "base types" : "child types of " + requestedTypeId) + " ***");
+                        log.debug("TypeChildren operation will fetch " + (requestedTypeId == null ? "base types" : "child types of " + requestedTypeId));
                         
                         // Call the repository-level handling with the request that has cmisselector=typeChildren
                         handleRepositoryLevelRequestWithoutSelector(request, response, repositoryId);
@@ -2903,7 +2898,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 throw new IllegalArgumentException("Could not determine repository ID from path: " + pathInfo);
             }
             
-            System.err.println("*** SET CONTENT HANDLER: Setting content for object: " + objectId + " ***");
+            log.debug("Setting content stream for object: " + objectId);
             
             // Extract content stream from request using existing methods
             org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = null;
@@ -2941,7 +2936,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 
             cmisService.setContentStream(repositoryId, objectIdHolder, overwriteFlag, changeTokenHolder, contentStream, null);
             
-            System.err.println("*** SET CONTENT HANDLER: Content stream set successfully for object: " + objectId + " ***");
+            log.debug("Content stream set successfully for object: " + objectId);
             
             // Return success response
             response.setStatus(HttpServletResponse.SC_OK);
