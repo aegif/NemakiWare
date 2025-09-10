@@ -268,8 +268,7 @@
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-test-tck</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-test-tck-1.1.0-nemakiware.jar</systemPath>
+			<scope>test</scope>
 		</dependency>
 
 		<!-- ANTLR runtime dependency for OpenCMIS query parsing -->
