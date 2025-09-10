@@ -65,7 +65,9 @@ public class CloudantClientPool {
 				return;
 			}
 
-			System.out.println("=== CLOUDANT CLIENT POOL: Initializing Cloudant client pool... ===");
+			if (log.isDebugEnabled()) {
+				log.debug("Initializing Cloudant client pool...");
+			}
 		log.info("Initializing Cloudant client pool...");
 			
 			// Try to resolve hostname dynamically for different environments
@@ -228,7 +230,9 @@ public class CloudantClientPool {
 	private void initializeRepositories(Cloudant cloudantClient) {
 		// CRITICAL FIX: Initialize nemaki_conf system database first
 		// This database is used by PropertyManager but is not in repositoryInfoMap
-		System.out.println("=== CLOUDANT CLIENT POOL: Initializing system configuration database: nemaki_conf ===");
+		if (log.isDebugEnabled()) {
+			log.debug("Initializing system configuration database: nemaki_conf");
+		}
 		log.info("Initializing system configuration database: nemaki_conf");
 		CloudantClientWrapper nemakiConfWrapper = new CloudantClientWrapper(cloudantClient, "nemaki_conf", couchdbObjectMapper);
 		pool.put("nemaki_conf", nemakiConfWrapper);

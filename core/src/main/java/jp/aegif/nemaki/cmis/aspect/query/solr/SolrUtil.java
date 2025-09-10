@@ -197,7 +197,9 @@ public class SolrUtil {
 	 * Index a single document in Solr using standard SolrJ API
 	 */
 	public void indexDocument(String repositoryId, Content content) {
-		System.out.println("=== SLF4J TEST: indexDocument called for " + content.getId());
+		if (log.isDebugEnabled()) {
+			log.debug("indexDocument called for " + content.getId());
+		}
 		log.info("SolrUtil.indexDocument called for document: " + content.getId() + " in repository: " + repositoryId);
 		
 		String _force = propertyManager
@@ -456,13 +458,13 @@ public class SolrUtil {
 				.readValue(PropertyKey.SOLR_PORT));
 		String context = propertyManager.readValue(PropertyKey.SOLR_CONTEXT);
 
-		System.out.println("=== SOLR HOST DEBUG START ===");
-		System.out.println("PropertyManager class: " + propertyManager.getClass().getName());
-		System.out.println("PropertyManager readValue(SOLR_HOST): " + host);
-		System.out.println("PropertyKey.SOLR_HOST constant: " + PropertyKey.SOLR_HOST);
-		System.out.println("All property keys: " + propertyManager.getKeys());
-		System.out.println("DEBUG SolrUtil.getSolrUrl: protocol=" + protocol + ", host=" + host + ", port=" + port + ", context=" + context);
-		System.out.println("=== SOLR HOST DEBUG END ===");
+		if (log.isDebugEnabled()) {
+			log.debug("PropertyManager class: " + propertyManager.getClass().getName());
+			log.debug("PropertyManager readValue(SOLR_HOST): " + host);
+			log.debug("PropertyKey.SOLR_HOST constant: " + PropertyKey.SOLR_HOST);
+			log.debug("All property keys: " + propertyManager.getKeys());
+			log.debug("SolrUtil.getSolrUrl: protocol=" + protocol + ", host=" + host + ", port=" + port + ", context=" + context);
+		}
 
 		String url = null;
 		try {
@@ -473,23 +475,31 @@ public class SolrUtil {
 			String baseContext = context;
 			if (baseContext.contains("/")) {
 				baseContext = baseContext.substring(0, baseContext.indexOf("/"));
-				System.out.println("DEBUG SolrUtil.getSolrUrl: Stripped context from '" + context + "' to '" + baseContext + "'");
+				if (log.isDebugEnabled()) {
+					log.debug("SolrUtil.getSolrUrl: Stripped context from '" + context + "' to '" + baseContext + "'");
+				}
 			}
 			
 			// Include the core name "nemaki" in the base URL since process() no longer adds it
 			url = _url.toString() + "/" + baseContext + "/nemaki";
-			System.out.println("DEBUG SolrUtil.getSolrUrl: Built URL with core included: " + url);
+			if (log.isDebugEnabled()) {
+				log.debug("SolrUtil.getSolrUrl: Built URL with core included: " + url);
+			}
 			
 			// SAFETY: Ensure correct URL pattern with core included
 			// Expected pattern: http://host:port/solr/nemaki
 			String expectedPattern = protocol + "://" + host + ":" + port + "/solr/nemaki";
 			if (!url.equals(expectedPattern)) {
-				System.out.println("DEBUG SolrUtil.getSolrUrl: URL mismatch, forcing correct pattern");
-				System.out.println("DEBUG SolrUtil.getSolrUrl: Expected: " + expectedPattern + ", Got: " + url);
+				if (log.isDebugEnabled()) {
+					log.debug("SolrUtil.getSolrUrl: URL mismatch, forcing correct pattern");
+					log.debug("SolrUtil.getSolrUrl: Expected: " + expectedPattern + ", Got: " + url);
+				}
 				url = expectedPattern;
 			}
 			
-			System.out.println("DEBUG SolrUtil.getSolrUrl: final URL=" + url);
+			if (log.isDebugEnabled()) {
+				log.debug("SolrUtil.getSolrUrl: final URL=" + url);
+			}
 		} catch (MalformedURLException e) {
 			System.out.println("DEBUG SolrUtil.getSolrUrl: MalformedURLException: " + e.getMessage());
 			e.printStackTrace();

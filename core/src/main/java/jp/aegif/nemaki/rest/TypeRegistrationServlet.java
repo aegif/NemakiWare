@@ -128,7 +128,9 @@ public class TypeRegistrationServlet extends HttpServlet {
     protected void doGet(HttpServletRequest request, HttpServletResponse response) 
             throws ServletException, IOException {
         
-        System.err.println("[TYPEREGISTRATIONSERVLET] === GET REQUEST RECEIVED ===");
+        if (log.isDebugEnabled()) {
+            log.debug("GET request received");
+        }
         
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
@@ -143,11 +145,15 @@ public class TypeRegistrationServlet extends HttpServlet {
         
         // Add debug information about registered types
         String pathInfo = request.getPathInfo();
-        System.err.println("[TYPEREGISTRATIONSERVLET] PathInfo: " + pathInfo);
+        if (log.isDebugEnabled()) {
+            log.debug("PathInfo: " + pathInfo);
+        }
         
         if (pathInfo != null && pathInfo.startsWith("/debug/")) {
             String repositoryId = pathInfo.substring(7); // Remove "/debug/"
-            System.err.println("[TYPEREGISTRATIONSERVLET] Debug repositoryId: " + repositoryId);
+            if (log.isDebugEnabled()) {
+                log.debug("Debug repositoryId: " + repositoryId);
+            }
             if (repositoryId != null && !repositoryId.isEmpty()) {
                 try {
                     // Debug: Check if our test type exists in database
@@ -169,8 +175,7 @@ public class TypeRegistrationServlet extends HttpServlet {
                     }
                 } catch (Exception e) {
                     result.put("debugError", e.getMessage());
-                    System.err.println("[TYPEREGISTRATIONSERVLET] Debug error: " + e.getMessage());
-                    e.printStackTrace();
+                    log.error("Debug error: " + e.getMessage(), e);
                 }
             }
         }

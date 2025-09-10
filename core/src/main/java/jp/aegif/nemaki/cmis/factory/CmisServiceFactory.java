@@ -118,7 +118,9 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 			// Create CmisService - CRITICAL FIX: Use bean name to avoid TypeManager ambiguity
 			CmisService calledCmisService = (CmisService) applicationContext.getBean("cmisService");
 			if(calledCmisService == null){
-				System.err.println("CRITICAL ERROR: CmisService bean is NULL");
+				if (log.isDebugEnabled()) {
+					log.debug("CRITICAL ERROR: CmisService bean is NULL");
+				}
 				log.error("RepositoryId=" + repositoryId + " does not exist", new Throwable());
 			} else {
 				if (log.isDebugEnabled()) {

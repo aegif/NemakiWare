@@ -6,6 +6,8 @@ import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.model.Content;
 import org.apache.solr.client.solrj.SolrClient;
 import org.springframework.stereotype.Component;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  * Mock implementation of SolrUtil for Jetty development environment
@@ -13,29 +15,38 @@ import org.springframework.stereotype.Component;
  */
 @Component("mockSolrUtil")
 public class MockSolrUtil extends SolrUtil {
+    private static final Log log = LogFactory.getLog(MockSolrUtil.class);
     
     public MockSolrUtil() {
         super();
-        System.out.println("MockSolrUtil initialized - Solr functionality disabled for development");
+        if (log.isDebugEnabled()) {
+            log.debug("MockSolrUtil initialized - Solr functionality disabled for development");
+        }
     }
     
     @Override
     public SolrClient getSolrClient() {
-        System.out.println("MockSolrUtil.getSolrClient() - Returning null (Solr disabled)");
+        if (log.isDebugEnabled()) {
+            log.debug("MockSolrUtil.getSolrClient() - Returning null (Solr disabled)");
+        }
         return null;
     }
     
     @Override
     public String getPropertyNameInSolr(String repositoryId, String cmisColName) {
-        System.out.println("MockSolrUtil.getPropertyNameInSolr() - Mock mapping for: " + cmisColName);
+        if (log.isDebugEnabled()) {
+            log.debug("MockSolrUtil.getPropertyNameInSolr() - Mock mapping for: " + cmisColName);
+        }
         // Return mock property name or original name for fallback
         return cmisColName;
     }
     
     @Override
     public void indexDocument(String repositoryId, Content content) {
-        System.out.println("MockSolrUtil.indexDocument() - Skipping Solr indexing for content: " + 
-            (content != null ? content.getId() : "null"));
+        if (log.isDebugEnabled()) {
+            log.debug("MockSolrUtil.indexDocument() - Skipping Solr indexing for content: " + 
+                (content != null ? content.getId() : "null"));
+        }
         // No-op for mock
     }
     

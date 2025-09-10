@@ -1044,7 +1044,9 @@ public class CompileServiceImpl implements CompileService {
 
 	private void setCmisBaseProperties(String repositoryId, PropertiesImpl properties, TypeDefinition tdf,
 			Content content) {
-		System.out.println("DEBUG secondaryIds: setCmisBaseProperties CALLED for content: " + content.getId());
+		if (log.isDebugEnabled()) {
+			log.debug("setCmisBaseProperties called for content: " + content.getId());
+		}
 		
 		// CRITICAL FIX: Add core CMIS properties in standard order FIRST
 		// This prevents duplication and ensures correct OpenCMIS TCK property order
@@ -1290,18 +1292,19 @@ public class CompileServiceImpl implements CompileService {
 					log.warn("Document type requires content stream but no attachment found - document may be incomplete");
 				}
 			} else {
-				System.err.println("  - Attachment found: length=" + attachment.getLength() + ", mimeType=" + attachment.getMimeType());
 				if (log.isDebugEnabled()) {
 					log.debug("Attachment found: length=" + attachment.getLength() + ", mimeType=" + attachment.getMimeType());
 				}
 				
 				// CRITICAL TCK FIX: Handle attachment length with proper CMIS 1.1 compliance
 				long attachmentLength = attachment.getLength();
-				System.err.println("  - Attachment raw length from DB: " + attachmentLength);
+				if (log.isDebugEnabled()) {
+					log.debug("Attachment raw length from DB: " + attachmentLength);
+				}
 				
 				if (attachmentLength <= 0) {
-					System.err.println("  - Attachment length is 0 or negative, attempting to retrieve actual size");
 					if (log.isDebugEnabled()) {
+						log.debug("Attachment length is 0 or negative, attempting to retrieve actual size");
 						log.debug("Attachment has invalid length (" + attachmentLength + "), attempting to retrieve actual size");
 					}
 					
@@ -1310,7 +1313,6 @@ public class CompileServiceImpl implements CompileService {
 						Long actualSize = contentService.getAttachmentActualSize(repositoryId, attachment.getId());
 						if (actualSize != null && actualSize > 0) {
 							length = actualSize;
-							System.err.println("  - Retrieved actual attachment size: " + actualSize + " bytes");
 							if (log.isDebugEnabled()) {
 								log.debug("Retrieved actual attachment size: " + actualSize + " bytes for attachment " + attachment.getId());
 							}
@@ -1318,7 +1320,6 @@ public class CompileServiceImpl implements CompileService {
 							// CRITICAL TCK FIX: For TCK compliance, use -1 for unknown size instead of null
 							// This prevents ContentStream properties from being omitted completely
 							length = -1L; // CMIS 1.1 specification: -1 indicates unknown content length
-							System.err.println("  - Could not retrieve actual size, using -1L for unknown length (CMIS 1.1 compliant)");
 							if (log.isDebugEnabled()) {
 								log.debug("Could not retrieve actual attachment size, using -1L for unknown size (CMIS 1.1 standard)");
 							}
@@ -1327,11 +1328,15 @@ public class CompileServiceImpl implements CompileService {
 						log.warn("Exception retrieving actual attachment size: " + e.getMessage());
 						// CRITICAL TCK FIX: Use -1L instead of null for better TCK compliance
 						length = -1L; // CMIS 1.1 standard: -1 for unknown content length
-						System.err.println("  - Exception occurred, using -1L for unknown length (CMIS 1.1 compliant)");
+						if (log.isDebugEnabled()) {
+							log.debug("Exception occurred, using -1L for unknown length (CMIS 1.1 compliant)");
+						}
 					}
 				} else {
 					length = attachmentLength;
-					System.err.println("  - Using attachment length: " + attachmentLength);
+					if (log.isDebugEnabled()) {
+						log.debug("Using attachment length: " + attachmentLength);
+					}
 				}
 				
 				mimeType = attachment.getMimeType();
@@ -1450,7 +1455,9 @@ public class CompileServiceImpl implements CompileService {
 	}
 
 	private void setCmisSecondaryTypes(String repositoryId, PropertiesImpl props, Content content, TypeDefinition tdf) {
-		System.out.println("DEBUG secondaryIds: setCmisSecondaryTypes CALLED for content: " + content.getId());
+		if (log.isDebugEnabled()) {
+			log.debug("setCmisSecondaryTypes called for content: " + content.getId());
+		}
 		List<Aspect> aspects = content.getAspects();
 		List<String> secondaryIds = new ArrayList<String>();
 
@@ -1466,17 +1473,23 @@ public class CompileServiceImpl implements CompileService {
 		// Fixed: Create PropertyIdImpl directly to force empty list instead of null
 		PropertyDefinition<?> pdf = tdf.getPropertyDefinitions().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 		if (checkAddProperty(props, tdf, PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
-			System.out.println("DEBUG secondaryIds: Creating PropertyIdImpl with list size: " + secondaryIds.size());
+			if (log.isDebugEnabled()) {
+				log.debug("Creating PropertyIdImpl with list size: " + secondaryIds.size());
+			}
 			PropertyIdImpl propId = new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
-			System.out.println("DEBUG secondaryIds: PropertyIdImpl created, getValues() = " + propId.getValues());
-			System.out.println("DEBUG secondaryIds: PropertyIdImpl getFirstValue() = " + propId.getFirstValue());
+			if (log.isDebugEnabled()) {
+				log.debug("PropertyIdImpl created, getValues() = " + propId.getValues());
+				log.debug("PropertyIdImpl getFirstValue() = " + propId.getFirstValue());
+			}
 			if (pdf != null) {
 				propId.setDisplayName(pdf.getDisplayName());
 				propId.setLocalName(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 				propId.setQueryName(pdf.getQueryName());
 			}
 			props.addProperty(propId);
-			System.out.println("DEBUG secondaryIds: PropertyIdImpl added to properties");
+			if (log.isDebugEnabled()) {
+				log.debug("PropertyIdImpl added to properties");
+			}
 		}
 
 		// each secondary properties

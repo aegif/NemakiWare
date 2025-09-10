@@ -108,71 +108,29 @@ public class RepositoryServiceImpl implements RepositoryService,
 	@Override
 	public TypeDefinition getTypeDefinition(CallContext callContext,
 			String repositoryId, String typeId, ExtensionsData extension) {
-		// CRITICAL DEBUG: Type definition retrieval debugging
-		System.err.println("=== REPOSITORY SERVICE GET TYPE DEFINITION ===");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("Type ID: " + typeId);
-		System.err.println("CallContext: " + (callContext != null ? callContext.getUsername() : "null"));
 		
-		try {
-			TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, typeId);
-			System.err.println("Type definition retrieved: " + (typeDefinition != null ? typeDefinition.getId() : "null"));
-			
-			if (typeDefinition != null) {
-				Map<String, PropertyDefinition<?>> propertyDefs = typeDefinition.getPropertyDefinitions();
-				System.err.println("Property definitions count: " + (propertyDefs != null ? propertyDefs.size() : "null"));
-				
-				if (propertyDefs != null && !propertyDefs.isEmpty()) {
-					System.err.println("First 3 property definitions:");
-					int count = 0;
-					for (Map.Entry<String, PropertyDefinition<?>> entry : propertyDefs.entrySet()) {
-						if (count >= 3) break;
-						System.err.println("  - " + entry.getKey() + ": " + (entry.getValue() != null ? "NOT NULL" : "NULL"));
-						count++;
-					}
-				}
-			}
-			
-			exceptionService.objectNotFound(DomainType.OBJECT_TYPE, typeDefinition, typeId);
-			System.err.println("Type definition successfully returned");
-			return typeDefinition;
-			
-		} catch (Exception e) {
-			System.err.println("EXCEPTION in getTypeDefinition: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-			e.printStackTrace();
-			throw e;
-		}
+		TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, typeId);
+		exceptionService.objectNotFound(DomainType.OBJECT_TYPE, typeDefinition, typeId);
+		return typeDefinition;
 	}
 
 	@Override
 	public TypeDefinition createType(CallContext callContext,
 			String repositoryId, TypeDefinition type, ExtensionsData extension) {
 		
-		System.err.println("=== CREATE TYPE METHOD CALLED ===");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("Type ID: " + (type != null ? type.getId() : "null"));
-		System.err.println("CallContext: " + (callContext != null ? callContext.getUsername() : "null"));
-		
 		// //////////////////
 		// General Exception
 		// //////////////////
-		System.err.println("=== PERMISSION AND VALIDATION CHECKS ===");
 		exceptionService.perimissionAdmin(callContext, repositoryId);
-		System.err.println("Permission check passed");
 		exceptionService.invalidArgumentRequired("typeDefinition", type);
-		System.err.println("Required argument check passed");
 		exceptionService.invalidArgumentCreatableType(repositoryId, type);
-		System.err.println("Creatable type check passed");
 		exceptionService.constraintDuplicatePropertyDefinition(repositoryId, type);
-		System.err.println("Duplicate property check passed");
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
 		// Attributes
-		System.err.println("=== SETTING TYPE ATTRIBUTES ===");
 		NemakiTypeDefinition ntd = setNemakiTypeDefinitionAttributes(repositoryId, type);
-		System.err.println("Type attributes set successfully");
 
 		// Property definitions
 		List<String> systemIds = typeManager.getSystemPropertyIds();
@@ -434,10 +392,12 @@ public class RepositoryServiceImpl implements RepositoryService,
 	private TypeDefinition sortPropertyDefinitions(
 			String repositoryId, NemakiTypeDefinition nemakiTypeDefinition, TypeDefinition criterion) {
 		
-		// CRITICAL DEBUG: Add logging to trace NPE in sortPropertyDefinitions
-		System.out.println("sortPropertyDefinitions: Starting with typeId=" + nemakiTypeDefinition.getTypeId());
-		System.out.println("sortPropertyDefinitions: Properties count=" + 
-			(nemakiTypeDefinition.getProperties() != null ? nemakiTypeDefinition.getProperties().size() : "null"));
+		// Debug logging for property definition sorting
+		if (log.isDebugEnabled()) {
+			log.debug("sortPropertyDefinitions: Starting with typeId=" + nemakiTypeDefinition.getTypeId());
+			log.debug("sortPropertyDefinitions: Properties count=" + 
+				(nemakiTypeDefinition.getProperties() != null ? nemakiTypeDefinition.getProperties().size() : "null"));
+		}
 		
 		AbstractTypeDefinition tdf = typeManager
 				.buildTypeDefinitionFromDB(repositoryId, nemakiTypeDefinition);

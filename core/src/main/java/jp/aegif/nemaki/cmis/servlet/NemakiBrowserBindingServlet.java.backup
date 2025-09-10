@@ -53,15 +53,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     private static final long serialVersionUID = 1L;
     private static final Log log = LogFactory.getLog(NemakiBrowserBindingServlet.class);
     
-    // CRITICAL: Static block that ALWAYS executes when class is loaded
+    // Static initialization block for class loading verification
     static {
-        System.err.println("=== STATIC INIT: NemakiBrowserBindingServlet class loaded at " + System.currentTimeMillis() + " ===");
-        System.err.println("CRITICAL: If you see this message, the custom NemakiBrowserBindingServlet is being loaded");
-        try {
-            System.err.println("CLASSLOADER: " + NemakiBrowserBindingServlet.class.getClassLoader());
-            System.err.println("CODEBASE: " + NemakiBrowserBindingServlet.class.getProtectionDomain().getCodeSource().getLocation());
-        } catch (Exception e) {
-            System.err.println("Error getting class info: " + e.getMessage());
+        if (log.isDebugEnabled()) {
+            log.debug("NemakiBrowserBindingServlet class loaded");
         }
     }
     
@@ -70,15 +65,17 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      */
     public NemakiBrowserBindingServlet() {
         super();
-        log.info("NEMAKI SERVLET: NemakiBrowserBindingServlet constructor called");
-        System.out.println("NEMAKI SERVLET: NemakiBrowserBindingServlet constructor called");
+        if (log.isDebugEnabled()) {
+            log.debug("NemakiBrowserBindingServlet constructor called");
+        }
     }
     
     @Override
     public void init() throws ServletException {
         super.init();
-        log.info("NEMAKI SERVLET: NemakiBrowserBindingServlet initialized");
-        System.out.println("NEMAKI SERVLET: NemakiBrowserBindingServlet initialized");
+        if (log.isDebugEnabled()) {
+            log.debug("NemakiBrowserBindingServlet initialized");
+        }
     }
 
     /**
@@ -89,20 +86,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         
-        // VERSION CHECK: This line should appear if the latest source code is compiled
-        System.err.println("!!! VERSION CHECK: LATEST SOURCE CODE EXECUTING - TIMESTAMP: " + System.currentTimeMillis() + " !!!");
-        
-        // CRITICAL: Simple debug message that MUST appear if this method is called
-        System.err.println("!!! NEMAKI SERVICE METHOD CALLED: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
-        
-        // CRITICAL DEBUG: Content-Type header for multipart debugging
-        String debugContentType = request.getContentType();
-        System.err.println("!!! CONTENT-TYPE HEADER: [" + debugContentType + "] !!!");
-        System.err.println("!!! CONTENT-TYPE NULL: " + (debugContentType == null) + " !!!");
-        if (debugContentType != null) {
-            System.err.println("!!! CONTENT-TYPE LENGTH: " + debugContentType.length() + " !!!");
-            System.err.println("!!! CONTAINS MULTIPART: " + debugContentType.contains("multipart") + " !!!");
-            System.err.println("!!! CONTAINS BOUNDARY: " + debugContentType.contains("boundary") + " !!!");
+        if (log.isDebugEnabled()) {
+            log.debug("Service method called: " + request.getMethod() + " " + request.getRequestURI());
+            String debugContentType = request.getContentType();
+            log.debug("Content-Type: " + debugContentType);
         }
         
         // CRITICAL DEBUG: ALWAYS log every request that reaches this servlet
@@ -113,31 +100,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String contextPath = request.getContextPath();
         String servletPath = request.getServletPath();
         
-        System.err.println("=== NEMAKI SERVLET: EVERY REQUEST CAPTURE ===");
-        System.err.println("Method: " + method);
-        System.err.println("RequestURI: " + requestURI);
-        System.err.println("ContextPath: " + contextPath);
-        System.err.println("ServletPath: " + servletPath);
-        System.err.println("PathInfo: " + pathInfo);
-        System.err.println("QueryString: " + queryString);
-        System.err.println("RemoteAddr: " + request.getRemoteAddr());
-        System.err.println("RemoteHost: " + request.getRemoteHost());
-        System.err.println("Thread: " + Thread.currentThread().getName());
-        System.err.println("Timestamp: " + System.currentTimeMillis());
-        
-        // Log ALL parameters for every request
-        java.util.Map<String, String[]> allParams = request.getParameterMap();
-        System.err.println("=== ALL PARAMETERS ===");
-        for (String paramName : allParams.keySet()) {
-            System.err.println("  " + paramName + " = " + java.util.Arrays.toString(allParams.get(paramName)));
-        }
-        
-        // Log ALL headers for every request
-        System.err.println("=== ALL HEADERS ===");
-        java.util.Enumeration<String> headerNames = request.getHeaderNames();
-        while (headerNames.hasMoreElements()) {
-            String headerName = headerNames.nextElement();
-            System.err.println("  " + headerName + " = " + request.getHeader(headerName));
+        if (log.isDebugEnabled()) {
+            log.debug("Request details - Method: " + method + ", URI: " + requestURI + ", PathInfo: " + pathInfo);
         }
         
         // ===============================
@@ -693,8 +657,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // This will use the standard authentication and dispatcher mechanism
         super.service(wrappedRequest, response);
         
-        log.info("NEMAKI CMIS: Successfully handled object-specific POST operation via request wrapping");
-        System.out.println("NEMAKI CMIS: Successfully handled object-specific POST operation via request wrapping");
+        if (log.isDebugEnabled()) {
+            log.debug("Successfully handled object-specific POST operation via request wrapping");
+        }
     }
     
     /**
@@ -707,10 +672,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String repositoryId = pathFragments[0];
         String objectId = pathFragments[1];
         
-        log.info("NEMAKI CMIS: Handling object-specific GET operation via standard OpenCMIS delegation");
-        System.out.println("NEMAKI CMIS: Handling object-specific GET operation via standard OpenCMIS delegation");
-        log.info("NEMAKI CMIS: repositoryId=" + repositoryId + ", objectId=" + objectId + ", cmisselector=" + cmisselector);
-        System.out.println("NEMAKI CMIS: repositoryId=" + repositoryId + ", objectId=" + objectId + ", cmisselector=" + cmisselector);
+        if (log.isDebugEnabled()) {
+            log.debug("Handling object-specific GET operation via standard OpenCMIS delegation");
+            log.debug("repositoryId=" + repositoryId + ", objectId=" + objectId + ", cmisselector=" + cmisselector);
+        }
         
         try {
             // FINAL APPROACH: Use standard OpenCMIS routing but with proper object ID parameter injection
@@ -776,8 +741,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // This uses the standard OpenCMIS authentication and context management
             super.service(wrappedRequest, response);
             
-            log.info("NEMAKI CMIS: Successfully handled " + cmisselector + " operation via standard delegation");
-            System.out.println("NEMAKI CMIS: Successfully handled " + cmisselector + " operation via standard delegation");
+            if (log.isDebugEnabled()) {
+                log.debug("Successfully handled " + cmisselector + " operation via standard delegation");
+            }
             
         } catch (Exception e) {
             log.error("Error in standard delegation CMIS service operation", e);
@@ -815,8 +781,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // Convert result to JSON and write response
             writeJsonResponse(response, result);
             
-            log.info("NEMAKI CMIS: Successfully handled " + cmisselector + " operation");
-            System.out.println("NEMAKI CMIS: Successfully handled " + cmisselector + " operation");
+            if (log.isDebugEnabled()) {
+                log.debug("Successfully handled " + cmisselector + " operation");
+            }
             
         } catch (Exception e) {
             log.error("Error in CMIS service operation", e);
@@ -1122,8 +1089,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     private void handleRepositoryLevelRequestWithoutSelector(HttpServletRequest request, HttpServletResponse response,
             String repositoryId) throws Exception {
         
-        log.info("NEMAKI FIX: Handling repository-level request without cmisselector for repository: " + repositoryId);
-        System.out.println("NEMAKI FIX: Handling repository-level request without cmisselector for repository: " + repositoryId);
+        if (log.isDebugEnabled()) {
+            log.debug("Handling repository-level request without cmisselector for repository: " + repositoryId);
+        }
         
         // For repository-level GET requests without cmisselector, the most common case is repositoryInfo
         // However, for TCK type operations, we need to check if there are type-related parameters

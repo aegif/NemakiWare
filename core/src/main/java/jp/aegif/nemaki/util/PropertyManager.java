@@ -71,23 +71,30 @@ public class PropertyManager{
 	}
 
 	public String readValue(String repositoryId, String key){
-		// DEBUG: Add detailed logging for system.folder property - ENHANCED with System.out.println
-		System.out.println("=== PROPERTY MANAGER DEBUG: readValue called with repositoryId='" + repositoryId + "', key='" + key + "'");
+		if (log.isDebugEnabled()) {
+			log.debug("readValue called with repositoryId='" + repositoryId + "', key='" + key + "'");
+		}
 		
 		Object configVal = getDynamicValue(repositoryId, key);
 		
-		System.out.println("=== PROPERTY MANAGER DEBUG: getDynamicValue returned: " + (configVal != null ? "'" + configVal.toString() + "'" : "NULL"));
+		if (log.isDebugEnabled()) {
+			log.debug("getDynamicValue returned: " + (configVal != null ? "'" + configVal.toString() + "'" : "NULL"));
+		}
 		
 		if(configVal == null){
 			String fallbackValue = propertyConfigurer.getValue(key);
 			
-			System.out.println("=== PROPERTY MANAGER DEBUG: Using fallback propertyConfigurer.getValue('" + key + "') = " + (fallbackValue != null ? "'" + fallbackValue + "'" : "NULL"));
+			if (log.isDebugEnabled()) {
+				log.debug("Using fallback propertyConfigurer.getValue('" + key + "') = " + (fallbackValue != null ? "'" + fallbackValue + "'" : "NULL"));
+			}
 			
 			return fallbackValue;
 		}else{
 			String result = configVal.toString();
 			
-			System.out.println("=== PROPERTY MANAGER DEBUG: Returning dynamic value: '" + result + "'");
+			if (log.isDebugEnabled()) {
+				log.debug("Returning dynamic value: '" + result + "'");
+			}
 			
 			return result;
 		}

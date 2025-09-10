@@ -696,9 +696,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return  v;
 		}
 
-		System.out.println("=== CACHED LAYER: getUserItemById for userId: " + userId + " in repository: " + repositoryId + " ===");
+		if (log.isDebugEnabled()) {
+			log.debug("getUserItemById for userId: " + userId + " in repository: " + repositoryId);
+		}
 		UserItem userItem = nonCachedContentDaoService.getUserItemById(repositoryId, userId);
-		System.out.println("=== CACHED LAYER: got userItem result: " + (userItem != null ? "NOT NULL" : "NULL") + " ===");
+		if (log.isDebugEnabled()) {
+			log.debug("got userItem result: " + (userItem != null ? "NOT NULL" : "NULL"));
+		}
 
 		if (userItem == null) {
 			return null;

@@ -873,9 +873,11 @@ public class TypeResource extends ResourceBase {
 		
 		for (Object keyObj : propertyDefinitions.keySet()) {
 			String propertyId = (String) keyObj;
-			JSONObject propertyJson = (JSONObject) propertyDefinitions.get(propertyId);
-			
-			System.err.println("[TYPERESOURCE] Processing property: " + propertyId);
+		JSONObject propertyJson = (JSONObject) propertyDefinitions.get(propertyId);
+		
+		if (log.isDebugEnabled()) {
+			log.debug("Processing property: " + propertyId);
+		}
 			
 			// Check if property already exists
 			if (existProperty(repositoryId, propertyId)) {
@@ -947,37 +949,48 @@ public class TypeResource extends ResourceBase {
 			
 			detailMaps.put(propertyId, detail);
 			
-			System.err.println("[TYPERESOURCE] Successfully parsed property: " + propertyId);
+			if (log.isDebugEnabled()) {
+				log.debug("Successfully parsed property: " + propertyId);
+			}
 		}
 		
 		typeProperties.put(typeId, propertyIds);
-		System.err.println("[TYPERESOURCE] Processed " + propertyIds.size() + " properties for type: " + typeId);
+		if (log.isDebugEnabled()) {
+			log.debug("Processed " + propertyIds.size() + " properties for type: " + typeId);
+		}
 		return propertyIds;
 	}
 
 	private void parse(String repositoryId, InputStream is) throws DocumentException {
-		System.err.println("[TYPERESOURCE] === PARSE METHOD CALLED ===");
-		System.err.println("[TYPERESOURCE] Repository ID: " + repositoryId);
+		if (log.isDebugEnabled()) {
+			log.debug("Parse method called for repository: " + repositoryId);
+		}
 		
 		SAXReader saxReader = new SAXReader();
 		Document document = saxReader.read(is);
 		Element model = document.getRootElement();
 		
-		System.err.println("[TYPERESOURCE] Root element name: " + model.getName());
-		System.err.println("[TYPERESOURCE] Root element content: " + model.asXML());
+		if (log.isDebugEnabled()) {
+			log.debug("Root element name: " + model.getName());
+		}
 
 		// Types
 		Element _types = getElement(model, "types");
-		System.err.println("[TYPERESOURCE] Found _types element: " + (_types != null ? _types.getName() : "null"));
+		if (log.isDebugEnabled()) {
+			log.debug("Found _types element: " + (_types != null ? _types.getName() : "null"));
+		}
 		
 		List<Element> types = getElements(_types, "type");
-		System.err.println("[TYPERESOURCE] Found types count: " + (types != null ? types.size() : "null"));
+		if (log.isDebugEnabled()) {
+			log.debug("Found types count: " + (types != null ? types.size() : "null"));
+		}
 		
 		if (types != null && !types.isEmpty()) {
 			for (int i = 0; i < types.size(); i++) {
 				Element type = types.get(i);
-				System.err.println("[TYPERESOURCE] Type[" + i + "] name: " + type.getName());
-				System.err.println("[TYPERESOURCE] Type[" + i + "] XML: " + type.asXML());
+				if (log.isDebugEnabled()) {
+					log.debug("Type[" + i + "] name: " + type.getName());
+				}
 			}
 		}
 		
@@ -985,10 +998,14 @@ public class TypeResource extends ResourceBase {
 
 		// Aspects
 		Element _aspects = getElement(model, "aspects");
-		System.err.println("[TYPERESOURCE] Found _aspects element: " + (_aspects != null ? _aspects.getName() : "null"));
+		if (log.isDebugEnabled()) {
+			log.debug("Found _aspects element: " + (_aspects != null ? _aspects.getName() : "null"));
+		}
 		
 		List<Element> aspects = getElements(_aspects, "aspect");
-		System.err.println("[TYPERESOURCE] Found aspects count: " + (aspects != null ? aspects.size() : "null"));
+		if (log.isDebugEnabled()) {
+			log.debug("Found aspects count: " + (aspects != null ? aspects.size() : "null"));
+		}
 		
 		parseTypes(repositoryId, aspects);
 		
@@ -1220,15 +1237,18 @@ public class TypeResource extends ResourceBase {
 	}
 
 	private void create(String repositoryId) {
-		System.err.println("[TYPERESOURCE] === CREATE METHOD CALLED ===");
-		System.err.println("[TYPERESOURCE] Repository ID: " + repositoryId);
-		System.err.println("[TYPERESOURCE] coreMaps size: " + (coreMaps != null ? coreMaps.size() : "null"));
-		System.err.println("[TYPERESOURCE] detailMaps size: " + (detailMaps != null ? detailMaps.size() : "null"));
-		System.err.println("[TYPERESOURCE] typeMaps size: " + (typeMaps != null ? typeMaps.size() : "null"));
+		if (log.isDebugEnabled()) {
+			log.debug("Create method called for repository: " + repositoryId);
+			log.debug("coreMaps size: " + (coreMaps != null ? coreMaps.size() : "null"));
+			log.debug("detailMaps size: " + (detailMaps != null ? detailMaps.size() : "null"));
+			log.debug("typeMaps size: " + (typeMaps != null ? typeMaps.size() : "null"));
+		}
 		
 		// First, create properties
 		if (coreMaps == null || coreMaps.isEmpty()) {
-			System.err.println("[TYPERESOURCE] WARNING: No coreMaps found - skipping property creation");
+			if (log.isDebugEnabled()) {
+				log.debug("No coreMaps found - skipping property creation");
+			}
 		}
 		
 		for (Entry<String, NemakiPropertyDefinitionCore> coreEntry : coreMaps.entrySet()) {
@@ -1236,7 +1256,9 @@ public class TypeResource extends ResourceBase {
 			NemakiPropertyDefinition p = new NemakiPropertyDefinition(coreEntry.getValue(),
 					detailMaps.get(coreEntry.getKey()));
 			
-			System.err.println("[TYPERESOURCE] Creating property: " + originalPropertyId);
+			if (log.isDebugEnabled()) {
+				log.debug("Creating property: " + originalPropertyId);
+			}
 			
 			// プロパティ定義を作成
 			NemakiPropertyDefinitionDetail createdDetail = typeService.createPropertyDefinition(repositoryId, p);
@@ -1246,8 +1268,10 @@ public class TypeResource extends ResourceBase {
 				continue;
 			}
 			
-			System.err.println("[TYPERESOURCE] Created detail with ID: " + createdDetail.getId() + 
-				", coreNodeId: " + createdDetail.getCoreNodeId());
+			if (log.isDebugEnabled()) {
+				log.debug("Created detail with ID: " + createdDetail.getId() + 
+					", coreNodeId: " + createdDetail.getCoreNodeId());
+			}
 			
 			// 元のコードのロジックに戻す - propertyIdで再度Coreを検索
 			// これは、createPropertyDefinition内でpropertyIdが変更される可能性があるため
@@ -1256,8 +1280,10 @@ public class TypeResource extends ResourceBase {
 					
 			if (createdCore != null) {
 				coreEntry.getValue().setId(createdCore.getId());
-				System.err.println("[TYPERESOURCE] Found core with ID: " + createdCore.getId() + 
-					" for property: " + p.getPropertyId());
+				if (log.isDebugEnabled()) {
+					log.debug("Found core with ID: " + createdCore.getId() + 
+						" for property: " + p.getPropertyId());
+				}
 			} else {
 				// createdCoreがnullの場合、DetailのcoreNodeIdを使用
 				log.warn("[TYPERESOURCE] Could not find core by propertyId, using detail's coreNodeId");
@@ -1285,8 +1311,10 @@ public class TypeResource extends ResourceBase {
 			System.err.println("[TYPERESOURCE] Property IDs for type " + t.getTypeId() + ": " + propertyIds);
 			
 			if (CollectionUtils.isNotEmpty(propertyIds)) {
-				for (String propertyId : typeProperties.get(t.getTypeId())) {
-					System.err.println("[TYPERESOURCE] Processing property: " + propertyId);
+			for (String propertyId : typeProperties.get(t.getTypeId())) {
+				if (log.isDebugEnabled()) {
+					log.debug("Processing property: " + propertyId);
+				}
 					
 					// 元のpropertyIdでcoreMapsから取得（作成時にIDがセットされている）
 					NemakiPropertyDefinitionCore coreFromMap = coreMaps.get(propertyId);

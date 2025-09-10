@@ -163,7 +163,9 @@ public class JodRenditionManagerImpl implements RenditionManager {
 			out.flush();
 			out.close();
 		} catch (IOException e) {
-			System.out.println(e.getMessage());
+			if (log.isDebugEnabled()) {
+				log.debug("IOException in convertInputStreamToFile: " + e.getMessage());
+			}
 		}
 
 		return file;

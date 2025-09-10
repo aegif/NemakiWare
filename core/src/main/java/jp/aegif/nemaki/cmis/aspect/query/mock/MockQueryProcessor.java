@@ -30,7 +30,9 @@ public class MockQueryProcessor implements QueryProcessor {
     private CompileService compileService;
 
     public MockQueryProcessor() {
-        System.out.println("MockQueryProcessor initialized - Solr disabled for development");
+        if (log.isDebugEnabled()) {
+            log.debug("MockQueryProcessor initialized - Solr disabled for development");
+        }
         log.info("MockQueryProcessor initialized - providing basic query functionality without Solr");
     }
 
@@ -43,7 +45,9 @@ public class MockQueryProcessor implements QueryProcessor {
                            BigInteger skipCount, ExtensionsData extension) {
         
         log.info("MockQueryProcessor.query called with statement: " + statement);
-        System.out.println("MockQueryProcessor executing query: " + statement);
+        if (log.isDebugEnabled()) {
+            log.debug("MockQueryProcessor executing query: " + statement);
+        }
         
         ObjectListImpl result = new ObjectListImpl();
         
@@ -54,12 +58,15 @@ public class MockQueryProcessor implements QueryProcessor {
             result.setHasMoreItems(false);
             
             log.info("MockQueryProcessor returning empty result set (Solr disabled for development)");
-            System.out.println("MockQueryProcessor: Returning 0 results (Solr disabled)");
+            if (log.isDebugEnabled()) {
+                log.debug("MockQueryProcessor: Returning 0 results (Solr disabled)");
+            }
             
         } catch (Exception e) {
             log.error("Error in MockQueryProcessor.query: " + e.getMessage(), e);
-            System.out.println("MockQueryProcessor error: " + e.getMessage());
-            e.printStackTrace();
+            if (log.isDebugEnabled()) {
+                log.debug("MockQueryProcessor error: " + e.getMessage());
+            }
         }
         
         return result;

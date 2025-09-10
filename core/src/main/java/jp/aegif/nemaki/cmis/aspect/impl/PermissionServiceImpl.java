@@ -521,7 +521,9 @@ public class PermissionServiceImpl implements PermissionService {
 		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 
 		log.info("PermissionServiceImpl.getFiltered: Processing " + contents.size() + " items for user " + userName + " with groups " + groups);
-		System.out.println("DEBUG PermissionServiceImpl.getFiltered: Processing " + contents.size() + " items for user " + userName + " with groups " + groups);
+		if (log.isDebugEnabled()) {
+			log.debug("PermissionServiceImpl.getFiltered: Processing " + contents.size() + " items for user " + userName + " with groups " + groups);
+		}
 		// Force error log for visibility
 		log.debug("getFiltered START - Processing " + contents.size() + " items for user " + userName);
 

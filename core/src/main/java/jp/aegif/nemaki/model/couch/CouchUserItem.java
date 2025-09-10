@@ -205,13 +205,7 @@ public class CouchUserItem extends CouchItem{
 			throw new RuntimeException("UserId is required but null in CouchUserItem conversion");
 		}
 		
-		// デバッグログ: パスワード設定前の状況を確認
 		String retrievedPassword = getPassword();
-		System.out.println("CouchUserItem.convert() DEBUG:");
-		System.out.println("  - userId: " + getUserId());
-		System.out.println("  - passwordHash field: " + passwordHash);
-		System.out.println("  - password field: " + password);
-		System.out.println("  - getPassword() returns: " + retrievedPassword);
 		
 		userItem.setPassowrd(retrievedPassword);
 		userItem.setAdmin(isAdmin() != null ? isAdmin() : false);
@@ -237,9 +231,6 @@ public class CouchUserItem extends CouchItem{
 			userItem.setSubTypeProperties(subTypeProps);
 		}
 		
-		// デバッグログ: UserItemに設定された値を確認
-		System.out.println("  - UserItem.getPassowrd() after set: " + userItem.getPassowrd());
-		System.out.println("  - SubTypeProperties count: " + (userItem.getSubTypeProperties() != null ? userItem.getSubTypeProperties().size() : 0));
 		
 		return userItem;
 	}

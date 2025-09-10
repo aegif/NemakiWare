@@ -60,11 +60,14 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 
 @Path("/repo/{repositoryId}/group")
 public class GroupItemResource extends ResourceBase{
 
+	private static final Log log = LogFactory.getLog(GroupItemResource.class);
 	private ContentService contentService;
 
 	private ContentService getContentService() {
@@ -117,7 +120,9 @@ public class GroupItemResource extends ResourceBase{
 	@Path("/list")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String list(@PathParam("repositoryId") String repositoryId){
-		System.out.println("=== GroupItemResource.list() called for repository: " + repositoryId + " ===");
+		if (log.isDebugEnabled()) {
+			log.debug("GroupItemResource.list() called for repository: " + repositoryId);
+		}
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray listJSON = new JSONArray();
@@ -126,23 +131,33 @@ public class GroupItemResource extends ResourceBase{
 
 		List<GroupItem> groupList;
 		try{
-			System.out.println("=== Calling getContentService().getGroupItems() ===");
+			if (log.isDebugEnabled()) {
+				log.debug("Calling getContentService().getGroupItems()");
+			}
 			groupList = getContentService().getGroupItems(repositoryId);
-			System.out.println("=== getGroupItems returned " + groupList.size() + " groups ===");
+			if (log.isDebugEnabled()) {
+				log.debug("getGroupItems returned " + groupList.size() + " groups");
+			}
 			
 			for(GroupItem group : groupList){
-				System.out.println("=== Processing group: ID=" + group.getGroupId() + ", Name=" + group.getName() + " ===");
+				if (log.isDebugEnabled()) {
+					log.debug("Processing group: ID=" + group.getGroupId() + ", Name=" + group.getName());
+				}
 				JSONObject groupJSON = convertGroupToJson(group);
 				listJSON.add(groupJSON);
 			}
 			result.put(ITEM_ALLGROUPS, listJSON);
 		}catch(Exception ex){
-			System.out.println("=== Exception in GroupItemResource.list(): " + ex.getMessage() + " ===");
+			if (log.isDebugEnabled()) {
+				log.debug("Exception in GroupItemResource.list(): " + ex.getMessage());
+			}
 			ex.printStackTrace();
 			addErrMsg(errMsg, ITEM_ALLGROUPS, ErrorCode.ERR_LIST);
 		}
 		result = makeResult(status, result, errMsg);
-		System.out.println("=== GroupItemResource.list() returning result ===");
+		if (log.isDebugEnabled()) {
+			log.debug("GroupItemResource.list() returning result");
+		}
 		return result.toString();
 	}
 

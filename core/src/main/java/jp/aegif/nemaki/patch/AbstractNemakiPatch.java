@@ -17,21 +17,27 @@ public abstract class AbstractNemakiPatch {
 
 
 	public void apply(){
-		System.out.println("=== PATCH DEBUG: AbstractNemakiPatch.apply() CALLED ===");
-		log.info("=== PATCH DEBUG: AbstractNemakiPatch.apply() CALLED ===");
+		if (log.isDebugEnabled()) {
+			log.debug("AbstractNemakiPatch.apply() called");
+		}
+		log.info("AbstractNemakiPatch.apply() called");
 		applySystemPatch();
 
 		for(String repositoryId : patchUtil.getRepositoryInfoMap().keys()){
-			System.out.println("=== PATCH DEBUG: Processing repository: " + repositoryId + " ===");
-			log.info("=== PATCH DEBUG: Processing repository: " + repositoryId + " ===");
+			if (log.isDebugEnabled()) {
+				log.debug("Processing repository: " + repositoryId);
+			}
+			log.info("Processing repository: " + repositoryId);
 			boolean isApplied = patchUtil.isApplied(repositoryId, getName());
 			if(isApplied){
 				log.info("[patch=" + getName() + ", repositoryId=" + repositoryId + "]" +  "already applied, skipped");
 				continue;
 			}else{
 				try{
-					System.out.println("=== PATCH DEBUG: Calling applyPerRepositoryPatch for: " + repositoryId + " ===");
-					log.info("=== PATCH DEBUG: Calling applyPerRepositoryPatch for: " + repositoryId + " ===");
+					if (log.isDebugEnabled()) {
+						log.debug("Calling applyPerRepositoryPatch for: " + repositoryId);
+					}
+					log.info("Calling applyPerRepositoryPatch for: " + repositoryId);
 					applyPerRepositoryPatch(repositoryId);
 
 					patchUtil.createPathHistory(repositoryId, getName());
@@ -47,8 +53,10 @@ public abstract class AbstractNemakiPatch {
 	public abstract String getName();
 
 	public void setPatchUtil(PatchUtil patchUtil) {
-		System.out.println("=== PATCH DEBUG: setPatchUtil called with " + (patchUtil != null ? patchUtil.getClass().getName() : "null"));
-		log.info("=== PATCH DEBUG: setPatchUtil called with " + (patchUtil != null ? patchUtil.getClass().getName() : "null"));
+		if (log.isDebugEnabled()) {
+			log.debug("setPatchUtil called with " + (patchUtil != null ? patchUtil.getClass().getName() : "null"));
+		}
+		log.info("setPatchUtil called with " + (patchUtil != null ? patchUtil.getClass().getName() : "null"));
 		this.patchUtil = patchUtil;
 	}
 

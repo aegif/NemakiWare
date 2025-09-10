@@ -24,12 +24,15 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefi
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 // Removed Ektorp imports - functionality temporarily disabled
 
 import java.util.List;
 import java.util.Map;
 
 public class PatchUtil {
+	private static final Log log = LogFactory.getLog(PatchUtil.class);
 	protected PropertyManager propertyManager;
 	protected CloudantClientPool connectorPool;
 	protected ContentService contentService;
@@ -40,8 +43,9 @@ public class PatchUtil {
 	protected TypeManager typeManager;
 
 	public PatchUtil() {
-		System.out.println("=== PATCH DEBUG: PatchUtil constructor called ===");
-		org.apache.commons.logging.LogFactory.getLog(PatchUtil.class).info("=== PATCH DEBUG: PatchUtil constructor called ===");
+		if (log.isDebugEnabled()) {
+			log.debug("PatchUtil constructor called");
+		}
 	}
 
 	protected boolean isApplied(String repositoryId, String name){

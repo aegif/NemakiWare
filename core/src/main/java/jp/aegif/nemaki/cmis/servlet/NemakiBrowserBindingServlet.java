@@ -528,10 +528,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         handleRepositoryLevelRequestWithoutSelector(request, response, repositoryId);
                         return;
                     } else {
-                        System.err.println("*** REPOSITORY LEVEL TYPE CHILDREN: Could not extract repository ID from pathInfo: " + pathInfo + " ***");
+                        if (log.isDebugEnabled()) {
+                            log.debug("Repository level type children: Could not extract repository ID from pathInfo: " + pathInfo);
+                        }
                     }
                 } catch (Exception e) {
-                    System.err.println("*** REPOSITORY LEVEL TYPE CHILDREN EXCEPTION: " + e.getMessage() + " ***");
+                    if (log.isDebugEnabled()) {
+                        log.debug("Repository level type children exception: " + e.getMessage());
+                    }
                     e.printStackTrace();
                     log.error("Error in repository-level typeChildren handling", e);
                     try {
@@ -1047,7 +1051,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 "typeId parameter is required for typeDefinition operation");
         }
         
-        System.err.println("*** HANDLE TYPE DEFINITION: Processing typeId='" + typeId + "' ***");
+        if (log.isDebugEnabled()) {
+            log.debug("Handle type definition: Processing typeId='" + typeId + "'");
+        }
         
         // Call CMIS service to get TypeDefinition
         org.apache.chemistry.opencmis.commons.definitions.TypeDefinition typeDefinition = service.getTypeDefinition(
@@ -1058,7 +1064,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // This ensures CMIS standard properties have inherited=true for CMIS 1.1 compliance
         if (typeDefinition != null) {
             typeDefinition = correctInheritedFlags(typeDefinition);
-            System.err.println("*** HANDLE TYPE DEFINITION: Applied inherited flag corrections to type '" + typeId + "' ***");
+            if (log.isDebugEnabled()) {
+                log.debug("Handle type definition: Applied inherited flag corrections to type '" + typeId + "'");
+            }
         }
         
         return typeDefinition;
@@ -1180,7 +1188,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // If normal buffering failed, try direct service approach
             if (contentBytes == null) {
                 // FALLBACK PATH: Get content directly from service, bypassing the closed stream
-                System.err.println("=== FALLBACK: Getting content directly from service ===");
+                if (log.isDebugEnabled()) {
+                    log.debug("Fallback: Getting content directly from service");
+                }
                 try {
                     // Get Spring web context to access service beans
                     org.springframework.web.context.WebApplicationContext webContext = 
@@ -1209,7 +1219,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         throw new Exception("Document has no attachment: " + objectId);
                     }
                     
-                    System.err.println("Getting fresh attachment from service: " + attachmentId);
+                    if (log.isDebugEnabled()) {
+                        log.debug("Getting fresh attachment from service: " + attachmentId);
+                    }
                     jp.aegif.nemaki.model.AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
                     if (attachment == null) {
                         throw new Exception("Attachment not found: " + attachmentId);
@@ -1227,14 +1239,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         int bytesRead;
                         long totalBytesRead = 0;
                         
-                        System.err.println("Buffering fresh attachment content...");
+                        if (log.isDebugEnabled()) {
+                            log.debug("Buffering fresh attachment content...");
+                        }
                         while ((bytesRead = freshStream.read(readBuffer)) != -1) {
                             buffer.write(readBuffer, 0, bytesRead);
                             totalBytesRead += bytesRead;
                         }
                         
                         contentBytes = buffer.toByteArray();
-                        System.err.println("✅ Fresh attachment content buffered: " + contentBytes.length + " bytes");
+                        if (log.isDebugEnabled()) {
+                            log.debug("Fresh attachment content buffered: " + contentBytes.length + " bytes");
+                        }
                         
                     } finally {
                         if (freshStream != null) {
@@ -1243,7 +1259,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     }
                     
                 } catch (Exception fallbackEx) {
-                    System.err.println("❌ FALLBACK ALSO FAILED: " + fallbackEx.getMessage());
+                    if (log.isDebugEnabled()) {
+                        log.debug("Fallback also failed: " + fallbackEx.getMessage());
+                    }
                     fallbackEx.printStackTrace();
                     throw new java.io.IOException("Both stream buffer and direct service approaches failed", fallbackEx);
                 }
@@ -1252,7 +1270,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // Now write the buffered content to response
             outputStream = response.getOutputStream();
             if (outputStream == null) {
-                System.err.println("ERROR: response.getOutputStream() returned null");
+                log.error("response.getOutputStream() returned null");
                 return null;
             }
             
@@ -1498,7 +1516,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             String repositoryId) throws Exception {
         
         log.info("NEMAKI FIX: Handling repository-level request without cmisselector for repository: " + repositoryId);
-        System.out.println("NEMAKI FIX: Handling repository-level request without cmisselector for repository: " + repositoryId);
+        if (log.isDebugEnabled()) {
+            log.debug("NEMAKI FIX: Handling repository-level request without cmisselector for repository: " + repositoryId);
+        }
         
         // For repository-level GET requests without cmisselector, the most common case is repositoryInfo
         // However, for TCK type operations, we need to check if there are type-related parameters
@@ -1544,7 +1564,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
         
         log.info("NEMAKI FIX: Inferred cmisselector: " + inferredSelector + " based on parameters");
-        System.out.println("NEMAKI FIX: Inferred cmisselector: " + inferredSelector + " based on parameters");
+        if (log.isDebugEnabled()) {
+            log.debug("NEMAKI FIX: Inferred cmisselector: " + inferredSelector + " based on parameters");
+        }
         
         // CRITICAL FIX: Only create wrapper if we actually inferred a new cmisselector
         final HttpServletRequest requestToUse;
@@ -1588,21 +1610,29 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         // Delegate to the parent servlet with the appropriate request
         log.info("*** NEMAKI DEBUG: About to call super.service() with selector: " + inferredSelector + " ***");
-        System.out.println("*** NEMAKI DEBUG: About to call super.service() with selector: " + inferredSelector + " ***");
+        if (log.isDebugEnabled()) {
+            log.debug("*** NEMAKI DEBUG: About to call super.service() with selector: " + inferredSelector + " ***");
+        }
         
         try {
             super.service(requestToUse, response);
             
             log.info("*** NEMAKI DEBUG: super.service() completed successfully for selector: " + inferredSelector + " ***");
-            System.out.println("*** NEMAKI DEBUG: super.service() completed successfully for selector: " + inferredSelector + " ***");
+            if (log.isDebugEnabled()) {
+                log.debug("*** NEMAKI DEBUG: super.service() completed successfully for selector: " + inferredSelector + " ***");
+            }
         } catch (Exception e) {
             log.error("*** NEMAKI DEBUG: Exception in super.service() for selector: " + inferredSelector + " - " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***", e);
-            System.out.println("*** NEMAKI DEBUG: Exception in super.service() for selector: " + inferredSelector + " - " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
+            if (log.isDebugEnabled()) {
+                log.debug("*** NEMAKI DEBUG: Exception in super.service() for selector: " + inferredSelector + " - " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
+            }
             throw e;
         }
         
         log.info("NEMAKI FIX: Successfully handled repository-level request with inferred selector: " + inferredSelector);
-        System.out.println("NEMAKI FIX: Successfully handled repository-level request with inferred selector: " + inferredSelector);
+        if (log.isDebugEnabled()) {
+            log.debug("NEMAKI FIX: Successfully handled repository-level request with inferred selector: " + inferredSelector);
+        }
     }
     
     /**

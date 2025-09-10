@@ -9,10 +9,13 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.servlet.http.HttpServletRequest;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 @Path("/test")
 public class SimpleTestResource {
+	private static final Log log = LogFactory.getLog(SimpleTestResource.class);
 
     @GET
     @Produces(MediaType.TEXT_PLAIN)
@@ -55,9 +58,10 @@ public class SimpleTestResource {
             // Use a default repository for testing - this is acceptable for test endpoints
             String repositoryId = "bedroom"; // Default test repository
             
-            System.out.println("=== TYPE CACHE INVALIDATION REQUEST ===");
-            System.out.println("Repository: " + repositoryId);
-            System.out.println("Spring context found: " + appContext.getClass().getName());
+            if (log.isDebugEnabled()) {
+                log.debug("TYPE CACHE INVALIDATION REQUEST - Repository: " + repositoryId + 
+                    ", Spring context: " + appContext.getClass().getName());
+            }
             
             // Get TypeManager bean from Spring context
             jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
@@ -68,22 +72,25 @@ public class SimpleTestResource {
                     "{\"error\":\"TypeManager bean not found\"}").build();
             }
             
-            System.out.println("TypeManager found: " + typeManager.getClass().getName());
+            if (log.isDebugEnabled()) {
+                log.debug("TypeManager found: " + typeManager.getClass().getName());
+            }
             
             // Call TypeManager to invalidate and regenerate type definitions
             java.lang.reflect.Method invalidateMethod = typeManager.getClass().getDeclaredMethod("invalidateTypeDefinitionCache", String.class);
             invalidateMethod.setAccessible(true);
             invalidateMethod.invoke(typeManager, repositoryId);
             
-            System.out.println("TYPE CACHE INVALIDATION COMPLETED SUCCESSFULLY");
+            if (log.isDebugEnabled()) {
+                log.debug("TYPE CACHE INVALIDATION COMPLETED SUCCESSFULLY");
+            }
             
             return Response.ok(
                 "{\"invalidated\":true,\"repository\":\"" + repositoryId + "\",\"message\":\"Type cache invalidated successfully\"}"
             ).build();
             
         } catch (Exception e) {
-            System.err.println("TYPE CACHE INVALIDATION FAILED: " + e.getMessage());
-            e.printStackTrace();
+            log.error("TYPE CACHE INVALIDATION FAILED: " + e.getMessage(), e);
             return Response.status(500).entity(
                 "{\"invalidated\":false,\"error\":\"" + e.getMessage() + "\"}"
             ).build();

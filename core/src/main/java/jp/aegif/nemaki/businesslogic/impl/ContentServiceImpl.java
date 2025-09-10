@@ -338,21 +338,25 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Folder getSystemFolder(String repositoryId) {
-		System.out.println("=== CRITICAL DEBUG: ContentServiceImpl.getSystemFolder called with repositoryId='" + repositoryId + "'");
-		log.debug("=== CRITICAL DEBUG: ContentServiceImpl.getSystemFolder called with repositoryId='" + repositoryId + "'");
+		if (log.isDebugEnabled()) {
+			log.debug("ContentServiceImpl.getSystemFolder called with repositoryId='" + repositoryId + "'");
+		}
 		
 		final String systemFolder = propertyManager.readValue(repositoryId, PropertyKey.SYSTEM_FOLDER);
-		System.out.println("=== CRITICAL DEBUG: PropertyManager.readValue returned systemFolder='" + (systemFolder != null ? systemFolder : "NULL") + "'");
-		log.debug("=== CRITICAL DEBUG: PropertyManager.readValue returned systemFolder='" + (systemFolder != null ? systemFolder : "NULL") + "'");
+		if (log.isDebugEnabled()) {
+			log.debug("PropertyManager.readValue returned systemFolder='" + (systemFolder != null ? systemFolder : "NULL") + "'");
+		}
 		
 		if (systemFolder != null) {
 			Folder folder = contentDaoService.getFolder(repositoryId, systemFolder);
-			System.out.println("=== CRITICAL DEBUG: contentDaoService.getFolder returned: " + (folder != null ? "Folder object with ID=" + folder.getId() : "NULL"));
-			log.debug("=== CRITICAL DEBUG: contentDaoService.getFolder returned: " + (folder != null ? "Folder object with ID=" + folder.getId() : "NULL"));
+			if (log.isDebugEnabled()) {
+				log.debug("contentDaoService.getFolder returned: " + (folder != null ? "Folder object with ID=" + folder.getId() : "NULL"));
+			}
 			return folder;
 		} else {
-			System.out.println("=== CRITICAL DEBUG: System folder ID is null - returning null");
-			log.debug("=== CRITICAL DEBUG: System folder ID is null - returning null");
+			if (log.isDebugEnabled()) {
+				log.debug("System folder ID is null - returning null");
+			}
 			return null;
 		}
 	}
@@ -671,18 +675,14 @@ public class ContentServiceImpl implements ContentService {
 			log.warn("Solr indexing failed for document {} (non-critical): {}", atomicResult.getId(), e.getMessage());
 		}
 		
-		// SECONDARY TYPES TEST DEBUG - Final verification before return
-		System.err.println("=== SECONDARY TYPES TEST DEBUG - FINAL RETURN ===");
-		System.err.println("Final atomicResult.id: " + atomicResult.getId());
-		System.err.println("Final atomicResult.attachmentNodeId: " + atomicResult.getAttachmentNodeId());
-		System.err.println("Final atomicResult.type: " + atomicResult.getType());
-		if (atomicResult.getAttachmentNodeId() == null) {
-			System.err.println("⚠️  WARNING: attachmentNodeId is NULL in final result - THIS WILL CAUSE Content stream is null!");
-			System.err.println("⚠️  Secondary Types Test will fail with CmisRuntimeException: Content stream is null!");
-		} else {
-			System.err.println("✅ SUCCESS: attachmentNodeId preserved in final result: " + atomicResult.getAttachmentNodeId());
+		if (log.isDebugEnabled()) {
+			log.debug("Final atomicResult.id: " + atomicResult.getId());
+			log.debug("Final atomicResult.attachmentNodeId: " + atomicResult.getAttachmentNodeId());
+			log.debug("Final atomicResult.type: " + atomicResult.getType());
+			if (atomicResult.getAttachmentNodeId() == null) {
+				log.debug("WARNING: attachmentNodeId is NULL in final result");
+			}
 		}
-		System.err.println("=== END SECONDARY TYPES TEST DEBUG ===");
 		
 		log.debug("=== ATOMIC DOCUMENT CREATION SUCCESS: {} ===", atomicResult.getId());
 		return atomicResult;
@@ -2064,22 +2064,25 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public AttachmentNode getAttachment(String repositoryId, String attachmentId) {
-		System.err.println("=== ContentServiceImpl.getAttachment() CALLED ===");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("Attachment ID: " + attachmentId);
+		if (log.isDebugEnabled()) {
+			log.debug("getAttachment called - Repository ID: " + repositoryId + ", Attachment ID: " + attachmentId);
+		}
+		
 		AttachmentNode an = contentDaoService.getAttachment(repositoryId, attachmentId);
-		System.err.println("contentDaoService.getAttachment() returned: " + (an != null ? an.getClass().getName() : "NULL"));
+		
 		// CRITICAL FIX: Only call setStream if no InputStream exists
 		// setStream() consumes the InputStream, so we need to avoid calling it when retrieving for getContentStream
 		if (an != null && an.getInputStream() == null) {
-			System.err.println("WARNING: AttachmentNode has no InputStream, calling setStream to populate it");
+			if (log.isDebugEnabled()) {
+				log.debug("AttachmentNode has no InputStream, calling setStream to populate it");
+			}
 			contentDaoService.setStream(repositoryId, an);
-			System.err.println("contentDaoService.setStream() completed");
-		} else {
-			System.err.println("AttachmentNode already has InputStream, skipping setStream to avoid stream consumption");
 		}
-		System.err.println("Final InputStream: " + (an != null && an.getInputStream() != null ? "SUCCESS" : "NULL"));
-		System.err.println("=== ContentServiceImpl.getAttachment() END ===");
+		
+		if (log.isDebugEnabled()) {
+			log.debug("getAttachment completed - InputStream: " + (an != null && an.getInputStream() != null ? "SUCCESS" : "NULL"));
+		}
+		
 		return an;
 	}
 

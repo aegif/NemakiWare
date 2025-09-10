@@ -67,8 +67,10 @@ public class DatabasePreInitializer {
     }
     
     public DatabasePreInitializer() {
-        System.out.println("=== DatabasePreInitializer CONSTRUCTOR CALLED ===");
-        log.info("=== DatabasePreInitializer CONSTRUCTOR CALLED ===");
+        if (log.isDebugEnabled()) {
+            log.debug("DatabasePreInitializer constructor called");
+        }
+        log.info("DatabasePreInitializer constructor called");
     }
     
     /**
@@ -83,32 +85,39 @@ public class DatabasePreInitializer {
      * Called via Spring init-method configuration.
      */
     public void initializeDatabase() {
-        System.out.println("========================================");
-        System.out.println("=== PHASE 1: DatabasePreInitializer.initializeDatabase() EXECUTING ===");
-        System.out.println("=== This should create databases and load dump files ===");
-        System.out.println("========================================");
-        System.out.println("=== DATABASE PRE-INITIALIZATION (Phase 1) STARTED ===");
-        log.info("=== PHASE 1: DatabasePreInitializer.initializeDatabase() EXECUTING ===");
-        log.info("=== DATABASE PRE-INITIALIZATION (Phase 1) STARTED - Pure database layer operations ===");
+        if (log.isDebugEnabled()) {
+            log.debug("PHASE 1: DatabasePreInitializer.initializeDatabase() executing");
+            log.debug("This should create databases and load dump files");
+        }
+        log.info("PHASE 1: DatabasePreInitializer.initializeDatabase() executing");
+        log.info("DATABASE PRE-INITIALIZATION (Phase 1) started - Pure database layer operations");
         
         try {
             // Wait a moment for CouchDB to be ready
             Thread.sleep(2000);
             
-            System.out.println("Initializing CouchDB databases at: " + couchdbUrl);
+            if (log.isDebugEnabled()) {
+                log.debug("Initializing CouchDB databases at: " + couchdbUrl);
+            }
             log.info("Initializing CouchDB databases at: " + couchdbUrl);
             
             // CRITICAL OPTIMIZATION: Check if databases are already initialized
             if (isDatabasesAlreadyInitialized()) {
-                System.out.println("=== OPTIMIZATION: Databases already initialized, skipping dump loading ===");
-                log.info("=== OPTIMIZATION: Databases already initialized, skipping expensive dump processing ===");
-                System.out.println("=== DATABASE PRE-INITIALIZATION (Phase 1) COMPLETED (SKIPPED) ===");
-                log.info("=== DATABASE PRE-INITIALIZATION (Phase 1) COMPLETED (SKIPPED) ===");
+                if (log.isDebugEnabled()) {
+                    log.debug("OPTIMIZATION: Databases already initialized, skipping dump loading");
+                }
+                log.info("OPTIMIZATION: Databases already initialized, skipping expensive dump processing");
+                if (log.isDebugEnabled()) {
+                    log.debug("DATABASE PRE-INITIALIZATION (Phase 1) completed (skipped)");
+                }
+                log.info("DATABASE PRE-INITIALIZATION (Phase 1) completed (skipped)");
                 return;
             }
             
-            System.out.println("=== FULL INITIALIZATION: Databases not found or incomplete, proceeding with setup ===");
-            log.info("=== FULL INITIALIZATION: Performing complete database setup ===");
+            if (log.isDebugEnabled()) {
+                log.debug("FULL INITIALIZATION: Databases not found or incomplete, proceeding with setup");
+            }
+            log.info("FULL INITIALIZATION: Performing complete database setup");
             
             // List of databases to create
             String[] databases = {"bedroom", "bedroom_closet", "canopy", "canopy_closet", "nemaki_conf"};

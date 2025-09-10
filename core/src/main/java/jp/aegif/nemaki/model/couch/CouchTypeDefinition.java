@@ -110,7 +110,6 @@ public class CouchTypeDefinition extends CouchNodeBase {
 								this.baseId = BaseTypeId.fromValue(baseIdStr);
 							} catch (Exception e2) {
 								// 無効な値の場合は無視（ログに記録すべき）
-								System.err.println("ERROR: Invalid BaseTypeId value: " + baseIdStr + " - " + e2.getMessage());
 							}
 						}
 					}

@@ -1,11 +1,14 @@
 package jp.aegif.nemaki.util;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.mindrot.jbcrypt.BCrypt;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 public class AuthenticationUtil {
+	private static final Log log = LogFactory.getLog(AuthenticationUtil.class);
 	/**
 	 * Check whether a password matches a hash.
 	 * Supports both legacy MD5 hashes (32 hex chars) and modern BCrypt hashes.
@@ -18,22 +21,30 @@ public class AuthenticationUtil {
 		
 		// 後方互換性：MD5ハッシュの検出と検証（32文字の16進数）
 		if (hashed.length() == 32 && hashed.matches("[a-f0-9]{32}")) {
-			System.out.println("AuthenticationUtil: Detected MD5 hash format, using legacy verification");
+			if (log.isDebugEnabled()) {
+				log.debug("Detected MD5 hash format, using legacy verification");
+			}
 			return verifyMD5Password(candidate, hashed);
 		}
 		
 		// BCryptハッシュの検証（$2a$または$2b$で始まる）
 		if (hashed.startsWith("$2a$") || hashed.startsWith("$2b$")) {
-			System.out.println("AuthenticationUtil: Detected BCrypt hash format, using modern verification");
+			if (log.isDebugEnabled()) {
+				log.debug("Detected BCrypt hash format, using modern verification");
+			}
 			return BCrypt.checkpw(candidate, hashed);
 		}
 		
 		// 不明なハッシュ形式の場合、BCryptを試行（フォールバック）
-		System.out.println("AuthenticationUtil: Unknown hash format, attempting BCrypt verification");
+		if (log.isDebugEnabled()) {
+			log.debug("Unknown hash format, attempting BCrypt verification");
+		}
 		try {
 			return BCrypt.checkpw(candidate, hashed);
 		} catch (Exception e) {
-			System.out.println("AuthenticationUtil: BCrypt verification failed: " + e.getMessage());
+			if (log.isDebugEnabled()) {
+				log.debug("BCrypt verification failed: " + e.getMessage());
+			}
 			return false;
 		}
 	}

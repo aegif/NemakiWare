@@ -178,14 +178,16 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
      */
     private Folder findExistingSystemFolder(ContentService contentService, String repositoryId, String rootFolderId) {
         try {
-            System.out.println("=== PATCH DEBUG: Checking for existing system folders in repository " + repositoryId + ", root folder " + rootFolderId);
-            log.info("PATCH DEBUG: Checking for existing system folders in repository " + repositoryId + ", root folder " + rootFolderId);
+            if (log.isDebugEnabled()) {
+                log.debug("Checking for existing system folders in repository " + repositoryId + ", root folder " + rootFolderId);
+            }
             
             // CRITICAL FIX: Use direct CouchDB query instead of ContentService/ContentDaoService
             // Both service layers fail during initialization phase due to getContent() dependencies
             try {
-                System.out.println("=== PATCH DEBUG: Using direct CouchDB view query approach");
-                log.info("PATCH DEBUG: Using direct CouchDB view query approach");
+                if (log.isDebugEnabled()) {
+                    log.debug("Using direct CouchDB view query approach");
+                }
                 
                 // Get CloudantClientWrapper directly from patch util
                 jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client = patchUtil.getConnectorPool().getClient(repositoryId);
@@ -199,13 +201,16 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                 queryParams.put("key", rootFolderId);
                 queryParams.put("include_docs", true);
                 
-                System.out.println("=== PATCH DEBUG: Executing direct CouchDB view query: _repo/children with key=" + rootFolderId);
+                if (log.isDebugEnabled()) {
+                    log.debug("Executing direct CouchDB view query: _repo/children with key=" + rootFolderId);
+                }
                 
                 com.ibm.cloud.cloudant.v1.model.ViewResult result = client.queryView("_repo", "children", queryParams);
                 
                 if (result.getRows() != null && !result.getRows().isEmpty()) {
-                    System.out.println("=== PATCH DEBUG: Direct CouchDB query found " + result.getRows().size() + " raw rows");
-                    log.info("PATCH DEBUG: Direct CouchDB query found " + result.getRows().size() + " raw rows");
+                    if (log.isDebugEnabled()) {
+                        log.debug("Direct CouchDB query found " + result.getRows().size() + " raw rows");
+                    }
                     
                     for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
                         if (row.getDoc() != null) {
@@ -213,7 +218,9 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                                 // CRITICAL FIX: Extract document ID correctly from ViewResultRow
                                 // Primary method: Get document ID from row itself
                                 String objectId = row.getId();
-                                System.out.println("=== PATCH DEBUG: Row ID (primary method): " + objectId);
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Row ID (primary method): " + objectId);
+                                }
                                 
                                 // Extract document properties for additional information
                                 com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
@@ -223,14 +230,18 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                                         java.util.Map<String, Object> docProperties = doc.getProperties();
                                         if (docProperties != null) {
                                             objectId = (String) docProperties.get("_id");
-                                            System.out.println("=== PATCH DEBUG: Document properties _id (fallback method): " + objectId);
+                                            if (log.isDebugEnabled()) {
+                                                log.debug("Document properties _id (fallback method): " + objectId);
+                                            }
                                         }
                                     }
                                     
                                     // Additional fallback: Try document getId() method
                                     if (objectId == null) {
                                         objectId = doc.getId();
-                                        System.out.println("=== PATCH DEBUG: Document getId() (additional fallback): " + objectId);
+                                        if (log.isDebugEnabled()) {
+                                            log.debug("Document getId() (additional fallback): " + objectId);
+                                        }
                                     }
                                     
                                     // Get other document properties for validation
@@ -240,13 +251,16 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                                         String type = (String) docProperties.get("type");
                                         Boolean folder = (Boolean) docProperties.get("folder");
                                     
-                                        System.out.println("=== PATCH DEBUG: Found object: name='" + name + "', id=" + objectId + ", type=" + type + ", folder=" + folder);
-                                        log.info("PATCH DEBUG: Found object: name='" + name + "', id=" + objectId + ", type=" + type + ", folder=" + folder);
+                                        if (log.isDebugEnabled()) {
+                                            log.debug("Found object: name='" + name + "', id=" + objectId + ", type=" + type + ", folder=" + folder);
+                                        }
                                         
                                         // Check if this is a folder with .system or System name
                                         if ((folder != null && folder) || "cmis:folder".equals(type)) {
                                             if (".system".equals(name)) {
-                                                System.out.println("=== PATCH SUCCESS: Found existing .system folder from dump file: " + objectId + " - using this as system folder");
+                                                if (log.isDebugEnabled()) {
+                                                    log.debug("Found existing .system folder from dump file: " + objectId + " - using this as system folder");
+                                                }
                                                 log.info("Found existing .system folder from dump file: " + objectId + " - using this as system folder");
                                                 
                                                 // Validate that we have a non-null objectId before creating the folder object

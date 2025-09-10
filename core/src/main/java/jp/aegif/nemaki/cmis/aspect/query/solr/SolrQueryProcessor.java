@@ -134,32 +134,35 @@ public class SolrQueryProcessor implements QueryProcessor {
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
-		System.out.println("=== QUERY DEBUG: SolrQueryProcessor.query called with statement: " + statement);
-		logger.info("[QUERY DEBUG] SolrQueryProcessor.query called with statement: " + statement);
+		if (logger.isDebugEnabled()) {
+			logger.debug("SolrQueryProcessor.query called with statement: " + statement);
+		}
 		
 		// Create CMIS Type Manager first and test basic functionality
-		System.out.println("=== QUERY DEBUG: Creating CmisTypeManager...");
 		CmisTypeManager cmisTypeManager = new CmisTypeManager(repositoryId, typeManager);
-		System.out.println("=== QUERY DEBUG: CmisTypeManager created: " + cmisTypeManager);
 		
 		// Test basic type lookup
 		try {
-			System.out.println("=== QUERY DEBUG: Testing type lookup for 'cmis:document'...");
 			TypeDefinition testType = cmisTypeManager.getTypeByQueryName("cmis:document");
-			System.out.println("=== QUERY DEBUG: Found cmis:document type: " + (testType != null ? testType.getId() : "null"));
+			if (logger.isDebugEnabled()) {
+				logger.debug("Found cmis:document type: " + (testType != null ? testType.getId() : "null"));
+			}
 		} catch (Exception e) {
-			System.out.println("=== QUERY DEBUG: Exception during type lookup: " + e.getMessage());
-			e.printStackTrace();
+			if (logger.isDebugEnabled()) {
+				logger.debug("Exception during type lookup: " + e.getMessage());
+			}
 		}
 		
 		SolrClient solrClient = null;
 		try {
-			System.out.println("=== QUERY DEBUG: Getting Solr client...");
 			solrClient = solrUtil.getSolrClient();
-			System.out.println("=== QUERY DEBUG: Got Solr client: " + (solrClient != null ? solrClient.getClass().getSimpleName() : "null"));
+			if (logger.isDebugEnabled()) {
+				logger.debug("Got Solr client: " + (solrClient != null ? solrClient.getClass().getSimpleName() : "null"));
+			}
 		} catch (Exception e) {
-			System.out.println("=== QUERY DEBUG: Exception getting Solr client: " + e.getMessage());
-			e.printStackTrace();
+			if (logger.isDebugEnabled()) {
+				logger.debug("Exception getting Solr client: " + e.getMessage());
+			}
 			logger.error("Failed to get Solr client", e);
 		}
 		
@@ -180,14 +183,19 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		// TODO walker is required?
 
-		System.out.println("=== QUERY DEBUG: Creating QueryUtilStrict with statement: " + statement);
+		if (logger.isDebugEnabled()) {
+			logger.debug("Creating QueryUtilStrict with statement: " + statement);
+		}
 		QueryUtilStrict util = null;
 		try {
 			util = new QueryUtilStrict(statement, cmisTypeManager, null);
-			System.out.println("=== QUERY DEBUG: QueryUtilStrict created successfully");
+			if (logger.isDebugEnabled()) {
+				logger.debug("QueryUtilStrict created successfully");
+			}
 		} catch (Exception e) {
-			System.out.println("=== QUERY DEBUG: CRITICAL ERROR - QueryUtilStrict initialization failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-			e.printStackTrace();
+			if (logger.isDebugEnabled()) {
+				logger.debug("QueryUtilStrict initialization failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+			}
 			logger.error("QueryUtilStrict initialization failed during Jakarta EE operation", e);
 			
 			// Return empty result for Jakarta EE compatibility
