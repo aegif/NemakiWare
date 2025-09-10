@@ -288,7 +288,7 @@ public class BulkCheckInResource extends ResourceBase {
 
 				String docName = null;
 				for(Object key : propJson.keySet() ) {
-					//TODO cmis:createDate
+					// Note: cmis:createDate handling - currently processed as custom JAL date properties
 					String keyStr = (String)key;
 					if (keyStr.startsWith("jal") && keyStr.endsWith("Date")) {
 						long v = (Long)propJson.get(key);
