@@ -1,0 +1,27 @@
+[ {
+  "document" : {
+    "_id" : "_design/_repo",
+    "_rev" : "1-designdocconf00000000000000000001",
+    "language" : "javascript",
+    "views" : {
+      "configuration" : {
+        "map" : "function(doc) { if (doc.type == 'configuration') emit(doc.key, doc) }"
+      }
+    }
+  },
+  "attachments" : { }
+}, {
+  "document" : {
+    "_id" : "system_config_001",
+    "_rev" : "1-systemconfig00000000000000000001",
+    "type" : "configuration",
+    "created" : "2013-01-01T00:00:00.000+0000",
+    "creator" : "system",
+    "modified" : "2013-01-01T00:00:00.000+0000",
+    "modifier" : "system",
+    "key" : "system.version",
+    "value" : "2025.07.02",
+    "description" : "NemakiWare system version"
+  },
+  "attachments" : { }
+} ]

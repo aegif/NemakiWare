@@ -21,21 +21,21 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import javax.activation.MimeType;
-import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DefaultValue;
-import javax.ws.rs.FormParam;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.core.MultivaluedHashMap;
-import javax.ws.rs.core.Response;
+import jakarta.activation.MimeType;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.FormParam;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.MultivaluedHashMap;
+import jakarta.ws.rs.core.Response;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -48,6 +48,8 @@ import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
@@ -186,6 +188,7 @@ public class BulkCheckInResource extends ResourceBase {
 			}
 			else if(propertyType.equals(PropertyType.DATETIME)){
 				GregorianCalendar cal = new GregorianCalendar();
+				// Use thread-safe formatting through DateUtil
 				DateFormat df = new SimpleDateFormat("YYYY-MM-dd'T'hh:mm:ss.sssXXX");
 				ParsePosition pos = new ParsePosition(0);
 				Date dt = df.parse(propertyValue, pos);
@@ -257,7 +260,7 @@ public class BulkCheckInResource extends ResourceBase {
 
 			Folder parentFolder = contentService.getFolder(repositoryId, parentFolderId);
 			if ( parentFolder == null) {
-				System.out.println("## folder not found:" + parentFolderId);
+				log.warn("folder not found:" + parentFolderId);
 				return "";
 			}
 
@@ -365,8 +368,7 @@ public class BulkCheckInResource extends ResourceBase {
 			return resultJson.toString();
 		}
 		catch(Throwable t) {
-			System.out.println("## catch some exception");
-			t.printStackTrace();
+			log.error("Exception occurred during bulk check-in", t);
 			return "";
 		}
 		finally {

@@ -20,9 +20,11 @@ import org.apache.chemistry.opencmis.tck.tests.crud.SetAndDeleteContentTest;
 import org.apache.chemistry.opencmis.tck.tests.crud.UpdateSmokeTest;
 import org.apache.chemistry.opencmis.tck.tests.crud.WhitespaceInNameTest;
 import org.junit.Test;
+import org.junit.Ignore;
 
 import jp.aegif.nemaki.cmis.tck.TckSuite;
 
+// @Ignore("TCK tests temporarily disabled due to data visibility issues - see CLAUDE.md") - ENABLED: Data visibility issues resolved
 public class CrudTestGroup extends TckSuite{
 	
 	@Test

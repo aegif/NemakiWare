@@ -49,6 +49,11 @@ public class UserItem extends Item{
 	public String getPassowrd() {
 		return passowrd;
 	}
+	
+	// 後方互換性を保つため、正しいパスワードを返すgetPasswordメソッドも追加
+	public String getPassword() {
+		return passowrd;
+	}
 
 	public void setPassowrd(String passowrd) {
 		this.passowrd = passowrd;

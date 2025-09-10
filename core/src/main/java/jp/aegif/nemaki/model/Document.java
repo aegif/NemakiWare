@@ -48,6 +48,13 @@ public class Document extends Content {
 		private String versionLabel;
 		//The following properties should be moved away to VersionSeries object
 		private Boolean privateWorkingCopy;
+		
+		// CRITICAL CMIS 1.1 COMPLIANCE: isVersionSeriesCheckedOut property is MANDATORY
+		private Boolean versionSeriesCheckedOut;
+		
+		// ADDITIONAL CMIS 1.1 VERSIONING PROPERTIES - required for complete TCK compliance
+		private String versionSeriesCheckedOutBy;
+		private String versionSeriesCheckedOutId;
 
 		private Boolean immutable;
 
@@ -68,6 +75,9 @@ public class Document extends Content {
 		setSecondaryIds(c.getSecondaryIds());
 		setObjectType(c.getObjectType());
 		setChangeToken(c.getChangeToken());
+		
+		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from Content
+		setRevision(c.getRevision());
 	}
 
 	/**
@@ -118,6 +128,30 @@ public class Document extends Content {
 
 	public void setPrivateWorkingCopy(Boolean privateWorkingCopy) {
 		this.privateWorkingCopy = privateWorkingCopy;
+	}
+
+	public Boolean isVersionSeriesCheckedOut() {
+		return (versionSeriesCheckedOut == null) ? false : versionSeriesCheckedOut;
+	}
+
+	public void setVersionSeriesCheckedOut(Boolean versionSeriesCheckedOut) {
+		this.versionSeriesCheckedOut = versionSeriesCheckedOut;
+	}
+
+	public String getVersionSeriesCheckedOutBy() {
+		return versionSeriesCheckedOutBy;
+	}
+
+	public void setVersionSeriesCheckedOutBy(String versionSeriesCheckedOutBy) {
+		this.versionSeriesCheckedOutBy = versionSeriesCheckedOutBy;
+	}
+
+	public String getVersionSeriesCheckedOutId() {
+		return versionSeriesCheckedOutId;
+	}
+
+	public void setVersionSeriesCheckedOutId(String versionSeriesCheckedOutId) {
+		this.versionSeriesCheckedOutId = versionSeriesCheckedOutId;
 	}
 
 	public String getVersionLabel() {

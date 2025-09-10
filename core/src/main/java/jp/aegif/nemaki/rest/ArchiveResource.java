@@ -22,17 +22,18 @@
 package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.common.ErrorCode;
+import jp.aegif.nemaki.util.DateUtil;
 import java.text.SimpleDateFormat;
 import java.util.List;
 
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Archive;
@@ -102,6 +103,37 @@ public class ArchiveResource extends ResourceBase {
 		return result.toJSONString();
 	}
 
+	@SuppressWarnings("unchecked")
+	@GET
+	@Path("/show/{id}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String id) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		try {
+			Archive archive = contentService.getArchive(repositoryId, id);
+			if (archive == null) {
+				status = false;
+				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
+			} else {
+				JSONObject archiveJson = buildArchiveJson(archive);
+				if (archive.isDocument()) {
+					archiveJson.put("mimeType", archive.getMimeType());
+				}
+				result.put("archive", archiveJson);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			status = false;
+			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_GET_ARCHIVES);
+		}
+		
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
+
 	@PUT
 	@Path("/restore/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -151,7 +183,7 @@ public class ArchiveResource extends ResourceBase {
 		archiveJson.put("parentId", archive.getParentId());
 		archiveJson.put("isDeletedWithParent", archive.isDeletedWithParent());
 		try{
-			String _created = new SimpleDateFormat(SystemConst.DATETIME_FORMAT).format(archive.getCreated().getTime());
+			String _created = DateUtil.formatSystemDateTime(archive.getCreated());
 			archiveJson.put("created", _created);
 		}catch(Exception e){
 			log.warn(String.format("Archive(%s) 'created' property is broken.", archive.getId()));

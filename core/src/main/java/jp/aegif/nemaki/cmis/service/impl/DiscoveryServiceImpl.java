@@ -54,10 +54,23 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 			Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
+		
+		System.out.println("=== DISCOVERY DEBUG: DiscoveryServiceImpl.query called");
+		System.out.println("=== DISCOVERY DEBUG: statement = " + statement);
+		System.out.println("=== DISCOVERY DEBUG: repositoryId = " + repositoryId);
+		
 		// //////////////////
 		// General Exception
 		// //////////////////
-		exceptionService.invalidArgumentRequiredString("statement", statement);
+		try {
+			System.out.println("=== DISCOVERY DEBUG: Calling exceptionService.invalidArgumentRequiredString");
+			exceptionService.invalidArgumentRequiredString("statement", statement);
+			System.out.println("=== DISCOVERY DEBUG: exceptionService.invalidArgumentRequiredString passed");
+		} catch (Exception e) {
+			System.out.println("=== DISCOVERY DEBUG: Exception in invalidArgumentRequiredString: " + e.getMessage());
+			e.printStackTrace();
+			throw e;
+		}
 
 		// //////////////////
 		// Specific Exception
@@ -66,9 +79,18 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 
 		// //////////////////
 		// Body of the method
-		return queryProcessor.query(context, repositoryId, statement,
-				searchAllVersions, includeAllowableActions, includeRelationships,
-				renditionFilter, maxItems, skipCount, extension);
+		System.out.println("=== DISCOVERY DEBUG: Calling queryProcessor.query");
+		try {
+			ObjectList result = queryProcessor.query(context, repositoryId, statement,
+					searchAllVersions, includeAllowableActions, includeRelationships,
+					renditionFilter, maxItems, skipCount, extension);
+			System.out.println("=== DISCOVERY DEBUG: queryProcessor.query completed successfully");
+			return result;
+		} catch (Exception e) {
+			System.out.println("=== DISCOVERY DEBUG: Exception in queryProcessor.query: " + e.getMessage());
+			e.printStackTrace();
+			throw e;
+		}
 	}
 
 	/**

@@ -8,7 +8,7 @@ import org.json.simple.parser.JSONParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.ws.rs.core.MediaType;
+// import jakarta.ws.rs.core.MediaType; // Removed due to Jersey 1.x compatibility
 import java.util.HashMap;
 import java.util.Map;
 
@@ -36,7 +36,7 @@ public class NemakiTokenManager {
 
 			apiResult = c.resource(restUri).path(userName + "/register")
 					.queryParam("app", "solr")
-					.accept(MediaType.APPLICATION_JSON_TYPE).get(String.class);
+					.accept("application/json").get(String.class);
 		} catch (Exception e) {
 			logger.error("Cannot connect to Core REST API : {}", restUri, e);
 			throw e;

@@ -4,9 +4,11 @@ import org.apache.chemistry.opencmis.tck.tests.basics.RepositoryInfoTest;
 import org.apache.chemistry.opencmis.tck.tests.basics.RootFolderTest;
 import org.apache.chemistry.opencmis.tck.tests.basics.SecurityTest;
 import org.junit.Test;
+import org.junit.Ignore;
 
 import jp.aegif.nemaki.cmis.tck.TckSuite;
 
+// @Ignore("TCK tests temporarily disabled due to data visibility issues - see CLAUDE.md") - TEMPORARILY ENABLED FOR INVESTIGATION
 public class BasicsTestGroup extends TckSuite{
 	
 	@Test

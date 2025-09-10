@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  couchdb:
+    image: couchdb:3.3
+    container_name: couchdb-jakarta-test
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://admin:password@localhost:5984/_up"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  initializer:
+    image: docker-initializer-bedroom:latest
+    container_name: initializer-jakarta-test
+    depends_on:
+      couchdb:
+        condition: service_healthy
+    environment:
+      - COUCHDB_URL=http://couchdb:5984
+      - COUCHDB_USERNAME=admin
+      - COUCHDB_PASSWORD=password
+      - REPOSITORY_ID=bedroom
+      - DUMP_FILE=/app/bedroom_init.dump
+      - FORCE=true
+    volumes:
+      - ./initializer/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ./initializer/cloudant-init.jar:/app/cloudant-init.jar
+
+  core-jakarta:
+    image: nemakiware-core-jakarta:latest
+    container_name: core-jakarta-test
+    depends_on:
+      - couchdb
+      - initializer
+    environment:
+      - COUCHDB_HOST=couchdb
+      - COUCHDB_PORT=5984
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+      - CATALINA_OPTS=-Xms512m -Xmx1024m -XX:+DisableExplicitGC
+        -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties
+        -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml
+        -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties
+        -Ddb.couchdb.auth.enabled=true
+        -Ddb.couchdb.auth.username=admin
+        -Ddb.couchdb.auth.password=password
+        -Djakarta.xml.bind.JAXBContext=com.sun.xml.bind.v2.ContextFactory
+        -Djakarta.xml.ws.spi.Provider=com.sun.xml.ws.spi.ProviderImpl
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/core"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  couchdb_data:

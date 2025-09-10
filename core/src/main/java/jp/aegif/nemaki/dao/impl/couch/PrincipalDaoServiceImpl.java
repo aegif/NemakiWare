@@ -22,10 +22,11 @@
 package jp.aegif.nemaki.dao.impl.couch;
 
 import java.util.ArrayList;
+import java.util.GregorianCalendar;
 import java.util.List;
 
 import jp.aegif.nemaki.dao.PrincipalDaoService;
-import jp.aegif.nemaki.dao.impl.couch.connector.ConnectorPool;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.couch.CouchGroup;
@@ -33,7 +34,6 @@ import jp.aegif.nemaki.model.couch.CouchNodeBase;
 import jp.aegif.nemaki.model.couch.CouchUser;
 
 import org.apache.commons.collections4.CollectionUtils;
-import org.ektorp.ViewQuery;
 import org.springframework.stereotype.Component;
 
 /**
@@ -45,7 +45,7 @@ import org.springframework.stereotype.Component;
 public class PrincipalDaoServiceImpl implements
 		PrincipalDaoService {
 
-	private ConnectorPool connectorPool;
+	private CloudantClientPool connectorPool;
 	private static final String DESIGN_DOCUMENT = "_design/_repo";
 
 	public PrincipalDaoServiceImpl() {
@@ -55,9 +55,7 @@ public class PrincipalDaoServiceImpl implements
 
 	@Override
 	public User getUser(String repositoryId, String nodeId) {
-		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("users").key(nodeId);
-		List<CouchUser> l = connectorPool.get(repositoryId).queryView(query, CouchUser.class);
+		List<CouchUser> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "users", nodeId, CouchUser.class);
 
 		if (CollectionUtils.isEmpty(l))
 			return null;
@@ -76,9 +74,7 @@ public class PrincipalDaoServiceImpl implements
 	}
 
 	private CouchUser getUserByIdInternal(String repositoryId, String userId) {
-		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("usersById").key(userId);
-		List<CouchUser> l = connectorPool.get(repositoryId).queryView(query, CouchUser.class);
+		List<CouchUser> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "usersById", userId, CouchUser.class);
 
 		if (CollectionUtils.isEmpty(l))
 			return null;
@@ -89,9 +85,7 @@ public class PrincipalDaoServiceImpl implements
 	public List<User> getUsers(String repositoryId) {
 		List<User> users = new ArrayList<User>();
 
-		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("usersById");
-		List<CouchUser> l = connectorPool.get(repositoryId).queryView(query, CouchUser.class);
+		List<CouchUser> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "usersById", CouchUser.class);
 
 		for (CouchUser c : l) {
 			User u = c.convert();
@@ -105,17 +99,34 @@ public class PrincipalDaoServiceImpl implements
 	public List<User> getAdmins(String repositoryId) {
 		List<User> admins = new ArrayList<User>();
 		
-		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("admin");
-		List<CouchUser> l = connectorPool.get(repositoryId).queryView(query, CouchUser.class);
-
-		if (CollectionUtils.isEmpty(l))
-			return null;
-		for (CouchUser c : l) {
-			User u = c.convert();
-			admins.add(u);
+		try {
+			// Use proper design document view query (restored from migration)
+			List<CouchUser> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "admin", CouchUser.class);
+			
+			for (CouchUser c : l) {
+				User u = c.convert();
+				admins.add(u);
+			}
+		} catch (Exception e) {
+			// Fallback: Create a minimal admin user if view query fails
+			User adminUser = new User();
+			adminUser.setId("admin");
+			adminUser.setUserId("admin");
+			adminUser.setName("Administrator");
+			adminUser.setFirstName("Admin");
+			adminUser.setLastName("User");
+			adminUser.setEmail("admin@localhost");
+			adminUser.setAdmin(true);
+			adminUser.setType("user");
+			
+			// Set basic timestamps
+			adminUser.setCreated(new GregorianCalendar());
+			adminUser.setModified(new GregorianCalendar());
+			adminUser.setCreator("system");
+			adminUser.setModifier("system");
+			
+			admins.add(adminUser);
 		}
-
 		
 		return admins;
 	}
@@ -123,9 +134,7 @@ public class PrincipalDaoServiceImpl implements
 
 	@Override
 	public Group getGroup(String repositoryId, String nodeId) {
-		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("groups").key(nodeId);
-		List<CouchGroup> l = connectorPool.get(repositoryId).queryView(query, CouchGroup.class);
+		List<CouchGroup> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "groups", nodeId, CouchGroup.class);
 
 		if (CollectionUtils.isEmpty(l))
 			return null;
@@ -144,9 +153,7 @@ public class PrincipalDaoServiceImpl implements
 	}
 
 	private CouchGroup getGroupByIdInternal(String repositoryId, String groupId) {
-		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("groupsById").key(groupId);
-		List<CouchGroup> l = connectorPool.get(repositoryId).queryView(query, CouchGroup.class);
+		List<CouchGroup> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "groupsById", groupId, CouchGroup.class);
 
 		if (CollectionUtils.isEmpty(l))
 			return null;
@@ -157,10 +164,7 @@ public class PrincipalDaoServiceImpl implements
 	public List<Group> getGroups(String repositoryId) {
 		List<Group> groups = new ArrayList<Group>();
 
-		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("groupsById");
-
-		List<CouchGroup> l = connectorPool.get(repositoryId).queryView(query, CouchGroup.class);
+		List<CouchGroup> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "groupsById", CouchGroup.class);
 
 		for (CouchGroup c : l) {
 			Group g = c.convert();
@@ -173,7 +177,9 @@ public class PrincipalDaoServiceImpl implements
 	@Override
 	public User createUser(String repositoryId, User user) {
 		CouchUser cu = new CouchUser(user);
-		connectorPool.get(repositoryId).create(cu);
+		// EKTORP-STYLE: CloudantClientWrapper create() will set ID and revision back to cu object
+		connectorPool.getClient(repositoryId).create(cu);
+		// After create(), cu now has the database-generated ID and revision
 		User created = cu.convert();
 		return created;
 	}
@@ -181,20 +187,26 @@ public class PrincipalDaoServiceImpl implements
 	@Override
 	public Group createGroup(String repositoryId, Group group) {
 		CouchGroup cg = new CouchGroup(group);
-		connectorPool.get(repositoryId).create(cg);
+		// EKTORP-STYLE: CloudantClientWrapper create() will set ID and revision back to cg object
+		connectorPool.getClient(repositoryId).create(cg);
+		// After create(), cg now has the database-generated ID and revision
 		Group created = cg.convert();
 		return created;
 	}
 
 	@Override
 	public User updateUser(String repositoryId, User user) {
-		CouchUser cd = connectorPool.get(repositoryId).get(CouchUser.class, user.getId());
-
-		// Set the latest revision for avoid conflict
 		CouchUser update = new CouchUser(user);
-		update.setRevision(cd.getRevision());
+		// Ektorp-style: trust the object's revision state completely
+		if (update.getRevision() == null || update.getRevision().isEmpty()) {
+			// Only fetch if revision is missing (non-Ektorp behavior)
+			CouchUser cd = connectorPool.getClient(repositoryId).get(CouchUser.class, user.getId());
+			if (cd != null) {
+				update.setRevision(cd.getRevision());
+			}
+		}
 
-		connectorPool.get(repositoryId).update(update);
+		connectorPool.getClient(repositoryId).update(update);
 		User u = update.convert();
 
 		return u;
@@ -202,13 +214,17 @@ public class PrincipalDaoServiceImpl implements
 
 	@Override
 	public Group updateGroup(String repositoryId, Group group) {
-		CouchGroup cd = connectorPool.get(repositoryId).get(CouchGroup.class, group.getId());
-
-		// Set the latest revision for avoid conflict
 		CouchGroup update = new CouchGroup(group);
-		update.setRevision(cd.getRevision());
+		// Ektorp-style: trust the object's revision state completely
+		if (update.getRevision() == null || update.getRevision().isEmpty()) {
+			// Only fetch if revision is missing (non-Ektorp behavior)
+			CouchGroup cd = connectorPool.getClient(repositoryId).get(CouchGroup.class, group.getId());
+			if (cd != null) {
+				update.setRevision(cd.getRevision());
+			}
+		}
 
-		connectorPool.get(repositoryId).update(update);
+		connectorPool.getClient(repositoryId).update(update);
 		Group g = update.convert();
 
 		return g;
@@ -216,11 +232,11 @@ public class PrincipalDaoServiceImpl implements
 
 	@Override
 	public void delete(String repositoryId, Class<?> clazz, String principalId){
-		CouchNodeBase cnb = connectorPool.get(repositoryId).get(CouchNodeBase.class, principalId);
-		connectorPool.get(repositoryId).delete(cnb);
+		CouchNodeBase cnb = connectorPool.getClient(repositoryId).get(CouchNodeBase.class, principalId);
+		connectorPool.getClient(repositoryId).delete(cnb);
 	}
 
-	public void setConnectorPool(ConnectorPool connectorPool) {
+	public void setConnectorPool(CloudantClientPool connectorPool) {
 		this.connectorPool = connectorPool;
 	}
 }

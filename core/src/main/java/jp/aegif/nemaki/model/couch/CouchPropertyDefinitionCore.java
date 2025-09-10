@@ -22,10 +22,14 @@
 
 package jp.aegif.nemaki.model.couch;
 
+import java.util.Map;
+
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
 
 public class CouchPropertyDefinitionCore extends CouchNodeBase{
 	
@@ -38,6 +42,43 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 	
 	public CouchPropertyDefinitionCore(){
 		super();	
+	}
+	
+	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	// CRITICAL FIX: 汚染防止システム統合 - setterメソッド経由で処理
+	@JsonCreator
+	public CouchPropertyDefinitionCore(Map<String, Object> properties) {
+		super(properties); // 親クラスのMapコンストラクタを呼び出し
+		
+		if (properties != null) {
+			// ✅ 汚染防止システム通過: setterメソッド経由で処理
+			setPropertyId((String) properties.get("propertyId"));
+			setQueryName((String) properties.get("queryName"));
+			
+			// PropertyType列挙型の処理
+			if (properties.containsKey("propertyType")) {
+				String propTypeStr = (String) properties.get("propertyType");
+				if (propTypeStr != null) {
+					try {
+						setPropertyType(PropertyType.fromValue(propTypeStr));
+					} catch (Exception e) {
+						// 無効な値の場合は無視
+					}
+				}
+			}
+			
+			// Cardinality列挙型の処理
+			if (properties.containsKey("cardinality")) {
+				String cardinalityStr = (String) properties.get("cardinality");
+				if (cardinalityStr != null) {
+					try {
+						setCardinality(Cardinality.fromValue(cardinalityStr));
+					} catch (Exception e) {
+						// 無効な値の場合は無視
+					}
+				}
+			}
+		}
 	}
 	
 	public CouchPropertyDefinitionCore(NemakiPropertyDefinitionCore np){
@@ -80,6 +121,8 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 		p.setQueryName(getQueryName());
 		p.setPropertyType(getPropertyType());
 		p.setCardinality(getCardinality());
+		
 		return p;
 	}
+	
 }

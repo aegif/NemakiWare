@@ -1,8 +1,5 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
-
-<!-- The Japanese langpack -->
-
-<langpack>
+<?xml version="1.0" encoding="utf-8"?>
+<izpack:langpack version="5.0" xmlns:izpack="http://izpack.org/schema/langpack" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://izpack.org/schema/langpack http://izpack.org/schema/5.0/izpack-langpack-5.0.xsd">
     <str id="user.inputpanel.appserver.title" txt="Configuration de Tomcat" />
     <str id="user.inputpanel.repository.title" txt="Configuration de référentiel" />
     <str id="user.inputpanel.couchdb.title" txt="Configuration de CouchDB" />
@@ -19,4 +16,4 @@
 
     <str id="solr.host" txt="Solr hôte" />
     <str id="solr.port" txt="Solr port" />
-</langpack>
+</izpack:langpack>

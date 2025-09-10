@@ -25,7 +25,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.SpringPropertyManager;
@@ -102,6 +102,9 @@ public class Capabilities extends org.apache.chemistry.opencmis.commons.impl.dat
 		//////////////////////////////////////////////////////////////////
 		// Type Capabilities
 		//////////////////////////////////////////////////////////////////		
+		// Note: Type management capability is determined by the presence of
+		// creatable property types and new type settable attributes
+		
 		//capabilityCreatablPopertyTypes
 		CreatablePropertyTypesImpl creatablePropertyTypes = new CreatablePropertyTypesImpl();
 		

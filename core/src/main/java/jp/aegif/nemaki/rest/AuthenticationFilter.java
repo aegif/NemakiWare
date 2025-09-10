@@ -22,32 +22,32 @@
 package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
-import jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.SystemConst;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+import jp.aegif.nemaki.businesslogic.PrincipalService;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
-import org.apache.chemistry.opencmis.server.shared.HttpUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-
-import javax.servlet.*;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.*;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Map;
 
 public class AuthenticationFilter implements Filter {
 
-	@Autowired
 	private PropertyManager propertyManager;
 	private AuthenticationService authenticationService;
 	private RepositoryInfoMap repositoryInfoMap;
+	private PrincipalService principalService;
 	private final String TOKEN_FALSE = "false";
 
 	private  Log log = LogFactory.getLog(AuthenticationFilter.class);
@@ -62,6 +62,50 @@ public class AuthenticationFilter implements Filter {
 		HttpServletRequest hreq = (HttpServletRequest) req;
 		HttpServletResponse hres = (HttpServletResponse) res;
 
+		// Handle CORS preflight requests (OPTIONS) - bypass authentication
+		if ("OPTIONS".equalsIgnoreCase(hreq.getMethod())) {
+			log.info("=== CORS: Handling OPTIONS preflight request ===");
+			// Set CORS headers
+			hres.setHeader("Access-Control-Allow-Origin", "*");
+			hres.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+			hres.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, AUTH_TOKEN, nemaki_auth_token");
+			hres.setHeader("Access-Control-Max-Age", "3600");
+			hres.setStatus(HttpServletResponse.SC_OK);
+			return;
+		}
+
+		// Add CORS headers to all responses
+		hres.setHeader("Access-Control-Allow-Origin", "*");
+		hres.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+		hres.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, AUTH_TOKEN, nemaki_auth_token");
+
+		// Check if this is an /all/ path that should bypass authentication
+		String requestURI = hreq.getRequestURI();
+		String servletPath = hreq.getServletPath();
+		String pathInfo = hreq.getPathInfo();
+		
+		log.info("=== AUTH DEBUG: requestURI=" + requestURI + ", servletPath=" + servletPath + ", pathInfo=" + pathInfo + " ===");
+		
+		// Check various URI patterns for /all/ paths
+		if (requestURI != null && requestURI.contains("/rest/all/")) {
+			log.info("Bypassing authentication for /rest/all/ URI: " + requestURI);
+			chain.doFilter(req, res);
+			return;
+		}
+		
+		// For servlet mappings, pathInfo might be null, so check servletPath
+		if (servletPath != null && servletPath.contains("/all/")) {
+			log.info("Bypassing authentication for /all/ servletPath: " + servletPath);
+			chain.doFilter(req, res);
+			return;
+		}
+		
+		if (pathInfo != null && pathInfo.startsWith("/all/")) {
+			log.info("Bypassing authentication for /all/ pathInfo: " + pathInfo);
+			chain.doFilter(req, res);
+			return;
+		}
+
 		boolean auth = login(hreq, hres);
 		if(auth){
 			chain.doFilter(req, res);
@@ -73,21 +117,70 @@ public class AuthenticationFilter implements Filter {
 
 	public boolean login(HttpServletRequest request, HttpServletResponse response){
 		final String repositoryId = getRepositoryId(request);
+		
+		log.info("=== AUTH LOGIN: repositoryId=" + repositoryId + " ===");
 
-		//Make dummy callContext
-		NemakiAuthCallContextHandler callContextHandeler = new NemakiAuthCallContextHandler();
-		Map<String, String> map = callContextHandeler.getCallContextMap(request);
-		CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, request, response, null, null);
-		for(String key : map.keySet()){
-			ctxt.put(key, map.get(key));
+		//Create simplified callContext without servlet dependencies
+		CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, null, null, null, null);
+		
+		// Extract basic auth information directly
+		String authHeader = request.getHeader("Authorization");
+		if (authHeader != null && authHeader.startsWith("Basic ")) {
+			try {
+				String base64Credentials = authHeader.substring("Basic ".length()).trim();
+				String credentials = new String(java.util.Base64.getDecoder().decode(base64Credentials));
+				String[] values = credentials.split(":", 2);
+				if (values.length == 2) {
+					ctxt.put(CallContext.USERNAME, values[0]);
+					ctxt.put(CallContext.PASSWORD, values[1]);
+					log.info("=== AUTH: Basic auth extracted - username=" + values[0] + " ===");
+				}
+			} catch (Exception e) {
+				log.error("Failed to parse Basic auth header", e);
+				return false;
+			}
+		} else {
+			log.warn("No Authorization header found");
+			return false;
 		}
+		
+		// Add additional context from headers
+		ctxt.put(CallContextKey.AUTH_TOKEN, request.getHeader(CallContextKey.AUTH_TOKEN));
+		ctxt.put(CallContextKey.AUTH_TOKEN_APP, request.getHeader(CallContextKey.AUTH_TOKEN_APP));
 
 		// auth
 		boolean auth = false;
-		if(ObjectUtils.equals(repositoryId, SystemConst.NEMAKI_CONF_DB)){
-			auth = authenticationService.loginForNemakiConfDb(ctxt);
-		}else{
-			auth = authenticationService.login(ctxt);
+		try {
+			if(ObjectUtils.equals(repositoryId, SystemConst.NEMAKI_CONF_DB)){
+				auth = authenticationService.loginForNemakiConfDb(ctxt);
+			}else{
+				auth = authenticationService.login(ctxt);
+			}
+			log.info("=== AUTH: Authentication result=" + auth + " ===");
+		} catch (Exception e) {
+			log.error("Authentication error", e);
+			return false;
+		}
+
+		// If authentication successful, check if user is admin
+		if(auth && ctxt.getUsername() != null && principalService != null){
+			try {
+				// Check if user is admin by getting admin list
+				java.util.List<jp.aegif.nemaki.model.User> admins = principalService.getAdmins(repositoryId);
+				boolean isAdmin = false;
+				if(admins != null){
+					for(jp.aegif.nemaki.model.User admin : admins){
+						if(admin.getUserId() != null && admin.getUserId().equals(ctxt.getUsername())){
+							isAdmin = true;
+							break;
+						}
+					}
+				}
+				ctxt.put(CallContextKey.IS_ADMIN, isAdmin);
+				log.info("=== AUTH: User admin status=" + isAdmin + " ===");
+			} catch (Exception e) {
+				log.error("Failed to check admin status for user: " + ctxt.getUsername(), e);
+			}
 		}
 
 		//Add attributes to Jersey @Context parameter
@@ -98,19 +191,49 @@ public class AuthenticationFilter implements Filter {
 	}
 
 	private String getRepositoryId(HttpServletRequest request){
-		// split path
-        String[] pathFragments = HttpUtils.splitPath(request);
+		// Extract path and split manually
+		String pathInfo = request.getPathInfo();
+		log.info("=== AUTH: getRepositoryId - pathInfo=" + pathInfo + " ===");
+		
+		if (pathInfo == null || pathInfo.isEmpty()) {
+			log.warn("PathInfo is null or empty");
+			return null;
+		}
+		
+		// Remove leading slash and split
+		if (pathInfo.startsWith("/")) {
+			pathInfo = pathInfo.substring(1);
+		}
+		String[] pathFragments = pathInfo.split("/");
+		log.info("=== AUTH: pathFragments=" + java.util.Arrays.toString(pathFragments) + " ===");
 
         if(pathFragments.length > 0){
         	if(ApiType.REPO.equals(pathFragments[0])){
         		if(pathFragments.length > 1 && StringUtils.isNotBlank(pathFragments[1])){
         			String repositoryId = pathFragments[1];
+        			log.info("=== AUTH: Found repositoryId from repo path=" + repositoryId + " ===");
         			return repositoryId;
         		}else{
-        			System.err.println("repositoryId is not specified in URI.");
+        			log.warn("repositoryId is not specified in URI.");
         		}
         	}else if(ApiType.ALL.equals(pathFragments[0])){
-        		return repositoryInfoMap.getSuperUsers().getId();
+        		String superUserId = repositoryInfoMap.getSuperUsers().getId();
+        		log.info("=== AUTH: Using superuser ID for /all/ path=" + superUserId + " ===");
+        		return superUserId;
+        	}else if("repositories".equals(pathFragments[0])){
+        		String superUserId = repositoryInfoMap.getSuperUsers().getId();
+        		log.info("=== AUTH: Using superuser ID for repositories path=" + superUserId + " ===");
+        		return superUserId;
+        	}else{
+        		// For paths like /user/bedroom, /group/bedroom, etc.
+        		// The repository ID is typically the second fragment
+        		if(pathFragments.length > 1 && StringUtils.isNotBlank(pathFragments[1])){
+        			String repositoryId = pathFragments[1];
+        			log.info("=== AUTH: Found repositoryId from standard REST path=" + repositoryId + " ===");
+        			return repositoryId;
+        		}else{
+        			log.warn("Could not extract repositoryId from path: " + java.util.Arrays.toString(pathFragments));
+        		}
         	}
         }
 
@@ -162,5 +285,9 @@ public class AuthenticationFilter implements Filter {
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
 		this.repositoryInfoMap = repositoryInfoMap;
+	}
+
+	public void setPrincipalService(PrincipalService principalService) {
+		this.principalService = principalService;
 	}
 }

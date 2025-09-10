@@ -53,6 +53,9 @@ public class Policy extends Content {
 		setSecondaryIds(c.getSecondaryIds());
 		setObjectType(c.getObjectType());
 		setChangeToken(c.getChangeToken());
+		
+		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from Content
+		setRevision(c.getRevision());
 	}
 	
 	public String getPolicyText() {

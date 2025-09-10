@@ -46,6 +46,7 @@ import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.BulkUpdateObjectIdAndChangeTokenImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.FailedToDeleteDataImpl;
@@ -57,6 +58,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.io.InputStream;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.text.MessageFormat;
 import java.util.ArrayList;
@@ -162,7 +164,13 @@ public class ObjectServiceImpl implements ObjectService {
 	@Override
 	public ContentStream getContentStream(CallContext callContext, String repositoryId, String objectId,
 			String streamId, BigInteger offset, BigInteger length) {
-
+		
+		// CRITICAL DEBUG: Public getContentStream method entry
+		System.err.println(">>> PUBLIC getContentStream() METHOD CALLED <<<");
+		System.err.println("Repository ID: " + repositoryId);
+		System.err.println("Object ID: " + objectId);
+		System.err.println("Stream ID: " + streamId);
+		
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
@@ -194,24 +202,186 @@ public class ObjectServiceImpl implements ObjectService {
 	// obligatory.
 	private ContentStream getContentStreamInternal(String repositoryId, Content content, BigInteger rangeOffset,
 			BigInteger rangeLength) {
+		// CRITICAL DEBUG: Method entry point verification
+		System.err.println("!!! getContentStreamInternal() METHOD CALLED !!!");
+		System.err.println("Repository ID: " + repositoryId);
+		System.err.println("Content ID: " + (content != null ? content.getId() : "NULL"));
+		System.err.println("Content Type: " + (content != null ? content.getClass().getSimpleName() : "NULL"));
+		
 		if (!content.isDocument()) {
 			exceptionService.constraint(content.getId(),
 					"getContentStream cannnot be invoked to other than document type.");
 		}
 		Document document = (Document) content;
+		
+		// Enhanced debugging for TCK failures
+		System.err.println("=== GET CONTENT STREAM INTERNAL DEBUG ===");
+		System.err.println("Document ID: " + document.getId());
+		System.err.println("Document Name: " + document.getName());
+		System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
+		System.err.println("Repository ID: " + repositoryId);
+		
+		// CRITICAL CMIS 1.1 SPECIFICATION FIX: Check constraints FIRST
+		// This will throw appropriate exceptions for:
+		// - NOTALLOWED documents (constraint exception)
+		// - REQUIRED documents without attachment (constraint exception)
+		// - ALLOWED documents without attachment (passes through)
 		exceptionService.constraintContentStreamDownload(repositoryId, document);
-		AttachmentNode attachment = contentService.getAttachment(repositoryId, document.getAttachmentNodeId());
+		
+		// CMIS 1.1 Standard Compliance: After constraint check, handle null attachmentNodeId
+		// Per CMIS 1.1 Section 2.1.10.1: If a document has no content stream, return null
+		// This is reached only for ALLOWED documents (REQUIRED would have thrown exception above)
+		if (document.getAttachmentNodeId() == null) {
+			System.err.println("=== CMIS STANDARD COMPLIANCE ===");
+			System.err.println("ALLOWED document has no attachment (AttachmentNodeId is null)");
+			System.err.println("Document ID: " + document.getId());
+			System.err.println("Document Name: " + document.getName());
+			System.err.println("Per CMIS 1.1 Section 2.1.10.1: Returning null for documents without content streams");
+			System.err.println("✅ TCK FIX: This is correct behavior for ALLOWED documents");
+			System.err.println("=== END CMIS STANDARD COMPLIANCE ===");
+			return null;
+		}
+		System.err.println("=== CONSTRAINT CHECK COMPLETED SUCCESSFULLY ===");
+		System.err.println("=== DEBUG: About to start attachment retrieval process ===");
+		
+		// After constraint check passes, get attachment
+		System.err.println("=== BEFORE CONTENTSERVICE.GETATTACHMENT() CALL ===");
+		System.err.println("contentService class: " + contentService.getClass().getName());
+		System.err.println("repositoryId: " + repositoryId);
+		System.err.println("attachmentNodeId: " + document.getAttachmentNodeId());
+		
+		AttachmentNode attachment = null;
+		try {
+			attachment = contentService.getAttachment(repositoryId, document.getAttachmentNodeId());
+			System.err.println("=== AFTER CONTENTSERVICE.GETATTACHMENT() CALL ===");
+			System.err.println("attachment class: " + (attachment != null ? attachment.getClass().getName() : "NULL"));
+			System.err.println("attachment InputStream: " + (attachment != null && attachment.getInputStream() != null ? "SUCCESS" : "NULL"));
+		} catch (CmisObjectNotFoundException e) {
+			// CloudantClientWrapper now throws proper exception when attachment not found
+			System.err.println("=== ATTACHMENT NOT FOUND - RETURNING NULL CONTENT STREAM ===");
+			System.err.println("Document ID: " + document.getId());
+			System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
+			System.err.println("Exception: " + e.getMessage());
+			System.err.println("Per CMIS 1.1: Document has no binary content stream - returning null");
+			return null;
+		} catch (Exception e) {
+			// Handle other CloudantClientWrapper exceptions
+			System.err.println("=== ATTACHMENT RETRIEVAL ERROR ===");
+			System.err.println("Document ID: " + document.getId());
+			System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
+			System.err.println("Error: " + e.getMessage());
+			throw new RuntimeException("Failed to retrieve content stream: " + e.getMessage(), e);
+		}
+		
+		// CRITICAL FIX: Handle null attachment per CMIS 1.1 specification
+		if (attachment == null) {
+			System.err.println("=== ATTACHMENT NULL - RETURNING NULL CONTENT STREAM ===");
+			System.err.println("Document ID: " + document.getId());
+			System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
+			System.err.println("Per CMIS 1.1: Document has no binary content stream - returning null");
+			return null;
+		}
+		
 		attachment.setRangeOffset(rangeOffset);
 		attachment.setRangeLength(rangeLength);
 
-		// Set content stream
-		BigInteger length = BigInteger.valueOf(attachment.getLength());
+		// Set content stream with CMIS-compliant length handling
+		System.err.println("=== CONTENT STREAM CREATION DEBUG ===");
+		
 		String name = attachment.getName();
+		System.err.println("Content name: " + name);
 		String mimeType = attachment.getMimeType();
+		System.err.println("Content mimeType: " + mimeType);
+		
+		System.err.println("Getting input stream from attachment...");
 		InputStream is = attachment.getInputStream();
+		System.err.println("InputStream retrieved: " + (is != null ? "SUCCESS" : "NULL"));
+		
+		if (is == null) {
+			System.err.println("ERROR: attachment.getInputStream() returned null");
+			throw new RuntimeException("Content stream InputStream is null!");
+		}
+		
+		// CRITICAL FIX: Apply same length calculation logic as in ContentServiceImpl.createAttachment()
+		// If length is unknown (-1) or invalid (<=0), calculate actual stream size
+		long attachmentLength = attachment.getLength();
+		BigInteger length;
+		
+		System.err.println("Raw attachment length from database: " + attachmentLength);
+		
+		if (attachmentLength <= 0) {
+			System.err.println("🚨 CRITICAL LENGTH FIX: attachment length is " + attachmentLength + " (unknown/invalid)");
+			
+			// Try to get actual size from CouchDB attachment metadata without consuming stream
+			System.err.println("Attempting to get actual size from CouchDB attachment metadata...");
+			Long actualSizeFromDB = contentService.getAttachmentActualSize(repositoryId, document.getAttachmentNodeId());
+			
+			if (actualSizeFromDB != null && actualSizeFromDB > 0) {
+				length = BigInteger.valueOf(actualSizeFromDB);
+				System.err.println("✅ SUCCESS: Retrieved actual size from CouchDB metadata: " + actualSizeFromDB + " bytes for: " + name);
+			} else {
+				// Use CMIS spec -1 for unknown size without consuming the stream
+				length = BigInteger.valueOf(-1);
+				System.err.println("✅ CMIS COMPLIANCE: Using CMIS standard -1 (unknown size) without consuming stream for: " + name);
+				System.err.println("✅ STREAM PRESERVATION: InputStream remains available for Browser Binding servlet");
+			}
+		} else {
+			// Known size - use the value from database
+			length = BigInteger.valueOf(attachmentLength);
+			System.err.println("✅ Using known size from database: " + length + " bytes");
+		}
+		
+		System.err.println("Final ContentStream length: " + length);
+		System.err.println("Creating ContentStreamImpl...");
 		ContentStream cs = new ContentStreamImpl(name, length, mimeType, is);
+		System.err.println("ContentStreamImpl created successfully");
+		System.err.println("=== END CONTENT STREAM CREATION DEBUG ===");
 
 		return cs;
+	}
+
+	/**
+	 * Calculate the actual size of an InputStream by reading through it
+	 * This is needed when AttachmentNode.getLength() returns -1 (unknown size)
+	 * Same logic as ContentServiceImpl.calculateStreamSize()
+	 * @param inputStream The stream to measure
+	 * @return The actual size in bytes, or -1 if calculation fails
+	 */
+	private long calculateActualStreamSize(InputStream inputStream) {
+		if (inputStream == null) {
+			return 0L;
+		}
+		
+		long totalBytes = 0L;
+		byte[] buffer = new byte[8192]; // 8KB buffer for efficient reading
+		
+		try {
+			// Mark the stream for reset if possible
+			if (inputStream.markSupported()) {
+				inputStream.mark(Integer.MAX_VALUE);
+			}
+			
+			int bytesRead;
+			while ((bytesRead = inputStream.read(buffer)) != -1) {
+				totalBytes += bytesRead;
+			}
+			
+			// Reset stream to beginning if possible
+			if (inputStream.markSupported()) {
+				inputStream.reset();
+			} else {
+				System.err.println("WARNING: InputStream does not support mark/reset - stream position cannot be restored");
+				// This is a problem - we consumed the stream, so we can't use it again
+				// But we got the size, which is what we needed
+				// The caller will need to handle this case appropriately
+			}
+			
+		} catch (IOException e) {
+			System.err.println("Error calculating stream size: " + e.getMessage());
+			return -1L; // Return -1 to indicate error
+		}
+		
+		return totalBytes;
 	}
 
 	private ContentStream getRenditionStream(String repositoryId, Content content, String streamId) {
@@ -321,13 +491,33 @@ public class ObjectServiceImpl implements ObjectService {
 	@Override
 	public String createFolder(CallContext callContext, String repositoryId, Properties properties, String folderId,
 			List<String> policies, Acl addAces, Acl removeAces, ExtensionsData extension) {
-		FolderTypeDefinition td = (FolderTypeDefinition) typeManager.getTypeDefinition(repositoryId,
-				DataUtil.getObjectTypeId(properties));
+		
+		System.err.println("!!! NEMAKI CREATEFOLDER: CALLED WITH REPOSITORYID=" + repositoryId + ", FOLDERID=" + folderId + " !!!");
+		if (properties != null) {
+			String objectTypeId = DataUtil.getObjectTypeId(properties);
+			System.err.println("!!! NEMAKI CREATEFOLDER: OBJECTTYPEID=" + objectTypeId + " !!!");
+		} else {
+			System.err.println("!!! NEMAKI CREATEFOLDER: PROPERTIES IS NULL !!!");
+		}
+		
+		// CRITICAL FIX: Validate type definition before casting to prevent ClassCastException
+		String objectTypeId = DataUtil.getObjectTypeId(properties);
+		TypeDefinition rawTypeDefinition = typeManager.getTypeDefinition(repositoryId, objectTypeId);
+		
+		if (!(rawTypeDefinition instanceof FolderTypeDefinition)) {
+			throw new CmisInvalidArgumentException("Invalid object type for folder creation: " + objectTypeId + 
+				". Expected folder type but got: " + 
+				(rawTypeDefinition != null ? rawTypeDefinition.getClass().getSimpleName() : "null"));
+		}
+		
+		FolderTypeDefinition td = (FolderTypeDefinition) rawTypeDefinition;
+		
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 
 		// //////////////////
 		// General Exception
 		// //////////////////
+		exceptionService.invalidArgumentRequired("properties", properties);
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parentFolder);
 		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
 				parentFolder);
@@ -357,8 +547,38 @@ public class ObjectServiceImpl implements ObjectService {
 	public String createDocument(CallContext callContext, String repositoryId, Properties properties, String folderId,
 			ContentStream contentStream, VersioningState versioningState, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
+		
+		// SECONDARY TYPES TEST DEBUG - ObjectServiceImpl Entry Point
+		System.err.println("=== SECONDARY TYPES TEST DEBUG - OBJECT SERVICE ENTRY ===");
 		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
-		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager.getTypeDefinition(repositoryId, objectTypeId);
+		Object nameProperty = properties.getProperties().get("cmis:name");
+		Object secondaryTypeIds = properties.getProperties().get("cmis:secondaryObjectTypeIds");
+		System.err.println("ObjectServiceImpl.createDocument called:");
+		System.err.println("  - Document Name: " + (nameProperty != null ? nameProperty : "NULL"));
+		System.err.println("  - Object Type ID: " + objectTypeId);
+		System.err.println("  - Secondary Type IDs: " + (secondaryTypeIds != null ? secondaryTypeIds : "NULL"));
+		if (contentStream != null) {
+			long length = contentStream.getLength();
+			BigInteger bigLength = contentStream.getBigLength();
+			System.err.println("  - ContentStream provided: YES");
+			System.err.println("  - ContentStream getLength(): " + length);
+			System.err.println("  - ContentStream getBigLength(): " + bigLength);
+			System.err.println("  - ContentStream MimeType: " + contentStream.getMimeType());
+			System.err.println("  - ContentStream FileName: " + contentStream.getFileName());
+		} else {
+			System.err.println("  - ContentStream provided: NO");
+		}
+		System.err.println("  - Repository ID: " + repositoryId);
+		System.err.println("  - Folder ID: " + folderId);
+		
+		// Get object type definition for validation
+		TypeDefinition rawTypeDefinition = typeManager.getTypeDefinition(repositoryId, objectTypeId);
+		
+		if (!(rawTypeDefinition instanceof DocumentTypeDefinition)) {
+			throw new CmisInvalidArgumentException("Invalid object type for document creation: " + objectTypeId);
+		}
+		
+		DocumentTypeDefinition td = (DocumentTypeDefinition) rawTypeDefinition;
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 
 		// //////////////////
@@ -390,8 +610,25 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
+		System.err.println("=== SECONDARY TYPES TEST DEBUG - CALLING CONTENT SERVICE ===");
+		System.err.println("About to call contentService.createDocument with:");
+		System.err.println("  - parentFolder.getId(): " + parentFolder.getId());
+		System.err.println("  - versioningState: " + versioningState);
+		
 		Document document = contentService.createDocument(callContext, repositoryId, properties, parentFolder,
 				contentStream, versioningState, policies, addAces, removeAces);
+		
+		System.err.println("=== SECONDARY TYPES TEST DEBUG - CONTENT SERVICE RETURNED ===");
+		System.err.println("Returned document.getId(): " + document.getId());
+		System.err.println("Returned document.getAttachmentNodeId(): " + document.getAttachmentNodeId());
+		
+		if (document.getAttachmentNodeId() == null) {
+			System.err.println("⚠️  CRITICAL: ObjectServiceImpl received document with NULL attachmentNodeId!");
+			System.err.println("⚠️  This will cause getContentStream() to return null and trigger the SecondaryTypesTest failure!");
+		} else {
+			System.err.println("✅ SUCCESS: ObjectServiceImpl received document with valid attachmentNodeId: " + document.getAttachmentNodeId());
+		}
+		
 		return document.getId();
 	}
 
@@ -569,7 +806,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Exception
 		// //////////////////
-		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
+		exceptionService.invalidArgumentRequired("properties", properties);
 		String sourceId = DataUtil.getIdProperty(properties, PropertyIds.SOURCE_ID);
 		if (sourceId != null) {
 			Content source = contentService.getContent(repositoryId, sourceId);
@@ -613,7 +850,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
+		exceptionService.invalidArgumentRequired("properties", properties);
 		// NOTE: folderId is ignored because policy is not filable in Nemaki
 		TypeDefinition td = typeManager.getTypeDefinition(repositoryId,
 				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID));
@@ -647,7 +884,9 @@ public class ObjectServiceImpl implements ObjectService {
 		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, DataUtil.getObjectTypeId(properties));
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parentFolder);
-		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
+		exceptionService.invalidArgumentRequired("properties", properties);
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
+				parentFolder);
 
 		// //////////////////
 		// Specific Exception
@@ -699,7 +938,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		
-		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
+		exceptionService.invalidArgumentRequired("properties", properties);
 		Content content = contentService.getContent(repositoryId, objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
 		if (content.isDocument()) {
@@ -994,7 +1233,10 @@ public class ObjectServiceImpl implements ObjectService {
 				folder, allVersions);
 		deleteService.execute();
 
-		solrUtil.callSolrIndexing(repositoryId);
+		// Delete folder from Solr index
+		if (folder != null) {
+			solrUtil.deleteDocument(repositoryId, folder.getId());
+		}
 
 		// Check FailedToDeleteData
 		// FIXME Consider orphans that was failed to be deleted

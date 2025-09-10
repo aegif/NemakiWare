@@ -4,13 +4,13 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.GET;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
 
 import org.apache.commons.codec.Charsets;
 import org.apache.commons.io.IOUtils;
@@ -19,6 +19,8 @@ import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.core.JsonParseException;
@@ -36,20 +38,37 @@ import net.logstash.logback.marker.Markers;
 public class LogResource extends ResourceBase{
 
 	private JsonLogger jsonLogger;
-	private ObjectMapper mapper = new ObjectMapper().setSerializationInclusion(Include.NON_NULL);;;
+	
+	private ObjectMapper mapper;
+	
 	private static final Log log = LogFactory.getLog(LogResource.class);
+	
+	private ObjectMapper getMapper() {
+		if (mapper != null) {
+			return mapper;
+		}
+		// Fallback to manual Spring context lookup
+		try {
+			return jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+					.getBean("debugObjectMapper", ObjectMapper.class);
+		} catch (Exception e) {
+			// If debugObjectMapper not found, try default nemakiObjectMapper
+			return jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+					.getBean("nemakiObjectMapper", ObjectMapper.class);
+		}
+	}
 
 	@GET
 	@Path("/config")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String get(@Context HttpServletRequest request) throws JsonProcessingException  {
 		boolean status = true;
-		ObjectNode result = mapper.createObjectNode();
-		ArrayNode errMsg = mapper.createArrayNode();
+		ObjectNode result = getMapper().createObjectNode();
+		ArrayNode errMsg = getMapper().createArrayNode();
 
 		//check admin
 		if(!checkAdmin(errMsg, request)){
-			mapper.writeValueAsString(makeResult(status, result, errMsg));
+			getMapper().writeValueAsString(makeResult(status, result, errMsg));
 		}
 
 		//get config
@@ -63,7 +82,7 @@ public class LogResource extends ResourceBase{
 		}
 
 		result = makeResult(status, result, errMsg);
-		return mapper.writeValueAsString(makeResult(status, result, errMsg));
+		return getMapper().writeValueAsString(makeResult(status, result, errMsg));
 
 	}
 
@@ -72,8 +91,8 @@ public class LogResource extends ResourceBase{
 	@Produces(MediaType.APPLICATION_JSON)
 	public String update(@Context HttpServletRequest request) throws JsonParseException, JsonMappingException, IOException {
 		boolean status = true;
-		ObjectNode result = mapper.createObjectNode();
-		ArrayNode errMsg = mapper.createArrayNode();
+		ObjectNode result = getMapper().createObjectNode();
+		ArrayNode errMsg = getMapper().createArrayNode();
 
 		//check admin
 		if(!checkAdmin(errMsg, request)){
@@ -89,7 +108,7 @@ public class LogResource extends ResourceBase{
 		}
 
 		result = makeResult(status, result, errMsg);
-		return mapper.writeValueAsString(makeResult(status, result, errMsg));
+		return getMapper().writeValueAsString(makeResult(status, result, errMsg));
 	}
 
 	@PUT
@@ -97,8 +116,8 @@ public class LogResource extends ResourceBase{
 	@Produces(MediaType.APPLICATION_JSON)
 	public String reload(@Context HttpServletRequest request) throws JsonParseException, JsonMappingException, IOException {
 		boolean status = true;
-		ObjectNode result = mapper.createObjectNode();
-		ArrayNode errMsg = mapper.createArrayNode();
+		ObjectNode result = getMapper().createObjectNode();
+		ArrayNode errMsg = getMapper().createArrayNode();
 
 		//check admin
 		if(!checkAdmin(errMsg, request)){
@@ -114,7 +133,7 @@ public class LogResource extends ResourceBase{
 		}
 
 		result = makeResult(status, result, errMsg);
-		return mapper.writeValueAsString(makeResult(status, result, errMsg));
+		return getMapper().writeValueAsString(makeResult(status, result, errMsg));
 	}
 
 	private String parseBody(HttpServletRequest request) {

@@ -1,0 +1,78 @@
+# Docker Compose configuration for containerized Java 11+ upgrade approach
+# UI module maintains Java 8, Core and Solr modules use Java 11+
+
+version: '3.8'
+
+services:
+  # CouchDB database - unchanged
+  couchdb:
+    image: couchdb:3.3
+    container_name: nemakiware-couchdb
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=admin
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+    networks:
+      - nemakiware-network
+
+  # UI Module - Java 8 maintained
+  ui:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ui
+    container_name: nemakiware-ui
+    ports:
+      - "9000:9000"
+    depends_on:
+      - core
+    environment:
+      - CORE_SERVICE_URL=http://core:8080
+    networks:
+      - nemakiware-network
+
+  # Core Module - Java 11+ for Solr 9.x compatibility
+  core:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.core
+    container_name: nemakiware-core
+    ports:
+      - "8080:8080"
+    depends_on:
+      - couchdb
+      - solr
+    environment:
+      - COUCHDB_URL=http://couchdb:5984
+      - SOLR_URL=http://solr:8983/solr
+      - JAVA_OPTS=-Xmx2g -Xms1g
+    networks:
+      - nemakiware-network
+
+  # Solr Module - Java 11+ for Solr 9.x
+  solr:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.solr
+    container_name: nemakiware-solr
+    ports:
+      - "8983:8983"
+    depends_on:
+      - couchdb
+    environment:
+      - COUCHDB_URL=http://couchdb:5984
+      - JAVA_OPTS=-Xmx1g -Xms512m
+    volumes:
+      - solr_data:/app/solr/solr
+    networks:
+      - nemakiware-network
+
+volumes:
+  couchdb_data:
+  solr_data:
+
+networks:
+  nemakiware-network:
+    driver: bridge

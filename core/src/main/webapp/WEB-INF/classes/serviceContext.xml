@@ -4,8 +4,11 @@
 
 <beans xmlns="http://www.springframework.org/schema/beans"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
-    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 
+
+    <!-- Phase 1: Database Pre-Initialization -->
+    <!-- Bean definition moved to databaseInitContext.xml to avoid duplicates -->
 
     <!-- CMIS Repository Beans -->
     <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.cmis.factory.CmisLifecycleBean">
@@ -27,7 +30,8 @@
 
 	<bean id="cmisService" class="jp.aegif.nemaki.cmis.factory.CmisService" scope="prototype">
 		<property name="repositoryService">
-            <ref bean="RepositoryService" />
+            <!-- CRITICAL DEBUG FIX: Reference implementation directly to bypass proxy and enable debugging -->
+            <ref bean="repositoryService" />
         </property>
         <property name="navigationService">
             <ref bean="NavigationService" />
@@ -413,6 +417,9 @@
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
+        <property name="contentDaoService">
+            <ref bean="ContentDaoService" />
+        </property>
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
@@ -548,6 +555,9 @@
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
+        <property name="typeService">
+            <ref bean="TypeService" />
+        </property>
         <property name="permissionService">
             <ref bean="PermissionService" />
         </property>
@@ -576,9 +586,6 @@
     </bean>
 
     <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor">
-        <property name="typeManager">
-            <ref bean="TypeManager" />
-        </property>
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -588,38 +595,32 @@
         <property name="compileService">
             <ref bean="CompileService" />
         </property>
+        <property name="solrUtil">
+            <ref bean="solrUtil" />
+        </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
         <property name="exceptionService">
             <ref bean="ExceptionService" />
         </property>
         <property name="threadLockService">
             <ref bean="ThreadLockService" />
         </property>
-        <property name="solrUtil">
-            <ref bean="solrUtil" />
-        </property>
     </bean>
 
+    <!-- SolrUtil bean - Use original SolrUtil for now -->
     <bean id="solrUtil" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil">
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
         <property name="typeService">
             <ref bean="typeService" />
-        </property>        
+        </property>      
     </bean>
 
     <!-- Extra Rest API implemented by Jersey -->
-    <bean id="restAuthenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
-    	<property name="propertyManager">
-            <ref bean="propertyManager" />
-        </property>
-        <property name="authenticationService">
-            <ref bean="AuthenticationService" />
-        </property>
-        <property name="repositoryInfoMap">
-            <ref bean="repositoryInfoMap" />
-        </property>
-    </bean>
+    <!-- restAuthenticationFilter is now auto-configured via @Component annotation -->
 
     <bean id="archiveResource" class="jp.aegif.nemaki.rest.ArchiveResource">
         <property name="ContentService">
@@ -627,11 +628,12 @@
         </property>
     </bean>
 
-	<bean id="groupItemResource" class="jp.aegif.nemaki.rest.GroupItemResource">
+	<!-- Commented out - REST resources will handle Spring context lookup manually -->
+	<!-- <bean id="groupItemResource" class="jp.aegif.nemaki.rest.GroupItemResource">
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
-    </bean>
+    </bean> -->
 
     <bean id="typeResource" class="jp.aegif.nemaki.rest.TypeResource">
         <property name="typeService">
@@ -648,14 +650,15 @@
         </property>
     </bean>
 
-    <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
+    <!-- Commented out - REST resources will handle Spring context lookup manually -->
+    <!-- <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
          <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
-    </bean>
+    </bean> -->
 
     <bean id="configResource" class="jp.aegif.nemaki.rest.ConfigResource">
         <property name="contentDaoService">
@@ -725,5 +728,37 @@
         </property>
     </bean>
 
+    
+    <!-- SpringContext bean definition for utility access -->
+    <bean id="springContext" class="jp.aegif.nemaki.util.spring.SpringContext" />
+    
+    <!-- AuthenticationFilter bean definition with explicit dependencies -->
+    <bean id="restAuthenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
+        <property name="propertyManager" ref="propertyManager" />
+        <property name="authenticationService" ref="AuthenticationService" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+        <property name="principalService" ref="PrincipalService" />
+    </bean>
+
+    <bean id="repositoriesLegacyResource" class="jp.aegif.nemaki.rest.RepositoriesLegacyResource">
+        <property name="repositoryInfoMap">
+            <ref bean="repositoryInfoMap" />
+        </property>
+    </bean>
+
+    <!-- REST API Resource Beans with explicit Spring DI -->
+    <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
+        <property name="contentService" ref="ContentService" />
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
+    <bean id="groupItemResource" class="jp.aegif.nemaki.rest.GroupItemResource">
+        <property name="contentService" ref="ContentService" />
+    </bean>
+
+    <bean id="permissionResource" class="jp.aegif.nemaki.rest.PermissionResource">
+        <property name="contentService" ref="ContentService" />
+        <property name="aclService" ref="AclService" />
+    </bean>
 
 </beans>

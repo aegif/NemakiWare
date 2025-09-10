@@ -64,15 +64,31 @@ public class GroupItem extends Item{
 
 	public void setUsers(List<String> userIds) {
 		Property users = getSubTypeProperty("nemaki:users");
-		if(users != null && users.getValue() != null && users.getValue() instanceof List){
+		if(users != null) {
 			users.setValue(userIds);
+		} else {
+			// プロパティが存在しない場合は新規作成
+			List<Property> subTypeProperties = getSubTypeProperties();
+			if (subTypeProperties == null) {
+				subTypeProperties = new ArrayList<>();
+				setSubTypeProperties(subTypeProperties);
+			}
+			subTypeProperties.add(new Property("nemaki:users", userIds));
 		}
 	}
 
 	public void setGroups(List<String> groupIds) {
 		Property groups = getSubTypeProperty("nemaki:groups");
-		if(groups != null && groups.getValue() != null && groups.getValue() instanceof List){
+		if(groups != null) {
 			groups.setValue(groupIds);
+		} else {
+			// プロパティが存在しない場合は新規作成
+			List<Property> subTypeProperties = getSubTypeProperties();
+			if (subTypeProperties == null) {
+				subTypeProperties = new ArrayList<>();
+				setSubTypeProperties(subTypeProperties);
+			}
+			subTypeProperties.add(new Property("nemaki:groups", groupIds));
 		}
 	}
 

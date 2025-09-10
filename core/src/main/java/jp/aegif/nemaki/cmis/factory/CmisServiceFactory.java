@@ -4,8 +4,8 @@ import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.Map;
 
-import javax.annotation.PostConstruct;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.annotation.PostConstruct;
+import jakarta.servlet.http.HttpServletRequest;
 
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.CmisServiceWrapper;
@@ -48,14 +48,23 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 
 	public CmisServiceFactory() {
 		super();
+		System.err.println("=== CMIS SERVICE FACTORY CONSTRUCTOR CALLED ===");
+		System.err.println("Timestamp: " + System.currentTimeMillis());
+		System.err.println("Thread: " + Thread.currentThread().getName());
 	}
 
 	@PostConstruct
 	public void setup(){
+		System.err.println("=== CMIS SERVICE FACTORY SETUP (@PostConstruct) ===");
+		System.err.println("Timestamp: " + System.currentTimeMillis());
+		System.err.println("Thread: " + Thread.currentThread().getName());
+		
 		DEFAULT_MAX_ITEMS_TYPES = DataUtil.convertToBigInteger(propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_MAX_ITEMS_TYPES));
 		DEFAULT_DEPTH_TYPES = DataUtil.convertToBigInteger(propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_DEPTH_TYPES));
 		DEFAULT_MAX_ITEMS_OBJECTS = DataUtil.convertToBigInteger(propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_MAX_ITEMS_OBJECTS));
 		DEFAULT_DEPTH_OBJECTS = DataUtil.convertToBigInteger(propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_MAX_DEPTH_OBJECTS));
+		
+		System.err.println("=== CMIS SERVICE FACTORY SETUP COMPLETED ===");
 	}
 
 	/**
@@ -63,21 +72,51 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 	 */
 	@Override
 	public void init(Map<String, String> parameters) {
+		System.err.println("=== CMIS SERVICE FACTORY INIT CALLED ===");
+		System.err.println("Parameters: " + (parameters != null ? parameters.toString() : "null"));
+		System.err.println("Timestamp: " + System.currentTimeMillis());
+		System.err.println("Thread: " + Thread.currentThread().getName());
 	}
 
 	@Override
 	public org.apache.chemistry.opencmis.commons.server.CmisService getService(CallContext callContext) {
 		String repositoryId = callContext.getRepositoryId();
 		String userName = callContext.getUsername();
+		
+		// CRITICAL DEBUG: Always log CmisServiceFactory calls
+		System.err.println("=== CMIS SERVICE FACTORY: getService called ===");
+		System.err.println("Repository ID: " + repositoryId);
+		System.err.println("Username: " + userName);
+		System.err.println("Thread: " + Thread.currentThread().getName());
+		System.err.println("Timestamp: " + System.currentTimeMillis());
+		
+		// Check if this is from HTTP request and log additional context
+		try {
+			if (callContext instanceof org.apache.chemistry.opencmis.server.impl.browser.BrowserCallContextImpl) {
+				org.apache.chemistry.opencmis.server.impl.browser.BrowserCallContextImpl browserContext = 
+					(org.apache.chemistry.opencmis.server.impl.browser.BrowserCallContextImpl) callContext;
+				// Try to get HTTP request details
+				System.err.println("CONTEXT: Browser Binding call context detected");
+			}
+		} catch (Exception e) {
+			System.err.println("CONTEXT: Error getting context details: " + e.getMessage());
+		}
 
 		// Authentication
 		boolean auth = authenticationService.login(callContext);
 
 		if (auth) {
-			// Create CmisService
-			CmisService calledCmisService = SpringUtil.getBeanByType(applicationContext, CmisService.class);
+			System.err.println("=== AUTHENTICATION SUCCESS ===");
+			
+			// Create CmisService - CRITICAL FIX: Use bean name to avoid TypeManager ambiguity
+			CmisService calledCmisService = (CmisService) applicationContext.getBean("cmisService");
 			if(calledCmisService == null){
+				System.err.println("CRITICAL ERROR: CmisService bean is NULL");
 				log.error("RepositoryId=" + repositoryId + " does not exist", new Throwable());
+			} else {
+				System.err.println("=== CMIS SERVICE RETRIEVED ===");
+				System.err.println("Service class: " + calledCmisService.getClass().getName());
+				System.err.println("Service hash: " + calledCmisService.hashCode());
 			}
 
 			CmisServiceWrapper wrapper = new CmisServiceWrapper(
@@ -85,6 +124,11 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 					DEFAULT_MAX_ITEMS_TYPES, DEFAULT_DEPTH_TYPES,
 					DEFAULT_MAX_ITEMS_OBJECTS, DEFAULT_DEPTH_OBJECTS,
 					callContext);
+					
+			System.err.println("=== CMIS SERVICE WRAPPER CREATED ===");
+			System.err.println("Wrapper class: " + wrapper.getClass().getName());
+			System.err.println("Wrapper hash: " + wrapper.hashCode());
+			
 			if(log.isTraceEnabled()){
 				log.trace("nemaki_log[FACTORY]"
 						+ "CmisService@"
@@ -96,6 +140,7 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 						+ "] is generated");
 			}
 
+			System.err.println("=== RETURNING CMIS SERVICE WRAPPER ===");
 			return wrapper;
 		} else {
 			String msg = String.format("[Repository=%1$s][UserName=%2$s]Authentication failed",repositoryId, userName);

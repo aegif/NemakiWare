@@ -37,11 +37,15 @@ import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import java.util.*;
 import java.util.concurrent.locks.Lock;
 
 public class VersioningServiceImpl implements VersioningService {
+	private static final Log log = LogFactory.getLog(VersioningServiceImpl.class);
+	
 	private ContentService contentService;
 	private CompileService compileService;
 	private ExceptionService exceptionService;
@@ -225,6 +229,14 @@ public class VersioningServiceImpl implements VersioningService {
 		} else {
 			document = contentService
 					.getDocumentOfLatestVersion(repositoryId, versionSeriesId);
+		}
+		
+		// CRITICAL FIX: Check for null document before accessing its properties
+		if (document == null) {
+			log.error("Document not found for versionSeriesId: " + versionSeriesId + 
+					" in repository: " + repositoryId + " (major: " + _major + ")");
+			exceptionService.objectNotFound(DomainType.OBJECT, null, versionSeriesId);
+			return null; // This line should not be reached due to exception above
 		}
 		
 		Lock lock = threadLockService.getReadLock(repositoryId, document.getId());

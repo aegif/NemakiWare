@@ -1,0 +1,53 @@
+~~
+~~
+~~ Licensed to the Apache Software Foundation (ASF) under one
+~~ or more contributor license agreements.  See the NOTICE file
+~~ distributed with this work for additional information
+~~ regarding copyright ownership.  The ASF licenses this file
+~~ to you under the Apache License, Version 2.0 (the
+~~ "License"); you may not use this file except in compliance
+~~ with the License.  You may obtain a copy of the License at
+~~
+~~   http://www.apache.org/licenses/LICENSE-2.0
+~~
+~~ Unless required by applicable law or agreed to in writing,
+~~ software distributed under the License is distributed on an
+~~ "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+~~ KIND, either express or implied.  See the License for the
+~~ specific language governing permissions and limitations
+~~ under the License.
+~~
+~~
+
+  -----
+  OpenCMIS Client Binding Layer
+  -----
+
+JUnit Test Parameters
+
+  The provider implementation tests that require a real CMIS repository can be 
+  configured via system properties. These are the properties:
+ 
+*-------------------------------------+-------------------------------------------+-------------------------------------------------------------------------------+
+|| Property                           || Description                              || Default                                                                      |
+*-------------------------------------+-------------------------------------------+-------------------------------------------------------------------------------+
+| opencmis.test                       | Must be set to true to run tests          | false                                                                         |
+*-------------------------------------+-------------------------------------------+-------------------------------------------------------------------------------+
+| opencmis.test.username              | User name                                 | test                                                                          |
+*-------------------------------------+-------------------------------------------+-------------------------------------------------------------------------------+
+| opencmis.test.password              | Password                                  | test                                                                          |
+*-------------------------------------+-------------------------------------------+-------------------------------------------------------------------------------+
+| opencmis.test.repository            | Repository id of the test repository      | [If not set the first repository returned by getRepositoryInfo will be used.] |
+*-------------------------------------+-------------------------------------------+-------------------------------------------------------------------------------+
+| opencmis.test.testfolder            | Root folder for all tests                 | [If not set the the root folder of the test repository will be used.]         |
+*-------------------------------------+-------------------------------------------+-------------------------------------------------------------------------------+
+| opencmis.test.documenttype          | Default test document type                | cmis:document                                                                 |
+*-------------------------------------+-------------------------------------------+-------------------------------------------------------------------------------+
+| opencmis.test.foldertype            | Default test folder type                  | cmis:folder                                                                   |
+*-------------------------------------+-------------------------------------------+-------------------------------------------------------------------------------+
+| opencmis.test.atompub.url           | URL of the CMIS AtomPub service document  | http://localhost:8080/cmis/atom                                               |
+*-------------------------------------+-------------------------------------------+-------------------------------------------------------------------------------+
+| opencmis.test.webservices.url       | URL prefix of the CMIS Web Services WSDLs | http://localhost:8080/cmis/services/                                          |
+*-------------------------------------+-------------------------------------------+-------------------------------------------------------------------------------+
+| opencmis.test.config                | Absolute path to a properties file that can contain all the parameters above | <none>                                     |
+*-------------------------------------+-------------------------------------------+-------------------------------------------------------------------------------+

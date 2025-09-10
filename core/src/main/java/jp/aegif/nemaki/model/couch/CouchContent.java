@@ -32,6 +32,8 @@ import jp.aegif.nemaki.model.Property;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import java.util.Map;
 
 public class CouchContent extends CouchNodeBase{
 
@@ -50,6 +52,50 @@ public class CouchContent extends CouchNodeBase{
 	public CouchContent(){
 		super();
 	}
+	
+	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	@JsonCreator
+	public CouchContent(Map<String, Object> properties) {
+		super(properties); // 親クラスのMapコンストラクタを呼び出し
+		
+		if (properties != null) {
+			// CouchContent固有のフィールドマッピング
+			this.name = (String) properties.get("name");
+			this.description = (String) properties.get("description");
+			this.parentId = (String) properties.get("parentId");
+			this.objectType = (String) properties.get("objectType");
+			this.changeToken = (String) properties.get("changeToken");
+			
+			// Boolean型の処理
+			if (properties.containsKey("aclInherited")) {
+				Object aclInheritedValue = properties.get("aclInherited");
+				if (aclInheritedValue instanceof Boolean) {
+					this.aclInherited = (Boolean) aclInheritedValue;
+				}
+			}
+			
+			// subTypePropertiesの変換
+			if (properties.containsKey("subTypeProperties")) {
+				Object subTypePropsValue = properties.get("subTypeProperties");
+				if (subTypePropsValue instanceof List) {
+					@SuppressWarnings("unchecked")
+					List<Map<String, Object>> subTypePropsList = (List<Map<String, Object>>) subTypePropsValue;
+					List<Property> subTypeProperties = new ArrayList<Property>();
+					for (Map<String, Object> propMap : subTypePropsList) {
+						String key = (String) propMap.get("key");
+						Object value = propMap.get("value");
+						if (key != null) {
+							subTypeProperties.add(new Property(key, value));
+						}
+					}
+					this.subTypeProperties = subTypeProperties;
+				}
+			}
+			
+			// 複雑なオブジェクトは後で処理
+			// TODO: acl, aspects, secondaryIds の変換
+		}
+	}
 
 	public CouchContent(Content c){
 		super(c);
@@ -63,6 +109,9 @@ public class CouchContent extends CouchNodeBase{
 		setSecondaryIds(c.getSecondaryIds());
 		setObjectType(c.getObjectType());
 		setChangeToken(c.getChangeToken());
+		
+		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from Content layer
+		setRevision(c.getRevision());
 	}
 
 	/**
@@ -177,7 +226,12 @@ public class CouchContent extends CouchNodeBase{
 		c.setChangeToken(getChangeToken());
 
 		CouchAcl cacl = getAcl();
-		c.setAcl(cacl.convertToNemakiAcl());
+		if (cacl != null) {
+			c.setAcl(cacl.convertToNemakiAcl());
+		} else {
+			// Set default ACL if none exists
+			c.setAcl(new jp.aegif.nemaki.model.Acl());
+		}
 
 		return c;
 	}

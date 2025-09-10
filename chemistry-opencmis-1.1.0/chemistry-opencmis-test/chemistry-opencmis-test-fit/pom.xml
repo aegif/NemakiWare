@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.apache.chemistry.opencmis</groupId>
+        <artifactId>chemistry-opencmis</artifactId>
+        <version>1.1.0</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+
+    <artifactId>chemistry-opencmis-test-fit</artifactId>
+    <name>OpenCMIS Full Integration Tests</name>
+    <packaging>war</packaging>
+
+    <properties>
+        <parentBasedir>../../</parentBasedir>
+        <tomcat.version>7.0.75</tomcat.version>
+        <overlay.groupId />
+        <overlay.artifactId />
+        <factory.class />
+        <!-- Used in ServiceLoader to look up impl. -->
+        <service.factory.class />
+        <repository />
+        <user />
+        <password />
+        <default.documentType>cmis:document</default.documentType>
+        <default.versionableDocumentType>VersionableType</default.versionableDocumentType>
+        <test.versionable>true</test.versionable>
+        <test.notVersionable>true</test.notVersionable>
+        <argLine>-Xmx512m -ea:org.apache.chemistry</argLine>
+    </properties>
+
+
+    <build>
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+                <filtering>true</filtering>
+            </testResource>
+        </testResources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-war-plugin</artifactId>
+                <configuration>
+                    <overlays>
+                        <overlay>
+                            <groupId>${overlay.groupId}</groupId>
+                            <artifactId>${overlay.artifactId}</artifactId>
+                            <includes>
+                            </includes>
+                        </overlay>
+                    </overlays>
+                    <webResources>
+                        <resource>
+                            <directory>${project.basedir}/src/main/webapp/WEB-INF</directory>
+                            <filtering>true</filtering>
+                            <targetPath>WEB-INF</targetPath>
+                            <includes>
+                                <include>**</include>
+                            </includes>
+                        </resource>
+                    </webResources>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <encoding>UTF-8</encoding>
+                    <reuseForks>true</reuseForks>
+                    <forkCount>1</forkCount>
+                    <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+                    <argLine>-Xmx2048m</argLine>
+                    <systemPropertyVariables>
+                        <systemProperty>
+                            <name>org.apache.chemistry.opencmis.session.repository.id</name>
+                            <value>${repository}</value>
+                        </systemProperty>
+                        <systemProperty>
+                            <name>org.apache.chemistry.opencmis.user</name>
+                            <value>${user}</value>
+                        </systemProperty>
+                        <systemProperty>
+                            <name>org.apache.chemistry.opencmis.password</name>
+                            <value>${password}</value>
+                        </systemProperty>
+                        <systemProperty>
+                            <name>org.apache.chemistry.opencmis.tck.default.documentType</name>
+                            <value>${default.documentType}</value>
+                        </systemProperty>
+                        <systemProperty>
+                            <name>org.apache.chemistry.opencmis.tck.default.versionableDocumentType</name>
+                            <value>${default.versionableDocumentType}</value>
+                        </systemProperty>
+                        <systemProperty>
+                            <name>org.apache.chemistry.opencmis.tck.testNotVersionable</name>
+                            <value>${test.notVersionable}</value>
+                        </systemProperty>
+                        <systemProperty>
+                            <name>org.apache.chemistry.opencmis.tck.testVersionable</name>
+                            <value>${test.versionable}</value>
+                        </systemProperty>
+                        <systemProperty>
+                            <name>project.basedir</name>
+                            <value>${project.basedir}</value>
+                        </systemProperty>
+                        <systemProperty>
+                            <name>project.build.directory</name>
+                            <value>${project.build.directory}</value>
+                        </systemProperty>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>integration-test</id>
+                        <goals>
+                            <goal>integration-test</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>verify</id>
+                        <goals>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <dependencies>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>chemistry-opencmis-test-tck</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Test -->
+        <dependency>
+            <groupId>org.apache.tomcat.embed</groupId>
+            <artifactId>tomcat-embed-jasper</artifactId>
+            <version>${tomcat.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.tomcat.embed</groupId>
+            <artifactId>tomcat-embed-logging-juli</artifactId>
+            <version>${tomcat.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>${log4j.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-jul</artifactId>
+            <version>${log4j.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- 
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j-impl</artifactId>
+            <version>${log4j.version}</version>
+            <scope>test</scope>
+        </dependency>
+        -->
+    </dependencies>
+
+    <profiles>
+        <profile>
+            <id>chemistry-inmemory</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <properties>
+                <overlay.groupId>${project.groupId}</overlay.groupId>
+                <overlay.artifactId>chemistry-opencmis-server-inmemory</overlay.artifactId>
+                <factory.class>org.apache.chemistry.opencmis.inmemory.server.InMemoryServiceFactoryImpl</factory.class>
+                <!-- Used in ServiceLoader to look up impl. -->
+                <service.factory.class>${factory.class}</service.factory.class>
+                <repository>test</repository>
+                <default.documentType>cmis:document</default.documentType>
+                <default.versionableDocumentType>VersionableType</default.versionableDocumentType>
+                <test.versionable>true</test.versionable>
+                <test.notVersionable>true</test.notVersionable>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>${project.groupId}</groupId>
+                    <artifactId>chemistry-opencmis-server-inmemory</artifactId>
+                    <version>${project.version}</version>
+                    <type>war</type>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
+</project>

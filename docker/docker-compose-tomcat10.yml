@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # Tomcat 10 with Jakarta EE converted OpenCMIS
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile.jakarta
+    image: nemakiware-tomcat10
+    container_name: nemaki-core-tomcat10
+    ports:
+      - "8081:8080"
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+      - COUCHDB_URL=http://couchdb:5984
+    networks:
+      - nemaki-network
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      initializer:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/core"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # CouchDB for database
+  couchdb:
+    image: couchdb:3.3
+    container_name: nemaki-couchdb
+    ports:
+      - "5984:5984"
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+    networks:
+      - nemaki-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://admin:password@localhost:5984/_up"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Database initializer with cloudant-init.jar
+  initializer:
+    image: openjdk:17-jdk-slim
+    container_name: nemaki-initializer
+    volumes:
+      - ./cloudant-init.jar:/app/cloudant-init.jar
+      - ./initializer/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ./initializer/initial_import/canopy_init.dump:/app/canopy_init.dump
+    environment:
+      - COUCHDB_URL=http://couchdb:5984
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+    networks:
+      - nemaki-network
+    depends_on:
+      couchdb:
+        condition: service_healthy
+    command: >
+      sh -c "
+        echo 'Initializing bedroom repository...'
+        java -jar /app/cloudant-init.jar --url http://couchdb:5984 --username admin --password password --repository bedroom --dump /app/bedroom_init.dump --force true
+        echo 'Initializing canopy repository...'
+        java -jar /app/cloudant-init.jar --url http://couchdb:5984 --username admin --password password --repository canopy --dump /app/canopy_init.dump --force true
+        echo 'Database initialization completed!'
+      "
+
+networks:
+  nemaki-network:
+    driver: bridge
+
+volumes:
+  couchdb_data:

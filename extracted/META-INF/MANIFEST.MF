@@ -1,0 +1,17 @@
+Manifest-Version: 1.0
+Created-By: Apache Maven 3.9.9
+Built-By: ishiiakinori
+Build-Jdk: 17.0.12
+Specification-Title: OpenCMIS Server Implementation
+Specification-Version: 1.2
+Specification-Vendor: The Apache Software Foundation
+Implementation-URL: https://chemistry.apache.org/java/chemistry-opencmis
+ -server/chemistry-opencmis-server-bindings/
+Implementation-Title: OpenCMIS Server Implementation
+Implementation-Vendor: The Apache Software Foundation
+Implementation-Vendor-Id: org.apache.chemistry.opencmis
+Implementation-Version: 1.2.0-SNAPSHOT
+X-Apache-SVN-Revision: ?
+X-Compile-Source-JDK: 1.8
+X-Compile-Target-JDK: 1.8
+

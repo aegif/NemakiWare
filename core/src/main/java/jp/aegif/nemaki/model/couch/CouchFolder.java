@@ -22,8 +22,10 @@
 package jp.aegif.nemaki.model.couch;
 
 import java.util.List;
+import java.util.Map;
 
 import jp.aegif.nemaki.model.Folder;
+import com.fasterxml.jackson.annotation.JsonCreator;
 
 public class CouchFolder extends CouchContent{
 	
@@ -34,6 +36,29 @@ public class CouchFolder extends CouchContent{
 	
 	public CouchFolder(){
 		super();
+	}
+	
+	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	@JsonCreator
+	public CouchFolder(Map<String, Object> properties) {
+		super(properties); // 親クラスのMapコンストラクタを呼び出し
+		
+		if (properties != null) {
+			// List型フィールドの処理
+			if (properties.containsKey("allowedChildTypeIds")) {
+				Object value = properties.get("allowedChildTypeIds");
+				if (value instanceof List) {
+					this.allowedChildTypeIds = (List<String>) value;
+				}
+			}
+			
+			if (properties.containsKey("renditionIds")) {
+				Object value = properties.get("renditionIds");
+				if (value instanceof List) {
+					this.renditionIds = (List<String>) value;
+				}
+			}
+		}
 	}
 	
 	public CouchFolder(Folder f){

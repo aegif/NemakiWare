@@ -67,9 +67,18 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 			} else if (content.isFolder()) {
 				List<Content> children = contentService.getChildren(repositoryId, objectId);
 				if (!CollectionUtils.isEmpty(children)) {
-					exceptionService
-							.constraint(objectId,
-									"deleteObject method is invoked on a folder containing objects.");
+					// Allow deletion of folders with children during cascading operations (deleteWithParent=true)
+					// or when the folder deletion is part of a larger operation
+					if (deleteWithParent == null || !deleteWithParent) {
+						exceptionService
+								.constraint(objectId,
+										"deleteObject method is invoked on a folder containing objects.");
+					} else {
+						// Recursively delete children first when deleteWithParent is true
+						for (Content child : children) {
+							deleteObjectInternal(callContext, repositoryId, child, allVersions, true);
+						}
+					}
 				}
 				contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
 

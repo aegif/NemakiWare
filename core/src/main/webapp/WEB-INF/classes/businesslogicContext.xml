@@ -2,8 +2,8 @@
 <beans xmlns="http://www.springframework.org/schema/beans"
 	xmlns:aop="http://www.springframework.org/schema/aop"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
-		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 
 	<!-- Cache -->
 	<bean id="nemakiCachePool" class="jp.aegif.nemaki.util.cache.impl.NemakiCachePoolImpl"
@@ -34,9 +34,10 @@
 		<property name="contentDaoService">
 			<ref bean="ContentDaoService" />
 		</property>
-		<property name="typeManager">
+		<!-- TypeManager dependency removed to avoid circular dependency - obtained via SpringContext -->
+		<!-- <property name="typeManager">
 			<ref bean="TypeManager" />
-		</property>
+		</property> -->
 		<property name="renditionManager">
 			<ref bean="RenditionManager" />
 		</property>
@@ -80,7 +81,7 @@
 			<ref bean="typeService" />
 		</property>
 	</bean>
-	<bean id="typeService" class="jp.aegif.nemaki.businesslogic.impl.TypeServiceImpl">
+	<bean id="typeService" class="jp.aegif.nemaki.businesslogic.impl.TypeServiceImpl" autowire-candidate="false" abstract="false" lazy-init="true">
 		<constructor-arg>
 			<ref bean="contentDaoService" />
 		</constructor-arg>
@@ -97,8 +98,7 @@
 			<ref bean="jodRenditionManager" />
 		</property>
 	</bean>
-	<bean id="jodRenditionManager" class="jp.aegif.nemaki.businesslogic.rendition.impl.JodRenditionManagerImpl"
-	init-method="init">
+	<bean id="jodRenditionManager" class="jp.aegif.nemaki.businesslogic.rendition.impl.JodRenditionManagerImpl">
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>

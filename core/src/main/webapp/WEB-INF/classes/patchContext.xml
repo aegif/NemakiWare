@@ -6,27 +6,83 @@
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xmlns:aop="http://www.springframework.org/schema/aop"
  xmlns:context="http://www.springframework.org/schema/context"
-	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
-    http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd
-    http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util-3.0.xsd
-    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.2.xsd">
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
+    http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
 
     <context:annotation-config />
 	<context:component-scan base-package="jp.aegif.nemaki.patch" />
+	<context:component-scan base-package="jp.aegif.nemaki.init" />
 
-	<bean id="PatchService" class="jp.aegif.nemaki.patch.PatchService"
-		init-method="apply">
+	<!-- 
+		Phase 2: CMIS Post-Initializer (New Architecture)
+		
+		Uses InitializingBean to execute CMIS operations after all Spring services
+		are fully initialized. This replaces the problematic init-method approach
+		and ensures proper dependency resolution.
+	-->
+	<bean id="cmisPostInitializer" class="jp.aegif.nemaki.init.CMISPostInitializer">
+		<property name="cmisPatchList">
+			<list>
+				<!-- CRITICAL: System folder must be created first for other patches to work -->
+				<bean class="jp.aegif.nemaki.patch.Patch_SystemFolderSetup">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- CMIS-specific patches that require running services -->
+				<bean class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<bean class="jp.aegif.nemaki.patch.Patch_TestUserInitialization">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+			</list>
+		</property>
+	</bean>
+
+	<!-- 
+		PatchService with PropertyDefinitionDetail initialization
+		
+		CRITICAL FIX: Added init-method to ensure PropertyDefinitionDetail initialization
+		for system CMIS properties, which is essential for TCK TypesTestGroup success.
+	-->
+	<bean id="PatchService" class="jp.aegif.nemaki.patch.PatchService" init-method="applyPatchesOnStartup">
 		<property name="repositoryInfoMap">
 			<ref bean="repositoryInfoMap" />
 		</property>
 		<property name="connectorPool">
 			<ref bean="connectorPool" />
 		</property>
+		<property name="propertyManager">
+			<ref bean="propertyManager" />
+		</property>
+		<property name="typeService">
+			<ref bean="TypeService" />
+		</property>
+		<property name="typeManager">
+			<ref bean="TypeManager" />
+		</property>
+		<property name="couchdbUrl">
+			<value>${db.couchdb.url}</value>
+		</property>
+		<property name="couchdbUsername">
+			<value>${db.couchdb.auth.username}</value>
+		</property>
+		<property name="couchdbPassword">
+			<value>${db.couchdb.auth.password}</value>
+		</property>
 		<property name="patchList">
 			<list>
-				<ref bean="patch_20160815" />
-				<ref bean="patch_20170425" />
-				<ref bean="patch_20170602" />
+				<!-- CRITICAL FIX: Removed duplicate patch execution to prevent folder duplication -->
+				<!-- All CMIS patches are now exclusively handled by CMISPostInitializer to prevent double execution -->
+				<!-- This PatchService is kept for PropertyDefinitionDetail initialization and manual operations -->
+				<!-- Future patches can be added here if they need manual execution -->
 			</list>
 		</property>
 	</bean>
@@ -50,7 +106,19 @@
 		<property name="repositoryService">
 			<ref bean="RepositoryService" />
 		</property>
+		<property name="typeService">
+			<ref bean="TypeService" />
+		</property>
+		<property name="typeManager">
+			<ref bean="TypeManager" />
+		</property>
 	</bean>
 
+	<!-- Standard CMIS Views Patch Bean -->
+	<bean id="patch_StandardCmisViews" class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
 
 </beans>

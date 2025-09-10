@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+    <!--
+        Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance
+        with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0 Unless
+        required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+        "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+        specific language governing permissions and limitations under the License.
+    -->
+
+    <!--
+        CMIS TCK ant task example.
+    -->
+
+<project name="CMISTCKExample" default="main" basedir=".">
+
+    <target name="main">
+        <path id="opencmistck">
+            <fileset dir="/path/to/opencmis/jars">
+                <include name="**/*.jar"/>
+            </fileset>
+        </path>
+    
+        <taskdef name="cmistck" classname="org.apache.chemistry.opencmis.tck.runner.CmisTckAntTask">
+            <classpath refid="opencmistck"/>
+        </taskdef>
+        
+        <!--
+            parameters: OpenCMIS session parameters file (see sample-parameters.properties)
+            output:     report file
+            format:     text, xml, or html
+        -->
+
+        <cmistck parameters="/path/to/opencmis-parameters.properties" output="/path/to/output.txt" format="text" />
+    	
+     </target>
+
+</project>

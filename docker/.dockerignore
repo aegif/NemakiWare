@@ -1,0 +1,6 @@
+solr/solr/nemaki/data
+solr/solr/token/data
+solr/solr/*/data
+*.log
+*.tmp
+.git

@@ -10,11 +10,13 @@ import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import play.Logger;
+import org.springframework.context.ApplicationContext;
+import org.springframework.web.context.support.WebApplicationContextUtils;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.*;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
 import java.text.ParseException;
 import java.util.GregorianCalendar;
 import java.util.concurrent.locks.Lock;
@@ -23,6 +25,7 @@ import java.util.concurrent.locks.Lock;
 public class CacheResource extends ResourceBase{
 	private NemakiCachePool nemakiCachePool;
 	private ThreadLockService threadLockService;
+	private jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager;
 
 	/**
 	 *
@@ -124,5 +127,72 @@ public class CacheResource extends ResourceBase{
 
 	public void setThreadLockService(ThreadLockService threadLockService) {
 		this.threadLockService = threadLockService;
+	}
+	
+	public void setTypeManager(jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager) {
+		this.typeManager = typeManager;
+	}
+	
+	/**
+	 * Invalidate type definition cache and force regeneration
+	 * This triggers TypeManager to rebuild all type definitions with the latest fixes
+	 *
+	 * @param repositoryId
+	 * @param httpRequest
+	 * @return JSON result indicating success/failure and details
+	 */
+	@DELETE
+	@Path("/types")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String invalidateTypeCache(@PathParam("repositoryId") String repositoryId, @Context HttpServletRequest httpRequest) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+		
+		try {
+			Logger.info("=== TYPE CACHE INVALIDATION REQUEST ===");
+			Logger.info("Repository: " + repositoryId);
+			Logger.info("Triggering TypeManager cache invalidation and regeneration...");
+			
+			// Get Spring Application Context
+			ApplicationContext appContext = WebApplicationContextUtils.getWebApplicationContext(
+				httpRequest.getServletContext());
+			
+			if (appContext == null) {
+				throw new RuntimeException("Spring ApplicationContext not available");
+			}
+			
+			// Get TypeManager bean from Spring context
+			jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
+				appContext.getBean("typeManager", jp.aegif.nemaki.cmis.aspect.type.TypeManager.class);
+			
+			if (typeManager == null) {
+				throw new RuntimeException("TypeManager bean not found in Spring context");
+			}
+			
+			Logger.info("TypeManager found: " + typeManager.getClass().getName());
+			
+			// Call TypeManager to invalidate and regenerate type definitions
+			// This will force all buildTypeDefinitionFromDB methods to execute with our fixes
+			java.lang.reflect.Method invalidateMethod = typeManager.getClass().getDeclaredMethod("invalidateTypeDefinitionCache", String.class);
+			invalidateMethod.setAccessible(true);
+			invalidateMethod.invoke(typeManager, repositoryId);
+			
+			Logger.info("TYPE CACHE INVALIDATION COMPLETED SUCCESSFULLY");
+			
+			result.put("invalidated", true);
+			result.put("repository", repositoryId);
+			result.put("message", "Type definition cache invalidated and regenerated successfully");
+			
+		} catch (Exception e) {
+			Logger.error("TYPE CACHE INVALIDATION FAILED: " + e.getMessage(), e);
+			status = false;
+			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_UPDATE);
+			result.put("invalidated", false);
+			result.put("error", e.getMessage());
+		}
+		
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
 	}
 }

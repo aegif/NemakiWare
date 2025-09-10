@@ -3,40 +3,55 @@
 
 	<modelVersion>4.0.0</modelVersion>
 	<artifactId>solr</artifactId>
-	<packaging>war</packaging>
-	<version>2.4.1</version>
+	<packaging>jar</packaging>
+	<version>3.0.0</version>
 	<name>solr</name>
 	<description>Solr customized for Nemakiware</description>
 	<url>https://github.com/aegif/NemakiWare</url>
 
-	<parent>
-		<groupId>jp.aegif.nemakiware</groupId>
-		<artifactId>nemakiware</artifactId>
-		<version>1.0</version>
-	</parent>
+	<!-- Removed problematic parent POM reference -->
+	<groupId>jp.aegif.nemaki.solr</groupId>
 
 	<properties>
-		<java-version>1.8</java-version>
-        <maven.compiler.target>${java.version}</maven.compiler.target>
-        <maven.compiler.source>${java.version}</maven.compiler.source>
+		<java-version>17</java-version>
+        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.source>17</maven.compiler.source>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<org.apache.chemistry.opencmis.version>1.1.0</org.apache.chemistry.opencmis.version>
-		<org.apache.solr.version>4.10.4</org.apache.solr.version>
+		<org.apache.solr.version>9.8.0</org.apache.solr.version>
 	</properties>
+
 	<repositories>
-        <repository>
-            <id>maven-restlet</id>
-            <name>Public online Restlet repository</name>
-            <url>https://maven.restlet.com</url>
-        </repository>  
+		<repository>
+			<id>central</id>
+			<name>Maven Central Repository</name>
+			<url>https://repo1.maven.org/maven2</url>
+			<layout>default</layout>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+		</repository>
+		<repository>
+			<id>maven-restlet</id>
+			<name>Restlet Maven Repository</name>
+			<url>https://maven.restlet.talend.com</url>
+			<layout>default</layout>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+		</repository>
+		<repository>
+			<id>restlet-central</id>
+			<name>Central Repository for Restlet</name>
+			<url>https://repo1.maven.org/maven2</url>
+			<layout>default</layout>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+		</repository>
 	</repositories>    
 
 	<dependencies>
-		<dependency>
-            <groupId>org.restlet.jee</groupId>
-            <artifactId>org.restlet</artifactId>
-            <version>2.1.1</version>
-        </dependency>
 		<dependency>
 			<groupId>org.apache.solr</groupId>
 			<artifactId>solr-core</artifactId>
@@ -59,17 +74,7 @@
 				</exclusion>
 			</exclusions>
 		</dependency>
-		<dependency>
-			<groupId>org.apache.solr</groupId>
-			<artifactId>solr-cell</artifactId>
-			<version>${org.apache.solr.version}</version>
-			<exclusions>
-				<exclusion>
-					<groupId>log4j</groupId>
-					<artifactId>log4j</artifactId>
-				</exclusion>
-			</exclusions>
-		</dependency>
+
 		<dependency>
 			<groupId>org.quartz-scheduler</groupId>
 			<artifactId>quartz</artifactId>
@@ -79,22 +84,22 @@
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
-			<version>1.7.21</version>
+			<version>2.0.12</version>
 		</dependency>
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>jcl-over-slf4j</artifactId>
-			<version>1.7.21</version>
+			<version>2.0.12</version>
 		</dependency>
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-core</artifactId>
-			<version>1.1.7</version>
+			<version>1.4.14</version>
 		</dependency>
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
-			<version>1.1.7</version>
+			<version>1.4.14</version>
 		</dependency>
 		<dependency>
 			<groupId>ch.qos.logback.contrib</groupId>
@@ -114,29 +119,29 @@
 		<dependency>
 			<groupId>net.logstash.logback</groupId>
 			<artifactId>logstash-logback-encoder</artifactId>
-			<version>3.4</version>
+			<version>7.4</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-core</artifactId>
-			<version>[2.15.3,)</version>
+			<version>2.17.1</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
-			<version>[2.15.3,)</version>
+			<version>2.17.1</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-annotations</artifactId>
-			<version>[2.15.3,)</version>
+			<version>2.17.1</version>
 		</dependency>
 
 
 		<dependency>
-			<groupId>org.ektorp</groupId>
-			<artifactId>org.ektorp</artifactId>
-			<version>1.5.0</version>
+			<groupId>com.ibm.cloud</groupId>
+			<artifactId>cloudant</artifactId>
+			<version>0.8.0</version>
 			<exclusions>
 				<exclusion>
 					<groupId>commons-logging</groupId>
@@ -152,7 +157,7 @@
 		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-lang3</artifactId>
-			<version>3.0.1</version>
+			<version>3.12.0</version>
 			<optional>false</optional>
 		</dependency>
 		<dependency>
@@ -206,6 +211,7 @@
 			<artifactId>jersey-client</artifactId>
 			<version>1.19</version>
 		</dependency>
+
 	</dependencies>
 
 	<build>
@@ -214,44 +220,14 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.6.0</version>
+				<version>3.11.0</version>
 				<configuration>
 					<encoding>UTF-8</encoding>
-					<source>1.8</source>
-					<target>1.8</target>
+					<source>17</source>
+					<target>17</target>
 				</configuration>
 			</plugin>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-war-plugin</artifactId>
-				<version>3.3.1</version>
-				<configuration>
-					 <packagingExcludes>**/custom-nemakiware.properties</packagingExcludes>
-					 <packagingExcludes>**/custom-repository.yml</packagingExcludes>
-				</configuration>
-			</plugin>
-			<plugin>
-				  <groupId>org.eclipse.jetty</groupId>
-				  <artifactId>jetty-maven-plugin</artifactId>
-				  <version>9.3.12.v20160915</version>
-				<configuration>
-					<scanIntervalSeconds>1</scanIntervalSeconds>
-					<stopPort>9968</stopPort>
-					<stopKey>foo</stopKey>
-					<webAppConfig>
-						<contextPath>/solr</contextPath>
-						<tempDirectory>./tmp</tempDirectory>
-					</webAppConfig>
-					<connectors>
-						<connector implementation="org.eclipse.jetty.server.nio.SelectChannelConnector">
-							<port>8983</port>
-						</connector>
-					</connectors>
-					<scanTargets>
-						<scanTarget>src/main/webapp</scanTarget>
-					</scanTargets>
-				</configuration>
-			</plugin>
+			<!-- JAR packaging - WAR and Jetty plugins removed as Solr 9.x uses standalone deployment -->
 		</plugins>
 	</build>
 
@@ -282,5 +258,4 @@
 			</build>
 		</profile>
 	</profiles>
-	<groupId>jp.aegif.nemaki.solr</groupId>
 </project>

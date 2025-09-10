@@ -21,6 +21,10 @@
  ******************************************************************************/
 package jp.aegif.nemaki.model.couch;
 
+import java.util.Map;
+import java.util.HashMap;
+import java.util.GregorianCalendar;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jp.aegif.nemaki.model.AttachmentNode;
 
 public class CouchAttachmentNode extends CouchNodeBase{
@@ -32,8 +36,13 @@ public class CouchAttachmentNode extends CouchNodeBase{
 	private long length;
 	private String mimeType;
 	
+	// CouchDB _attachments field to get actual file size
+	@JsonProperty("_attachments")
+	private Map<String, AttachmentInfo> attachments;
+	
 	public CouchAttachmentNode(){
 		super();
+		System.err.println("=== CouchAttachmentNode() DEFAULT CONSTRUCTOR CALLED ===");
 	}
 	
 	public CouchAttachmentNode(AttachmentNode a){
@@ -41,6 +50,73 @@ public class CouchAttachmentNode extends CouchNodeBase{
 		setName(a.getName());
 		setMimeType(a.getMimeType());
 		setLength(a.getLength());
+	}
+	
+	/**
+	 * CRITICAL CLOUDANT SDK COMPATIBILITY: Map constructor required for deserialization
+	 * This constructor ensures CouchAttachmentNode can be deserialized from CouchDB documents
+	 * like all other Couch* classes in the system.
+	 */
+	public CouchAttachmentNode(Map<String, Object> properties) {
+		super(properties);
+		System.err.println("=== CouchAttachmentNode(Map) CONSTRUCTOR CALLED ===");
+		
+		// Extract attachment-specific properties from the map
+		if (properties.containsKey("name")) {
+			this.name = (String) properties.get("name");
+		}
+		
+		if (properties.containsKey("length")) {
+			Object lengthObj = properties.get("length");
+			if (lengthObj instanceof Number) {
+				this.length = ((Number) lengthObj).longValue();
+			}
+		}
+		
+		if (properties.containsKey("mimeType")) {
+			this.mimeType = (String) properties.get("mimeType");
+		}
+		
+		// Handle CouchDB _attachments field for actual file size retrieval
+		if (properties.containsKey("_attachments")) {
+			@SuppressWarnings("unchecked")
+			Map<String, Map<String, Object>> attachmentData = (Map<String, Map<String, Object>>) properties.get("_attachments");
+			if (attachmentData != null && !attachmentData.isEmpty()) {
+				Map<String, AttachmentInfo> attachmentInfoMap = new HashMap<>();
+				for (Map.Entry<String, Map<String, Object>> entry : attachmentData.entrySet()) {
+					AttachmentInfo info = new AttachmentInfo();
+					Map<String, Object> attachmentMeta = entry.getValue();
+					
+					if (attachmentMeta.containsKey("content_type")) {
+						info.setContentType((String) attachmentMeta.get("content_type"));
+					}
+					if (attachmentMeta.containsKey("length")) {
+						Object lengthObj = attachmentMeta.get("length");
+						if (lengthObj instanceof Number) {
+							info.setLength(((Number) lengthObj).longValue());
+						}
+					}
+					if (attachmentMeta.containsKey("digest")) {
+						info.setDigest((String) attachmentMeta.get("digest"));
+					}
+					if (attachmentMeta.containsKey("revpos")) {
+						Object revposObj = attachmentMeta.get("revpos");
+						if (revposObj instanceof Number) {
+							info.setRevpos(((Number) revposObj).intValue());
+						}
+					}
+					if (attachmentMeta.containsKey("stub")) {
+						Object stubObj = attachmentMeta.get("stub");
+						if (stubObj instanceof Boolean) {
+							info.setStub((Boolean) stubObj);
+						}
+					}
+					
+					attachmentInfoMap.put(entry.getKey(), info);
+				}
+				this.attachments = attachmentInfoMap;
+			}
+		}
 	}
 	
 	/**
@@ -70,11 +146,176 @@ public class CouchAttachmentNode extends CouchNodeBase{
 		this.mimeType = mimeType;
 	}
 
+	public Map<String, AttachmentInfo> getAttachments() {
+		return attachments;
+	}
+	
+	public void setAttachments(Map<String, AttachmentInfo> attachments) {
+		this.attachments = attachments;
+	}
+	
+	/**
+	 * Gets the actual file length from CouchDB _attachments or falls back to stored length
+	 * CRITICAL: This method provides the correct file size for CMIS content stream properties
+	 * @return actual file length
+	 */
+	public long getActualLength() {
+		// First try to get length from CouchDB _attachments (most accurate)
+		if (attachments != null && !attachments.isEmpty()) {
+			for (AttachmentInfo info : attachments.values()) {
+				if (info != null && info.getLength() > 0) {
+					// Found actual CouchDB attachment size
+					return info.getLength();
+				}
+			}
+		}
+		
+		// Fall back to stored length field (but prefer actual CouchDB data)
+		return length > 0 ? length : 0;
+	}
+	
+	/**
+	 * Gets the actual MIME type from CouchDB _attachments or falls back to stored mimeType
+	 * @return actual MIME type
+	 */
+	public String getActualMimeType() {
+		// First try to get MIME type from CouchDB _attachments
+		if (attachments != null && !attachments.isEmpty()) {
+			for (AttachmentInfo info : attachments.values()) {
+				if (info != null && info.getContentType() != null && !info.getContentType().isEmpty()) {
+					return info.getContentType();
+				}
+			}
+		}
+		
+		// Fall back to stored mimeType field
+		return mimeType;
+	}
+	
 	public AttachmentNode convert(){
+		System.err.println("=== CouchAttachmentNode.convert() CALLED for ID: " + getId() + " ===");
+		System.err.println("DEBUG: convert() method executing - Spring context lookup about to start");
 		AttachmentNode a = new AttachmentNode(super.convert());
 		
 		a.setName(getName());
-	
+		// CRITICAL FIX: Use actual length from CouchDB _attachments instead of stored field
+		a.setLength(getActualLength());
+		// CRITICAL FIX: Use actual MIME type from CouchDB _attachments instead of stored field
+		a.setMimeType(getActualMimeType());
+		
+		// CRITICAL FIX FOR JAVA 17 MIGRATION: Set InputStream from CouchDB attachment
+		// This was broken during Java 17/Jakarta EE migration - InputStream was never retrieved
+		try {
+			System.err.println("DEBUG: About to lookup connectorPool bean from SpringContext");
+			// Get CloudantClientPool from Spring context and then get client for repository
+			jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPool = 
+				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+					.getBean("connectorPool", jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+			System.err.println("DEBUG: connectorPool bean lookup successful: " + connectorPool);
+			
+			if (connectorPool != null && getId() != null) {
+				// Try common repository IDs to find the attachment
+				String[] repositoryIds = {"bedroom", "canopy", "nemaki_conf"};
+				boolean streamSet = false;
+				
+				for (String repositoryId : repositoryIds) {
+					try {
+						System.err.println("DEBUG: Trying repository: " + repositoryId + " for attachment ID: " + getId());
+						jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+						if (client != null) {
+							System.err.println("DEBUG: Got client for repository: " + repositoryId);
+							// Get the actual binary attachment from CouchDB
+							Object attachmentData = client.getAttachment(getId(), "content");
+							System.err.println("DEBUG: getAttachment() returned: " + (attachmentData != null ? attachmentData.getClass().getName() : "NULL"));
+							
+							if (attachmentData instanceof java.io.InputStream) {
+								a.setInputStream((java.io.InputStream) attachmentData);
+								System.err.println("SUCCESS: Set InputStream for attachment " + getId() + " from repository " + repositoryId);
+								streamSet = true;
+								break;
+							} else if (attachmentData != null) {
+								System.err.println("ERROR: getAttachment() returned unexpected type: " + attachmentData.getClass().getName());
+							} else {
+								System.err.println("ERROR: getAttachment() returned null for attachment " + getId() + " in repository " + repositoryId);
+							}
+						} else {
+							System.err.println("ERROR: Could not get client for repository: " + repositoryId);
+						}
+					} catch (Exception repoEx) {
+						System.err.println("ERROR: Exception trying repository " + repositoryId + ": " + repoEx.getMessage());
+						// Try next repository
+						continue;
+					}
+				}
+				
+				if (!streamSet) {
+					System.err.println("WARNING: Could not retrieve InputStream for attachment " + getId() + " from any repository");
+				}
+			} else {
+				System.err.println("ERROR: connectorPool is null or getId() is null - connectorPool: " + connectorPool + ", getId(): " + getId());
+			}
+		} catch (Exception e) {
+			// Log error but don't fail the conversion - allows system to continue working
+			System.err.println("ERROR: Failed to retrieve InputStream for attachment " + getId() + ": " + e.getMessage());
+			e.printStackTrace();
+		}
+
 		return a;
+	}
+	
+	/**
+	 * Inner class to represent CouchDB attachment info
+	 */
+	public static class AttachmentInfo {
+		@JsonProperty("content_type")
+		private String contentType;
+		
+		private long length;
+		
+		private String digest;
+		
+		private int revpos;
+		
+		private boolean stub;
+		
+		public String getContentType() {
+			return contentType;
+		}
+		
+		public void setContentType(String contentType) {
+			this.contentType = contentType;
+		}
+		
+		public long getLength() {
+			return length;
+		}
+		
+		public void setLength(long length) {
+			this.length = length;
+		}
+		
+		public String getDigest() {
+			return digest;
+		}
+		
+		public void setDigest(String digest) {
+			this.digest = digest;
+		}
+		
+		public int getRevpos() {
+			return revpos;
+		}
+		
+		public void setRevpos(int revpos) {
+			this.revpos = revpos;
+		}
+		
+		public boolean isStub() {
+			return stub;
+		}
+		
+		public void setStub(boolean stub) {
+			this.stub = stub;
+		}
 	}
 }

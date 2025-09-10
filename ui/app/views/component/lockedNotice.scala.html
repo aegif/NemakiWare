@@ -1,9 +1,0 @@
-@*{<meta charset="UTF-8" />}*@
-
-@import util.Util
-@import org.apache.chemistry.opencmis.client.api.CmisObject
-@import org.apache.chemistry.opencmis.commons.PropertyIds
-@import play.mvc.Http.Context.Implicit
-
-@(obj:CmisObject)
-<i class="fa fa-lock"></i>@Messages("view.node.freeze-copy.cannot-update", Util.displayValue(obj,PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, Implicit.lang.toLocale))

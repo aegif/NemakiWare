@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans 
+        http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!-- Development-specific configuration for Jetty environment -->
+    <!-- Use real Solr integration for development with proper localhost configuration -->
+    
+    <!-- Override SolrUtil to use real Solr with localhost configuration -->
+    <bean id="solrUtil" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil">
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+    </bean>
+    
+    <!-- Override QueryProcessor to use real Solr with localhost configuration -->
+    <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor">
+        <property name="solrUtil">
+            <ref bean="solrUtil" />
+        </property>
+        <property name="contentService">
+            <ref bean="contentService" />
+        </property>
+        <property name="typeService">
+            <ref bean="typeService" />
+        </property>
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
+        </property>
+        <property name="permissionService">
+            <ref bean="PermissionService" />
+        </property>
+        <property name="compileService">
+            <ref bean="CompileService" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
+        </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
+    </bean>
+
+</beans>

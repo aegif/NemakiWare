@@ -23,11 +23,15 @@
 package jp.aegif.nemaki.model.couch;
 
 import java.util.List;
+import java.util.Map;
 
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class CouchTypeDefinition extends CouchNodeBase {
 
@@ -52,6 +56,8 @@ public class CouchTypeDefinition extends CouchNodeBase {
 	private Boolean typeMutabilityCreate;
 	private Boolean typeMutabilityUpdate;
 	private Boolean typeMutabilityDelete;
+	
+	@JsonProperty("properties")
 	private List<String> properties;
 
 	// Attributes specific to Document
@@ -65,9 +71,156 @@ public class CouchTypeDefinition extends CouchNodeBase {
 	public CouchTypeDefinition() {
 		super();
 	}
+	
+	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	@JsonCreator
+	public CouchTypeDefinition(Map<String, Object> properties) {
+		super(properties); // 親クラスのMapコンストラクタを呼び出し（必須最初の文）
+		
+		System.err.println("=== COUCH TYPE DEFINITION CONSTRUCTOR START ===");
+		try {
+			if (properties != null) {
+				System.err.println("Properties map size: " + properties.size());
+				System.err.println("Properties keys: " + properties.keySet());
+				// CRITICAL FIX: typeId vs queryName schema inconsistency
+				// Old system types (nemaki:*) have no typeId field - use queryName as fallback
+				// New TCK types have both typeId and queryName fields
+				this.typeId = (String) properties.get("typeId");
+				if (this.typeId == null || this.typeId.isEmpty()) {
+					// Fallback to queryName for old system types
+					this.typeId = (String) properties.get("queryName");
+					System.err.println("SCHEMA FIX: Using queryName as typeId: " + this.typeId);
+				}
+				
+				// 文字列フィールドの処理
+				this.localName = (String) properties.get("localName");
+				this.localNameSpace = (String) properties.get("localNameSpace");
+				this.queryName = (String) properties.get("queryName");
+				this.displayName = (String) properties.get("displayName");
+				this.parentId = (String) properties.get("parentId");
+				this.description = (String) properties.get("description");
+				
+				// BaseTypeId列挙型の処理（CouchDB形式からCMIS形式に変換）
+				System.err.println("Processing BaseTypeId...");
+				if (properties.containsKey("baseId")) {
+					String baseIdStr = (String) properties.get("baseId");
+					System.err.println("Found baseId: " + baseIdStr);
+					if (baseIdStr != null) {
+						try {
+							// CouchDB形式（CMIS_ITEM）からCMIS形式（cmis:item）に変換
+							String cmisFormat = convertToNormalizedBaseTypeId(baseIdStr);
+							System.err.println("Converted to CMIS format: " + cmisFormat);
+							this.baseId = BaseTypeId.fromValue(cmisFormat);
+							System.err.println("BaseTypeId conversion successful: " + this.baseId);
+						} catch (Exception e) {
+							System.err.println("BaseTypeId conversion failed with: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+							// フォールバック：元の値を試す
+							try {
+								this.baseId = BaseTypeId.fromValue(baseIdStr);
+								System.err.println("BaseTypeId fallback successful: " + this.baseId);
+							} catch (Exception e2) {
+								// 無効な値の場合は無視（ログに記録すべき）
+								System.err.println("Warning: Invalid BaseTypeId value: " + baseIdStr);
+								System.err.println("Exception: " + e2.getClass().getSimpleName() + ": " + e2.getMessage());
+							}
+						}
+					}
+				} else {
+					System.err.println("No baseId field found");
+				}
+				
+				// Boolean型フィールドの処理
+				String[] booleanFields = {
+					"creatable", "filable", "queryable", "controllablePolicy", 
+					"controllableACL", "fulltextIndexed", "includedInSupertypeQuery",
+					"typeMutabilityCreate", "typeMutabilityUpdate", "typeMutabilityDelete",
+					"versionable"
+				};
+				
+				for (String field : booleanFields) {
+					if (properties.containsKey(field)) {
+						Object value = properties.get(field);
+						Boolean boolValue = value instanceof Boolean ? (Boolean) value : 
+							value != null ? Boolean.parseBoolean(String.valueOf(value)) : null;
+						
+						// リフレクションを使わず、フィールドごとに設定
+						switch (field) {
+							case "creatable": this.creatable = boolValue; break;
+							case "filable": this.filable = boolValue; break;
+							case "queryable": this.queryable = boolValue; break;
+							case "controllablePolicy": this.controllablePolicy = boolValue; break;
+							case "controllableACL": this.controllableACL = boolValue; break;
+							case "fulltextIndexed": this.fulltextIndexed = boolValue; break;
+							case "includedInSupertypeQuery": this.includedInSupertypeQuery = boolValue; break;
+							case "typeMutabilityCreate": this.typeMutabilityCreate = boolValue; break;
+							case "typeMutabilityUpdate": this.typeMutabilityUpdate = boolValue; break;
+							case "typeMutabilityDelete": this.typeMutabilityDelete = boolValue; break;
+							case "versionable": this.versionable = boolValue; break;
+						}
+					}
+				}
+				
+				// ContentStreamAllowed列挙型の処理
+				if (properties.containsKey("contentStreamAllowed")) {
+					String csaStr = (String) properties.get("contentStreamAllowed");
+					if (csaStr != null) {
+						try {
+							this.contentStreamAllowed = ContentStreamAllowed.fromValue(csaStr);
+						} catch (Exception e) {
+							// 無効な値の場合は無視
+						}
+					}
+				}
+				
+				// List型フィールドの処理
+				System.err.println("Processing properties field...");
+				if (properties.containsKey("properties")) {
+					Object value = properties.get("properties");
+					System.err.println("Properties field type: " + (value != null ? value.getClass().getSimpleName() : "null"));
+					System.err.println("Properties field value: " + value);
+					if (value instanceof List) {
+						this.properties = (List<String>) value;
+						System.err.println("Properties field processed as List with size: " + this.properties.size());
+					} else {
+						System.err.println("Properties field is not a List - skipping");
+					}
+				} else {
+					System.err.println("No properties field found");
+				}
+				if (properties.containsKey("allowedSourceTypes")) {
+					Object value = properties.get("allowedSourceTypes");
+					if (value instanceof List) {
+						this.allowedSourceTypes = (List<String>) value;
+					}
+				}
+				if (properties.containsKey("allowedTargetTypes")) {
+					Object value = properties.get("allowedTargetTypes");
+					if (value instanceof List) {
+						this.allowedTargetTypes = (List<String>) value;
+					}
+				}
+			}
+			System.err.println("=== COUCH TYPE DEFINITION CONSTRUCTOR END SUCCESS ===");
+		} catch (Exception e) {
+			System.err.println("=== COUCH TYPE DEFINITION CONSTRUCTOR EXCEPTION ===");
+			System.err.println("Exception type: " + e.getClass().getSimpleName());
+			System.err.println("Exception message: " + e.getMessage());
+			System.err.println("Properties map: " + (properties != null ? properties.keySet() : "null"));
+			e.printStackTrace(System.err);
+			System.err.println("=== END EXCEPTION DETAILS ===");
+			// Re-throw to ensure this object is not created successfully
+			throw new RuntimeException("CouchTypeDefinition constructor failed", e);
+		}
+	}
 
 	public CouchTypeDefinition(NemakiTypeDefinition t) {
 		super(t);
+		
+		// CRITICAL FIX: Explicitly set CouchDB _id field to typeId
+		// This prevents CouchDB from auto-generating timestamp-based IDs
+		// which were causing TCK tests to fail (e.g., "test:customType" → "test:customType_1756800184116")
+		setId(t.getTypeId());
+		
 		setTypeId(t.getTypeId());
 		setLocalName(t.getLocalName());
 		setLocalNameSpace(t.getLocalNameSpace());
@@ -314,5 +467,35 @@ public class CouchTypeDefinition extends CouchNodeBase {
 		t.setAllowedTargetTypes(getAllowedTargetTypes());
 
 		return t;
+	}
+	
+	/**
+	 * CouchDB形式のBaseTypeId（CMIS_ITEM）をCMIS形式（cmis:item）に変換
+	 */
+	private String convertToNormalizedBaseTypeId(String couchDbFormat) {
+		if (couchDbFormat == null) {
+			return null;
+		}
+		
+		// CouchDB形式からCMIS形式への変換マッピング
+		switch (couchDbFormat.toUpperCase()) {
+			case "CMIS_DOCUMENT":
+				return "cmis:document";
+			case "CMIS_FOLDER":
+				return "cmis:folder";
+			case "CMIS_ITEM":
+				return "cmis:item";
+			case "CMIS_RELATIONSHIP":
+				return "cmis:relationship";
+			case "CMIS_POLICY":
+				return "cmis:policy";
+			default:
+				// 既にCMIS形式の場合はそのまま返す
+				if (couchDbFormat.startsWith("cmis:")) {
+					return couchDbFormat;
+				}
+				// 不明な形式の場合は元の値を返す
+				return couchDbFormat;
+		}
 	}
 }

@@ -3,9 +3,9 @@ default:
   root: e02f784f8360a02cc14d1314c10038ff
   principal.anonymous: anonymous
   principal.anyone: GROUP_EVERYONE
-  thinClientUri: http://localhost:8080/ui/
+  thinClientUri: http://localhost:8080/core/ui/dist/
   vendor: aegif
   product.name: NemakiWare
-  product.version: 2.4.1
+  product.version: 3.0.0
   namespace: http://www.aegif.jp/NemakiWare/
-super.users: canopy
+super.users: bedroom

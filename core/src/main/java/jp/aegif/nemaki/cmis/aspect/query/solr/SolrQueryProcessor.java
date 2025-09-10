@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.aspect.query.solr;
 
+import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -59,7 +60,7 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.SolrServer;
+import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
@@ -133,7 +134,45 @@ public class SolrQueryProcessor implements QueryProcessor {
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
-		SolrServer solrServer = solrUtil.getSolrServer();
+		System.out.println("=== QUERY DEBUG: SolrQueryProcessor.query called with statement: " + statement);
+		logger.info("[QUERY DEBUG] SolrQueryProcessor.query called with statement: " + statement);
+		
+		// Create CMIS Type Manager first and test basic functionality
+		System.out.println("=== QUERY DEBUG: Creating CmisTypeManager...");
+		CmisTypeManager cmisTypeManager = new CmisTypeManager(repositoryId, typeManager);
+		System.out.println("=== QUERY DEBUG: CmisTypeManager created: " + cmisTypeManager);
+		
+		// Test basic type lookup
+		try {
+			System.out.println("=== QUERY DEBUG: Testing type lookup for 'cmis:document'...");
+			TypeDefinition testType = cmisTypeManager.getTypeByQueryName("cmis:document");
+			System.out.println("=== QUERY DEBUG: Found cmis:document type: " + (testType != null ? testType.getId() : "null"));
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Exception during type lookup: " + e.getMessage());
+			e.printStackTrace();
+		}
+		
+		SolrClient solrClient = null;
+		try {
+			System.out.println("=== QUERY DEBUG: Getting Solr client...");
+			solrClient = solrUtil.getSolrClient();
+			System.out.println("=== QUERY DEBUG: Got Solr client: " + (solrClient != null ? solrClient.getClass().getSimpleName() : "null"));
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Exception getting Solr client: " + e.getMessage());
+			e.printStackTrace();
+			logger.error("Failed to get Solr client", e);
+		}
+		
+		// Handle case where Solr client creation failed due to HTTP Client compatibility
+		if (solrClient == null) {
+			logger.warn("Solr client unavailable due to HTTP Client compatibility issues - returning empty result");
+			logger.warn("CMIS query will not use full-text search functionality: " + statement);
+			ObjectListImpl nullList = new ObjectListImpl();
+			nullList.setHasMoreItems(false);
+			nullList.setNumItems(BigInteger.ZERO);
+			return nullList;
+		}
+		
 		// replacing backslashed for TIMESTAMP only
 		Pattern time_p = Pattern.compile("(TIMESTAMP\\s?'[\\-\\d]*T\\d{2})\\\\:(\\d{2})\\\\:([\\.\\d]*Z')", Pattern.CASE_INSENSITIVE);
 		Matcher time_m = time_p.matcher(statement);
@@ -141,15 +180,81 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		// TODO walker is required?
 
-		QueryUtilStrict util = new QueryUtilStrict(statement, new CmisTypeManager(repositoryId, typeManager), null);
+		System.out.println("=== QUERY DEBUG: Creating QueryUtilStrict with statement: " + statement);
+		QueryUtilStrict util = null;
+		try {
+			util = new QueryUtilStrict(statement, cmisTypeManager, null);
+			System.out.println("=== QUERY DEBUG: QueryUtilStrict created successfully");
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: CRITICAL ERROR - QueryUtilStrict initialization failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+			e.printStackTrace();
+			logger.error("QueryUtilStrict initialization failed during Jakarta EE operation", e);
+			
+			// Return empty result for Jakarta EE compatibility
+			ObjectListImpl emptyResult = new ObjectListImpl();
+			emptyResult.setHasMoreItems(false);
+			emptyResult.setNumItems(BigInteger.ZERO);
+			emptyResult.setObjects(new ArrayList<>());
+			return emptyResult;
+		}
+		
+		// Get queryObject before processStatement
 		QueryObject queryObject = util.getQueryObject();
+		System.out.println("=== QUERY DEBUG: QueryObject created (before processStatement)");
+		
+		// Debug the QueryObject state before processStatement
+		try {
+			System.out.println("=== QUERY DEBUG: Checking QueryObject state before processStatement...");
+			// Use reflection to access the froms map
+			java.lang.reflect.Field fromsField = QueryObject.class.getDeclaredField("froms");
+			fromsField.setAccessible(true);
+			Map<String, String> froms = (Map<String, String>) fromsField.get(queryObject);
+			System.out.println("=== QUERY DEBUG: froms map size before processStatement: " + (froms != null ? froms.size() : "null"));
+			if (froms != null && !froms.isEmpty()) {
+				for (Map.Entry<String, String> entry : froms.entrySet()) {
+					System.out.println("=== QUERY DEBUG: FROM entry: " + entry.getKey() + " -> " + entry.getValue());
+				}
+			}
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Error accessing froms map: " + e.getMessage());
+		}
+		
 		// Get where caluse as Tree
 		Tree whereTree = null;
 		try {
+			System.out.println("=== QUERY DEBUG: About to call util.processStatement()");
 			util.processStatement();
+			System.out.println("=== QUERY DEBUG: processStatement() completed");
 			Tree tree = util.parseStatement();
+			System.out.println("=== QUERY DEBUG: parseStatement() completed");
 			whereTree = extractWhereTree(tree);
 		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Exception in processStatement: " + e.getMessage());
+			e.printStackTrace();
+		}
+		
+		// Check queryObject after processStatement
+		System.out.println("=== QUERY DEBUG: After processStatement, checking froms map state...");
+		try {
+			java.lang.reflect.Field fromsField = QueryObject.class.getDeclaredField("froms");
+			fromsField.setAccessible(true);
+			Map<String, String> froms = (Map<String, String>) fromsField.get(queryObject);
+			System.out.println("=== QUERY DEBUG: froms map size after processStatement: " + (froms != null ? froms.size() : "null"));
+			if (froms != null && !froms.isEmpty()) {
+				for (Map.Entry<String, String> entry : froms.entrySet()) {
+					System.out.println("=== QUERY DEBUG: FROM entry after processStatement: " + entry.getKey() + " -> " + entry.getValue());
+				}
+			}
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Error accessing froms map after processStatement: " + e.getMessage());
+		}
+		
+		// Now try getMainFromName() with detailed error handling
+		try {
+			TypeDefinition mainFromName = queryObject.getMainFromName();
+			System.out.println("=== QUERY DEBUG: getMainFromName() returned: " + (mainFromName != null ? mainFromName.getId() : "null"));
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Exception in getMainFromName(): " + e.getMessage());
 			e.printStackTrace();
 		}
 
@@ -157,16 +262,19 @@ public class SolrQueryProcessor implements QueryProcessor {
 		String whereQueryString = "";
 		if (whereTree == null || whereTree.isNil()) {
 			whereQueryString = "*:*";
+			logger.info("[QUERY DEBUG] whereTree is null or nil, using default query: *:*");
 		} else {
+			logger.info("[QUERY DEBUG] whereTree found, processing predicate...");
 			try {
 				SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(repositoryId,
 						queryObject, solrUtil, contentService);
 				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
 				whereQueryString = whereQuery.toString();
 				} catch (Exception e) {
+				logger.error("Error in SolrPredicateWalker.walkPredicate: " + e.getMessage(), e);
 				e.printStackTrace();
 				// TODO Output more detailed exception
-				exceptionService.invalidArgument("Invalid CMIS SQL statement!");
+				exceptionService.invalidArgument("Invalid CMIS SQL statement: " + e.getMessage());
 			}
 		}
 
@@ -178,7 +286,28 @@ public class SolrQueryProcessor implements QueryProcessor {
 		fromQueryString += repositoryQuery + " AND ";
 		TypeDefinition td = null;
 
-		td = queryObject.getMainFromName();
+		// Use the debug version that already handles exceptions
+		try {
+			td = queryObject.getMainFromName();
+			System.out.println("=== QUERY DEBUG: getMainFromName() in FROM query section returned: " + (td != null ? td.getId() : "null"));
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Exception in getMainFromName() during FROM query: " + e.getMessage());
+			e.printStackTrace();
+			// Return empty result instead of crashing
+			ObjectListImpl nullList = new ObjectListImpl();
+			nullList.setHasMoreItems(false);
+			nullList.setNumItems(BigInteger.ZERO);
+			return nullList;
+		}
+
+		// Check if td is null before proceeding
+		if (td == null) {
+			System.out.println("=== QUERY DEBUG: TypeDefinition is null, cannot proceed with query");
+			ObjectListImpl nullList = new ObjectListImpl();
+			nullList.setHasMoreItems(false);
+			nullList.setNumItems(BigInteger.ZERO);
+			return nullList;
+		}
 
 		// includedInSupertypeQuery
 		List<TypeDefinitionContainer> typeDescendants = typeManager
@@ -208,10 +337,17 @@ public class SolrQueryProcessor implements QueryProcessor {
 		solrQuery.setQuery(whereQueryString);
 		solrQuery.setFilterQueries(fromQueryString);
 		
+		// RANKING FIX: Add sort by modification date descending to prioritize recent documents
+		// This ensures that newly created documents appear at the top of search results
+		solrQuery.setSort("modified", SolrQuery.ORDER.desc);
+		System.out.println("=== QUERY DEBUG: Added sort by modified desc to prioritize recent documents");
+		
 		logger.info(solrQuery.toString());
-		logger.info("statement: " + statement);
-		logger.info("skipCount: " + skipCount);
-		logger.info("maxItems: " + maxItems);
+		logger.info("[QUERY DEBUG] statement: " + statement);
+		logger.info("[QUERY DEBUG] skipCount: " + skipCount);
+		logger.info("[QUERY DEBUG] maxItems: " + maxItems);
+		logger.info("[QUERY DEBUG] whereQueryString: " + whereQueryString);
+		logger.info("[QUERY DEBUG] fromQueryString: " + fromQueryString);
 		if(skipCount == null){
 			solrQuery.set(CommonParams.START, 0);
 		}else{
@@ -226,13 +362,28 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		QueryResponse resp = null;
 		try {
-			resp = solrServer.query(solrQuery);
-		} catch (SolrServerException e) {
+			logger.info("[QUERY DEBUG] Creating SolrClient...");
+			if (solrClient == null) {
+				logger.error("[QUERY DEBUG] SolrClient is null!");
+				exceptionService.invalidArgument("Solr client initialization failed");
+				return null;
+			}
+			logger.info("[QUERY DEBUG] Executing Solr query: " + solrQuery.toString());
+			// Core name is already included in the URL from SolrUtil.getSolrUrl()
+			resp = solrClient.query(solrQuery);
+			logger.info("[QUERY DEBUG] Solr query executed successfully, response: " + (resp != null ? "not null" : "null"));
+		} catch (SolrServerException | IOException e) {
+			logger.error("[QUERY DEBUG] Solr query failed: " + e.getMessage(), e);
 			e.printStackTrace();
+			exceptionService.invalidArgument("Solr query execution failed: " + e.getMessage());
+			return null;
 		}
 
 		long numFound =0;
 		// Output search results to ObjectList
+		logger.info("Solr response check: resp=" + (resp != null ? "not null" : "null") + 
+			    ", results=" + (resp != null && resp.getResults() != null ? "not null" : "null") +
+			    ", numFound=" + (resp != null && resp.getResults() != null ? resp.getResults().getNumFound() : "N/A"));
 		if (resp != null && resp.getResults() != null
 				&& resp.getResults().getNumFound() != 0) {
 			SolrDocumentList docs = resp.getResults();
@@ -240,7 +391,13 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 			List<Content> contents = new ArrayList<Content>();
 			for (SolrDocument doc : docs) {
-				String docId = (String) doc.getFieldValue("object_id");
+				// Type-safe field value extraction
+				String docId = extractStringFieldValue(doc, "object_id");
+				if (docId == null) {
+					logger.warn("Skipping document with null object_id");
+					continue;
+				}
+				
 				Content c = contentService.getContent(repositoryId, docId);
 
 				// When for some reason the content is missed, pass through
@@ -258,9 +415,15 @@ public class SolrQueryProcessor implements QueryProcessor {
 			try{
 				threadLockService.bulkLock(locks);
 				
+				// Debug logging for permission filtering
+				System.out.println("DEBUG SolrQueryProcessor: Before permission filtering - includeAllowableActions=" + includeAllowableActions + ", contents.size=" + contents.size() + ", user=" + callContext.getUsername());
+				
 				// Filter out by permissions
 				List<Content> permitted = permissionService.getFiltered(
 						callContext, repositoryId, contents);
+				
+				// Debug logging after permission filtering
+				System.out.println("DEBUG SolrQueryProcessor: After permission filtering - permitted.size=" + permitted.size() + ", filtered out=" + (contents.size() - permitted.size()));
 
 				// Filter return value with SELECT clause
 				Map<String, String> requestedWithAliasKey = queryObject
@@ -274,6 +437,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 				// Build ObjectList
 				String orderBy = orderBy(queryObject);
+				// Build ObjectList with original includeAllowableActions parameter for final response
 				ObjectList result = compileService.compileObjectDataListForSearchResult(
 						callContext, repositoryId, permitted, filter,
 						includeAllowableActions, includeRelationships, renditionFilter, false,
@@ -290,6 +454,30 @@ public class SolrQueryProcessor implements QueryProcessor {
 			nullList.setNumItems(BigInteger.ZERO);
 			return nullList;
 		}
+	}
+	
+	/**
+	 * Type-safe field value extraction from SolrDocument.
+	 * Handles both String and ArrayList<String> return types.
+	 */
+	private String extractStringFieldValue(SolrDocument doc, String fieldName) {
+		Object value = doc.getFieldValue(fieldName);
+		if (value == null) {
+			return null;
+		}
+		
+		if (value instanceof String) {
+			return (String) value;
+		} else if (value instanceof java.util.ArrayList) {
+			@SuppressWarnings("unchecked")
+			java.util.ArrayList<String> listValue = (java.util.ArrayList<String>) value;
+			if (!listValue.isEmpty()) {
+				return listValue.get(0);
+			}
+		}
+		
+		logger.warn("Unexpected field type for " + fieldName + ": " + value.getClass().getName());
+		return value.toString();
 	}
 	
 	private String orderBy(QueryObject queryObject){

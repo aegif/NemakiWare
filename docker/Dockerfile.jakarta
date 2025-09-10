@@ -1,0 +1,70 @@
+FROM tomcat:10.1-jdk17
+
+# Install required packages
+RUN apt-get update && apt-get install -y \
+    curl \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up Tomcat
+RUN rm -rf /usr/local/tomcat/webapps/*
+
+# Copy configuration files
+COPY context.xml /usr/local/tomcat/conf/
+COPY nemakiware.properties /usr/local/tomcat/conf/
+COPY repositories.yml /usr/local/tomcat/conf/
+COPY log4j.properties /usr/local/tomcat/conf/
+
+# Copy the WAR file and Jakarta libraries for processing
+COPY core.war /tmp/core.war
+COPY jakarta-lib/* /tmp/jakarta-lib/
+
+# Install Jakarta JARs into WAR file during build
+RUN cd /tmp && \
+    mkdir -p jakarta-war && \
+    cd jakarta-war && \
+    jar xf ../core.war && \
+    echo "Removing original OpenCMIS JARs..." && \
+    rm -f WEB-INF/lib/chemistry-opencmis-*.jar && \
+    rm -f WEB-INF/lib/jaxws-rt-*.jar && \
+    echo "Preserving custom NemakiWare modules..." && \
+    echo "Found custom modules:" && \
+    ls -la WEB-INF/lib/ | grep -E "solr-[0-9]|quartz-[0-9]|nemakiware" && \
+    echo "Installing Jakarta converted JARs..." && \
+    cp /tmp/jakarta-lib/chemistry-opencmis-*-1.1.0-jakarta.jar WEB-INF/lib/ && \
+    cp /tmp/jakarta-lib/chemistry-opencmis-client-impl-1.1.0-jakarta.jar WEB-INF/lib/ && \
+    cp /tmp/jakarta-lib/chemistry-opencmis-client-api-1.1.0-jakarta.jar WEB-INF/lib/ && \
+    cp /tmp/jakarta-lib/jaxws-rt-*-jakarta.jar WEB-INF/lib/ && \
+    for f in WEB-INF/lib/*-jakarta.jar; do \
+        case "$f" in \
+            *SNAPSHOT-jakarta.jar) \
+                mv "$f" "${f%-SNAPSHOT-jakarta.jar}-SNAPSHOT.jar" ;; \
+            *) \
+                mv "$f" "${f%-jakarta.jar}.jar" ;; \
+        esac; \
+    done && \
+    echo "Building updated WAR file..." && \
+    jar cf /usr/local/tomcat/webapps/core.war . && \
+    echo "Verifying critical JARs in final WAR..." && \
+    jar tf /usr/local/tomcat/webapps/core.war | grep -E "solr-2|quartz-2" && \
+    echo "Critical JARs verified in WAR" && \
+    cd / && rm -rf /tmp/jakarta-war /tmp/core.war /tmp/jakarta-lib && \
+    echo "Jakarta JAR integration completed during Docker build"
+
+# Copy utilities
+COPY wait-for-couchdb.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/wait-for-couchdb.sh
+
+# Environment variables for Jakarta EE
+ENV CATALINA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC \
+  -Djakarta.xml.bind.JAXBContext=com.sun.xml.bind.v2.ContextFactory \
+  -Djakarta.xml.ws.spi.Provider=com.sun.xml.ws.spi.ProviderImpl"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+  CMD curl -f http://localhost:8080/core || exit 1
+
+EXPOSE 8080
+
+# Wait for dependencies and start Tomcat
+CMD ["/usr/local/bin/wait-for-couchdb.sh", "catalina.sh", "run"]

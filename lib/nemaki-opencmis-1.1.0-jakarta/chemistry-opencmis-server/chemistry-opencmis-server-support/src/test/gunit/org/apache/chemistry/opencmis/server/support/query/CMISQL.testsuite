@@ -1,0 +1,188 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ *
+ * Authors:
+ *     Stefane Fermigier, Nuxeo
+ *     Florent Guillaume, Nuxeo
+ */
+gunit CMISQL;
+
+@header{
+package org.apache.chemistry.opencmis.server.support.query;
+}
+
+// ----- Lexer tests -----
+
+ID:
+"a" OK
+"!" FAIL
+"toto" OK
+"toto123" OK
+"toto123_" OK
+"_foo" OK
+"foo:bar" OK
+"123" FAIL
+"123abc" FAIL
+
+NUM_LIT:
+"123" OK
+"0" OK
+"-0" OK
+"1" OK
+"-1" OK
+"-123" OK
+"0123" OK
+"-0123" OK
+"123abc" FAIL
+"123E" FAIL
+"123.456" OK
+"+123.456" OK
+"-123.456" OK
+".456" OK
+"+.456" OK
+"-.456" OK
+"123." OK
+"+123." OK
+"-123." OK
+"+123.456E78" OK
+"-123.456E-78" OK
+".456E78" OK
+"+123.E+78" OK
+
+STRING_LIT:
+"'abc'" OK
+"'a''bc'" OK
+"'abc" FAIL
+"abc'" FAIL
+"'ab'c'" FAIL
+
+BOOL_LIT:
+"TRUE" OK
+"true" OK
+"FALSE" OK
+"false" OK
+
+TIME_LIT:
+"TIMESTAMP '2010-01-01Z01:01:01.000Z'" OK
+"timestamp   '123'" OK
+"TIMESTAMP 123" FAIL
+
+// ----- Parser tests -----
+
+literal:
+"123" OK
+"-123" OK
+"0" OK
+"0123" OK
+"abc123" OK
+"123abc" FAIL
+"'abc'" OK
+"123.345E78" OK
+
+order_by_clause:
+"ORDER BY foo" -> (ORDER_BY (COL foo) ASC)
+"ORDER BY foo ASC" -> (ORDER_BY (COL foo) ASC)
+"ORDER BY foo DESC" -> (ORDER_BY (COL foo) DESC)
+"ORDER BY t.foo, bar DESC" -> (ORDER_BY (COL t foo) ASC (COL bar) DESC)
+
+column_reference:
+"foo" -> (COL foo)
+"bar.foo" -> (COL bar foo)
+
+from_clause:
+"FROM foo JOIN bar ON x = y" -> (FROM (TABLE foo) (JOIN INNER (TABLE bar) (ON (COL x) = (COL y))))
+
+table_join:
+"LEFT OUTER JOIN foo ON x = y" -> (JOIN LEFT (TABLE foo) (ON (COL x) = (COL y)))
+"INNER JOIN foo" -> (JOIN INNER (TABLE foo))
+
+one_table:
+"foo" -> (TABLE foo)
+"foo bar" -> (TABLE foo bar)
+"foo AS bar" -> (TABLE foo bar)
+"(foo)" -> (TABLE foo)
+
+in_predicate:
+"foo IN ( 'a', 'b', 'c')" -> (BIN_OP IN (COL foo) (LIST 'a' 'b' 'c'))
+"foo NOT IN ( 1, 2, 3)" -> (BIN_OP NOT_IN (COL foo) (LIST 1 2 3))
+
+quantified_in_predicate:
+"ANY foo IN ('a', 1)" -> (BIN_OP_ANY IN (LIST 'a' 1) (COL foo))
+
+comparison_predicate:
+"foo = 1" -> (BIN_OP = (COL foo) 1)
+"foo <> 1" -> (BIN_OP <> (COL foo) 1)
+
+predicate:
+"foo = 1" -> (BIN_OP = (COL foo) 1)
+"foo IN ('bar')" -> (BIN_OP IN (COL foo) (LIST 'bar'))
+"foo IS NULL" -> (UN_OP IS_NULL (COL foo))
+"foo IS NOT NULL" -> (UN_OP IS_NOT_NULL (COL foo))
+"1 = ANY foo" -> (BIN_OP_ANY = 1 (COL foo))
+"LOWER(foo) = 'bar'" -> (BIN_OP = (FUNC LOWER (COL foo)) 'bar')
+"quux(foo) = 'bar'" -> (BIN_OP = (FUNC quux (COL foo)) 'bar')
+
+folder_predicate:
+"IN_FOLDER(foo,'ID123')" -> (FUNC IN_FOLDER foo 'ID123')
+"IN_FOLDER('ID123')" -> (FUNC IN_FOLDER 'ID123')
+"IN_TREE(foo,'ID123')" -> (FUNC IN_TREE foo 'ID123')
+"IN_TREE('ID123')" -> (FUNC IN_TREE 'ID123')
+
+text_search_predicate:
+"CONTAINS('foo')" -> (FUNC CONTAINS 'foo')
+"CONTAINS(bar, 'foo')" -> (FUNC CONTAINS bar 'foo')
+
+where_clause:
+"WHERE foo = 1" -> (WHERE (BIN_OP = (COL foo) 1))
+"WHERE a = 1 AND b <> 2 OR c >= 3 AND NOT d <= 4" -> (WHERE (BIN_OP = (COL a) 1) AND (BIN_OP <> (COL b) 2) OR (BIN_OP >= (COL c) 3) AND NOT (BIN_OP <= (COL d) 4))
+
+query:
+"SELECT * FROM Document" -> (SELECT * (FROM (TABLE Document)))
+"SELECT a, b, c FROM Document" -> (SELECT (LIST (COL a) (COL b) (COL c)) (FROM (TABLE Document)))
+"SELECT a, b FROM Document ORDER BY a, b" -> (SELECT (LIST (COL a) (COL b)) (FROM (TABLE Document)) (ORDER_BY (COL a) ASC (COL b) ASC))
+"SELECT DISTINCT a, b, c FROM Document" -> (SELECT DISTINCT (LIST (COL a) (COL b) (COL c)) (FROM (TABLE Document)))
+
+
+// Examples from the specs.
+
+<<
+SELECT TITLE, AUTHORS, DATE
+FROM WHITE_PAPER
+WHERE ( IN_TREE('ID00093854763') ) AND ( 'SMITH' = ANY AUTHORS )
+>> -> (SELECT (LIST (COL TITLE) (COL AUTHORS) (COL DATE)) (FROM (TABLE WHITE_PAPER)) (WHERE ( (FUNC IN_TREE 'ID00093854763') ) AND ( (BIN_OP_ANY = 'SMITH' (COL AUTHORS)) )))
+
+<<
+SELECT OBJECT_ID, SCORE() AS X, DESTINATION, DEPARTURE_DATES
+FROM TRAVEL_BROCHURE
+WHERE ( CONTAINS('CARIBBEAN CENTRAL AMERICA CRUISE TOUR') ) AND
+  ( '2010-1-1' < ANY DEPARTURE_DATES )
+ORDER BY X DESC
+>> OK
+
+<<
+SELECT *
+FROM CAR_REVIEW
+WHERE ( LOWER(MAKE) = 'buick' ) OR
+  ( ANY FEATURES IN ('NAVIGATION SYSTEM', 'SATELLITE RADIO', 'MP3' ) )
+>> OK
+
+<<
+SELECT Y.CLAIM_NUM, X.PROPERTY_ADDRESS, Y.DAMAGE_ESTIMATES
+FROM POLICY AS X JOIN CLAIMS AS Y ON X.POLICY_NUM = Y.POLICY_NUM
+WHERE ( 100000 <= ANY Y.DAMAGE_ESTIMATES ) AND ( Y.CAUSE NOT LIKE '%Katrina%' )
+>> OK

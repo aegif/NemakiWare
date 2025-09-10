@@ -21,7 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.tracker;
 
-import com.google.common.collect.Iterables;
+
 import jp.aegif.nemaki.NemakiCoreAdminHandler;
 import jp.aegif.nemaki.util.*;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
@@ -33,14 +33,14 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.spi.CmisBinding;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.SolrServer;
+import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.request.AbstractUpdateRequest;
 import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrInputDocument;
-import org.apache.solr.core.CloseHook;
+// import org.apache.solr.core.CloseHook; // Removed in Solr 9.x
 import org.apache.solr.core.SolrCore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,7 +48,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.*;
 
-import static org.apache.solr.handler.extraction.ExtractingParams.UNKNOWN_FIELD_PREFIX;
+
 
 
 /**
@@ -57,7 +57,7 @@ import static org.apache.solr.handler.extraction.ExtractingParams.UNKNOWN_FIELD_
  * @author linzhixing
  *
  */
-public class CoreTracker extends CloseHook {
+public class CoreTracker /* implements CloseHook */ {
 
 	private static final Object LOCK = new Object();
 
@@ -65,8 +65,8 @@ public class CoreTracker extends CloseHook {
 
 	NemakiCoreAdminHandler adminHandler;
 	SolrCore core;
-	SolrServer indexServer;
-	SolrServer tokenServer;
+	SolrClient indexServer;
+	SolrClient tokenServer;
 
 	CmisBinding cmisBinding;
 	NemakiTokenManager nemakiTokenManager;
@@ -75,8 +75,8 @@ public class CoreTracker extends CloseHook {
 	Set<String> latestIndexedChangeLogIds = new HashSet<String>();
 	
 
-	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core, SolrServer indexServer,
-			SolrServer tokenServer) {
+	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core, SolrClient indexServer,
+			SolrClient tokenServer) {
 		super();
 
 		this.adminHandler = adminHandler;
@@ -87,15 +87,13 @@ public class CoreTracker extends CloseHook {
 		this.propertyManager = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 	}
 
-	public SolrServer getIndexServer() {
+	public SolrClient getIndexServer() {
 		return indexServer;
 	}
 
-	@Override
 	public void preClose(SolrCore core) {
 	}
 
-	@Override
 	public void postClose(SolrCore core) {
 	}
 
@@ -172,7 +170,7 @@ logger.info("Start indexing of events : Repo={} Count={}", repositoryId,
 				List<ChangeEvent> events = changeEvents.getChangeEvents();
 				Calendar currentTime = GregorianCalendar.getInstance();
 
-				ChangeEvent latestEvent = Iterables.getLast(events,null);
+				ChangeEvent latestEvent = events.isEmpty() ? null : events.get(events.size() - 1);
 				int eventSize = events.size();
 				int oldEventSize = this.latestIndexedChangeLogIds.size();
 
@@ -312,6 +310,8 @@ logger.info("extraction start");
 		try {
 			resp = tokenServer.query(solrQuery);
 		} catch (SolrServerException e) {
+			logger.error("Read latest ChangeToken query failed : {} ", solrQuery, e);
+		} catch (IOException e) {
 			logger.error("Read latest ChangeToken query failed : {} ", solrQuery, e);
 		}
 
@@ -459,7 +459,7 @@ logger.info("Session aquired");
 		// Set UpdateRequest
 		up.add(sid);
 		// Ignored(for schema.xml, ignoring some SolrCell meta fields)
-		up.setParam(UNKNOWN_FIELD_PREFIX, "ignored_");
+		up.setParam("uprefix", "ignored_");
 
 		// Set Solr action parameter
 		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);

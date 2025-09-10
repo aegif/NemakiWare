@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.model.couch;
 
 import java.text.SimpleDateFormat;
+import jp.aegif.nemaki.util.DateUtil;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.List;
@@ -183,8 +184,7 @@ public class CouchArchive extends CouchNodeBase{
 	}
 
 	public String convertToDateFormat(GregorianCalendar cal) {
-		SimpleDateFormat sdf = new SimpleDateFormat(SystemConst.DATETIME_FORMAT);
-		return sdf.format(cal.getTime());
+		return DateUtil.formatSystemDateTime(cal);
 	}
 
 	@Override

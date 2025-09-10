@@ -1,0 +1,30 @@
+{
+  "docs": [
+    {
+      "_id": "cmis:folder",
+      "name": "Root",
+      "type": "cmis:folder",
+      "created": "2025-05-21T00:00:00Z",
+      "creator": "admin",
+      "modified": "2025-05-21T00:00:00Z",
+      "modifier": "admin",
+      "parentId": null,
+      "path": "/",
+      "isRoot": true,
+      "acl": {
+        "entries": [
+          {
+            "principalId": "anyone",
+            "permissions": ["cmis:read"],
+            "direct": true
+          },
+          {
+            "principalId": "admin",
+            "permissions": ["cmis:all"],
+            "direct": true
+          }
+        ]
+      }
+    }
+  ]
+}

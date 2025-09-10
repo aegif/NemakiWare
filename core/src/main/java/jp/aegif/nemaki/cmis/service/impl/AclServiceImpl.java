@@ -164,23 +164,38 @@ public class AclServiceImpl implements AclService {
 	}
 
 	private void clearCachesRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent){
+		clearCachesRecursively(executorService, callContext, repositoryId, content, executeOnParent, new java.util.HashSet<String>());
+	}
 
-		//Call threads for recursive applyAcl
-		if(content.isFolder()){
-			if(executeOnParent){
-				executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
+	private void clearCachesRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent, java.util.Set<String> visitedIds){
+		if (visitedIds.contains(content.getId())) {
+			return;
+		}
+		visitedIds.add(content.getId());
+
+		java.util.Queue<Content> queue = new java.util.LinkedList<>();
+		queue.offer(content);
+		
+		while (!queue.isEmpty()) {
+			Content current = queue.poll();
+			
+			if (visitedIds.contains(current.getId())) {
+				continue;
 			}
-			List<Content> children = contentService.getChildren(repositoryId, content.getId());
-			if(CollectionUtils.isEmpty(children)){
-				return;
-			}
-			for(Content child : children){
-				if(contentService.getAclInheritedWithDefault(repositoryId, child)){
-					executorService.submit(new ClearCachesRecursivelyTask(executorService, callContext, repositoryId, child));
+			visitedIds.add(current.getId());
+			
+			executorService.submit(new ClearCacheTask(repositoryId, current.getId()));
+			
+			if (current.isFolder()) {
+				List<Content> children = contentService.getChildren(repositoryId, current.getId());
+				if (!CollectionUtils.isEmpty(children)) {
+					for (Content child : children) {
+						if (contentService.getAclInheritedWithDefault(repositoryId, child) && !visitedIds.contains(child.getId())) {
+							queue.offer(child);
+						}
+					}
 				}
 			}
-		}else{
-			executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
 		}
 	}
 
