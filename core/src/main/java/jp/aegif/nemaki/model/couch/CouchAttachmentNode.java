@@ -26,11 +26,14 @@ import java.util.HashMap;
 import java.util.GregorianCalendar;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jp.aegif.nemaki.model.AttachmentNode;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 public class CouchAttachmentNode extends CouchNodeBase{
 	
+	private static final Log log = LogFactory.getLog(CouchAttachmentNode.class);
 	private static final long serialVersionUID = 1984059866949665299L;
-	public static final String TYPE = "attachment"; 
+	public static final String TYPE = "attachment";
 
 	private String name;
 	private long length;
@@ -232,14 +235,21 @@ public class CouchAttachmentNode extends CouchNodeBase{
 				}
 				
 				if (!streamSet) {
-					System.err.println("WARNING: Could not retrieve InputStream for attachment " + getId() + " from any repository");
+					// Log warning but don't fail - allows system to continue working
+					if (log.isDebugEnabled()) {
+						log.debug("Could not retrieve InputStream for attachment " + getId() + " from any repository");
+					}
 				}
 			} else {
-				System.err.println("ERROR: connectorPool is null or getId() is null");
+				if (log.isDebugEnabled()) {
+					log.debug("connectorPool is null or getId() is null");
+				}
 			}
 		} catch (Exception e) {
 			// Log error but don't fail the conversion - allows system to continue working
-			System.err.println("ERROR: Failed to retrieve InputStream for attachment " + getId() + ": " + e.getMessage());
+			if (log.isDebugEnabled()) {
+				log.debug("Failed to retrieve InputStream for attachment " + getId() + ": " + e.getMessage());
+			}
 		}
 
 		return a;

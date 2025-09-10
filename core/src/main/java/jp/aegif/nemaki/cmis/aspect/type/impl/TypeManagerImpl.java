@@ -213,50 +213,61 @@ public class TypeManagerImpl implements TypeManager {
 				
 				// CRITICAL: Verify TYPES is populated before marking as initialized
 				if (TYPES == null || TYPES.isEmpty()) {
-					System.err.println("*** CRITICAL ERROR: TYPES is empty at end of init()! ***");
+					log.error("CRITICAL ERROR: TYPES is empty at end of init()!");
 					throw new RuntimeException("TYPES map is empty after initialization");
 				}
 				
-				System.err.println("*** FINAL TYPES STATE: " + TYPES.keySet() + " with sizes: ***");
-				for (String repo : TYPES.keySet()) {
-					Map<String, TypeDefinitionContainer> repoTypes = TYPES.get(repo);
-					System.err.println("***   " + repo + ": " + (repoTypes != null ? repoTypes.size() : 0) + " types ***");
+				if (log.isDebugEnabled()) {
+					log.debug("FINAL TYPES STATE: " + TYPES.keySet() + " with sizes:");
+					for (String repo : TYPES.keySet()) {
+						Map<String, TypeDefinitionContainer> repoTypes = TYPES.get(repo);
+						log.debug("  " + repo + ": " + (repoTypes != null ? repoTypes.size() : 0) + " types");
+					}
 				}
 				
 				initialized = true;
-				System.err.println("*** INITIALIZATION MARKED COMPLETE ***");
+				if (log.isDebugEnabled()) {
+					log.debug("INITIALIZATION MARKED COMPLETE");
+				}
 				
 			} catch (Exception e) {
-				System.err.println("*** INITIALIZATION FAILED WITH EXCEPTION: " + e.getMessage() + " ***");
-				e.printStackTrace(System.err);
+				log.error("INITIALIZATION FAILED WITH EXCEPTION: " + e.getMessage(), e);
 				throw e;
 			}
 		}
-		log.info("*** CRITICAL DIAGNOSIS: TypeManagerImpl.init() completed successfully ***");
-		System.err.println("*** CRITICAL STACK TRACE: TypeManagerImpl.init() END ***");
+		log.info("TypeManagerImpl.init() completed successfully");
 	}
 	
 	private void ensureInitialized() {
-		log.info("*** DIAGNOSIS: ensureInitialized() called - initialized=" + initialized + " ***");
+		if (log.isDebugEnabled()) {
+			log.debug("ensureInitialized() called - initialized=" + initialized);
+		}
 		
 		if (!initialized) {
-			log.info("*** DIAGNOSIS: Not initialized - acquiring lock to initialize ***");
+			if (log.isDebugEnabled()) {
+				log.debug("Not initialized - acquiring lock to initialize");
+			}
 			synchronized (initLock) {
 				if (!initialized) {
-					log.info("*** DIAGNOSIS: Still not initialized in synchronized block - calling init() ***");
+					if (log.isDebugEnabled()) {
+						log.debug("Still not initialized in synchronized block - calling init()");
+					}
 					init();
 				} else {
-					log.info("*** DIAGNOSIS: Already initialized by another thread ***");
+					if (log.isDebugEnabled()) {
+						log.debug("Already initialized by another thread");
+					}
 				}
 			}
 		} else {
-			log.info("*** DIAGNOSIS: Already initialized - skipping init() ***");
+			if (log.isDebugEnabled()) {
+				log.debug("Already initialized - skipping init()");
+			}
 		}
 		
 		// CRITICAL FIX: Verify TYPES is properly populated after initialization
 		if (TYPES == null || TYPES.isEmpty()) {
-			System.err.println("*** CRITICAL ERROR: TYPES is empty after initialization! ***");
-			log.error("*** CRITICAL ERROR: TYPES is empty after initialization! ***");
+			log.error("CRITICAL ERROR: TYPES is empty after initialization!");
 			// Force re-initialization
 			synchronized (initLock) {
 					initialized = false;
@@ -264,7 +275,9 @@ public class TypeManagerImpl implements TypeManager {
 			}
 		}
 		
-		log.info("*** DIAGNOSIS: ensureInitialized() completed - initialized=" + initialized + ", TYPES keys=" + (TYPES != null ? TYPES.keySet() : "null") + " ***");
+		if (log.isDebugEnabled()) {
+			log.debug("ensureInitialized() completed - initialized=" + initialized + ", TYPES keys=" + (TYPES != null ? TYPES.keySet() : "null"));
+		}
 	}
 
 	private void initGlobalTypes(){
@@ -1923,8 +1936,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					// Create a copy with correct inherited flag to avoid modifying shared instance
 					AbstractPropertyDefinition<?> inheritedProperty = (AbstractPropertyDefinition<?>) sharedProperty;
 					if (inheritedProperty.isInherited() != shouldInherit) {
-						System.out.println("*** INHERITANCE FIX: Setting inherited=" + shouldInherit + 
-							" for " + parentProperty.getId() + " in type " + nemakiType.getId());
+						if (log.isDebugEnabled()) {
+							log.debug("INHERITANCE FIX: Setting inherited=" + shouldInherit + 
+								" for " + parentProperty.getId() + " in type " + nemakiType.getId());
+						}
 					}
 					inheritedProperty.setIsInherited(shouldInherit);
 				}
@@ -2655,23 +2670,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL ENHANCEMENT: Cleanup timed-out types before processing
 		cleanupTimedOutTypes();
 		
-		// CRITICAL DEBUG: TCK実行パス完全追跡 - getTypeDefinition
-		log.info("*** TCK PATH TRACKING: getTypeDefinition ENTRY: repositoryId=" + repositoryId + ", typeId=" + typeId + " ***");
-		
-		// CRITICAL DEBUG: File-based logging for getTypeDefinition entry
-		try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/tck-execution-path.log", true)) {
-			fw.write("=== TCK EXECUTION PATH: getTypeDefinition ENTRY ===\n");
-			fw.write("Timestamp: " + new java.util.Date() + "\n");
-			fw.write("RepositoryId: " + repositoryId + "\n");
-			fw.write("TypeId: " + typeId + "\n");
-			fw.write("Call Stack: " + java.util.Arrays.toString(Thread.currentThread().getStackTrace()) + "\n");
-			fw.write("===============================================\n");
-		} catch (Exception e) {
-			System.err.println("Failed to write TCK execution path log: " + e.getMessage());
+		if (log.isDebugEnabled()) {
+			log.debug("getTypeDefinition ENTRY: repositoryId=" + repositoryId + ", typeId=" + typeId);
 		}
-		
-		// MORE DEBUG
-		System.err.println("*** AFTER ensureInitialized: TYPES=" + (TYPES != null ? "EXISTS" : "NULL") + " ***");
 		if (TYPES != null) {
 			System.err.println("*** TYPES KEYS AFTER INIT: " + TYPES.keySet() + " ***");
 		}
@@ -2718,10 +2719,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 						// This ensures both normal and refresh paths return TypeDefinition objects with identical object identity
 						TypeDefinition rawTypeDefinition = refreshedTc.getTypeDefinition();
 						TypeDefinition sharedTypeDefinition = getSharedTypeDefinition(repositoryId, typeId, rawTypeDefinition);
-						System.out.println("*** TYPE DEFINITION SHARING: Applied getSharedTypeDefinition() to refresh path for type " + typeId);
-		try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/type-definition-debug.log", true)) {
-			fw.write("REFRESH PATH: Applied getSharedTypeDefinition() to type " + typeId + " at " + new java.util.Date() + "\n");
-		} catch (Exception e) {}
+						if (log.isDebugEnabled()) {
+							log.debug("TYPE DEFINITION SHARING: Applied getSharedTypeDefinition() to refresh path for type " + typeId);
+						}
 						return sharedTypeDefinition;
 					} else {
 						log.error("NEMAKI TYPE ERROR: Type '" + typeId + "' still not found even after forced refresh");
@@ -2816,17 +2816,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL CONSISTENCY FIX: Use shared TypeDefinition system for normal path
 		// This ensures both normal and refresh paths return TypeDefinition objects with identical object identity
 		TypeDefinition sharedTypeDefinition = getSharedTypeDefinition(repositoryId, typeDefinition.getId(), typeDefinition);
-		System.out.println("*** TYPE DEFINITION SHARING: Applied getSharedTypeDefinition() to normal path for type " + (typeDefinition != null ? typeDefinition.getId() : "null"));
-		try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/type-definition-debug.log", true)) {
-			fw.write("NORMAL PATH: Applied getSharedTypeDefinition() to type " + (typeDefinition != null ? typeDefinition.getId() : "null") + " at " + new java.util.Date() + "\n");
-		} catch (Exception e) {}
+		if (log.isDebugEnabled()) {
+			log.debug("TYPE DEFINITION SHARING: Applied getSharedTypeDefinition() to normal path for type " + (typeDefinition != null ? typeDefinition.getId() : "null"));
+		}
 		
-		// CRITICAL DEBUG: File-based logging for getTypeDefinition exit
-		log.info("*** TCK PATH TRACKING: getTypeDefinition EXIT: typeId=" + (sharedTypeDefinition != null ? sharedTypeDefinition.getId() : "null") + " ***");
-		try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/tck-execution-path.log", true)) {
-			fw.write("getTypeDefinition EXIT: Returned TypeDefinition for typeId=" + (sharedTypeDefinition != null ? sharedTypeDefinition.getId() : "null") + "\n");
-			fw.write("=== END getTypeDefinition ===\n\n");
-		} catch (Exception e) {}
+		if (log.isDebugEnabled()) {
+			log.debug("getTypeDefinition EXIT: typeId=" + (sharedTypeDefinition != null ? sharedTypeDefinition.getId() : "null"));
+		}
 		
 		return sharedTypeDefinition;
 	}
@@ -2847,47 +2843,19 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			String repositoryId, String typeId,
 			boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
 		
-		// CRITICAL DEBUG: 超強力デバッグコード - 複数の出力経路で確実にキャッチ
-		System.out.println("=== CRITICAL STACK TRACE: getTypesChildren CALLED ===");
-		System.out.println("Timestamp: " + new java.util.Date());
-		System.out.println("Parameters: repositoryId=" + repositoryId + ", typeId=" + typeId + 
-		                   ", includePropertyDefinitions=" + includePropertyDefinitions);
-		System.err.println("*** SYSTEM.ERR: getTypesChildren CALLED with repositoryId=" + repositoryId + ", typeId=" + typeId + " ***");
-		log.info("*** TCK PATH TRACKING: getTypesChildren ENTRY: repositoryId=" + repositoryId + 
-		         ", typeId=" + typeId + 
-		         ", includePropertyDefinitions=" + includePropertyDefinitions +
-		         ", maxItems=" + maxItems + 
-		         ", skipCount=" + skipCount + " ***");
-				
-		// CRITICAL DEBUG: File-based logging for getTypesChildren entry
-		try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/tck-execution-path.log", true)) {
-			fw.write("=== TCK EXECUTION PATH: getTypesChildren ENTRY ===\n");
-			fw.write("Timestamp: " + new java.util.Date() + "\n");
-			fw.write("RepositoryId: " + repositoryId + "\n");
-			fw.write("TypeId: " + typeId + "\n");
-			fw.write("IncludePropertyDefinitions: " + includePropertyDefinitions + "\n");
-			fw.write("MaxItems: " + maxItems + "\n");
-			fw.write("SkipCount: " + skipCount + "\n");
-			fw.write("Call Stack: " + java.util.Arrays.toString(Thread.currentThread().getStackTrace()) + "\n");
-			fw.write("===============================================\n");
-		} catch (Exception e) {
-			System.err.println("Failed to write TCK execution path log: " + e.getMessage());
+		if (log.isDebugEnabled()) {
+			log.debug("getTypesChildren ENTRY: repositoryId=" + repositoryId + ", typeId=" + typeId + 
+				", includePropertyDefinitions=" + includePropertyDefinitions + ", maxItems=" + maxItems + ", skipCount=" + skipCount);
 		}
 						
 		ensureInitialized();
 		
-		// DEBUG: Log TYPES state before accessing
-		System.err.println("*** BEFORE TYPES.get: ***");
-		System.err.println("*** TYPES identity: " + System.identityHashCode(TYPES) + " ***");
-		System.err.println("*** TYPES keys: " + (TYPES != null ? TYPES.keySet() : "NULL") + " ***");
-		System.err.println("*** TYPES size: " + (TYPES != null ? TYPES.size() : "NULL") + " ***");
-		
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
-		System.err.println("*** TYPES.get(" + repositoryId + ") returned: " + (types != null ? "NOT NULL with size " + types.size() : "NULL") + " ***");
 		
-		// CRITICAL FIX: Handle missing repository type cache - dynamic initialization
 		if (types == null) {
-			log.warn("*** CRITICAL FIX: No type cache found for repository: " + repositoryId + " - triggering dynamic initialization ***");
+			if (log.isDebugEnabled()) {
+				log.debug("No type cache found for repository: " + repositoryId + " - triggering dynamic initialization");
+			}
 			System.err.println("*** CRITICAL FIX: No type cache for " + repositoryId + " - forcing repository-specific initialization ***");
 			System.err.println("*** THIS SHOULD NOT HAPPEN if generate() already ran! ***");
 			
@@ -3058,14 +3026,16 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				
 				// CRITICAL CMIS COMPLIANCE FIX: Use copyTypeDefinitionWithoutProperties when includePropertyDefinitions=false
 					if (!includePropertyDefinitions) {
-						System.err.println("*** CHILD TYPE: Skipping properties for " + childTypeId + " (includePropertyDefinitions=false) ***");
-						typeDef = jp.aegif.nemaki.util.DataUtil.copyTypeDefinitionWithoutProperties(typeDef);
-				} else {
-						System.err.println("*** CHILD TYPE: CALLING ensureConsistentPropertyDefinitions for " + childTypeId + " ***");
-						System.out.println("*** CHILD TYPE ensureConsistentPropertyDefinitions ENTRY for " + childTypeId + " ***");
-						typeDef = ensureConsistentPropertyDefinitions(repositoryId, typeDef);
-						System.err.println("*** CHILD TYPE: ensureConsistentPropertyDefinitions COMPLETED for " + childTypeId + " ***");
-				}
+					if (log.isDebugEnabled()) {
+						log.debug("Skipping properties for " + childTypeId + " (includePropertyDefinitions=false)");
+					}
+					typeDef = jp.aegif.nemaki.util.DataUtil.copyTypeDefinitionWithoutProperties(typeDef);
+			} else {
+					if (log.isDebugEnabled()) {
+						log.debug("Calling ensureConsistentPropertyDefinitions for " + childTypeId);
+					}
+					typeDef = ensureConsistentPropertyDefinitions(repositoryId, typeDef);
+			}
 	 
 					// TypeDefinition prepared for response
 				
@@ -3082,17 +3052,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			result.setNumItems(BigInteger.valueOf(tc.getChildren().size()));
 		}
 
-		// CRITICAL DEBUG: Final result summary
-		log.info("*** TCK PATH TRACKING: getTypesChildren EXIT: repositoryId=" + repositoryId + 
-		         ", typeId=" + typeId + 
-		         ", returned " + result.getList().size() + " type definitions" +
-		         ", includePropertyDefinitions=" + includePropertyDefinitions + " ***");
-		         
-		// CRITICAL DEBUG: File-based logging for getTypesChildren exit
-		try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/tck-execution-path.log", true)) {
-			fw.write("getTypesChildren EXIT: Returned " + result.getList().size() + " types\n");
-			fw.write("=== END getTypesChildren ===\n\n");
-		} catch (Exception e) {}
+		if (log.isDebugEnabled()) {
+			log.debug("getTypesChildren EXIT: repositoryId=" + repositoryId + ", typeId=" + typeId + 
+				", returned " + result.getList().size() + " type definitions, includePropertyDefinitions=" + includePropertyDefinitions);
+		}
 
 		// NOTE: includePropertyDefinitions is now properly handled above using copyTypeDefinitionWithoutProperties
 		return result;
@@ -3105,24 +3068,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	public List<TypeDefinitionContainer> getTypesDescendants(String repositoryId,
 			String typeId, BigInteger depth, Boolean includePropertyDefinitions) {
 		
-		// CRITICAL DEBUG: TCK実行パス完全追跡 - getTypesDescendants
-		log.info("*** TCK PATH TRACKING: getTypesDescendants ENTRY: repositoryId=" + repositoryId + 
-		         ", typeId=" + typeId + 
-		         ", depth=" + depth + 
-		         ", includePropertyDefinitions=" + includePropertyDefinitions + " ***");
-		
-		// CRITICAL DEBUG: File-based logging for getTypesDescendants entry
-		try (java.io.FileWriter fw = new java.io.FileWriter("/tmp/tck-execution-path.log", true)) {
-			fw.write("=== TCK EXECUTION PATH: getTypesDescendants ENTRY ===\n");
-			fw.write("Timestamp: " + new java.util.Date() + "\n");
-			fw.write("RepositoryId: " + repositoryId + "\n");
-			fw.write("TypeId: " + typeId + "\n");
-			fw.write("Depth: " + depth + "\n");
-			fw.write("IncludePropertyDefinitions: " + includePropertyDefinitions + "\n");
-			fw.write("Call Stack: " + java.util.Arrays.toString(Thread.currentThread().getStackTrace()) + "\n");
-			fw.write("===============================================\n");
-		} catch (Exception e) {
-			System.err.println("Failed to write TCK execution path log: " + e.getMessage());
+		if (log.isDebugEnabled()) {
+			log.debug("getTypesDescendants ENTRY: repositoryId=" + repositoryId + 
+				", typeId=" + typeId + ", depth=" + depth + ", includePropertyDefinitions=" + includePropertyDefinitions);
 		}
 							
 		ensureInitialized();

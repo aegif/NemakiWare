@@ -238,40 +238,38 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 		
 		// After constraint check passes, get attachment
-		System.err.println("=== BEFORE CONTENTSERVICE.GETATTACHMENT() CALL ===");
-		System.err.println("contentService class: " + contentService.getClass().getName());
-		System.err.println("repositoryId: " + repositoryId);
-		System.err.println("attachmentNodeId: " + document.getAttachmentNodeId());
+		if (log.isDebugEnabled()) {
+			log.debug("Getting attachment: contentService=" + contentService.getClass().getName() + 
+				", repositoryId=" + repositoryId + ", attachmentNodeId=" + document.getAttachmentNodeId());
+		}
 		
 		AttachmentNode attachment = null;
 		try {
 			attachment = contentService.getAttachment(repositoryId, document.getAttachmentNodeId());
-			System.err.println("=== AFTER CONTENTSERVICE.GETATTACHMENT() CALL ===");
-			System.err.println("attachment class: " + (attachment != null ? attachment.getClass().getName() : "NULL"));
-			System.err.println("attachment InputStream: " + (attachment != null && attachment.getInputStream() != null ? "SUCCESS" : "NULL"));
+			if (log.isDebugEnabled()) {
+				log.debug("Attachment retrieved: " + (attachment != null ? attachment.getClass().getName() : "NULL") + 
+					", InputStream available: " + (attachment != null && attachment.getInputStream() != null));
+			}
 		} catch (CmisObjectNotFoundException e) {
 			// CloudantClientWrapper now throws proper exception when attachment not found
-			System.err.println("=== ATTACHMENT NOT FOUND - RETURNING NULL CONTENT STREAM ===");
-			System.err.println("Document ID: " + document.getId());
-			System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
-			System.err.println("Exception: " + e.getMessage());
-			System.err.println("Per CMIS 1.1: Document has no binary content stream - returning null");
+			if (log.isDebugEnabled()) {
+				log.debug("Attachment not found for document " + document.getId() + 
+					" (attachmentId=" + document.getAttachmentNodeId() + ") - returning null per CMIS 1.1");
+			}
 			return null;
 		} catch (Exception e) {
 			// Handle other CloudantClientWrapper exceptions
-			System.err.println("=== ATTACHMENT RETRIEVAL ERROR ===");
-			System.err.println("Document ID: " + document.getId());
-			System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
-			System.err.println("Error: " + e.getMessage());
+			log.error("Attachment retrieval error for document " + document.getId() + 
+				" (attachmentId=" + document.getAttachmentNodeId() + "): " + e.getMessage());
 			throw new RuntimeException("Failed to retrieve content stream: " + e.getMessage(), e);
 		}
 		
 		// CRITICAL FIX: Handle null attachment per CMIS 1.1 specification
 		if (attachment == null) {
-			System.err.println("=== ATTACHMENT NULL - RETURNING NULL CONTENT STREAM ===");
-			System.err.println("Document ID: " + document.getId());
-			System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
-			System.err.println("Per CMIS 1.1: Document has no binary content stream - returning null");
+			if (log.isDebugEnabled()) {
+				log.debug("Attachment is null for document " + document.getId() + 
+					" (attachmentId=" + document.getAttachmentNodeId() + ") - returning null per CMIS 1.1");
+			}
 			return null;
 		}
 		
@@ -306,29 +304,33 @@ public class ObjectServiceImpl implements ObjectService {
 			System.err.println("🚨 CRITICAL LENGTH FIX: attachment length is " + attachmentLength + " (unknown/invalid)");
 			
 			// Try to get actual size from CouchDB attachment metadata without consuming stream
-			System.err.println("Attempting to get actual size from CouchDB attachment metadata...");
-			Long actualSizeFromDB = contentService.getAttachmentActualSize(repositoryId, document.getAttachmentNodeId());
-			
-			if (actualSizeFromDB != null && actualSizeFromDB > 0) {
-				length = BigInteger.valueOf(actualSizeFromDB);
-				System.err.println("✅ SUCCESS: Retrieved actual size from CouchDB metadata: " + actualSizeFromDB + " bytes for: " + name);
-			} else {
-				// Use CMIS spec -1 for unknown size without consuming the stream
-				length = BigInteger.valueOf(-1);
-				System.err.println("✅ CMIS COMPLIANCE: Using CMIS standard -1 (unknown size) without consuming stream for: " + name);
-				System.err.println("✅ STREAM PRESERVATION: InputStream remains available for Browser Binding servlet");
+		if (log.isDebugEnabled()) {
+			log.debug("Attempting to get actual size from CouchDB attachment metadata");
+		}
+		Long actualSizeFromDB = contentService.getAttachmentActualSize(repositoryId, document.getAttachmentNodeId());
+		
+		if (actualSizeFromDB != null && actualSizeFromDB > 0) {
+			length = BigInteger.valueOf(actualSizeFromDB);
+			if (log.isDebugEnabled()) {
+				log.debug("Retrieved actual size from CouchDB metadata: " + actualSizeFromDB + " bytes for: " + name);
 			}
 		} else {
-			// Known size - use the value from database
-			length = BigInteger.valueOf(attachmentLength);
-			System.err.println("✅ Using known size from database: " + length + " bytes");
+			length = BigInteger.valueOf(-1);
+			if (log.isDebugEnabled()) {
+				log.debug("Using CMIS standard -1 (unknown size) without consuming stream for: " + name);
+			}
 		}
-		
-		System.err.println("Final ContentStream length: " + length);
-		System.err.println("Creating ContentStreamImpl...");
-		ContentStream cs = new ContentStreamImpl(name, length, mimeType, is);
-		System.err.println("ContentStreamImpl created successfully");
-		System.err.println("=== END CONTENT STREAM CREATION DEBUG ===");
+	} else {
+		length = BigInteger.valueOf(attachmentLength);
+		if (log.isDebugEnabled()) {
+			log.debug("Using known size from database: " + length + " bytes");
+		}
+	}
+	
+	if (log.isDebugEnabled()) {
+		log.debug("Creating ContentStreamImpl with final length: " + length);
+	}
+	ContentStream cs = new ContentStreamImpl(name, length, mimeType, is);
 
 		return cs;
 	}
@@ -363,15 +365,16 @@ public class ObjectServiceImpl implements ObjectService {
 			if (inputStream.markSupported()) {
 				inputStream.reset();
 			} else {
-				System.err.println("WARNING: InputStream does not support mark/reset - stream position cannot be restored");
-				// This is a problem - we consumed the stream, so we can't use it again
-				// But we got the size, which is what we needed
-				// The caller will need to handle this case appropriately
+				if (log.isDebugEnabled()) {
+					log.debug("InputStream does not support mark/reset - stream position cannot be restored");
+				}
 			}
 			
 		} catch (IOException e) {
-			System.err.println("Error calculating stream size: " + e.getMessage());
-			return -1L; // Return -1 to indicate error
+			if (log.isDebugEnabled()) {
+				log.debug("Error calculating stream size: " + e.getMessage());
+			}
+			return -1L;
 		}
 		
 		return totalBytes;

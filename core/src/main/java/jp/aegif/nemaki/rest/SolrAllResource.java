@@ -22,9 +22,13 @@ import org.json.simple.JSONObject;
 import org.w3c.dom.Node;
 
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 @Path("/all/search-engine")
 public class SolrAllResource extends ResourceBase {
+	
+	private static final Log log = LogFactory.getLog(SolrAllResource.class);
 	
 	@Context private HttpServletRequest servletRequest;
 	
@@ -130,7 +134,9 @@ public class SolrAllResource extends ResourceBase {
 				});
 				
 				result.put("message", "Solr index cleared and reindexing started");
-				System.out.println("Solr index cleared, reindexing will occur automatically via SolrUtil");
+				if (log.isDebugEnabled()) {
+					log.debug("Solr index cleared, reindexing will occur automatically via SolrUtil");
+				}
 				
 			} catch (Exception e) {
 				status = false;
