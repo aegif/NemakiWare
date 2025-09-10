@@ -4,14 +4,41 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.constant.SystemConst;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Properties;
-import org.apache.chemistry.opencmis.commons.data.*;
+import org.apache.chemistry.opencmis.commons.data.PropertyBoolean;
+import org.apache.chemistry.opencmis.commons.data.PropertyData;
+import org.apache.chemistry.opencmis.commons.data.PropertyId;
+import org.apache.chemistry.opencmis.commons.data.PropertyString;
+import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
-import org.apache.chemistry.opencmis.commons.enums.*;
+import org.apache.chemistry.opencmis.commons.enums.Cardinality;
+import org.apache.chemistry.opencmis.commons.enums.DateTimeResolution;
+import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
+import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 // WSConverter removed due to Jakarta EE compatibility issues
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.*;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.ChoiceImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectDataImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyHtmlDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyHtmlImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyUriDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyUriImpl;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
@@ -23,7 +50,13 @@ import java.math.BigInteger;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.GregorianCalendar;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TimeZone;
 
 public class DataUtil {
 	public static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
@@ -288,7 +321,6 @@ public class DataUtil {
 	/**
 	 * Convert OpenCMIS Choice objects to NemakiWare Choice objects for property copy
 	 */
-	@SuppressWarnings("unchecked")
 	private static List<jp.aegif.nemaki.model.Choice> convertChoices(
 			List<? extends org.apache.chemistry.opencmis.commons.definitions.Choice<?>> choices) {
 		if (choices == null || choices.isEmpty()) {
@@ -302,13 +334,15 @@ public class DataUtil {
 				if (choice.getValue() != null) {
 					values.addAll(choice.getValue());
 				}
-				// Safe cast for recursive call - nested choices have same structure
-				List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>> nestedChoices = 
-					(List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>>) choice.getChoice();
+				// Type-safe handling of nested choices
+				List<jp.aegif.nemaki.model.Choice> nestedChoices = null;
+				if (choice.getChoice() != null) {
+					nestedChoices = convertChoices(choice.getChoice());
+				}
 				jp.aegif.nemaki.model.Choice nemakiChoice = new jp.aegif.nemaki.model.Choice(
 					choice.getDisplayName(),
 					values,
-					convertChoices(nestedChoices) // Recursive for nested choices
+					nestedChoices
 				);
 				result.add(nemakiChoice);
 			}
@@ -797,14 +831,14 @@ public class DataUtil {
 		}
 		
 		try {
-			// Deep clone choices if present
-			List<jp.aegif.nemaki.model.Choice> clonedChoices = null;
-			if (original.getChoices() != null && !original.getChoices().isEmpty()) {
-				@SuppressWarnings("unchecked")
-				List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>> originalChoices = 
-					(List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>>) original.getChoices();
-				clonedChoices = deepCloneChoices(originalChoices);
-			}
+		// Deep clone choices if present
+		List<jp.aegif.nemaki.model.Choice> clonedChoices = null;
+		if (original.getChoices() != null && !original.getChoices().isEmpty()) {
+			@SuppressWarnings("unchecked")
+			List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>> originalChoices = 
+				(List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>>) original.getChoices();
+			clonedChoices = deepCloneChoices(originalChoices);
+		}
 			
 			// Deep clone default values if present
 			List<Object> clonedDefaultValue = null;
@@ -865,14 +899,14 @@ public class DataUtil {
 			List<Object> clonedValues = choice.getValue() != null ? 
 				new ArrayList<Object>(choice.getValue()) : null;
 			
-			// Recursively clone sub-choices
-			List<jp.aegif.nemaki.model.Choice> clonedSubChoices = null;
-			if (choice.getChoice() != null) {
-				@SuppressWarnings("unchecked")
-				List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>> subChoices = 
-					(List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>>) choice.getChoice();
-				clonedSubChoices = deepCloneChoices(subChoices);
-			}
+		// Recursively clone sub-choices
+		List<jp.aegif.nemaki.model.Choice> clonedSubChoices = null;
+		if (choice.getChoice() != null) {
+			@SuppressWarnings("unchecked")
+			List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>> subChoices = 
+				(List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>>) choice.getChoice();
+			clonedSubChoices = deepCloneChoices(subChoices);
+		}
 			
 			// Create new Choice instance
 			jp.aegif.nemaki.model.Choice clonedChoice = new jp.aegif.nemaki.model.Choice(
