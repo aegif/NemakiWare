@@ -392,11 +392,15 @@ public class TypeManagerImpl implements TypeManager {
 	}
 	
 	private void generate(String repositoryId) {
-		System.err.println("*** generate(" + repositoryId + ") START ***");
+		if (log.isDebugEnabled()) {
+			log.debug("generate(" + repositoryId + ") START");
+		}
 		
 		// Ensure this repository has a types map
 		if (!TYPES.containsKey(repositoryId)) {
-			System.err.println("*** WARNING: TYPES missing entry for " + repositoryId + ", adding now ***");
+			if (log.isDebugEnabled()) {
+				log.debug("WARNING: TYPES missing entry for " + repositoryId + ", adding now");
+			}
 			// CRITICAL FIX: Use ConcurrentHashMap for thread safety
 			TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
 		}
@@ -415,7 +419,9 @@ public class TypeManagerImpl implements TypeManager {
 		// Generate property definition cores
 		this.buildPropertyDefinitionCores(repositoryId);
 		
-		System.err.println("*** generate(" + repositoryId + ") END - types count: " + TYPES.get(repositoryId).size() + " ***");
+		if (log.isDebugEnabled()) {
+			log.debug("generate(" + repositoryId + ") END - types count: " + TYPES.get(repositoryId).size());
+		}
 	}
 
 	private void buildPropertyDefinitionCores(String repositoryId) {
@@ -2394,14 +2400,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			PropertyType propertyType, Cardinality cardinality) {
 		// Add property definition core with contamination prevention
 		boolean isCustomProperty = propertyId != null && propertyId.contains(":") && !propertyId.startsWith("cmis:");
-		if (isCustomProperty) {
+		if (isCustomProperty && log.isDebugEnabled()) {
 			// COMPREHENSIVE DEBUG: Custom namespace property detected - full contamination trace
-			System.err.println("=== CUSTOM NAMESPACE PROPERTY DETECTED ===");
-			System.err.println("Custom Property ID: " + propertyId);
-			System.err.println("Custom Query Name: " + queryName);
-			System.err.println("TCK Property Type: " + propertyType);
-			System.err.println("TCK Cardinality: " + cardinality);
-			System.err.println("=== END TCK DETECTION ===");
+			log.debug("CUSTOM NAMESPACE PROPERTY DETECTED");
+			log.debug("Custom Property ID: " + propertyId);
+			log.debug("Custom Query Name: " + queryName);
+			log.debug("TCK Property Type: " + propertyType);
+			log.debug("TCK Cardinality: " + cardinality);
 		}
 		
 		if (log.isTraceEnabled()) {

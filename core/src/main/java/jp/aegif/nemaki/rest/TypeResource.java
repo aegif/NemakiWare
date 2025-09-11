@@ -1009,7 +1009,9 @@ public class TypeResource extends ResourceBase {
 		
 		parseTypes(repositoryId, aspects);
 		
-		System.err.println("[TYPERESOURCE] === PARSE METHOD COMPLETED ===");
+		if (log.isDebugEnabled()) {
+			log.debug("[TYPERESOURCE] Parse method completed");
+		}
 	}
 
 	private void parseTypes(String repositoryId, List<Element> types) {
@@ -1292,23 +1294,31 @@ public class TypeResource extends ResourceBase {
 		}
 
 		// Prepare types
-		System.err.println("[TYPERESOURCE] === PREPARING TYPES ===");
+		if (log.isDebugEnabled()) {
+			log.debug("[TYPERESOURCE] Preparing types");
+		}
 		if (typeMaps == null || typeMaps.isEmpty()) {
-			System.err.println("[TYPERESOURCE] CRITICAL: No typeMaps found - no types to prepare!");
+			log.warn("[TYPERESOURCE] CRITICAL: No typeMaps found - no types to prepare!");
 			return;
 		}
 		
-		System.err.println("[TYPERESOURCE] Found " + typeMaps.size() + " types to prepare");
+		if (log.isDebugEnabled()) {
+			log.debug("[TYPERESOURCE] Found " + typeMaps.size() + " types to prepare");
+		}
 		for (Entry<String, NemakiTypeDefinition> typeEntry : typeMaps.entrySet()) {
 			NemakiTypeDefinition t = typeEntry.getValue();
 
-			System.err.println("[TYPERESOURCE] Processing type: " + t.getTypeId());
+			if (log.isDebugEnabled()) {
+				log.debug("[TYPERESOURCE] Processing type: " + t.getTypeId());
+			}
 			
 			// Set property detail ids using the coreNodeId from creation
 			List<String> propertyNodeIds = new ArrayList<String>();
 			List<String> propertyIds = typeProperties.get(t.getTypeId());
 			
-			System.err.println("[TYPERESOURCE] Property IDs for type " + t.getTypeId() + ": " + propertyIds);
+			if (log.isDebugEnabled()) {
+				log.debug("[TYPERESOURCE] Property IDs for type " + t.getTypeId() + ": " + propertyIds);
+			}
 			
 			if (CollectionUtils.isNotEmpty(propertyIds)) {
 			for (String propertyId : typeProperties.get(t.getTypeId())) {
@@ -1319,17 +1329,23 @@ public class TypeResource extends ResourceBase {
 					// 元のpropertyIdでcoreMapsから取得（作成時にIDがセットされている）
 					NemakiPropertyDefinitionCore coreFromMap = coreMaps.get(propertyId);
 					
-					System.err.println("[TYPERESOURCE] Core from map for " + propertyId + ": " + 
-						(coreFromMap != null ? coreFromMap.getId() : "null"));
+					if (log.isDebugEnabled()) {
+						log.debug("[TYPERESOURCE] Core from map for " + propertyId + ": " + 
+							(coreFromMap != null ? coreFromMap.getId() : "null"));
+					}
 					
 					if (coreFromMap != null && coreFromMap.getId() != null) {
 						String coreNodeId = coreFromMap.getId();
-						System.err.println("[TYPERESOURCE] Querying details for coreNodeId: " + coreNodeId);
+						if (log.isDebugEnabled()) {
+							log.debug("[TYPERESOURCE] Querying details for coreNodeId: " + coreNodeId);
+						}
 						
 						List<NemakiPropertyDefinitionDetail> details = typeService
 								.getPropertyDefinitionDetailByCoreNodeId(repositoryId, coreNodeId);
 								
-						System.err.println("[TYPERESOURCE] Found " + details.size() + " details for coreNodeId: " + coreNodeId);
+						if (log.isDebugEnabled()) {
+							log.debug("[TYPERESOURCE] Found " + details.size() + " details for coreNodeId: " + coreNodeId);
+						}
 						
 						if (CollectionUtils.isEmpty(details)) {
 							log.warn(buildMsg(t.getTypeId(), propertyId,
@@ -1339,7 +1355,9 @@ public class TypeResource extends ResourceBase {
 							NemakiPropertyDefinitionDetail detail = details.get(0);
 							String detailId = detail.getId();
 							
-							System.err.println("[TYPERESOURCE] Detail ID: " + detailId + " for property: " + propertyId);
+							if (log.isDebugEnabled()) {
+								log.debug("[TYPERESOURCE] Detail ID: " + detailId + " for property: " + propertyId);
+							}
 							
 							if (detailId != null) {
 								propertyNodeIds.add(detailId);

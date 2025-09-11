@@ -143,22 +143,29 @@ public class PropertyManager{
 	private Object getDynamicValue(String repositoryId, String key){
 		Object result = null;
 
-		// DEBUG: Add detailed logging for system.folder property
-		System.out.println("=== PROPERTY MANAGER DEBUG: getDynamicValue called with repositoryId='" + repositoryId + "', key='" + key + "'");
+		if (log.isDebugEnabled()) {
+			log.debug("getDynamicValue called with repositoryId='" + repositoryId + "', key='" + key + "'");
+		}
 
 		Configuration repoConf = getConfiguration(repositoryId);
 		
-		System.out.println("=== PROPERTY MANAGER DEBUG: getConfiguration('" + repositoryId + "') returned: " + (repoConf != null ? "NOT NULL" : "NULL"));
+		if (log.isDebugEnabled()) {
+			log.debug("getConfiguration('" + repositoryId + "') returned: " + (repoConf != null ? "NOT NULL" : "NULL"));
+		}
 		
 		if(repoConf != null){
-			System.out.println("=== PROPERTY MANAGER DEBUG: Configuration map: " + (repoConf.getConfiguration() != null ? "NOT NULL, size=" + repoConf.getConfiguration().size() : "NULL"));
-			if(repoConf.getConfiguration() != null) {
-				System.out.println("=== PROPERTY MANAGER DEBUG: Configuration keys: " + repoConf.getConfiguration().keySet());
+			if (log.isDebugEnabled()) {
+				log.debug("Configuration map: " + (repoConf.getConfiguration() != null ? "NOT NULL, size=" + repoConf.getConfiguration().size() : "NULL"));
+				if(repoConf.getConfiguration() != null) {
+					log.debug("Configuration keys: " + repoConf.getConfiguration().keySet());
+				}
 			}
 			
 			Object repoVal = repoConf.getConfiguration().get(key);
 			
-			System.out.println("=== PROPERTY MANAGER DEBUG: repoConf.getConfiguration().get('" + key + "') returned: " + (repoVal != null ? "'" + repoVal.toString() + "'" : "NULL"));
+			if (log.isDebugEnabled()) {
+				log.debug("repoConf.getConfiguration().get('" + key + "') returned: " + (repoVal != null ? "'" + repoVal.toString() + "'" : "NULL"));
+			}
 			
 			if(repoVal != null){
 				result = repoVal;
@@ -166,11 +173,15 @@ public class PropertyManager{
 		}
 
 		if(result == null){
-			System.out.println("=== PROPERTY MANAGER DEBUG: Repository-specific value is null, trying system-wide configuration");
+			if (log.isDebugEnabled()) {
+				log.debug("Repository-specific value is null, trying system-wide configuration");
+			}
 			result = getDynamicValue(key);
 		}
 
-		System.out.println("=== PROPERTY MANAGER DEBUG: getDynamicValue final result: " + (result != null ? "'" + result.toString() + "'" : "NULL"));
+		if (log.isDebugEnabled()) {
+			log.debug("getDynamicValue final result: " + (result != null ? "'" + result.toString() + "'" : "NULL"));
+		}
 
 		return result;
 	}

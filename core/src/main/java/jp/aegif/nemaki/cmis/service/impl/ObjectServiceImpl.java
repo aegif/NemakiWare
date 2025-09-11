@@ -277,19 +277,29 @@ public class ObjectServiceImpl implements ObjectService {
 		attachment.setRangeLength(rangeLength);
 
 		// Set content stream with CMIS-compliant length handling
-		System.err.println("=== CONTENT STREAM CREATION DEBUG ===");
+		if (log.isDebugEnabled()) {
+			log.debug("Content stream creation debug");
+		}
 		
 		String name = attachment.getName();
-		System.err.println("Content name: " + name);
+		if (log.isDebugEnabled()) {
+			log.debug("Content name: " + name);
+		}
 		String mimeType = attachment.getMimeType();
-		System.err.println("Content mimeType: " + mimeType);
+		if (log.isDebugEnabled()) {
+			log.debug("Content mimeType: " + mimeType);
+		}
 		
-		System.err.println("Getting input stream from attachment...");
+		if (log.isDebugEnabled()) {
+			log.debug("Getting input stream from attachment...");
+		}
 		InputStream is = attachment.getInputStream();
-		System.err.println("InputStream retrieved: " + (is != null ? "SUCCESS" : "NULL"));
+		if (log.isDebugEnabled()) {
+			log.debug("InputStream retrieved: " + (is != null ? "SUCCESS" : "NULL"));
+		}
 		
 		if (is == null) {
-			System.err.println("ERROR: attachment.getInputStream() returned null");
+			log.error("attachment.getInputStream() returned null");
 			throw new RuntimeException("Content stream InputStream is null!");
 		}
 		
@@ -298,10 +308,14 @@ public class ObjectServiceImpl implements ObjectService {
 		long attachmentLength = attachment.getLength();
 		BigInteger length;
 		
-		System.err.println("Raw attachment length from database: " + attachmentLength);
+		if (log.isDebugEnabled()) {
+			log.debug("Raw attachment length from database: " + attachmentLength);
+		}
 		
 		if (attachmentLength <= 0) {
-			System.err.println("🚨 CRITICAL LENGTH FIX: attachment length is " + attachmentLength + " (unknown/invalid)");
+			if (log.isDebugEnabled()) {
+				log.debug("CRITICAL LENGTH FIX: attachment length is " + attachmentLength + " (unknown/invalid)");
+			}
 			
 			// Try to get actual size from CouchDB attachment metadata without consuming stream
 		if (log.isDebugEnabled()) {
@@ -488,12 +502,18 @@ public class ObjectServiceImpl implements ObjectService {
 	public String createFolder(CallContext callContext, String repositoryId, Properties properties, String folderId,
 			List<String> policies, Acl addAces, Acl removeAces, ExtensionsData extension) {
 		
-		System.err.println("!!! NEMAKI CREATEFOLDER: CALLED WITH REPOSITORYID=" + repositoryId + ", FOLDERID=" + folderId + " !!!");
+		if (log.isDebugEnabled()) {
+			log.debug("NEMAKI CREATEFOLDER: CALLED WITH REPOSITORYID=" + repositoryId + ", FOLDERID=" + folderId);
+		}
 		if (properties != null) {
 			String objectTypeId = DataUtil.getObjectTypeId(properties);
-			System.err.println("!!! NEMAKI CREATEFOLDER: OBJECTTYPEID=" + objectTypeId + " !!!");
+			if (log.isDebugEnabled()) {
+				log.debug("NEMAKI CREATEFOLDER: OBJECTTYPEID=" + objectTypeId);
+			}
 		} else {
-			System.err.println("!!! NEMAKI CREATEFOLDER: PROPERTIES IS NULL !!!");
+			if (log.isDebugEnabled()) {
+				log.debug("NEMAKI CREATEFOLDER: PROPERTIES IS NULL");
+			}
 		}
 		
 		// CRITICAL FIX: Validate type definition before casting to prevent ClassCastException

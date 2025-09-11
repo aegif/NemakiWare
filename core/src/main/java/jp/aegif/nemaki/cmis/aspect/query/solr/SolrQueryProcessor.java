@@ -208,37 +208,49 @@ public class SolrQueryProcessor implements QueryProcessor {
 		
 		// Get queryObject before processStatement
 		QueryObject queryObject = util.getQueryObject();
-		System.out.println("=== QUERY DEBUG: QueryObject created (before processStatement)");
+		if (logger.isDebugEnabled()) {
+			logger.debug("QueryObject created (before processStatement)");
+		}
 		
 		// Debug the QueryObject state before processStatement
-		try {
-			System.out.println("=== QUERY DEBUG: Checking QueryObject state before processStatement...");
-			// Use reflection to access the froms map
-			java.lang.reflect.Field fromsField = QueryObject.class.getDeclaredField("froms");
-			fromsField.setAccessible(true);
-			Map<String, String> froms = (Map<String, String>) fromsField.get(queryObject);
-			System.out.println("=== QUERY DEBUG: froms map size before processStatement: " + (froms != null ? froms.size() : "null"));
-			if (froms != null && !froms.isEmpty()) {
-				for (Map.Entry<String, String> entry : froms.entrySet()) {
-					System.out.println("=== QUERY DEBUG: FROM entry: " + entry.getKey() + " -> " + entry.getValue());
+		if (logger.isDebugEnabled()) {
+			try {
+				logger.debug("Checking QueryObject state before processStatement...");
+				// Use reflection to access the froms map
+				java.lang.reflect.Field fromsField = QueryObject.class.getDeclaredField("froms");
+				fromsField.setAccessible(true);
+				Map<String, String> froms = (Map<String, String>) fromsField.get(queryObject);
+				logger.debug("froms map size before processStatement: " + (froms != null ? froms.size() : "null"));
+				if (froms != null && !froms.isEmpty()) {
+					for (Map.Entry<String, String> entry : froms.entrySet()) {
+						logger.debug("FROM entry: " + entry.getKey() + " -> " + entry.getValue());
+					}
 				}
+			} catch (Exception e) {
+				logger.debug("Error accessing froms map: " + e.getMessage());
 			}
-		} catch (Exception e) {
-			System.out.println("=== QUERY DEBUG: Error accessing froms map: " + e.getMessage());
 		}
 		
 		// Get where caluse as Tree
 		Tree whereTree = null;
 		try {
-			System.out.println("=== QUERY DEBUG: About to call util.processStatement()");
+			if (logger.isDebugEnabled()) {
+				logger.debug("About to call util.processStatement()");
+			}
 			util.processStatement();
-			System.out.println("=== QUERY DEBUG: processStatement() completed");
+			if (logger.isDebugEnabled()) {
+				logger.debug("processStatement() completed");
+			}
 			Tree tree = util.parseStatement();
-			System.out.println("=== QUERY DEBUG: parseStatement() completed");
+			if (logger.isDebugEnabled()) {
+				logger.debug("parseStatement() completed");
+			}
 			whereTree = extractWhereTree(tree);
 		} catch (Exception e) {
-			System.out.println("=== QUERY DEBUG: Exception in processStatement: " + e.getMessage());
-			e.printStackTrace();
+			if (logger.isDebugEnabled()) {
+				logger.debug("Exception in processStatement: " + e.getMessage());
+			}
+			logger.error("Exception in processStatement", e);
 		}
 		
 		// Check queryObject after processStatement

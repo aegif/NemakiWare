@@ -1274,15 +1274,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 return null;
             }
             
-            System.err.println("Writing buffered content to response...");
+            if (log.isDebugEnabled()) {
+                log.debug("Writing buffered content to response...");
+            }
             outputStream.write(contentBytes);
             outputStream.flush();
             
-            System.err.println("✅ Content stream transfer completed successfully: " + contentBytes.length + " bytes");
+            if (log.isDebugEnabled()) {
+                log.debug("Content stream transfer completed successfully: " + contentBytes.length + " bytes");
+            }
             
         } catch (java.io.IOException e) {
-            System.err.println("❌ ERROR in content stream transfer: " + e.getMessage());
-            e.printStackTrace();
+            log.error("ERROR in content stream transfer: " + e.getMessage(), e);
             
             if (!response.isCommitted()) {
                 response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
@@ -1295,13 +1298,15 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 try {
                     inputStream.close();
                 } catch (Exception e) {
-                    System.err.println("Warning: Failed to close input stream: " + e.getMessage());
+                    log.warn("Failed to close input stream: " + e.getMessage());
                 }
             }
             // NOTE: Do NOT close outputStream - it's managed by servlet container
         }
         
-        System.err.println("=== END BROWSER BINDING CONTENT STREAM DEBUG ===");
+        if (log.isDebugEnabled()) {
+            log.debug("END BROWSER BINDING CONTENT STREAM DEBUG");
+        }
         
         return null; // Response handled directly
     }
@@ -1386,7 +1391,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     writer.write(jsonObject.toJSONString());
                 } catch (Exception typeDefException) {
                     // Fallback to Jackson if OpenCMIS conversion fails
-                    System.err.println("WARNING: TypeDefinition OpenCMIS conversion failed, using Jackson fallback: " + 
+                    log.warn("TypeDefinition OpenCMIS conversion failed, using Jackson fallback: " + 
                         typeDefException.getMessage());
                     com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
                     String json = objectMapper.writeValueAsString(result);
@@ -1536,14 +1541,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String existingSelector = HttpUtils.getStringParameter(request, "cmisselector");
         
         // ENHANCED DEBUG: Show what we actually got
-        System.err.println("*** CMISSELECTOR DEBUG: existingSelector = '" + existingSelector + "' ***");
-        System.err.println("*** CMISSELECTOR DEBUG: request.getParameter('cmisselector') = '" + request.getParameter("cmisselector") + "' ***");
+        if (log.isDebugEnabled()) {
+            log.debug("CMISSELECTOR DEBUG: existingSelector = '" + existingSelector + "'");
+            log.debug("CMISSELECTOR DEBUG: request.getParameter('cmisselector') = '" + request.getParameter("cmisselector") + "'");
+        }
         
         if (existingSelector != null && !existingSelector.isEmpty()) {
             // Use existing cmisselector from request - don't override it with inference
             inferredSelector = existingSelector;
             log.info("NEMAKI FIX: Using existing cmisselector: " + inferredSelector);
-            System.err.println("*** CMISSELECTOR FIX: Using existing cmisselector: " + inferredSelector + " ***");
+            if (log.isDebugEnabled()) {
+                log.debug("CMISSELECTOR FIX: Using existing cmisselector: " + inferredSelector);
+            }
         } else {
             // Infer the appropriate cmisselector based on parameters only if none exists
             if (typeId != null && !typeId.isEmpty()) {

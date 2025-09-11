@@ -746,11 +746,15 @@ public class DataUtil {
 		if (id != null && id.startsWith("cmis:")) {
 			// System CMIS properties: Force CMIS 1.1 compliance
 			queryName = localName;
-			System.out.println("*** CMIS 1.1 COMPLIANCE: System property " + id + " queryName set to localName: " + localName + " ***");
+			if (log.isDebugEnabled()) {
+				log.debug("CMIS 1.1 COMPLIANCE: System property " + id + " queryName set to localName: " + localName);
+			}
 		} else {
 			// Custom properties: Preserve original queryName if provided, fallback to localName only if null
 			queryName = (queryName == null) ? localName : queryName;
-			System.out.println("*** CUSTOM PROPERTY: " + id + " preserving queryName: " + queryName + " (localName: " + localName + ") ***");
+			if (log.isDebugEnabled()) {
+				log.debug("CUSTOM PROPERTY: " + id + " preserving queryName: " + queryName + " (localName: " + localName + ")");
+			}
 		}
 		
 		// DisplayName: Adopt directly provided value, generate only when null

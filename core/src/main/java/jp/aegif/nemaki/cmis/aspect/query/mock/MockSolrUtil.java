@@ -52,25 +52,33 @@ public class MockSolrUtil extends SolrUtil {
     
     @Override
     public void deleteDocument(String repositoryId, String documentId) {
-        System.out.println("MockSolrUtil.deleteDocument() - Skipping Solr deletion for document: " + documentId);
+        if (log.isDebugEnabled()) {
+            log.debug("MockSolrUtil.deleteDocument() - Skipping Solr deletion for document: " + documentId);
+        }
         // No-op for mock
     }
     
     @Override
     public String getSolrUrl() {
-        System.out.println("MockSolrUtil.getSolrUrl() - Mock URL (Solr disabled)");
+        if (log.isDebugEnabled()) {
+            log.debug("MockSolrUtil.getSolrUrl() - Mock URL (Solr disabled)");
+        }
         return "http://localhost:8983/solr/nemaki";
     }
     
     @Override
     public void setPropertyManager(PropertyManager propertyManager) {
         super.setPropertyManager(propertyManager);
-        System.out.println("MockSolrUtil.setPropertyManager() - PropertyManager set for mock");
+        if (log.isDebugEnabled()) {
+            log.debug("MockSolrUtil.setPropertyManager() - PropertyManager set for mock");
+        }
     }
     
     @Override
     public void setTypeService(TypeService typeService) {
         super.setTypeService(typeService);
-        System.out.println("MockSolrUtil.setTypeService() - TypeService set for mock");
+        if (log.isDebugEnabled()) {
+            log.debug("MockSolrUtil.setTypeService() - TypeService set for mock");
+        }
     }
 }

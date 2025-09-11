@@ -501,8 +501,7 @@ public class SolrUtil {
 				log.debug("SolrUtil.getSolrUrl: final URL=" + url);
 			}
 		} catch (MalformedURLException e) {
-			System.out.println("DEBUG SolrUtil.getSolrUrl: MalformedURLException: " + e.getMessage());
-			e.printStackTrace();
+			log.error("SolrUtil.getSolrUrl: MalformedURLException: " + e.getMessage(), e);
 		}
 //		log.info("Solr URL:" + url);
 		return url;

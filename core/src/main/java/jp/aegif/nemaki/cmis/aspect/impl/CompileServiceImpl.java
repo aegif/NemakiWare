@@ -1348,21 +1348,27 @@ public class CompileServiceImpl implements CompileService {
 				streamId = attachment.getId();
 			}
 		} else {
-			System.err.println("  - Condition NOT met: not REQUIRED and not (ALLOWED + has attachmentId)");
+			if (log.isDebugEnabled()) {
+				log.debug("Condition NOT met: not REQUIRED and not (ALLOWED + has attachmentId)");
+			}
 		}
 
 		// Add ContentStream properties to Document object - CMIS 1.1 compliant
 		// CRITICAL: Handle CMIS content stream property rules correctly
-		System.err.println("  - Final state before property setting:");
-		System.err.println("    - attachment: " + (attachment != null ? "EXISTS" : "NULL"));
-		System.err.println("    - length: " + length);
-		System.err.println("    - mimeType: " + mimeType);
-		System.err.println("    - fileName: " + fileName);
-		System.err.println("    - streamId: " + streamId);
+		if (log.isDebugEnabled()) {
+			log.debug("Final state before property setting:");
+			log.debug("  - attachment: " + (attachment != null ? "EXISTS" : "NULL"));
+			log.debug("  - length: " + length);
+			log.debug("  - mimeType: " + mimeType);
+			log.debug("  - fileName: " + fileName);
+			log.debug("  - streamId: " + streamId);
+		}
 		if (attachment != null && length != null) {
 			// Case 1: Content stream exists with known size (length >= 0)
 			// Case 2: Content stream exists with unknown size (length = -1)
-			System.err.println("  - CASE 1/2: Setting content stream properties (length=" + length + ")");
+			if (log.isDebugEnabled()) {
+				log.debug("CASE 1/2: Setting content stream properties (length=" + length + ")");
+			}
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_LENGTH, length >= 0 ? length : -1L);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_MIME_TYPE, mimeType);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_FILE_NAME, fileName);
@@ -1370,7 +1376,9 @@ public class CompileServiceImpl implements CompileService {
 		} else if (ContentStreamAllowed.REQUIRED == csa && attachment == null) {
 			// Case 3: Required content stream but no attachment - this is an error state
 			// Set properties to indicate missing required content stream
-			System.err.println("  - CASE 3: Required content stream missing - setting -1L");
+			if (log.isDebugEnabled()) {
+				log.debug("CASE 3: Required content stream missing - setting -1L");
+			}
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_LENGTH, -1L); // Unknown size for missing stream
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_MIME_TYPE, null);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_FILE_NAME, null);
@@ -1378,9 +1386,13 @@ public class CompileServiceImpl implements CompileService {
 		} else {
 			// Case 4: ContentStreamAllowed.ALLOWED with no content stream - don't set properties
 			// Case 5: ContentStreamAllowed.NOTALLOWED - don't set properties
-			System.err.println("  - CASE 4/5: No content stream properties should be set");
+			if (log.isDebugEnabled()) {
+				log.debug("CASE 4/5: No content stream properties should be set");
+			}
 		}
-		System.err.println("*** END DEBUG setCmisAttachmentProperties ***");
+		if (log.isDebugEnabled()) {
+			log.debug("END DEBUG setCmisAttachmentProperties");
+		}
 	}
 
 	/**

@@ -275,7 +275,9 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                                                 }
                                             }
                                             if ("System".equals(name)) {
-                                                System.out.println("=== PATCH SUCCESS: Found existing legacy System folder: " + objectId);
+                                                if (log.isDebugEnabled()) {
+                                                    log.debug("Found existing legacy System folder: " + objectId);
+                                                }
                                                 log.info("Found existing legacy System folder: " + objectId);
                                                 
                                                 // Validate that we have a non-null objectId before creating the folder object
@@ -290,16 +292,19 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                                                 }
                                             }
                                         } else {
-                                            System.out.println("=== PATCH DEBUG: Found non-folder: " + name + " (type: " + type + ", folder: " + folder + ")");
-                                            log.info("PATCH DEBUG: Found non-folder: " + name + " (type: " + type + ", folder: " + folder + ")");
+                                            if (log.isDebugEnabled()) {
+                                                log.debug("Found non-folder: " + name + " (type: " + type + ", folder: " + folder + ")");
+                                            }
                                         }
                                     } else {
-                                        System.out.println("=== PATCH DEBUG: Document has no properties");
-                                        log.info("PATCH DEBUG: Document has no properties");
+                                        if (log.isDebugEnabled()) {
+                                            log.debug("Document has no properties");
+                                        }
                                     }
                                 } else {
-                                    System.out.println("=== PATCH DEBUG: Document is null");
-                                    log.info("PATCH DEBUG: Document is null");
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Document is null");
+                                    }
                                 }
                             } catch (Exception docEx) {
                                 log.warn("Error processing document in system folder search", docEx);
@@ -307,12 +312,14 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                         }
                     }
                 } else {
-                    System.out.println("=== PATCH DEBUG: No children found in direct CouchDB view query");
-                    log.info("PATCH DEBUG: No children found in direct CouchDB view query");
+                    if (log.isDebugEnabled()) {
+                        log.debug("No children found in direct CouchDB view query");
+                    }
                 }
                 
-                System.out.println("=== PATCH DEBUG: No existing system folders found via direct CouchDB query");
-                log.info("PATCH DEBUG: No existing system folders found via direct CouchDB query");
+                if (log.isDebugEnabled()) {
+                    log.debug("No existing system folders found via direct CouchDB query");
+                }
                 return null;
                 
             } catch (Exception directEx) {

@@ -50,18 +50,24 @@ public class PatchUtil {
 
 	protected boolean isApplied(String repositoryId, String name){
 		try {
-			System.out.println("Checking if patch '" + name + "' is applied in repository '" + repositoryId + "'");
+			if (log.isDebugEnabled()) {
+				log.debug("Checking if patch '" + name + "' is applied in repository '" + repositoryId + "'");
+			}
 			
 			// Use ContentDaoService to query patch history by name
 			PatchHistory patchHistory = contentDaoService.getPatchHistoryByName(repositoryId, name);
 			
 			if (patchHistory == null) {
-				System.out.println("No patch history found for '" + name + "' - patch not applied");
+				if (log.isDebugEnabled()) {
+					log.debug("No patch history found for '" + name + "' - patch not applied");
+				}
 				return false;
 			}
 			
 			boolean applied = patchHistory.isApplied();
-			System.out.println("Patch '" + name + "' status: " + (applied ? "APPLIED" : "NOT APPLIED"));
+			if (log.isDebugEnabled()) {
+				log.debug("Patch '" + name + "' status: " + (applied ? "APPLIED" : "NOT APPLIED"));
+			}
 			return applied;
 			
 		} catch (Exception e) {
@@ -73,23 +79,31 @@ public class PatchUtil {
 
 	protected void createPathHistory(String repositoryId, String name){
 		try {
-			System.out.println("Creating patch history for '" + name + "' in repository '" + repositoryId + "'");
+			if (log.isDebugEnabled()) {
+				log.debug("Creating patch history for '" + name + "' in repository '" + repositoryId + "'");
+			}
 			
 			// Check if patch history already exists
 			PatchHistory existingHistory = contentDaoService.getPatchHistoryByName(repositoryId, name);
 			if (existingHistory != null) {
-				System.out.println("Patch history for '" + name + "' already exists - updating status to applied");
+				if (log.isDebugEnabled()) {
+					log.debug("Patch history for '" + name + "' already exists - updating status to applied");
+				}
 				existingHistory.setIsApplied(true);
 				contentDaoService.update(repositoryId, existingHistory);
 			} else {
-				System.out.println("Creating new patch history for '" + name + "'");
+				if (log.isDebugEnabled()) {
+					log.debug("Creating new patch history for '" + name + "'");
+				}
 				PatchHistory patchHistory = new PatchHistory(name, true);
 				contentDaoService.create(repositoryId, patchHistory);
 			}
 			
-			System.out.println("Patch history for '" + name + "' successfully created/updated");
+			if (log.isDebugEnabled()) {
+				log.debug("Patch history for '" + name + "' successfully created/updated");
+			}
 		} catch (Exception e) {
-			org.apache.commons.logging.LogFactory.getLog(PatchUtil.class).error("Error creating patch history for '" + name + "': " + e.getMessage(), e);
+			log.error("Error creating patch history for '" + name + "': " + e.getMessage(), e);
 		}
 	}
 

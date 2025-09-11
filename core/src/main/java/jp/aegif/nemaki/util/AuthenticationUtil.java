@@ -85,18 +85,24 @@ public class AuthenticationUtil {
 		
 		// BCryptハッシュの検証（アップグレード不要）
 		if (hashed.startsWith("$2a$") || hashed.startsWith("$2b$")) {
-			System.out.println("AuthenticationUtil: Using modern BCrypt verification");
+			if (log.isDebugEnabled()) {
+				log.debug("Using modern BCrypt verification");
+			}
 			boolean bcryptMatches = BCrypt.checkpw(candidate, hashed);
 			return new PasswordMatchResult(bcryptMatches, false, null);
 		}
 		
 		// 不明なハッシュ形式（フォールバック）
-		System.out.println("AuthenticationUtil: Unknown hash format, attempting BCrypt verification");
+		if (log.isDebugEnabled()) {
+			log.debug("Unknown hash format, attempting BCrypt verification");
+		}
 		try {
 			boolean matches = BCrypt.checkpw(candidate, hashed);
 			return new PasswordMatchResult(matches, false, null);
 		} catch (Exception e) {
-			System.out.println("AuthenticationUtil: BCrypt verification failed: " + e.getMessage());
+			if (log.isDebugEnabled()) {
+				log.debug("BCrypt verification failed: " + e.getMessage());
+			}
 			return new PasswordMatchResult(false, false, null);
 		}
 	}
@@ -151,7 +157,7 @@ public class AuthenticationUtil {
 			
 			return matches;
 		} catch (NoSuchAlgorithmException | java.io.UnsupportedEncodingException e) {
-			System.out.println("AuthenticationUtil: MD5 verification error: " + e.getMessage());
+			log.error("MD5 verification error: " + e.getMessage(), e);
 			return false;
 		}
 	}

@@ -132,11 +132,15 @@ public class DatabasePreInitializer {
             // CRITICAL FIX: System folder creation removed - provided by dump file
             // .system folder is now provided by bedroom_init.dump with proper security configuration
             // DatabasePreInitializer should not create duplicate System folders
-            System.out.println("=== SYSTEM FOLDER: Skipping creation - provided by dump file with proper .system name and security ===");
+            if (log.isDebugEnabled()) {
+                log.debug("SYSTEM FOLDER: Skipping creation - provided by dump file with proper .system name and security");
+            }
             log.info("System folder creation skipped - provided by dump file");
             
-            System.out.println("=== DATABASE PRE-INITIALIZATION (Phase 1) COMPLETED ===");
-            log.info("=== DATABASE PRE-INITIALIZATION (Phase 1) COMPLETED ===");
+            if (log.isDebugEnabled()) {
+                log.debug("DATABASE PRE-INITIALIZATION (Phase 1) COMPLETED");
+            }
+            log.info("DATABASE PRE-INITIALIZATION (Phase 1) COMPLETED");
             
         } catch (Exception e) {
             log.error("Phase 1 database pre-initialization failed", e);
@@ -163,8 +167,10 @@ public class DatabasePreInitializer {
             // Databases that require design documents (closet databases don't need them)
             String[] databasesWithDesignDocs = {"bedroom", "canopy", "nemaki_conf"};
             
-            System.out.println("=== CHECKING: Database initialization status ===");
-            log.info("=== CHECKING: Database initialization status ===");
+            if (log.isDebugEnabled()) {
+                log.debug("CHECKING: Database initialization status");
+            }
+            log.info("CHECKING: Database initialization status");
             
             for (String dbName : requiredDatabases) {
                 // Check if database exists
@@ -180,8 +186,10 @@ public class DatabasePreInitializer {
                 checkConn.disconnect();
                 
                 if (responseCode != 200) {
-                    System.out.println("=== CHECKING: Database " + dbName + " not found (HTTP " + responseCode + ") ===");
-                    log.info("=== CHECKING: Database " + dbName + " not found, full initialization needed ===");
+                    if (log.isDebugEnabled()) {
+                        log.debug("CHECKING: Database " + dbName + " not found (HTTP " + responseCode + ")");
+                    }
+                    log.info("CHECKING: Database " + dbName + " not found, full initialization needed");
                     return false;
                 }
                 
@@ -204,29 +212,39 @@ public class DatabasePreInitializer {
                     designConn.disconnect();
                     
                     if (designResponseCode != 200) {
-                        System.out.println("=== CHECKING: Database " + dbName + " missing design documents, initialization needed ===");
-                        log.info("=== CHECKING: Database " + dbName + " missing design documents, full initialization needed ===");
+                        if (log.isDebugEnabled()) {
+                            log.debug("CHECKING: Database " + dbName + " missing design documents, initialization needed");
+                        }
+                        log.info("CHECKING: Database " + dbName + " missing design documents, full initialization needed");
                         return false;
                     }
                 } else {
-                    System.out.println("=== CHECKING: Database " + dbName + " (closet) - design documents not required ===");
-                    log.info("=== CHECKING: Database " + dbName + " (closet) - design documents not required ===");
+                    if (log.isDebugEnabled()) {
+                        log.debug("CHECKING: Database " + dbName + " (closet) - design documents not required");
+                    }
+                    log.info("CHECKING: Database " + dbName + " (closet) - design documents not required");
                 }
             }
             
             // CRITICAL IDEMPOTENT CHECK: Validate .system folder is properly configured
             if (!isSystemFolderProperlyConfigured()) {
-                System.out.println("=== CHECKING: .system folder configuration invalid or missing, initialization needed ===");
-                log.info("=== CHECKING: .system folder configuration invalid or missing, full initialization needed ===");
+                if (log.isDebugEnabled()) {
+                    log.debug("CHECKING: .system folder configuration invalid or missing, initialization needed");
+                }
+                log.info("CHECKING: .system folder configuration invalid or missing, full initialization needed");
                 return false;
             }
             
-            System.out.println("=== CHECKING: All databases AND .system folders properly initialized ===");
-            log.info("=== CHECKING: All databases AND .system folders properly initialized, skipping dump processing ===");
+            if (log.isDebugEnabled()) {
+                log.debug("CHECKING: All databases AND .system folders properly initialized");
+            }
+            log.info("CHECKING: All databases AND .system folders properly initialized, skipping dump processing");
             return true;
             
         } catch (Exception e) {
-            System.out.println("=== CHECKING: Error checking database status, proceeding with full initialization ===");
+            if (log.isDebugEnabled()) {
+                log.debug("Error checking database status, proceeding with full initialization");
+            }
             log.warn("Error checking database initialization status, proceeding with full initialization: " + e.getMessage());
             return false;
         }
@@ -275,7 +293,9 @@ public class DatabasePreInitializer {
     }
     
     private void loadInitialDumpFiles() {
-        System.out.println("=== DUMP LOADING: Starting to load initial dump files ===");
+        if (log.isDebugEnabled()) {
+            log.debug("Starting to load initial dump files");
+        }
         log.info("Loading initial dump files...");
         
         try {
@@ -293,30 +313,46 @@ public class DatabasePreInitializer {
                 try {
                     // Try to load from classpath first
                     String classpath = "/initialization/" + dbName + "_init.dump";
-                    System.out.println("=== DUMP DEBUG: Attempting to load from classpath: " + classpath);
+                    if (log.isDebugEnabled()) {
+                        log.debug("Attempting to load from classpath: " + classpath);
+                    }
                     java.io.InputStream dumpStream = getClass().getResourceAsStream(classpath);
                     if (dumpStream == null) {
-                        System.out.println("=== DUMP DEBUG: Classpath not found, trying absolute path: " + dumpPath);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Classpath not found, trying absolute path: " + dumpPath);
+                        }
                         // Try absolute path
                         java.io.File dumpFile = new java.io.File(dumpPath);
                         if (dumpFile.exists()) {
                             dumpStream = new java.io.FileInputStream(dumpFile);
-                            System.out.println("=== DUMP DEBUG: Found dump file at absolute path");
+                            if (log.isDebugEnabled()) {
+                                log.debug("Found dump file at absolute path");
+                            }
                         } else {
-                            System.out.println("=== DUMP DEBUG: Absolute path also not found");
+                            if (log.isDebugEnabled()) {
+                                log.debug("Absolute path also not found");
+                            }
                         }
                     } else {
-                        System.out.println("=== DUMP DEBUG: Found dump file in classpath");
+                        if (log.isDebugEnabled()) {
+                            log.debug("Found dump file in classpath");
+                        }
                     }
                     
                     if (dumpStream != null) {
-                        System.out.println("=== DUMP DEBUG: Loading dump file for database: " + dbName);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Loading dump file for database: " + dbName);
+                        }
                         log.info("Loading dump file for database: " + dbName);
                         loadDumpIntoDatabase(dbName, dumpStream);
                         dumpStream.close();
-                        System.out.println("=== DUMP DEBUG: Completed loading dump file for database: " + dbName);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Completed loading dump file for database: " + dbName);
+                        }
                     } else {
-                        System.out.println("=== DUMP DEBUG: Dump file not found for database: " + dbName);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Dump file not found for database: " + dbName);
+                        }
                         log.warn("Dump file not found for database: " + dbName);
                     }
                 } catch (Exception e) {
@@ -330,7 +366,9 @@ public class DatabasePreInitializer {
     }
     
     private void loadDumpIntoDatabase(String dbName, java.io.InputStream dumpStream) throws Exception {
-        System.out.println("=== DUMP LOAD DEBUG: Starting to load dump for database: " + dbName);
+        if (log.isDebugEnabled()) {
+            log.debug("Starting to load dump for database: " + dbName);
+        }
         
         // Read the dump file
         java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(dumpStream));
@@ -341,17 +379,23 @@ public class DatabasePreInitializer {
         }
         reader.close();
         
-        System.out.println("=== DUMP LOAD DEBUG: Read " + content.length() + " characters from dump file");
+        if (log.isDebugEnabled()) {
+            log.debug("Read " + content.length() + " characters from dump file");
+        }
         
         // Parse JSON dump
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         com.fasterxml.jackson.databind.JsonNode dumpData = mapper.readTree(content.toString());
         
-        System.out.println("=== DUMP LOAD DEBUG: Parsed JSON successfully");
+        if (log.isDebugEnabled()) {
+            log.debug("Parsed JSON successfully");
+        }
         
         // The dump file is directly a JSON array, not an object with a "docs" property
         if (dumpData.isArray()) {
-            System.out.println("=== DUMP LOAD DEBUG: Found array with " + dumpData.size() + " elements");
+            if (log.isDebugEnabled()) {
+                log.debug("Found array with " + dumpData.size() + " elements");
+            }
             for (com.fasterxml.jackson.databind.JsonNode doc : dumpData) {
                 // Handle document directly or extract from document wrapper
                 com.fasterxml.jackson.databind.JsonNode docToInsert = doc;
@@ -362,7 +406,9 @@ public class DatabasePreInitializer {
                 try {
                     // Create document in CouchDB
                     String docId = docToInsert.get("_id").asText();
-                    System.out.println("=== DUMP LOAD DEBUG: Processing document: " + docId);
+                    if (log.isDebugEnabled()) {
+                        log.debug("Processing document: " + docId);
+                    }
                     
                     // Remove _rev for new document creation (CouchDB will assign new revision)
                     com.fasterxml.jackson.databind.node.ObjectNode docCopy = docToInsert.deepCopy();

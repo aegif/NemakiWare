@@ -227,17 +227,21 @@ public class GroupItemResource extends ResourceBase{
 
 	//TODO this is a copy & paste method.
 	private Folder getOrCreateSystemSubFolder(String repositoryId, String name){
-	System.out.println("=== CRITICAL DEBUG: getOrCreateSystemSubFolder called with repositoryId='" + repositoryId + "', name='" + name + "'");
-	System.out.println("=== CRITICAL DEBUG: About to call getContentService().getSystemFolder(repositoryId)");
+	if (log.isDebugEnabled()) {
+		log.debug("getOrCreateSystemSubFolder called with repositoryId='" + repositoryId + "', name='" + name + "'");
+		log.debug("About to call getContentService().getSystemFolder(repositoryId)");
+	}
 	
 	Folder systemFolder = getContentService().getSystemFolder(repositoryId);
 	
-	System.out.println("=== CRITICAL DEBUG: getContentService().getSystemFolder returned: " + (systemFolder != null ? "NOT NULL (ID=" + systemFolder.getId() + ")" : "NULL"));
+	if (log.isDebugEnabled()) {
+		log.debug("getContentService().getSystemFolder returned: " + (systemFolder != null ? "NOT NULL (ID=" + systemFolder.getId() + ")" : "NULL"));
+	}
 
 	// CRITICAL FIX: Fallback solution when PropertyManager fails to read system.folder configuration
 	if (systemFolder == null) {
-		System.out.println("=== CRITICAL ERROR: systemFolder is null - .system folder not found via PropertyManager ===");
-		System.out.println("=== This may be due to security changes requiring .system folder name and system-only access ===");
+		log.error("systemFolder is null - .system folder not found via PropertyManager");
+		log.error("This may be due to security changes requiring .system folder name and system-only access");
 		throw new RuntimeException(".system folder not accessible via PropertyManager - check system folder configuration and security settings");
 	}
 
