@@ -1631,15 +1631,38 @@ public class ContentServiceImpl implements ContentService {
 						Aspect aspect = new Aspect();
 						aspect.setName(secondaryTypeId);
 
-						Collection<PropertyDefinition<?>> propDefs = td.getPropertyDefinitions() != null ? 
-							td.getPropertyDefinitions().values() : new ArrayList<>();
+						Collection<PropertyDefinition<?>> propDefs = null;
+						if (td.getPropertyDefinitions() != null) {
+							propDefs = td.getPropertyDefinitions().values();
+							int nullPropDefCount = 0;
+							for (PropertyDefinition<?> propDef : propDefs) {
+								if (propDef == null) {
+									nullPropDefCount++;
+								}
+							}
+							if (nullPropDefCount > 0) {
+								log.warn("Found " + nullPropDefCount + " null PropertyDefinitions in secondary type " + secondaryTypeId);
+							}
+						} else {
+							propDefs = new ArrayList<>();
+							if (log.isDebugEnabled()) {
+								log.debug("No property definitions found for secondary type " + secondaryTypeId);
+							}
+						}
 						
 						List<Property> props = injectPropertyValue(propDefs, properties, content);
 						aspect.setProperties(props);
 						aspects.add(aspect);
+						
+						if (log.isDebugEnabled()) {
+							log.debug("Successfully processed secondary type " + secondaryTypeId + " with " + 
+								(props != null ? props.size() : 0) + " properties");
+						}
 					} else {
 						if (log.isDebugEnabled()) {
-							log.debug("Secondary type {} is not valid or not a secondary type", secondaryTypeId);
+							log.debug("Secondary type {} is not valid or not a secondary type (td: {}, baseTypeId: {})", 
+								secondaryTypeId, td != null ? "not null" : "null", 
+								td != null ? td.getBaseTypeId() : "null");
 						}
 					}
 				} catch (Exception e) {

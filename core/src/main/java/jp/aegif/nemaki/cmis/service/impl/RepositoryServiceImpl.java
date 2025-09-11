@@ -93,10 +93,22 @@ public class RepositoryServiceImpl implements RepositoryService,
 			
 			TypeDefinition td = typeManager.getTypeDefinition(repositoryId, typeId);
 			if (td != null && td.getPropertyDefinitions() != null) {
-				for (PropertyDefinition<?> propDef : td.getPropertyDefinitions().values()) {
+				int validPropCount = 0;
+				int nullPropCount = 0;
+				for (Map.Entry<String, PropertyDefinition<?>> entry : td.getPropertyDefinitions().entrySet()) {
+					PropertyDefinition<?> propDef = entry.getValue();
 					if (propDef == null) {
-						log.error("Null PropertyDefinition found in type " + typeId);
+						log.error("Null PropertyDefinition found for property '" + entry.getKey() + "' in type " + typeId);
+						nullPropCount++;
+					} else {
+						validPropCount++;
+						if (propDef.getId() == null) {
+							log.error("PropertyDefinition with null ID found for property '" + entry.getKey() + "' in type " + typeId);
+						}
 					}
+				}
+				if (log.isDebugEnabled()) {
+					log.debug("TypeDefinition " + typeId + " has " + validPropCount + " valid properties and " + nullPropCount + " null properties");
 				}
 			}
 			return td;

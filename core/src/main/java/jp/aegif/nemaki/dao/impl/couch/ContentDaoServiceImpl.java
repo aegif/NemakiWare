@@ -2544,11 +2544,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						try {
 							String revisionToUse = documentRevision;
 							if (revisionToUse == null) {
-								com.ibm.cloud.cloudant.v1.model.Document currentDoc = client.get(documentId);
-								revisionToUse = currentDoc != null ? currentDoc.getRev() : null;
-								if (revisionToUse == null) {
-									throw new RuntimeException("Unable to retrieve document revision for attachment creation");
+								try {
+									com.ibm.cloud.cloudant.v1.model.Document currentDoc = client.get(documentId);
+									revisionToUse = currentDoc != null ? currentDoc.getRev() : null;
+									if (revisionToUse == null) {
+										log.error("Unable to retrieve document revision for attachment creation - document may not exist");
+										throw new RuntimeException("Unable to retrieve document revision for attachment creation");
+									}
+								} catch (Exception getDocEx) {
+									log.error("Failed to get current document revision for " + documentId + ": " + getDocEx.getMessage(), getDocEx);
+									throw new RuntimeException("Unable to retrieve document revision for attachment creation", getDocEx);
 								}
+							}
+							
+							if (log.isDebugEnabled()) {
+								log.debug("STAGE 2 ATTEMPT " + (retryCount + 1) + ": Creating attachment with revision " + revisionToUse);
 							}
 							
 							finalRevision = client.createAttachment(
@@ -2574,12 +2584,28 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 								break;
 							}
 							
+							documentRevision = null;
+							
 							try {
-								long backoffMs = (long) (100 * Math.pow(2, retryCount - 1) * (0.5 + Math.random() * 0.5));
+								long baseBackoff = 100;
+								long backoffMs = (long) (baseBackoff * Math.pow(2, retryCount - 1) * (0.5 + Math.random() * 0.5));
+								backoffMs = Math.min(backoffMs, 5000);
+								if (log.isDebugEnabled()) {
+									log.debug("Backing off for " + backoffMs + "ms before retry " + retryCount);
+								}
 								Thread.sleep(backoffMs);
 							} catch (InterruptedException ie) {
 								Thread.currentThread().interrupt();
 								log.warn("Interrupted during attachment binary retry - continuing with metadata-only");
+								break;
+							}
+						} catch (Exception otherEx) {
+							log.error("Unexpected error during attachment creation for " + documentId + 
+								": " + otherEx.getMessage(), otherEx);
+							retryCount++;
+							if (retryCount >= maxRetries) {
+								log.error("STAGE 2 FAILURE: Failed to add binary attachment after " + 
+									maxRetries + " retries due to unexpected errors - continuing with metadata-only attachment");
 								break;
 							}
 						}
@@ -3208,7 +3234,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {
 		if (attachmentId == null || attachmentId.trim().isEmpty()) {
-			log.debug("getAttachmentActualSize: attachmentId is null or empty");
+			if (log.isDebugEnabled()) {
+				log.debug("getAttachmentActualSize: attachmentId is null or empty");
+			}
 			return null;
 		}
 		
@@ -3219,15 +3247,28 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				return null;
 			}
 			
-			com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachmentId);
+			com.ibm.cloud.cloudant.v1.model.Document doc = null;
+			try {
+				doc = client.get(attachmentId);
+			} catch (Exception getEx) {
+				if (log.isDebugEnabled()) {
+					log.debug("Failed to retrieve attachment document " + attachmentId + ": " + getEx.getMessage());
+				}
+				return null;
+			}
+			
 			if (doc == null) {
-				log.debug("Attachment document not found: " + attachmentId);
+				if (log.isDebugEnabled()) {
+					log.debug("Attachment document not found: " + attachmentId);
+				}
 				return null;
 			}
 			
 			Map<String, Object> properties = doc.getProperties();
 			if (properties == null) {
-				log.debug("No properties found in document: " + attachmentId);
+				if (log.isDebugEnabled()) {
+					log.debug("No properties found in document: " + attachmentId);
+				}
 				return null;
 			}
 			
@@ -3245,14 +3286,35 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					if (lengthObj instanceof Number) {
 						long actualSize = ((Number) lengthObj).longValue();
 						if (actualSize > 0) {
-							log.debug("Found actual attachment size: " + actualSize + " bytes for " + attachmentId);
+							if (log.isDebugEnabled()) {
+								log.debug("Found actual attachment size: " + actualSize + " bytes for " + attachmentId);
+							}
 							return actualSize;
+						} else {
+							if (log.isDebugEnabled()) {
+								log.debug("Attachment size is zero or negative for: " + attachmentId);
+							}
+						}
+					} else {
+						if (log.isDebugEnabled()) {
+							log.debug("Attachment length is not a number for: " + attachmentId + 
+								" (type: " + (lengthObj != null ? lengthObj.getClass().getSimpleName() : "null") + ")");
 						}
 					}
+				} else {
+					if (log.isDebugEnabled()) {
+						log.debug("No 'content' attachment found for: " + attachmentId);
+					}
+				}
+			} else {
+				if (log.isDebugEnabled()) {
+					log.debug("No _attachments metadata found for: " + attachmentId);
 				}
 			}
 			
-			log.debug("No valid attachment size found for: " + attachmentId);
+			if (log.isDebugEnabled()) {
+				log.debug("No valid attachment size found for: " + attachmentId);
+			}
 			return null;
 			
 		} catch (Exception e) {
