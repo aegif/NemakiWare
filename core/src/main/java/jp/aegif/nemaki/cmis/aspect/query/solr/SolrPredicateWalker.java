@@ -55,6 +55,7 @@ import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TermRangeQuery;
+import org.apache.lucene.search.WildcardQuery;
 import org.apache.lucene.util.BytesRef;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrClient;
@@ -137,9 +138,9 @@ public class SolrPredicateWalker{
 			}
 		case CmisQlStrictLexer.IN_TREE:
 			if (node.getChildCount() == 1) {
-				return walkInTree(null, node.getChild(0), repositoryId);
+				return walkInTree(null, node.getChild(0));
 			} else {
-				return walkInTree(node.getChild(0), node.getChild(1), repositoryId);
+				return walkInTree(node.getChild(0), node.getChild(1));
 			}
 			// Full-text search type walk
 		case CmisQlStrictLexer.CONTAINS:
@@ -266,17 +267,15 @@ public class SolrPredicateWalker{
 
 		// Build a statement
 		String field = solrUtil.getPropertyNameInSolr(repositoryId,solrUtil.convertToString(colNode));
-		String pattern = translatePattern((String) rVal); // Solr wildcard
-															// expression
+		String pattern = translatePattern((String) rVal); // Solr wildcard expression
 		
-		Term t = new Term(field, pattern);
-		TermQuery q = new TermQuery(t);
+		WildcardQuery q = new WildcardQuery(new Term(field, pattern));
 		return q;
 	}
 
 	private Query walkNotLike(Tree colNode, Tree stringNode) {
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
-			builder.add(walkLike(colNode, stringNode), Occur.MUST);
+		builder.add(walkLike(colNode, stringNode), Occur.MUST_NOT);
 		return builder.build();
 	}
 
@@ -382,7 +381,7 @@ public class SolrPredicateWalker{
 		return q;
 	}
 
-	private Query walkInTree(Tree qualNode, Tree paramNode, String repositoryId) {
+	private Query walkInTree(Tree qualNode, Tree paramNode) {
 		// OpenCMIS correctly returns ArrayList for IN_TREE parameters
 		// Extract folder ID from the ArrayList structure
 		Object lit = walkExpr(paramNode);
@@ -411,7 +410,7 @@ public class SolrPredicateWalker{
 		}
 
 		// Build a Statement using the extracted folder ID
-		Query q = walkInTreeInternal(folderId, repositoryId);
+		Query q = walkInTreeInternal(folderId, this.repositoryId);
 		if (qualNode != null) {
 			String qualifier = safeWalkExprToString(qualNode);
 			if (qualifier != null) {
