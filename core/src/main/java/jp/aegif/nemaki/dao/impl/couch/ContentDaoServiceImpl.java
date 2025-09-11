@@ -2542,13 +2542,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					
 					while (retryCount < maxRetries) {
 						try {
-							// CRITICAL FIX: Use the revision from STAGE 1 completion, not a fresh GET
 							String revisionToUse = documentRevision;
 							if (revisionToUse == null) {
-								// Fallback: get fresh revision only if STAGE 1 revision is somehow lost
 								com.ibm.cloud.cloudant.v1.model.Document currentDoc = client.get(documentId);
 								revisionToUse = currentDoc != null ? currentDoc.getRev() : null;
-											}
+								if (revisionToUse == null) {
+									throw new RuntimeException("Unable to retrieve document revision for attachment creation");
+								}
+							}
 							
 							finalRevision = client.createAttachment(
 								documentId, 
@@ -2558,24 +2559,24 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 								contentType
 							);
 							
-											log.debug("STAGE 2 SUCCESS: Added binary attachment: " + documentId + " (revision: " + revisionToUse + " -> " + finalRevision + ")");
-							break; // Success, exit retry loop
+							log.debug("STAGE 2 SUCCESS: Added binary attachment: " + documentId + 
+								" (revision: " + revisionToUse + " -> " + finalRevision + ")");
+							break;
 							
 						} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
 							retryCount++;
-							log.warn("STAGE 2 RETRY " + retryCount + "/" + maxRetries + ": Attachment creation conflict - " + e.getMessage());
+							log.warn("STAGE 2 RETRY " + retryCount + "/" + maxRetries + 
+								": Attachment creation conflict - " + e.getMessage());
 							
 							if (retryCount >= maxRetries) {
-								log.error("STAGE 2 FAILURE: Failed to add binary attachment after " + maxRetries + " retries");
-								// Don't throw exception here - document metadata is already created
-								// Just log warning and continue with metadata-only attachment
-								log.warn("Continuing with metadata-only attachment for: " + documentId);
+								log.error("STAGE 2 FAILURE: Failed to add binary attachment after " + 
+									maxRetries + " retries - continuing with metadata-only attachment");
 								break;
 							}
 							
-							// Brief wait before retry
 							try {
-								Thread.sleep(100 * retryCount);
+								long backoffMs = (long) (100 * Math.pow(2, retryCount - 1) * (0.5 + Math.random() * 0.5));
+								Thread.sleep(backoffMs);
 							} catch (InterruptedException ie) {
 								Thread.currentThread().interrupt();
 								log.warn("Interrupted during attachment binary retry - continuing with metadata-only");
@@ -3206,58 +3207,56 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {
+		if (attachmentId == null || attachmentId.trim().isEmpty()) {
+			log.debug("getAttachmentActualSize: attachmentId is null or empty");
+			return null;
+		}
+		
 		try {
-			log.debug("DAO DEBUG: getAttachmentActualSize called with repositoryId=" + repositoryId + ", attachmentId=" + attachmentId);
-			// Use the CloudantClientWrapper to get document with _attachments metadata
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			log.debug("DAO DEBUG: Got CloudantClientWrapper client");
+			if (client == null) {
+				log.error("CloudantClientWrapper is null for repository: " + repositoryId);
+				return null;
+			}
+			
 			com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachmentId);
-			log.debug("DAO DEBUG: Retrieved document: " + (doc != null ? "SUCCESS" : "NULL"));
 			if (doc == null) {
-				log.debug("DAO DEBUG: Attachment document not found: " + attachmentId);
+				log.debug("Attachment document not found: " + attachmentId);
 				return null;
 			}
 			
-			// Get the properties Map which contains the actual CouchDB document fields
 			Map<String, Object> properties = doc.getProperties();
-			log.debug("DAO DEBUG: Properties retrieved: " + (properties != null ? properties.size() + " keys" : "NULL"));
 			if (properties == null) {
-				log.debug("DAO DEBUG: No properties found in document: " + attachmentId);
+				log.debug("No properties found in document: " + attachmentId);
 				return null;
 			}
 			
-			// Check if the document has _attachments metadata
 			Object attachmentsObj = properties.get("_attachments");
-			log.debug("DAO DEBUG: _attachments found: " + (attachmentsObj != null ? "YES" : "NO"));
 			if (attachmentsObj instanceof Map) {
 				@SuppressWarnings("unchecked")
 				Map<String, Object> attachments = (Map<String, Object>) attachmentsObj;
-				log.debug("DAO DEBUG: _attachments keys: " + attachments.keySet());
 				
-				// Look for the "content" attachment (NemakiWare convention)
 				Object contentObj = attachments.get("content");
-				log.debug("DAO DEBUG: 'content' attachment found: " + (contentObj != null ? "YES" : "NO"));
 				if (contentObj instanceof Map) {
 					@SuppressWarnings("unchecked")
 					Map<String, Object> contentAttachment = (Map<String, Object>) contentObj;
-					log.debug("DAO DEBUG: content attachment keys: " + contentAttachment.keySet());
 					
-					// Get the length from CouchDB attachment metadata
 					Object lengthObj = contentAttachment.get("length");
-					log.debug("DAO DEBUG: length value: " + lengthObj + " (type: " + (lengthObj != null ? lengthObj.getClass().getSimpleName() : "null") + ")");
 					if (lengthObj instanceof Number) {
 						long actualSize = ((Number) lengthObj).longValue();
-						log.error("DAO SUCCESS: Found actual attachment size in CouchDB: " + actualSize + " bytes for attachment " + attachmentId);
-						return actualSize;
+						if (actualSize > 0) {
+							log.debug("Found actual attachment size: " + actualSize + " bytes for " + attachmentId);
+							return actualSize;
+						}
 					}
 				}
 			}
 			
-			log.error("DAO WARNING: No _attachments metadata found for attachment: " + attachmentId);
+			log.debug("No valid attachment size found for: " + attachmentId);
 			return null;
 			
 		} catch (Exception e) {
-			log.error("Error retrieving attachment size from CouchDB for " + attachmentId + ": " + e.getMessage(), e);
+			log.error("Error retrieving attachment size for " + attachmentId + ": " + e.getMessage(), e);
 			return null;
 		}
 	}

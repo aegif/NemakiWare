@@ -1631,7 +1631,10 @@ public class ContentServiceImpl implements ContentService {
 						Aspect aspect = new Aspect();
 						aspect.setName(secondaryTypeId);
 
-						List<Property> props = injectPropertyValue(td.getPropertyDefinitions().values(), properties, content);
+						Collection<PropertyDefinition<?>> propDefs = td.getPropertyDefinitions() != null ? 
+							td.getPropertyDefinitions().values() : new ArrayList<>();
+						
+						List<Property> props = injectPropertyValue(propDefs, properties, content);
 						aspect.setProperties(props);
 						aspects.add(aspect);
 					} else {

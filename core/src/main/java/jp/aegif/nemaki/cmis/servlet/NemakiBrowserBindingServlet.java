@@ -1296,6 +1296,28 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     "Content stream transfer failed: " + e.getMessage());
             }
             throw e;
+        } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException e) {
+            if (e.getMessage() != null && e.getMessage().contains("getContentStream")) {
+                log.error("Content stream error in Browser Binding: " + e.getMessage(), e);
+                
+                if (!response.isCommitted()) {
+                    response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                    response.setContentType("application/json");
+                    try (java.io.OutputStream out = response.getOutputStream()) {
+                        String errorJson = "{\"exception\":\"objectNotFound\",\"message\":\"Content stream not available\"}";
+                        out.write(errorJson.getBytes("UTF-8"));
+                    }
+                }
+                return null;
+            }
+            
+            log.error("ERROR in Browser Binding operation: " + e.getMessage(), e);
+            
+            if (!response.isCommitted()) {
+                response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
+                    "Browser Binding operation failed: " + e.getMessage());
+            }
+            throw e;
         } finally {
             // CRITICAL: Ensure streams are properly closed
             if (inputStream != null) {

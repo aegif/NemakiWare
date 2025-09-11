@@ -91,7 +91,15 @@ public class RepositoryServiceImpl implements RepositoryService,
 				log.debug("Creating shared TypeDefinition for " + typeId);
 			}
 			
-			return typeManager.getTypeDefinition(repositoryId, typeId);
+			TypeDefinition td = typeManager.getTypeDefinition(repositoryId, typeId);
+			if (td != null && td.getPropertyDefinitions() != null) {
+				for (PropertyDefinition<?> propDef : td.getPropertyDefinitions().values()) {
+					if (propDef == null) {
+						log.error("Null PropertyDefinition found in type " + typeId);
+					}
+				}
+			}
+			return td;
 		});
 	}
 	
