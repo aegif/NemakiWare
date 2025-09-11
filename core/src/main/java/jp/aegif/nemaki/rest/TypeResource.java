@@ -1361,10 +1361,11 @@ public class TypeResource extends ResourceBase {
 							
 							if (detailId != null) {
 								propertyNodeIds.add(detailId);
-								System.err.println("[TYPERESOURCE] Added property detail ID: " + detailId + 
-									" for property: " + propertyId);
+								if (log.isDebugEnabled()) {
+									log.debug("Added property detail ID: " + detailId + " for property: " + propertyId);
+								}
 							} else {
-								System.err.println("[TYPERESOURCE] WARNING: Detail ID is null for property: " + propertyId);
+								log.warn("Detail ID is null for property: " + propertyId);
 							}
 						}
 					} else {
@@ -1373,24 +1374,32 @@ public class TypeResource extends ResourceBase {
 					}
 				}
 				
-				System.err.println("[TYPERESOURCE] Final propertyNodeIds for type " + t.getTypeId() + ": " + propertyNodeIds);
+				if (log.isDebugEnabled()) {
+					log.debug("Final propertyNodeIds for type " + t.getTypeId() + ": " + propertyNodeIds);
+				}
 				t.setProperties(propertyNodeIds);
 			} else {
-				System.err.println("[TYPERESOURCE] No properties found for type: " + t.getTypeId());
+				if (log.isDebugEnabled()) {
+					log.debug("No properties found for type: " + t.getTypeId());
+				}
 			}
 
 			// Remove orphan types
-			System.err.println("[TYPERESOURCE] Checking parent type for " + t.getTypeId() + 
-				", parentId: " + t.getParentId() + ", isBaseType: " + isBaseType(t.getParentId()) + 
-				", parentInTypeMaps: " + (typeMaps.get(t.getParentId()) != null));
+			if (log.isDebugEnabled()) {
+				log.debug("Checking parent type for " + t.getTypeId() + 
+					", parentId: " + t.getParentId() + ", isBaseType: " + isBaseType(t.getParentId()) + 
+					", parentInTypeMaps: " + (typeMaps.get(t.getParentId()) != null));
+			}
 			if (typeMaps.get(t.getParentId()) == null && !isBaseType(t.getParentId())) {
 				log.warn(buildMsg(t.getId(), null,
 						"Skipped to create this type because it has an unknown parent type."));
-				System.err.println("[TYPERESOURCE] SKIPPED type creation for " + t.getTypeId() + 
-					" due to unknown parent: " + t.getParentId());
+				if (log.isDebugEnabled()) {
+					log.debug("SKIPPED type creation for " + t.getTypeId() + " due to unknown parent: " + t.getParentId());
+				}
 			} else {
-				System.err.println("[TYPERESOURCE] About to create type: " + t.getTypeId() + 
-					" with properties: " + t.getProperties());
+				if (log.isDebugEnabled()) {
+					log.debug("About to create type: " + t.getTypeId() + " with properties: " + t.getProperties());
+				}
 				typeService.createTypeDefinition(repositoryId, t);
 			}
 		}

@@ -2417,22 +2417,22 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Create property definition if not exists by propertyId
 		if (!propertyDefinitionCoresByPropertyId.containsKey(propertyId)) {
 			
-			System.err.println("=== CREATING NEW PROPERTY CORE ===");
-			System.err.println("Creating new core for propertyId: " + propertyId);
-			System.err.println("queryName: " + queryName);
-			System.err.println("propertyType: " + propertyType);
-			System.err.println("cardinality: " + cardinality);
+			if (log.isDebugEnabled()) {
+				log.debug("Creating new property core for propertyId: " + propertyId + 
+					", queryName: " + queryName + ", propertyType: " + propertyType + 
+					", cardinality: " + cardinality);
+			}
 			
 			PropertyDefinition<?> core = DataUtil.createPropDefCore(propertyId, queryName, propertyType, cardinality);
 			
-			// COMPREHENSIVE DEBUG: Verify created core object
+			// Verify created core object
 			if (core != null) {
-				System.err.println("Created core - ID: " + core.getId());
-				System.err.println("Created core - QueryName: " + core.getQueryName()); 
-				System.err.println("Created core - Type: " + core.getPropertyType());
-				System.err.println("Created core object hash: " + System.identityHashCode(core));
+				if (log.isDebugEnabled()) {
+					log.debug("Created core - ID: " + core.getId() + ", QueryName: " + core.getQueryName() + 
+						", Type: " + core.getPropertyType() + ", hash: " + System.identityHashCode(core));
+				}
 			} else {
-				System.err.println("ERROR: DataUtil.createPropDefCore returned NULL for propertyId: " + propertyId);
+				log.error("DataUtil.createPropDefCore returned NULL for propertyId: " + propertyId);
 			}
 			
 			// CRITICAL FIX: Use the SAME instance in both maps
@@ -2447,20 +2447,20 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			PropertyDefinition<?> storedInPropertyIdMap = propertyDefinitionCoresByPropertyId.get(propertyId);
 			PropertyDefinition<?> storedInQueryNameMap = propertyDefinitionCoresByQueryName.get(queryName);
 			
-			System.err.println("=== STORAGE VERIFICATION ===");
-			System.err.println("Stored in PropertyId map - hash: " + System.identityHashCode(storedInPropertyIdMap));
-			System.err.println("Stored in QueryName map - hash: " + System.identityHashCode(storedInQueryNameMap));
-			
-			if (storedInPropertyIdMap != null) {
-				System.err.println("PropertyId map stored - ID: " + storedInPropertyIdMap.getId());
-				System.err.println("PropertyId map stored - QueryName: " + storedInPropertyIdMap.getQueryName());
+			if (log.isDebugEnabled()) {
+				log.debug("Storage verification - PropertyId map hash: " + System.identityHashCode(storedInPropertyIdMap) + 
+					", QueryName map hash: " + System.identityHashCode(storedInQueryNameMap));
+				
+				if (storedInPropertyIdMap != null) {
+					log.debug("PropertyId map stored - ID: " + storedInPropertyIdMap.getId() + 
+						", QueryName: " + storedInPropertyIdMap.getQueryName());
+				}
+				
+				if (storedInQueryNameMap != null) {
+					log.debug("QueryName map stored - ID: " + storedInQueryNameMap.getId() + 
+						", QueryName: " + storedInQueryNameMap.getQueryName());
+				}
 			}
-			
-			if (storedInQueryNameMap != null) {
-				System.err.println("QueryName map stored - ID: " + storedInQueryNameMap.getId());
-				System.err.println("QueryName map stored - QueryName: " + storedInQueryNameMap.getQueryName());
-			}
-			System.err.println("=== END STORAGE VERIFICATION ===");
 			
 			// Handle custom namespace properties
 			if (isCustomProperty) {

@@ -305,7 +305,9 @@ public class BulkCheckInResource extends ResourceBase {
 					}
 					else if (keyStr.equals("isMajor")) {
 						isMajor = (Boolean)propJson.get(key);
-						//						System.out.println("## isMajor --> " + isMajor);
+						if (log.isDebugEnabled()) {
+							log.debug("isMajor --> " + isMajor);
+						}
 					}
 					else {
 						String v = (String)propJson.get(key);

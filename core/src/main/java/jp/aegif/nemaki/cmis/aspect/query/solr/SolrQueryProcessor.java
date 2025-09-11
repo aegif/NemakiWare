@@ -254,28 +254,34 @@ public class SolrQueryProcessor implements QueryProcessor {
 		}
 		
 		// Check queryObject after processStatement
-		System.out.println("=== QUERY DEBUG: After processStatement, checking froms map state...");
-		try {
-			java.lang.reflect.Field fromsField = QueryObject.class.getDeclaredField("froms");
-			fromsField.setAccessible(true);
-			Map<String, String> froms = (Map<String, String>) fromsField.get(queryObject);
-			System.out.println("=== QUERY DEBUG: froms map size after processStatement: " + (froms != null ? froms.size() : "null"));
-			if (froms != null && !froms.isEmpty()) {
-				for (Map.Entry<String, String> entry : froms.entrySet()) {
-					System.out.println("=== QUERY DEBUG: FROM entry after processStatement: " + entry.getKey() + " -> " + entry.getValue());
+		if (logger.isDebugEnabled()) {
+			logger.debug("After processStatement, checking froms map state...");
+			try {
+				java.lang.reflect.Field fromsField = QueryObject.class.getDeclaredField("froms");
+				fromsField.setAccessible(true);
+				Map<String, String> froms = (Map<String, String>) fromsField.get(queryObject);
+				logger.debug("froms map size after processStatement: " + (froms != null ? froms.size() : "null"));
+				if (froms != null && !froms.isEmpty()) {
+					for (Map.Entry<String, String> entry : froms.entrySet()) {
+						logger.debug("FROM entry after processStatement: " + entry.getKey() + " -> " + entry.getValue());
+					}
 				}
+			} catch (Exception e) {
+				logger.debug("Error accessing froms map after processStatement: " + e.getMessage());
 			}
-		} catch (Exception e) {
-			System.out.println("=== QUERY DEBUG: Error accessing froms map after processStatement: " + e.getMessage());
 		}
 		
 		// Now try getMainFromName() with detailed error handling
 		try {
 			TypeDefinition mainFromName = queryObject.getMainFromName();
-			System.out.println("=== QUERY DEBUG: getMainFromName() returned: " + (mainFromName != null ? mainFromName.getId() : "null"));
+			if (logger.isDebugEnabled()) {
+				logger.debug("getMainFromName() returned: " + (mainFromName != null ? mainFromName.getId() : "null"));
+			}
 		} catch (Exception e) {
-			System.out.println("=== QUERY DEBUG: Exception in getMainFromName(): " + e.getMessage());
-			e.printStackTrace();
+			if (logger.isDebugEnabled()) {
+				logger.debug("Exception in getMainFromName(): " + e.getMessage());
+			}
+			logger.error("Exception in getMainFromName()", e);
 		}
 
 		// Build solr statement of WHERE
@@ -309,10 +315,14 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// Use the debug version that already handles exceptions
 		try {
 			td = queryObject.getMainFromName();
-			System.out.println("=== QUERY DEBUG: getMainFromName() in FROM query section returned: " + (td != null ? td.getId() : "null"));
+			if (logger.isDebugEnabled()) {
+				logger.debug("getMainFromName() in FROM query section returned: " + (td != null ? td.getId() : "null"));
+			}
 		} catch (Exception e) {
-			System.out.println("=== QUERY DEBUG: Exception in getMainFromName() during FROM query: " + e.getMessage());
-			e.printStackTrace();
+			if (logger.isDebugEnabled()) {
+				logger.debug("Exception in getMainFromName() during FROM query: " + e.getMessage());
+			}
+			logger.error("Exception in getMainFromName() during FROM query", e);
 			// Return empty result instead of crashing
 			ObjectListImpl nullList = new ObjectListImpl();
 			nullList.setHasMoreItems(false);
@@ -322,7 +332,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		// Check if td is null before proceeding
 		if (td == null) {
-			System.out.println("=== QUERY DEBUG: TypeDefinition is null, cannot proceed with query");
+			if (logger.isDebugEnabled()) {
+				logger.debug("TypeDefinition is null, cannot proceed with query");
+			}
 			ObjectListImpl nullList = new ObjectListImpl();
 			nullList.setHasMoreItems(false);
 			nullList.setNumItems(BigInteger.ZERO);
