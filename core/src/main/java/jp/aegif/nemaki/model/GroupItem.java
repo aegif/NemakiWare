@@ -33,8 +33,7 @@ public class GroupItem extends Item{
 		try {
 			BeanUtils.copyProperties(this, item);
 		} catch (IllegalAccessException | InvocationTargetException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			throw new RuntimeException("Failed to copy properties from Item to GroupItem", e);
 		}
 	}
 

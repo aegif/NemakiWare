@@ -703,12 +703,6 @@ public class SolrPredicateWalker{
 	 * @param s
 	 * @return
 	 */
-	@Deprecated
-	private BytesRef convertToBytesRef(String s) {
-		byte[] bytes = s.getBytes();
-		BytesRef bytesRef = new BytesRef(bytes);
-		return bytesRef;
-	}
 
 	/**
 	 * Translate a full-text search expression from SQL style to Solr style

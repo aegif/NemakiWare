@@ -1254,7 +1254,11 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         
                     } finally {
                         if (freshStream != null) {
-                            try { freshStream.close(); } catch (Exception e) { /* ignore */ }
+                            try { 
+                                freshStream.close(); 
+                            } catch (Exception e) { 
+                                log.debug("Failed to close stream: " + e.getMessage());
+                            }
                         }
                     }
                     
@@ -1583,10 +1587,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         if (existingSelector != null && !existingSelector.isEmpty()) {
             // Use original request if cmisselector already exists
             requestToUse = request;
-            System.err.println("*** REQUEST WRAPPER FIX: Using original request with existing cmisselector: " + existingSelector + " ***");
+            log.debug("REQUEST WRAPPER FIX: Using original request with existing cmisselector: " + existingSelector);
         } else {
             // Create wrapper only when we need to add inferred cmisselector
-            System.err.println("*** REQUEST WRAPPER FIX: Creating wrapper to add inferred cmisselector: " + inferredSelector + " ***");
+            log.debug("REQUEST WRAPPER FIX: Creating wrapper to add inferred cmisselector: " + inferredSelector);
             requestToUse = new HttpServletRequestWrapper(request) {
                 @Override
                 public String getParameter(String name) {
@@ -1649,7 +1653,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * This is a critical workaround for the service factory routing issue.
      */
     private void handleDeleteTypeDirectly(HttpServletRequest request, HttpServletResponse response, String pathInfo) throws Exception {
-        System.err.println("=== DIRECT DELETE TYPE HANDLER START ===");
+        log.debug("=== DIRECT DELETE TYPE HANDLER START ===");
         
         // Extract repository ID from path
         String[] pathParts = pathInfo != null ? pathInfo.split("/") : new String[0];
@@ -1663,7 +1667,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String contentType = request.getContentType();
         
         if (contentType != null && contentType.startsWith("multipart/form-data")) {
-            System.err.println("DIRECT DELETE TYPE: Parsing typeId from multipart data");
+            log.debug("DIRECT DELETE TYPE: Parsing typeId from multipart data");
             try {
                 // Use OpenCMIS HttpUtils to properly parse multipart parameters
                 typeId = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "typeId");
@@ -1673,10 +1677,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     try {
                         parts = request.getParts();
                     } catch (jakarta.servlet.ServletException servletEx) {
-                        System.err.println("JAKARTA EE 10 FIX: ServletException in typeId getParts() - " + servletEx.getMessage());
+                        log.warn("JAKARTA EE 10 FIX: ServletException in typeId getParts() - " + servletEx.getMessage());
                         throw servletEx;
                     } catch (java.io.IOException ioEx) {
-                        System.err.println("JAKARTA EE 10 FIX: IOException in typeId getParts() - " + ioEx.getMessage());
+                        log.warn("JAKARTA EE 10 FIX: IOException in typeId getParts() - " + ioEx.getMessage());
                         throw ioEx;
                     }
                     
@@ -1688,19 +1692,19 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                                     if (inputStream != null) {
                                         byte[] bytes = inputStream.readAllBytes();
                                         typeId = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
-                                        System.err.println("JAKARTA EE 10 FIX: Part-based typeId extracted: " + typeId);
+                                        log.debug("JAKARTA EE 10 FIX: Part-based typeId extracted: " + typeId);
                                         break;
                                     } else {
-                                        System.err.println("JAKARTA EE 10 FIX: typeId part inputStream is null");
+                                        log.warn("JAKARTA EE 10 FIX: typeId part inputStream is null");
                                     }
                                 }
                             } catch (java.io.IOException partIoEx) {
-                                System.err.println("JAKARTA EE 10 FIX: IOException reading typeId part - " + partIoEx.getMessage());
+                                log.warn("JAKARTA EE 10 FIX: IOException reading typeId part - " + partIoEx.getMessage());
                                 // Continue to next part
                             }
                         }
                     } else {
-                        System.err.println("JAKARTA EE 10 FIX: typeId getParts() returned null");
+                        log.warn("JAKARTA EE 10 FIX: typeId getParts() returned null");
                     }
                 }
             } catch (Exception e) {

@@ -436,28 +436,42 @@ public class DatabasePreInitializer {
                     out.close();
                     
                     int responseCode = conn.getResponseCode();
-                    System.out.println("=== DUMP LOAD DEBUG: Document " + docId + " response code: " + responseCode);
+                    if (log.isDebugEnabled()) {
+                        log.debug("Document " + docId + " response code: " + responseCode);
+                    }
                     if (responseCode == 201 || responseCode == 200) {
-                        System.out.println("=== DUMP LOAD DEBUG: Successfully created document " + docId + " in " + dbName);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Successfully created document " + docId + " in " + dbName);
+                        }
                         log.info("Created document " + docId + " in " + dbName);
                     } else if (responseCode == 409) {
-                        System.out.println("=== DUMP LOAD DEBUG: Document " + docId + " already exists in " + dbName);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Document " + docId + " already exists in " + dbName);
+                        }
                         log.debug("Document " + docId + " already exists in " + dbName);
                     } else {
-                        System.out.println("=== DUMP LOAD DEBUG: Failed to create document " + docId + " response: " + responseCode);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Failed to create document " + docId + " response: " + responseCode);
+                        }
                         log.warn("Failed to create document " + docId + " in " + dbName + ", response: " + responseCode);
                     }
                     
                     conn.disconnect();
                     
                 } catch (Exception e) {
-                    System.out.println("=== DUMP LOAD DEBUG: Exception processing document: " + e.getMessage());
+                    if (log.isDebugEnabled()) {
+                        log.debug("Exception processing document: " + e.getMessage());
+                    }
                     log.error("Error processing document in " + dbName, e);
                 }
             }
-            System.out.println("=== DUMP LOAD DEBUG: Completed processing all documents for " + dbName);
+            if (log.isDebugEnabled()) {
+                log.debug("Completed processing all documents for " + dbName);
+            }
         } else {
-            System.out.println("=== DUMP LOAD DEBUG: Root JSON is not an array for " + dbName + ", type: " + dumpData.getNodeType());
+            if (log.isDebugEnabled()) {
+                log.debug("Root JSON is not an array for " + dbName + ", type: " + dumpData.getNodeType());
+            }
         }
     }
     

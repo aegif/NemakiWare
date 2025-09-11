@@ -113,17 +113,23 @@ public class PatchUtil {
 			CloudantClientWrapper client = connectorPool.getClient(dbName);
 			if (client != null) {
 				// Database already exists - no need to create
-				System.out.println("Database '" + dbName + "' already exists, skipping creation");
+				if (log.isDebugEnabled()) {
+					log.debug("Database '" + dbName + "' already exists, skipping creation");
+				}
 				return;
 			}
 		} catch (Exception e) {
 			// Database doesn't exist or connection failed
-			System.out.println("Database '" + dbName + "' doesn't exist or connection failed: " + e.getMessage());
+			if (log.isDebugEnabled()) {
+				log.debug("Database '" + dbName + "' doesn't exist or connection failed: " + e.getMessage());
+			}
 		}
 		
 		// For Docker environments, databases are already created during initialization
 		// This method is primarily for non-Docker deployments
-		System.out.println("addDb for '" + dbName + "' - assuming database exists in Docker environment");
+		if (log.isDebugEnabled()) {
+			log.debug("addDb for '" + dbName + "' - assuming database exists in Docker environment");
+		}
 	}
 
 	protected void addView(String repositoryId, String viewName, String map){
@@ -133,13 +139,17 @@ public class PatchUtil {
 	protected void addView(String repositoryId, String viewName, String map, boolean force){
 		// ViewQuery functionality temporarily disabled during Cloudant migration
 		// Views are assumed to be already created in the database initialization
-		System.out.println("addView for '" + viewName + "' in repository '" + repositoryId + "' - assuming view exists in Docker environment");
+		if (log.isDebugEnabled()) {
+			log.debug("addView for '" + viewName + "' in repository '" + repositoryId + "' - assuming view exists in Docker environment");
+		}
 		// TODO: Implement view creation with Cloudant SDK when full ViewQuery support is restored
 	}
 
 	protected void deleteView(String repositoryId, String viewName){
 		// ViewQuery functionality temporarily disabled during Cloudant migration
-		System.out.println("deleteView for '" + viewName + "' in repository '" + repositoryId + "' - skipping during Cloudant migration");
+		if (log.isDebugEnabled()) {
+			log.debug("deleteView for '" + viewName + "' in repository '" + repositoryId + "' - skipping during Cloudant migration");
+		}
 		// TODO: Implement view deletion with Cloudant SDK when full ViewQuery support is restored
 	}
 

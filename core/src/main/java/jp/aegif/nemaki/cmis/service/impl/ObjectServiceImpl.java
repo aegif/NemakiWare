@@ -564,28 +564,29 @@ public class ObjectServiceImpl implements ObjectService {
 			ContentStream contentStream, VersioningState versioningState, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
 		
-		// SECONDARY TYPES TEST DEBUG - ObjectServiceImpl Entry Point
-		System.err.println("=== SECONDARY TYPES TEST DEBUG - OBJECT SERVICE ENTRY ===");
 		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
-		Object nameProperty = properties.getProperties().get("cmis:name");
-		Object secondaryTypeIds = properties.getProperties().get("cmis:secondaryObjectTypeIds");
-		System.err.println("ObjectServiceImpl.createDocument called:");
-		System.err.println("  - Document Name: " + (nameProperty != null ? nameProperty : "NULL"));
-		System.err.println("  - Object Type ID: " + objectTypeId);
-		System.err.println("  - Secondary Type IDs: " + (secondaryTypeIds != null ? secondaryTypeIds : "NULL"));
-		if (contentStream != null) {
-			long length = contentStream.getLength();
-			BigInteger bigLength = contentStream.getBigLength();
-			System.err.println("  - ContentStream provided: YES");
-			System.err.println("  - ContentStream getLength(): " + length);
-			System.err.println("  - ContentStream getBigLength(): " + bigLength);
-			System.err.println("  - ContentStream MimeType: " + contentStream.getMimeType());
-			System.err.println("  - ContentStream FileName: " + contentStream.getFileName());
-		} else {
-			System.err.println("  - ContentStream provided: NO");
+		
+		if (log.isDebugEnabled()) {
+			Object nameProperty = properties.getProperties().get("cmis:name");
+			Object secondaryTypeIds = properties.getProperties().get("cmis:secondaryObjectTypeIds");
+			log.debug("ObjectServiceImpl.createDocument called:");
+			log.debug("  - Document Name: " + (nameProperty != null ? nameProperty : "NULL"));
+			log.debug("  - Object Type ID: " + objectTypeId);
+			log.debug("  - Secondary Type IDs: " + (secondaryTypeIds != null ? secondaryTypeIds : "NULL"));
+			if (contentStream != null) {
+				long length = contentStream.getLength();
+				BigInteger bigLength = contentStream.getBigLength();
+				log.debug("  - ContentStream provided: YES");
+				log.debug("  - ContentStream getLength(): " + length);
+				log.debug("  - ContentStream getBigLength(): " + bigLength);
+				log.debug("  - ContentStream MimeType: " + contentStream.getMimeType());
+				log.debug("  - ContentStream FileName: " + contentStream.getFileName());
+			} else {
+				log.debug("  - ContentStream provided: NO");
+			}
+			log.debug("  - Repository ID: " + repositoryId);
+			log.debug("  - Folder ID: " + folderId);
 		}
-		System.err.println("  - Repository ID: " + repositoryId);
-		System.err.println("  - Folder ID: " + folderId);
 		
 		// Get object type definition for validation
 		TypeDefinition rawTypeDefinition = typeManager.getTypeDefinition(repositoryId, objectTypeId);
@@ -626,10 +627,11 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		System.err.println("=== SECONDARY TYPES TEST DEBUG - CALLING CONTENT SERVICE ===");
-		System.err.println("About to call contentService.createDocument with:");
-		System.err.println("  - parentFolder.getId(): " + parentFolder.getId());
-		System.err.println("  - versioningState: " + versioningState);
+		if (log.isDebugEnabled()) {
+			log.debug("About to call contentService.createDocument with:");
+			log.debug("  - parentFolder.getId(): " + parentFolder.getId());
+			log.debug("  - versioningState: " + versioningState);
+		}
 		
 		Document document = contentService.createDocument(callContext, repositoryId, properties, parentFolder,
 				contentStream, versioningState, policies, addAces, removeAces);
