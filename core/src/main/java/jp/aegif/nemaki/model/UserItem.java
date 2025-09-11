@@ -30,11 +30,9 @@ public class UserItem extends Item{
 		try {
 			BeanUtils.copyProperties(this, item);
 		} catch (IllegalAccessException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			throw new RuntimeException("Failed to copy properties from Item to UserItem", e);
 		} catch (InvocationTargetException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			throw new RuntimeException("Failed to copy properties from Item to UserItem", e);
 		}
 	}
 	

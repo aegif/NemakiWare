@@ -62,22 +62,18 @@ public class AuthenticationUtil {
 		
 		// MD5ハッシュの検出と検証（セキュリティ向上のため、成功時にBCryptに移行）
 		if (hashed.length() == 32 && hashed.matches("[a-f0-9]{32}")) {
-			try {
-				java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-				debugWriter.write("AuthenticationUtil: Detected MD5 hash - verifying and preparing BCrypt upgrade\n");
-				debugWriter.close();
-			} catch (Exception e) {}
+			if (log.isDebugEnabled()) {
+				log.debug("Detected MD5 hash - verifying and preparing BCrypt upgrade");
+			}
 			
 			boolean md5Matches = verifyMD5Password(candidate, hashed);
 			
 			if (md5Matches) {
 				// MD5認証成功時、BCryptハッシュを生成してセキュリティを向上
 				String newBCryptHash = BCrypt.hashpw(candidate, BCrypt.gensalt(12));
-				try {
-					java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-					debugWriter.write("AuthenticationUtil: MD5 auth successful - generated BCrypt hash for upgrade\n");
-					debugWriter.close();
-				} catch (Exception e) {}
+				if (log.isDebugEnabled()) {
+					log.debug("MD5 auth successful - generated BCrypt hash for upgrade");
+				}
 				return new PasswordMatchResult(true, true, newBCryptHash);
 			}
 			return new PasswordMatchResult(false, false, null);
@@ -142,18 +138,14 @@ public class AuthenticationUtil {
 			}
 			
 			String candidateHash = sb.toString();
-			try {
-				java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-				debugWriter.write("AuthenticationUtil: MD5 verification - candidate hash: " + candidateHash + ", stored hash: " + md5Hash + "\n");
-				debugWriter.close();
-			} catch (Exception e) {}
+			if (log.isDebugEnabled()) {
+				log.debug("MD5 verification - candidate hash: " + candidateHash + ", stored hash: " + md5Hash);
+			}
 			
 			boolean matches = candidateHash.equals(md5Hash);
-			try {
-				java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-				debugWriter.write("AuthenticationUtil: MD5 verification result: " + matches + "\n");
-				debugWriter.close();
-			} catch (Exception e) {}
+			if (log.isDebugEnabled()) {
+				log.debug("MD5 verification result: " + matches);
+			}
 			
 			return matches;
 		} catch (NoSuchAlgorithmException | java.io.UnsupportedEncodingException e) {

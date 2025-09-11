@@ -56,12 +56,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private RepositoryInfoMap repositoryInfoMap;
 
 	public boolean login(CallContext callContext) {
-		try {
-			java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-			debugWriter.write("=== LOGIN METHOD CALLED ===\n");
-			debugWriter.write("Timestamp: " + new java.util.Date() + "\n");
-			debugWriter.close();
-		} catch (Exception e) {}
+		if (log.isDebugEnabled()) {
+			log.debug("Login method called at " + new java.util.Date());
+		}
 		
 		String repositoryId = callContext.getRepositoryId();
 
@@ -199,51 +196,31 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private UserItem getAuthenticatedUserItem(String repositoryId, String userId, String password) {
 		UserItem u = contentService.getUserItemById(repositoryId, userId);
 		
-		// ファイルベースデバッグログ: 認証処理の詳細
-		try {
-			java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-			debugWriter.write("=== AUTHENTICATION DEBUG LOG ===\n");
-			debugWriter.write("Timestamp: " + new java.util.Date() + "\n");
-			debugWriter.write("repositoryId: " + repositoryId + "\n");
-			debugWriter.write("userId: " + userId + "\n");
-			debugWriter.write("inputPassword: " + password + "\n");
-			debugWriter.write("retrieved UserItem: " + (u != null ? "not null" : "null") + "\n");
-			if (u != null) {
-				debugWriter.write("UserItem.getPassowrd(): " + u.getPassowrd() + "\n");
-				debugWriter.write("UserItem.getPassword(): " + u.getPassword() + "\n");
-				debugWriter.write("UserItem.isAdmin(): " + u.isAdmin() + "\n");
-			}
-			debugWriter.close();
-		} catch (Exception e) {
-			// デバッグログエラーは無視
+		if (log.isDebugEnabled()) {
+			log.debug("Authentication attempt - repositoryId: " + repositoryId + ", userId: " + userId + 
+				", userItem: " + (u != null ? "found" : "not found"));
 		}
 
 		// パスワード認証とセキュリティアップグレード
 		if (u != null && StringUtils.isNotBlank(u.getPassowrd())) {
-			try {
-				java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-				debugWriter.write("Password field is not blank, attempting match with upgrade...\n");
-				debugWriter.close();
-			} catch (Exception e) {}
+			if (log.isDebugEnabled()) {
+				log.debug("Password field is not blank, attempting match with upgrade");
+			}
 			
 			// 新しいアップグレード対応認証を使用
 			AuthenticationUtil.PasswordMatchResult result = 
 				AuthenticationUtil.passwordMatchesWithUpgrade(password, u.getPassowrd());
 			
 			if (result.matches()) {
-				try {
-					java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-					debugWriter.write("Password match SUCCESS!\n");
-					debugWriter.close();
-				} catch (Exception e) {}
+				if (log.isDebugEnabled()) {
+					log.debug("Password match SUCCESS");
+				}
 				
 				// MD5からBCryptへのセキュリティアップグレードが必要な場合
 				if (result.requiresUpgrade()) {
-					try {
-						java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-						debugWriter.write("SECURITY UPGRADE: Updating MD5 hash to BCrypt for user: " + userId + "\n");
-						debugWriter.close();
-					} catch (Exception e) {}
+					if (log.isDebugEnabled()) {
+						log.debug("SECURITY UPGRADE: Updating MD5 hash to BCrypt for user: " + userId);
+					}
 					
 					try {
 						// ユーザーのパスワードハッシュをBCryptに更新
@@ -254,11 +231,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 						debugWriter.write("SECURITY UPGRADE COMPLETED: User password hash updated to BCrypt\n");
 						debugWriter.close();
 					} catch (Exception e) {
-						try {
-							java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-							debugWriter.write("SECURITY UPGRADE FAILED: " + e.getMessage() + "\n");
-							debugWriter.close();
-						} catch (Exception ex) {}
+						if (log.isDebugEnabled()) {
+							log.debug("SECURITY UPGRADE FAILED: " + e.getMessage());
+						}
 						// アップグレードが失敗しても認証は成功として扱う
 						log.warn("Failed to upgrade password hash for user " + userId + ": " + e.getMessage());
 					}
@@ -267,18 +242,14 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 				log.debug(String.format( "[%s][%s]Get authenticated user successfully ! , Is admin?  : %s", repositoryId, userId , u.isAdmin()));
 				return u;
 			} else {
-				try {
-					java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-					debugWriter.write("Password match FAILED!\n");
-					debugWriter.close();
-				} catch (Exception e) {}
+				if (log.isDebugEnabled()) {
+					log.debug("Password match FAILED");
+				}
 			}
 		} else {
-			try {
-				java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-				debugWriter.write("Password field is blank or user is null\n");
-				debugWriter.close();
-			} catch (Exception e) {}
+			if (log.isDebugEnabled()) {
+				log.debug("Password field is blank or user is null");
+			}
 		}
 
 		// Check anonymous

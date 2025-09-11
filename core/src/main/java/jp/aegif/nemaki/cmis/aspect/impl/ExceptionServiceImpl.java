@@ -430,7 +430,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 			debugWriter.write("Key: " + key + "\n");
 			debugWriter.write("Content: " + content.getId() + "\n");
 			debugWriter.close();
-		} catch (Exception e) {}
+		} catch (Exception e) {
+			log.debug("Failed to write debug information to log file", e);
+		}
 
 		// Admin user always pass a permission check(skip calculateAcl)
 		String userId = context.getUsername();
@@ -461,7 +463,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 			debugWriter.write("Content: " + content.getId() + " (" + content.getName() + ")\n");
 			debugWriter.write("About to call permissionService.checkPermission()\n");
 			debugWriter.close();
-		} catch (Exception e) {}
+		} catch (Exception e) {
+			log.debug("Failed to write permission check debug information", e);
+		}
 		
 		boolean permissionResult = permissionService.checkPermission(callContext, repositoryId, key, acl, baseTypeId, content);
 		
@@ -469,7 +473,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 			java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
 			debugWriter.write("Permission check result: " + permissionResult + "\n");
 			debugWriter.close();
-		} catch (Exception e) {}
+		} catch (Exception e) {
+			log.debug("Failed to write permission result debug information", e);
+		}
 		
 		if (!permissionResult) {
 			String msg = String.format( "Permission Denied! repositoryId=%s key=%s acl=%s  content={id:%s, name:%s} ", repositoryId, key, acl, content.getId(), content.getName()) ;

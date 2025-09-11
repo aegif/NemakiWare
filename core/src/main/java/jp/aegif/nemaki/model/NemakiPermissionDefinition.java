@@ -36,13 +36,15 @@ public class NemakiPermissionDefinition {
 	}
 	
 	public NemakiPermissionDefinition(Map<String, Object> map){
-		//TODO try-catch
-		//TODO externamlize
-		this.setId((String)map.get("id"));
-		this.setDescription((String)map.get("description"));
-		this.setBase((List<String>)map.get("base"));
-		this.setPermissionMapping((Map<String,Boolean>)map.get("permissionMapping"));
-		this.setAsCmisBasicPermission((String)map.get("asCmisBasic"));
+		try {
+			this.setId((String)map.get("id"));
+			this.setDescription((String)map.get("description"));
+			this.setBase((List<String>)map.get("base"));
+			this.setPermissionMapping((Map<String,Boolean>)map.get("permissionMapping"));
+			this.setAsCmisBasicPermission((String)map.get("asCmisBasic"));
+		} catch (ClassCastException e) {
+			throw new IllegalArgumentException("Invalid permission definition map structure", e);
+		}
 	}
 	
 	public String getId() {

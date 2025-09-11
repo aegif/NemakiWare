@@ -26,6 +26,8 @@ import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.service.NavigationService;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
@@ -59,6 +61,7 @@ import java.util.List;
 import java.util.concurrent.locks.Lock;
 
 public class NavigationServiceImpl implements NavigationService {
+	private static final Log log = LogFactory.getLog(NavigationServiceImpl.class);
 
 	private ContentService contentService;
 	private ExceptionService exceptionService;
@@ -87,16 +90,10 @@ public class NavigationServiceImpl implements NavigationService {
 			// //////////////////
 			Folder folder = contentService.getFolder(repositoryId, folderId);
 			exceptionService.invalidArgumentFolderId(folder, folderId);
-			// CRITICAL DEBUG: About to call permissionDenied for getChildren
-			try {
-				java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-				debugWriter.write("=== NAVIGATION SERVICE DEBUG ===\n");
-				debugWriter.write("Timestamp: " + new java.util.Date() + "\n");
-				debugWriter.write("User: " + callContext.getUsername() + "\n");
-				debugWriter.write("About to call exceptionService.permissionDenied for CAN_GET_CHILDREN_FOLDER\n");
-				debugWriter.write("Folder ID: " + folderId + "\n");
-				debugWriter.close();
-			} catch (Exception e) {}
+			if (log.isDebugEnabled()) {
+				log.debug("NavigationService.getChildren called - Repository: " + repositoryId + 
+					", Folder ID: " + folderId + ", User: " + callContext.getUsername());
+			}
 			
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_GET_CHILDREN_FOLDER, folder);

@@ -88,7 +88,11 @@ public class NemakiPropertyDefinition extends NodeBase {
 	}
 
 	public NemakiPropertyDefinition(NemakiPropertyDefinitionCore core, NemakiPropertyDefinitionDetail detail){
-		//TODO Output error when core and detail don't match
+		// Validate core and detail compatibility
+		if (core != null && detail != null && !core.getId().equals(detail.getId())) {
+			throw new IllegalArgumentException("Property definition core and detail IDs do not match: " + 
+				core.getId() + " vs " + detail.getId());
+		}
 
 
 		setId(detail.getId());

@@ -87,12 +87,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 	private TypeDefinition getSharedTypeDefinition(String repositoryId, String typeId) {
 		String cacheKey = repositoryId + ":" + typeId;
 		return SHARED_TYPE_DEFINITIONS.computeIfAbsent(cacheKey, k -> {
-			try {
-				java.io.PrintWriter debugOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/repository-service-debug.log", true));
-				debugOut.println("=== REPOSITORY SERVICE SHARED: Creating shared TypeDefinition for " + typeId + " ===");
-				debugOut.flush();
-				debugOut.close();
-			} catch (Exception e) {}
+			if (log.isDebugEnabled()) {
+				log.debug("Creating shared TypeDefinition for " + typeId);
+			}
 			
 			return typeManager.getTypeDefinition(repositoryId, typeId);
 		});
@@ -105,12 +102,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
 		String cacheKey = repositoryId + ":" + typeId + ":" + includePropertyDefinitions + ":" + maxItems + ":" + skipCount;
 		return SHARED_TYPE_CHILDREN.computeIfAbsent(cacheKey, k -> {
-			try {
-				java.io.PrintWriter debugOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/repository-service-debug.log", true));
-				debugOut.println("=== REPOSITORY SERVICE SHARED: Creating shared TypeDefinitionList for " + typeId + " ===");
-				debugOut.flush();
-				debugOut.close();
-			} catch (Exception e) {}
+			if (log.isDebugEnabled()) {
+				log.debug("Creating shared TypeDefinitionList for " + typeId);
+			}
 			
 			boolean includeProps = (includePropertyDefinitions == null) ? false : includePropertyDefinitions.booleanValue();
 			return typeManager.getTypesChildren(callContext, repositoryId, typeId, includeProps, maxItems, skipCount);
@@ -124,12 +118,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 			BigInteger depth, Boolean includePropertyDefinitions) {
 		String cacheKey = repositoryId + ":" + typeId + ":" + depth + ":" + includePropertyDefinitions;
 		return SHARED_TYPE_DESCENDANTS.computeIfAbsent(cacheKey, k -> {
-			try {
-				java.io.PrintWriter debugOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/repository-service-debug.log", true));
-				debugOut.println("=== REPOSITORY SERVICE SHARED: Creating shared TypeDefinitionContainer list for " + typeId + " ===");
-				debugOut.flush();
-				debugOut.close();
-			} catch (Exception e) {}
+			if (log.isDebugEnabled()) {
+				log.debug("Creating shared TypeDefinitionContainer list for " + typeId);
+			}
 			
 			return typeManager.getTypesDescendants(repositoryId, typeId, depth, includePropertyDefinitions);
 		});
@@ -139,12 +130,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 	 * Clear shared caches when types are modified
 	 */
 	private void clearSharedTypeCaches() {
-		try {
-			java.io.PrintWriter debugOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/repository-service-debug.log", true));
-			debugOut.println("=== REPOSITORY SERVICE SHARED: Clearing all shared type caches ===");
-			debugOut.flush();
-			debugOut.close();
-		} catch (Exception e) {}
+		if (log.isDebugEnabled()) {
+			log.debug("Clearing all shared type caches");
+		}
 		
 		SHARED_TYPE_DEFINITIONS.clear();
 		SHARED_TYPE_CHILDREN.clear();
