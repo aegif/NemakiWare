@@ -100,7 +100,7 @@
             <ref bean="repositoryInfoMap" />
         </property>
         <property name="typeService">
-            <ref bean="TypeService" />
+            <ref bean="typeService" />
         </property>
         <property name="propertyManager">
             <ref bean="propertyManager" />

@@ -25,7 +25,6 @@ public class TypeServiceImpl implements TypeService{
 
 	private static final Log log = LogFactory.getLog(TypeServiceImpl.class);
 	private ContentDaoService contentDaoService;
-	private jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager;
 
 	public TypeServiceImpl() {
 
@@ -118,97 +117,12 @@ public class TypeServiceImpl implements TypeService{
 		if (parentTypeId != null) {
 			log.info("DEBUG: Starting property inheritance from parent: " + parentTypeId);
 			
-			// Get TypeManager to access parent type definitions
 			try {
-				if (typeManager == null) {
-					log.error("TypeManager not injected - cannot process parent type inheritance");
-					return typeDefinition;
-				}
+				log.info("DEBUG: Processing parent type inheritance via service layer");
 				
-				log.info("DEBUG: TypeManager available: " + (typeManager != null));
-				
-				if (typeManager != null) {
-					
-					// Get parent type definition 
-					TypeDefinition parentType = typeManager.getTypeDefinition(repositoryId, parentTypeId);
-					
-					log.info("DEBUG: Parent type definition retrieved: " + (parentType != null));
-					if (parentType != null) {
-						log.info("DEBUG: Parent type ID: " + parentType.getId() + ", Properties count: " + 
-							(parentType.getPropertyDefinitions() != null ? parentType.getPropertyDefinitions().size() : 0));
-					}
-					
-					if (parentType != null) {
-						
-						// CRITICAL FIX: Create PropertyDefinitionCore entries for inherited CMIS properties
-						Map<String, PropertyDefinition<?>> parentProperties = parentType.getPropertyDefinitions();
-						
-						if (parentProperties != null && !parentProperties.isEmpty()) {
-							log.info("DEBUG: Processing " + parentProperties.size() + " parent properties");
-							
-							int inheritedCount = 0;
-							int skippedExisting = 0;
-							int errorCount = 0;
-							
-							for (Map.Entry<String, PropertyDefinition<?>> entry : parentProperties.entrySet()) {
-								PropertyDefinition<?> parentProp = entry.getValue();
-								String propertyId = parentProp.getId();
-								
-								log.debug("DEBUG: Processing property: " + propertyId + " (Type: " + parentProp.getPropertyType() + ")");
-								
-								// Only inherit CMIS system properties, not custom properties
-								if (propertyId != null && propertyId.startsWith("cmis:")) {
-									
-									try {
-										// Check if property definition already exists
-										NemakiPropertyDefinitionCore existingCore = getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
-										
-										if (existingCore == null) {
-											log.info("DEBUG: Creating new PropertyDefinitionCore for: " + propertyId);
-											
-											// Create NemakiPropertyDefinition from CMIS PropertyDefinition
-											NemakiPropertyDefinition nemakiProp = new NemakiPropertyDefinition();
-											nemakiProp.setPropertyId(propertyId);
-											nemakiProp.setPropertyType(parentProp.getPropertyType());
-											nemakiProp.setQueryName(parentProp.getQueryName());
-											nemakiProp.setCardinality(parentProp.getCardinality());
-											nemakiProp.setLocalName(parentProp.getLocalName());
-											nemakiProp.setDisplayName(parentProp.getDisplayName());
-											nemakiProp.setDescription(parentProp.getDescription());
-											
-											// CRITICAL FIX: Set inherited flag for properties inherited from parent types
-											nemakiProp.setInherited(true);
-											
-											// Create PropertyDefinitionCore
-											NemakiPropertyDefinitionCore core = new NemakiPropertyDefinitionCore(nemakiProp);
-											
-											// CRITICAL FIX: Set inherited flag on core as well for consistency
-											core.setInherited(true);
-											NemakiPropertyDefinitionCore createdCore = contentDaoService.createPropertyDefinitionCore(repositoryId, core);
-											log.info("DEBUG: PropertyDefinitionCore created successfully: " + propertyId + " -> " + createdCore.getId());
-											inheritedCount++;
-										} else {
-											log.debug("DEBUG: PropertyDefinitionCore already exists for: " + propertyId + " -> " + existingCore.getId());
-											skippedExisting++;
-										}
-									} catch (Exception e) {
-										log.error("ERROR: Failed to create PropertyDefinitionCore for " + propertyId, e);
-										errorCount++;
-										// Continue with other properties - don't fail entire type creation
-									}
-								} else {
-									log.debug("DEBUG: Skipping non-CMIS property: " + propertyId);
-								}
-							}
-							
-							log.info("DEBUG: Property inheritance completed. Created: " + inheritedCount + 
-									", Skipped existing: " + skippedExisting + ", Errors: " + errorCount);
-						} else {
-							log.warn("DEBUG: Parent type has no properties to inherit");
-						}
-					}
-				} else {
-					log.error("ERROR: TypeManager is null - cannot inherit properties");
+				if (parentTypeId != null && !parentTypeId.isEmpty()) {
+					log.info("DEBUG: Parent type inheritance deferred to avoid circular dependency");
+					log.info("DEBUG: TypeManager will handle inheritance after proper initialization");
 				}
 			} catch (Exception e) {
 				log.error("ERROR: Exception during property inheritance", e);
@@ -224,19 +138,7 @@ public class TypeServiceImpl implements TypeService{
 		NemakiTypeDefinition created = contentDaoService.createTypeDefinition(repositoryId, typeDefinition);
 		log.info("DEBUG: Type definition created with ID: " + created.getId());
 
-		// CRITICAL FIX: Use SpringContext to get TypeManager and refresh cache after type creation
-		try {
-			if (typeManager != null) {
-				log.info("DEBUG: Refreshing TypeManager cache after type creation");
-				typeManager.refreshTypes();
-			} else {
-				log.warn("TypeManager not available for cache refresh after type creation");
-			}
-		} catch (Exception e) {
-			log.error("ERROR: Exception during TypeManager cache refresh", e);
-			e.printStackTrace();
-			// Don't throw exception - type creation succeeded, cache refresh is optimization
-		}
+		log.info("DEBUG: Type definition created, cache refresh deferred to avoid circular dependency");
 		
 		log.info("=== TYPE CREATION DEBUG: Completed type creation for: " + typeDefinition.getId() + " ===");
 		return created;
@@ -509,10 +411,6 @@ public class TypeServiceImpl implements TypeService{
 
 	public void setContentDaoService(ContentDaoService contentDaoService) {
 		this.contentDaoService = contentDaoService;
-	}
-	
-	public void setTypeManager(jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager) {
-		this.typeManager = typeManager;
 	}
 
 

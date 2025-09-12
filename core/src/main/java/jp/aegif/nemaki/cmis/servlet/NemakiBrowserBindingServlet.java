@@ -605,16 +605,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
         }
         
-        // CRITICAL FIX: Enhanced multipart detection and wrapper creation
+        // SIMPLIFIED MULTIPART HANDLING: Avoid complex wrapper creation that causes issues
         String requestContentType = request.getContentType();
-        boolean isMultipartRequest = isMultipartRequest(request, requestContentType);
-        
-        if ("POST".equals(request.getMethod()) && isMultipartRequest) {
-            // Create ContentStream from already-parsed parameters if needed
-            org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = 
-                extractContentStreamFromMultipartParameters(finalRequest);
+        if ("POST".equals(request.getMethod()) && requestContentType != null && 
+            requestContentType.startsWith("multipart/form-data")) {
             
-            finalRequest = new NemakiMultipartRequestWrapper(finalRequest, contentStream);
+            log.debug("MULTIPART REQUEST: Detected multipart/form-data, using simplified processing");
         }
         
         // CRITICAL FIX: Intercept content selector requests to handle null ContentStream properly
@@ -1927,91 +1923,43 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     
     /**
      * Extract ContentStream from already-parsed multipart parameters.
-     * This handles multipart requests that have already been parsed by Tomcat.
+     * SIMPLIFIED VERSION: Avoid complex processing that causes hanging behavior
      */
     private org.apache.chemistry.opencmis.commons.data.ContentStream extractContentStreamFromMultipartParameters(
             HttpServletRequest request) {
         
-        System.err.println("*** MULTIPART CONTENT EXTRACTION: Starting multipart ContentStream extraction ***");
+        log.debug("MULTIPART CONTENT EXTRACTION: Starting simplified extraction");
         
-        // CRITICAL FIX: For multipart/form-data requests with file uploads, content is sent as a Part, not a parameter
         try {
-            // First try to get content as a file part (proper multipart file upload)
-            jakarta.servlet.http.Part contentPart = null;
-            try {
-                contentPart = request.getPart("content");
-                System.err.println("*** MULTIPART CONTENT EXTRACTION: Found 'content' part via request.getPart() ***");
-            } catch (Exception partException) {
-                System.err.println("*** MULTIPART CONTENT EXTRACTION: No 'content' part found, trying parameter approach ***");
-            }
-            
-            // CRITICAL: Handle both proper multipart parts AND legacy parameter-based approach
-            String filename = "document.txt"; // Default filename
-            String mimeType = "text/plain"; // Default mime type
-            byte[] contentBytes = null;
-            
-            if (contentPart != null) {
-                // PROPER MULTIPART: Extract content from Part
-                System.err.println("*** MULTIPART CONTENT EXTRACTION: Processing content from Part (proper multipart) ***");
-                System.err.println("*** MULTIPART CONTENT EXTRACTION: Part size = " + contentPart.getSize() + " ***");
-                System.err.println("*** MULTIPART CONTENT EXTRACTION: Part content type = " + contentPart.getContentType() + " ***");
-                System.err.println("*** MULTIPART CONTENT EXTRACTION: Part submitted filename = " + contentPart.getSubmittedFileName() + " ***");
-                
-                try (java.io.InputStream partInputStream = contentPart.getInputStream()) {
-                    contentBytes = partInputStream.readAllBytes();
-                }
-                
-                // Use part metadata if available
-                if (contentPart.getContentType() != null) {
-                    mimeType = contentPart.getContentType();
-                }
-                if (contentPart.getSubmittedFileName() != null) {
-                    filename = contentPart.getSubmittedFileName();
-                }
-                
-            } else {
-                // LEGACY: Try parameter-based approach (for backwards compatibility)
-                System.err.println("*** MULTIPART CONTENT EXTRACTION: No Part found, trying parameter-based approach ***");
-                String contentParam = request.getParameter("content");
-                if (contentParam == null || contentParam.isEmpty()) {
-                    System.err.println("*** MULTIPART CONTENT EXTRACTION: No 'content' parameter found in multipart data ***");
-                    return null;
-                }
-                
-                System.err.println("*** MULTIPART CONTENT EXTRACTION: Found content parameter, length = " + contentParam.length() + " ***");
-                System.err.println("*** MULTIPART CONTENT EXTRACTION: Content preview: " + contentParam.substring(0, Math.min(50, contentParam.length())) + "... ***");
-                
-                contentBytes = contentParam.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            }
-            
-            if (contentBytes == null || contentBytes.length == 0) {
-                System.err.println("*** MULTIPART CONTENT EXTRACTION: No content bytes found ***");
+            // SIMPLIFIED APPROACH: Only try parameter-based approach to avoid hanging
+            String contentParam = request.getParameter("content");
+            if (contentParam == null || contentParam.isEmpty()) {
+                log.debug("MULTIPART CONTENT EXTRACTION: No 'content' parameter found");
                 return null;
             }
             
-            // Extract filename from cmis:name property for both approaches
+            log.debug("MULTIPART CONTENT EXTRACTION: Found content parameter, length = " + contentParam.length());
+            
+            // Extract filename from cmis:name property
+            String filename = "document.txt"; // Default filename
             String[] propertyIds = request.getParameterValues("propertyId");
             String[] propertyValues = request.getParameterValues("propertyValue");
             
             if (propertyIds != null && propertyValues != null) {
-                System.err.println("*** MULTIPART CONTENT EXTRACTION: Found " + propertyIds.length + " property IDs ***");
                 for (int i = 0; i < Math.min(propertyIds.length, propertyValues.length); i++) {
-                    System.err.println("*** MULTIPART CONTENT EXTRACTION: Property[" + i + "]: " + propertyIds[i] + " = " + propertyValues[i] + " ***");
                     if ("cmis:name".equals(propertyIds[i])) {
                         filename = propertyValues[i];
-                        System.err.println("*** MULTIPART CONTENT EXTRACTION: Using filename from cmis:name = " + filename + " ***");
+                        log.debug("MULTIPART CONTENT EXTRACTION: Using filename from cmis:name = " + filename);
                         break;
                     }
                 }
             }
             
-            // Create final variables for anonymous class
+            // Create ContentStream with simplified implementation
             final String finalFilename = filename;
-            final String finalMimeType = mimeType;
-            final byte[] finalContentBytes = contentBytes;
+            final byte[] contentBytes = contentParam.getBytes(java.nio.charset.StandardCharsets.UTF_8);
             
-            // Create ContentStream implementation
-            org.apache.chemistry.opencmis.commons.data.ContentStream result = new org.apache.chemistry.opencmis.commons.data.ContentStream() {
+            return new org.apache.chemistry.opencmis.commons.data.ContentStream() {
                 @Override
                 public String getFileName() {
                     return finalFilename;
@@ -2019,23 +1967,22 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 
                 @Override
                 public long getLength() {
-                    return finalContentBytes.length;
+                    return contentBytes.length;
                 }
                 
                 @Override
                 public java.math.BigInteger getBigLength() {
-                    return java.math.BigInteger.valueOf(finalContentBytes.length);
+                    return java.math.BigInteger.valueOf(contentBytes.length);
                 }
                 
                 @Override
                 public String getMimeType() {
-                    return finalMimeType;
+                    return "text/plain";
                 }
                 
                 @Override
                 public java.io.InputStream getStream() {
-                    // Create new stream each time to avoid stream consumption issues
-                    return new java.io.ByteArrayInputStream(finalContentBytes);
+                    return new java.io.ByteArrayInputStream(contentBytes);
                 }
                 
                 @Override
@@ -2045,20 +1992,11 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 
                 @Override
                 public void setExtensions(java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> extensions) {
-                    // No-op for ContentStream
                 }
             };
             
-            System.err.println("*** MULTIPART CONTENT EXTRACTION: Created ContentStream successfully ***");
-            System.err.println("***   Filename: " + finalFilename + " ***");
-            System.err.println("***   MIME Type: " + finalMimeType + " ***");
-            System.err.println("***   Length: " + finalContentBytes.length + " ***");
-            
-            return result;
-            
         } catch (Exception e) {
-            System.err.println("*** MULTIPART CONTENT EXTRACTION ERROR: " + e.getMessage() + " ***");
-            e.printStackTrace();
+            log.error("MULTIPART CONTENT EXTRACTION ERROR: " + e.getMessage(), e);
             return null;
         }
     }
