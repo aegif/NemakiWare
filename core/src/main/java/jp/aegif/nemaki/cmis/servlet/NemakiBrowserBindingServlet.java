@@ -1122,25 +1122,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 return null;
             }
             
-            // CRITICAL FIX: Enhanced stream processing with proper validation and error handling
+            // SIMPLIFIED STREAM PROCESSING: Direct stream transfer without mark/reset operations
             try {
-                if (!inputStream.markSupported()) {
-                    log.debug("InputStream does not support mark/reset for document: " + objectId);
-                }
-                
-                inputStream.mark(1);
-                int firstByte = inputStream.read();
-                if (firstByte == -1) {
-                    log.debug("Content stream is empty for document: " + objectId + " - returning HTTP 404");
-                    if (!response.isCommitted()) {
-                        response.sendError(HttpServletResponse.SC_NOT_FOUND, 
-                            "Document " + objectId + " has empty content stream");
-                    }
-                    return null;
-                }
-                inputStream.reset();
-                
-                // Set response headers AFTER validating stream
+                // Set response headers before stream transfer
                 response.setContentType(contentStream.getMimeType());
                 long contentLength = contentStream.getLength();
                 if (contentLength > 0) {
@@ -1161,38 +1145,22 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     return null;
                 }
                 
-                // Enhanced stream transfer with better error handling
+                // Direct stream transfer without complex error handling
                 byte[] buffer = new byte[8192];
                 int bytesRead;
-                long totalBytesRead = 0;
-                
-                try {
-                    while ((bytesRead = inputStream.read(buffer)) != -1) {
-                        outputStream.write(buffer, 0, bytesRead);
-                        totalBytesRead += bytesRead;
-                    }
-                    outputStream.flush();
-                    log.debug("Content stream transfer completed: " + totalBytesRead + " bytes for document: " + objectId);
-                } catch (java.io.IOException streamException) {
-                    log.error("Stream read error after " + totalBytesRead + " bytes for document " + objectId + ": " + streamException.getMessage());
-                    throw streamException;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
                 }
+                outputStream.flush();
+                
+                log.debug("Content stream transfer completed successfully for document: " + objectId);
                 
                 
             } catch (java.io.IOException e) {
-                // CRITICAL FIX: Handle stream closure and other IO exceptions gracefully
-                if (e.getMessage() != null && e.getMessage().contains("closed")) {
-                    log.error("Content stream was closed prematurely for document " + objectId + ": " + e.getMessage());
-                    if (!response.isCommitted()) {
-                        response.sendError(HttpServletResponse.SC_CONFLICT, 
-                            "Content stream unavailable - stream was closed");
-                    }
-                } else {
-                    log.error("IOException in content stream transfer for document " + objectId + ": " + e.getMessage(), e);
-                    if (!response.isCommitted()) {
-                        response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
-                            "Content stream transfer failed: " + e.getMessage());
-                    }
+                log.error("IOException in content stream transfer for document " + objectId + ": " + e.getMessage(), e);
+                if (!response.isCommitted()) {
+                    response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
+                        "Content stream transfer failed: " + e.getMessage());
                 }
                 return null;
             } finally {
