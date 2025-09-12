@@ -118,16 +118,88 @@ public class TypeServiceImpl implements TypeService{
 			log.info("DEBUG: Starting property inheritance from parent: " + parentTypeId);
 			
 			try {
-				log.info("DEBUG: Processing parent type inheritance via service layer");
+				jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
+					(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
 				
-				if (parentTypeId != null && !parentTypeId.isEmpty()) {
-					log.info("DEBUG: Parent type inheritance deferred to avoid circular dependency");
-					log.info("DEBUG: TypeManager will handle inheritance after proper initialization");
+				log.info("DEBUG: TypeManager retrieved: " + (typeManager != null));
+				
+				if (typeManager != null) {
+					
+					TypeDefinition parentType = typeManager.getTypeDefinition(repositoryId, parentTypeId);
+					
+					log.info("DEBUG: Parent type definition retrieved: " + (parentType != null));
+					if (parentType != null) {
+						log.info("DEBUG: Parent type ID: " + parentType.getId() + ", Properties count: " + 
+							(parentType.getPropertyDefinitions() != null ? parentType.getPropertyDefinitions().size() : 0));
+					}
+					
+					if (parentType != null) {
+						
+						Map<String, PropertyDefinition<?>> parentProperties = parentType.getPropertyDefinitions();
+						
+						if (parentProperties != null && !parentProperties.isEmpty()) {
+							log.info("DEBUG: Processing " + parentProperties.size() + " parent properties");
+							
+							int inheritedCount = 0;
+							int skippedExisting = 0;
+							int errorCount = 0;
+							
+							for (Map.Entry<String, PropertyDefinition<?>> entry : parentProperties.entrySet()) {
+								PropertyDefinition<?> parentProp = entry.getValue();
+								String propertyId = parentProp.getId();
+								
+								log.debug("DEBUG: Processing property: " + propertyId + " (Type: " + parentProp.getPropertyType() + ")");
+								
+								if (propertyId != null && propertyId.startsWith("cmis:")) {
+									
+									try {
+										NemakiPropertyDefinitionCore existingCore = getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
+										
+										if (existingCore == null) {
+											log.info("DEBUG: Creating new PropertyDefinitionCore for: " + propertyId);
+											
+											NemakiPropertyDefinition nemakiProp = new NemakiPropertyDefinition();
+											nemakiProp.setPropertyId(propertyId);
+											nemakiProp.setPropertyType(parentProp.getPropertyType());
+											nemakiProp.setQueryName(parentProp.getQueryName());
+											nemakiProp.setCardinality(parentProp.getCardinality());
+											nemakiProp.setLocalName(parentProp.getLocalName());
+											nemakiProp.setDisplayName(parentProp.getDisplayName());
+											nemakiProp.setDescription(parentProp.getDescription());
+											
+											nemakiProp.setInherited(true);
+											
+											NemakiPropertyDefinitionCore core = new NemakiPropertyDefinitionCore(nemakiProp);
+											
+											core.setInherited(true);
+											NemakiPropertyDefinitionCore createdCore = contentDaoService.createPropertyDefinitionCore(repositoryId, core);
+											log.info("DEBUG: PropertyDefinitionCore created successfully: " + propertyId + " -> " + createdCore.getId());
+											inheritedCount++;
+										} else {
+											log.debug("DEBUG: PropertyDefinitionCore already exists for: " + propertyId + " -> " + existingCore.getId());
+											skippedExisting++;
+										}
+									} catch (Exception e) {
+										log.error("ERROR: Failed to create PropertyDefinitionCore for " + propertyId, e);
+										errorCount++;
+									}
+								} else {
+									log.debug("DEBUG: Skipping non-CMIS property: " + propertyId);
+								}
+							}
+							
+							log.info("DEBUG: Property inheritance completed. Created: " + inheritedCount + 
+									", Skipped existing: " + skippedExisting + ", Errors: " + errorCount);
+						} else {
+							log.warn("DEBUG: Parent type has no properties to inherit");
+						}
+					}
+				} else {
+					log.error("ERROR: TypeManager is null - cannot inherit properties");
 				}
 			} catch (Exception e) {
 				log.error("ERROR: Exception during property inheritance", e);
 				e.printStackTrace();
-				// Don't fail type creation - inheritance is enhancement
 			}
 		} else {
 			log.info("DEBUG: No parent type for inheritance - creating base type");
@@ -138,7 +210,21 @@ public class TypeServiceImpl implements TypeService{
 		NemakiTypeDefinition created = contentDaoService.createTypeDefinition(repositoryId, typeDefinition);
 		log.info("DEBUG: Type definition created with ID: " + created.getId());
 
-		log.info("DEBUG: Type definition created, cache refresh deferred to avoid circular dependency");
+		// CRITICAL FIX: Use ServiceLocator to get TypeManager and refresh cache after type creation
+		// This avoids circular dependency since we use ServiceLocator instead of direct injection
+		try {
+			jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
+				(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
+			
+			if (typeManager != null) {
+				log.info("DEBUG: Refreshing TypeManager cache after type creation");
+				typeManager.refreshTypes();
+			}
+		} catch (Exception e) {
+			log.error("ERROR: Exception during TypeManager cache refresh", e);
+			e.printStackTrace();
+			// Don't throw exception - type creation succeeded, cache refresh is optimization
+		}
 		
 		log.info("=== TYPE CREATION DEBUG: Completed type creation for: " + typeDefinition.getId() + " ===");
 		return created;
@@ -205,6 +291,19 @@ public class TypeServiceImpl implements TypeService{
 			log.error("Error deleting type definition: " + typeId, e);
 			e.printStackTrace();
 			throw e; // Re-throw since this is the main operation
+		}
+		
+		try {
+			jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
+				(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
+			
+			if (typeManager != null) {
+				log.info("DEBUG: Invalidating TypeManager cache after type deletion");
+				typeManager.invalidateTypeCache(repositoryId);
+			}
+		} catch (Exception e) {
+			log.error("ERROR: Exception during TypeManager cache invalidation", e);
+			e.printStackTrace();
 		}
 	}
 
@@ -337,6 +436,16 @@ public class TypeServiceImpl implements TypeService{
 		NemakiPropertyDefinitionDetail _detail = new NemakiPropertyDefinitionDetail(
 				propertyDefinition, coreNodeId);
 		log.debug("DETAIL CREATED - LocalName: " + _detail.getLocalName());
+		
+		if (_detail.getLocalName() == null || _detail.getLocalName().trim().isEmpty()) {
+			_detail.setLocalName(originalPropertyId);
+			log.debug("DETAIL LocalName set to propertyId: " + originalPropertyId);
+		}
+		
+		if (_detail.getDisplayName() == null || _detail.getDisplayName().trim().isEmpty()) {
+			_detail.setDisplayName(originalPropertyId);
+			log.debug("DETAIL DisplayName set to propertyId: " + originalPropertyId);
+		}
 		
 		NemakiPropertyDefinitionDetail detail = contentDaoService
 				.createPropertyDefinitionDetail(repositoryId, _detail);

@@ -34,9 +34,6 @@
 		<property name="contentDaoService">
 			<ref bean="ContentDaoService" />
 		</property>
-		<property name="typeManager">
-			<ref bean="TypeManager" />
-		</property>
 		<property name="renditionManager">
 			<ref bean="RenditionManager" />
 		</property>
