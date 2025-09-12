@@ -38,12 +38,12 @@ log_info "NemakiWare確実デプロイ開始: $(date)"
 log_info "Step 1: 環境確認"
 
 # Java 17確認
-if [ ! -d "/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home" ]; then
-    log_error "Java 17 JBR not found. Please install JetBrains Runtime 17."
+if [ ! -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
+    log_error "Java 17 OpenJDK not found. Please install OpenJDK 17."
     exit 1
 fi
 
-export JAVA_HOME="/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home"
+export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
 export PATH="$JAVA_HOME/bin:$PATH"
 
 JAVA_VERSION=$(java -version 2>&1 | head -n 1)
@@ -82,7 +82,7 @@ log_success "完全クリーンアップ完了"
 # ========================================
 log_info "Step 3: 最新ソース修正からのOpenCMIS JAR完全リビルド"
 
-cd /Users/ishiiakinori/NemakiWare
+cd /home/ubuntu/repos/NemakiWare
 
 # Maven Localリポジトリの古いJARを削除（今日何度も発生している問題の根本対策）
 log_warning "Maven Localリポジトリの古いJAR削除中（古いJAR問題根絶）..."
@@ -90,7 +90,7 @@ rm -rf ~/.m2/repository/org/apache/chemistry/opencmis/chemistry-opencmis-server-
 
 # 最新ソース修正からOpenCMIS JARリビルド
 log_info "最新ソース修正からOpenCMIS JAR完全リビルド..."
-OPENCMIS_BUILD_DIR="/Users/ishiiakinori/NemakiWare/lib/nemaki-opencmis-1.1.0-jakarta"
+OPENCMIS_BUILD_DIR="/home/ubuntu/repos/NemakiWare/lib/nemaki-opencmis-1.1.0-jakarta"
 
 if [[ ! -d "$OPENCMIS_BUILD_DIR" ]]; then
     log_error "OpenCMIS build directory not found: $OPENCMIS_BUILD_DIR"
@@ -116,8 +116,8 @@ FIXED_JAR_TIMESTAMP=$(ls -l "$FIXED_JAR" | awk '{print $6, $7, $8}')
 log_info "最新JAR情報: サイズ=$FIXED_JAR_SIZE bytes, タイムスタンプ=$FIXED_JAR_TIMESTAMP"
 
 # ソースファイルタイムスタンプと比較
-SOURCE_TIMESTAMP=$(stat -f "%m" "$OPENCMIS_BUILD_DIR/chemistry-opencmis-server/chemistry-opencmis-server-bindings/src/main/java/org/apache/chemistry/opencmis/server/impl/browser/MultipartParser.java")
-JAR_TIMESTAMP=$(stat -f "%m" "$FIXED_JAR")
+SOURCE_TIMESTAMP=$(stat -c "%Y" "$OPENCMIS_BUILD_DIR/chemistry-opencmis-server/chemistry-opencmis-server-bindings/src/main/java/org/apache/chemistry/opencmis/server/impl/browser/MultipartParser.java")
+JAR_TIMESTAMP=$(stat -c "%Y" "$FIXED_JAR")
 
 if [ $JAR_TIMESTAMP -gt $SOURCE_TIMESTAMP ]; then
     TIME_DIFF=$((JAR_TIMESTAMP - SOURCE_TIMESTAMP))
@@ -129,7 +129,7 @@ fi
 
 # Maven repository に強制インストール（完全に新しいJAR）
 log_info "最新JAR の Maven リポジトリ強制インストール..."
-cd /Users/ishiiakinori/NemakiWare
+cd /home/ubuntu/repos/NemakiWare
 mvn install:install-file \
     -Dfile="$FIXED_JAR" \
     -DgroupId=org.apache.chemistry.opencmis \
@@ -139,7 +139,7 @@ mvn install:install-file \
     -q
 
 # Maven Localリポジトリの最新JAR検証
-LOCAL_JAR_TIMESTAMP=$(stat -f "%m" ~/.m2/repository/org/apache/chemistry/opencmis/chemistry-opencmis-server-bindings/1.1.0-nemakiware/chemistry-opencmis-server-bindings-1.1.0-nemakiware.jar)
+LOCAL_JAR_TIMESTAMP=$(stat -c "%Y" ~/.m2/repository/org/apache/chemistry/opencmis/chemistry-opencmis-server-bindings/1.1.0-nemakiware/chemistry-opencmis-server-bindings-1.1.0-nemakiware.jar)
 if [ $LOCAL_JAR_TIMESTAMP -eq $JAR_TIMESTAMP ]; then
     log_success "Maven Localリポジトリ最新JAR確認完了"
 else
@@ -184,7 +184,7 @@ else
     exit 1
 fi
 
-cd /Users/ishiiakinori/NemakiWare
+cd /home/ubuntu/repos/NemakiWare
 rm -rf core/target/war_verification
 
 # ========================================
@@ -193,12 +193,12 @@ rm -rf core/target/war_verification
 log_info "Step 4: タイムスタンプ検証付きコピー"
 
 # ソースファイルタイムスタンプ
-SOURCE_TIMESTAMP=$(stat -f "%m" core/src/main/java/jp/aegif/nemaki/cmis/servlet/NemakiBrowserBindingServlet.java)
+SOURCE_TIMESTAMP=$(stat -c "%Y" core/src/main/java/jp/aegif/nemaki/cmis/servlet/NemakiBrowserBindingServlet.java)
 log_info "ソースファイルタイムスタンプ: $SOURCE_TIMESTAMP"
 
 # WARファイルコピー
 cp core/target/core.war docker/core/core.war
-WAR_TIMESTAMP=$(stat -f "%m" docker/core/core.war)
+WAR_TIMESTAMP=$(stat -c "%Y" docker/core/core.war)
 COPY_TIME=$(date)
 
 log_info "WARコピー完了: $COPY_TIME"
