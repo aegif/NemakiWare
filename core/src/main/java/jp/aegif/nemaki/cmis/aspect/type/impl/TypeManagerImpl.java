@@ -987,7 +987,11 @@ public class TypeManagerImpl implements TypeManager {
 
 
 	private void addBasePropertyDefinitions(String repositoryId, AbstractTypeDefinition type) {
-		log.info("=== ADD BASE PROPERTIES DEBUG: Starting for type: " + type.getId() + " ===");
+		addBasePropertyDefinitions(repositoryId, type, false);
+	}
+	
+	private void addBasePropertyDefinitions(String repositoryId, AbstractTypeDefinition type, boolean isInherited) {
+		log.info("=== ADD BASE PROPERTIES DEBUG: Starting for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
 		
 		// Get initial property count
 		Map<String, PropertyDefinition<?>> initialProps = type.getPropertyDefinitions();
@@ -1004,7 +1008,7 @@ public class TypeManagerImpl implements TypeManager {
 		boolean orderable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.NAME, PropertyType.STRING,
-				Cardinality.SINGLE, updatability_name, REQUIRED, queryable_name, orderable_name, null));
+				Cardinality.SINGLE, updatability_name, REQUIRED, queryable_name, orderable_name, null, isInherited));
 		log.info("DEBUG: Added cmis:name property");
 
 		//cmis:description
@@ -1015,14 +1019,14 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.DESCRIPTION,
 				PropertyType.STRING, Cardinality.SINGLE, updatability_description,
-				!REQUIRED, queryable_description, orderable_description, null));
+				!REQUIRED, queryable_description, orderable_description, null, isInherited));
 		log.info("DEBUG: Added cmis:description property");
 
 		//cmis:objectId
 		boolean orderable_objectId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.OBJECT_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READONLY, REQUIRED, QUERYABLE, orderable_objectId, null));
+				Updatability.READONLY, REQUIRED, QUERYABLE, orderable_objectId, null, isInherited));
 		log.info("DEBUG: Added cmis:objectId property");
 
 		//cmis:baseTypeId
@@ -1030,7 +1034,7 @@ public class TypeManagerImpl implements TypeManager {
 		boolean orderable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.BASE_TYPE_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null));
+				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null, isInherited));
 		log.info("DEBUG: Added cmis:baseTypeId property");
 
 		//cmis:objectTypeId
@@ -1039,7 +1043,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.OBJECT_TYPE_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.ONCREATE, REQUIRED,
-				queryable_objectTypeId, orderable_objectTypeId, null));
+				queryable_objectTypeId, orderable_objectTypeId, null, isInherited));
 		log.info("DEBUG: Added cmis:objectTypeId property");
 
 		//cmis:secondaryObjectTypeIds - CRITICAL CMIS 1.1 REQUIREMENT
@@ -1049,36 +1053,36 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.SECONDARY_OBJECT_TYPE_IDS,
 				PropertyType.ID, Cardinality.MULTI, updatability_secondaryObjectTypeIds,
-				!REQUIRED, queryable_secondaryObjectTypeIds, !ORDERABLE, null));
+				!REQUIRED, queryable_secondaryObjectTypeIds, !ORDERABLE, null, isInherited));
 		log.info("DEBUG: Added cmis:secondaryObjectTypeIds property");
 
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.CREATED_BY, PropertyType.STRING, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null));
+				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null, isInherited));
 		log.info("DEBUG: Added cmis:createdBy property");
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CREATION_DATE,
 				PropertyType.DATETIME, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null));
+				!REQUIRED, QUERYABLE, ORDERABLE, null, isInherited));
 		log.info("DEBUG: Added cmis:creationDate property");
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.LAST_MODIFIED_BY,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null));
+				!REQUIRED, QUERYABLE, ORDERABLE, null, isInherited));
 		log.info("DEBUG: Added cmis:lastModifiedBy property");
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.LAST_MODIFICATION_DATE,
 				PropertyType.DATETIME, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null));
+				!REQUIRED, QUERYABLE, ORDERABLE, null, isInherited));
 		log.info("DEBUG: Added cmis:lastModificationDate property");
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CHANGE_TOKEN,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, !QUERYABLE, !ORDERABLE, null));
+				!REQUIRED, !QUERYABLE, !ORDERABLE, null, isInherited));
 		log.info("DEBUG: Added cmis:changeToken property");
 		
 		// Get final property count and detailed analysis
@@ -1297,14 +1301,9 @@ public class TypeManagerImpl implements TypeManager {
 			Cardinality cardinality, Updatability updatability, boolean required,
 			boolean queryable, boolean orderable, List<?> defaultValue) {
 	
-	// CRITICAL FIX: Determine inherited based on property ID and CMIS specification
-	// For base type property definitions, CMIS properties are not inherited (they define them)
-	// This method is used primarily for base type property creation
-	boolean isBaseTypeDefinition = true; // This method is primarily used for base type definitions
-	boolean inherited = isStandardCmisProperty(id, isBaseTypeDefinition);
-	
+	// Default overload for custom properties: inherited=false
 	return createDefaultPropDef(repositoryId, id, datatype, cardinality, updatability, 
-		required, queryable, orderable, defaultValue, inherited);
+		required, queryable, orderable, defaultValue, false);
 }
 
 private PropertyDefinition<?> createDefaultPropDef(String repositoryId,
@@ -1605,13 +1604,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 		// CRITICAL FIX: All document types need CMIS properties for TCK compliance
 		// Base types get them as non-inherited, derived types get them as inherited
-		addBasePropertyDefinitions(repositoryId, type);
+		boolean isBaseType = BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId());
+		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
 		addDocumentPropertyDefinitions(repositoryId, type);
-		
-		if (!BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId())) {
-			// For derived types, mark CMIS properties as inherited
-			setInheritedFlagsForCMISProperties(type, true);
-		}
 
 		// Add specific attributes
 		ContentStreamAllowed contentStreamAllowed = (nemakiType
@@ -1640,13 +1635,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 		// CRITICAL FIX: All folder types need CMIS properties for TCK compliance
 		// Base types get them as non-inherited, derived types get them as inherited
-		addBasePropertyDefinitions(repositoryId, type);
+		boolean isBaseType = BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId());
+		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
 		addFolderPropertyDefinitions(repositoryId, type);
-		
-		if (!BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId())) {
-			// For derived types, mark CMIS properties as inherited
-			setInheritedFlagsForCMISProperties(type, true);
-		}
 
 		return type;
 	}
@@ -1663,11 +1654,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
-		// They are already inherited from parent type with correct inherited flags
-		// Only add these for base types (cmis:relationship itself)
-		if (BaseTypeId.CMIS_RELATIONSHIP.value().equals(nemakiType.getTypeId())) {
-			addBasePropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: All relationship types need CMIS properties for TCK compliance
+		// Base types get them as non-inherited, derived types get them as inherited
+		boolean isBaseType = BaseTypeId.CMIS_RELATIONSHIP.value().equals(nemakiType.getTypeId());
+		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
+		if (isBaseType) {
 			addRelationshipPropertyDefinitions(repositoryId, type);
 		}
 
@@ -1690,11 +1681,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
-		// They are already inherited from parent type with correct inherited flags
-		// Only add these for base types (cmis:policy itself)
-		if (BaseTypeId.CMIS_POLICY.value().equals(nemakiType.getTypeId())) {
-			addBasePropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: All policy types need CMIS properties for TCK compliance
+		// Base types get them as non-inherited, derived types get them as inherited
+		boolean isBaseType = BaseTypeId.CMIS_POLICY.value().equals(nemakiType.getTypeId());
+		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
+		if (isBaseType) {
 			addPolicyPropertyDefinitions(repositoryId, type);
 		}
 
@@ -1713,12 +1704,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
-		// They are already inherited from parent type with correct inherited flags
-		// Only add these for base types (cmis:item itself)
-		if (BaseTypeId.CMIS_ITEM.value().equals(nemakiType.getTypeId())) {
-			addBasePropertyDefinitions(repositoryId, type);
-		}
+		// CRITICAL FIX: All item types need CMIS properties for TCK compliance
+		// Base types get them as non-inherited, derived types get them as inherited
+		boolean isBaseType = BaseTypeId.CMIS_ITEM.value().equals(nemakiType.getTypeId());
+		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
 
 		return type;
 	}
@@ -1735,12 +1724,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
-		// They are already inherited from parent type with correct inherited flags
-		// Only add these for base types (cmis:secondary itself)
-		if (BaseTypeId.CMIS_SECONDARY.value().equals(nemakiType.getTypeId())) {
-			addBasePropertyDefinitions(repositoryId, type);
-		}
+		// CRITICAL FIX: All secondary types need CMIS properties for TCK compliance
+		// Base types get them as non-inherited, derived types get them as inherited
+		boolean isBaseType = BaseTypeId.CMIS_SECONDARY.value().equals(nemakiType.getTypeId());
+		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
 
 		return type;
 	}
@@ -2065,8 +2052,15 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * @param typeId Type identifier (for logging)
 	 * @return true if the property should be marked as inherited=true
 	 */
-	private static boolean shouldBeInherited(String propertyId, String typeId) {
+	private boolean shouldBeInherited(String propertyId, String typeId) {
 		if (propertyId == null) {
+			return false;
+		}
+		
+		// CRITICAL FIX: Base types must have inherited=false for their CMIS properties
+		// Check if this is a base type first
+		if (typeId != null && isBaseType(typeId)) {
+			// Base types define their own CMIS properties with inherited=false
 			return false;
 		}
 		
@@ -2938,9 +2932,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		if (originalDefinition == null) return null;
 		
-		// TCK tests compare PropertyDefinitions using == operator, so we must return the same instance
-		
-		String cacheKey = repositoryId + ":" + propertyId;
+		// CRITICAL FIX: Include inherited flag in cache key
+		// Properties with different inherited flags must be separate instances
+		// Base types have inherited=false, derived types have inherited=true for CMIS properties
+		boolean isInherited = originalDefinition.isInherited();
+		String cacheKey = repositoryId + ":" + propertyId + ":" + isInherited;
 		
 		// Get or create repository-level cache
 		Map<String, PropertyDefinition<?>> repoCache = SHARED_PROPERTY_DEFINITIONS.computeIfAbsent(
@@ -2952,20 +2948,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				log.debug("Creating shared PropertyDefinition instance for " + cacheKey + " (type=" + typeId + ")");
 			}
 			
-			if (originalDefinition instanceof AbstractPropertyDefinition) {
-				AbstractPropertyDefinition<?> abstractProp = (AbstractPropertyDefinition<?>) originalDefinition;
-				boolean shouldInherit = shouldBeInherited(propertyId, typeId);
-				if (abstractProp.isInherited() != shouldInherit) {
-					abstractProp.setIsInherited(shouldInherit);
-					if (log.isDebugEnabled()) {
-						log.debug("RESTORED FIX: Set inherited=" + shouldInherit + 
-							" for " + propertyId + " in type " + typeId);
-					}
-				}
-			}
+			// DO NOT modify inherited flag here - it should already be set correctly
+			// when the property was created by addBasePropertyDefinitions
 			
 			// For first occurrence, use the original definition as the shared instance
-			// This ensures all types share the same PropertyDefinition instance
+			// This ensures all types with same inherited flag share the same PropertyDefinition instance
 			return originalDefinition;
 		});
 	}

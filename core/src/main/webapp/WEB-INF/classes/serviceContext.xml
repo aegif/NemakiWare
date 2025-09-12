@@ -102,6 +102,9 @@
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
+        <property name="repositoryInfoMap">
+            <ref bean="repositoryInfoMap" />
+        </property>
     </bean>
 
     <!-- CMIS Service Beans -->
