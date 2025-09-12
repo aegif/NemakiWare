@@ -1919,40 +1919,33 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		typeMutability.setCanDelete(delete);
 		type.setTypeMutability(typeMutability);
 
-		// CRITICAL FIX: Share PropertyDefinition instances instead of copying
-		// TCK tests require object identity (== comparison) to pass
+		// SIMPLIFIED FIX: Copy parent properties with correct inherited flags
 		Map<String, PropertyDefinition<?>> parentProperties;
 		if (parentType != null && parentType.getPropertyDefinitions() != null) {
-			// Use the parent's PropertyDefinitions directly without copying
-			// This ensures the same instances are shared across type hierarchy
-			parentProperties = new HashMap<>(parentType.getPropertyDefinitions());
+			// Copy parent properties and set correct inherited flags
+			parentProperties = new HashMap<>();
 			
-			// CRITICAL TCK FIX: Use shared PropertyDefinition instances and simplified inheritance
-			Map<String, PropertyDefinition<?>> sharedProperties = new HashMap<>();
-			for (String key : parentProperties.keySet()) {
-				PropertyDefinition<?> parentProperty = parentProperties.get(key);
+			for (Map.Entry<String, PropertyDefinition<?>> entry : parentType.getPropertyDefinitions().entrySet()) {
+				String propertyId = entry.getKey();
+				PropertyDefinition<?> parentProperty = entry.getValue();
 				
-				// Get shared instance for TCK object identity compliance
-				PropertyDefinition<?> sharedProperty = getSharedPropertyDefinition(
-					repositoryId, nemakiType.getId(), parentProperty.getId(), parentProperty);
-				
-				// Apply simplified inheritance logic: properties from parent are always inherited
-				boolean shouldInherit = shouldBeInherited(parentProperty.getId(), nemakiType.getId());
-				if (sharedProperty instanceof AbstractPropertyDefinition) {
-					// Create a copy with correct inherited flag to avoid modifying shared instance
-					AbstractPropertyDefinition<?> inheritedProperty = (AbstractPropertyDefinition<?>) sharedProperty;
-					if (inheritedProperty.isInherited() != shouldInherit) {
+				// For derived types, all properties from parent should be marked as inherited
+				if (parentProperty instanceof AbstractPropertyDefinition) {
+					AbstractPropertyDefinition<?> inheritedProperty = (AbstractPropertyDefinition<?>) parentProperty;
+					
+					// Properties inherited from parent are always inherited=true in child
+					if (!inheritedProperty.isInherited()) {
+						inheritedProperty.setIsInherited(true);
+						
 						if (log.isDebugEnabled()) {
-							log.debug("INHERITANCE FIX: Setting inherited=" + shouldInherit + 
-								" for " + parentProperty.getId() + " in type " + nemakiType.getId());
+							log.debug("SIMPLIFIED INHERITANCE: Set inherited=true for " + propertyId + 
+								" in derived type " + nemakiType.getId());
 						}
 					}
-					inheritedProperty.setIsInherited(shouldInherit);
 				}
 				
-				sharedProperties.put(key, sharedProperty);
+				parentProperties.put(propertyId, parentProperty);
 			}
-			parentProperties = sharedProperties;
 		} else {
 			parentProperties = new HashMap<String, PropertyDefinition<?>>();
 		}
@@ -2929,7 +2922,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	}
 	
 	/**
-	 * CRITICAL TCK FIX: Get or create shared PropertyDefinition instance for object identity comparison
+	 * RESTORED TCK FIX: Get or create shared PropertyDefinition instance for object identity comparison
 	 * 
 	 * Based on vk/61b7-tck-type-t approach that achieved 100% Docker QA success.
 	 * TCK tests compare PropertyDefinitions using == operator, so we must return the same instance.
@@ -2945,7 +2938,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		if (originalDefinition == null) return null;
 		
-		// CRITICAL TCK FIX: Use shared PropertyDefinition instances for object identity comparison
 		// TCK tests compare PropertyDefinitions using == operator, so we must return the same instance
 		
 		String cacheKey = repositoryId + ":" + propertyId;
@@ -2960,6 +2952,18 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				log.debug("Creating shared PropertyDefinition instance for " + cacheKey + " (type=" + typeId + ")");
 			}
 			
+			if (originalDefinition instanceof AbstractPropertyDefinition) {
+				AbstractPropertyDefinition<?> abstractProp = (AbstractPropertyDefinition<?>) originalDefinition;
+				boolean shouldInherit = shouldBeInherited(propertyId, typeId);
+				if (abstractProp.isInherited() != shouldInherit) {
+					abstractProp.setIsInherited(shouldInherit);
+					if (log.isDebugEnabled()) {
+						log.debug("RESTORED FIX: Set inherited=" + shouldInherit + 
+							" for " + propertyId + " in type " + typeId);
+					}
+				}
+			}
+			
 			// For first occurrence, use the original definition as the shared instance
 			// This ensures all types share the same PropertyDefinition instance
 			return originalDefinition;
@@ -2967,7 +2971,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	}
 	
 	/**
-	 * Ensure TypeDefinition uses consistent PropertyDefinition instances
+	 * RESTORED: Ensure TypeDefinition uses consistent PropertyDefinition instances
 	 * @param repositoryId Repository identifier
 	 * @param typeDefinition Original TypeDefinition
 	 * @return TypeDefinition with shared PropertyDefinition instances
@@ -2977,12 +2981,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		String typeId = typeDefinition.getId();
 		
-		// CRITICAL DEBUG: TypeDefinition型の実態調査
 		if (log.isDebugEnabled()) {
-			log.debug("Type definition investigation for " + typeId + ": class=" + typeDefinition.getClass().getName() + 
-				", instanceof AbstractTypeDefinition=" + (typeDefinition instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition));
+			log.debug("RESTORED: Ensuring consistent properties for type " + typeId);
 		}
-		
 		
 		Map<String, PropertyDefinition<?>> originalProps = typeDefinition.getPropertyDefinitions();
 		
@@ -3018,17 +3019,17 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			log.debug("CONSISTENCY SYSTEM: Applied sharing to " + sharedCount + " properties for type " + typeId);
 		}
 		
-		// CRITICAL FIX: Modify original TypeDefinition instance directly to preserve object identity
+		// RESTORED FIX: Modify original TypeDefinition instance directly to preserve object identity
 		// TCK compliance requires both getTypeDefinition() and getTypesDescendants() to return 
 		// the SAME TypeDefinition instance with SAME PropertyDefinition instances
 		try {
 			if (typeDefinition instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) {
-				// CRITICAL: Use original instance, NO copying to preserve object identity
+				// RESTORED: Use original instance, NO copying to preserve object identity
 				((org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) typeDefinition)
 					.setPropertyDefinitions(sharedProps);
 				
 				if (log.isDebugEnabled()) {
-					log.debug("CRITICAL FIX: Modified original TypeDefinition instance directly for " + typeId + 
+					log.debug("RESTORED FIX: Modified original TypeDefinition instance directly for " + typeId + 
 						" - preserving object identity for TCK compliance");
 				}
 				
