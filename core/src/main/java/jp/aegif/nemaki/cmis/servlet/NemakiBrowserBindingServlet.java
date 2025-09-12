@@ -75,7 +75,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         super.init();
         
         try {
-            log.info("NEMAKI SERVLET: NemakiBrowserBindingServlet initialization completed successfully");
+            log.error("=== NEMAKIBROWSERBINDINGSERVLET INIT START ===");
+            log.error("NEMAKI SERVLET: NemakiBrowserBindingServlet initialization completed successfully");
+            log.error("=== NEMAKIBROWSERBINDINGSERVLET INIT END ===");
             
         } catch (Exception e) {
             log.error("NEMAKI SERVLET: Initialization failed", e);
@@ -94,6 +96,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         
         // CRITICAL DEBUG: ALWAYS log every request that reaches this servlet
+        log.error("=== NEMAKIBROWSERBINDINGSERVLET SERVICE INVOKED === Method: " + request.getMethod() + " URI: " + request.getRequestURI() + " QueryString: " + request.getQueryString());
         String method = request.getMethod();
         
         // SPRING 6.X URL PARSING FIX: Enhanced pathInfo extraction with fallback logic
@@ -924,7 +927,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 result = handleContentOperation(service, repositoryId, objectId, request, response);
                 return; // Content operation handles response directly
             } else if ("typeDefinition".equals(cmisselector)) {
-                // CRITICAL FIX: Handle typeDefinition requests to apply inherited flag corrections
                 result = handleTypeDefinitionOperation(service, repositoryId, request);
             } else {
                 // For other selectors, fall back to standard OpenCMIS dispatcher
@@ -1060,281 +1062,170 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             repositoryId, typeId, null
         );
         
-        // CRITICAL FIX: Apply inherited flag corrections before returning
-        // This ensures CMIS standard properties have inherited=true for CMIS 1.1 compliance
-        if (typeDefinition != null) {
-            typeDefinition = correctInheritedFlags(typeDefinition);
-            if (log.isDebugEnabled()) {
-                log.debug("Handle type definition: Applied inherited flag corrections to type '" + typeId + "'");
-            }
-        }
+        // CONSISTENCY FIX: Remove inherited flag corrections to ensure consistency
         
         return typeDefinition;
     }
     
     /**
      * Handle content operation - equivalent to getContentStream CMIS service call
+     * CRITICAL TCK COMPLIANCE FIX: Return proper HTTP status codes instead of throwing CMIS exceptions
+     * Let AbstractBrowserBindingService.convertStatusCode() handle the HTTP-to-CMIS exception mapping
      */
     private Object handleContentOperation(CmisService service, String repositoryId, String objectId, 
-                                        HttpServletRequest request, HttpServletResponse response) throws Exception {
-        // Parse parameters
-        String streamId = HttpUtils.getStringParameter(request, "streamId");
-        java.math.BigInteger offset = getBigIntegerParameterSafe(request, "offset");
-        java.math.BigInteger length = getBigIntegerParameterSafe(request, "length");
-        
-        // Call CMIS service
-        org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = service.getContentStream(
-            repositoryId, objectId, streamId, offset, length, null
-        );
-        
-        // CRITICAL CMIS 1.1 TCK COMPLIANCE FIX
-        // TCK client expects HTTP 200 + "null" JSON response for documents without content streams
-        // Previous HTTP 409 + constraint exception approach was causing TCK validation failures
-        
-        // STREAM-SAFE FIX: Use only non-destructive validation methods
-        boolean hasValidContent = false;
-        java.io.InputStream inputStream = null;
-        
-        if (contentStream == null) {
-            hasValidContent = false;
-        } else {
-            // Use non-destructive validation - don't read from stream
-            inputStream = contentStream.getStream();
-            if (inputStream == null) {
-                hasValidContent = false;
-            } else {
-                // Use only ContentStream metadata for validation - avoid touching InputStream
-                try {
-                    long contentLength = contentStream.getLength();
-                    
-                    if (contentLength > 0) {
-                        hasValidContent = true;
-                    } else {
-                        // Even if length is unknown, try to process the stream
-                        // The actual stream test will happen during buffering
-                        hasValidContent = true;
-                    }
-                } catch (Exception validateEx) {
-                    log.error("Content stream metadata validation failed: " + validateEx.getMessage());
-                    hasValidContent = false;
-                }
-            }
-        }
-        
-        if (!hasValidContent) {
-            log.debug("CMIS 1.1 TCK COMPLIANCE FIX - No valid content stream for document: " + objectId + 
-                     " - returning CMIS-compliant null response for TCK validation");
-            
-            // Return HTTP 200 + null JSON response per CMIS 1.1 Browser Binding specification
-            // This is what the TCK client expects for documents without content streams
-            response.setStatus(HttpServletResponse.SC_OK); // HTTP 200
-            response.setContentType("application/json");
-            
-            // CRITICAL FIX: Use OutputStream instead of Writer to avoid IllegalStateException
-            // getWriter() fails when OutputStream has already been accessed elsewhere
-            try (java.io.OutputStream out = response.getOutputStream()) {
-                out.write("null".getBytes("UTF-8")); // CMIS-compliant null response
-                out.flush();
-            } catch (Exception writeEx) {
-                log.error("Failed to write null JSON response: " + writeEx.getMessage());
-                throw writeEx;
-            }
-            return null;
-        }
-        
-        // CRITICAL FIX: Check response state before any operations
-        if (response.isCommitted()) {
-            log.warn("Response already committed before content stream transfer");
-            return null;
-        }
-        
-        // Set response headers BEFORE accessing stream
-        response.setContentType(contentStream.getMimeType());
-        long contentLength = contentStream.getLength();
-        if (contentLength > 0) {
-            response.setContentLengthLong(contentLength);
-        }
-        if (contentStream.getFileName() != null) {
-            response.setHeader("Content-Disposition", "attachment; filename=\"" + contentStream.getFileName() + "\"");
-        }
-        
-        log.debug("Browser binding content stream - filename: " + contentStream.getFileName() + 
-                 ", length: " + contentStream.getLength() + ", mime type: " + contentStream.getMimeType());
-        
-        // STREAM-SAFE: Buffer the InputStream without destructive testing
-        java.io.OutputStream outputStream = null;
-        byte[] contentBytes = null;
-        
+                                        HttpServletRequest request, HttpServletResponse response) {
+        log.error("=== HANDLECONTENTOPERATION INVOKED === objectId: " + objectId + " repositoryId: " + repositoryId);
         try {
-            // NORMAL PATH: Buffer the InputStream directly (no prior testing)
-            try (java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream()) {
-                byte[] readBuffer = new byte[8192];
-                int bytesRead;
-                long totalRead = 0;
-                
-                while ((bytesRead = inputStream.read(readBuffer)) != -1) {
-                    buffer.write(readBuffer, 0, bytesRead);
-                    totalRead += bytesRead;
-                }
-                
-                contentBytes = buffer.toByteArray();
-                log.debug("Content stream buffered successfully: " + contentBytes.length + " bytes");
-                
-            } catch (java.io.IOException readException) {
-                log.error("Buffering failed - falling back to direct service approach: " + readException.getMessage(), readException);
-                contentBytes = null; // Will trigger fallback
-            }
+            // Parse parameters
+            String streamId = HttpUtils.getStringParameter(request, "streamId");
+            java.math.BigInteger offset = getBigIntegerParameterSafe(request, "offset");
+            java.math.BigInteger length = getBigIntegerParameterSafe(request, "length");
             
-            // If normal buffering failed, try direct service approach
-            if (contentBytes == null) {
-                // FALLBACK PATH: Get content directly from service, bypassing the closed stream
-                if (log.isDebugEnabled()) {
-                    log.debug("Fallback: Getting content directly from service");
-                }
-                try {
-                    // Get Spring web context to access service beans
-                    org.springframework.web.context.WebApplicationContext webContext = 
-                        org.springframework.web.context.support.WebApplicationContextUtils.getWebApplicationContext(getServletContext());
-                        
-                    if (webContext == null) {
-                        throw new Exception("Cannot access Spring context for direct service call");
-                    }
-                    
-                    jp.aegif.nemaki.businesslogic.ContentService contentService = 
-                        (jp.aegif.nemaki.businesslogic.ContentService) webContext.getBean("contentService");
-                        
-                    if (contentService == null) {
-                        throw new Exception("Cannot access ContentService for direct service call");
-                    }
-                    
-                    // Get document and its attachment ID
-                    jp.aegif.nemaki.model.Content document = contentService.getContent(repositoryId, objectId);
-                    if (document == null || !(document instanceof jp.aegif.nemaki.model.Document)) {
-                        throw new Exception("Document not found or not a document type: " + objectId);
-                    }
-                    
-                    jp.aegif.nemaki.model.Document doc = (jp.aegif.nemaki.model.Document) document;
-                    String attachmentId = doc.getAttachmentNodeId();
-                    if (attachmentId == null || attachmentId.trim().isEmpty()) {
-                        throw new Exception("Document has no attachment: " + objectId);
-                    }
-                    
-                    if (log.isDebugEnabled()) {
-                        log.debug("Getting fresh attachment from service: " + attachmentId);
-                    }
-                    jp.aegif.nemaki.model.AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
-                    if (attachment == null) {
-                        throw new Exception("Attachment not found: " + attachmentId);
-                    }
-                    
-                    // Get fresh InputStream from attachment
-                    java.io.InputStream freshStream = attachment.getInputStream();
-                    if (freshStream == null) {
-                        throw new Exception("Fresh attachment stream is null");
-                    }
-                    
-                    // Buffer the fresh stream immediately
-                    try (java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream()) {
-                        byte[] readBuffer = new byte[8192];
-                        int bytesRead;
-                        long totalBytesRead = 0;
-                        
-                        if (log.isDebugEnabled()) {
-                            log.debug("Buffering fresh attachment content...");
-                        }
-                        while ((bytesRead = freshStream.read(readBuffer)) != -1) {
-                            buffer.write(readBuffer, 0, bytesRead);
-                            totalBytesRead += bytesRead;
-                        }
-                        
-                        contentBytes = buffer.toByteArray();
-                        if (log.isDebugEnabled()) {
-                            log.debug("Fresh attachment content buffered: " + contentBytes.length + " bytes");
-                        }
-                        
-                    } finally {
-                        if (freshStream != null) {
-                            try { 
-                                freshStream.close(); 
-                            } catch (Exception e) { 
-                                log.debug("Failed to close stream: " + e.getMessage());
-                            }
-                        }
-                    }
-                    
-                } catch (Exception fallbackEx) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Fallback also failed: " + fallbackEx.getMessage());
-                    }
-                    fallbackEx.printStackTrace();
-                    throw new java.io.IOException("Both stream buffer and direct service approaches failed", fallbackEx);
-                }
-            }
-            
-            // Now write the buffered content to response
-            outputStream = response.getOutputStream();
-            if (outputStream == null) {
-                log.error("response.getOutputStream() returned null");
-                return null;
-            }
-            
-            if (log.isDebugEnabled()) {
-                log.debug("Writing buffered content to response...");
-            }
-            outputStream.write(contentBytes);
-            outputStream.flush();
-            
-            if (log.isDebugEnabled()) {
-                log.debug("Content stream transfer completed successfully: " + contentBytes.length + " bytes");
-            }
-            
-        } catch (java.io.IOException e) {
-            log.error("ERROR in content stream transfer: " + e.getMessage(), e);
-            
-            if (!response.isCommitted()) {
-                response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
-                    "Content stream transfer failed: " + e.getMessage());
-            }
-            throw e;
-        } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException e) {
-            if (e.getMessage() != null && e.getMessage().contains("getContentStream")) {
-                log.error("Content stream error in Browser Binding: " + e.getMessage(), e);
-                
+            // Call CMIS service to get content stream
+            org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = null;
+            try {
+                contentStream = service.getContentStream(repositoryId, objectId, streamId, offset, length, null);
+            } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException e) {
+                log.debug("Object not found for content stream: " + objectId);
                 if (!response.isCommitted()) {
-                    response.setStatus(HttpServletResponse.SC_NOT_FOUND);
-                    response.setContentType("application/json");
-                    try (java.io.OutputStream out = response.getOutputStream()) {
-                        String errorJson = "{\"exception\":\"objectNotFound\",\"message\":\"Content stream not available\"}";
-                        out.write(errorJson.getBytes("UTF-8"));
-                    }
+                    response.sendError(HttpServletResponse.SC_NOT_FOUND, "Object not found: " + e.getMessage());
+                }
+                return null;
+            } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException e) {
+                log.debug("CMIS constraint violation for content stream: " + objectId);
+                if (!response.isCommitted()) {
+                    response.sendError(HttpServletResponse.SC_CONFLICT, "CMIS constraint: " + e.getMessage());
+                }
+                return null;
+            } catch (Exception e) {
+                log.debug("Service exception getting content stream for " + objectId + ": " + e.getMessage());
+                if (!response.isCommitted()) {
+                    response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Service error: " + e.getMessage());
                 }
                 return null;
             }
             
-            log.error("ERROR in Browser Binding operation: " + e.getMessage(), e);
-            
-            if (!response.isCommitted()) {
-                response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
-                    "Browser Binding operation failed: " + e.getMessage());
+            // CRITICAL TCK COMPLIANCE FIX: Return HTTP 404 for null content streams
+            // This will be converted to CmisObjectNotFoundException by AbstractBrowserBindingService.convertStatusCode()
+            if (contentStream == null) {
+                log.debug("No content stream available for document: " + objectId + " - returning HTTP 404");
+                if (!response.isCommitted()) {
+                    response.sendError(HttpServletResponse.SC_NOT_FOUND, 
+                        "Document " + objectId + " does not have a content stream");
+                }
+                return null;
             }
-            throw e;
-        } finally {
-            // CRITICAL: Ensure streams are properly closed
-            if (inputStream != null) {
-                try {
-                    inputStream.close();
-                } catch (Exception e) {
-                    log.warn("Failed to close input stream: " + e.getMessage());
+            
+            java.io.InputStream inputStream = contentStream.getStream();
+            if (inputStream == null) {
+                log.debug("Content stream has null InputStream for document: " + objectId + " - returning HTTP 404");
+                if (!response.isCommitted()) {
+                    response.sendError(HttpServletResponse.SC_NOT_FOUND, 
+                        "Document " + objectId + " content stream has null InputStream");
+                }
+                return null;
+            }
+            
+            // SIMPLIFIED STREAM PROCESSING: Direct stream transfer for TCK compliance
+            try {
+                // Set response headers BEFORE accessing stream
+                response.setContentType(contentStream.getMimeType());
+                long contentLength = contentStream.getLength();
+                if (contentLength > 0) {
+                    response.setContentLengthLong(contentLength);
+                }
+                if (contentStream.getFileName() != null) {
+                    response.setHeader("Content-Disposition", "attachment; filename=\"" + contentStream.getFileName() + "\"");
+                }
+                
+                // Direct stream transfer without complex buffering
+                java.io.OutputStream outputStream = response.getOutputStream();
+                if (outputStream == null) {
+                    log.error("response.getOutputStream() returned null");
+                    if (!response.isCommitted()) {
+                        response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
+                            "Failed to get response output stream");
+                    }
+                    return null;
+                }
+                
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
+                }
+                outputStream.flush();
+                
+                log.debug("Content stream transfer completed successfully for document: " + objectId);
+                
+            } catch (java.io.IOException e) {
+                log.error("IOException in content stream transfer for document " + objectId + ": " + e.getMessage(), e);
+                if (!response.isCommitted()) {
+                    response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
+                        "Content stream transfer failed: " + e.getMessage());
+                }
+                return null;
+            } finally {
+                // CRITICAL: Ensure input stream is properly closed
+                if (inputStream != null) {
+                    try {
+                        inputStream.close();
+                    } catch (Exception e) {
+                        log.warn("Failed to close input stream for document " + objectId + ": " + e.getMessage());
+                    }
+                }
+                // NOTE: Do NOT close outputStream - it's managed by servlet container
+            }
+            
+            return null; // Content was written directly to response
+            
+        } catch (java.io.IOException ioException) {
+            log.error("IOException in handleContentOperation for " + objectId + ": " + ioException.getMessage(), ioException);
+            try {
+                if (!response.isCommitted()) {
+                    response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
+                        "IO error in content operation: " + ioException.getMessage());
+                }
+            } catch (java.io.IOException sendErrorException) {
+                log.error("Failed to send error response: " + sendErrorException.getMessage());
+            }
+            return null;
+        } catch (Exception topLevelException) {
+            log.error("Unexpected exception in handleContentOperation for " + objectId + ": " + topLevelException.getMessage(), topLevelException);
+            try {
+                if (!response.isCommitted()) {
+                    response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
+                        "Unexpected error in content operation: " + topLevelException.getMessage());
+                }
+            } catch (java.io.IOException sendErrorException) {
+                log.error("Failed to send error response: " + sendErrorException.getMessage());
+            }
+            return null;
+        }
+    }
+    
+    /**
+     * Helper method to write null JSON response for Browser Binding compliance
+     * CRITICAL: This method must NEVER throw exceptions
+     */
+    private Object writeNullJsonResponse(HttpServletResponse response, String logMessage) {
+        try {
+            if (!response.isCommitted()) {
+                response.setStatus(HttpServletResponse.SC_OK);
+                response.setContentType("application/json");
+                response.setCharacterEncoding("UTF-8");
+                
+                try (java.io.PrintWriter writer = response.getWriter()) {
+                    writer.write("null");
+                    writer.flush();
+                } catch (Exception writeException) {
+                    log.debug("Failed to write null response: " + writeException.getMessage());
                 }
             }
-            // NOTE: Do NOT close outputStream - it's managed by servlet container
+        } catch (Exception responseException) {
+            log.debug("Exception in writeNullJsonResponse: " + responseException.getMessage());
         }
-        
-        if (log.isDebugEnabled()) {
-            log.debug("END BROWSER BINDING CONTENT STREAM DEBUG");
-        }
-        
-        return null; // Response handled directly
+        return null;
     }
     
     /**
@@ -1399,20 +1290,15 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     
                 writer.write(jsonObject.toJSONString());
             } else if (result instanceof org.apache.chemistry.opencmis.commons.definitions.TypeDefinition) {
-                // CRITICAL FIX: Handle TypeDefinition with inherited flag correction for CMIS 1.1 compliance
-                // ROOT CAUSE: Jackson ObjectMapper doesn't understand CMIS inherited flag semantics
-                // SOLUTION: Preprocess TypeDefinition to set inherited=true for CMIS standard properties before JSON conversion
+                // CONSISTENCY FIX: Use TypeDefinition as-is without inherited flag corrections
+                // to ensure consistency with getTypeDescendants() and getTypeChildren() methods
                 org.apache.chemistry.opencmis.commons.definitions.TypeDefinition typeDefinition = 
                     (org.apache.chemistry.opencmis.commons.definitions.TypeDefinition) result;
                 
                 try {
-                    // Create a corrected TypeDefinition with proper inherited flags
-                    org.apache.chemistry.opencmis.commons.definitions.TypeDefinition correctedTypeDef = 
-                        correctInheritedFlags(typeDefinition);
-                    
                     // Use OpenCMIS JSONConverter for proper CMIS 1.1 JSON serialization
                     org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonObject = 
-                        org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(correctedTypeDef, null);
+                        org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(typeDefinition, null);
                         
                     writer.write(jsonObject.toJSONString());
                 } catch (Exception typeDefException) {
@@ -2853,12 +2739,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             org.apache.chemistry.opencmis.commons.definitions.TypeDefinition createdType = 
                 cmisService.createType(repositoryId, typeDefinition, null);
 
-            // *** INHERITED FLAG CONSISTENCY FIX ***
-            // Apply same INHERITED FLAG CORRECTION as getTypeDefinition to ensure consistent inherited flags
-            // ROOT CAUSE: createType returns inherited=false, getTypeDefinition returns inherited=true
-            // SOLUTION: Apply correctInheritedFlags() to createType result for TCK consistency
-            createdType = correctInheritedFlags(createdType);
-            System.err.println("*** CREATE TYPE CONSISTENCY: Applied INHERITED FLAG CORRECTION to maintain consistency with getTypeDefinition ***");
+            // CONSISTENCY FIX: Remove inherited flag corrections to ensure consistency
             
             
             // Return success response with type definition in JSON format

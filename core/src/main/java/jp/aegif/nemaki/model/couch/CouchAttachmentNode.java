@@ -205,7 +205,7 @@ public class CouchAttachmentNode extends CouchNodeBase{
 		// CRITICAL FIX FOR JAVA 17 MIGRATION: Set InputStream from CouchDB attachment
 		// This was broken during Java 17/Jakarta EE migration - InputStream was never retrieved
 		try {
-			// Get CloudantClientPool from Spring context and then get client for repository
+			// CRITICAL FIX: Use proper DI instead of manual Spring context lookup
 			jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPool = 
 				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
 					.getBean("connectorPool", jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);

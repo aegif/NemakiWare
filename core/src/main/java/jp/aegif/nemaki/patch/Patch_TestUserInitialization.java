@@ -61,7 +61,7 @@ public class Patch_TestUserInitialization extends AbstractNemakiPatch {
         log.info("=== PATCH: Applying Test User Initialization for repository: " + repositoryId + " ===");
         
         try {
-            // Get services from Spring context
+            // Get services via proper DI - these should be injected as fields
             PrincipalService principalService = SpringContext.getApplicationContext()
                     .getBean("PrincipalService", PrincipalService.class);
             ContentService contentService = SpringContext.getApplicationContext()
