@@ -328,7 +328,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 							.createPropertyDefinition(repositoryId, create);
 					
 					// CRITICAL FIX: Enhanced contamination detection and handling
-					NemakiPropertyDefinition retrievedProp = typeManager.getPropertyDefinition(repositoryId, created.getId());
+					NemakiPropertyDefinition retrievedProp = typeService.getPropertyDefinition(repositoryId, created.getId());
 					if (retrievedProp != null) {
 						if (!originalPropertyId.equals(retrievedProp.getPropertyId())) {
 							// CRITICAL FIX: Contamination detected - implement proper handling
@@ -345,7 +345,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 							updatedDetail.setId(created.getId());
 							updatedDetail.setLocalName(originalPropertyId);  // Ensure localName matches property ID
 							
-							typeManager.updatePropertyDefinitionDetail(repositoryId, updatedDetail);
+							typeService.updatePropertyDefinitionDetail(repositoryId, updatedDetail);
 							log.info("DEBUG: Property definition updated with correct property ID: " + originalPropertyId);
 						}
 					}
@@ -365,9 +365,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 		}
 
 		// Create
-		log.info("DEBUG: Calling typeManager.createTypeDefinition()");
-		NemakiTypeDefinition created = typeManager.createTypeDefinition(repositoryId, ntd);
-		log.info("DEBUG: typeManager.createTypeDefinition() completed - Created type ID: " + created.getTypeId());
+		log.info("DEBUG: Calling typeService.createTypeDefinition()");
+		NemakiTypeDefinition created = typeService.createTypeDefinition(repositoryId, ntd);
+		log.info("DEBUG: typeService.createTypeDefinition() completed - Created type ID: " + created.getTypeId());
 		
 		// CRITICAL FIX: Instead of full refresh, force specific repository cache refresh
 		log.info("DEBUG: Refreshing TypeManager cache");
@@ -519,7 +519,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 				// CRITICAL FIX: Check if property already exists by propertyId, not by node ID lookup
 				// Old logic was trying to get PropertyDefinitionCore for new properties that don't exist yet
-				NemakiPropertyDefinitionCore existingCore = typeManager.getPropertyDefinitionCoreByPropertyId(repositoryId, key);
+				NemakiPropertyDefinitionCore existingCore = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, key);
 				if (existingCore != null) {
 					// update
 					PropertyDefinition<?> oldPropDef = typeManager.getTypeDefinition(repositoryId, existingType.getTypeId()).getPropertyDefinitions().get(key);
@@ -531,13 +531,13 @@ public class RepositoryServiceImpl implements RepositoryService,
 							propDef);
 					// FIXED: Use existing PropertyDefinitionCore ID we already found
 					NemakiPropertyDefinitionDetail update = new NemakiPropertyDefinitionDetail(_update, existingCore.getId());
-					typeManager.updatePropertyDefinitionDetail(repositoryId, update);
+					typeService.updatePropertyDefinitionDetail(repositoryId, update);
 				} else {
 					// create
 					exceptionService.constraintQueryName(propDef);
 					NemakiPropertyDefinition create = new NemakiPropertyDefinition(
 							propDef);
-					NemakiPropertyDefinitionDetail created = typeManager
+					NemakiPropertyDefinitionDetail created = typeService
 							.createPropertyDefinition(repositoryId, create);
 
 					List<String> l = ntd.getProperties();
@@ -549,7 +549,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		}
 
 		// Update
-		NemakiTypeDefinition updated = typeManager.updateTypeDefinition(repositoryId, ntd);
+		NemakiTypeDefinition updated = typeService.updateTypeDefinition(repositoryId, ntd);
 		typeManager.refreshTypes();
 		
 		// CRITICAL FIX: Clear shared TypeDefinition caches to maintain object identity consistency

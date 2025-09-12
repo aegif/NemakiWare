@@ -118,14 +118,14 @@ public class TypeServiceImpl implements TypeService{
 		if (parentTypeId != null) {
 			log.info("DEBUG: Starting property inheritance from parent: " + parentTypeId);
 			
-		// Get TypeManager to access parent type definitions
-		try {
-			if (typeManager == null) {
-				log.error("TypeManager not injected - cannot process parent type inheritance");
-				return ntd;
-			}
-			
-			log.info("DEBUG: TypeManager available: " + (typeManager != null));
+			// Get TypeManager to access parent type definitions
+			try {
+				if (typeManager == null) {
+					log.error("TypeManager not injected - cannot process parent type inheritance");
+					return typeDefinition;
+				}
+				
+				log.info("DEBUG: TypeManager available: " + (typeManager != null));
 				
 				if (typeManager != null) {
 					

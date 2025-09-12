@@ -129,6 +129,7 @@ public class ContentServiceImpl implements ContentService {
 	private PropertyManager propertyManager;
 	private SolrUtil solrUtil;
 	private NemakiCachePool nemakiCachePool;
+	private TypeManager typeManager;
 
 	private static final Logger log = LoggerFactory.getLogger(ContentServiceImpl.class);
 	private final static String PATH_SEPARATOR = "/";
@@ -2786,6 +2787,10 @@ public class ContentServiceImpl implements ContentService {
 
 	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
 		this.nemakiCachePool = nemakiCachePool;
+	}
+
+	public void setTypeManager(TypeManager typeManager) {
+		this.typeManager = typeManager;
 	}
 
 	@Override
