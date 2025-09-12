@@ -1164,14 +1164,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
                 return null;
             } finally {
-                // CRITICAL: Ensure input stream is properly closed
-                if (inputStream != null) {
-                    try {
-                        inputStream.close();
-                    } catch (Exception e) {
-                        log.warn("Failed to close input stream for document " + objectId + ": " + e.getMessage());
-                    }
-                }
+                // NOTE: Do NOT close inputStream - it's managed by CMIS service layer
                 // NOTE: Do NOT close outputStream - it's managed by servlet container
             }
             
