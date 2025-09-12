@@ -2932,11 +2932,20 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		if (originalDefinition == null) return null;
 		
-		// CRITICAL FIX: Include inherited flag in cache key
-		// Properties with different inherited flags must be separate instances
+		// CRITICAL FIX: Include both typeId and inherited flag in cache key
+		// Each type needs its own PropertyDefinition instances with correct inherited flags
 		// Base types have inherited=false, derived types have inherited=true for CMIS properties
 		boolean isInherited = originalDefinition.isInherited();
-		String cacheKey = repositoryId + ":" + propertyId + ":" + isInherited;
+		
+		// For base types, force inherited=false for CMIS properties
+		if (isBaseType(typeId) && propertyId.startsWith("cmis:")) {
+			isInherited = false;
+			if (originalDefinition instanceof AbstractPropertyDefinition) {
+				((AbstractPropertyDefinition<?>) originalDefinition).setIsInherited(false);
+			}
+		}
+		
+		String cacheKey = repositoryId + ":" + typeId + ":" + propertyId + ":" + isInherited;
 		
 		// Get or create repository-level cache
 		Map<String, PropertyDefinition<?>> repoCache = SHARED_PROPERTY_DEFINITIONS.computeIfAbsent(
@@ -2945,14 +2954,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Return existing shared instance or create new one
 		return repoCache.computeIfAbsent(cacheKey, k -> {
 			if (log.isDebugEnabled()) {
-				log.debug("Creating shared PropertyDefinition instance for " + cacheKey + " (type=" + typeId + ")");
+				log.debug("Creating shared PropertyDefinition instance for " + cacheKey);
 			}
 			
-			// DO NOT modify inherited flag here - it should already be set correctly
-			// when the property was created by addBasePropertyDefinitions
-			
 			// For first occurrence, use the original definition as the shared instance
-			// This ensures all types with same inherited flag share the same PropertyDefinition instance
+			// This ensures each type gets its own PropertyDefinition instance with correct inherited flag
 			return originalDefinition;
 		});
 	}

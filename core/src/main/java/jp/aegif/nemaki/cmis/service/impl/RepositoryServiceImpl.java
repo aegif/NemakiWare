@@ -299,7 +299,8 @@ public class RepositoryServiceImpl implements RepositoryService,
 			if (parentType != null && parentType.getPropertyDefinitions() != null) {
 				
 				// Get parent type definition from database to find property IDs
-				NemakiTypeDefinition parentTypeDef = (NemakiTypeDefinition) typeManager.getTypeDefinition(repositoryId, parentTypeId);
+				// FIX: Use typeService to get NemakiTypeDefinition directly from database
+				NemakiTypeDefinition parentTypeDef = typeService.getTypeDefinition(repositoryId, parentTypeId);
 				if (parentTypeDef != null && parentTypeDef.getProperties() != null) {
 					
 					// Inherit all property IDs from parent type
