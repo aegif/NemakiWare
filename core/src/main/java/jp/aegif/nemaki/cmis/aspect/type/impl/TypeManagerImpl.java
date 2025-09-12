@@ -1599,12 +1599,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
-		// They are already inherited from parent type with correct inherited flags
-		// Only add these for base types (cmis:folder itself)
-		if (BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId())) {
-			addBasePropertyDefinitions(repositoryId, type);
-			addFolderPropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: All folder types need CMIS properties for TCK compliance
+		// Base types get them as non-inherited, derived types get them as inherited
+		addBasePropertyDefinitions(repositoryId, type);
+		addFolderPropertyDefinitions(repositoryId, type);
+		
+		if (!BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId())) {
+			// For derived types, mark CMIS properties as inherited
+			setInheritedFlagsForCMISProperties(type, true);
 		}
 
 		return type;
@@ -2103,12 +2105,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: For subtypes, DO NOT re-add base CMIS properties
-		// They are already inherited from parent type with correct inherited flags
-		// Only add these for base types (cmis:document itself)
-		if (BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId())) {
-			addBasePropertyDefinitions(repositoryId, type);
-			addDocumentPropertyDefinitions(repositoryId, type);
+		// CRITICAL FIX: All document types need CMIS properties for TCK compliance
+		// Base types get them as non-inherited, derived types get them as inherited
+		addBasePropertyDefinitions(repositoryId, type);
+		addDocumentPropertyDefinitions(repositoryId, type);
+		
+		if (!BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId())) {
+			// For derived types, mark CMIS properties as inherited
+			setInheritedFlagsForCMISProperties(type, true);
 		}
 
 		// Add specific attributes
@@ -3588,6 +3592,32 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		return Cardinality.SINGLE;
 	}
 	
+	/**
+	 * Set inherited flags for CMIS system properties in derived types
+	 * This ensures TCK compliance for property inheritance
+	 */
+	private void setInheritedFlagsForCMISProperties(AbstractTypeDefinition type, boolean inherited) {
+		if (type == null || type.getPropertyDefinitions() == null) {
+			return;
+		}
+		
+		Map<String, PropertyDefinition<?>> properties = type.getPropertyDefinitions();
+		for (Map.Entry<String, PropertyDefinition<?>> entry : properties.entrySet()) {
+			String propertyId = entry.getKey();
+			PropertyDefinition<?> property = entry.getValue();
+			
+			// Only modify CMIS system properties
+			if (propertyId != null && propertyId.startsWith("cmis:") && property instanceof AbstractPropertyDefinition) {
+				AbstractPropertyDefinition<?> abstractProp = (AbstractPropertyDefinition<?>) property;
+				abstractProp.setIsInherited(inherited);
+				
+				if (log.isDebugEnabled()) {
+					log.debug("Set inherited=" + inherited + " for property: " + propertyId + " in type: " + type.getId());
+				}
+			}
+		}
+	}
+
 	/**
 	 * PRIORITY 4: Invalidate type cache for TCK compliance
 	 * Forces TypeManager to reload type definitions from database
