@@ -166,12 +166,8 @@ public class CacheResource extends ResourceBase{
 				throw new RuntimeException("Spring ApplicationContext not available");
 			}
 			
-			// Get TypeManager bean from Spring context
-			jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
-				appContext.getBean("typeManager", jp.aegif.nemaki.cmis.aspect.type.TypeManager.class);
-			
 			if (typeManager == null) {
-				throw new RuntimeException("TypeManager bean not found in Spring context");
+				throw new RuntimeException("TypeManager not properly injected - check Spring configuration");
 			}
 			
 			Logger.info("TypeManager found: " + typeManager.getClass().getName());

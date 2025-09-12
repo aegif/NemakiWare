@@ -602,8 +602,33 @@ public class ContentServiceImpl implements ContentService {
 	try {
 		// PHASE 1: Prepare all components without CouchDB writes
 		Document d = buildNewBasicDocument(callContext, repositoryId, properties, parentFolder, addAces, removeAces);
+		
+		// CRITICAL FIX: Evaluate ContentStreamAllowed considering Secondary Types
 		DocumentTypeDefinition tdf = (DocumentTypeDefinition) (getTypeManager().getTypeDefinition(repositoryId, d));
 		ContentStreamAllowed csa = tdf.getContentStreamAllowed();
+		
+		List<String> secondaryTypeIds = d.getSecondaryIds();
+		if (secondaryTypeIds != null && !secondaryTypeIds.isEmpty()) {
+			for (String secondaryTypeId : secondaryTypeIds) {
+				try {
+					org.apache.chemistry.opencmis.commons.definitions.TypeDefinition secondaryTd = 
+						getTypeManager().getTypeDefinition(repositoryId, secondaryTypeId);
+					if (secondaryTd instanceof DocumentTypeDefinition) {
+						DocumentTypeDefinition secondaryDocTd = (DocumentTypeDefinition) secondaryTd;
+						ContentStreamAllowed secondaryCsa = secondaryDocTd.getContentStreamAllowed();
+						if (secondaryCsa == ContentStreamAllowed.REQUIRED) {
+							csa = ContentStreamAllowed.REQUIRED;
+							log.debug("Secondary Type {} requires content stream, upgrading ContentStreamAllowed to REQUIRED", secondaryTypeId);
+							break;
+						}
+					}
+				} catch (Exception e) {
+					log.debug("Could not evaluate Secondary Type {} for ContentStreamAllowed: {}", secondaryTypeId, e.getMessage());
+				}
+			}
+		}
+		
+		log.debug("Final ContentStreamAllowed evaluation: {}, ContentStream provided: {}", csa, (contentStream != null));
 		
 		log.debug("ContentStreamAllowed: {}, ContentStream provided: {}", csa, (contentStream != null));
 		
@@ -1489,6 +1514,8 @@ public class ContentServiceImpl implements ContentService {
 		List<Aspect> secondary = buildSecondaryTypes(repositoryId, properties, content);
 		if (!CollectionUtils.isEmpty(secondary)) {
 			content.setAspects(secondary);
+			log.debug("Applied {} Secondary Types to content: {}", secondary.size(), 
+				secondary.stream().map(Aspect::getName).collect(java.util.stream.Collectors.toList()));
 		}
 
 		// Signature
@@ -2737,14 +2764,12 @@ public class ContentServiceImpl implements ContentService {
 		this.contentDaoService = contentDaoService;
 	}
 
-	// TypeManager obtained via SpringContext to avoid circular dependency
+	// TypeManager injected via proper DI to maintain proxy benefits
 	private TypeManager getTypeManager() {
-		try {
-			return (TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
-		} catch (Exception e) {
-			log.error("Failed to get TypeManager from SpringContext: " + e.getMessage(), e);
-			return null;
+		if (typeManager == null) {
+			log.error("TypeManager not properly injected - this indicates a configuration issue");
 		}
+		return typeManager;
 	}
 
 	public void setRenditionManager(RenditionManager renditionManager) {

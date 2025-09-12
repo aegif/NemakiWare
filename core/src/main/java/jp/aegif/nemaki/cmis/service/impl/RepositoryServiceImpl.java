@@ -283,7 +283,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 			if (parentType != null && parentType.getPropertyDefinitions() != null) {
 				
 				// Get parent type definition from database to find property IDs
-				NemakiTypeDefinition parentTypeDef = typeService.getTypeDefinition(repositoryId, parentTypeId);
+				NemakiTypeDefinition parentTypeDef = (NemakiTypeDefinition) typeManager.getTypeDefinition(repositoryId, parentTypeId);
 				if (parentTypeDef != null && parentTypeDef.getProperties() != null) {
 					
 					// Inherit all property IDs from parent type
@@ -328,7 +328,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 							.createPropertyDefinition(repositoryId, create);
 					
 					// CRITICAL FIX: Enhanced contamination detection and handling
-					NemakiPropertyDefinition retrievedProp = typeService.getPropertyDefinition(repositoryId, created.getId());
+					NemakiPropertyDefinition retrievedProp = typeManager.getPropertyDefinition(repositoryId, created.getId());
 					if (retrievedProp != null) {
 						if (!originalPropertyId.equals(retrievedProp.getPropertyId())) {
 							// CRITICAL FIX: Contamination detected - implement proper handling
@@ -345,7 +345,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 							updatedDetail.setId(created.getId());
 							updatedDetail.setLocalName(originalPropertyId);  // Ensure localName matches property ID
 							
-							typeService.updatePropertyDefinitionDetail(repositoryId, updatedDetail);
+							typeManager.updatePropertyDefinitionDetail(repositoryId, updatedDetail);
 							log.info("DEBUG: Property definition updated with correct property ID: " + originalPropertyId);
 						}
 					}
@@ -365,9 +365,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 		}
 
 		// Create
-		log.info("DEBUG: Calling typeService.createTypeDefinition()");
-		NemakiTypeDefinition created = typeService.createTypeDefinition(repositoryId, ntd);
-		log.info("DEBUG: typeService.createTypeDefinition() completed - Created type ID: " + created.getTypeId());
+		log.info("DEBUG: Calling typeManager.createTypeDefinition()");
+		NemakiTypeDefinition created = typeManager.createTypeDefinition(repositoryId, ntd);
+		log.info("DEBUG: typeManager.createTypeDefinition() completed - Created type ID: " + created.getTypeId());
 		
 		// CRITICAL FIX: Instead of full refresh, force specific repository cache refresh
 		log.info("DEBUG: Refreshing TypeManager cache");
@@ -438,8 +438,8 @@ public class RepositoryServiceImpl implements RepositoryService,
 			}
 			
 			try {
-				typeService.deleteTypeDefinition(repositoryId, typeId);
-				log.debug("typeService.deleteTypeDefinition completed successfully");
+				typeManager.deleteTypeDefinition(repositoryId, typeId);
+				log.debug("typeManager.deleteTypeDefinition completed successfully");
 			} catch (Exception deletionException) {
 				log.error("Type deletion failed for typeId: " + typeId, deletionException);
 				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("Type deletion failed: " + deletionException.getMessage(), deletionException);
@@ -499,7 +499,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		NemakiTypeDefinition existingType = typeService
+		NemakiTypeDefinition existingType = (NemakiTypeDefinition) typeManager
 				.getTypeDefinition(repositoryId, type.getId());
 
 		// Attributes
@@ -519,7 +519,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 				// CRITICAL FIX: Check if property already exists by propertyId, not by node ID lookup
 				// Old logic was trying to get PropertyDefinitionCore for new properties that don't exist yet
-				NemakiPropertyDefinitionCore existingCore = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, key);
+				NemakiPropertyDefinitionCore existingCore = typeManager.getPropertyDefinitionCoreByPropertyId(repositoryId, key);
 				if (existingCore != null) {
 					// update
 					PropertyDefinition<?> oldPropDef = typeManager.getTypeDefinition(repositoryId, existingType.getTypeId()).getPropertyDefinitions().get(key);
@@ -531,13 +531,13 @@ public class RepositoryServiceImpl implements RepositoryService,
 							propDef);
 					// FIXED: Use existing PropertyDefinitionCore ID we already found
 					NemakiPropertyDefinitionDetail update = new NemakiPropertyDefinitionDetail(_update, existingCore.getId());
-					typeService.updatePropertyDefinitionDetail(repositoryId, update);
+					typeManager.updatePropertyDefinitionDetail(repositoryId, update);
 				} else {
 					// create
 					exceptionService.constraintQueryName(propDef);
 					NemakiPropertyDefinition create = new NemakiPropertyDefinition(
 							propDef);
-					NemakiPropertyDefinitionDetail created = typeService
+					NemakiPropertyDefinitionDetail created = typeManager
 							.createPropertyDefinition(repositoryId, create);
 
 					List<String> l = ntd.getProperties();
@@ -549,7 +549,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		}
 
 		// Update
-		NemakiTypeDefinition updated = typeService.updateTypeDefinition(repositoryId, ntd);
+		NemakiTypeDefinition updated = typeManager.updateTypeDefinition(repositoryId, ntd);
 		typeManager.refreshTypes();
 		
 		// CRITICAL FIX: Clear shared TypeDefinition caches to maintain object identity consistency
