@@ -307,15 +307,10 @@ public class TypeManagerImpl implements TypeManager {
 			TYPES = new ConcurrentHashMap<String, Map<String,TypeDefinitionContainer>>();
 		} else {
 			if (log.isDebugEnabled()) {
-				log.debug("Clearing existing TYPES map (refresh operation)");
+				log.debug("TYPES map already exists - preserving during refresh operation");
 			}
-			// Clear each repository's type map instead of replacing the entire TYPES map
-			for (String key : TYPES.keySet()) {
-				Map<String, TypeDefinitionContainer> repositoryTypes = TYPES.get(key);
-				if (repositoryTypes != null) {
-					repositoryTypes.clear();
-				}
-			}
+			// CRITICAL FIX: Do NOT clear existing TYPES during refresh
+			// This was causing "TYPES is empty after initialization" error
 		}
 		
 		// CRITICAL FIX: Ensure all repositories have a type map and preserve existing entries
@@ -1027,7 +1022,7 @@ public class TypeManagerImpl implements TypeManager {
 		boolean orderable_objectId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.OBJECT_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, QUERYABLE, orderable_objectId, null));
+				Updatability.READONLY, REQUIRED, QUERYABLE, orderable_objectId, null));
 		log.info("DEBUG: Added cmis:objectId property");
 
 		//cmis:baseTypeId
@@ -1035,7 +1030,7 @@ public class TypeManagerImpl implements TypeManager {
 		boolean orderable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.BASE_TYPE_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null));
+				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null));
 		log.info("DEBUG: Added cmis:baseTypeId property");
 
 		//cmis:objectTypeId
@@ -1586,6 +1581,50 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		return null;
 	}
 
+	private DocumentTypeDefinitionImpl buildDocumentTypeDefinitionFromDB(
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
+		DocumentTypeDefinitionImpl type = new DocumentTypeDefinitionImpl();
+		
+		// CRITICAL FIX: Add null safety for parent type lookup with baseId fallback
+		String parentId = nemakiType.getParentId();
+		String baseId = nemakiType.getBaseId() != null ? nemakiType.getBaseId().value() : null;
+		String targetParentId = (parentId != null) ? parentId : baseId;
+		
+		TypeDefinitionContainer parentContainer = types.get(targetParentId);
+		if (parentContainer == null) {
+			log.error("Parent type container not found for ID: " + targetParentId + ". Available types: " + types.keySet());
+			throw new RuntimeException("Parent type not found: " + targetParentId);
+		}
+		
+		DocumentTypeDefinitionImpl parentType = (DocumentTypeDefinitionImpl) parentContainer.getTypeDefinition();
+
+		// Set base attributes, and properties(with specific properties included)
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
+
+		// CRITICAL FIX: All document types need CMIS properties for TCK compliance
+		// Base types get them as non-inherited, derived types get them as inherited
+		addBasePropertyDefinitions(repositoryId, type);
+		addDocumentPropertyDefinitions(repositoryId, type);
+		
+		if (!BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId())) {
+			// For derived types, mark CMIS properties as inherited
+			setInheritedFlagsForCMISProperties(type, true);
+		}
+
+		// Add specific attributes
+		ContentStreamAllowed contentStreamAllowed = (nemakiType
+				.getContentStreamAllowed() == null) ? parentType
+				.getContentStreamAllowed() : nemakiType
+				.getContentStreamAllowed();
+		type.setContentStreamAllowed(contentStreamAllowed);
+		boolean versionable = (nemakiType.isVersionable() == null) ? parentType
+				.isVersionable() : nemakiType.isVersionable();
+		type.setIsVersionable(versionable);
+
+		return type;
+	}
 
 	private FolderTypeDefinitionImpl buildFolderTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
@@ -2068,65 +2107,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		return property;
 	}
 
-	/**
-	 * ARCHITECTURAL REDESIGN: Unified PropertyDefinition Builder
-	 * 
-	 * This builder eliminates the 3-layer separation complexity by providing
-	 * a single, consistent interface for PropertyDefinition creation that:
-	 * 
-	 * 1. ELIMINATES OBJECT REUSE: Always creates fresh, isolated objects
-	 * 2. PREVENTS CONTAMINATION: No shared references between properties
-	 * 3. MANAGES INHERITANCE: Consistent inheritance flag determination
-	 * 4. SIMPLIFIES CREATION: Single builder interface instead of multiple constructors
-	 */
-
-	private DocumentTypeDefinitionImpl buildDocumentTypeDefinitionFromDB(
-			String repositoryId, NemakiTypeDefinition nemakiType) {
-		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
-		
-		DocumentTypeDefinitionImpl type = new DocumentTypeDefinitionImpl();
-		
-		// CRITICAL FIX: Add null safety for parent type lookup with baseId fallback
-		// Same issue as in validation methods - parentId may be null for new custom types
-		String parentId = nemakiType.getParentId();
-		String baseId = nemakiType.getBaseId() != null ? nemakiType.getBaseId().value() : null;
-		String targetParentId = (parentId != null) ? parentId : baseId;
-		
-							
-		TypeDefinitionContainer parentContainer = types.get(targetParentId);
-		if (parentContainer == null) {
-				log.error("Parent type container not found for ID: " + targetParentId + ". Available types: " + types.keySet());
-				throw new RuntimeException("Parent type not found: " + targetParentId);
-		}
-		
-		DocumentTypeDefinitionImpl parentType = (DocumentTypeDefinitionImpl) parentContainer.getTypeDefinition();
-
-		// Set base attributes, and properties(with specific properties
-		// included)
-		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
-
-		// CRITICAL FIX: All document types need CMIS properties for TCK compliance
-		// Base types get them as non-inherited, derived types get them as inherited
-		addBasePropertyDefinitions(repositoryId, type);
-		addDocumentPropertyDefinitions(repositoryId, type);
-		
-		if (!BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId())) {
-			// For derived types, mark CMIS properties as inherited
-			setInheritedFlagsForCMISProperties(type, true);
-		}
-
-		// Add specific attributes
-		ContentStreamAllowed contentStreamAllowed = (nemakiType
-				.getContentStreamAllowed() == null) ? parentType
-				.getContentStreamAllowed() : nemakiType
-				.getContentStreamAllowed();
-		type.setContentStreamAllowed(contentStreamAllowed);
-		boolean versionable = (nemakiType.isVersionable() == null) ? parentType
-				.isVersionable() : nemakiType.isVersionable();
-		type.setIsVersionable(versionable);
-
-		return type;
-	}
 
 
 	private void copyToPropertyDefinitionCore(
@@ -3598,10 +3578,15 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 */
 	private void setInheritedFlagsForCMISProperties(AbstractTypeDefinition type, boolean inherited) {
 		if (type == null || type.getPropertyDefinitions() == null) {
+			log.warn("setInheritedFlagsForCMISProperties: type or properties is null");
 			return;
 		}
 		
+		log.info("DEBUG: setInheritedFlagsForCMISProperties called for type: " + type.getId() + " with inherited=" + inherited);
+		
 		Map<String, PropertyDefinition<?>> properties = type.getPropertyDefinitions();
+		int modifiedCount = 0;
+		
 		for (Map.Entry<String, PropertyDefinition<?>> entry : properties.entrySet()) {
 			String propertyId = entry.getKey();
 			PropertyDefinition<?> property = entry.getValue();
@@ -3609,13 +3594,15 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			// Only modify CMIS system properties
 			if (propertyId != null && propertyId.startsWith("cmis:") && property instanceof AbstractPropertyDefinition) {
 				AbstractPropertyDefinition<?> abstractProp = (AbstractPropertyDefinition<?>) property;
+				boolean oldInherited = abstractProp.isInherited();
 				abstractProp.setIsInherited(inherited);
+				modifiedCount++;
 				
-				if (log.isDebugEnabled()) {
-					log.debug("Set inherited=" + inherited + " for property: " + propertyId + " in type: " + type.getId());
-				}
+				log.info("DEBUG: Property " + propertyId + " inherited flag changed from " + oldInherited + " to " + inherited);
 			}
 		}
+		
+		log.info("DEBUG: Modified " + modifiedCount + " CMIS properties in type: " + type.getId());
 	}
 
 	/**

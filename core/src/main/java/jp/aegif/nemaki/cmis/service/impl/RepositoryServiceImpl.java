@@ -55,6 +55,7 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
 import org.apache.chemistry.opencmis.commons.definitions.TypeMutability;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
@@ -238,21 +239,36 @@ public class RepositoryServiceImpl implements RepositoryService,
 			String repositoryId, TypeDefinition type, ExtensionsData extension) {
 		
 		log.info("=== REPOSITORY SERVICE DEBUG: createType() called ===");
-	log.info("DEBUG: repositoryId=" + repositoryId);
-	log.info("DEBUG: typeId=" + (type != null ? type.getId() : "null"));
-	log.info("DEBUG: user=" + (callContext != null ? callContext.getUsername() : "null"));
-	log.info("DEBUG: type class=" + (type != null ? type.getClass().getName() : "null"));
-	log.info("DEBUG: parentTypeId=" + (type != null ? type.getParentTypeId() : "null"));
+		log.info("DEBUG: repositoryId=" + repositoryId);
+		log.info("DEBUG: typeId=" + (type != null ? type.getId() : "null"));
+		log.info("DEBUG: user=" + (callContext != null ? callContext.getUsername() : "null"));
+		log.info("DEBUG: type class=" + (type != null ? type.getClass().getName() : "null"));
+		log.info("DEBUG: parentTypeId=" + (type != null ? type.getParentTypeId() : "null"));
+		
+		log.error("=== TYPE CREATION DEBUG ===");
+		log.error("Input type class: " + (type != null ? type.getClass().getName() : "null"));
+		log.error("Input type instanceof DocumentTypeDefinition: " + 
+			(type instanceof DocumentTypeDefinition));
+		log.error("Input type instanceof NemakiTypeDefinition: " + 
+			(type instanceof NemakiTypeDefinition));
 		
 		// //////////////////
 		// General Exception
 		// //////////////////
-		log.info("DEBUG: Performing permission and validation checks for createType");
-		exceptionService.perimissionAdmin(callContext, repositoryId);
-		exceptionService.invalidArgumentRequired("typeDefinition", type);
-		exceptionService.invalidArgumentCreatableType(repositoryId, type);
-		exceptionService.constraintDuplicatePropertyDefinition(repositoryId, type);
-		log.info("DEBUG: All validation checks passed for createType");
+		try {
+			log.info("DEBUG: Performing permission and validation checks for createType");
+			exceptionService.perimissionAdmin(callContext, repositoryId);
+			exceptionService.invalidArgumentRequired("typeDefinition", type);
+			exceptionService.invalidArgumentCreatableType(repositoryId, type);
+			exceptionService.constraintDuplicatePropertyDefinition(repositoryId, type);
+			log.info("DEBUG: All validation checks passed for createType");
+		} catch (ClassCastException e) {
+			log.error("ClassCastException during validation checks: ", e);
+			log.error("Stack trace details:");
+			e.printStackTrace();
+			throw new CmisRuntimeException("Type conversion failed during validation: " + 
+				(type != null ? type.getClass().getName() : "null") + " to expected type", e);
+		}
 
 		// //////////////////
 		// Body of the method
