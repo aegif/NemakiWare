@@ -625,6 +625,17 @@ public class TypeManagerImpl implements TypeManager {
 	// BaseType Generating Methods
 	// /////////////////////////////////////////////////
 	private void addDocumentType(String repositoryId) {
+		log.info("addDocumentType called for repository: " + repositoryId);
+
+		// CRITICAL FIX: Ensure TYPES map has entry for this repository
+		if (!TYPES.containsKey(repositoryId)) {
+			log.error("CRITICAL: TYPES map missing entry for repository: " + repositoryId);
+			log.error("Available repositories in TYPES: " + TYPES.keySet());
+			// Create the missing entry
+			TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
+			log.info("Created missing TYPES entry for repository: " + repositoryId);
+		}
+
 		// Read parameters
 		String localName = propertyManager
 				.readValue(PropertyKey.BASETYPE_DOCUMENT_LOCAL_NAME);
@@ -692,6 +703,17 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addFolderType(String repositoryId) {
+		log.info("addFolderType called for repository: " + repositoryId);
+
+		// CRITICAL FIX: Ensure TYPES map has entry for this repository
+		if (!TYPES.containsKey(repositoryId)) {
+			log.error("CRITICAL: TYPES map missing entry for repository: " + repositoryId);
+			log.error("Available repositories in TYPES: " + TYPES.keySet());
+			// Create the missing entry
+			TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
+			log.info("Created missing TYPES entry for repository: " + repositoryId);
+		}
+
 		// Read parameters
 		String localName = propertyManager
 				.readValue(PropertyKey.BASETYPE_FOLDER_LOCAL_NAME);
@@ -749,6 +771,17 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addRelationshipType(String repositoryId) {
+		log.info("addRelationshipType called for repository: " + repositoryId);
+
+		// CRITICAL FIX: Ensure TYPES map has entry for this repository
+		if (!TYPES.containsKey(repositoryId)) {
+			log.error("CRITICAL: TYPES map missing entry for repository: " + repositoryId);
+			log.error("Available repositories in TYPES: " + TYPES.keySet());
+			// Create the missing entry
+			TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
+			log.info("Created missing TYPES entry for repository: " + repositoryId);
+		}
+
 		// Read parameters
 		String localName = propertyManager
 				.readValue(PropertyKey.BASETYPE_RELATIONSHIP_LOCAL_NAME);
@@ -814,6 +847,17 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addPolicyType(String repositoryId) {
+		log.info("addPolicyType called for repository: " + repositoryId);
+
+		// CRITICAL FIX: Ensure TYPES map has entry for this repository
+		if (!TYPES.containsKey(repositoryId)) {
+			log.error("CRITICAL: TYPES map missing entry for repository: " + repositoryId);
+			log.error("Available repositories in TYPES: " + TYPES.keySet());
+			// Create the missing entry
+			TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
+			log.info("Created missing TYPES entry for repository: " + repositoryId);
+		}
+
 		// Read parameters
 		String localName = propertyManager
 				.readValue(PropertyKey.BASETYPE_POLICY_LOCAL_NAME);
@@ -873,6 +917,17 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addItemType(String repositoryId) {
+		log.info("addItemType called for repository: " + repositoryId);
+
+		// CRITICAL FIX: Ensure TYPES map has entry for this repository
+		if (!TYPES.containsKey(repositoryId)) {
+			log.error("CRITICAL: TYPES map missing entry for repository: " + repositoryId);
+			log.error("Available repositories in TYPES: " + TYPES.keySet());
+			// Create the missing entry
+			TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
+			log.info("Created missing TYPES entry for repository: " + repositoryId);
+		}
+
 		// Read parameters
 		String localName = propertyManager
 				.readValue(PropertyKey.BASETYPE_ITEM_LOCAL_NAME);
