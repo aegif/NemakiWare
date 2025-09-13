@@ -517,12 +517,17 @@ public class MultipartParser {
     }
 
     private void skipPreamble() throws IOException {
-        // JAKARTA EE / TOMCAT FIX: Check if multipart was already processed
-        Object multipartProcessed = request.getAttribute("multipart.processed");
-        if (Boolean.TRUE.equals(multipartProcessed)) {
-            // Multipart already processed by container - skip parsing
-            System.out.println("MULTIPART FIX: Skipping multipart parsing - already processed by container");
-            return;
+        // JAKARTA EE / TOMCAT 10 FIX: Check if stream is already consumed
+        try {
+            int available = requestStream.available();
+            if (available == 0 && request.getContentLength() > 0) {
+                // Stream consumed but content was present - likely processed by Tomcat
+                System.out.println("MULTIPART FIX: Stream appears consumed by container, skipping preamble");
+                eof = true;
+                return;
+            }
+        } catch (Exception e) {
+            System.out.println("MULTIPART FIX: Error checking stream availability: " + e.getMessage());
         }
 
         readBuffer();
@@ -651,37 +656,76 @@ public class MultipartParser {
     }
 
     public void parse() throws IOException {
-        // JAKARTA EE / TOMCAT FIX: Check if multipart was already processed
-        Object multipartProcessed = request.getAttribute("multipart.processed");
-        if (Boolean.TRUE.equals(multipartProcessed)) {
-            // Multipart already processed by container - get parameters directly
-            System.out.println("MULTIPART FIX: Using container-parsed parameters");
+        // JAKARTA EE / TOMCAT 10 FIX: Try Parts API first, fallback to stream parsing
+        boolean partsApiSuccess = false;
 
-            // Copy all parameters from request to fields map
-            java.util.Map<String, String[]> paramMap = request.getParameterMap();
-            for (java.util.Map.Entry<String, String[]> entry : paramMap.entrySet()) {
-                fields.put(entry.getKey(), entry.getValue());
-            }
+        // Try to use Parts API if Tomcat has already processed multipart
+        try {
+            // Check if stream is already consumed (indicates Tomcat processed it)
+            int available = requestStream.available();
+            System.out.println("MULTIPART FIX: InputStream available bytes: " + available);
 
-            // Try to get content from Parts API if available
-            try {
+            // If stream is empty or we detect Tomcat processing, try Parts API
+            if (available == 0 || request.getContentLength() == -1) {
+                System.out.println("MULTIPART FIX: Stream appears consumed or chunked, trying Parts API");
+
                 java.util.Collection<jakarta.servlet.http.Part> parts = request.getParts();
-                for (jakarta.servlet.http.Part part : parts) {
-                    if ("content".equals(part.getName())) {
-                        filename = part.getSubmittedFileName();
-                        contentType = part.getContentType();
-                        contentSize = java.math.BigInteger.valueOf(part.getSize());
-                        contentStream = part.getInputStream();
-                        hasContent = true;
-                        break;
-                    }
-                }
-            } catch (Exception e) {
-                // Parts API not available or error - continue without content
-                System.out.println("MULTIPART FIX: Could not get content from Parts API: " + e.getMessage());
-            }
+                if (parts != null && !parts.isEmpty()) {
+                    System.out.println("MULTIPART FIX: Found " + parts.size() + " parts via Parts API");
 
-            return;
+                    // Process all parts
+                    for (jakarta.servlet.http.Part part : parts) {
+                        String partName = part.getName();
+                        System.out.println("MULTIPART FIX: Processing part '" + partName + "'");
+
+                        if ("content".equals(partName)) {
+                            // File content part
+                            filename = part.getSubmittedFileName();
+                            contentType = part.getContentType();
+                            contentSize = java.math.BigInteger.valueOf(part.getSize());
+                            contentStream = part.getInputStream();
+                            hasContent = true;
+                            System.out.println("MULTIPART FIX: Found content part - filename: " + filename + ", type: " + contentType + ", size: " + contentSize);
+                        } else {
+                            // Form field part
+                            try (java.io.InputStream partStream = part.getInputStream()) {
+                                // Read the stream into a byte array
+                                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                                byte[] buffer = new byte[1024];
+                                int bytesRead;
+                                while ((bytesRead = partStream.read(buffer)) != -1) {
+                                    baos.write(buffer, 0, bytesRead);
+                                }
+                                String value = new String(baos.toByteArray(), "UTF-8");
+                                addField(partName, value);
+                                System.out.println("MULTIPART FIX: Added field '" + partName + "' = '" + value + "'");
+                            }
+                        }
+                    }
+
+                    // Also get any regular form parameters
+                    java.util.Map<String, String[]> paramMap = request.getParameterMap();
+                    for (java.util.Map.Entry<String, String[]> entry : paramMap.entrySet()) {
+                        if (!fields.containsKey(entry.getKey())) {
+                            fields.put(entry.getKey(), entry.getValue());
+                            System.out.println("MULTIPART FIX: Added parameter '" + entry.getKey() + "' with " + entry.getValue().length + " values");
+                        }
+                    }
+
+                    partsApiSuccess = true;
+                    System.out.println("MULTIPART FIX: Successfully processed multipart via Parts API");
+                    return;
+                }
+            }
+        } catch (jakarta.servlet.ServletException e) {
+            System.out.println("MULTIPART FIX: Parts API failed with ServletException: " + e.getMessage());
+        } catch (Exception e) {
+            System.out.println("MULTIPART FIX: Parts API failed with exception: " + e.getClass().getName() + ": " + e.getMessage());
+        }
+
+        // If Parts API failed or stream is available, use traditional parsing
+        if (!partsApiSuccess) {
+            System.out.println("MULTIPART FIX: Falling back to traditional stream parsing");
         }
 
         try {

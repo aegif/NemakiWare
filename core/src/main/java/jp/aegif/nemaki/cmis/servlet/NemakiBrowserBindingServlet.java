@@ -124,16 +124,11 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String contentType = request.getContentType();
 
         // ===============================
-        // CRITICAL MULTIPART FIX: Handle multipart BEFORE any getParameter() calls
+        // JAKARTA EE 10 MULTIPART FIX: Let OpenCMIS handle multipart with Parts API
         // ===============================
         HttpServletRequest finalRequest = request;
-        if ("POST".equalsIgnoreCase(method) && contentType != null && contentType.startsWith("multipart/form-data")) {
-            System.out.println("*** MULTIPART FIX: Detected multipart/form-data - wrapping request to prevent re-parsing ***");
-            // Create wrapper that prevents OpenCMIS from re-parsing multipart
-            finalRequest = new PreProcessedMultipartRequestWrapper(request);
-            // Set marker for OpenCMIS
-            request.setAttribute("multipart.processed", Boolean.TRUE);
-        }
+        // DO NOT wrap multipart requests - let OpenCMIS MultipartParser handle them
+        // The MultipartParser has been enhanced to use Jakarta Parts API when available
 
         // ===============================
         // POST Request Routing and TCK Client Detection
@@ -202,8 +197,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // Root Cause: HttpServletRequestWrapper corrupts parameters by changing Content-Type
         // and setting Content-Length to 0, making parameters invisible to ObjectServiceImpl
 
-        // finalRequest is already set above in the multipart handling section
-        boolean multipartAlreadyProcessed = (finalRequest instanceof PreProcessedMultipartRequestWrapper);
+        // finalRequest is set above but no longer wrapped for multipart
 
         // CRITICAL FIX: Extract cmisaction once at global scope to avoid null-initialization bug
         // Use finalRequest instead of request to ensure proper parameter handling
@@ -212,21 +206,15 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // Log critical service parameters for debugging
         log.debug("SERVICE: cmisaction='" + cmisaction + "', method=" + method + ", pathInfo=" + pathInfo);
 
-        if (multipartAlreadyProcessed) {
-            System.out.println("*** MULTIPART FIX: Using wrapped request for parameters ***");
-            // Debug: Log all parameters to verify they're available
-            java.util.Map<String, String[]> parameterMap = finalRequest.getParameterMap();
-            System.out.println("*** MULTIPART FIX: Available parameters: " + parameterMap.size() + " ***");
-            for (String key : parameterMap.keySet()) {
-                String[] values = parameterMap.get(key);
-                System.out.println("*** MULTIPART FIX: Parameter '" + key + "' = " + java.util.Arrays.toString(values) + " ***");
-            }
+        // Debug logging for multipart parameters
+        if (contentType != null && contentType.startsWith("multipart/form-data")) {
+            System.out.println("*** MULTIPART DEBUG: Multipart request detected - will be handled by OpenCMIS MultipartParser with Parts API ***");
         }
         
         // CRITICAL FIX: Handle multipart form-data parameter parsing for legacy compatibility
         // BUG FIX: cmisaction already extracted at global scope (line 216) - no redeclaration needed
         
-        if (!multipartAlreadyProcessed && contentType != null && contentType.startsWith("multipart/form-data")) {
+        if (contentType != null && contentType.startsWith("multipart/form-data")) {
             try {
                 // Use OpenCMIS HttpUtils to properly parse multipart parameters
                 cmisaction = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "cmisaction");
@@ -256,42 +244,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
                 
                 if (cmisaction == null) {
-                    // Try alternative parsing methods if HttpUtils doesn't work
-                    if (request instanceof jakarta.servlet.http.HttpServletRequest) {
-                        try {
-                            // JAKARTA EE 10 MULTIPART PROCESSING FIX: Enhanced cmisaction parameter extraction
-                            java.util.Collection<jakarta.servlet.http.Part> parts = null;
-                            try {
-                                parts = request.getParts();
-                            } catch (jakarta.servlet.ServletException servletEx) {
-                                log.warn("ServletException in cmisaction getParts(): " + servletEx.getMessage());
-                                throw servletEx;
-                            } catch (java.io.IOException ioEx) {
-                                log.error("IOException in cmisaction getParts(): " + ioEx.getMessage());
-                                throw ioEx;
-                            }
-                            
-                            if (parts != null) {
-                                for (jakarta.servlet.http.Part part : parts) {
-                                    try {
-                                        if ("cmisaction".equals(part.getName())) {
-                                            java.io.InputStream inputStream = part.getInputStream();
-                                            if (inputStream != null) {
-                                                byte[] bytes = inputStream.readAllBytes();
-                                                cmisaction = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
-                                                break;
-                                            }
-                                        }
-                                    } catch (java.io.IOException partIoEx) {
-                                        log.warn("IOException reading cmisaction part: " + partIoEx.getMessage());
-                                        // Continue to next part
-                                    }
-                                }
-                            }
-                        } catch (Exception partException) {
-                            log.error("PART-BASED CMISACTION PARSING FAILED: " + partException.getMessage());
-                        }
-                    }
+                    // JAKARTA EE 10 FIX: DO NOT call getParts() here as it consumes the InputStream
+                    // The multipart data will be parsed by OpenCMIS MultipartParser later
+                    // This early parsing was causing the "Invalid multipart request!" error
+                    log.debug("cmisaction not found in initial parsing - will be extracted by OpenCMIS MultipartParser");
                 }
             } catch (Exception e) {
                 log.error("MULTIPART PARSING ERROR: " + e.getMessage());
@@ -574,7 +530,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         if ("createDocument".equals(cmisaction)) {
             log.debug("Starting createDocument operation - Final request class: " + finalRequest.getClass().getName() + 
                      ", Content-Type: " + finalRequest.getContentType() + ", Content-Length: " + finalRequest.getContentLength() +
-                     ", Multipart Already Processed: " + multipartAlreadyProcessed);
+                     ", Content-Type: " + contentType);
             
             // Log parameters for debugging if needed
             if (log.isDebugEnabled()) {
@@ -690,7 +646,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 log.error("Secondary Types Test failure - CmisInvalidArgumentException in createDocument operation");
                 log.debug("Request details for failed createDocument: Method=" + method + ", URI=" + requestURI + 
                          ", PathInfo=" + pathInfo + ", Content-Type=" + contentType + ", CmisAction=" + cmisaction + 
-                         ", Multipart Already Processed=" + multipartAlreadyProcessed);
+                         ", Content-Type=" + contentType);
                 
                 // Enhanced parameter analysis for createDocument failures
                 if (log.isDebugEnabled()) {
@@ -713,7 +669,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // Enhanced logging for Secondary Types Test debugging
             if ("createDocument".equals(cmisaction)) {
                 log.error("Secondary Types Test: Exception during createDocument operation - " + e.getClass().getName() + ": " + e.getMessage());
-                log.debug("Multipart Already Processed: " + multipartAlreadyProcessed);
+                log.debug("Content-Type: " + contentType);
             }
             
             // Re-throw the exception
@@ -730,7 +686,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         if ("createDocument".equals(cmisaction)) {
             log.debug("createDocument operation completed successfully - Response status: " + response.getStatus() + 
                      ", Content type: " + response.getContentType() + 
-                     ", Multipart Processing Method: " + (multipartAlreadyProcessed ? "Tomcat (prevented OpenCMIS re-parsing)" : "OpenCMIS (legacy)"));
+                     ", Multipart Processing: OpenCMIS with Parts API");
         }
     }
     
@@ -1545,54 +1501,17 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String typeId = null;
         String contentType = request.getContentType();
         
-        if (contentType != null && contentType.startsWith("multipart/form-data")) {
-            log.debug("DIRECT DELETE TYPE: Parsing typeId from multipart data");
+        // JAKARTA EE 10 FIX: Simplify parameter extraction - let OpenCMIS handle multipart
+        // DO NOT call getParts() here as it consumes the InputStream
+        typeId = request.getParameter("typeId");
+
+        if (typeId == null && contentType != null && contentType.startsWith("multipart/form-data")) {
+            // For multipart, try using HttpUtils but without consuming the stream
             try {
-                // Use OpenCMIS HttpUtils to properly parse multipart parameters
                 typeId = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "typeId");
-                if (typeId == null) {
-                    // JAKARTA EE 10 MULTIPART PROCESSING FIX: Enhanced typeId parameter extraction
-                    java.util.Collection<jakarta.servlet.http.Part> parts = null;
-                    try {
-                        parts = request.getParts();
-                    } catch (jakarta.servlet.ServletException servletEx) {
-                        log.warn("JAKARTA EE 10 FIX: ServletException in typeId getParts() - " + servletEx.getMessage());
-                        throw servletEx;
-                    } catch (java.io.IOException ioEx) {
-                        log.warn("JAKARTA EE 10 FIX: IOException in typeId getParts() - " + ioEx.getMessage());
-                        throw ioEx;
-                    }
-                    
-                    if (parts != null) {
-                        for (jakarta.servlet.http.Part part : parts) {
-                            try {
-                                if ("typeId".equals(part.getName())) {
-                                    java.io.InputStream inputStream = part.getInputStream();
-                                    if (inputStream != null) {
-                                        byte[] bytes = inputStream.readAllBytes();
-                                        typeId = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
-                                        log.debug("JAKARTA EE 10 FIX: Part-based typeId extracted: " + typeId);
-                                        break;
-                                    } else {
-                                        log.warn("JAKARTA EE 10 FIX: typeId part inputStream is null");
-                                    }
-                                }
-                            } catch (java.io.IOException partIoEx) {
-                                log.warn("JAKARTA EE 10 FIX: IOException reading typeId part - " + partIoEx.getMessage());
-                                // Continue to next part
-                            }
-                        }
-                    } else {
-                        log.warn("JAKARTA EE 10 FIX: typeId getParts() returned null");
-                    }
-                }
             } catch (Exception e) {
-                System.err.println("JAKARTA EE 10 FIX: Multipart parsing error: " + e.getMessage());
-                e.printStackTrace();
+                log.debug("Could not extract typeId from multipart - will be handled by OpenCMIS");
             }
-        } else {
-            // Normal parameter parsing for non-multipart requests
-            typeId = request.getParameter("typeId");
         }
         
         if (typeId == null || typeId.isEmpty()) {
@@ -1973,62 +1892,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         } catch (Exception e) {
             log.error("MULTIPART CONTENT EXTRACTION ERROR: " + e.getMessage(), e);
             return null;
-        }
-    }
-    
-    /**
-     * Wrapper that prevents OpenCMIS from re-parsing multipart data that has already been
-     * processed by Tomcat/Jakarta EE container.
-     */
-    private static class PreProcessedMultipartRequestWrapper extends jakarta.servlet.http.HttpServletRequestWrapper {
-        public PreProcessedMultipartRequestWrapper(HttpServletRequest request) {
-            super(request);
-        }
-
-        @Override
-        public String getContentType() {
-            // Return form-encoded to prevent OpenCMIS from creating POSTHttpServletRequestWrapper
-            // which would try to parse multipart data that's already consumed
-            return "application/x-www-form-urlencoded";
-        }
-
-        @Override
-        public int getContentLength() {
-            // Return 0 to indicate no body content needs parsing
-            return 0;
-        }
-
-        @Override
-        public long getContentLengthLong() {
-            // Return 0 to indicate no body content needs parsing
-            return 0L;
-        }
-
-        @Override
-        public jakarta.servlet.ServletInputStream getInputStream() throws java.io.IOException {
-            // Return empty stream since parameters are already parsed
-            return new jakarta.servlet.ServletInputStream() {
-                private final java.io.ByteArrayInputStream emptyStream = new java.io.ByteArrayInputStream(new byte[0]);
-
-                @Override
-                public boolean isFinished() {
-                    return true;
-                }
-
-                @Override
-                public boolean isReady() {
-                    return true;
-                }
-
-                @Override
-                public void setReadListener(jakarta.servlet.ReadListener listener) {
-                }
-
-                @Override
-                public int read() throws java.io.IOException {
-                    return emptyStream.read();
-                }
-            };
         }
     }
 
