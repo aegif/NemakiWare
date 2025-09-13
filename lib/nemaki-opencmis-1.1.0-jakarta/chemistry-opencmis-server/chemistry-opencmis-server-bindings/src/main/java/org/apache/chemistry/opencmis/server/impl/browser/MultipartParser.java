@@ -717,6 +717,11 @@ public class MultipartParser {
 
                     partsApiSuccess = true;
                     System.out.println("MULTIPART FIX: Successfully processed multipart via Parts API");
+                    System.out.println("MULTIPART FIX: Final fields map size: " + fields.size());
+                    System.out.println("MULTIPART FIX: Final fields content:");
+                    for (Map.Entry<String, String[]> entry : fields.entrySet()) {
+                        System.out.println("MULTIPART FIX:   '" + entry.getKey() + "' = " + java.util.Arrays.toString(entry.getValue()));
+                    }
                     return;
                 }
             }
@@ -809,6 +814,13 @@ public class MultipartParser {
     }
 
     public Map<String, String[]> getFields() {
+        System.out.println("MULTIPART FIX: getFields() called, returning map with " + (fields != null ? fields.size() : "null") + " entries");
+        if (fields != null && fields.size() > 0) {
+            System.out.println("MULTIPART FIX: getFields() content:");
+            for (Map.Entry<String, String[]> entry : fields.entrySet()) {
+                System.out.println("MULTIPART FIX:   '" + entry.getKey() + "' = " + java.util.Arrays.toString(entry.getValue()));
+            }
+        }
         return fields;
     }
 

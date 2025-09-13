@@ -110,12 +110,26 @@ public final class POSTHttpServletRequestWrapper extends QueryStringHttpServletR
                 }
 
                 System.out.println("MULTIPART DEBUG: Processing parser fields");
-                for (Map.Entry<String, String[]> e : parser.getFields().entrySet()) {
-                    System.out.println("MULTIPART DEBUG: Adding parameter '" + e.getKey() + "' with " + e.getValue().length + " values");
-                    for (String value : e.getValue()) {
-                        System.out.println("MULTIPART DEBUG: Parameter '" + e.getKey() + "' value: '" + value + "'");
+                Map<String, String[]> parserFields = parser.getFields();
+                System.out.println("MULTIPART DEBUG: parser.getFields() returned " + (parserFields != null ? parserFields.size() : "null") + " fields");
+
+                if (parserFields != null) {
+                    for (Map.Entry<String, String[]> e : parserFields.entrySet()) {
+                        System.out.println("MULTIPART DEBUG: Adding parameter '" + e.getKey() + "' with " + e.getValue().length + " values");
+                        for (String value : e.getValue()) {
+                            System.out.println("MULTIPART DEBUG: Parameter '" + e.getKey() + "' value: '" + value + "'");
+                        }
+                        addParameter(e.getKey(), e.getValue());
                     }
-                    addParameter(e.getKey(), e.getValue());
+                } else {
+                    System.out.println("MULTIPART DEBUG: WARNING - parser.getFields() returned null!");
+                }
+
+                // Debug: Check if parameters were actually added
+                System.out.println("MULTIPART DEBUG: After adding parser fields, parameters map size: " + parameters.size());
+                System.out.println("MULTIPART DEBUG: Parameters map content:");
+                for (Map.Entry<String, String[]> entry : parameters.entrySet()) {
+                    System.out.println("MULTIPART DEBUG:   '" + entry.getKey() + "' = " + java.util.Arrays.toString(entry.getValue()));
                 }
 
                 String filenameControl = HttpUtils.getStringParameter(this, Constants.CONTROL_FILENAME);

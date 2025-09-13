@@ -103,11 +103,27 @@ public class QueryStringHttpServletRequestWrapper extends HttpServletRequestWrap
 
     @Override
     public final String getParameter(String name) {
+        // MULTIPART FIX DEBUG: Log parameter retrieval
+        System.out.println("MULTIPART FIX DEBUG: getParameter called for '" + name + "'");
+        System.out.println("MULTIPART FIX DEBUG: Current parameters map size: " + parameters.size());
+
+        // Log first 5 parameters in the map for debugging
+        int count = 0;
+        for (Map.Entry<String, String[]> entry : parameters.entrySet()) {
+            if (count++ >= 5) break;
+            System.out.println("MULTIPART FIX DEBUG: Parameter '" + entry.getKey() + "' has " + entry.getValue().length + " values");
+            if (entry.getValue().length > 0 && entry.getValue()[0] != null) {
+                System.out.println("MULTIPART FIX DEBUG: First value: '" + entry.getValue()[0] + "'");
+            }
+        }
+
         String[] values = parameters.get(name);
         if (values == null || values.length == 0) {
+            System.out.println("MULTIPART FIX DEBUG: Parameter '" + name + "' not found, returning null");
             return null;
         }
 
+        System.out.println("MULTIPART FIX DEBUG: Parameter '" + name + "' found, returning: '" + values[0] + "'");
         return values[0];
     }
 
