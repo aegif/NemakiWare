@@ -30,8 +30,7 @@
 
 	<bean id="cmisService" class="jp.aegif.nemaki.cmis.factory.CmisService" scope="prototype">
 		<property name="repositoryService">
-            <!-- CRITICAL DEBUG FIX: Reference implementation directly to bypass proxy and enable debugging -->
-            <ref bean="repositoryService" />
+            <ref bean="RepositoryService" />
         </property>
         <property name="navigationService">
             <ref bean="NavigationService" />

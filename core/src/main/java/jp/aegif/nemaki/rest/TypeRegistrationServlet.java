@@ -33,23 +33,7 @@ public class TypeRegistrationServlet extends HttpServlet {
         super.init();
         log.info("TypeRegistrationServlet initializing...");
         
-        try {
-            // Spring context経由でserviceを取得
-            typeService = (TypeService) SpringContext.getBean("TypeService");
-            typeManager = (TypeManager) SpringContext.getBean("TypeManager");
-            typeResource = (TypeResource) SpringContext.getBean("typeResource");
-            
-            // TypeResourceに依存性を注入
-            if (typeResource != null) {
-                typeResource.setTypeService(typeService);
-                typeResource.setTypeManager(typeManager);
-            }
-            
-            log.info("TypeRegistrationServlet initialized successfully");
-        } catch (Exception e) {
-            log.error("Failed to initialize TypeRegistrationServlet", e);
-            throw new ServletException("Failed to initialize TypeRegistrationServlet", e);
-        }
+        log.info("TypeRegistrationServlet initialized - services should be injected via Spring configuration");
     }
 
     @Override

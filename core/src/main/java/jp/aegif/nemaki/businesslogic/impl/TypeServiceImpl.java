@@ -25,6 +25,7 @@ public class TypeServiceImpl implements TypeService{
 
 	private static final Log log = LogFactory.getLog(TypeServiceImpl.class);
 	private ContentDaoService contentDaoService;
+	private jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager;
 
 	public TypeServiceImpl() {
 
@@ -118,9 +119,6 @@ public class TypeServiceImpl implements TypeService{
 			log.info("DEBUG: Starting property inheritance from parent: " + parentTypeId);
 			
 			try {
-				jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
-					(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
-				
 				log.info("DEBUG: TypeManager retrieved: " + (typeManager != null));
 				
 				if (typeManager != null) {
@@ -210,20 +208,9 @@ public class TypeServiceImpl implements TypeService{
 		NemakiTypeDefinition created = contentDaoService.createTypeDefinition(repositoryId, typeDefinition);
 		log.info("DEBUG: Type definition created with ID: " + created.getId());
 
-		// CRITICAL FIX: Use ServiceLocator to get TypeManager and refresh cache after type creation
-		// This avoids circular dependency since we use ServiceLocator instead of direct injection
-		try {
-			jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
-				(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
-			
-			if (typeManager != null) {
-				log.info("DEBUG: Refreshing TypeManager cache after type creation");
-				typeManager.refreshTypes();
-			}
-		} catch (Exception e) {
-			log.error("ERROR: Exception during TypeManager cache refresh", e);
-			e.printStackTrace();
-			// Don't throw exception - type creation succeeded, cache refresh is optimization
+		if (typeManager != null) {
+			log.info("DEBUG: Refreshing TypeManager cache after type creation");
+			typeManager.refreshTypes();
 		}
 		
 		log.info("=== TYPE CREATION DEBUG: Completed type creation for: " + typeDefinition.getId() + " ===");
@@ -293,17 +280,9 @@ public class TypeServiceImpl implements TypeService{
 			throw e; // Re-throw since this is the main operation
 		}
 		
-		try {
-			jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
-				(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
-			
-			if (typeManager != null) {
-				log.info("DEBUG: Invalidating TypeManager cache after type deletion");
-				typeManager.invalidateTypeCache(repositoryId);
-			}
-		} catch (Exception e) {
-			log.error("ERROR: Exception during TypeManager cache invalidation", e);
-			e.printStackTrace();
+		if (typeManager != null) {
+			log.info("DEBUG: Invalidating TypeManager cache after type deletion");
+			typeManager.invalidateTypeCache(repositoryId);
 		}
 	}
 
@@ -520,6 +499,10 @@ public class TypeServiceImpl implements TypeService{
 
 	public void setContentDaoService(ContentDaoService contentDaoService) {
 		this.contentDaoService = contentDaoService;
+	}
+
+	public void setTypeManager(jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager) {
+		this.typeManager = typeManager;
 	}
 
 

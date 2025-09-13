@@ -72,6 +72,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	private ContentDaoService nonCachedContentDaoService;
 	private NemakiCachePool nemakiCachePool;
+	private jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager;
 
 	private final String TOKEN_CACHE_LATEST_CHANGE_TOKEN = "lc";
 
@@ -139,21 +140,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		// Clear property definition cache since type changes affect property definitions
 		nemakiCachePool.get(repositoryId).getPropertyDefinitionCache().removeAll();
 		
-		// CRITICAL FIX: Refresh TypeManager cache to handle TCK tests that bypass RepositoryService
-		// TCK tests directly call DAO layer, so we must ensure TypeManager cache is refreshed here
-		try {
-			jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
-				(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("typeManager");
-			
-			if (typeManager != null) {
-				log.debug("Refreshing TypeManager cache after type creation");
-				typeManager.refreshTypes();
-				log.debug("TypeManager cache refresh completed");
-			} else {
-				log.error("TypeManager not found in SpringContext");
-			}
-		} catch (Exception e) {
-			log.error("Failed to refresh TypeManager cache: " + e.getMessage(), e);
+		if (typeManager != null) {
+			log.debug("Refreshing TypeManager cache after type creation");
+			typeManager.refreshTypes();
+			log.debug("TypeManager cache refresh completed");
 		}
 		
 		return nt;

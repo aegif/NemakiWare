@@ -103,6 +103,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	private RepositoryInfoMap repositoryInfoMap;
 	private CloudantClientPool connectorPool;
+	private TypeManager typeManager;
 	private static final Log log = LogFactory.getLog(ContentDaoServiceImpl.class);
 
 	private static final String DESIGN_DOCUMENT = "_design/_repo";
@@ -299,17 +300,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		// Step 3: Convert back to NemakiTypeDefinition
 			NemakiTypeDefinition result = ct.convert();
 			
-		// Step 4: CRITICAL - Refresh TypeManager cache to include new type
-			try {
-			// Get TypeManager from Spring context and refresh types cache
-			TypeManager typeManager = (TypeManager) SpringContext.getBean("typeManager");
-			if (typeManager != null) {
-				typeManager.refreshTypes();
-				} else {
-				}
-		} catch (Exception e) {
-				e.printStackTrace();
-			// Don't throw - let type creation succeed even if cache refresh fails
+		if (typeManager != null) {
+			typeManager.refreshTypes();
 		}
 		
 			return result;

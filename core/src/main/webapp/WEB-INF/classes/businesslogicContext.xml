@@ -81,6 +81,9 @@
 		<constructor-arg>
 			<ref bean="contentDaoService" />
 		</constructor-arg>
+		<property name="typeManager">
+			<ref bean="TypeManager" />
+		</property>
 	</bean>
 
 	<!-- Rendition builder -->

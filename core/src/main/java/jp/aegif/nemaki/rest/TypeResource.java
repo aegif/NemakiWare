@@ -63,14 +63,6 @@ public class TypeResource extends ResourceBase {
 	public String test(@PathParam("repositoryId") String repositoryId) {
 		log.info("[TYPERESOURCE] TEST METHOD CALLED - Repository ID: " + repositoryId);
 		
-		// Get Spring services using SpringContext
-		try {
-			typeService = (TypeService) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeService");
-			typeManager = (TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
-		} catch (Exception e) {
-			log.error("Failed to get Spring beans: " + e.getMessage(), e);
-		}
-		
 		JSONObject result = new JSONObject();
 		result.put("status", "success");
 		result.put("message", "TypeResource test endpoint is working");
@@ -93,10 +85,6 @@ public class TypeResource extends ResourceBase {
 		log.info("TypeResource.list() called for repository: " + repositoryId);
 		
 		try {
-			// Get Spring services using SpringContext fallback
-			if (typeService == null) {
-				typeService = (TypeService) SpringContext.getBean("TypeService");
-			}
 			
 			if (typeService == null) {
 				JSONObject errorResult = new JSONObject();
@@ -149,10 +137,6 @@ public class TypeResource extends ResourceBase {
 		log.info("TypeResource.show() called for repository: " + repositoryId + ", typeId: " + typeId);
 		
 		try {
-			// Get Spring services using SpringContext fallback
-			if (typeService == null) {
-				typeService = (TypeService) SpringContext.getBean("TypeService");
-			}
 			
 			if (typeService == null) {
 				JSONObject errorResult = new JSONObject();
@@ -207,13 +191,6 @@ public class TypeResource extends ResourceBase {
 		log.info("TypeResource.create() called for repository: " + repositoryId);
 		
 		try {
-			// Get Spring services using SpringContext fallback
-			if (typeService == null) {
-				typeService = (TypeService) SpringContext.getBean("TypeService");
-			}
-			if (typeManager == null) {
-				typeManager = (TypeManager) SpringContext.getBean("TypeManager");
-			}
 			
 			if (typeService == null) {
 				JSONObject errorResult = new JSONObject();
@@ -281,13 +258,6 @@ public class TypeResource extends ResourceBase {
 		log.info("TypeResource.update() called for repository: " + repositoryId + ", typeId: " + typeId);
 		
 		try {
-			// Get Spring services using SpringContext fallback
-			if (typeService == null) {
-				typeService = (TypeService) SpringContext.getBean("TypeService");
-			}
-			if (typeManager == null) {
-				typeManager = (TypeManager) SpringContext.getBean("TypeManager");
-			}
 			
 			if (typeService == null) {
 				JSONObject errorResult = new JSONObject();
@@ -359,13 +329,6 @@ public class TypeResource extends ResourceBase {
 		log.info("TypeResource.delete() called for repository: " + repositoryId + ", typeId: " + typeId);
 		
 		try {
-			// Get Spring services using SpringContext fallback
-			if (typeService == null) {
-				typeService = (TypeService) SpringContext.getBean("TypeService");
-			}
-			if (typeManager == null) {
-				typeManager = (TypeManager) SpringContext.getBean("TypeManager");
-			}
 			
 			if (typeService == null) {
 				JSONObject errorResult = new JSONObject();
@@ -509,24 +472,11 @@ public class TypeResource extends ResourceBase {
 				return result.toJSONString();
 			}
 			
-			// Spring依存性注入が失敗した場合の緊急対応
 			if (typeService == null || typeManager == null) {
-				log.error("CRITICAL: TypeService or TypeManager is null - attempting manual Spring lookup");
-				try {
-					if (typeService == null) {
-						typeService = (jp.aegif.nemaki.businesslogic.TypeService) SpringContext.getBean("TypeService");
-						log.info("Successfully retrieved TypeService via SpringContext");
-					}
-					if (typeManager == null) {
-						typeManager = (jp.aegif.nemaki.cmis.aspect.type.TypeManager) SpringContext.getBean("TypeManager");
-						log.info("Successfully retrieved TypeManager via SpringContext");
-					}
-				} catch (Exception e) {
-					log.error("Failed to retrieve dependencies via SpringContext", e);
-					addErrMsg(errMsg, "types", "dependencyInjectionFailed");
-					result = makeResult(false, result, errMsg);
-					return result.toJSONString();
-				}
+				log.error("CRITICAL: TypeService or TypeManager is null - dependency injection failed");
+				addErrMsg(errMsg, "types", "dependencyInjectionFailed");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
 			}
 
 			try {
@@ -589,24 +539,11 @@ public class TypeResource extends ResourceBase {
 				return result.toJSONString();
 			}
 			
-			// Spring依存性注入が失敗した場合の緊急対応
 			if (typeService == null || typeManager == null) {
-				log.error("CRITICAL: TypeService or TypeManager is null - attempting manual Spring lookup");
-				try {
-					if (typeService == null) {
-						typeService = (jp.aegif.nemaki.businesslogic.TypeService) SpringContext.getBean("TypeService");
-						log.info("Successfully retrieved TypeService via SpringContext");
-					}
-					if (typeManager == null) {
-						typeManager = (jp.aegif.nemaki.cmis.aspect.type.TypeManager) SpringContext.getBean("TypeManager");
-						log.info("Successfully retrieved TypeManager via SpringContext");
-					}
-				} catch (Exception e) {
-					log.error("Failed to retrieve dependencies via SpringContext", e);
-					addErrMsg(errMsg, "types", "dependencyInjectionFailed");
-					result = makeResult(false, result, errMsg);
-					return result.toJSONString();
-				}
+				log.error("CRITICAL: TypeService or TypeManager is null - dependency injection failed");
+				addErrMsg(errMsg, "types", "dependencyInjectionFailed");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
 			}
 
 			try {
@@ -674,25 +611,12 @@ public class TypeResource extends ResourceBase {
 				return result.toJSONString();
 			}
 		
-		// Spring依存性注入が失敗した場合の緊急対応
-		if (typeService == null || typeManager == null) {
-			log.error("CRITICAL: TypeService or TypeManager is null - attempting manual Spring lookup");
-			try {
-				if (typeService == null) {
-					typeService = (jp.aegif.nemaki.businesslogic.TypeService) SpringContext.getBean("TypeService");
-					log.info("Successfully retrieved TypeService via SpringContext");
-				}
-				if (typeManager == null) {
-					typeManager = (jp.aegif.nemaki.cmis.aspect.type.TypeManager) SpringContext.getBean("TypeManager");
-					log.info("Successfully retrieved TypeManager via SpringContext");
-				}
-			} catch (Exception e) {
-				log.error("Failed to retrieve dependencies via SpringContext", e);
+			if (typeService == null || typeManager == null) {
+				log.error("CRITICAL: TypeService or TypeManager is null - dependency injection failed");
 				addErrMsg(errMsg, "types", "dependencyInjectionFailed");
 				result = makeResult(false, result, errMsg);
 				return result.toJSONString();
 			}
-		}
 
 			try {
 				log.info("Starting XML parsing...");
