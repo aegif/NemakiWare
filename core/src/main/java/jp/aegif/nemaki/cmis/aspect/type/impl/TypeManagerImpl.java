@@ -1709,7 +1709,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		boolean isBaseType = BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId());
 		System.err.println("*** buildDocumentTypeDefinitionFromDB - typeId: " + nemakiType.getTypeId() + ", isBaseType: " + isBaseType + ", passing inherited: " + !isBaseType + " ***");
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
-		addDocumentPropertyDefinitions(repositoryId, type, !isBaseType);
+		// CRITICAL: Only add document-specific properties for base type
+		// Derived types inherit these from their parent automatically
+		if (isBaseType) {
+			addDocumentPropertyDefinitions(repositoryId, type, false);
+		}
 
 		// Add specific attributes
 		ContentStreamAllowed contentStreamAllowed = (nemakiType
@@ -1740,7 +1744,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId());
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
-		addFolderPropertyDefinitions(repositoryId, type, !isBaseType);
+		// CRITICAL: Only add folder-specific properties for base type
+		// Derived types inherit these from their parent automatically
+		if (isBaseType) {
+			addFolderPropertyDefinitions(repositoryId, type, false);
+		}
 
 		return type;
 	}
@@ -1761,8 +1769,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_RELATIONSHIP.value().equals(nemakiType.getTypeId());
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
+		// CRITICAL: Only add relationship-specific properties for base type
+		// Derived types inherit these from their parent automatically
 		if (isBaseType) {
-			addRelationshipPropertyDefinitions(repositoryId, type);
+			addRelationshipPropertyDefinitions(repositoryId, type, false);
 		}
 
 		// Set specific attributes
@@ -1788,8 +1798,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_POLICY.value().equals(nemakiType.getTypeId());
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
+		// CRITICAL: Only add policy-specific properties for base type
+		// Derived types inherit these from their parent automatically
 		if (isBaseType) {
-			addPolicyPropertyDefinitions(repositoryId, type);
+			addPolicyPropertyDefinitions(repositoryId, type, false);
 		}
 
 		return type;
@@ -2009,33 +2021,38 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		typeMutability.setCanDelete(delete);
 		type.setTypeMutability(typeMutability);
 
-		// SIMPLIFIED FIX: Copy parent properties with correct inherited flags
+		// CRITICAL FIX: Copy parent properties with correct inherited flags
 		Map<String, PropertyDefinition<?>> parentProperties;
 		if (parentType != null && parentType.getPropertyDefinitions() != null) {
-			// Copy parent properties and set correct inherited flags
+			// Create deep copies of parent properties and mark them as inherited
 			parentProperties = new HashMap<>();
-			
+			System.err.println("*** buildTypeDefinitionBaseFromDB - Copying parent properties for type: " + nemakiType.getTypeId() + " ***");
+			System.err.println("*** Parent type: " + parentType.getId() + " has " + parentType.getPropertyDefinitions().size() + " properties ***");
+
 			for (Map.Entry<String, PropertyDefinition<?>> entry : parentType.getPropertyDefinitions().entrySet()) {
 				String propertyId = entry.getKey();
 				PropertyDefinition<?> parentProperty = entry.getValue();
-				
+				boolean originalInherited = parentProperty.isInherited();
+
+				// Create a deep copy of the property and mark it as inherited
+				PropertyDefinition<?> copiedProperty = DataUtil.clonePropertyDefinition(parentProperty);
+
 				// For derived types, all properties from parent should be marked as inherited
-				if (parentProperty instanceof AbstractPropertyDefinition) {
-					AbstractPropertyDefinition<?> inheritedProperty = (AbstractPropertyDefinition<?>) parentProperty;
-					
-					// Properties inherited from parent are always inherited=true in child
-					if (!inheritedProperty.isInherited()) {
-						inheritedProperty.setIsInherited(true);
-						
-						if (log.isDebugEnabled()) {
-							log.debug("SIMPLIFIED INHERITANCE: Set inherited=true for " + propertyId + 
-								" in derived type " + nemakiType.getId());
-						}
+				if (copiedProperty instanceof AbstractPropertyDefinition) {
+					AbstractPropertyDefinition<?> inheritedProperty = (AbstractPropertyDefinition<?>) copiedProperty;
+					// All properties in derived types are inherited
+					inheritedProperty.setIsInherited(true);
+					System.err.println("*** Property " + propertyId + ": originalInherited=" + originalInherited + " -> newInherited=true ***");
+
+					if (log.isDebugEnabled()) {
+						log.debug("INHERITANCE FIX: Set inherited=true for " + propertyId +
+							" in derived type " + nemakiType.getTypeId());
 					}
 				}
-				
-				parentProperties.put(propertyId, parentProperty);
+
+				parentProperties.put(propertyId, copiedProperty);
 			}
+			System.err.println("*** Finished copying " + parentProperties.size() + " properties for type: " + nemakiType.getTypeId() + " ***");
 		} else {
 			parentProperties = new HashMap<String, PropertyDefinition<?>>();
 		}
