@@ -122,11 +122,23 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         // Get contentType early for debug code
         String contentType = request.getContentType();
-        
+
+        // ===============================
+        // CRITICAL MULTIPART FIX: Handle multipart BEFORE any getParameter() calls
+        // ===============================
+        HttpServletRequest finalRequest = request;
+        if ("POST".equalsIgnoreCase(method) && contentType != null && contentType.startsWith("multipart/form-data")) {
+            System.out.println("*** MULTIPART FIX: Detected multipart/form-data - wrapping request to prevent re-parsing ***");
+            // Create wrapper that prevents OpenCMIS from re-parsing multipart
+            finalRequest = new PreProcessedMultipartRequestWrapper(request);
+            // Set marker for OpenCMIS
+            request.setAttribute("multipart.processed", Boolean.TRUE);
+        }
+
         // ===============================
         // POST Request Routing and TCK Client Detection
         // ===============================
-        
+
         if ("POST".equalsIgnoreCase(method)) {
             // TCK Client Detection via User-Agent header for enhanced compatibility
             String userAgent = request.getHeader("User-Agent");
@@ -148,46 +160,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 // Check required parameters for createDocument
                 String folderId = request.getParameter("folderId");
                 String objectId = request.getParameter("objectId");
-                
+
                 if (folderId == null && objectId == null) {
                     log.warn("Neither folderId nor objectId provided for createDocument - will cause 'folderId must be set' error");
                 }
-                
-                // Handle multipart form data if present
+
+                // CRITICAL: DO NOT call request.getParts() here as it consumes InputStream
+                // The multipart processing is handled later in the unified processing section
+                // This early processing was causing the "folderId must be set" error
                 if (contentType != null && contentType.startsWith("multipart/form-data")) {
-                    try {
-                        // JAKARTA EE 10 MULTIPART PROCESSING FIX: Enhanced multipart handling for Jakarta EE 10 / Tomcat 10 compatibility
-                        java.util.Collection<jakarta.servlet.http.Part> parts = null;
-                        try {
-                            parts = request.getParts();
-                        } catch (jakarta.servlet.ServletException servletEx) {
-                            // Try to handle Tomcat 10 specific multipart parsing issues
-                            if (servletEx.getCause() instanceof java.io.IOException) {
-                                log.warn("IOException in multipart parsing, attempting fallback");
-                            }
-                            throw servletEx; // Re-throw for outer catch
-                        } catch (java.io.IOException ioEx) {
-                            log.error("IOException in getParts(): " + ioEx.getMessage());
-                            throw ioEx; // Re-throw for outer catch
-                        }
-                        
-                        if (parts != null) {
-                            for (jakarta.servlet.http.Part part : parts) {
-                                try {
-                                    String partName = part.getName();
-                                    String fileName = part.getSubmittedFileName();
-                                    if ("content".equals(partName) || fileName != null) {
-                                        log.debug("Content part detected: " + fileName);
-                                    }
-                                } catch (Exception partProcessEx) {
-                                    log.warn("Error processing individual part: " + partProcessEx.getMessage());
-                                    // Continue processing other parts
-                                }
-                            }
-                        }
-                    } catch (Exception partEx) {
-                        log.error("Error reading parts: " + partEx.getMessage());
-                    }
+                    log.debug("Multipart form-data detected for createDocument - will be processed later");
                 }
             }
             
@@ -215,43 +197,29 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
         
         // ===============================
-        // CRITICAL FIX: REMOVE PROBLEMATIC REQUEST WRAPPER 
+        // CRITICAL FIX: REMOVE PROBLEMATIC REQUEST WRAPPER
         // ===============================
-        // Root Cause: HttpServletRequestWrapper corrupts parameters by changing Content-Type 
+        // Root Cause: HttpServletRequestWrapper corrupts parameters by changing Content-Type
         // and setting Content-Length to 0, making parameters invisible to ObjectServiceImpl
-        
-        HttpServletRequest finalRequest = request; // Use original request directly - NO WRAPPER
-        boolean multipartAlreadyProcessed = false;
-        
+
+        // finalRequest is already set above in the multipart handling section
+        boolean multipartAlreadyProcessed = (finalRequest instanceof PreProcessedMultipartRequestWrapper);
+
         // CRITICAL FIX: Extract cmisaction once at global scope to avoid null-initialization bug
-        String cmisaction = request.getParameter("cmisaction");
-        
+        // Use finalRequest instead of request to ensure proper parameter handling
+        String cmisaction = finalRequest.getParameter("cmisaction");
+
         // Log critical service parameters for debugging
         log.debug("SERVICE: cmisaction='" + cmisaction + "', method=" + method + ", pathInfo=" + pathInfo);
-        
-        // MULTIPART FIX: Check if Tomcat has already processed multipart data
-        if (contentType != null && contentType.startsWith("multipart/form-data")) {
-            // Check if multipart parameters are available (indicates Tomcat processed it)
-            try {
-                // Try to get parameters - if this succeeds, Tomcat has already processed the multipart
-                java.util.Map<String, String[]> parameterMap = request.getParameterMap();
 
-                if (parameterMap != null && parameterMap.size() > 0) {
-                    multipartAlreadyProcessed = true;
-                    log.debug("MULTIPART: Tomcat has already processed multipart data - " + parameterMap.size() + " parameters available");
-
-                    // Set a marker that OpenCMIS can check
-                    request.setAttribute("multipart.processed", Boolean.TRUE);
-
-                    // Keep using the original request - Tomcat has already parsed it
-                    finalRequest = request;
-                } else {
-                    log.debug("MULTIPART: No parameters available yet - letting OpenCMIS handle multipart");
-                    finalRequest = request;
-                }
-            } catch (Exception e) {
-                log.debug("MULTIPART: Error checking parameters - letting OpenCMIS handle multipart: " + e.getMessage());
-                finalRequest = request;
+        if (multipartAlreadyProcessed) {
+            System.out.println("*** MULTIPART FIX: Using wrapped request for parameters ***");
+            // Debug: Log all parameters to verify they're available
+            java.util.Map<String, String[]> parameterMap = finalRequest.getParameterMap();
+            System.out.println("*** MULTIPART FIX: Available parameters: " + parameterMap.size() + " ***");
+            for (String key : parameterMap.keySet()) {
+                String[] values = parameterMap.get(key);
+                System.out.println("*** MULTIPART FIX: Parameter '" + key + "' = " + java.util.Arrays.toString(values) + " ***");
             }
         }
         
