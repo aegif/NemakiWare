@@ -103,7 +103,25 @@ public class MultipartParser {
         fields = new HashMap<String, String[]>();
         rawFields = new HashMap<String, byte[][]>();
 
-        skipPreamble();
+        // JAKARTA EE FIX: Check if multipart was already processed by container
+        boolean streamConsumed = false;
+        try {
+            int available = requestStream.available();
+            if (available == 0 && request.getContentLength() > 0) {
+                // Stream consumed but content was present - likely processed by Tomcat
+                System.out.println("MULTIPART FIX: Stream consumed by container (Content-Length=" +
+                                  request.getContentLength() + " but available=" + available +
+                                  "), will use Parts API in parse()");
+                streamConsumed = true;
+                eof = true;
+            }
+        } catch (Exception e) {
+            System.out.println("MULTIPART FIX: Error checking stream: " + e.getMessage());
+        }
+
+        if (!streamConsumed) {
+            skipPreamble();
+        }
     }
 
     private void addField(String name, String value) {
@@ -517,19 +535,7 @@ public class MultipartParser {
     }
 
     private void skipPreamble() throws IOException {
-        // JAKARTA EE / TOMCAT 10 FIX: Check if stream is already consumed
-        try {
-            int available = requestStream.available();
-            if (available == 0 && request.getContentLength() > 0) {
-                // Stream consumed but content was present - likely processed by Tomcat
-                System.out.println("MULTIPART FIX: Stream appears consumed by container, skipping preamble");
-                eof = true;
-                return;
-            }
-        } catch (Exception e) {
-            System.out.println("MULTIPART FIX: Error checking stream availability: " + e.getMessage());
-        }
-
+        // Note: Stream consumption check is now done in constructor
         readBuffer();
 
         // COMPREHENSIVE FIX: Handle chunked transfer encoding and EOF issues
@@ -661,13 +667,10 @@ public class MultipartParser {
 
         // Try to use Parts API if Tomcat has already processed multipart
         try {
-            // Check if stream is already consumed (indicates Tomcat processed it)
-            int available = requestStream.available();
-            System.out.println("MULTIPART FIX: InputStream available bytes: " + available);
-
-            // If stream is empty or we detect Tomcat processing, try Parts API
-            if (available == 0 || request.getContentLength() == -1) {
-                System.out.println("MULTIPART FIX: Stream appears consumed or chunked, trying Parts API");
+            // If eof is already true (set in constructor), immediately use Parts API
+            if (eof) {
+                System.out.println("MULTIPART FIX: EOF already set in constructor - stream was consumed by container");
+                System.out.println("MULTIPART FIX: Using Parts API to retrieve multipart data");
 
                 java.util.Collection<jakarta.servlet.http.Part> parts = request.getParts();
                 if (parts != null && !parts.isEmpty()) {
@@ -725,6 +728,11 @@ public class MultipartParser {
 
         // If Parts API failed or stream is available, use traditional parsing
         if (!partsApiSuccess) {
+            // JAKARTA EE FIX: If stream was consumed but Parts API failed, we can't proceed
+            if (eof) {
+                System.out.println("MULTIPART FIX: ERROR - Stream consumed by container but Parts API failed");
+                throw new CmisInvalidArgumentException("Multipart stream was consumed by container but Parts API failed to retrieve data");
+            }
             System.out.println("MULTIPART FIX: Falling back to traditional stream parsing");
         }
 
