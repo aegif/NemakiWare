@@ -332,11 +332,11 @@ public class TypeManagerImpl implements TypeManager {
 					log.info("*** DIAGNOSIS: Re-initializing null TYPES cache for repository: " + key + " ***");
 					TYPES.put(key, new ConcurrentHashMap<String, TypeDefinitionContainer>());
 				} else {
-					// Clear existing map but keep the reference
+					// Keep existing map and its contents - do NOT clear
+					// Clearing should only happen in refreshTypes() when explicitly requested
 					if (log.isDebugEnabled()) {
-						log.debug("Clearing existing repository cache for: " + key);
+						log.debug("Preserving existing repository cache for: " + key + " with " + existingMap.size() + " types");
 					}
-					existingMap.clear();
 				}
 			}
 		}
@@ -581,10 +581,18 @@ public class TypeManagerImpl implements TypeManager {
 		synchronized (initLock) {
 			// Cache refresh logging
 			log.info("refreshTypes() called - clearing and rebuilding cache");
-			
+
 			// Reset initialization flag to force re-initialization
 			initialized = false;
-			
+
+			// Clear existing type definitions before rebuilding
+			// This is the ONLY place where we should clear existing types
+			for (Map<String, TypeDefinitionContainer> repoTypes : TYPES.values()) {
+				if (repoTypes != null) {
+					repoTypes.clear();
+				}
+			}
+
 			initGlobalTypes();
 			
 			basetypes.clear();
@@ -629,11 +637,15 @@ public class TypeManagerImpl implements TypeManager {
 
 		// CRITICAL FIX: Ensure TYPES map has entry for this repository
 		if (!TYPES.containsKey(repositoryId)) {
-			log.error("CRITICAL: TYPES map missing entry for repository: " + repositoryId);
-			log.error("Available repositories in TYPES: " + TYPES.keySet());
+			if (log.isDebugEnabled()) {
+				log.debug("TYPES map missing entry for repository: " + repositoryId);
+				log.debug("Available repositories in TYPES: " + TYPES.keySet());
+			}
 			// Create the missing entry
 			TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
-			log.info("Created missing TYPES entry for repository: " + repositoryId);
+			if (log.isDebugEnabled()) {
+				log.debug("Created missing TYPES entry for repository: " + repositoryId);
+			}
 		}
 
 		// Read parameters
@@ -707,11 +719,15 @@ public class TypeManagerImpl implements TypeManager {
 
 		// CRITICAL FIX: Ensure TYPES map has entry for this repository
 		if (!TYPES.containsKey(repositoryId)) {
-			log.error("CRITICAL: TYPES map missing entry for repository: " + repositoryId);
-			log.error("Available repositories in TYPES: " + TYPES.keySet());
+			if (log.isDebugEnabled()) {
+				log.debug("TYPES map missing entry for repository: " + repositoryId);
+				log.debug("Available repositories in TYPES: " + TYPES.keySet());
+			}
 			// Create the missing entry
 			TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
-			log.info("Created missing TYPES entry for repository: " + repositoryId);
+			if (log.isDebugEnabled()) {
+				log.debug("Created missing TYPES entry for repository: " + repositoryId);
+			}
 		}
 
 		// Read parameters
@@ -775,11 +791,15 @@ public class TypeManagerImpl implements TypeManager {
 
 		// CRITICAL FIX: Ensure TYPES map has entry for this repository
 		if (!TYPES.containsKey(repositoryId)) {
-			log.error("CRITICAL: TYPES map missing entry for repository: " + repositoryId);
-			log.error("Available repositories in TYPES: " + TYPES.keySet());
+			if (log.isDebugEnabled()) {
+				log.debug("TYPES map missing entry for repository: " + repositoryId);
+				log.debug("Available repositories in TYPES: " + TYPES.keySet());
+			}
 			// Create the missing entry
 			TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
-			log.info("Created missing TYPES entry for repository: " + repositoryId);
+			if (log.isDebugEnabled()) {
+				log.debug("Created missing TYPES entry for repository: " + repositoryId);
+			}
 		}
 
 		// Read parameters
@@ -851,11 +871,15 @@ public class TypeManagerImpl implements TypeManager {
 
 		// CRITICAL FIX: Ensure TYPES map has entry for this repository
 		if (!TYPES.containsKey(repositoryId)) {
-			log.error("CRITICAL: TYPES map missing entry for repository: " + repositoryId);
-			log.error("Available repositories in TYPES: " + TYPES.keySet());
+			if (log.isDebugEnabled()) {
+				log.debug("TYPES map missing entry for repository: " + repositoryId);
+				log.debug("Available repositories in TYPES: " + TYPES.keySet());
+			}
 			// Create the missing entry
 			TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
-			log.info("Created missing TYPES entry for repository: " + repositoryId);
+			if (log.isDebugEnabled()) {
+				log.debug("Created missing TYPES entry for repository: " + repositoryId);
+			}
 		}
 
 		// Read parameters
@@ -921,11 +945,15 @@ public class TypeManagerImpl implements TypeManager {
 
 		// CRITICAL FIX: Ensure TYPES map has entry for this repository
 		if (!TYPES.containsKey(repositoryId)) {
-			log.error("CRITICAL: TYPES map missing entry for repository: " + repositoryId);
-			log.error("Available repositories in TYPES: " + TYPES.keySet());
+			if (log.isDebugEnabled()) {
+				log.debug("TYPES map missing entry for repository: " + repositoryId);
+				log.debug("Available repositories in TYPES: " + TYPES.keySet());
+			}
 			// Create the missing entry
 			TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
-			log.info("Created missing TYPES entry for repository: " + repositoryId);
+			if (log.isDebugEnabled()) {
+				log.debug("Created missing TYPES entry for repository: " + repositoryId);
+			}
 		}
 
 		// Read parameters
