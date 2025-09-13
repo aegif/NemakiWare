@@ -517,6 +517,14 @@ public class MultipartParser {
     }
 
     private void skipPreamble() throws IOException {
+        // JAKARTA EE / TOMCAT FIX: Check if multipart was already processed
+        Object multipartProcessed = request.getAttribute("multipart.processed");
+        if (Boolean.TRUE.equals(multipartProcessed)) {
+            // Multipart already processed by container - skip parsing
+            System.out.println("MULTIPART FIX: Skipping multipart parsing - already processed by container");
+            return;
+        }
+
         readBuffer();
 
         // COMPREHENSIVE FIX: Handle chunked transfer encoding and EOF issues
@@ -525,9 +533,9 @@ public class MultipartParser {
         int readAttempts = 0;
         while (bufferCount < boundary.length - 2 && readAttempts < 10) {
             int prevBufferCount = bufferCount;
-            
+
             // CRITICAL: Force reading even if EOF flag is set - chunked encoding issue
-            
+
             // Direct stream reading bypassing EOF check
             if (!eof || (eof && bufferCount == 0)) {
                 try {
@@ -544,15 +552,26 @@ public class MultipartParser {
             } else {
                 readBuffer();
             }
-            
+
             readAttempts++;
-            
+
             // If buffer didn't grow after multiple attempts, break
             if (bufferCount == prevBufferCount) {
                 break;
             }
         }
-        
+
+        // JAKARTA EE FIX: Check if stream was already consumed by container
+        if (bufferCount == 0) {
+            // Check if parameters are available via request.getParameter()
+            String testParam = request.getParameter("cmisaction");
+            if (testParam != null) {
+                System.out.println("MULTIPART FIX: Stream consumed but parameters available - container processed multipart");
+                // Don't throw exception - parameters are available via getParameter()
+                return;
+            }
+        }
+
         if (bufferCount < boundary.length - 2) {
             throw new CmisInvalidArgumentException("Invalid multipart request!");
         }
@@ -632,15 +651,47 @@ public class MultipartParser {
     }
 
     public void parse() throws IOException {
-        
+        // JAKARTA EE / TOMCAT FIX: Check if multipart was already processed
+        Object multipartProcessed = request.getAttribute("multipart.processed");
+        if (Boolean.TRUE.equals(multipartProcessed)) {
+            // Multipart already processed by container - get parameters directly
+            System.out.println("MULTIPART FIX: Using container-parsed parameters");
+
+            // Copy all parameters from request to fields map
+            java.util.Map<String, String[]> paramMap = request.getParameterMap();
+            for (java.util.Map.Entry<String, String[]> entry : paramMap.entrySet()) {
+                fields.put(entry.getKey(), entry.getValue());
+            }
+
+            // Try to get content from Parts API if available
+            try {
+                java.util.Collection<jakarta.servlet.http.Part> parts = request.getParts();
+                for (jakarta.servlet.http.Part part : parts) {
+                    if ("content".equals(part.getName())) {
+                        filename = part.getSubmittedFileName();
+                        contentType = part.getContentType();
+                        contentSize = java.math.BigInteger.valueOf(part.getSize());
+                        contentStream = part.getInputStream();
+                        hasContent = true;
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                // Parts API not available or error - continue without content
+                System.out.println("MULTIPART FIX: Could not get content from Parts API: " + e.getMessage());
+            }
+
+            return;
+        }
+
         try {
             int partCount = 0;
-            
+
             while (readNext()) {
                 partCount++;
                 // nothing to do here, just read
             }
-            
+
 
             // apply charset
             for (Map.Entry<String, byte[][]> e : rawFields.entrySet()) {

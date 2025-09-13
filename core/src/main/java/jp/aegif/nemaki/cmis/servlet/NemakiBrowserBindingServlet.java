@@ -229,17 +229,29 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // Log critical service parameters for debugging
         log.debug("SERVICE: cmisaction='" + cmisaction + "', method=" + method + ", pathInfo=" + pathInfo);
         
-        // PARAMETER CORRUPTION FIX: Do NOT wrap request - let OpenCMIS handle multipart directly  
+        // MULTIPART FIX: Check if Tomcat has already processed multipart data
         if (contentType != null && contentType.startsWith("multipart/form-data")) {
-            // Check if multipart parameters are available
-            java.util.Map<String, String[]> parameterMap = request.getParameterMap();
-            
-            if (cmisaction != null || parameterMap.size() > 0) {
-                multipartAlreadyProcessed = true;
-                
-                // CRITICAL: DO NOT CREATE WRAPPER - Use original request directly
-                // The wrapper was corrupting Content-Type and Content-Length, breaking parameter processing
-                finalRequest = request; // Keep original request intact
+            // Check if multipart parameters are available (indicates Tomcat processed it)
+            try {
+                // Try to get parameters - if this succeeds, Tomcat has already processed the multipart
+                java.util.Map<String, String[]> parameterMap = request.getParameterMap();
+
+                if (parameterMap != null && parameterMap.size() > 0) {
+                    multipartAlreadyProcessed = true;
+                    log.debug("MULTIPART: Tomcat has already processed multipart data - " + parameterMap.size() + " parameters available");
+
+                    // Set a marker that OpenCMIS can check
+                    request.setAttribute("multipart.processed", Boolean.TRUE);
+
+                    // Keep using the original request - Tomcat has already parsed it
+                    finalRequest = request;
+                } else {
+                    log.debug("MULTIPART: No parameters available yet - letting OpenCMIS handle multipart");
+                    finalRequest = request;
+                }
+            } catch (Exception e) {
+                log.debug("MULTIPART: Error checking parameters - letting OpenCMIS handle multipart: " + e.getMessage());
+                finalRequest = request;
             }
         }
         
@@ -1996,6 +2008,62 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
     }
     
+    /**
+     * Wrapper that prevents OpenCMIS from re-parsing multipart data that has already been
+     * processed by Tomcat/Jakarta EE container.
+     */
+    private static class PreProcessedMultipartRequestWrapper extends jakarta.servlet.http.HttpServletRequestWrapper {
+        public PreProcessedMultipartRequestWrapper(HttpServletRequest request) {
+            super(request);
+        }
+
+        @Override
+        public String getContentType() {
+            // Return form-encoded to prevent OpenCMIS from creating POSTHttpServletRequestWrapper
+            // which would try to parse multipart data that's already consumed
+            return "application/x-www-form-urlencoded";
+        }
+
+        @Override
+        public int getContentLength() {
+            // Return 0 to indicate no body content needs parsing
+            return 0;
+        }
+
+        @Override
+        public long getContentLengthLong() {
+            // Return 0 to indicate no body content needs parsing
+            return 0L;
+        }
+
+        @Override
+        public jakarta.servlet.ServletInputStream getInputStream() throws java.io.IOException {
+            // Return empty stream since parameters are already parsed
+            return new jakarta.servlet.ServletInputStream() {
+                private final java.io.ByteArrayInputStream emptyStream = new java.io.ByteArrayInputStream(new byte[0]);
+
+                @Override
+                public boolean isFinished() {
+                    return true;
+                }
+
+                @Override
+                public boolean isReady() {
+                    return true;
+                }
+
+                @Override
+                public void setReadListener(jakarta.servlet.ReadListener listener) {
+                }
+
+                @Override
+                public int read() throws java.io.IOException {
+                    return emptyStream.read();
+                }
+            };
+        }
+    }
+
     /**
      * Custom HttpServletRequestWrapper that prevents OpenCMIS from re-parsing multipart data
      * by simulating the POSTHttpServletRequestWrapper interface without consuming InputStream
