@@ -1208,18 +1208,22 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addFolderPropertyDefinitions(String repositoryId, FolderTypeDefinitionImpl type) {
+		addFolderPropertyDefinitions(repositoryId, type, false);
+	}
+
+	private void addFolderPropertyDefinitions(String repositoryId, FolderTypeDefinitionImpl type, boolean isInherited) {
 		//cmis:parentId
 		boolean queryable_parentId = propertyManager.readBoolean(PropertyKey.PROPERTY_PARENT_ID_QUERYABLE);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.PARENT_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, queryable_parentId, !ORDERABLE, null));
+				Updatability.READONLY, !REQUIRED, queryable_parentId, !ORDERABLE, null, isInherited));
 
 		//cmis:path
 		boolean queryable_path = propertyManager.readBoolean(PropertyKey.PROPERTY_PATH_QUERYABLE);
 		boolean orderable_path = propertyManager.readBoolean(PropertyKey.PROPERTY_PATH_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.PATH, PropertyType.STRING, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, queryable_path, orderable_path, null));
+				Updatability.READONLY, !REQUIRED, queryable_path, orderable_path, null, isInherited));
 
 		List<String> defaults = new ArrayList<String>();
 		defaults.add(BaseTypeId.CMIS_FOLDER.value());
@@ -1227,17 +1231,23 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS,
 				PropertyType.ID, Cardinality.MULTI, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, !ORDERABLE, defaults));
+				!REQUIRED, QUERYABLE, !ORDERABLE, defaults, isInherited));
 	}
 
 	private void addDocumentPropertyDefinitions(String repositoryId, DocumentTypeDefinitionImpl type) {
+		System.err.println("*** addDocumentPropertyDefinitions DEPRECATED OVERLOAD - type: " + type.getId() + " ***");
+		addDocumentPropertyDefinitions(repositoryId, type, false);
+	}
+
+	private void addDocumentPropertyDefinitions(String repositoryId, DocumentTypeDefinitionImpl type, boolean isInherited) {
+		System.err.println("*** addDocumentPropertyDefinitions NEW OVERLOAD - type: " + type.getId() + ", inherited: " + isInherited + " ***");
 		//cmis:isImmutable
 		boolean queryable_isImmutable = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_IMMUTABLE_QUERYABLE);
 		boolean orderable_isImmutable = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_IMMUTABLE_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.IS_IMMUTABLE,
 				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_isImmutable, orderable_isImmutable, Arrays.asList(false)));
+				!REQUIRED, queryable_isImmutable, orderable_isImmutable, Arrays.asList(false), isInherited));
 
 		//cmis:isLatestVersion
 		boolean queryable_isLatestVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_VERSION_QUERYABLE);
@@ -1245,7 +1255,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.IS_LATEST_VERSION,
 				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_isLatestVersion, orderable_isLatestVersion, null));
+				!REQUIRED, queryable_isLatestVersion, orderable_isLatestVersion, null, isInherited));
 
 		//cmis:isMajorVersion
 		boolean queryable_isMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_MAJOR_VERSION_QUERYABLE);
@@ -1253,7 +1263,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.IS_MAJOR_VERSION,
 				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_isMajorVersion, orderable_isMajorVersion, null));
+				!REQUIRED, queryable_isMajorVersion, orderable_isMajorVersion, null, isInherited));
 
 		//cmis:isLatestMajorVersion
 		boolean queryable_isLatestMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_MAJOR_VERSION_QUERYABLE);
@@ -1261,7 +1271,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.IS_LATEST_MAJOR_VERSION,
 				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_isLatestMajorVersion, orderable_isLatestMajorVersion, null));
+				!REQUIRED, queryable_isLatestMajorVersion, orderable_isLatestMajorVersion, null, isInherited));
 
 		//cmis:isPrivateWorkingCopy
 		boolean queryable_isPrivateWorkingCopy = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_PRIVATE_WORKING_COPY_QUERYABLE);
@@ -1269,7 +1279,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.IS_PRIVATE_WORKING_COPY,
 				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_isPrivateWorkingCopy, orderable_isPrivateWorkingCopy, null));
+				!REQUIRED, queryable_isPrivateWorkingCopy, orderable_isPrivateWorkingCopy, null, isInherited));
 
 		//cmis:versionLabel
 		boolean queryable_versionLabel = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_LABEL_QUERYABLE);
@@ -1277,7 +1287,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.VERSION_LABEL,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_versionLabel, orderable_versionLabel, null));
+				!REQUIRED, queryable_versionLabel, orderable_versionLabel, null, isInherited));
 
 		//cmis:versionSeriesId
 		boolean queryable_versionSeriesId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_ID_QUERYABLE);
@@ -1285,7 +1295,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.VERSION_SERIES_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_versionSeriesId, orderable_versionSeriesId, null));
+				!REQUIRED, queryable_versionSeriesId, orderable_versionSeriesId, null, isInherited));
 
 		//cmis:isVersionSeriesCheckedOut
 		boolean queryable_isVersionSeriesCheckedOut = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_VERSION_SERIES_CHECKED_OUT_QUERYABLE);
@@ -1293,7 +1303,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId,
 				PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, PropertyType.BOOLEAN,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED, queryable_isVersionSeriesCheckedOut, orderable_isVersionSeriesCheckedOut, null));
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED, queryable_isVersionSeriesCheckedOut, orderable_isVersionSeriesCheckedOut, null, isInherited));
 
 		//cmis:versionSeriesCheckedOutBy
 		boolean queryable_versionSeriesCheckedOutBy = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_BY_QUERYABLE);
@@ -1301,7 +1311,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_versionSeriesCheckedOutBy, orderable_versionSeriesCheckedOutBy, null));
+				!REQUIRED, queryable_versionSeriesCheckedOutBy, orderable_versionSeriesCheckedOutBy, null, isInherited));
 
 		//cmis:versionSeriesCheckedOutId
 		boolean queryable_versionSeriesCheckedOutId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_ID_QUERYABLE);
@@ -1309,7 +1319,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_versionSeriesCheckedOutId, orderable_versionSeriesCheckedOutId, null));
+				!REQUIRED, queryable_versionSeriesCheckedOutId, orderable_versionSeriesCheckedOutId, null, isInherited));
 
 		//cmis:checkInComment
 		boolean queryable_checkInComment = propertyManager.readBoolean(PropertyKey.PROPERTY_CHECK_IN_COMMENT_QUERYABLE);
@@ -1317,7 +1327,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CHECKIN_COMMENT,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_checkInComment, orderable_checkInComment, null));
+				!REQUIRED, queryable_checkInComment, orderable_checkInComment, null, isInherited));
 
 		//cmis:contentStreamLength
 		boolean queryable_contentStreamLength = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_LENGTH_QUERYABLE);
@@ -1325,7 +1335,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CONTENT_STREAM_LENGTH,
 				PropertyType.INTEGER, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_contentStreamLength, orderable_contentStreamLength, null));
+				!REQUIRED, queryable_contentStreamLength, orderable_contentStreamLength, null, isInherited));
 
 		//cmis:contentStreamMimeType
 		boolean queryable_contentStreamMimeType = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_MIME_TYPE_QUERYABLE);
@@ -1333,7 +1343,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CONTENT_STREAM_MIME_TYPE,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_contentStreamMimeType, orderable_contentStreamMimeType, null));
+				!REQUIRED, queryable_contentStreamMimeType, orderable_contentStreamMimeType, null, isInherited));
 
 		//cmis:contentStreamMimeType
 		boolean queryable_contentStreamFileName = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_FILE_NAME_QUERYABLE);
@@ -1341,7 +1351,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CONTENT_STREAM_FILE_NAME,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_contentStreamFileName, orderable_contentStreamFileName, null));
+				!REQUIRED, queryable_contentStreamFileName, orderable_contentStreamFileName, null, isInherited));
 
 		//cmis:contentStreamId
 		boolean queryable_contentStreamId = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_ID_QUERYABLE);
@@ -1349,34 +1359,43 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CONTENT_STREAM_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_contentStreamId, orderable_contentStreamId, null));
+				!REQUIRED, queryable_contentStreamId, orderable_contentStreamId, null, isInherited));
 	}
 
 	private void addRelationshipPropertyDefinitions(
 			String repositoryId, RelationshipTypeDefinitionImpl type) {
+		addRelationshipPropertyDefinitions(repositoryId, type, false);
+	}
+
+	private void addRelationshipPropertyDefinitions(
+			String repositoryId, RelationshipTypeDefinitionImpl type, boolean isInherited) {
 		//cmis:sourceId
 		boolean queryable_sourceId = propertyManager.readBoolean(PropertyKey.PROPERTY_SOURCE_ID_QUERYABLE);
 		boolean orderable_sourceId = propertyManager.readBoolean(PropertyKey.PROPERTY_SOURCE_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.SOURCE_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READWRITE, REQUIRED, queryable_sourceId, orderable_sourceId, null));
+				Updatability.READWRITE, REQUIRED, queryable_sourceId, orderable_sourceId, null, isInherited));
 
 		//cmis:targetId
 		boolean queryable_targetId = propertyManager.readBoolean(PropertyKey.PROPERTY_TARGET_ID_QUERYABLE);
 		boolean orderable_targetId = propertyManager.readBoolean(PropertyKey.PROPERTY_TARGET_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.TARGET_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READWRITE, REQUIRED, queryable_targetId, orderable_targetId, null));
+				Updatability.READWRITE, REQUIRED, queryable_targetId, orderable_targetId, null, isInherited));
 	}
 
 	private void addPolicyPropertyDefinitions(String repositoryId, PolicyTypeDefinitionImpl type) {
+		addPolicyPropertyDefinitions(repositoryId, type, false);
+	}
+
+	private void addPolicyPropertyDefinitions(String repositoryId, PolicyTypeDefinitionImpl type, boolean isInherited) {
 		//cmis:policyText
 		boolean queryable_policyText = propertyManager.readBoolean(PropertyKey.PROPERTY_POLICY_TEXT_QUERYABLE);
 		boolean orderable_policyText = propertyManager.readBoolean(PropertyKey.PROPERTY_POLICY_TEXT_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.POLICY_TEXT,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_policyText, orderable_policyText, null));
+				!REQUIRED, queryable_policyText, orderable_policyText, null, isInherited));
 	}
 
 	private PropertyDefinition<?> createDefaultPropDef(String repositoryId,
@@ -1688,8 +1707,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL FIX: All document types need CMIS properties for TCK compliance
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId());
+		System.err.println("*** buildDocumentTypeDefinitionFromDB - typeId: " + nemakiType.getTypeId() + ", isBaseType: " + isBaseType + ", passing inherited: " + !isBaseType + " ***");
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
-		addDocumentPropertyDefinitions(repositoryId, type);
+		addDocumentPropertyDefinitions(repositoryId, type, !isBaseType);
 
 		// Add specific attributes
 		ContentStreamAllowed contentStreamAllowed = (nemakiType
@@ -1720,7 +1740,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId());
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
-		addFolderPropertyDefinitions(repositoryId, type);
+		addFolderPropertyDefinitions(repositoryId, type, !isBaseType);
 
 		return type;
 	}
