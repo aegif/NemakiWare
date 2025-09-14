@@ -2144,17 +2144,34 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					parentType.getPropertyDefinitions() != null && 
 					parentType.getPropertyDefinitions().containsKey(p.getPropertyId());
 				
-				// CRITICAL FIX: Reuse existing PropertyDefinition instances for TCK compliance
-				// First, try to get the existing PropertyDefinition from the global cache
-				PropertyDefinition<?> property = propertyDefinitionCoresByPropertyId.get(p.getPropertyId());
-				
-				// If not in cache, check if parent has this property (for inheritance)
-				if (property == null && parentType != null && parentType.getPropertyDefinitions() != null) {
-					property = parentType.getPropertyDefinitions().get(p.getPropertyId());
+				// CRITICAL FIX: Create PropertyDefinition with correct inherited flag
+				// Check if we need to look up an existing property from parent
+				PropertyDefinition<?> existingProperty = null;
+
+				// Check global cache first
+				existingProperty = propertyDefinitionCoresByPropertyId.get(p.getPropertyId());
+
+				// If not in cache, check if parent has this property
+				if (existingProperty == null && parentType != null && parentType.getPropertyDefinitions() != null) {
+					existingProperty = parentType.getPropertyDefinitions().get(p.getPropertyId());
 				}
-				
-				// Only create new instance if absolutely necessary (should rarely happen)
-				if (property == null) {
+
+				PropertyDefinition<?> property;
+
+				if (existingProperty != null) {
+					// CRITICAL FIX: Clone the property if inherited flag needs to be different
+					if (existingProperty.isInherited() != isInherited) {
+						// Need a new instance with different inherited flag
+						property = DataUtil.clonePropertyDefinition(existingProperty);
+						if (property instanceof AbstractPropertyDefinition) {
+							((AbstractPropertyDefinition<?>) property).setIsInherited(isInherited);
+						}
+					} else {
+						// Can reuse existing instance as inherited flag matches
+						property = existingProperty;
+					}
+				} else {
+					// Create new property definition
 					property = DataUtil.createPropDef(
 						p.getPropertyId(), p.getLocalName(),
 						p.getLocalNameSpace(), p.getQueryName(),
@@ -2166,17 +2183,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 						p.getMaxValue(), p.getResolution(),
 						p.getDecimalPrecision(), p.getDecimalMinValue(),
 						p.getDecimalMaxValue(), p.getMaxLength());
-						
-					// Add to global cache for future reuse
-					if (property != null) {
-						propertyDefinitionCoresByPropertyId.put(p.getPropertyId(), property);
-						propertyDefinitionCoresByQueryName.put(p.getQueryName(), property);
-					}
-				} else {
-					// Update inherited flag on existing instance
-					if (property instanceof AbstractPropertyDefinition) {
-						((AbstractPropertyDefinition<?>) property).setIsInherited(isInherited);
-					}
+
+					// Don't add to global cache here - each type needs its own instance
 				}
 
 				// CRITICAL FIX: Only add to properties map if property is NOT NULL
