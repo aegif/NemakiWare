@@ -121,26 +121,26 @@ public class TypeManagerImpl implements TypeManager {
 	 */
 	// Map of all types
 	//private Map<String, TypeDefinitionContainer> types;
-	// CRITICAL FIX: Reverted from static - each instance should maintain its own type cache
-	private Map<String, Map<String, TypeDefinitionContainer>> TYPES;
+	// CRITICAL FIX: TYPES must be static to be shared across all instances for TCK compliance
+	private static Map<String, Map<String, TypeDefinitionContainer>> TYPES;
 
 	// Map of all base types
-	// CRITICAL FIX: Reverted from static - instance-specific base types
-	private Map<String, TypeDefinitionContainer> basetypes;
+	// CRITICAL FIX: basetypes must be static to be shared across all instances for TCK compliance
+	private static Map<String, TypeDefinitionContainer> basetypes;
 
 	// Map of subtype-specific property
-	// CRITICAL FIX: Reverted from static - instance-specific subtype properties
-	private Map<String, List<PropertyDefinition<?>>> subTypeProperties;
+	// CRITICAL FIX: subTypeProperties must be static to be shared across all instances for TCK compliance
+	private static Map<String, List<PropertyDefinition<?>>> subTypeProperties;
 
 	// FUNDAMENTAL FIX: Separate Maps to prevent key collisions between propertyId and queryName
-	// CRITICAL FIX: Reverted from static - instance-specific property definitions
-	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresByPropertyId;
-	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresByQueryName;
-	
+	// CRITICAL FIX: Property definition maps must be static to be shared across all instances for TCK compliance
+	private static Map<String, PropertyDefinition<?>> propertyDefinitionCoresByPropertyId;
+	private static Map<String, PropertyDefinition<?>> propertyDefinitionCoresByQueryName;
+
 	// Flag to track initialization
-	// CRITICAL FIX: Reverted from static - instance-specific initialization state
-	private volatile boolean initialized = false;
-	private final Object initLock = new Object();
+	// CRITICAL FIX: initialized flag must be static to be shared across all instances for TCK compliance
+	private static volatile boolean initialized = false;
+	private static final Object initLock = new Object();
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
 	private final Set<String> typesBeingDeleted = new HashSet<>();
@@ -165,13 +165,23 @@ public class TypeManagerImpl implements TypeManager {
 		if (log.isDebugEnabled()) {
 			log.debug("TypeManagerImpl constructor called - instance: " + this.hashCode());
 		}
-		
-		// Initialize instance fields in constructor
-		TYPES = new ConcurrentHashMap<>();
-		basetypes = new ConcurrentHashMap<>();
-		subTypeProperties = new ConcurrentHashMap<>();
-		propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
-		propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
+
+		// Initialize static fields only if not already initialized
+		if (TYPES == null) {
+			TYPES = new ConcurrentHashMap<>();
+		}
+		if (basetypes == null) {
+			basetypes = new ConcurrentHashMap<>();
+		}
+		if (subTypeProperties == null) {
+			subTypeProperties = new ConcurrentHashMap<>();
+		}
+		if (propertyDefinitionCoresByPropertyId == null) {
+			propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
+		}
+		if (propertyDefinitionCoresByQueryName == null) {
+			propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
+		}
 	}
 	
 	public void init() {
