@@ -233,7 +233,9 @@ public class ObjectServiceImpl implements ObjectService {
 		// CMIS 1.1 Standard Compliance: After constraint check, handle null attachmentNodeId
 		// Per CMIS 1.1 Section 2.1.10.1: If a document has no content stream, return null
 		// This is reached only for ALLOWED documents (REQUIRED would have thrown exception above)
+		log.debug("VERSIONING DEBUG: Checking attachmentNodeId for document " + document.getId() + ": " + document.getAttachmentNodeId());
 		if (document.getAttachmentNodeId() == null) {
+			log.debug("VERSIONING DEBUG: Document " + document.getId() + " has null attachmentNodeId - returning null content stream");
 			return null;
 		}
 		

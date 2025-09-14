@@ -1524,7 +1524,25 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private String copyAttachment(CallContext callContext, String repositoryId, String attachmentId) {
-		AttachmentNode original = getAttachment(repositoryId, attachmentId);
+		log.debug("VERSIONING DEBUG: Starting copyAttachment for attachmentId: " + attachmentId);
+		
+		AttachmentNode original = getAttachmentRef(repositoryId, attachmentId);
+		if (original == null) {
+			log.error("VERSIONING ERROR: Failed to get attachment reference for copying: " + attachmentId);
+			return null;
+		}
+		
+		log.debug("VERSIONING DEBUG: Got attachment reference - name: " + original.getName() + ", length: " + original.getLength());
+		
+		contentDaoService.setStream(repositoryId, original);
+		
+		if (original.getInputStream() == null) {
+			log.error("VERSIONING ERROR: InputStream is null after setStream for attachmentId: " + attachmentId);
+			return null;
+		}
+		
+		log.debug("VERSIONING DEBUG: Fresh InputStream obtained successfully");
+		
 		ContentStream cs = new ContentStreamImpl(original.getName(), BigInteger.valueOf(original.getLength()),
 				original.getMimeType(), original.getInputStream());
 
@@ -1534,7 +1552,10 @@ public class ContentServiceImpl implements ContentService {
 		copy.setMimeType(original.getMimeType());
 		setSignature(callContext, copy);
 
-		return contentDaoService.createAttachment(repositoryId, copy, cs);
+		String result = contentDaoService.createAttachment(repositoryId, copy, cs);
+		log.debug("VERSIONING DEBUG: copyAttachment completed - new attachmentId: " + result);
+		
+		return result;
 	}
 
 	private List<String> copyRenditions(CallContext callContext, String repositoryId, List<String> renditionIds) {

@@ -366,10 +366,86 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
         
         // ===============================
-        // CRITICAL FIX: Handle repository-level typeDefinition requests  
+        // CRITICAL FIX: Handle /types/{typeId} URL pattern for CMIS Browser Binding
+        // ===============================
+        if ("GET".equals(method) && pathInfo != null && pathInfo.contains("/types/")) {
+            log.debug("Detected /types/ URL pattern in pathInfo: " + pathInfo);
+            
+            String[] pathParts = pathInfo.split("/");
+            if (pathParts.length >= 4 && "types".equals(pathParts[2])) {
+                String repositoryId = pathParts[1];
+                String encodedTypeId = pathParts[3];
+                
+                try {
+                    String typeId = java.net.URLDecoder.decode(encodedTypeId, "UTF-8");
+                    
+                    log.debug("Processing /types/ URL: repositoryId=" + repositoryId + ", typeId=" + typeId);
+                    
+                    // Create call context for CMIS service operations
+                    CallContext callContext = createContext(getServletContext(), request, response, null);
+                    CmisService service = getServiceFactory().getService(callContext);
+                    
+                    // Handle the typeDefinition request directly
+                    Object result = handleTypeDefinitionOperation(service, repositoryId, request);
+                    
+                    // Convert result to JSON and write response
+                    writeJsonResponse(response, result);
+                    
+                    log.debug("Successfully completed /types/ operation for typeId: " + typeId);
+                    return; // Don't delegate to parent - we handled it completely
+                    
+                } catch (Exception e) {
+                    log.error("Error in /types/ URL handling", e);
+                    try {
+                        writeErrorResponse(response, e);
+                    } catch (Exception writeEx) {
+                        log.error("Failed to write error response: " + writeEx.getMessage());
+                    }
+                    return;
+                }
+            }
+        }
+        
+        // ===============================
+        // CRITICAL FIX: Handle content operations with objectId extraction from URL path
         // ===============================
         if ("GET".equals(method) && queryString != null) {
             String cmisselector = request.getParameter("cmisselector");
+            
+            // Handle content operations that need objectId extracted from query parameter
+            if ("content".equals(cmisselector) && pathInfo != null) {
+                String[] pathParts = pathInfo.split("/");
+                if (pathParts.length >= 2) {
+                    String repositoryId = pathParts[1];
+                    String objectId = request.getParameter("objectId");
+                    
+                    log.debug("CONTENT OPERATION: Extracted repositoryId='" + repositoryId + "', objectId='" + objectId + "' from pathInfo='" + pathInfo + "' and query parameter");
+                    
+                    if (objectId != null && !objectId.trim().isEmpty()) {
+                        try {
+                            // Create call context for CMIS service operations
+                            CallContext callContext = createContext(getServletContext(), request, response, null);
+                            CmisService service = getServiceFactory().getService(callContext);
+                            
+                            // Handle the content operation directly with extracted objectId
+                            Object result = handleContentOperation(service, repositoryId, objectId, request, response);
+                            
+                            log.debug("Successfully completed content operation for objectId: " + objectId);
+                            return; // Don't delegate to parent - we handled it completely
+                            
+                        } catch (Exception e) {
+                            log.error("Error in content operation handling", e);
+                            try {
+                                writeErrorResponse(response, e);
+                            } catch (Exception writeEx) {
+                                log.error("Failed to write error response: " + writeEx.getMessage());
+                            }
+                            return;
+                        }
+                    }
+                }
+            }
+            
             String typeId = request.getParameter("typeId");
             
             // Debug parameter extraction
@@ -977,8 +1053,24 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * This method handles typeDefinition cmisselector requests with inherited flag corrections.
      */
     private Object handleTypeDefinitionOperation(CmisService service, String repositoryId, HttpServletRequest request) {
-        // Parse parameters
+        // Parse parameters - try both query parameter and path extraction
         String typeId = HttpUtils.getStringParameter(request, "typeId");
+        
+        // If typeId not in query parameters, try to extract from path
+        if (typeId == null) {
+            String pathInfo = request.getPathInfo();
+            if (pathInfo != null && pathInfo.contains("/types/")) {
+                String[] pathParts = pathInfo.split("/");
+                if (pathParts.length >= 4 && "types".equals(pathParts[2])) {
+                    try {
+                        typeId = java.net.URLDecoder.decode(pathParts[3], "UTF-8");
+                        log.debug("Extracted typeId from path: " + typeId);
+                    } catch (Exception e) {
+                        log.warn("Failed to decode typeId from path: " + pathParts[3]);
+                    }
+                }
+            }
+        }
         
         if (typeId == null || typeId.trim().isEmpty()) {
             throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
@@ -993,8 +1085,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         org.apache.chemistry.opencmis.commons.definitions.TypeDefinition typeDefinition = service.getTypeDefinition(
             repositoryId, typeId, null
         );
-        
-        // CONSISTENCY FIX: Remove inherited flag corrections to ensure consistency
         
         return typeDefinition;
     }
@@ -1014,11 +1104,13 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             java.math.BigInteger length = getBigIntegerParameterSafe(request, "length");
             
             // Call CMIS service to get content stream
+            log.debug("VERSIONING DEBUG: About to call service.getContentStream for objectId: " + objectId + ", streamId: " + streamId);
             org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = null;
             try {
                 contentStream = service.getContentStream(repositoryId, objectId, streamId, offset, length, null);
+                log.debug("VERSIONING DEBUG: service.getContentStream returned: " + (contentStream != null ? "valid ContentStream" : "null"));
             } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException e) {
-                log.debug("Object not found for content stream: " + objectId);
+                log.debug("VERSIONING DEBUG: CmisObjectNotFoundException in servlet for objectId: " + objectId + " - " + e.getMessage());
                 if (!response.isCommitted()) {
                     response.sendError(HttpServletResponse.SC_NOT_FOUND, "Object not found: " + e.getMessage());
                 }
@@ -1030,7 +1122,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
                 return null;
             } catch (Exception e) {
-                log.debug("Service exception getting content stream for " + objectId + ": " + e.getMessage());
+                log.debug("VERSIONING DEBUG: General exception getting content stream for " + objectId + ": " + e.getMessage(), e);
                 if (!response.isCommitted()) {
                     response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Service error: " + e.getMessage());
                 }
@@ -1081,15 +1173,20 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     return null;
                 }
                 
-                // Direct stream transfer without complex error handling
+                // Direct stream transfer with debugging
+                log.debug("VERSIONING DEBUG: Starting stream transfer for objectId: " + objectId);
                 byte[] buffer = new byte[8192];
                 int bytesRead;
+                long totalBytesTransferred = 0;
+                
                 while ((bytesRead = inputStream.read(buffer)) != -1) {
                     outputStream.write(buffer, 0, bytesRead);
+                    totalBytesTransferred += bytesRead;
                 }
+                
                 outputStream.flush();
                 
-                log.debug("Content stream transfer completed successfully for document: " + objectId);
+                log.debug("VERSIONING DEBUG: Content stream transfer completed successfully for document: " + objectId + ", total bytes: " + totalBytesTransferred);
                 
                 
             } catch (java.io.IOException e) {
