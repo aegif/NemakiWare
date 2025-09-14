@@ -1107,18 +1107,26 @@ public class TypeManagerImpl implements TypeManager {
 
 		//cmis:objectId
 		boolean orderable_objectId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_ID_ORDERABLE);
-		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
+		PropertyDefinition<?> objectIdProp = createDefaultPropDef(repositoryId,
 				PropertyIds.OBJECT_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READONLY, REQUIRED, QUERYABLE, orderable_objectId, null, isInherited));
-		log.info("DEBUG: Added cmis:objectId property");
+				Updatability.READONLY, REQUIRED, QUERYABLE, orderable_objectId, null, isInherited);
+		type.addPropertyDefinition(objectIdProp);
+		log.info("DEBUG: Added cmis:objectId property - localName=" + objectIdProp.getLocalName() +
+				 ", queryName=" + objectIdProp.getQueryName() +
+				 ", displayName=" + objectIdProp.getDisplayName() +
+				 ", localNamespace=" + objectIdProp.getLocalNamespace());
 
 		//cmis:baseTypeId
 		boolean queryable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_QUERYABLE);
 		boolean orderable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_ORDERABLE);
-		type.addPropertyDefinition(createDefaultPropDef(
+		PropertyDefinition<?> baseTypeIdProp = createDefaultPropDef(
 				repositoryId, PropertyIds.BASE_TYPE_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null, isInherited));
-		log.info("DEBUG: Added cmis:baseTypeId property");
+				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null, isInherited);
+		type.addPropertyDefinition(baseTypeIdProp);
+		log.info("DEBUG: Added cmis:baseTypeId property - localName=" + baseTypeIdProp.getLocalName() +
+				 ", queryName=" + baseTypeIdProp.getQueryName() +
+				 ", displayName=" + baseTypeIdProp.getDisplayName() +
+				 ", localNamespace=" + baseTypeIdProp.getLocalNamespace());
 
 		//cmis:objectTypeId
 		boolean queryable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_QUERYABLE);
@@ -2003,7 +2011,16 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		type.setId(nemakiType.getTypeId());
 		type.setLocalName(nemakiType.getLocalName());
 		type.setLocalNamespace(nemakiType.getLocalNameSpace());
-		type.setQueryName(nemakiType.getQueryName());
+
+		// CRITICAL FIX: Ensure queryName is never null (CMIS 1.1 requirement)
+		String queryName = nemakiType.getQueryName();
+		if (queryName == null || queryName.isEmpty()) {
+			// For types, queryName should default to the type ID
+			queryName = nemakiType.getTypeId();
+			log.warn("Type queryName was null/empty for type: " + nemakiType.getTypeId() + ", using typeId as queryName");
+		}
+		type.setQueryName(queryName);
+
 		type.setDisplayName(nemakiType.getDisplayName());
 		type.setBaseTypeId(nemakiType.getBaseId());
 		type.setParentTypeId(nemakiType.getParentId());
