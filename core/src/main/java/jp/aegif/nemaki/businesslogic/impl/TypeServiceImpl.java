@@ -100,120 +100,24 @@ public class TypeServiceImpl implements TypeService{
 	public NemakiTypeDefinition createTypeDefinition(
 			String repositoryId, NemakiTypeDefinition typeDefinition) {
 		
-		// CRITICAL DEBUG: Add comprehensive debugging for property inheritance investigation
-		log.info("=== TYPE CREATION DEBUG: Starting type creation for: " + typeDefinition.getId() + " ===");
-		log.info("DEBUG: Repository: " + repositoryId + ", TypeId: " + typeDefinition.getId());
-		log.info("DEBUG: BaseId: " + typeDefinition.getBaseId() + ", ParentId: " + typeDefinition.getParentId());
-		
-		// CRITICAL FIX: Inherit property definitions from parent type before creation
-		// ROOT CAUSE IDENTIFIED: TCK creates new types but they don't inherit CMIS property definitions
-		// This causes "Property definition: cmis:name" failures in TCK compliance checks
-		
-		String parentTypeId = typeDefinition.getParentId();
-		if (parentTypeId == null && typeDefinition.getBaseId() != null) {
-			parentTypeId = typeDefinition.getBaseId().value();
-			log.info("DEBUG: Using BaseId as parent: " + parentTypeId);
+		// CRITICAL FIX: The type inherits properties from its parent automatically via TypeManagerImpl
+		// No need to create PropertyDefinitionCore records for inherited CMIS properties
+
+		if (log.isDebugEnabled()) {
+			log.debug("Creating type definition: " + typeDefinition.getId() +
+				" (Parent: " + typeDefinition.getParentId() + ", Base: " + typeDefinition.getBaseId() + ")");
 		}
-		
-		if (parentTypeId != null) {
-			log.info("DEBUG: Starting property inheritance from parent: " + parentTypeId);
-			
-			try {
-				log.info("DEBUG: TypeManager retrieved: " + (typeManager != null));
-				
-				if (typeManager != null) {
-					
-					TypeDefinition parentType = typeManager.getTypeDefinition(repositoryId, parentTypeId);
-					
-					log.info("DEBUG: Parent type definition retrieved: " + (parentType != null));
-					if (parentType != null) {
-						log.info("DEBUG: Parent type ID: " + parentType.getId() + ", Properties count: " + 
-							(parentType.getPropertyDefinitions() != null ? parentType.getPropertyDefinitions().size() : 0));
-					}
-					
-					if (parentType != null) {
-						
-						Map<String, PropertyDefinition<?>> parentProperties = parentType.getPropertyDefinitions();
-						
-						if (parentProperties != null && !parentProperties.isEmpty()) {
-							log.info("DEBUG: Processing " + parentProperties.size() + " parent properties");
-							
-							int inheritedCount = 0;
-							int skippedExisting = 0;
-							int errorCount = 0;
-							
-							for (Map.Entry<String, PropertyDefinition<?>> entry : parentProperties.entrySet()) {
-								PropertyDefinition<?> parentProp = entry.getValue();
-								String propertyId = parentProp.getId();
-								
-								log.debug("DEBUG: Processing property: " + propertyId + " (Type: " + parentProp.getPropertyType() + ")");
-								
-								if (propertyId != null && propertyId.startsWith("cmis:")) {
-									
-									try {
-										NemakiPropertyDefinitionCore existingCore = getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
-										
-										if (existingCore == null) {
-											log.info("DEBUG: Creating new PropertyDefinitionCore for: " + propertyId);
-											
-											NemakiPropertyDefinition nemakiProp = new NemakiPropertyDefinition();
-											nemakiProp.setPropertyId(propertyId);
-											nemakiProp.setPropertyType(parentProp.getPropertyType());
-											nemakiProp.setQueryName(parentProp.getQueryName());
-											nemakiProp.setCardinality(parentProp.getCardinality());
-											nemakiProp.setLocalName(parentProp.getLocalName());
-											nemakiProp.setDisplayName(parentProp.getDisplayName());
-											nemakiProp.setDescription(parentProp.getDescription());
-											
-											nemakiProp.setInherited(true);
-											
-											NemakiPropertyDefinitionCore core = new NemakiPropertyDefinitionCore(nemakiProp);
-											
-											core.setInherited(true);
-											NemakiPropertyDefinitionCore createdCore = contentDaoService.createPropertyDefinitionCore(repositoryId, core);
-											log.info("DEBUG: PropertyDefinitionCore created successfully: " + propertyId + " -> " + createdCore.getId());
-											inheritedCount++;
-										} else {
-											log.debug("DEBUG: PropertyDefinitionCore already exists for: " + propertyId + " -> " + existingCore.getId());
-											skippedExisting++;
-										}
-									} catch (Exception e) {
-										log.error("ERROR: Failed to create PropertyDefinitionCore for " + propertyId, e);
-										errorCount++;
-									}
-								} else {
-									log.debug("DEBUG: Skipping non-CMIS property: " + propertyId);
-								}
-							}
-							
-							log.info("DEBUG: Property inheritance completed. Created: " + inheritedCount + 
-									", Skipped existing: " + skippedExisting + ", Errors: " + errorCount);
-						} else {
-							log.warn("DEBUG: Parent type has no properties to inherit");
-						}
-					}
-				} else {
-					log.error("ERROR: TypeManager is null - cannot inherit properties");
-				}
-			} catch (Exception e) {
-				log.error("ERROR: Exception during property inheritance", e);
-				e.printStackTrace();
-			}
-		} else {
-			log.info("DEBUG: No parent type for inheritance - creating base type");
-		}
-		
-		// Proceed with original type creation
-		log.info("DEBUG: Creating type definition in database");
 		NemakiTypeDefinition created = contentDaoService.createTypeDefinition(repositoryId, typeDefinition);
-		log.info("DEBUG: Type definition created with ID: " + created.getId());
 
 		if (typeManager != null) {
-			log.info("DEBUG: Refreshing TypeManager cache after type creation");
+			// CRITICAL FIX: Force immediate cache invalidation before refresh
+			// This ensures the next getTypeDefinition() call rebuilds from database
+			typeManager.invalidateTypeCache(repositoryId);
 			typeManager.refreshTypes();
+			if (log.isDebugEnabled()) {
+				log.debug("Type cache invalidated and refreshed after creating type: " + created.getId());
+			}
 		}
-		
-		log.info("=== TYPE CREATION DEBUG: Completed type creation for: " + typeDefinition.getId() + " ===");
 		return created;
 	}
 
