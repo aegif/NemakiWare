@@ -99,25 +99,100 @@ public class TypeServiceImpl implements TypeService{
 	@Override
 	public NemakiTypeDefinition createTypeDefinition(
 			String repositoryId, NemakiTypeDefinition typeDefinition) {
-		
-		// CRITICAL FIX: The type inherits properties from its parent automatically via TypeManagerImpl
-		// No need to create PropertyDefinitionCore records for inherited CMIS properties
 
-		if (log.isDebugEnabled()) {
-			log.debug("Creating type definition: " + typeDefinition.getId() +
-				" (Parent: " + typeDefinition.getParentId() + ", Base: " + typeDefinition.getBaseId() + ")");
+		// CRITICAL FIX: Inherit property definitions from parent type before creation
+		// TCK creates new types but they don't inherit CMIS property definitions properly
+		// This causes "Property definition: cmis:name" failures in TCK compliance checks
+
+		String parentTypeId = typeDefinition.getParentId();
+		if (parentTypeId == null && typeDefinition.getBaseId() != null) {
+			parentTypeId = typeDefinition.getBaseId().value();
+			if (log.isDebugEnabled()) {
+				log.debug("Using BaseId as parent: " + parentTypeId);
+			}
 		}
+
+		if (parentTypeId != null) {
+			if (log.isDebugEnabled()) {
+				log.debug("Starting property inheritance from parent: " + parentTypeId);
+			}
+
+			// Get parent type definition from TypeManager
+			if (typeManager != null) {
+				TypeDefinition parentType = typeManager.getTypeDefinition(repositoryId, parentTypeId);
+
+				if (parentType != null) {
+					// CRITICAL FIX: Create PropertyDefinitionCore entries for inherited CMIS properties
+					Map<String, PropertyDefinition<?>> parentProperties = parentType.getPropertyDefinitions();
+
+					if (parentProperties != null && !parentProperties.isEmpty()) {
+						int inheritedCount = 0;
+						int skippedExisting = 0;
+
+						for (Map.Entry<String, PropertyDefinition<?>> entry : parentProperties.entrySet()) {
+							PropertyDefinition<?> parentProp = entry.getValue();
+							String propertyId = parentProp.getId();
+
+							// Only inherit CMIS system properties, not custom properties
+							if (propertyId != null && propertyId.startsWith("cmis:")) {
+								try {
+									// Check if property definition already exists
+									NemakiPropertyDefinitionCore existingCore = getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
+
+									if (existingCore == null) {
+										// Create NemakiPropertyDefinition from CMIS PropertyDefinition
+										NemakiPropertyDefinition nemakiProp = new NemakiPropertyDefinition();
+										nemakiProp.setPropertyId(propertyId);
+										nemakiProp.setPropertyType(parentProp.getPropertyType());
+										nemakiProp.setQueryName(parentProp.getQueryName());
+										nemakiProp.setCardinality(parentProp.getCardinality());
+										nemakiProp.setLocalName(parentProp.getLocalName());
+										nemakiProp.setDisplayName(parentProp.getDisplayName());
+										nemakiProp.setDescription(parentProp.getDescription());
+
+										// CRITICAL FIX: Set inherited flag for properties inherited from parent types
+										nemakiProp.setInherited(true);
+
+										// Create PropertyDefinitionCore
+										NemakiPropertyDefinitionCore core = new NemakiPropertyDefinitionCore(nemakiProp);
+
+										// CRITICAL FIX: Set inherited flag on core as well for consistency
+										core.setInherited(true);
+										NemakiPropertyDefinitionCore createdCore = contentDaoService.createPropertyDefinitionCore(repositoryId, core);
+										if (log.isDebugEnabled()) {
+											log.debug("PropertyDefinitionCore created for: " + propertyId + " -> " + createdCore.getId());
+										}
+										inheritedCount++;
+									} else {
+										skippedExisting++;
+									}
+								} catch (Exception e) {
+									log.error("Failed to create PropertyDefinitionCore for " + propertyId, e);
+									// Continue with other properties - don't fail entire type creation
+								}
+							}
+						}
+
+						if (log.isDebugEnabled()) {
+							log.debug("Property inheritance completed. Created: " + inheritedCount +
+									", Skipped existing: " + skippedExisting);
+						}
+					}
+				}
+			}
+		}
+
+		// Proceed with original type creation
 		NemakiTypeDefinition created = contentDaoService.createTypeDefinition(repositoryId, typeDefinition);
 
 		if (typeManager != null) {
-			// CRITICAL FIX: Force immediate cache invalidation before refresh
-			// This ensures the next getTypeDefinition() call rebuilds from database
-			typeManager.invalidateTypeCache(repositoryId);
+			// Force cache refresh after type creation
 			typeManager.refreshTypes();
 			if (log.isDebugEnabled()) {
-				log.debug("Type cache invalidated and refreshed after creating type: " + created.getId());
+				log.debug("Type cache refreshed after creating type: " + created.getId());
 			}
 		}
+
 		return created;
 	}
 
