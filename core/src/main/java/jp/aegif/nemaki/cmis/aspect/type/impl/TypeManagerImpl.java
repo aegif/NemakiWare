@@ -1085,7 +1085,7 @@ public class TypeManagerImpl implements TypeManager {
 	
 	private void addBasePropertyDefinitions(String repositoryId, AbstractTypeDefinition type, boolean isInherited) {
 		log.info("=== ADD BASE PROPERTIES DEBUG: Starting for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
-		
+
 		// Get initial property count
 		Map<String, PropertyDefinition<?>> initialProps = type.getPropertyDefinitions();
 		int initialCount = (initialProps != null) ? initialProps.size() : 0;
@@ -1093,98 +1093,111 @@ public class TypeManagerImpl implements TypeManager {
 		if (initialProps != null) {
 			log.info("DEBUG: Initial property keys: " + initialProps.keySet());
 		}
-		
+
+		String typeId = type.getId();
+
 		//cmis:name
 		String _updatability_name = propertyManager.readValue(PropertyKey.PROPERTY_NAME_UPDATABILITY);
 		Updatability updatability_name = Updatability.fromValue(_updatability_name);
 		boolean queryable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_QUERYABLE);
 		boolean orderable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_ORDERABLE);
+		boolean inherited_name = shouldBeInherited(PropertyIds.NAME, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.NAME, PropertyType.STRING,
-				Cardinality.SINGLE, updatability_name, REQUIRED, queryable_name, orderable_name, null, isInherited));
-		log.info("DEBUG: Added cmis:name property");
+				Cardinality.SINGLE, updatability_name, REQUIRED, queryable_name, orderable_name, null, inherited_name));
+		log.info("DEBUG: Added cmis:name property (inherited=" + inherited_name + ")")
 
 		//cmis:description
 		String _updatability_description = propertyManager.readValue(PropertyKey.PROPERTY_DESCRIPTION_UPDATABILITY);
 		Updatability updatability_description = Updatability.fromValue(_updatability_description);
 		boolean queryable_description = propertyManager.readBoolean(PropertyKey.PROPERTY_DESCRIPTION_QUERYABLE);
 		boolean orderable_description = propertyManager.readBoolean(PropertyKey.PROPERTY_DESCRIPTION_ORDERABLE);
+		boolean inherited_description = shouldBeInherited(PropertyIds.DESCRIPTION, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.DESCRIPTION,
 				PropertyType.STRING, Cardinality.SINGLE, updatability_description,
-				!REQUIRED, queryable_description, orderable_description, null, isInherited));
-		log.info("DEBUG: Added cmis:description property");
+				!REQUIRED, queryable_description, orderable_description, null, inherited_description));
+		log.info("DEBUG: Added cmis:description property (inherited=" + inherited_description + ")")
 
 		//cmis:objectId
 		boolean orderable_objectId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_ID_ORDERABLE);
+		boolean inherited_objectId = shouldBeInherited(PropertyIds.OBJECT_ID, typeId);
 		PropertyDefinition<?> objectIdProp = createDefaultPropDef(repositoryId,
 				PropertyIds.OBJECT_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READONLY, REQUIRED, QUERYABLE, orderable_objectId, null, isInherited);
+				Updatability.READONLY, REQUIRED, QUERYABLE, orderable_objectId, null, inherited_objectId);
 		type.addPropertyDefinition(objectIdProp);
-		log.info("DEBUG: Added cmis:objectId property - localName=" + objectIdProp.getLocalName() +
+		log.info("DEBUG: Added cmis:objectId property (inherited=" + inherited_objectId + ") - localName=" + objectIdProp.getLocalName() +
 				 ", queryName=" + objectIdProp.getQueryName() +
 				 ", displayName=" + objectIdProp.getDisplayName() +
-				 ", localNamespace=" + objectIdProp.getLocalNamespace());
+				 ", localNamespace=" + objectIdProp.getLocalNamespace())
 
 		//cmis:baseTypeId
 		boolean queryable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_QUERYABLE);
 		boolean orderable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_ORDERABLE);
+		boolean inherited_baseTypeId = shouldBeInherited(PropertyIds.BASE_TYPE_ID, typeId);
 		PropertyDefinition<?> baseTypeIdProp = createDefaultPropDef(
 				repositoryId, PropertyIds.BASE_TYPE_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null, isInherited);
+				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null, inherited_baseTypeId);
 		type.addPropertyDefinition(baseTypeIdProp);
-		log.info("DEBUG: Added cmis:baseTypeId property - localName=" + baseTypeIdProp.getLocalName() +
+		log.info("DEBUG: Added cmis:baseTypeId property (inherited=" + inherited_baseTypeId + ") - localName=" + baseTypeIdProp.getLocalName() +
 				 ", queryName=" + baseTypeIdProp.getQueryName() +
 				 ", displayName=" + baseTypeIdProp.getDisplayName() +
-				 ", localNamespace=" + baseTypeIdProp.getLocalNamespace());
+				 ", localNamespace=" + baseTypeIdProp.getLocalNamespace())
 
 		//cmis:objectTypeId
 		boolean queryable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_QUERYABLE);
 		boolean orderable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_ORDERABLE);
+		boolean inherited_objectTypeId = shouldBeInherited(PropertyIds.OBJECT_TYPE_ID, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.OBJECT_TYPE_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.ONCREATE, REQUIRED,
-				queryable_objectTypeId, orderable_objectTypeId, null, isInherited));
-		log.info("DEBUG: Added cmis:objectTypeId property");
+				queryable_objectTypeId, orderable_objectTypeId, null, inherited_objectTypeId));
+		log.info("DEBUG: Added cmis:objectTypeId property (inherited=" + inherited_objectTypeId + ")")
 
 		//cmis:secondaryObjectTypeIds - CRITICAL CMIS 1.1 REQUIREMENT
 		String _updatability_secondaryObjectTypeIds = propertyManager.readValue(PropertyKey.PROPERTY_SECONDARY_OBJECT_TYPE_IDS_UPDATABILITY);
 		Updatability updatability_secondaryObjectTypeIds = Updatability.fromValue(_updatability_secondaryObjectTypeIds);
 		boolean queryable_secondaryObjectTypeIds = propertyManager.readBoolean(PropertyKey.PROPERTY_SECONDARY_OBJECT_TYPE_IDS_QUERYABLE);
+		boolean inherited_secondaryObjectTypeIds = shouldBeInherited(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.SECONDARY_OBJECT_TYPE_IDS,
 				PropertyType.ID, Cardinality.MULTI, updatability_secondaryObjectTypeIds,
-				!REQUIRED, queryable_secondaryObjectTypeIds, !ORDERABLE, null, isInherited));
-		log.info("DEBUG: Added cmis:secondaryObjectTypeIds property");
+				!REQUIRED, queryable_secondaryObjectTypeIds, !ORDERABLE, null, inherited_secondaryObjectTypeIds));
+		log.info("DEBUG: Added cmis:secondaryObjectTypeIds property (inherited=" + inherited_secondaryObjectTypeIds + ")")
 
+		boolean inherited_createdBy = shouldBeInherited(PropertyIds.CREATED_BY, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.CREATED_BY, PropertyType.STRING, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null, isInherited));
-		log.info("DEBUG: Added cmis:createdBy property");
+				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null, inherited_createdBy));
+		log.info("DEBUG: Added cmis:createdBy property (inherited=" + inherited_createdBy + ")")
 
+		boolean inherited_creationDate = shouldBeInherited(PropertyIds.CREATION_DATE, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CREATION_DATE,
 				PropertyType.DATETIME, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null, isInherited));
-		log.info("DEBUG: Added cmis:creationDate property");
+				!REQUIRED, QUERYABLE, ORDERABLE, null, inherited_creationDate));
+		log.info("DEBUG: Added cmis:creationDate property (inherited=" + inherited_creationDate + ")")
 
+		boolean inherited_lastModifiedBy = shouldBeInherited(PropertyIds.LAST_MODIFIED_BY, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.LAST_MODIFIED_BY,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null, isInherited));
-		log.info("DEBUG: Added cmis:lastModifiedBy property");
+				!REQUIRED, QUERYABLE, ORDERABLE, null, inherited_lastModifiedBy));
+		log.info("DEBUG: Added cmis:lastModifiedBy property (inherited=" + inherited_lastModifiedBy + ")")
 
+		boolean inherited_lastModificationDate = shouldBeInherited(PropertyIds.LAST_MODIFICATION_DATE, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.LAST_MODIFICATION_DATE,
 				PropertyType.DATETIME, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null, isInherited));
-		log.info("DEBUG: Added cmis:lastModificationDate property");
+				!REQUIRED, QUERYABLE, ORDERABLE, null, inherited_lastModificationDate));
+		log.info("DEBUG: Added cmis:lastModificationDate property (inherited=" + inherited_lastModificationDate + ")")
 
+		boolean inherited_changeToken = shouldBeInherited(PropertyIds.CHANGE_TOKEN, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CHANGE_TOKEN,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, !QUERYABLE, !ORDERABLE, null, isInherited));
-		log.info("DEBUG: Added cmis:changeToken property");
+				!REQUIRED, !QUERYABLE, !ORDERABLE, null, inherited_changeToken));
+		log.info("DEBUG: Added cmis:changeToken property (inherited=" + inherited_changeToken + ")")
 		
 		// Get final property count and detailed analysis
 		Map<String, PropertyDefinition<?>> finalProps = type.getPropertyDefinitions();
