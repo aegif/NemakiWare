@@ -1415,9 +1415,20 @@ private PropertyDefinition<?> createDefaultPropDef(String repositoryId,
 	PropertyDefinition<?> result = null;
 
 	// Default values with CMIS 1.1 compliance
+	// CRITICAL FIX: Extract local name without namespace prefix for CMIS compliance
 	String localName = id;
-	String localNameSpace = getNameSpace(repositoryId);
-	String queryName = localName;  // CMIS 1.1: queryName must equal localName
+	if (id != null && id.contains(":")) {
+		// Remove namespace prefix (e.g., "cmis:objectId" -> "objectId")
+		localName = id.substring(id.indexOf(':') + 1);
+	}
+	// CRITICAL FIX: CMIS standard properties should not have custom namespace
+	// Only custom properties should use the repository namespace
+	String localNameSpace = null;
+	if (id != null && !id.startsWith("cmis:")) {
+		// Only custom properties get the repository namespace
+		localNameSpace = getNameSpace(repositoryId);
+	}
+	String queryName = id;  // CMIS 1.1: queryName should be the full qualified name (e.g., "cmis:objectId")
 	String displayName = null;  // Let DataUtil generate human-readable displayName
 	String description = id;
 	boolean openChoice = false;
@@ -1704,16 +1715,18 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Set base attributes, and properties(with specific properties included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: All document types need CMIS properties for TCK compliance
-		// Base types get them as non-inherited, derived types get them as inherited
+		// CRITICAL FIX: Property inheritance handling for TCK compliance
+		// Base types: Add all properties with inherited=false
+		// Derived types: Properties are already copied from parent with inherited=true, DO NOT re-add
 		boolean isBaseType = BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId());
-		System.err.println("*** buildDocumentTypeDefinitionFromDB - typeId: " + nemakiType.getTypeId() + ", isBaseType: " + isBaseType + ", passing inherited: " + !isBaseType + " ***");
-		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
-		// CRITICAL: Only add document-specific properties for base type
-		// Derived types inherit these from their parent automatically
+		System.err.println("*** buildDocumentTypeDefinitionFromDB - typeId: " + nemakiType.getTypeId() + ", isBaseType: " + isBaseType + " ***");
+
+		// ONLY add properties for base types - derived types already have all properties from parent
 		if (isBaseType) {
+			addBasePropertyDefinitions(repositoryId, type, false);
 			addDocumentPropertyDefinitions(repositoryId, type, false);
 		}
+		// For derived types, properties are already set in buildTypeDefinitionBaseFromDB
 
 		// Add specific attributes
 		ContentStreamAllowed contentStreamAllowed = (nemakiType
@@ -1740,15 +1753,17 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: All folder types need CMIS properties for TCK compliance
-		// Base types get them as non-inherited, derived types get them as inherited
+		// CRITICAL FIX: Property inheritance handling for TCK compliance
+		// Base types: Add all properties with inherited=false
+		// Derived types: Properties are already copied from parent with inherited=true, DO NOT re-add
 		boolean isBaseType = BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId());
-		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
-		// CRITICAL: Only add folder-specific properties for base type
-		// Derived types inherit these from their parent automatically
+
+		// ONLY add properties for base types - derived types already have all properties from parent
 		if (isBaseType) {
+			addBasePropertyDefinitions(repositoryId, type, false);
 			addFolderPropertyDefinitions(repositoryId, type, false);
 		}
+		// For derived types, properties are already set in buildTypeDefinitionBaseFromDB
 
 		return type;
 	}
@@ -1765,15 +1780,17 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: All relationship types need CMIS properties for TCK compliance
-		// Base types get them as non-inherited, derived types get them as inherited
+		// CRITICAL FIX: Property inheritance handling for TCK compliance
+		// Base types: Add all properties with inherited=false
+		// Derived types: Properties are already copied from parent with inherited=true, DO NOT re-add
 		boolean isBaseType = BaseTypeId.CMIS_RELATIONSHIP.value().equals(nemakiType.getTypeId());
-		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
-		// CRITICAL: Only add relationship-specific properties for base type
-		// Derived types inherit these from their parent automatically
+
+		// ONLY add properties for base types - derived types already have all properties from parent
 		if (isBaseType) {
+			addBasePropertyDefinitions(repositoryId, type, false);
 			addRelationshipPropertyDefinitions(repositoryId, type, false);
 		}
+		// For derived types, properties are already set in buildTypeDefinitionBaseFromDB
 
 		// Set specific attributes
 		type.setAllowedSourceTypes(nemakiType.getAllowedSourceTypes());
@@ -1794,15 +1811,17 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: All policy types need CMIS properties for TCK compliance
-		// Base types get them as non-inherited, derived types get them as inherited
+		// CRITICAL FIX: Property inheritance handling for TCK compliance
+		// Base types: Add all properties with inherited=false
+		// Derived types: Properties are already copied from parent with inherited=true, DO NOT re-add
 		boolean isBaseType = BaseTypeId.CMIS_POLICY.value().equals(nemakiType.getTypeId());
-		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
-		// CRITICAL: Only add policy-specific properties for base type
-		// Derived types inherit these from their parent automatically
+
+		// ONLY add properties for base types - derived types already have all properties from parent
 		if (isBaseType) {
+			addBasePropertyDefinitions(repositoryId, type, false);
 			addPolicyPropertyDefinitions(repositoryId, type, false);
 		}
+		// For derived types, properties are already set in buildTypeDefinitionBaseFromDB
 
 		return type;
 	}
@@ -1819,10 +1838,16 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: All item types need CMIS properties for TCK compliance
-		// Base types get them as non-inherited, derived types get them as inherited
+		// CRITICAL FIX: Property inheritance handling for TCK compliance
+		// Base types: Add all properties with inherited=false
+		// Derived types: Properties are already copied from parent with inherited=true, DO NOT re-add
 		boolean isBaseType = BaseTypeId.CMIS_ITEM.value().equals(nemakiType.getTypeId());
-		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
+
+		// ONLY add properties for base types - derived types already have all properties from parent
+		if (isBaseType) {
+			addBasePropertyDefinitions(repositoryId, type, false);
+		}
+		// For derived types, properties are already set in buildTypeDefinitionBaseFromDB
 
 		return type;
 	}
@@ -1839,10 +1864,16 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
-		// CRITICAL FIX: All secondary types need CMIS properties for TCK compliance
-		// Base types get them as non-inherited, derived types get them as inherited
+		// CRITICAL FIX: Property inheritance handling for TCK compliance
+		// Base types: Add all properties with inherited=false
+		// Derived types: Properties are already copied from parent with inherited=true, DO NOT re-add
 		boolean isBaseType = BaseTypeId.CMIS_SECONDARY.value().equals(nemakiType.getTypeId());
-		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
+
+		// ONLY add properties for base types - derived types already have all properties from parent
+		if (isBaseType) {
+			addBasePropertyDefinitions(repositoryId, type, false);
+		}
+		// For derived types, properties are already set in buildTypeDefinitionBaseFromDB
 
 		return type;
 	}

@@ -510,16 +510,23 @@ public class DataUtil {
 	 */
 	private static String generateDisplayName(String propertyId) {
 		if (propertyId == null) return "Unknown Property";
-		
+
 		// Extract local name and convert to title case
 		String localName = extractLocalName(propertyId);
 		StringBuilder displayName = new StringBuilder();
-		
+
 		boolean capitalizeNext = true;
-		for (char c : localName.toCharArray()) {
+		for (int i = 0; i < localName.length(); i++) {
+			char c = localName.charAt(i);
+
 			if (c == '_' || c == '-') {
 				displayName.append(' ');
 				capitalizeNext = true;
+			} else if (Character.isUpperCase(c) && i > 0 && !capitalizeNext) {
+				// Handle camelCase - insert space before uppercase letter (except at start)
+				displayName.append(' ');
+				displayName.append(c);
+				capitalizeNext = false;
 			} else if (capitalizeNext) {
 				displayName.append(Character.toUpperCase(c));
 				capitalizeNext = false;
@@ -527,7 +534,7 @@ public class DataUtil {
 				displayName.append(Character.toLowerCase(c));
 			}
 		}
-		
+
 		return displayName.toString();
 	}
 	
@@ -738,23 +745,25 @@ public class DataUtil {
 			boolean queryable, boolean orderable, boolean openChoice) {
 		// Set default value if not set(null)
 		localName = (localName == null) ? id : localName;
-		localNameSpace = (localNameSpace == null) ? NAMESPACE : localNameSpace;
+		// CRITICAL FIX: CMIS standard properties should not have namespace
+		// Only apply default namespace for non-CMIS properties
+		if (localNameSpace == null && id != null && !id.startsWith("cmis:")) {
+			localNameSpace = NAMESPACE;
+		}
+		// Leave localNameSpace as null for CMIS properties
 		
-		// CMIS 1.1 COMPLIANCE CRITICAL FIX (CORRECTED): 
-		// queryName MUST equal localName ONLY for SYSTEM properties (cmis:*)
-		// Custom properties (tck:*, custom:*, etc.) should preserve original queryName
-		if (id != null && id.startsWith("cmis:")) {
-			// System CMIS properties: Force CMIS 1.1 compliance
-			queryName = localName;
-			if (log.isDebugEnabled()) {
-				log.debug("CMIS 1.1 COMPLIANCE: System property " + id + " queryName set to localName: " + localName);
-			}
-		} else {
-			// Custom properties: Preserve original queryName if provided, fallback to localName only if null
-			queryName = (queryName == null) ? localName : queryName;
-			if (log.isDebugEnabled()) {
-				log.debug("CUSTOM PROPERTY: " + id + " preserving queryName: " + queryName + " (localName: " + localName + ")");
-			}
+		// CMIS 1.1 COMPLIANCE CRITICAL FIX:
+		// For CMIS system properties, queryName should be the full qualified name (e.g., "cmis:objectId")
+		// while localName should be without prefix (e.g., "objectId")
+		// Custom properties preserve their original queryName
+		if (queryName == null) {
+			// If queryName not provided, use the id as queryName for system properties
+			// or localName for custom properties
+			queryName = (id != null && id.startsWith("cmis:")) ? id : localName;
+		}
+		// Don't override queryName if it's already set correctly
+		if (log.isDebugEnabled()) {
+			log.debug("PROPERTY DEFINITION: id=" + id + ", localName=" + localName + ", queryName=" + queryName);
 		}
 		
 		// DisplayName: Adopt directly provided value, generate only when null
