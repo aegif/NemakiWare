@@ -707,7 +707,9 @@ public class TypeManagerImpl implements TypeManager {
 		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		documentType.setTypeMutability(typeMutability);
 
+		log.error("CRITICAL DEBUG: About to call addBasePropertyDefinitions for cmis:document");
 		addBasePropertyDefinitions(repositoryId, documentType);
+		log.error("CRITICAL DEBUG: Finished addBasePropertyDefinitions for cmis:document");
 		addDocumentPropertyDefinitions(repositoryId, documentType);
 
 		addTypeInternal(TYPES.get(repositoryId), documentType);
@@ -1074,7 +1076,8 @@ public class TypeManagerImpl implements TypeManager {
 	}
 	
 	private void addBasePropertyDefinitions(String repositoryId, AbstractTypeDefinition type, boolean isInherited) {
-		log.info("=== ADD BASE PROPERTIES DEBUG: Starting for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
+		System.out.println("=== SYSTEM DEBUG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
+		log.error("=== ERROR LOG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
 		
 		// Get initial property count
 		Map<String, PropertyDefinition<?>> initialProps = type.getPropertyDefinitions();
@@ -1646,6 +1649,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	private DocumentTypeDefinitionImpl buildDocumentTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
+		log.error("CRITICAL DEBUG: buildDocumentTypeDefinitionFromDB called for typeId=" + nemakiType.getTypeId() + ", repositoryId=" + repositoryId);
 		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
 		
 		DocumentTypeDefinitionImpl type = new DocumentTypeDefinitionImpl();
@@ -1669,7 +1673,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL FIX: All document types need CMIS properties for TCK compliance
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId());
+		log.error("CRITICAL DEBUG: About to call addBasePropertyDefinitions for typeId=" + nemakiType.getTypeId() + ", isBaseType=" + isBaseType + ", inherited=" + !isBaseType);
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
+		log.error("CRITICAL DEBUG: Finished addBasePropertyDefinitions for typeId=" + nemakiType.getTypeId());
 		addDocumentPropertyDefinitions(repositoryId, type);
 
 		// Add specific attributes
@@ -1687,6 +1693,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	private FolderTypeDefinitionImpl buildFolderTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
+		log.error("CRITICAL DEBUG: buildFolderTypeDefinitionFromDB called for typeId=" + nemakiType.getTypeId() + ", repositoryId=" + repositoryId);
 		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
 		
 		FolderTypeDefinitionImpl type = new FolderTypeDefinitionImpl();
@@ -1700,7 +1707,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL FIX: All folder types need CMIS properties for TCK compliance
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId());
+		log.error("CRITICAL DEBUG: About to call addBasePropertyDefinitions for typeId=" + nemakiType.getTypeId() + ", isBaseType=" + isBaseType + ", inherited=" + !isBaseType);
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
+		log.error("CRITICAL DEBUG: Finished addBasePropertyDefinitions for typeId=" + nemakiType.getTypeId());
 		addFolderPropertyDefinitions(repositoryId, type);
 
 		return type;
@@ -2447,6 +2456,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL DEBUG: Entry point logging
 		System.err.println("*** getTypeDefinition CALLED: repo=" + repositoryId + ", type=" + typeId + " ***");
 		System.err.println("*** THIS INSTANCE: " + this.hashCode() + " ***");
+		log.warn("INHERITANCE DEBUG: getTypeDefinition method called for repositoryId=" + repositoryId + ", typeId=" + typeId);
 		System.err.println("*** ClassLoader: " + this.getClass().getClassLoader() + " ***");
 		System.err.println("*** ClassLoader Identity: " + System.identityHashCode(this.getClass().getClassLoader()) + " ***");
 		System.err.println("*** TYPES MAP: " + (TYPES != null ? "EXISTS" : "NULL") + " ***");
@@ -2621,18 +2631,76 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				" has NULL property definitions");
 		}
 
-		// CRITICAL CONSISTENCY FIX: Use shared TypeDefinition system for normal path
-		// This ensures both normal and refresh paths return TypeDefinition objects with identical object identity
-		TypeDefinition sharedTypeDefinition = getSharedTypeDefinition(repositoryId, typeDefinition.getId(), typeDefinition);
-		if (log.isDebugEnabled()) {
-			log.debug("TYPE DEFINITION SHARING: Applied getSharedTypeDefinition() to normal path for type " + (typeDefinition != null ? typeDefinition.getId() : "null"));
+	// CRITICAL FIX: Check inheritance flags and force regeneration if incorrect
+	if (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null) {
+		boolean inheritanceFlagsIncorrect = false;
+		
+		// Check if this is a base type (cmis:document, cmis:folder, etc.)
+		String currentTypeId = typeDefinition.getId();
+		boolean isBaseType = currentTypeId != null && (
+			currentTypeId.equals("cmis:document") || currentTypeId.equals("cmis:folder") || 
+			currentTypeId.equals("cmis:relationship") || currentTypeId.equals("cmis:policy") || 
+			currentTypeId.equals("cmis:item") || currentTypeId.equals("cmis:secondary")
+		);
+		
+		if (isBaseType) {
+			// For base types, all properties should have inherited=false
+			for (PropertyDefinition<?> prop : typeDefinition.getPropertyDefinitions().values()) {
+				if (prop != null && prop.isInherited()) {
+					log.warn("INHERITANCE FIX: Base type " + currentTypeId + " has property " + prop.getId() + " with inherited=true, should be false");
+					inheritanceFlagsIncorrect = true;
+					break;
+				}
+			}
+		} else {
+			// For derived types, check if CMIS base properties have inherited=true
+			PropertyDefinition<?> objectIdProp = typeDefinition.getPropertyDefinitions().get("cmis:objectId");
+			PropertyDefinition<?> baseTypeIdProp = typeDefinition.getPropertyDefinitions().get("cmis:baseTypeId");
+			
+			if ((objectIdProp != null && !objectIdProp.isInherited()) || 
+				(baseTypeIdProp != null && !baseTypeIdProp.isInherited())) {
+				log.warn("INHERITANCE FIX: Derived type " + currentTypeId + " has CMIS base properties with inherited=false, should be true");
+				inheritanceFlagsIncorrect = true;
+			}
 		}
 		
-		if (log.isDebugEnabled()) {
-			log.debug("getTypeDefinition EXIT: typeId=" + (sharedTypeDefinition != null ? sharedTypeDefinition.getId() : "null"));
+		// If inheritance flags are incorrect, force cache regeneration
+		if (inheritanceFlagsIncorrect) {
+			log.warn("INHERITANCE FIX: Forcing cache regeneration for type " + currentTypeId + " due to incorrect inheritance flags");
+			
+			try {
+				// Invalidate cache and force regeneration
+				invalidateTypeDefinitionCache(repositoryId);
+				
+				// Regenerate types with correct inheritance logic
+				generate(repositoryId);
+				
+				Map<String, TypeDefinitionContainer> refreshedTypes = TYPES.get(repositoryId);
+				if (refreshedTypes != null) {
+					TypeDefinitionContainer refreshedTc = refreshedTypes.get(typeDefinition.getId());
+					if (refreshedTc != null) {
+						typeDefinition = refreshedTc.getTypeDefinition();
+						log.info("INHERITANCE FIX: Successfully regenerated type " + currentTypeId + " with correct inheritance flags");
+					}
+				}
+			} catch (Exception e) {
+				log.error("INHERITANCE FIX: Failed to regenerate type " + currentTypeId + ": " + e.getMessage(), e);
+			}
 		}
-		
-		return sharedTypeDefinition;
+	}
+
+	// CRITICAL CONSISTENCY FIX: Use shared TypeDefinition system for normal path
+	// This ensures both normal and refresh paths return TypeDefinition objects with identical object identity
+	TypeDefinition sharedTypeDefinition = getSharedTypeDefinition(repositoryId, typeDefinition.getId(), typeDefinition);
+	if (log.isDebugEnabled()) {
+		log.debug("TYPE DEFINITION SHARING: Applied getSharedTypeDefinition() to normal path for type " + (typeDefinition != null ? typeDefinition.getId() : "null"));
+	}
+	
+	if (log.isDebugEnabled()) {
+		log.debug("getTypeDefinition EXIT: typeId=" + (sharedTypeDefinition != null ? sharedTypeDefinition.getId() : "null"));
+	}
+	
+	return sharedTypeDefinition;
 	}
 
 	@Override
