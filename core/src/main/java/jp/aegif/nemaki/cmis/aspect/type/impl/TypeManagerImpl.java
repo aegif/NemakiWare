@@ -3103,39 +3103,59 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * @param originalDefinition Original PropertyDefinition to use as template
 	 * @return Shared PropertyDefinition instance
 	 */
-	private PropertyDefinition<?> getSharedPropertyDefinition(String repositoryId, String typeId, 
+	private PropertyDefinition<?> getSharedPropertyDefinition(String repositoryId, String typeId,
 			String propertyId, PropertyDefinition<?> originalDefinition) {
-		
+
 		if (originalDefinition == null) return null;
-		
+
 		// CRITICAL FIX: Include both typeId and inherited flag in cache key
 		// Each type needs its own PropertyDefinition instances with correct inherited flags
 		// Base types have inherited=false, derived types have inherited=true for CMIS properties
 		boolean isInherited = originalDefinition.isInherited();
-		
-		// For base types, force inherited=false for CMIS properties
-		if (isBaseType(typeId) && propertyId.startsWith("cmis:")) {
-			isInherited = false;
-			if (originalDefinition instanceof AbstractPropertyDefinition) {
-				((AbstractPropertyDefinition<?>) originalDefinition).setIsInherited(false);
+
+		// CRITICAL FIX: Set correct inherited flag based on type hierarchy
+		// Create a copy before modifying to avoid side effects
+		PropertyDefinition<?> definitionToCache = originalDefinition;
+		if (propertyId.startsWith("cmis:")) {
+			if (isBaseType(typeId)) {
+				// For base types, force inherited=false for CMIS properties
+				if (isInherited != false) {
+					definitionToCache = DataUtil.clonePropertyDefinition(originalDefinition);
+					isInherited = false;
+					if (definitionToCache instanceof AbstractPropertyDefinition) {
+						((AbstractPropertyDefinition<?>) definitionToCache).setIsInherited(false);
+					}
+					log.warn("DEBUG: Setting inherited=false for CMIS property " + propertyId + " in base type " + typeId);
+				}
+			} else {
+				// For derived types, force inherited=true for CMIS properties
+				if (isInherited != true) {
+					definitionToCache = DataUtil.clonePropertyDefinition(originalDefinition);
+					isInherited = true;
+					if (definitionToCache instanceof AbstractPropertyDefinition) {
+						((AbstractPropertyDefinition<?>) definitionToCache).setIsInherited(true);
+					}
+					log.warn("DEBUG: Setting inherited=true for CMIS property " + propertyId + " in derived type " + typeId);
+				}
 			}
 		}
-		
+
 		String cacheKey = repositoryId + ":" + typeId + ":" + propertyId + ":" + isInherited;
-		
+
 		// Get or create repository-level cache
 		Map<String, PropertyDefinition<?>> repoCache = SHARED_PROPERTY_DEFINITIONS.computeIfAbsent(
 			repositoryId, k -> new ConcurrentHashMap<>());
-		
+
 		// Return existing shared instance or create new one
+		PropertyDefinition<?> finalDefinition = definitionToCache;
 		return repoCache.computeIfAbsent(cacheKey, k -> {
 			if (log.isDebugEnabled()) {
 				log.debug("Creating shared PropertyDefinition instance for " + cacheKey);
 			}
-			
-			// For first occurrence, use the original definition as the shared instance
+
+			// For first occurrence, use the definition as the shared instance
 			// This ensures each type gets its own PropertyDefinition instance with correct inherited flag
-			return originalDefinition;
+			return finalDefinition;
 		});
 	}
 	
