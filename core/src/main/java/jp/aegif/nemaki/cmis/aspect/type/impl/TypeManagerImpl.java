@@ -1243,26 +1243,31 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addFolderPropertyDefinitions(String repositoryId, FolderTypeDefinitionImpl type, boolean isInherited) {
+		String typeId = type.getId();
+
 		//cmis:parentId
 		boolean queryable_parentId = propertyManager.readBoolean(PropertyKey.PROPERTY_PARENT_ID_QUERYABLE);
+		boolean inherited_parentId = shouldBeInherited(PropertyIds.PARENT_ID, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.PARENT_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, queryable_parentId, !ORDERABLE, null, isInherited));
+				Updatability.READONLY, !REQUIRED, queryable_parentId, !ORDERABLE, null, inherited_parentId));
 
 		//cmis:path
 		boolean queryable_path = propertyManager.readBoolean(PropertyKey.PROPERTY_PATH_QUERYABLE);
 		boolean orderable_path = propertyManager.readBoolean(PropertyKey.PROPERTY_PATH_ORDERABLE);
+		boolean inherited_path = shouldBeInherited(PropertyIds.PATH, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.PATH, PropertyType.STRING, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, queryable_path, orderable_path, null, isInherited));
+				Updatability.READONLY, !REQUIRED, queryable_path, orderable_path, null, inherited_path));
 
 		List<String> defaults = new ArrayList<String>();
 		defaults.add(BaseTypeId.CMIS_FOLDER.value());
 		defaults.add(BaseTypeId.CMIS_DOCUMENT.value());
+		boolean inherited_allowedChild = shouldBeInherited(PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS,
 				PropertyType.ID, Cardinality.MULTI, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, !ORDERABLE, defaults, isInherited));
+				!REQUIRED, QUERYABLE, !ORDERABLE, defaults, inherited_allowedChild))
 	}
 
 	private void addDocumentPropertyDefinitions(String repositoryId, DocumentTypeDefinitionImpl type) {
@@ -1272,13 +1277,16 @@ public class TypeManagerImpl implements TypeManager {
 
 	private void addDocumentPropertyDefinitions(String repositoryId, DocumentTypeDefinitionImpl type, boolean isInherited) {
 		System.err.println("*** addDocumentPropertyDefinitions NEW OVERLOAD - type: " + type.getId() + ", inherited: " + isInherited + " ***");
+		String typeId = type.getId();
+
 		//cmis:isImmutable
 		boolean queryable_isImmutable = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_IMMUTABLE_QUERYABLE);
 		boolean orderable_isImmutable = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_IMMUTABLE_ORDERABLE);
+		boolean inherited_isImmutable = shouldBeInherited(PropertyIds.IS_IMMUTABLE, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.IS_IMMUTABLE,
 				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_isImmutable, orderable_isImmutable, Arrays.asList(false), isInherited));
+				!REQUIRED, queryable_isImmutable, orderable_isImmutable, Arrays.asList(false), inherited_isImmutable))
 
 		//cmis:isLatestVersion
 		boolean queryable_isLatestVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_VERSION_QUERYABLE);
@@ -1387,10 +1395,11 @@ public class TypeManagerImpl implements TypeManager {
 		//cmis:contentStreamId
 		boolean queryable_contentStreamId = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_ID_QUERYABLE);
 		boolean orderable_contentStreamId = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_ID_ORDERABLE);
+		boolean inherited_contentStreamId = shouldBeInherited(PropertyIds.CONTENT_STREAM_ID, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CONTENT_STREAM_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_contentStreamId, orderable_contentStreamId, null, isInherited));
+				!REQUIRED, queryable_contentStreamId, orderable_contentStreamId, null, inherited_contentStreamId));
 	}
 
 	private void addRelationshipPropertyDefinitions(
