@@ -1079,22 +1079,55 @@ public class TypeManagerImpl implements TypeManager {
 		System.out.println("=== SYSTEM DEBUG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
 		log.error("=== ERROR LOG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
 		
-		// Get initial property count
-		Map<String, PropertyDefinition<?>> initialProps = type.getPropertyDefinitions();
-		int initialCount = (initialProps != null) ? initialProps.size() : 0;
-		log.info("DEBUG: Initial property definitions count: " + initialCount);
-		if (initialProps != null) {
-			log.info("DEBUG: Initial property keys: " + initialProps.keySet());
-		}
-		
 		String typeId = type.getId();
 		
+		log.error("*** FLOW DEBUG: Entered addBasePropertyDefinitions method body for typeId=" + typeId + " ***");
+		System.err.println("*** FLOW DEBUG: Entered addBasePropertyDefinitions method body for typeId=" + typeId + " ***");
+		
+		try {
+			log.error("*** FLOW DEBUG: About to get initial property definitions ***");
+			System.err.println("*** FLOW DEBUG: About to get initial property definitions ***");
+			
+			// Get initial property count
+			Map<String, PropertyDefinition<?>> initialProps = type.getPropertyDefinitions();
+			int initialCount = (initialProps != null) ? initialProps.size() : 0;
+			
+			log.error("*** FLOW DEBUG: Got initial props, count=" + initialCount + " ***");
+			System.err.println("*** FLOW DEBUG: Got initial props, count=" + initialCount + " ***");
+			
+			log.info("DEBUG: Initial property definitions count: " + initialCount);
+			if (initialProps != null) {
+				log.info("DEBUG: Initial property keys: " + initialProps.keySet());
+			}
+			
+			log.error("*** FLOW DEBUG: Got typeId=" + typeId + ", proceeding to property setup ***");
+			System.err.println("*** FLOW DEBUG: Got typeId=" + typeId + ", proceeding to property setup ***");
+		} catch (Exception e) {
+			log.error("*** FLOW DEBUG: Exception in initial setup: " + e.getMessage() + " ***", e);
+			System.err.println("*** FLOW DEBUG: Exception in initial setup: " + e.getMessage() + " ***");
+			throw e;
+		}
+		
 		//cmis:name
+		log.error("*** EXECUTION DEBUG: Starting cmis:name property setup for type " + typeId + " ***");
+		System.err.println("*** EXECUTION DEBUG: Starting cmis:name property setup for type " + typeId + " ***");
+		
 		String _updatability_name = propertyManager.readValue(PropertyKey.PROPERTY_NAME_UPDATABILITY);
+		log.error("*** EXECUTION DEBUG: Got updatability_name: " + _updatability_name + " ***");
+		
 		Updatability updatability_name = Updatability.fromValue(_updatability_name);
 		boolean queryable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_QUERYABLE);
 		boolean orderable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_ORDERABLE);
+		
+		log.error("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		System.err.println("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		
+		log.error("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
 		boolean inherited_name = shouldBeInherited(PropertyIds.NAME, typeId);
+		log.error("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_name + " for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_name + " for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		log.info("TCK DEBUG buildTypeDefinitionFromDB: Setting inherited=" + inherited_name + " for " + PropertyIds.NAME + " in type " + typeId);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.NAME, PropertyType.STRING,
 				Cardinality.SINGLE, updatability_name, REQUIRED, queryable_name, orderable_name, null, inherited_name));
@@ -1113,8 +1146,19 @@ public class TypeManagerImpl implements TypeManager {
 		log.info("DEBUG: Added cmis:description property (inherited=" + inherited_description + ")");
 
 		//cmis:objectId
+		log.error("*** EXECUTION DEBUG: Starting cmis:objectId property setup for type " + typeId + " ***");
+		System.err.println("*** EXECUTION DEBUG: Starting cmis:objectId property setup for type " + typeId + " ***");
+		
 		boolean orderable_objectId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_ID_ORDERABLE);
+		
+		log.error("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
+		System.err.println("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
+		
+		log.error("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
 		boolean inherited_objectId = shouldBeInherited(PropertyIds.OBJECT_ID, typeId);
+		log.error("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_objectId + " for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_objectId + " for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.OBJECT_ID, PropertyType.ID, Cardinality.SINGLE,
 				Updatability.READONLY, REQUIRED, QUERYABLE, orderable_objectId, null, inherited_objectId));
@@ -1123,7 +1167,11 @@ public class TypeManagerImpl implements TypeManager {
 		//cmis:baseTypeId
 		boolean queryable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_QUERYABLE);
 		boolean orderable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_ORDERABLE);
+		log.error("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.BASE_TYPE_ID + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.BASE_TYPE_ID + " in type " + typeId + " ***");
 		boolean inherited_baseTypeId = shouldBeInherited(PropertyIds.BASE_TYPE_ID, typeId);
+		log.error("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_baseTypeId + " for " + PropertyIds.BASE_TYPE_ID + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_baseTypeId + " for " + PropertyIds.BASE_TYPE_ID + " in type " + typeId + " ***");
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.BASE_TYPE_ID, PropertyType.ID,
 				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null, inherited_baseTypeId));
@@ -2113,22 +2161,22 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 
 	/**
-	 * CRITICAL TCK FIX: Simplified PropertyDefinition inheritance logic
+	 * CRITICAL TCK FIX: PropertyDefinition inheritance logic for CMIS 1.1 compliance
 	 * 
-	 * Based on vk/61b7-tck-type-t approach that achieved 100% Docker QA success.
-	 * 
-	 * Key insight: When copying properties from parent to child type, ALL properties
-	 * from parent should be marked as inherited=true in the child type.
-	 * This is the correct CMIS 1.1 interpretation for PropertyDefinition inheritance.
+	 * Key insight: PropertyDefinition inheritance flags must be set correctly:
+	 * - Base types: inherited=false for their own CMIS properties
+	 * - Derived types: inherited=true for properties inherited from parent types
 	 * 
 	 * @param propertyId Property identifier
 	 * @param typeId Type identifier (for logging)
 	 * @return true if the property should be marked as inherited=true
 	 */
 	private boolean shouldBeInherited(String propertyId, String typeId) {
-		log.error("DEBUG shouldBeInherited: propertyId=" + propertyId + ", typeId=" + typeId);
+		log.info("REAL TCK DEBUG shouldBeInherited: propertyId=" + propertyId + ", typeId=" + typeId);
+		System.err.println("*** REAL TCK DEBUG shouldBeInherited: propertyId=" + propertyId + ", typeId=" + typeId + " ***");
+		
 		if (propertyId == null) {
-			log.error("DEBUG shouldBeInherited: propertyId is null, returning false");
+			log.warn("REAL TCK DEBUG shouldBeInherited: propertyId is null, returning false");
 			return false;
 		}
 		
@@ -2136,7 +2184,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Check if this is a base type first
 		if (typeId != null && isBaseType(typeId)) {
 			// Base types define their own CMIS properties with inherited=false
-			log.error("DEBUG shouldBeInherited: " + typeId + " is base type, returning false for " + propertyId);
+			log.info("REAL TCK DEBUG shouldBeInherited: " + typeId + " is base type, returning false for " + propertyId);
+			System.err.println("*** REAL TCK DEBUG shouldBeInherited: " + typeId + " is base type, returning false for " + propertyId + " ***");
 			return false;
 		}
 		
@@ -2146,7 +2195,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Since this method is called when copying from parent to child,
 		// the child should mark these as inherited=true
 		if (propertyId.startsWith("cmis:")) {
-			log.error("DEBUG shouldBeInherited: " + propertyId + " is CMIS property in derived type " + typeId + ", returning true");
+			log.info("REAL TCK DEBUG shouldBeInherited: " + propertyId + " is CMIS property in derived type " + typeId + ", returning true");
+			System.err.println("*** REAL TCK DEBUG shouldBeInherited: " + propertyId + " is CMIS property in derived type " + typeId + ", returning true ***");
 			return true;
 		}
 		
@@ -2157,11 +2207,15 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (propertyId.contains(":") && !propertyId.startsWith("cmis:")) {
 			// Since this method is called when copying from parent to child,
 			// ALL properties from parent should be marked as inherited in child
+			log.info("REAL TCK DEBUG shouldBeInherited: " + propertyId + " is custom property in derived type " + typeId + ", returning true");
+			System.err.println("*** REAL TCK DEBUG shouldBeInherited: " + propertyId + " is custom property in derived type " + typeId + ", returning true ***");
 			return true;
 		}
 		
 		// STRATEGY 3: Non-namespaced properties
 		// Default to inherited for compatibility
+		log.info("REAL TCK DEBUG shouldBeInherited: " + propertyId + " is non-namespaced property, returning true");
+		System.err.println("*** REAL TCK DEBUG shouldBeInherited: " + propertyId + " is non-namespaced property, returning true ***");
 		return true;
 	}
 
