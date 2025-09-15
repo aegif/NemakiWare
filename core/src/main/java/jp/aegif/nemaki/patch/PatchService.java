@@ -28,7 +28,8 @@ import jp.aegif.nemaki.util.PropertyManager;
  * @Order(100) - Executes after core services are initialized (higher numbers execute later)  
  * @DependsOn - Ensures required dependencies are initialized before PatchService execution
  */
-@Component
+// @Component annotation removed to prevent conflicts with XML bean definition in patchContext.xml
+// This class is instantiated via XML configuration as "PatchService" bean with init-method="applyPatchesOnStartup"
 @Order(100)
 @DependsOn({"typeService", "typeManager", "repositoryInfoMap", "propertyManager", "connectorPool"})
 public class PatchService {
