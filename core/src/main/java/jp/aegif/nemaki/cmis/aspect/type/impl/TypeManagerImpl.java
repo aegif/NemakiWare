@@ -112,7 +112,7 @@ public class TypeManagerImpl implements TypeManager {
 	/**
 	 * Constant
 	 */
-	private final static boolean REQUIRED = true;
+	private final static boolean REQUIRED = false;
 	private final static boolean QUERYABLE = true;
 	private final static boolean ORDERABLE = true;
 
