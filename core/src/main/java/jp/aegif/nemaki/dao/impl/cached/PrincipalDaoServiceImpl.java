@@ -37,7 +37,7 @@ import jp.aegif.nemaki.util.cache.NemakiCachePool;
  *
  * @author linzhixing
  */
-@Component
+// @Component annotation removed to prevent conflicts with XML bean definition in daoContext.xml
 public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 
 	private static final Log log = LogFactory

@@ -41,7 +41,7 @@ import org.springframework.stereotype.Component;
  *
  * @author linzhixing
  */
-@Component
+// @Component annotation removed to prevent conflicts with XML bean definition in couchContext.xml
 public class PrincipalDaoServiceImpl implements
 		PrincipalDaoService {
 

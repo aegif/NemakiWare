@@ -98,7 +98,7 @@ import jp.aegif.nemaki.util.spring.SpringContext;
  * @author linzhixing
  *
  */
-@Component
+// @Component annotation removed to prevent conflicts with XML bean definition in couchContext.xml
 public class ContentDaoServiceImpl implements ContentDaoService {
 
 	private RepositoryInfoMap repositoryInfoMap;

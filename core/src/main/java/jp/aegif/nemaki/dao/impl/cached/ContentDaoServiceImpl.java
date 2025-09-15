@@ -66,7 +66,7 @@ import net.sf.ehcache.Element;
  * @author linzhixing
  *
  */
-@Component
+// @Component annotation removed to prevent conflicts with XML bean definition in daoContext.xml
 public class ContentDaoServiceImpl implements ContentDaoService {
 	private static final Log log = LogFactory.getLog(ContentDaoServiceImpl.class);
 
