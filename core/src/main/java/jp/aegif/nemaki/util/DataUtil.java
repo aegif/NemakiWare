@@ -506,7 +506,7 @@ public class DataUtil {
 
 	/**
 	 * Generate human-readable display name from property ID
-	 * Example: "cmis:name" → "Name", "user_id" → "User Id"
+	 * Example: "cmis:name" → "Name", "user_id" → "User Id", "objectId" → "Object Id"
 	 */
 	private static String generateDisplayName(String propertyId) {
 		if (propertyId == null) return "Unknown Property";
@@ -514,6 +514,11 @@ public class DataUtil {
 		// Extract local name and convert to title case
 		String localName = extractLocalName(propertyId);
 		StringBuilder displayName = new StringBuilder();
+
+		// Debug logging
+		if (log.isDebugEnabled()) {
+			log.debug("generateDisplayName: Converting '" + propertyId + "' (localName='" + localName + "')");
+		}
 
 		boolean capitalizeNext = true;
 		for (int i = 0; i < localName.length(); i++) {
@@ -531,11 +536,19 @@ public class DataUtil {
 				displayName.append(Character.toUpperCase(c));
 				capitalizeNext = false;
 			} else {
-				displayName.append(Character.toLowerCase(c));
+				// KEEP CASE: Don't convert to lowercase if it's already uppercase
+				displayName.append(c);
 			}
 		}
 
-		return displayName.toString();
+		String result = displayName.toString();
+
+		// Debug logging
+		if (log.isDebugEnabled()) {
+			log.debug("generateDisplayName: Result = '" + result + "'");
+		}
+
+		return result;
 	}
 	
 	/**
