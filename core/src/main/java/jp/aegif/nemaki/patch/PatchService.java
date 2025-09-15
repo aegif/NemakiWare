@@ -81,10 +81,12 @@ public class PatchService {
 		// The patch application is now triggered explicitly by Spring configuration via init-method="applyPatchesOnStartup"
 		// This ensures compatibility and prevents circular dependency issues during Spring context initialization
 		// DEBUG: PatchService constructor called (logged by log.info below)
+		System.out.println("=== PATCH DEBUG: PatchService constructor called ===");
 		log.info("=== PATCH DEBUG: PatchService constructor called ===");
 	}
 
 	public void applyPatchesOnStartup() {
+		System.out.println("=== PATCH DEBUG: applyPatchesOnStartup method called ===");
 		log.info("=== PHASE 2: PatchService.applyPatchesOnStartup() EXECUTING ===");
 		try {
 			log.info("Starting CMIS patch application (Phase 2)");
