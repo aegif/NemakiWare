@@ -2520,6 +2520,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL DEBUG: Entry point logging
 		System.err.println("*** getTypeDefinition CALLED: repo=" + repositoryId + ", type=" + typeId + " ***");
 		System.err.println("*** THIS INSTANCE: " + this.hashCode() + " ***");
+		log.debug("OBJECT_IDENTITY: getTypeDefinition called for " + typeId); // (important-comment)
 		log.warn("INHERITANCE DEBUG: getTypeDefinition method called for repositoryId=" + repositoryId + ", typeId=" + typeId);
 		System.err.println("*** ClassLoader: " + this.getClass().getClassLoader() + " ***");
 		System.err.println("*** ClassLoader Identity: " + System.identityHashCode(this.getClass().getClassLoader()) + " ***");
@@ -3133,15 +3134,20 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			repositoryId, k -> new ConcurrentHashMap<>());
 		
 		// Return existing shared instance or create new one
-		return repoCache.computeIfAbsent(cacheKey, k -> {
-			if (log.isDebugEnabled()) {
-				log.debug("Creating shared TypeDefinition instance for " + cacheKey);
-			}
+		TypeDefinition result = repoCache.computeIfAbsent(cacheKey, k -> {
+			System.out.println("OBJECT_IDENTITY: Creating shared TypeDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(originalDefinition) + ")"); // (important-comment)
 			
 			// Apply PropertyDefinition sharing first, then use as shared TypeDefinition
 			TypeDefinition consistentTypeDefinition = ensureConsistentPropertyDefinitions(repositoryId, originalDefinition);
+			log.debug("OBJECT_IDENTITY: After ensureConsistentPropertyDefinitions for " + cacheKey + " (hash: " + System.identityHashCode(consistentTypeDefinition) + ")"); // (important-comment)
 			return consistentTypeDefinition;
 		});
+		
+		if (result == repoCache.get(cacheKey)) {
+			System.out.println("OBJECT_IDENTITY: Returning cached TypeDefinition for " + cacheKey + " (hash: " + System.identityHashCode(result) + ")"); // (important-comment)
+		}
+		
+		return result;
 	}
 	
 	/**
@@ -3201,15 +3207,16 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 		// Return existing shared instance or create new one
 		PropertyDefinition<?> finalDefinition = definitionToCache;
-		return repoCache.computeIfAbsent(cacheKey, k -> {
-			if (log.isDebugEnabled()) {
-				log.debug("Creating shared PropertyDefinition instance for " + cacheKey);
-			}
-
-			// For first occurrence, use the definition as the shared instance
-			// This ensures each type gets its own PropertyDefinition instance with correct inherited flag
+		PropertyDefinition<?> result = repoCache.computeIfAbsent(cacheKey, k -> {
+			System.out.println("OBJECT_IDENTITY: Creating shared PropertyDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(finalDefinition) + ")"); // (important-comment)
 			return finalDefinition;
 		});
+		
+		if (result == repoCache.get(cacheKey)) {
+			System.out.println("OBJECT_IDENTITY: Returning cached PropertyDefinition for " + cacheKey + " (hash: " + System.identityHashCode(result) + ")"); // (important-comment)
+		}
+
+		return result;
 	}
 	
 	
@@ -3233,16 +3240,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		String typeId = typeDefinition.getId();
 		
-		if (log.isDebugEnabled()) {
-			log.debug("RESTORED: Ensuring consistent properties for type " + typeId);
-		}
+		log.debug("OBJECT_IDENTITY: Ensuring consistent properties for type " + typeId + " (original hash: " + System.identityHashCode(typeDefinition) + ")"); // (important-comment)
 		
 		Map<String, PropertyDefinition<?>> originalProps = typeDefinition.getPropertyDefinitions();
 		
 		if (originalProps == null || originalProps.isEmpty()) {
-			if (log.isDebugEnabled()) {
-				log.debug("No properties to process for type " + typeId);
-			}
+			log.debug("OBJECT_IDENTITY: No properties to process for type " + typeId); // (important-comment)
 			return typeDefinition;
 		}
 		
@@ -3261,15 +3264,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			sharedCount++;
 			
 			// Log CMIS property sharing specifically
-			if (propertyId.startsWith("cmis:") && log.isDebugEnabled()) {
-				log.debug("SHARED PROPERTY: " + propertyId + " -> instance@" + 
-					System.identityHashCode(sharedProp) + " for type " + typeId);
+			if (propertyId.startsWith("cmis:")) {
+				log.debug("OBJECT_IDENTITY: Replaced " + propertyId + " with shared instance (original hash: " + 
+				         System.identityHashCode(originalProp) + ", shared hash: " + System.identityHashCode(sharedProp) + ")"); // (important-comment)
 			}
 		}
 		
-		if (log.isDebugEnabled()) {
-			log.debug("CONSISTENCY SYSTEM: Applied sharing to " + sharedCount + " properties for type " + typeId);
-		}
+		log.debug("OBJECT_IDENTITY: Applied sharing to " + sharedCount + " properties for type " + typeId); // (important-comment)
 		
 		// RESTORED FIX: Modify original TypeDefinition instance directly to preserve object identity
 		// TCK compliance requires both getTypeDefinition() and getTypesDescendants() to return 
@@ -3280,10 +3281,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				((org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) typeDefinition)
 					.setPropertyDefinitions(sharedProps);
 				
-				if (log.isDebugEnabled()) {
-					log.debug("RESTORED FIX: Modified original TypeDefinition instance directly for " + typeId + 
-						" - preserving object identity for TCK compliance");
-				}
+				log.debug("OBJECT_IDENTITY: Successfully updated PropertyDefinitions map for type " + typeId + 
+				         " (final hash: " + System.identityHashCode(typeDefinition) + ")"); // (important-comment)
 				
 				return typeDefinition; // Return the SAME instance
 			}

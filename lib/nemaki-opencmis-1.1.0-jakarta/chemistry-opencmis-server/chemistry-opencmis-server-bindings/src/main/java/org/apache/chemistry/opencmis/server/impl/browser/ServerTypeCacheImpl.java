@@ -118,7 +118,7 @@ public class ServerTypeCacheImpl implements TypeCache {
         for (TypeDefinition typeDef : typeDefinitions.values()) {
             PropertyDefinition<?> propDef = typeDef.getPropertyDefinitions().get(propId);
             if (propDef != null) {
-                System.out.println("DEBUG: Found property " + propId + " in cached type " + typeDef.getId());
+                log.debug("Found property {} in cached type {}", propId, typeDef.getId());
                 return propDef;
             }
         }
@@ -144,9 +144,54 @@ public class ServerTypeCacheImpl implements TypeCache {
         
         // Phase 4: Dynamic property generation for standard CMIS properties
         log.debug("Property {} still not found. Attempting dynamic generation...", propId);
-        PropertyDefinition<?> dynamicProp = createStandardCmisPropertyDefinition(propId);
+        PropertyDefinition<?> dynamicProp = createStandardCmisPropertyDefinition(propId, null);
         if (dynamicProp != null) {
             log.debug("Successfully generated dynamic property definition for: {}", propId);
+            return dynamicProp;
+        }
+        
+        log.warn("Could not resolve property definition for: {} - this may cause TCK test failures", propId);
+        return null;
+    }
+    
+    /**
+     * Enhanced getPropertyDefinition method with TypeDefinition context for proper inheritance flag determination
+     */
+    public PropertyDefinition<?> getPropertyDefinition(String propId, TypeDefinition contextType) {
+        // Phase 1: Search in existing cached type definitions
+        for (TypeDefinition typeDef : typeDefinitions.values()) {
+            PropertyDefinition<?> propDef = typeDef.getPropertyDefinitions().get(propId);
+            if (propDef != null) {
+                log.debug("Found property {} in cached type {}", propId, typeDef.getId());
+                return propDef;
+            }
+        }
+        
+        // Phase 2: Force-load CMIS base types if cache is empty/incomplete
+        log.debug("Property {} not found in cached types ({} types). Force-loading base types...", propId, typeDefinitions.size());
+        String[] baseTypes = {"cmis:document", "cmis:folder", "cmis:relationship", "cmis:policy"};
+        for (String baseTypeId : baseTypes) {
+            if (!typeDefinitions.containsKey(baseTypeId)) {
+                log.debug("Loading base type: {}", baseTypeId);
+                getTypeDefinition(baseTypeId); // This will cache the type definition
+            }
+        }
+        
+        // Phase 3: Search again in newly loaded base types
+        for (TypeDefinition typeDef : typeDefinitions.values()) {
+            PropertyDefinition<?> propDef = typeDef.getPropertyDefinitions().get(propId);
+            if (propDef != null) {
+                log.debug("Found property {} in force-loaded type {}", propId, typeDef.getId());
+                return propDef;
+            }
+        }
+        
+        // Phase 4: Dynamic property generation with TypeDefinition context for proper inheritance flags
+        log.debug("Property {} still not found. Attempting dynamic generation with context type: {}", 
+                 propId, contextType != null ? contextType.getId() : "null");
+        PropertyDefinition<?> dynamicProp = createStandardCmisPropertyDefinition(propId, contextType);
+        if (dynamicProp != null) {
+            log.debug("Successfully generated dynamic property definition for: {} with inheritance context", propId);
             return dynamicProp;
         }
         
@@ -158,19 +203,24 @@ public class ServerTypeCacheImpl implements TypeCache {
      * Create standard CMIS property definitions dynamically as fallback
      * when they cannot be found in cached type definitions
      */
-    private PropertyDefinition<?> createStandardCmisPropertyDefinition(String propId) {
-        log.debug("Creating dynamic property definition for: {}", propId);
+    private PropertyDefinition<?> createStandardCmisPropertyDefinition(String propId, TypeDefinition contextType) {
+        log.debug("Creating dynamic property definition for: {} with context type: {}", 
+                 propId, contextType != null ? contextType.getId() : "null");
         
         // Standard CMIS properties with their types - comprehensive coverage for TCK compliance
         switch (propId) {
             // Base object properties (cmis:document, cmis:folder, cmis:relationship, cmis:policy)
             case PropertyIds.OBJECT_ID:
-                return createPropertyDefinition(propId, PropertyType.ID, "Object ID", "The object ID", 
-                        Cardinality.SINGLE, Updatability.READONLY, true, false, false);
+                // CRITICAL FIX: cmis:objectId inheritance depends on type hierarchy
+                boolean objectIdInherited = determineInheritanceFlag(propId, contextType);
+                return createPropertyDefinition(propId, PropertyType.ID, "Object Id", "The object ID", 
+                        Cardinality.SINGLE, Updatability.READONLY, true, true, false, objectIdInherited);
                 
             case PropertyIds.BASE_TYPE_ID:
-                return createPropertyDefinition(propId, PropertyType.ID, "Base Type ID", "The base type ID",
-                        Cardinality.SINGLE, Updatability.READONLY, true, false, false);
+                // CRITICAL FIX: cmis:baseTypeId inheritance depends on type hierarchy
+                boolean baseTypeIdInherited = determineInheritanceFlag(propId, contextType);
+                return createPropertyDefinition(propId, PropertyType.ID, "Base Type Id", "The base type ID",
+                        Cardinality.SINGLE, Updatability.READONLY, true, true, false, baseTypeIdInherited);
                         
             case PropertyIds.OBJECT_TYPE_ID:
                 return createPropertyDefinition(propId, PropertyType.ID, "Object Type ID", "The object type ID",
@@ -309,6 +359,15 @@ public class ServerTypeCacheImpl implements TypeCache {
     private PropertyDefinition<?> createPropertyDefinition(final String id, final PropertyType propertyType, 
             final String displayName, final String description, final Cardinality cardinality, 
             final Updatability updatability, final boolean required, final boolean queryable, final boolean orderable) {
+        return createPropertyDefinition(id, propertyType, displayName, description, cardinality, updatability, required, queryable, orderable, false);
+    }
+
+    /**
+     * Helper method to create PropertyDefinition instances with inheritance flag
+     */
+    private PropertyDefinition<?> createPropertyDefinition(final String id, final PropertyType propertyType, 
+            final String displayName, final String description, final Cardinality cardinality, 
+            final Updatability updatability, final boolean required, final boolean queryable, final boolean orderable, final boolean inherited) {
         
         log.debug("Created dynamic property definition: {} ({})", id, propertyType);
         
@@ -326,7 +385,7 @@ public class ServerTypeCacheImpl implements TypeCache {
             @Override public Boolean isRequired() { return required; }
             @Override public Boolean isQueryable() { return queryable; }
             @Override public Boolean isOrderable() { return orderable; }
-            @Override public Boolean isInherited() { return false; } // Dynamic properties are not inherited
+            @Override public Boolean isInherited() { return inherited; } // Use correct inheritance flag
             @Override public Boolean isOpenChoice() { return false; }
             @Override public java.util.List<Object> getDefaultValue() { return null; }
             @Override public java.util.List<org.apache.chemistry.opencmis.commons.definitions.Choice<Object>> getChoices() { return null; }
@@ -335,5 +394,35 @@ public class ServerTypeCacheImpl implements TypeCache {
             }
             @Override public void setExtensions(java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> extensions) {}
         };
+    }
+    
+    /**
+     * Determines the correct inheritance flag for a property based on type hierarchy
+     * CMIS specification: Properties are inherited=false for base types, inherited=true for derived types
+     */
+    private boolean determineInheritanceFlag(String propertyId, TypeDefinition contextType) {
+        if (contextType == null) {
+            log.warn("TypeDefinition context is null, defaulting inheritance to false for property: " + propertyId);
+            return false;
+        }
+        
+        // For base types (cmis:document, cmis:folder, etc.), properties are not inherited
+        String typeId = contextType.getId();
+        if ("cmis:document".equals(typeId) || "cmis:folder".equals(typeId) || 
+            "cmis:relationship".equals(typeId) || "cmis:policy".equals(typeId) || 
+            "cmis:item".equals(typeId) || "cmis:secondary".equals(typeId)) {
+            log.debug("Base type {} - property {} inheritance = false", typeId, propertyId);
+            return false;
+        }
+        
+        // For derived types, properties inherited from base types should be marked as inherited
+        String parentTypeId = contextType.getParentTypeId();
+        if (parentTypeId != null && !parentTypeId.trim().isEmpty()) {
+            log.debug("Derived type {} (parent: {}) - property {} inheritance = true", typeId, parentTypeId, propertyId);
+            return true;
+        }
+        
+        log.debug("Unknown type hierarchy for {} - property {} inheritance = false", typeId, propertyId);
+        return false;
     }
 }

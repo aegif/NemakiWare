@@ -1051,8 +1051,11 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     /**
      * Handle typeDefinition operation - equivalent to getTypeDefinition CMIS service call
      * This method handles typeDefinition cmisselector requests with inherited flag corrections.
+     * CRITICAL TCK FIX: Uses TypeManagerImpl sharing system for object identity preservation.
      */
     private Object handleTypeDefinitionOperation(CmisService service, String repositoryId, HttpServletRequest request) {
+        System.out.println("SERVLET_OBJECT_IDENTITY: handleTypeDefinitionOperation called for repositoryId=" + repositoryId); // (important-comment)
+        
         // Parse parameters - try both query parameter and path extraction
         String typeId = HttpUtils.getStringParameter(request, "typeId");
         
@@ -1077,11 +1080,45 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 "typeId parameter is required for typeDefinition operation");
         }
         
+        System.out.println("SERVLET_OBJECT_IDENTITY: Processing typeId=" + typeId + " for TCK object identity preservation"); // (important-comment)
+        
         if (log.isDebugEnabled()) {
             log.debug("Handle type definition: Processing typeId='" + typeId + "'");
         }
         
-        // Call CMIS service to get TypeDefinition
+        // CRITICAL TCK FIX: Use TypeManagerImpl sharing system instead of direct service call
+        // This ensures object identity preservation for TCK compliance
+        try {
+            // Get TypeManagerImpl from Spring context
+            org.springframework.web.context.WebApplicationContext context = 
+                org.springframework.web.context.support.WebApplicationContextUtils.getWebApplicationContext(getServletContext());
+            
+            if (context != null) {
+                jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
+                    context.getBean("typeManager", jp.aegif.nemaki.cmis.aspect.type.TypeManager.class);
+                
+                if (typeManager != null) {
+                    System.out.println("SERVLET_OBJECT_IDENTITY: Using TypeManagerImpl sharing system for typeId=" + typeId); // (important-comment)
+                    
+                    org.apache.chemistry.opencmis.commons.definitions.TypeDefinition typeDefinition = 
+                        typeManager.getTypeDefinition(repositoryId, typeId);
+                    
+                    System.out.println("SERVLET_OBJECT_IDENTITY: TypeManagerImpl returned TypeDefinition for typeId=" + typeId + " (hash: " + System.identityHashCode(typeDefinition) + ")"); // (important-comment)
+                    
+                    return typeDefinition;
+                } else {
+                    System.out.println("SERVLET_OBJECT_IDENTITY: TypeManager bean not found, falling back to direct service call"); // (important-comment)
+                }
+            } else {
+                System.out.println("SERVLET_OBJECT_IDENTITY: Spring context not found, falling back to direct service call"); // (important-comment)
+            }
+        } catch (Exception e) {
+            System.out.println("SERVLET_OBJECT_IDENTITY: Error accessing TypeManagerImpl, falling back to direct service call: " + e.getMessage()); // (important-comment)
+            log.warn("Failed to use TypeManagerImpl sharing system, falling back to direct service call", e);
+        }
+        
+        // Fallback: Call CMIS service directly (original behavior)
+        System.out.println("SERVLET_OBJECT_IDENTITY: Using fallback direct service call for typeId=" + typeId); // (important-comment)
         org.apache.chemistry.opencmis.commons.definitions.TypeDefinition typeDefinition = service.getTypeDefinition(
             repositoryId, typeId, null
         );

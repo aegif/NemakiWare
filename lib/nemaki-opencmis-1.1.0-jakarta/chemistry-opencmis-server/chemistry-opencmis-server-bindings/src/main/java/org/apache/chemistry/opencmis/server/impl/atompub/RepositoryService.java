@@ -457,7 +457,42 @@ public class RepositoryService {
                 return;
             }
 
-            TypeDefinition type = service.getTypeDefinition(repositoryId, typeId, null);
+            System.out.println("ATOMPUB_OBJECT_IDENTITY: GetTypeDefinition called for repositoryId=" + repositoryId + ", typeId=" + typeId);
+
+            // CRITICAL TCK FIX: Use TypeManagerImpl sharing system for object identity preservation
+            TypeDefinition type = null;
+            try {
+                jakarta.servlet.ServletContext servletContext = request.getServletContext();
+                if (servletContext != null) {
+                    org.springframework.web.context.WebApplicationContext springContext = 
+                        org.springframework.web.context.support.WebApplicationContextUtils.getWebApplicationContext(servletContext);
+                    
+                    if (springContext != null) {
+                        jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
+                            springContext.getBean("typeManager", jp.aegif.nemaki.cmis.aspect.type.TypeManager.class);
+                        
+                        if (typeManager != null) {
+                            System.out.println("ATOMPUB_OBJECT_IDENTITY: Using TypeManagerImpl sharing system for typeId=" + typeId);
+                            type = typeManager.getTypeDefinition(repositoryId, typeId);
+                            System.out.println("ATOMPUB_OBJECT_IDENTITY: TypeManagerImpl returned TypeDefinition for typeId=" + typeId + " (hash: " + System.identityHashCode(type) + ")");
+                        } else {
+                            System.out.println("ATOMPUB_OBJECT_IDENTITY: TypeManager bean not found, falling back to direct service call");
+                        }
+                    } else {
+                        System.out.println("ATOMPUB_OBJECT_IDENTITY: Spring context not found, falling back to direct service call");
+                    }
+                } else {
+                    System.out.println("ATOMPUB_OBJECT_IDENTITY: ServletContext not found, falling back to direct service call");
+                }
+            } catch (Exception e) {
+                System.out.println("ATOMPUB_OBJECT_IDENTITY: Error accessing TypeManagerImpl, falling back to direct service call: " + e.getMessage());
+            }
+
+            // Fallback: Call CMIS service directly (original behavior)
+            if (type == null) {
+                System.out.println("ATOMPUB_OBJECT_IDENTITY: Using fallback direct service call for typeId=" + typeId);
+                type = service.getTypeDefinition(repositoryId, typeId, null);
+            }
 
             if (stopAfterService(service)) {
                 return;
