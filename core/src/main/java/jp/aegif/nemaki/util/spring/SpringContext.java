@@ -25,5 +25,9 @@ public class SpringContext implements ApplicationContextAware{
 	   }
 
 	   public void setNemakiApplicationContextLoader(NemakiApplicationContextLoader loader) {
+	       System.out.println("=== SPRING CONTEXT DEBUG: setNemakiApplicationContextLoader called ===");
+	       if (loader != null) {
+	           System.out.println("=== SPRING CONTEXT DEBUG: NemakiApplicationContextLoader instance received ===");
+	       }
 	   }
 }

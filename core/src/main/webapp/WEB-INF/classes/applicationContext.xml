@@ -23,6 +23,11 @@
 	<!-- Direct import of patchContext.xml to ensure PatchService initialization -->
 	<import resource="classpath:patchContext.xml" />
 	
+	<!-- Force PatchService instantiation directly -->
+	<bean id="forcePatchService" class="java.lang.String" depends-on="PatchService">
+		<constructor-arg value="force-patch-initialization" />
+	</bean>
+	
 	<!-- Enable component scanning for REST resources after property context is loaded -->
 	<context:component-scan base-package="jp.aegif.nemaki.rest">
 		<!-- Exclude AuthenticationFilter from component scan to control initialization order -->

@@ -728,8 +728,7 @@
     </bean>
 
     
-    <!-- SpringContext bean definition for utility access -->
-    <bean id="springContext" class="jp.aegif.nemaki.util.spring.SpringContext" />
+    <!-- SpringContext bean definition removed - already defined in applicationContext.xml -->
     
     <!-- AuthenticationFilter bean definition with explicit dependencies -->
     <bean id="restAuthenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
