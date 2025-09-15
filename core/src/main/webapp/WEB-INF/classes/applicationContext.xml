@@ -68,5 +68,9 @@
 	</bean>
 
 	<bean id="SpringContext" class="jp.aegif.nemaki.util.spring.SpringContext">
+		<!-- Force instantiation of NemakiApplicationContextLoader to load patchContext.xml -->
+		<property name="nemakiApplicationContextLoader">
+			<ref bean="nemakiApplicationContextLoader" />
+		</property>
 	</bean>
 </beans>

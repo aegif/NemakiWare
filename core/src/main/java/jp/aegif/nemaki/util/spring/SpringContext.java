@@ -23,4 +23,7 @@ public class SpringContext implements ApplicationContextAware{
 	       SpringContext.applicationContext = applicationContext;
 
 	   }
+
+	   public void setNemakiApplicationContextLoader(NemakiApplicationContextLoader loader) {
+	   }
 }
