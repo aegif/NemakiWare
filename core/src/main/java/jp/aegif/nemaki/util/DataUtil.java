@@ -506,20 +506,26 @@ public class DataUtil {
 
 	/**
 	 * Generate human-readable display name from property ID
-	 * Example: "cmis:name" → "Name", "user_id" → "User Id"
+	 * Example: "cmis:name" → "Name", "cmis:objectId" → "Object Id", "user_id" → "User Id"
 	 */
 	private static String generateDisplayName(String propertyId) {
 		if (propertyId == null) return "Unknown Property";
 		
-		// Extract local name and convert to title case
+		// Extract local name and convert to title case with camelCase support
 		String localName = extractLocalName(propertyId);
 		StringBuilder displayName = new StringBuilder();
 		
 		boolean capitalizeNext = true;
-		for (char c : localName.toCharArray()) {
+		for (int i = 0; i < localName.length(); i++) {
+			char c = localName.charAt(i);
+			
 			if (c == '_' || c == '-') {
 				displayName.append(' ');
 				capitalizeNext = true;
+			} else if (Character.isUpperCase(c) && i > 0) {
+				displayName.append(' ');
+				displayName.append(Character.toUpperCase(c));
+				capitalizeNext = false;
 			} else if (capitalizeNext) {
 				displayName.append(Character.toUpperCase(c));
 				capitalizeNext = false;

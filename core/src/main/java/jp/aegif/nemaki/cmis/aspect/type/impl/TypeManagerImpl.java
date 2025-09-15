@@ -2613,6 +2613,35 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 		TypeDefinition typeDefinition = tc.getTypeDefinition();
 		
+		// CRITICAL DEBUG: Log actual PropertyDefinition inherited flags being returned to TCK
+		if ("nemaki:user".equals(typeId)) {
+			System.err.println("*** NEMAKI:USER DEBUG: About to return type definition for nemaki:user ***");
+			System.err.println("*** NEMAKI:USER DEBUG: typeDefinition is " + (typeDefinition != null ? "NOT NULL" : "NULL") + " ***");
+			
+			if (typeDefinition != null) {
+				System.err.println("*** NEMAKI:USER DEBUG: typeDefinition class: " + typeDefinition.getClass().getName() + " ***");
+				System.err.println("*** NEMAKI:USER DEBUG: PropertyDefinitions is " + (typeDefinition.getPropertyDefinitions() != null ? "NOT NULL" : "NULL") + " ***");
+				
+				if (typeDefinition.getPropertyDefinitions() != null) {
+					System.err.println("*** NEMAKI:USER DEBUG: PropertyDefinitions count: " + typeDefinition.getPropertyDefinitions().size() + " ***");
+					System.err.println("*** NEMAKI:USER DEBUG: PropertyDefinition keys: " + typeDefinition.getPropertyDefinitions().keySet() + " ***");
+					
+					for (PropertyDefinition<?> prop : typeDefinition.getPropertyDefinitions().values()) {
+						if (prop != null) {
+							System.err.println("*** NEMAKI:USER DEBUG: Property " + prop.getId() + " inherited=" + prop.isInherited() + " ***");
+							if (prop.getId().equals("cmis:objectId") || prop.getId().equals("cmis:baseTypeId")) {
+								log.error("NEMAKI:USER CRITICAL: PropertyDefinition " + prop.getId() + " inherited=" + prop.isInherited() + " for type " + typeId);
+							}
+						}
+					}
+				} else {
+					System.err.println("*** NEMAKI:USER DEBUG: PropertyDefinitions is NULL - this is the problem! ***");
+				}
+			} else {
+				System.err.println("*** NEMAKI:USER DEBUG: typeDefinition is NULL - this is the problem! ***");
+			}
+		}
+		
 		// Check for property contamination patterns
 		if (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null) {
 					
