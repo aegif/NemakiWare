@@ -121,26 +121,26 @@ public class TypeManagerImpl implements TypeManager {
 	 */
 	// Map of all types
 	//private Map<String, TypeDefinitionContainer> types;
-	// CRITICAL FIX: Reverted from static - each instance should maintain its own type cache
-	private Map<String, Map<String, TypeDefinitionContainer>> TYPES;
+	// CRITICAL FIX: TYPES must be static to be shared across all instances for TCK compliance
+	private static Map<String, Map<String, TypeDefinitionContainer>> TYPES;
 
 	// Map of all base types
-	// CRITICAL FIX: Reverted from static - instance-specific base types
-	private Map<String, TypeDefinitionContainer> basetypes;
+	// CRITICAL FIX: basetypes must be static to be shared across all instances for TCK compliance
+	private static Map<String, TypeDefinitionContainer> basetypes;
 
 	// Map of subtype-specific property
-	// CRITICAL FIX: Reverted from static - instance-specific subtype properties
-	private Map<String, List<PropertyDefinition<?>>> subTypeProperties;
+	// CRITICAL FIX: subTypeProperties must be static to be shared across all instances for TCK compliance
+	private static Map<String, List<PropertyDefinition<?>>> subTypeProperties;
 
 	// FUNDAMENTAL FIX: Separate Maps to prevent key collisions between propertyId and queryName
-	// CRITICAL FIX: Reverted from static - instance-specific property definitions
-	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresByPropertyId;
-	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresByQueryName;
-	
+	// CRITICAL FIX: Property definition maps must be static to be shared across all instances for TCK compliance
+	private static Map<String, PropertyDefinition<?>> propertyDefinitionCoresByPropertyId;
+	private static Map<String, PropertyDefinition<?>> propertyDefinitionCoresByQueryName;
+
 	// Flag to track initialization
-	// CRITICAL FIX: Reverted from static - instance-specific initialization state
-	private volatile boolean initialized = false;
-	private final Object initLock = new Object();
+	// CRITICAL FIX: initialized flag must be static to be shared across all instances for TCK compliance
+	private static volatile boolean initialized = false;
+	private static final Object initLock = new Object();
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
 	private final Set<String> typesBeingDeleted = new HashSet<>();
@@ -165,13 +165,23 @@ public class TypeManagerImpl implements TypeManager {
 		if (log.isDebugEnabled()) {
 			log.debug("TypeManagerImpl constructor called - instance: " + this.hashCode());
 		}
-		
-		// Initialize instance fields in constructor
-		TYPES = new ConcurrentHashMap<>();
-		basetypes = new ConcurrentHashMap<>();
-		subTypeProperties = new ConcurrentHashMap<>();
-		propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
-		propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
+
+		// Initialize static fields only if not already initialized
+		if (TYPES == null) {
+			TYPES = new ConcurrentHashMap<>();
+		}
+		if (basetypes == null) {
+			basetypes = new ConcurrentHashMap<>();
+		}
+		if (subTypeProperties == null) {
+			subTypeProperties = new ConcurrentHashMap<>();
+		}
+		if (propertyDefinitionCoresByPropertyId == null) {
+			propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
+		}
+		if (propertyDefinitionCoresByQueryName == null) {
+			propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
+		}
 	}
 	
 	public void init() {
@@ -3146,42 +3156,72 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * @param originalDefinition Original PropertyDefinition to use as template
 	 * @return Shared PropertyDefinition instance
 	 */
-	private PropertyDefinition<?> getSharedPropertyDefinition(String repositoryId, String typeId, 
+	private PropertyDefinition<?> getSharedPropertyDefinition(String repositoryId, String typeId,
 			String propertyId, PropertyDefinition<?> originalDefinition) {
-		
+
 		if (originalDefinition == null) return null;
-		
+
 		// CRITICAL FIX: Include both typeId and inherited flag in cache key
 		// Each type needs its own PropertyDefinition instances with correct inherited flags
 		// Base types have inherited=false, derived types have inherited=true for CMIS properties
 		boolean isInherited = originalDefinition.isInherited();
-		
-		// For base types, force inherited=false for CMIS properties
-		if (isBaseType(typeId) && propertyId.startsWith("cmis:")) {
-			isInherited = false;
-			if (originalDefinition instanceof AbstractPropertyDefinition) {
-				((AbstractPropertyDefinition<?>) originalDefinition).setIsInherited(false);
+
+		// CRITICAL FIX: Set correct inherited flag based on type hierarchy
+		// Create a copy before modifying to avoid side effects
+		PropertyDefinition<?> definitionToCache = originalDefinition;
+		if (propertyId.startsWith("cmis:")) {
+			if (isBaseType(typeId)) {
+				// For base types, force inherited=false for CMIS properties
+				if (isInherited != false) {
+					definitionToCache = DataUtil.clonePropertyDefinition(originalDefinition);
+					isInherited = false;
+					if (definitionToCache instanceof AbstractPropertyDefinition) {
+						((AbstractPropertyDefinition<?>) definitionToCache).setIsInherited(false);
+					}
+					log.warn("DEBUG: Setting inherited=false for CMIS property " + propertyId + " in base type " + typeId);
+				}
+			} else {
+				// For derived types, force inherited=true for CMIS properties
+				if (isInherited != true) {
+					definitionToCache = DataUtil.clonePropertyDefinition(originalDefinition);
+					isInherited = true;
+					if (definitionToCache instanceof AbstractPropertyDefinition) {
+						((AbstractPropertyDefinition<?>) definitionToCache).setIsInherited(true);
+					}
+					log.warn("DEBUG: Setting inherited=true for CMIS property " + propertyId + " in derived type " + typeId);
+				}
 			}
 		}
-		
+
 		String cacheKey = repositoryId + ":" + typeId + ":" + propertyId + ":" + isInherited;
-		
+
 		// Get or create repository-level cache
 		Map<String, PropertyDefinition<?>> repoCache = SHARED_PROPERTY_DEFINITIONS.computeIfAbsent(
 			repositoryId, k -> new ConcurrentHashMap<>());
-		
+
 		// Return existing shared instance or create new one
+		PropertyDefinition<?> finalDefinition = definitionToCache;
 		return repoCache.computeIfAbsent(cacheKey, k -> {
 			if (log.isDebugEnabled()) {
 				log.debug("Creating shared PropertyDefinition instance for " + cacheKey);
 			}
-			
-			// For first occurrence, use the original definition as the shared instance
+
+			// For first occurrence, use the definition as the shared instance
 			// This ensures each type gets its own PropertyDefinition instance with correct inherited flag
-			return originalDefinition;
+			return finalDefinition;
 		});
 	}
 	
+	
+	/**
+	 * Helper method to determine if a type is a base type
+	 */
+	private boolean isBaseType(String typeId) {
+		return "cmis:document".equals(typeId) || "cmis:folder".equals(typeId) || 
+			   "cmis:relationship".equals(typeId) || "cmis:policy".equals(typeId) || 
+			   "cmis:item".equals(typeId) || "cmis:secondary".equals(typeId);
+	}
+
 	/**
 	 * RESTORED: Ensure TypeDefinition uses consistent PropertyDefinition instances
 	 * @param repositoryId Repository identifier
@@ -3253,8 +3293,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		return typeDefinition; // Return original instance
 	}
-	
-	
+
 	
 	
 	
@@ -3530,18 +3569,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		return childTypes;
 	}
 
-	/**
-	 * Check if the specified type is a base type (cannot be deleted)
-	 */
-	private boolean isBaseType(String typeId) {
-		// CMIS base types that cannot be deleted
-		return BaseTypeId.CMIS_DOCUMENT.value().equals(typeId) ||
-			   BaseTypeId.CMIS_FOLDER.value().equals(typeId) ||
-			   BaseTypeId.CMIS_RELATIONSHIP.value().equals(typeId) ||
-			   BaseTypeId.CMIS_POLICY.value().equals(typeId) ||
-			   BaseTypeId.CMIS_ITEM.value().equals(typeId) ||
-			   BaseTypeId.CMIS_SECONDARY.value().equals(typeId);
-	}
 
 	/**
 	 * Check if the type has existing instances in the repository
