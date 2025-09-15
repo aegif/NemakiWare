@@ -87,16 +87,27 @@ public class PatchService {
 
 	public void applyPatchesOnStartup() {
 		System.out.println("=== PATCH DEBUG: applyPatchesOnStartup method called ===");
-		log.info("=== PHASE 2: PatchService.applyPatchesOnStartup() EXECUTING ===");
+		System.out.println("=== PATCH DEBUG: About to call log.info ===");
 		try {
+			log.info("=== PHASE 2: PatchService.applyPatchesOnStartup() EXECUTING ===");
+			System.out.println("=== PATCH DEBUG: log.info completed successfully ===");
+		} catch (Exception e) {
+			System.out.println("=== PATCH DEBUG: log.info failed with exception: " + e.getMessage());
+			e.printStackTrace();
+		}
+		System.out.println("=== PATCH DEBUG: About to enter main try block ===");
+		try {
+			System.out.println("=== PATCH DEBUG: Starting CMIS patch application (Phase 2) ===");
 			log.info("Starting CMIS patch application (Phase 2)");
 			
 			// Note: All database initialization (Phase 1) is handled by DatabasePreInitializer
 			// This method focuses on CMIS-aware operations that require fully initialized services
 			
+			System.out.println("=== PATCH DEBUG: About to call initializeSystemPropertyDefinitionDetails ===");
 			// CRITICAL FIX: Create PropertyDefinitionDetail records for system CMIS properties
 			// This addresses the root cause of PropertyDefinitionCore contamination
 			initializeSystemPropertyDefinitionDetails();
+			System.out.println("=== PATCH DEBUG: initializeSystemPropertyDefinitionDetails completed ===");
 			
 			// PRIORITY 4: TypeManager cache forced update for TCK compliance
 			// This ensures that PropertyDefinitionDetail changes are immediately reflected in type cache
@@ -126,22 +137,28 @@ public class PatchService {
 	 * This causes TypeManagerImpl to have zero PropertyDefinitionDetail records, leading to contamination
 	 */
 	private void initializeSystemPropertyDefinitionDetails() {
+		System.out.println("=== PATCH DEBUG: initializeSystemPropertyDefinitionDetails method called ===");
 		log.info("=== CRITICAL FIX: Initializing PropertyDefinitionDetail for system CMIS properties ===");
 		
 		if (typeService == null) {
+			System.out.println("=== PATCH DEBUG: TypeService is null - exiting ===");
 			log.error("TypeService not injected - cannot create PropertyDefinitionDetail records");
 			return;
 		}
 		
 		if (typeManager == null) {
+			System.out.println("=== PATCH DEBUG: TypeManager is null - exiting ===");
 			log.error("TypeManager not injected - cannot get system property IDs");
 			return;
 		}
 		
 		if (repositoryInfoMap == null) {
+			System.out.println("=== PATCH DEBUG: RepositoryInfoMap is null - exiting ===");
 			log.error("RepositoryInfoMap not injected - cannot iterate repositories");
 			return;
 		}
+		
+		System.out.println("=== PATCH DEBUG: All dependencies injected, proceeding with initialization ===");
 		
 		try {
 			// Get system property IDs from TypeManager

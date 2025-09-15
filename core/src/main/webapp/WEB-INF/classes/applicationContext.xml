@@ -20,14 +20,6 @@
 	<!-- Import database pre-initialization context (Phase 1) -->
 	<import resource="classpath:databaseInitContext.xml" />
 	
-	<!-- Direct import of patchContext.xml to ensure PatchService initialization -->
-	<import resource="classpath:patchContext.xml" />
-	
-	<!-- Force PatchService instantiation directly -->
-	<bean id="forcePatchService" class="java.lang.String" depends-on="PatchService">
-		<constructor-arg value="force-patch-initialization" />
-	</bean>
-	
 	<!-- Enable component scanning for REST resources after property context is loaded -->
 	<context:component-scan base-package="jp.aegif.nemaki.rest">
 		<!-- Exclude AuthenticationFilter from component scan to control initialization order -->
@@ -64,8 +56,6 @@
 		</property>
 		<property name="configLocations">
 			<list>
-				<value>classpath*:${context.log}</value>
-				<value>classpath:propertyContext.xml</value>
 				<value>classpath:jacksonContext.xml</value>
 				<value>classpath*:${context.dao.implementation}</value>
 				<value>classpath*:${context.dao}</value>
@@ -77,14 +67,5 @@
 	</bean>
 
 	<bean id="SpringContext" class="jp.aegif.nemaki.util.spring.SpringContext">
-		<!-- Force instantiation of NemakiApplicationContextLoader to load patchContext.xml -->
-		<property name="nemakiApplicationContextLoader">
-			<ref bean="nemakiApplicationContextLoader" />
-		</property>
-	</bean>
-	
-	<!-- Alternative approach: Force instantiation using depends-on -->
-	<bean id="forceContextLoader" class="java.lang.String" depends-on="nemakiApplicationContextLoader">
-		<constructor-arg value="dummy" />
 	</bean>
 </beans>

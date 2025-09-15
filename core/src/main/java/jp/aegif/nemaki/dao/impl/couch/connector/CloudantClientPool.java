@@ -126,6 +126,14 @@ public class CloudantClientPool {
 	 * Attempts to detect if running in Docker or local environment
 	 */
 	private String resolveUrl() {
+		System.out.println("=== CLOUDANT DEBUG: resolveUrl called, this.url = " + this.url);
+		System.out.println("=== CLOUDANT DEBUG: System property db.couchdb.url = " + System.getProperty("db.couchdb.url"));
+		
+		if (this.url == null) {
+			System.out.println("=== CLOUDANT DEBUG: URL is null! Property resolution failed for ${db.couchdb.url}");
+			throw new RuntimeException("CloudantClientPool URL is null - property resolution failed for ${db.couchdb.url}");
+		}
+		
 		// First, check if URL override is provided via system property
 		String overrideUrl = System.getProperty("db.couchdb.url.override");
 		if (overrideUrl != null && !overrideUrl.isEmpty()) {

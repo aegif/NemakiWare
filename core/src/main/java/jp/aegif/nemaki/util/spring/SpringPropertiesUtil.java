@@ -19,6 +19,11 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
 			.getLog(SpringPropertiesUtil.class);
 
     private Map<String, String> propertiesMap;
+    
+    public SpringPropertiesUtil() {
+        System.out.println("=== SPRING PROPERTIES DEBUG: SpringPropertiesUtil constructor called ===");
+        log.info("=== SPRING PROPERTIES DEBUG: SpringPropertiesUtil constructor called ===");
+    }
     // Default as in PropertyPlaceholderConfigurer
     private int springSystemPropertiesMode = SYSTEM_PROPERTIES_MODE_FALLBACK;
 
@@ -30,6 +35,9 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
 
     @Override
     protected void processProperties(ConfigurableListableBeanFactory beanFactory, Properties props) throws BeansException {
+        System.out.println("=== SPRING PROPERTIES DEBUG: processProperties called with " + props.size() + " properties ===");
+        log.info("=== SPRING PROPERTIES DEBUG: processProperties called with " + props.size() + " properties ===");
+        
         super.processProperties(beanFactory, props);
 
         propertiesMap = new HashMap<String, String>();
@@ -37,7 +45,15 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
             String keyStr = key.toString();
             String valueStr = resolvePlaceholder(keyStr, props, springSystemPropertiesMode);
             propertiesMap.put(keyStr, valueStr);
+            
+            if (keyStr.contains("couchdb.url")) {
+                System.out.println("=== SPRING PROPERTIES DEBUG: " + keyStr + " = " + valueStr);
+                System.out.println("=== SPRING PROPERTIES DEBUG: System property db.couchdb.url = " + System.getProperty("db.couchdb.url"));
+            }
         }
+        
+        System.out.println("=== SPRING PROPERTIES DEBUG: processProperties completed ===");
+        log.info("=== SPRING PROPERTIES DEBUG: processProperties completed ===");
     }
 
     public String getValue(String key) {
