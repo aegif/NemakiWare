@@ -1171,7 +1171,7 @@ public class TypeManagerImpl implements TypeManager {
 		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_objectId + " for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.OBJECT_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READONLY, REQUIRED, QUERYABLE, orderable_objectId, null, inherited_objectId));
+				Updatability.READONLY, !REQUIRED, QUERYABLE, orderable_objectId, null, inherited_objectId));
 		log.info("DEBUG: Added cmis:objectId property (inherited=" + inherited_objectId + ")");
 
 		//cmis:baseTypeId
@@ -1184,7 +1184,7 @@ public class TypeManagerImpl implements TypeManager {
 		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_baseTypeId + " for " + PropertyIds.BASE_TYPE_ID + " in type " + typeId + " ***");
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.BASE_TYPE_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null, inherited_baseTypeId));
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null, inherited_baseTypeId));
 		log.info("DEBUG: Added cmis:baseTypeId property (inherited=" + inherited_baseTypeId + ")");
 
 		//cmis:objectTypeId
