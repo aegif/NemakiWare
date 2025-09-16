@@ -3126,24 +3126,51 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * 3. Bracket format: properties[cmis:name]=value&properties[cmis:objectTypeId]=value
      */
     private java.util.Map<String, Object> extractPropertiesFromRequest(HttpServletRequest request) {
-        System.err.println("*** CRITICAL: extractPropertiesFromRequest method ENTRY POINT ***");
+        System.err.println("*** ULTRA CRITICAL: extractPropertiesFromRequest method ENTRY POINT - TIMESTAMP: " + System.currentTimeMillis() + " ***");
         System.err.flush(); // Force immediate output
-        java.util.Map<String, Object> properties = new java.util.HashMap<>();
+        
+        java.util.Map<String, Object> properties = null;
+        try {
+            properties = new java.util.HashMap<>();
+            System.err.println("*** ULTRA CRITICAL: HashMap created successfully ***");
+            System.err.flush();
+        } catch (Exception e) {
+            System.err.println("*** ULTRA CRITICAL ERROR: Failed to create HashMap: " + e.getMessage() + " ***");
+            e.printStackTrace();
+            return new java.util.HashMap<>();
+        }
+        
         java.util.Map<String, String[]> paramMap = null;
         
         try {
+            System.err.println("*** ULTRA CRITICAL: About to call request.getParameterMap() ***");
+            System.err.flush();
             paramMap = request.getParameterMap();
-            System.err.println("*** CRITICAL: Got parameter map successfully, size: " + paramMap.size() + " ***");
+            System.err.println("*** ULTRA CRITICAL: Got parameter map successfully, size: " + paramMap.size() + " ***");
+            System.err.flush();
         } catch (Exception e) {
-            System.err.println("*** CRITICAL ERROR: Failed to get parameter map: " + e.getMessage() + " ***");
+            System.err.println("*** ULTRA CRITICAL ERROR: Failed to get parameter map: " + e.getMessage() + " ***");
             e.printStackTrace();
+            System.err.flush();
             return properties;
         }
         
-        System.err.println("*** PROPERTY EXTRACTION DEBUG: All parameters ***");
-        for (String paramName : paramMap.keySet()) {
-            String[] values = paramMap.get(paramName);
-            System.err.println("***   " + paramName + " = " + java.util.Arrays.toString(values) + " ***");
+        System.err.println("*** ULTRA CRITICAL: About to iterate through parameters ***");
+        System.err.flush();
+        
+        try {
+            System.err.println("*** PROPERTY EXTRACTION DEBUG: All parameters ***");
+            for (String paramName : paramMap.keySet()) {
+                String[] values = paramMap.get(paramName);
+                System.err.println("***   " + paramName + " = " + java.util.Arrays.toString(values) + " ***");
+                System.err.flush();
+            }
+            System.err.println("*** ULTRA CRITICAL: Parameter iteration completed ***");
+            System.err.flush();
+        } catch (Exception e) {
+            System.err.println("*** ULTRA CRITICAL ERROR: Failed during parameter iteration: " + e.getMessage() + " ***");
+            e.printStackTrace();
+            System.err.flush();
         }
         
         // Method 1: Handle array format (propertyId[N], propertyValue[N])
@@ -3192,20 +3219,22 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         System.err.println("*** PROPERTY EXTRACTION DEBUG: Processing subSpec[" + j + "] = '" + subSpec + "' ***");
                         
                         if (subSpec.contains(":")) {
-                            // CRITICAL FIX: For CMIS properties like "cmis:name:value", we need to find the LAST colon
-                            int lastColonIndex = subSpec.lastIndexOf(":");
-                            System.err.println("*** PROPERTY EXTRACTION DEBUG: subSpec lastColonIndex = " + lastColonIndex + " ***");
+                            // CRITICAL FIX: For CMIS properties like "cmis:name:value" or "cmis:objectTypeId:cmis:folder"
+                            // We need to find the SECOND colon (after the property namespace)
+                            int firstColonIndex = subSpec.indexOf(":");
+                            int secondColonIndex = subSpec.indexOf(":", firstColonIndex + 1);
+                            System.err.println("*** PROPERTY EXTRACTION DEBUG: firstColonIndex = " + firstColonIndex + ", secondColonIndex = " + secondColonIndex + " ***");
                             
-                            if (lastColonIndex > 0 && lastColonIndex < subSpec.length() - 1) {
-                                String propertyId = subSpec.substring(0, lastColonIndex).trim();
-                                String propertyValue = subSpec.substring(lastColonIndex + 1).trim();
+                            if (secondColonIndex > 0 && secondColonIndex < subSpec.length() - 1) {
+                                String propertyId = subSpec.substring(0, secondColonIndex).trim();
+                                String propertyValue = subSpec.substring(secondColonIndex + 1).trim();
                                 
                                 System.err.println("*** PROPERTY EXTRACTION DEBUG: Extracted propertyId = '" + propertyId + "', propertyValue = '" + propertyValue + "' ***");
                                 
                                 properties.put(propertyId, propertyValue);
                                 System.err.println("*** PROPERTY EXTRACTION SUCCESS: " + propertyId + " = " + propertyValue + " ***");
                             } else {
-                                System.err.println("*** PROPERTY EXTRACTION ERROR: Invalid colon position in subSpec: '" + subSpec + "' (lastColonIndex=" + lastColonIndex + ", length=" + subSpec.length() + ") ***");
+                                System.err.println("*** PROPERTY EXTRACTION ERROR: Invalid colon position in subSpec: '" + subSpec + "' (secondColonIndex=" + secondColonIndex + ", length=" + subSpec.length() + ") ***");
                             }
                         } else {
                             System.err.println("*** PROPERTY EXTRACTION ERROR: No colon found in subSpec: '" + subSpec + "' ***");
