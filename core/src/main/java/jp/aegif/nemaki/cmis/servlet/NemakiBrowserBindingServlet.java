@@ -3084,15 +3084,24 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     }
     
     /**
-     * Extract CMIS properties from Browser Binding property array parameters.
-     * Converts propertyId[0], propertyValue[0], propertyId[1], propertyValue[1]... format
-     * to a Map of property names to values.
+     * Extract CMIS properties from Browser Binding property parameters.
+     * Handles multiple formats:
+     * 1. Array format: propertyId[0], propertyValue[0], propertyId[1], propertyValue[1]...
+     * 2. Direct format: properties=cmis:name:value&properties=cmis:objectTypeId:value
+     * 3. Bracket format: properties[cmis:name]=value&properties[cmis:objectTypeId]=value
      */
     private java.util.Map<String, Object> extractPropertiesFromRequest(HttpServletRequest request) {
+        System.err.println("*** CRITICAL: extractPropertiesFromRequest method ENTRY POINT ***");
         java.util.Map<String, Object> properties = new java.util.HashMap<>();
         java.util.Map<String, String[]> paramMap = request.getParameterMap();
         
-        // Find all propertyId parameters and match them with propertyValue parameters
+        System.err.println("*** PROPERTY EXTRACTION DEBUG: All parameters ***");
+        for (String paramName : paramMap.keySet()) {
+            String[] values = paramMap.get(paramName);
+            System.err.println("***   " + paramName + " = " + java.util.Arrays.toString(values) + " ***");
+        }
+        
+        // Method 1: Handle array format (propertyId[N], propertyValue[N])
         for (String paramName : paramMap.keySet()) {
             if (paramName.startsWith("propertyId[") && paramName.endsWith("]")) {
                 // Extract index from propertyId[N]
@@ -3106,6 +3115,73 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     String propertyId = idValues[0];
                     String propertyValue = propValues[0];
                     properties.put(propertyId, propertyValue);
+                    System.err.println("*** ARRAY FORMAT: " + propertyId + " = " + propertyValue + " ***");
+                }
+            }
+        }
+        
+        // Method 2: Handle direct properties format (properties=cmis:name:value,cmis:objectTypeId:value)
+        String[] propertiesParams = paramMap.get("properties");
+        System.err.println("*** PROPERTY EXTRACTION DEBUG: propertiesParams = " + Arrays.toString(propertiesParams) + " ***");
+        if (propertiesParams != null) {
+            for (int i = 0; i < propertiesParams.length; i++) {
+                String propParam = propertiesParams[i];
+                System.err.println("*** PROPERTY EXTRACTION DEBUG: Processing propParam[" + i + "] = '" + propParam + "' ***");
+                if (propParam != null && !propParam.trim().isEmpty()) {
+                    String propertySpec = propParam.trim();
+                    System.err.println("*** PROPERTY EXTRACTION DEBUG: Processing spec = '" + propertySpec + "' ***");
+                    
+                    // CRITICAL FIX: Handle comma-separated format within single parameter
+                    // Split by comma and process each property specification
+                    String[] propertySpecs;
+                    if (propertySpec.contains(",")) {
+                        propertySpecs = propertySpec.split(",");
+                        System.err.println("*** PROPERTY EXTRACTION DEBUG: Split comma-separated into " + propertySpecs.length + " specs: " + Arrays.toString(propertySpecs) + " ***");
+                    } else {
+                        propertySpecs = new String[]{propertySpec};
+                        System.err.println("*** PROPERTY EXTRACTION DEBUG: Single spec (no comma): '" + propertySpec + "' ***");
+                    }
+                    
+                    for (int j = 0; j < propertySpecs.length; j++) {
+                        String subSpec = propertySpecs[j].trim();
+                        System.err.println("*** PROPERTY EXTRACTION DEBUG: Processing subSpec[" + j + "] = '" + subSpec + "' ***");
+                        
+                        if (subSpec.contains(":")) {
+                            // CRITICAL FIX: For CMIS properties like "cmis:name:value", we need to find the LAST colon
+                            int lastColonIndex = subSpec.lastIndexOf(":");
+                            System.err.println("*** PROPERTY EXTRACTION DEBUG: subSpec lastColonIndex = " + lastColonIndex + " ***");
+                            
+                            if (lastColonIndex > 0 && lastColonIndex < subSpec.length() - 1) {
+                                String propertyId = subSpec.substring(0, lastColonIndex).trim();
+                                String propertyValue = subSpec.substring(lastColonIndex + 1).trim();
+                                
+                                System.err.println("*** PROPERTY EXTRACTION DEBUG: Extracted propertyId = '" + propertyId + "', propertyValue = '" + propertyValue + "' ***");
+                                
+                                properties.put(propertyId, propertyValue);
+                                System.err.println("*** PROPERTY EXTRACTION SUCCESS: " + propertyId + " = " + propertyValue + " ***");
+                            } else {
+                                System.err.println("*** PROPERTY EXTRACTION ERROR: Invalid colon position in subSpec: '" + subSpec + "' (lastColonIndex=" + lastColonIndex + ", length=" + subSpec.length() + ") ***");
+                            }
+                        } else {
+                            System.err.println("*** PROPERTY EXTRACTION ERROR: No colon found in subSpec: '" + subSpec + "' ***");
+                        }
+                    }
+                } else {
+                    System.err.println("*** PROPERTY EXTRACTION DEBUG: propParam[" + i + "] is null or empty ***");
+                }
+            }
+        } else {
+            System.err.println("*** PROPERTY EXTRACTION DEBUG: propertiesParams is null ***");
+        }
+        
+        // Method 3: Handle bracket format (properties[cmis:name]=value)
+        for (String paramName : paramMap.keySet()) {
+            if (paramName.startsWith("properties[") && paramName.endsWith("]")) {
+                String propertyId = paramName.substring("properties[".length(), paramName.length() - 1);
+                String[] values = paramMap.get(paramName);
+                if (values != null && values.length > 0) {
+                    properties.put(propertyId, values[0]);
+                    System.err.println("*** BRACKET FORMAT: " + propertyId + " = " + values[0] + " ***");
                 }
             }
         }
