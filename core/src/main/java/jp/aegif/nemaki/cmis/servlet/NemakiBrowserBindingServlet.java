@@ -3145,7 +3145,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         // Method 2: Handle direct properties format (properties=cmis:name:value,cmis:objectTypeId:value)
         String[] propertiesParams = paramMap.get("properties");
-        System.err.println("*** PROPERTY EXTRACTION DEBUG: propertiesParams = " + Arrays.toString(propertiesParams) + " ***");
+        System.err.println("*** PROPERTY EXTRACTION DEBUG: propertiesParams = " + java.util.Arrays.toString(propertiesParams) + " ***");
         if (propertiesParams != null) {
             for (int i = 0; i < propertiesParams.length; i++) {
                 String propParam = propertiesParams[i];
@@ -3159,7 +3159,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     String[] propertySpecs;
                     if (propertySpec.contains(",")) {
                         propertySpecs = propertySpec.split(",");
-                        System.err.println("*** PROPERTY EXTRACTION DEBUG: Split comma-separated into " + propertySpecs.length + " specs: " + Arrays.toString(propertySpecs) + " ***");
+                        System.err.println("*** PROPERTY EXTRACTION DEBUG: Split comma-separated into " + propertySpecs.length + " specs: " + java.util.Arrays.toString(propertySpecs) + " ***");
                     } else {
                         propertySpecs = new String[]{propertySpec};
                         System.err.println("*** PROPERTY EXTRACTION DEBUG: Single spec (no comma): '" + propertySpec + "' ***");
