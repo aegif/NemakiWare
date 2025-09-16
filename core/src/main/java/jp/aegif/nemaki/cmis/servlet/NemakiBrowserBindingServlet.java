@@ -2534,17 +2534,37 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             // Extract properties from Browser Binding property array format
             System.err.println("*** CREATE FOLDER DEBUG: About to call extractPropertiesFromRequest ***");
-            System.err.println("*** CREATE FOLDER DEBUG: Method exists check: " + (this.getClass().getDeclaredMethod("extractPropertiesFromRequest", HttpServletRequest.class) != null) + " ***");
+            
+            // CRITICAL DEBUG: Test if method exists and is accessible
+            try {
+                java.lang.reflect.Method method = this.getClass().getDeclaredMethod("extractPropertiesFromRequest", HttpServletRequest.class);
+                System.err.println("*** CREATE FOLDER DEBUG: Method found: " + method.getName() + " ***");
+                System.err.println("*** CREATE FOLDER DEBUG: Method accessible: " + method.isAccessible() + " ***");
+                System.err.println("*** CREATE FOLDER DEBUG: Method declaring class: " + method.getDeclaringClass().getName() + " ***");
+            } catch (Exception e) {
+                System.err.println("*** CREATE FOLDER ERROR: Method not found: " + e.getMessage() + " ***");
+            }
+            
             java.util.Map<String, Object> properties = null;
             try {
                 System.err.println("*** CREATE FOLDER DEBUG: Calling method now... ***");
+                System.err.println("*** CREATE FOLDER DEBUG: Request object type: " + request.getClass().getName() + " ***");
+                System.err.println("*** CREATE FOLDER DEBUG: This object type: " + this.getClass().getName() + " ***");
+                System.err.flush(); // Force immediate output
+                
+                // CRITICAL DEBUG: Call method directly and trace execution
+                System.err.println("*** CREATE FOLDER DEBUG: About to enter extractPropertiesFromRequest method ***");
                 properties = this.extractPropertiesFromRequest(request);
+                System.err.println("*** CREATE FOLDER DEBUG: Exited extractPropertiesFromRequest method ***");
+                
                 System.err.println("*** CREATE FOLDER DEBUG: extractPropertiesFromRequest returned successfully: " + properties + " ***");
                 System.err.println("*** CREATE FOLDER DEBUG: Properties size: " + properties.size() + " ***");
                 System.err.println("*** CREATE FOLDER DEBUG: Properties keys: " + properties.keySet() + " ***");
-            } catch (Exception e) {
-                System.err.println("*** CREATE FOLDER ERROR: extractPropertiesFromRequest threw exception: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
-                e.printStackTrace();
+            } catch (Throwable e) {
+                System.err.println("*** CREATE FOLDER ERROR: extractPropertiesFromRequest threw throwable: " + e.getClass().getName() + ": " + e.getMessage() + " ***");
+                System.err.println("*** CREATE FOLDER ERROR: Full stack trace: ***");
+                e.printStackTrace(System.err);
+                System.err.flush();
                 properties = new java.util.HashMap<>();
             }
             
@@ -3212,6 +3232,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
         
         System.err.println("*** PROPERTY EXTRACTION: Found " + properties.size() + " properties: " + properties.keySet() + " ***");
+        System.err.println("*** EXTRACT PROPERTIES: METHOD EXIT - Returning properties map ***");
         return properties;
     }
     
