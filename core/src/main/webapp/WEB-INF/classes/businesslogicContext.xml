@@ -46,6 +46,9 @@
         <property name="nemakiCachePool">
             <ref bean="nemakiCachePool" />
         </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
 	</bean>
 
 	<bean id="PrincipalService" class="org.springframework.aop.framework.ProxyFactoryBean">
