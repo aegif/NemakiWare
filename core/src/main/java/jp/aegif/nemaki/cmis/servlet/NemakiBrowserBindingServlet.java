@@ -3249,16 +3249,29 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
         
         // Method 3: Handle bracket format (properties[cmis:name]=value)
+        System.err.println("*** BRACKET FORMAT DEBUG: Starting bracket format processing ***");
         for (String paramName : paramMap.keySet()) {
+            System.err.println("*** BRACKET FORMAT DEBUG: Checking paramName: '" + paramName + "' ***");
+            System.err.println("*** BRACKET FORMAT DEBUG: startsWith('properties['): " + paramName.startsWith("properties[") + " ***");
+            System.err.println("*** BRACKET FORMAT DEBUG: endsWith(']'): " + paramName.endsWith("]") + " ***");
+            
             if (paramName.startsWith("properties[") && paramName.endsWith("]")) {
+                System.err.println("*** BRACKET FORMAT DEBUG: MATCHED bracket format for: '" + paramName + "' ***");
                 String propertyId = paramName.substring("properties[".length(), paramName.length() - 1);
+                System.err.println("*** BRACKET FORMAT DEBUG: Extracted propertyId: '" + propertyId + "' ***");
                 String[] values = paramMap.get(paramName);
+                System.err.println("*** BRACKET FORMAT DEBUG: Values array: " + java.util.Arrays.toString(values) + " ***");
                 if (values != null && values.length > 0) {
                     properties.put(propertyId, values[0]);
-                    System.err.println("*** BRACKET FORMAT: " + propertyId + " = " + values[0] + " ***");
+                    System.err.println("*** BRACKET FORMAT SUCCESS: " + propertyId + " = " + values[0] + " ***");
+                } else {
+                    System.err.println("*** BRACKET FORMAT ERROR: Values array is null or empty ***");
                 }
+            } else {
+                System.err.println("*** BRACKET FORMAT DEBUG: NO MATCH for paramName: '" + paramName + "' ***");
             }
         }
+        System.err.println("*** BRACKET FORMAT DEBUG: Completed bracket format processing ***");
         
         System.err.println("*** PROPERTY EXTRACTION: Found " + properties.size() + " properties: " + properties.keySet() + " ***");
         System.err.println("*** EXTRACT PROPERTIES: METHOD EXIT - Returning properties map ***");
