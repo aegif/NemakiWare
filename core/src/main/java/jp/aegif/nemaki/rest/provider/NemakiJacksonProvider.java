@@ -40,7 +40,7 @@ import jakarta.ws.rs.ext.Provider;
  * the configured ObjectMapper from JacksonConfig.
  */
 @Provider
-@Component
+// @Component annotation removed to prevent conflicts with component scanning exclusion in applicationContext.xml
 public class NemakiJacksonProvider implements ContextResolver<ObjectMapper> {
 
     private final ObjectMapper objectMapper;

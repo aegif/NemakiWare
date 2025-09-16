@@ -67,6 +67,10 @@ public class JsonLogger {
 	private JsonLogConfig config;
 	private String jsonConfigurationFile;
 	
+	public void setMapper(ObjectMapper mapper) {
+		this.mapper = mapper;
+	}
+	
 	private final MethodConfig defaultMethodConfig = new MethodConfig();;
 	
 	private final ReadWriteLock lock = new ReentrantReadWriteLock(true);
