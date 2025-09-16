@@ -4,7 +4,11 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.beans.factory.config.PropertyPlaceholderConfigurer;
+import org.springframework.context.support.PropertySourcesPlaceholderConfigurer;
+import org.springframework.core.env.ConfigurablePropertyResolver;
+import org.springframework.core.env.MutablePropertySources;
+import org.springframework.core.env.PropertiesPropertySource;
+import org.springframework.core.env.PropertySource;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,7 +17,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
-public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
+public class SpringPropertiesUtil extends PropertySourcesPlaceholderConfigurer {
 
 	private static final Log log = LogFactory
 			.getLog(SpringPropertiesUtil.class);
@@ -24,36 +28,45 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
         System.out.println("=== SPRING PROPERTIES DEBUG: SpringPropertiesUtil constructor called ===");
         log.info("=== SPRING PROPERTIES DEBUG: SpringPropertiesUtil constructor called ===");
     }
-    // Default as in PropertyPlaceholderConfigurer
-    private int springSystemPropertiesMode = SYSTEM_PROPERTIES_MODE_FALLBACK;
 
     @Override
-    public void setSystemPropertiesMode(int systemPropertiesMode) {
-        super.setSystemPropertiesMode(systemPropertiesMode);
-        springSystemPropertiesMode = systemPropertiesMode;
-    }
-
-    @Override
-    protected void processProperties(ConfigurableListableBeanFactory beanFactory, Properties props) throws BeansException {
-        System.out.println("=== SPRING PROPERTIES DEBUG: processProperties called with " + props.size() + " properties ===");
-        log.info("=== SPRING PROPERTIES DEBUG: processProperties called with " + props.size() + " properties ===");
+    public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
+        System.out.println("=== SPRING PROPERTIES DEBUG: postProcessBeanFactory called (Spring 6.x version) ===");
+        log.info("=== SPRING PROPERTIES DEBUG: postProcessBeanFactory called (Spring 6.x version) ===");
         
-        super.processProperties(beanFactory, props);
+        super.postProcessBeanFactory(beanFactory);
 
         propertiesMap = new HashMap<String, String>();
-        for (Object key : props.keySet()) {
-            String keyStr = key.toString();
-            String valueStr = resolvePlaceholder(keyStr, props, springSystemPropertiesMode);
-            propertiesMap.put(keyStr, valueStr);
-            
-            if (keyStr.contains("couchdb.url")) {
-                System.out.println("=== SPRING PROPERTIES DEBUG: " + keyStr + " = " + valueStr);
-                System.out.println("=== SPRING PROPERTIES DEBUG: System property db.couchdb.url = " + System.getProperty("db.couchdb.url"));
+        
+        try {
+            MutablePropertySources appliedPropertySources = (MutablePropertySources) getAppliedPropertySources();
+            if (appliedPropertySources != null) {
+                System.out.println("=== SPRING PROPERTIES DEBUG: Found " + appliedPropertySources.size() + " property sources ===");
+                log.info("=== SPRING PROPERTIES DEBUG: Found " + appliedPropertySources.size() + " property sources ===");
+                
+                for (PropertySource<?> propertySource : appliedPropertySources) {
+                    if (propertySource.getSource() instanceof Properties) {
+                        Properties props = (Properties) propertySource.getSource();
+                        for (Object key : props.keySet()) {
+                            String keyStr = key.toString();
+                            String valueStr = props.getProperty(keyStr);
+                            propertiesMap.put(keyStr, valueStr);
+                            
+                            if (keyStr.contains("couchdb.url")) {
+                                System.out.println("=== SPRING PROPERTIES DEBUG: " + keyStr + " = " + valueStr);
+                                log.info("=== SPRING PROPERTIES DEBUG: " + keyStr + " = " + valueStr);
+                            }
+                        }
+                    }
+                }
             }
+        } catch (Exception e) {
+            System.out.println("=== SPRING PROPERTIES DEBUG: Error extracting properties: " + e.getMessage());
+            log.warn("=== SPRING PROPERTIES DEBUG: Error extracting properties: " + e.getMessage(), e);
         }
         
-        System.out.println("=== SPRING PROPERTIES DEBUG: processProperties completed ===");
-        log.info("=== SPRING PROPERTIES DEBUG: processProperties completed ===");
+        System.out.println("=== SPRING PROPERTIES DEBUG: postProcessBeanFactory completed, propertiesMap size: " + propertiesMap.size() + " ===");
+        log.info("=== SPRING PROPERTIES DEBUG: postProcessBeanFactory completed, propertiesMap size: " + propertiesMap.size() + " ===");
     }
 
     public String getValue(String key) {

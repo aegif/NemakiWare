@@ -32,9 +32,20 @@ RUN cd /tmp && \
     ls -la /usr/local/tomcat/webapps/core/WEB-INF/classes/jp/aegif/nemaki/cmis/servlet/NemakiBrowserBindingServlet.class && \
     echo "=== WAR content directly deployed to /usr/local/tomcat/webapps/core/ ==="
 
+# Copy ALL property files that SpringPropertiesUtil needs from local docker context
+COPY ./custom-nemakiware.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/custom-nemakiware.properties
+COPY ./app-server-core.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/app-server-core.properties
+
 # Copy configuration files to the extracted webapp
 COPY ./nemakiware.properties /usr/local/tomcat/conf/nemakiware.properties
 COPY ./nemakiware.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware.properties
+
+# Copy additional property files that SpringPropertiesUtil requires from local build context
+COPY ./nemakiware-capability.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware-capability.properties
+COPY ./nemakiware-property.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware-property.properties
+COPY ./nemakiware-dev.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware-dev.properties
+COPY ./nemakiware-jetty.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware-jetty.properties
+COPY ./nemakiware-docker.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware-docker.properties
 COPY ./repositories.yml /usr/local/tomcat/conf/repositories.yml
 COPY ./log4j.properties /usr/local/tomcat/conf/log4j.properties
 COPY ./logging.properties /usr/local/tomcat/conf/logging.properties

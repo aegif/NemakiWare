@@ -5,8 +5,8 @@
 	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
 		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 	
-	<!-- Property Configurer -->
-	<bean id="propertyConfigurer" class="jp.aegif.nemaki.util.spring.SpringPropertiesUtil">
+	<!-- Property Configurer - Use standard Spring PropertySourcesPlaceholderConfigurer -->
+	<bean id="propertyConfigurer" class="org.springframework.context.support.PropertySourcesPlaceholderConfigurer">
 		<property name="locations">
 			<list>
 				<value>classpath:nemakiware.properties</value>
@@ -24,11 +24,9 @@
 		</property>
 		<property name="ignoreResourceNotFound" value="true"/>
 		<property name="ignoreUnresolvablePlaceholders" value="false"/>
-		<property name="systemPropertiesModeName" value="SYSTEM_PROPERTIES_MODE_OVERRIDE"/>
 	</bean>
 	
 	<!-- Spring Property Manager for additional functionality -->
     <bean id="springPropertyManager" class="jp.aegif.nemaki.util.SpringPropertyManager">
-        <property name="propertyConfigurer" ref="propertyConfigurer" />
     </bean>
 </beans>
