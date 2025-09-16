@@ -949,6 +949,8 @@ public class ContentServiceImpl implements ContentService {
 		// Create PWC renditions
 		copyRenditions(callContext, repositoryId, latest.getRenditionIds());
 
+		pwc.setVersionLabel(generateVersionLabel(latest.getVersionSeriesId(), false));
+		
 		// Set other properties
 		updateVersionProperties(callContext, repositoryId, VersioningState.CHECKEDOUT, pwc, latest);
 
@@ -1556,6 +1558,82 @@ public class ContentServiceImpl implements ContentService {
 		log.debug("VERSIONING DEBUG: copyAttachment completed - new attachmentId: " + result);
 		
 		return result;
+	}
+
+	private String generateVersionLabel(String versionSeriesId, boolean majorVersion) {
+		List<Document> versions = getVersionSeries(versionSeriesId);
+		return calculateNextVersionLabel(versions, majorVersion);
+	}
+	
+	private List<Document> getVersionSeries(String versionSeriesId) {
+		try {
+			return contentDaoService.getAllVersions(null, versionSeriesId);
+		} catch (Exception e) {
+			log.error("Failed to get version series: " + versionSeriesId, e);
+			return new ArrayList<>();
+		}
+	}
+	
+	private String calculateNextVersionLabel(List<Document> versions, boolean majorVersion) {
+		if (versions.isEmpty()) {
+			return majorVersion ? "1.0" : "0.1";
+		}
+		
+		int maxMajor = 0;
+		int maxMinor = 0;
+		
+		for (Document version : versions) {
+			String label = version.getVersionLabel();
+			if (label != null && label.contains(".")) {
+				try {
+					String[] parts = label.split("\\.");
+					int major = Integer.parseInt(parts[0]);
+					int minor = Integer.parseInt(parts[1]);
+					
+					if (major > maxMajor || (major == maxMajor && minor > maxMinor)) {
+						maxMajor = major;
+						maxMinor = minor;
+					}
+				} catch (NumberFormatException e) {
+				}
+			}
+		}
+		
+		if (majorVersion) {
+			return (maxMajor + 1) + ".0";
+		} else {
+			return maxMajor + "." + (maxMinor + 1);
+		}
+	}
+	
+	private void deleteVersionSafely(String versionId, boolean deleteAllVersions) {
+		if (deleteAllVersions) {
+			deleteAllVersionsInSeries(versionId);
+		} else {
+			deleteSingleVersion(versionId);
+		}
+	}
+	
+	private void deleteAllVersionsInSeries(String objectId) {
+		try {
+			Document document = (Document) contentDaoService.getContent(null, objectId);
+			if (document != null) {
+				List<Document> versions = contentDaoService.getAllVersions(null, document.getVersionSeriesId());
+				for (Document version : versions) {
+					contentDaoService.delete(null, version.getId());
+				}
+			}
+		} catch (Exception e) {
+			log.error("Failed to delete all versions in series for object: " + objectId, e);
+		}
+	}
+	
+	private void deleteSingleVersion(String versionId) {
+		try {
+			contentDaoService.delete(null, versionId);
+		} catch (Exception e) {
+			log.error("Failed to delete single version: " + versionId, e);
+		}
 	}
 
 	private List<String> copyRenditions(CallContext callContext, String repositoryId, List<String> renditionIds) {
@@ -2920,4 +2998,5 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	////////////////////////////////////////////
+
 }

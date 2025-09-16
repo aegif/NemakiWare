@@ -572,4 +572,38 @@ public class SolrQueryProcessor implements QueryProcessor {
 	public void setThreadLockService(ThreadLockService threadLockService) {
 		this.threadLockService = threadLockService;
 	}
+
+	private String convertLikePattern(String likePattern) {
+		return likePattern.replace("%", "*").replace("_", "?");
+	}
+	
+	private String buildLikeQuery(String field, String pattern) {
+		String solrPattern = convertLikePattern(pattern);
+		return field + ":" + solrPattern;
+	}
+	
+	private String buildInFolderQuery(String folderId) {
+		return "cmis:parentId:" + folderId;
+	}
+	
+	private String buildInTreeQuery(String folderId) {
+		return "cmis:path:" + folderId + "/*";
+	}
+	
+	private String resolveRootFolderId(String repositoryId) {
+		if ("@@root@@".equals(repositoryId) || repositoryId == null) {
+			return getRootFolderId(repositoryId);
+		}
+		return repositoryId;
+	}
+	
+	private String getRootFolderId(String repositoryId) {
+		try {
+			return contentService.getContent(repositoryId, null).getId();
+		} catch (Exception e) {
+			logger.error("Failed to get root folder ID for repository: " + repositoryId, e);
+			return null;
+		}
+	}
+
 }

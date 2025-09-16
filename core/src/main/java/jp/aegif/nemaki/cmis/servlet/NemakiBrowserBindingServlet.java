@@ -33,7 +33,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 
+import org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisUnauthorizedException;
 import org.apache.chemistry.opencmis.commons.impl.Constants;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.server.CmisService;
@@ -145,6 +148,11 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                              userAgent.contains("OpenCMIS") ||
                              userAgent.contains("TCK") ||
                              userAgent.toLowerCase().contains("junit");
+            }
+            
+            // Normalize parameter names for compatibility
+            if (isCreateDocumentRequest(request)) {
+                normalizeParentIdParameters(request);
             }
             
             // Enhanced parameter detection for POST requests
@@ -3338,4 +3346,56 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
     }
     
+
+	private void normalizeParentIdParameters(HttpServletRequest request) {
+		String folderId = request.getParameter("folderId");
+		String objectId = request.getParameter("objectId");
+		String parentId = request.getParameter("parentId");
+		
+		// Handle folderId -> objectId mapping for createDocument operations
+		if (folderId != null && objectId == null) {
+			request.setAttribute("objectId", folderId);
+		}
+		
+		// Handle parentId -> objectId mapping for folder operations
+		if (parentId != null && objectId == null) {
+			request.setAttribute("objectId", parentId);
+		}
+		
+		// Ensure backward compatibility - if objectId exists, also set folderId for legacy support
+		if (objectId != null && folderId == null) {
+			request.setAttribute("folderId", objectId);
+		}
+		
+		// Set parentId if not present but objectId is available
+		if (objectId != null && parentId == null) {
+			request.setAttribute("parentId", objectId);
+		}
+	}
+	
+	private boolean isCreateDocumentRequest(HttpServletRequest request) {
+		String cmisAction = request.getParameter("cmisaction");
+		return "createDocument".equals(cmisAction);
+	}
+	
+	private void handleException(Exception e, HttpServletResponse response) throws IOException {
+		if (e instanceof CmisUnauthorizedException || e instanceof CmisPermissionDeniedException) {
+			response.setHeader("WWW-Authenticate", "Basic realm=\"CMIS\"");
+			response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+		}
+		
+		try {
+			if (e instanceof CmisBaseException) {
+				CmisBaseException cmisException = (CmisBaseException) e;
+				writeErrorResponse(response, cmisException);
+			} else {
+				response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+				response.getWriter().write("{\"error\":\"Internal server error\"}");
+			}
+		} catch (Exception writeEx) {
+			log.error("Failed to write error response: " + writeEx.getMessage());
+			response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+		}
+	}
+
 }
