@@ -38,7 +38,9 @@ import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.commons.enums.DateTimeFormat;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisUnauthorizedException;
 import org.apache.chemistry.opencmis.commons.impl.Constants;
 import org.apache.chemistry.opencmis.commons.impl.JSONConverter;
 import org.apache.chemistry.opencmis.commons.impl.json.JSONArray;
@@ -304,7 +306,19 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             toReport = new CmisRuntimeException(ex.getMessage(), ex);
         }
 
-        printError(context, toReport, request, response);
+        if (toReport instanceof CmisUnauthorizedException) {
+            response.setHeader("WWW-Authenticate", "Basic realm=\"CMIS\", charset=\"UTF-8\"");
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Authorization Required");
+        } else if (toReport instanceof CmisPermissionDeniedException) {
+            if (context == null || context.getUsername() == null) {
+                response.setHeader("WWW-Authenticate", "Basic realm=\"CMIS\", charset=\"UTF-8\"");
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Authorization Required");
+            } else {
+                printError(context, toReport, request, response);
+            }
+        } else {
+            printError(context, toReport, request, response);
+        }
     }
 
     private void closeService(CmisService service) {
