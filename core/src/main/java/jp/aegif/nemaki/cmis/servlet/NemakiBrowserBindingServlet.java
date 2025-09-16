@@ -2533,8 +2533,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
             
             // Extract properties from Browser Binding property array format
+            System.err.println("*** CREATE FOLDER DEBUG: About to call extractPropertiesFromRequest ***");
             java.util.Map<String, Object> properties = extractPropertiesFromRequest(request);
+            System.err.println("*** CREATE FOLDER DEBUG: extractPropertiesFromRequest returned: " + properties + " ***");
+            System.err.println("*** CREATE FOLDER DEBUG: Properties size: " + properties.size() + " ***");
+            System.err.println("*** CREATE FOLDER DEBUG: Properties keys: " + properties.keySet() + " ***");
+            
             if (!properties.containsKey("cmis:name")) {
+                System.err.println("*** CREATE FOLDER ERROR: cmis:name not found in properties map ***");
                 throw new IllegalArgumentException("cmis:name property is required for folder creation");
             }
             
