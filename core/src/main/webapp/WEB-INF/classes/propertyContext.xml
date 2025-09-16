@@ -29,4 +29,25 @@
 	<!-- Spring Property Manager for additional functionality -->
     <bean id="springPropertyManager" class="jp.aegif.nemaki.util.SpringPropertyManager">
     </bean>
+    
+    <!-- SpringPropertiesUtil bean for PropertyManager compatibility -->
+    <bean id="springPropertiesUtil" class="jp.aegif.nemaki.util.spring.SpringPropertiesUtil">
+		<property name="locations">
+			<list>
+				<value>classpath:nemakiware.properties</value>
+				<value>classpath:nemakiware-capability.properties</value>
+                <value>classpath:nemakiware-basetype.properties</value>
+                <value>classpath:nemakiware-property.properties</value>
+				<!-- Environment-specific overrides -->
+				<value>classpath:nemakiware-dev.properties</value>
+				<!-- Profile-specific overrides (explicit file names) -->
+				<value>classpath:nemakiware-jetty.properties</value>
+				<value>classpath:nemakiware-docker.properties</value>
+				<value>classpath:custom-nemakiware.properties</value>
+				<value>classpath:app-server-core.properties</value>
+			</list>
+		</property>
+		<property name="ignoreResourceNotFound" value="true"/>
+		<property name="ignoreUnresolvablePlaceholders" value="false"/>
+    </bean>
 </beans>

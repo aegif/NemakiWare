@@ -44,7 +44,7 @@
 		</property>
 	</bean>
 	<bean id="propertyManager" class="jp.aegif.nemaki.util.PropertyManager">
-        <property name="propertyConfigurer" ref="propertyConfigurer" />
+        <property name="propertyConfigurer" ref="springPropertiesUtil" />
         <property name="contentDaoService">
 			<ref bean="ContentDaoService" />
 		</property>
