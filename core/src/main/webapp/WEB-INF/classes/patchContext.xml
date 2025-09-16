@@ -64,10 +64,10 @@
 			<ref bean="propertyManager" />
 		</property>
 		<property name="typeService">
-			<ref bean="typeService" />
+			<ref bean="TypeService" />
 		</property>
 		<property name="typeManager">
-			<ref bean="typeManager" />
+			<ref bean="TypeManager" />
 		</property>
 		<property name="couchdbUrl">
 			<value>${db.couchdb.url}</value>
@@ -108,10 +108,10 @@
 			<ref bean="RepositoryService" />
 		</property>
 		<property name="typeService">
-			<ref bean="typeService" />
+			<ref bean="TypeService" />
 		</property>
 		<property name="typeManager">
-			<ref bean="typeManager" />
+			<ref bean="TypeManager" />
 		</property>
 	</bean>
 

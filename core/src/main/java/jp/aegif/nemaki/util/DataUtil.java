@@ -883,13 +883,13 @@ public class DataUtil {
 				original.isOpenChoice(),
 				original.isOrderable(),
 				clonedDefaultValue,
-				(Long) typeSpecificValues.get("minValue"),
-				(Long) typeSpecificValues.get("maxValue"),
+				convertToLong(typeSpecificValues.get("minValue")),
+				convertToLong(typeSpecificValues.get("maxValue")),
 				(Resolution) typeSpecificValues.get("resolution"),
 				(DecimalPrecision) typeSpecificValues.get("decimalPrecision"),
 				(BigDecimal) typeSpecificValues.get("decimalMinValue"),
 				(BigDecimal) typeSpecificValues.get("decimalMaxValue"),
-				(Long) typeSpecificValues.get("maxLength")
+				convertToLong(typeSpecificValues.get("maxLength"))
 			);
 		} catch (Exception e) {
 			// Log cloning failure for debugging
@@ -1001,6 +1001,34 @@ public class DataUtil {
 		}
 		
 		return typeSpecificValues;
+	}
+
+	/**
+	 * Safely convert Object to Long, handling both BigInteger and Long types
+	 */
+	private static Long convertToLong(Object value) {
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof Long) {
+			return (Long) value;
+		}
+		if (value instanceof BigInteger) {
+			return ((BigInteger) value).longValue();
+		}
+		if (value instanceof Integer) {
+			return ((Integer) value).longValue();
+		}
+		if (value instanceof String) {
+			try {
+				return Long.valueOf((String) value);
+			} catch (NumberFormatException e) {
+				log.warn("Failed to convert string value to Long: " + value);
+				return null;
+			}
+		}
+		log.warn("Unexpected type for Long conversion: " + value.getClass().getName() + ", value: " + value);
+		return null;
 	}
 
 	public static ObjectData copyObjectData(ObjectData objectData) {

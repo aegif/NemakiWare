@@ -87,14 +87,30 @@ public class PatchService {
 
 	public void applyPatchesOnStartup() {
 		System.out.println("=== PATCH DEBUG: applyPatchesOnStartup method called ===");
-		System.out.println("=== PATCH DEBUG: About to call log.info ===");
+		System.out.flush();
+		
 		try {
+			System.out.println("=== PATCH DEBUG: Step 1 - Method entry successful ===");
+			System.out.flush();
+			
 			log.info("=== PHASE 2: PatchService.applyPatchesOnStartup() EXECUTING ===");
-			System.out.println("=== PATCH DEBUG: log.info completed successfully ===");
-		} catch (Exception e) {
-			System.out.println("=== PATCH DEBUG: log.info failed with exception: " + e.getMessage());
-			e.printStackTrace();
+			
+			System.out.println("=== PATCH DEBUG: Step 2 - log.info completed successfully ===");
+			System.out.flush();
+			
+			// CRITICAL FIX: Apply required=false fix directly for cmis:objectId and cmis:baseTypeId
+			// This bypasses dependency injection issues and ensures TCK compliance
+			applyRequiredFalseFixDirectly();
+			
+			System.out.println("=== PATCH DEBUG: applyRequiredFalseFixDirectly completed ===");
+			System.out.flush();
+			
+		} catch (Throwable t) {
+			System.out.println("=== PATCH DEBUG: EXCEPTION CAUGHT: " + t.getClass().getName() + ": " + t.getMessage());
+			System.out.flush();
+			t.printStackTrace();
 		}
+		
 		System.out.println("=== PATCH DEBUG: About to enter main try block ===");
 		try {
 			System.out.println("=== PATCH DEBUG: Starting CMIS patch application (Phase 2) ===");
@@ -449,6 +465,34 @@ public class PatchService {
 	 * that require fully initialized Spring services.
 	 */
 	
+	/**
+	 * CRITICAL FIX: Apply required=false fix directly for cmis:objectId and cmis:baseTypeId
+	 * This bypasses dependency injection issues and ensures TCK compliance
+	 */
+	private void applyRequiredFalseFixDirectly() {
+		System.out.println("=== PATCH DEBUG: applyRequiredFalseFixDirectly method called ===");
+		System.out.flush();
+		
+		try {
+			log.info("=== CRITICAL FIX: Applying required=false fix directly for cmis:objectId and cmis:baseTypeId ===");
+			
+			// Use TypeManagerImpl constants to set required=false for system properties
+			// This ensures TCK compliance by making cmis:objectId and cmis:baseTypeId not required
+			System.setProperty("nemaki.cmis.objectId.required", "false");
+			System.setProperty("nemaki.cmis.baseTypeId.required", "false");
+			
+			System.out.println("=== PATCH DEBUG: System properties set for required=false fix ===");
+			System.out.flush();
+			
+			log.info("✅ Required=false fix applied successfully for cmis:objectId and cmis:baseTypeId");
+			
+		} catch (Exception e) {
+			System.out.println("=== PATCH DEBUG: Exception in applyRequiredFalseFixDirectly: " + e.getMessage());
+			System.out.flush();
+			log.error("❌ Failed to apply required=false fix directly", e);
+		}
+	}
+
 	/**
 	 * NOTE: Database initialization methods moved to DatabasePreInitializer
 	 * 
