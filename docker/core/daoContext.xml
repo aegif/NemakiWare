@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
+
+	<!-- DAO Service Beans (without non-cached implementation) -->
+	<bean id="ContentDaoService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.dao.ContentDaoService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="contentDaoService" />
+		</property>
+	</bean>
+	<bean id="contentDaoService" class="jp.aegif.nemaki.dao.impl.cached.ContentDaoServiceImpl">
+		<property name="nonCachedContentDaoService">
+			<ref bean="nonCachedContentDaoService" />
+		</property>
+		<property name="nemakiCachePool">
+			<ref bean="nemakiCachePool" />
+		</property>
+	</bean>
+	
+	<bean id="PrincipalDaoService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.dao.PrincipalDaoService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="principalDaoService" />
+		</property>
+	</bean>
+	<bean id="principalDaoService" class="jp.aegif.nemaki.dao.impl.cached.PrincipalDaoServiceImpl">
+		<property name="nonCachedPrincipalDaoService">
+			<ref bean="nonCachedPrincipalDaoService" />
+		</property>
+		<property name="nemakiCachePool">
+			<ref bean="nemakiCachePool" />
+		</property>
+	</bean>
+	<bean id="propertyManager" class="jp.aegif.nemaki.util.PropertyManager">
+        <property name="propertyConfigurer" ref="springPropertiesUtil" />
+        <property name="contentDaoService">
+			<ref bean="ContentDaoService" />
+		</property>
+    </bean>
+</beans>
