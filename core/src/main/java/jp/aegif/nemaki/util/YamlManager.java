@@ -28,7 +28,7 @@ import java.io.Reader;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.jvyaml.YAML;
+import com.esotericsoftware.yamlbeans.YamlReader;
 
 public class YamlManager {
 
@@ -40,27 +40,40 @@ public class YamlManager {
 	}
 
 	public Object loadYml(){
+		log.info("YamlManager.loadYml() called for file: " + baseModelFile);
 		InputStream is = getClass().getClassLoader().getResourceAsStream(baseModelFile);
 		if (is == null) {
-			log.error("yaml file not found");
+			log.error("yaml file not found: " + baseModelFile);
+			return null;
 		}
+		log.info("InputStream found for file: " + baseModelFile);
 
-		Reader reader;
+		Reader reader = null;
+		YamlReader yamlReader = null;
 		try {
 			reader = new InputStreamReader(is, "UTF-8");
-
-	        reader = new BufferedReader(reader);
-	        StringBuffer buf = new StringBuffer();
-	        int ch;
-	        while ((ch = reader.read()) >= 0)
-	            buf.append((char)ch);
-	        reader.close();
-	        Object ydoc = YAML.load(buf.toString());
-
-	        return ydoc;
+			reader = new BufferedReader(reader);
+			log.info("Created BufferedReader for file: " + baseModelFile);
+			
+			yamlReader = new YamlReader(reader);
+			log.info("Created YamlReader for file: " + baseModelFile);
+			Object ydoc = yamlReader.read();
+			log.info("YamlReader.read() completed for file: " + baseModelFile + ", result: " + (ydoc != null ? ydoc.getClass().getName() : "null"));
+			
+			return ydoc;
 		} catch (Exception e) {
-			log.error(baseModelFile + " load failed", e);
-
+			log.error(baseModelFile + " load failed with yamlbeans", e);
+		} finally {
+			try {
+				if (yamlReader != null) {
+					yamlReader.close();
+				}
+				if (reader != null) {
+					reader.close();
+				}
+			} catch (Exception e) {
+				log.warn("Error closing YAML reader resources", e);
+			}
 		}
 		return null;
 	}
