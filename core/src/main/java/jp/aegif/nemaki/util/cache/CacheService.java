@@ -89,17 +89,41 @@ public class CacheService {
 
 		private void override(Map<String, Object> map) {
 			if (map.get("cacheEnabled") != null)
-				cacheEnabled = (Boolean) map.get("cacheEnabled");
+				cacheEnabled = convertToBoolean(map.get("cacheEnabled"));
 			if (map.get("maxElementsInMemory") != null)
-				maxElementsInMemory = (Long) map.get("maxElementsInMemory");
+				maxElementsInMemory = convertToLong(map.get("maxElementsInMemory"));
 			if (map.get("overflowToDisc") != null)
-				overflowToDisc = (Boolean) map.get("overflowToDisc");
+				overflowToDisc = convertToBoolean(map.get("overflowToDisc"));
 			if (map.get("eternal") != null)
-				eternal = (Boolean) map.get("eternal");
+				eternal = convertToBoolean(map.get("eternal"));
 			if (map.get("timeToLiveSeconds") != null)
-				timeToLiveSeconds = (Long) map.get("timeToLiveSeconds");
+				timeToLiveSeconds = convertToLong(map.get("timeToLiveSeconds"));
 			if (map.get("timeToIdleSeconds") != null)
-				timeToIdleSeconds = (Long) map.get("timeToIdleSeconds");
+				timeToIdleSeconds = convertToLong(map.get("timeToIdleSeconds"));
+		}
+		
+		private Boolean convertToBoolean(Object value) {
+			if (value instanceof Boolean) {
+				return (Boolean) value;
+			} else if (value instanceof String) {
+				return Boolean.parseBoolean((String) value);
+			}
+			return null;
+		}
+		
+		private Long convertToLong(Object value) {
+			if (value instanceof Long) {
+				return (Long) value;
+			} else if (value instanceof Integer) {
+				return ((Integer) value).longValue();
+			} else if (value instanceof String) {
+				try {
+					return Long.parseLong((String) value);
+				} catch (NumberFormatException e) {
+					return null;
+				}
+			}
+			return null;
 		}
 	}
 
