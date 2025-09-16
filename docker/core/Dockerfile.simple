@@ -46,6 +46,9 @@ COPY ./propertyContext.xml /usr/local/tomcat/webapps/core/WEB-INF/classes/proper
 # Copy updated applicationContext.xml with fixed circular dependency
 COPY ./applicationContext.xml /usr/local/tomcat/webapps/core/WEB-INF/classes/applicationContext.xml
 
+# Copy updated daoContext.xml with springPropertiesUtil reference
+COPY ./daoContext.xml /usr/local/tomcat/webapps/core/WEB-INF/classes/daoContext.xml
+
 # Copy additional property files that SpringPropertiesUtil requires from local build context
 COPY ./nemakiware-capability.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware-capability.properties
 COPY ./nemakiware-property.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware-property.properties
