@@ -2534,10 +2534,17 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             // Extract properties from Browser Binding property array format
             System.err.println("*** CREATE FOLDER DEBUG: About to call extractPropertiesFromRequest ***");
-            java.util.Map<String, Object> properties = extractPropertiesFromRequest(request);
-            System.err.println("*** CREATE FOLDER DEBUG: extractPropertiesFromRequest returned: " + properties + " ***");
-            System.err.println("*** CREATE FOLDER DEBUG: Properties size: " + properties.size() + " ***");
-            System.err.println("*** CREATE FOLDER DEBUG: Properties keys: " + properties.keySet() + " ***");
+            java.util.Map<String, Object> properties = null;
+            try {
+                properties = extractPropertiesFromRequest(request);
+                System.err.println("*** CREATE FOLDER DEBUG: extractPropertiesFromRequest returned successfully: " + properties + " ***");
+                System.err.println("*** CREATE FOLDER DEBUG: Properties size: " + properties.size() + " ***");
+                System.err.println("*** CREATE FOLDER DEBUG: Properties keys: " + properties.keySet() + " ***");
+            } catch (Exception e) {
+                System.err.println("*** CREATE FOLDER ERROR: extractPropertiesFromRequest threw exception: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
+                e.printStackTrace();
+                properties = new java.util.HashMap<>();
+            }
             
             if (!properties.containsKey("cmis:name")) {
                 System.err.println("*** CREATE FOLDER ERROR: cmis:name not found in properties map ***");
@@ -3098,8 +3105,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      */
     private java.util.Map<String, Object> extractPropertiesFromRequest(HttpServletRequest request) {
         System.err.println("*** CRITICAL: extractPropertiesFromRequest method ENTRY POINT ***");
+        System.err.flush(); // Force immediate output
         java.util.Map<String, Object> properties = new java.util.HashMap<>();
-        java.util.Map<String, String[]> paramMap = request.getParameterMap();
+        java.util.Map<String, String[]> paramMap = null;
+        
+        try {
+            paramMap = request.getParameterMap();
+            System.err.println("*** CRITICAL: Got parameter map successfully, size: " + paramMap.size() + " ***");
+        } catch (Exception e) {
+            System.err.println("*** CRITICAL ERROR: Failed to get parameter map: " + e.getMessage() + " ***");
+            e.printStackTrace();
+            return properties;
+        }
         
         System.err.println("*** PROPERTY EXTRACTION DEBUG: All parameters ***");
         for (String paramName : paramMap.keySet()) {
