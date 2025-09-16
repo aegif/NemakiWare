@@ -2534,9 +2534,11 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             // Extract properties from Browser Binding property array format
             System.err.println("*** CREATE FOLDER DEBUG: About to call extractPropertiesFromRequest ***");
+            System.err.println("*** CREATE FOLDER DEBUG: Method exists check: " + (this.getClass().getDeclaredMethod("extractPropertiesFromRequest", HttpServletRequest.class) != null) + " ***");
             java.util.Map<String, Object> properties = null;
             try {
-                properties = extractPropertiesFromRequest(request);
+                System.err.println("*** CREATE FOLDER DEBUG: Calling method now... ***");
+                properties = this.extractPropertiesFromRequest(request);
                 System.err.println("*** CREATE FOLDER DEBUG: extractPropertiesFromRequest returned successfully: " + properties + " ***");
                 System.err.println("*** CREATE FOLDER DEBUG: Properties size: " + properties.size() + " ***");
                 System.err.println("*** CREATE FOLDER DEBUG: Properties keys: " + properties.keySet() + " ***");
