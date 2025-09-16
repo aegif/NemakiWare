@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <beans xmlns="http://www.springframework.org/schema/beans"
 	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:context="http://www.springframework.org/schema/context"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
-		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
+	
+	<!-- Enable annotation-driven dependency injection -->
+	<context:annotation-config />
 	
 	<aop:config>
   		<aop:aspect id="aspect" ref="jsonLogger">
@@ -14,6 +19,8 @@
 
 	<bean id="jsonLogger" class="${log.aspect.class}" init-method="init">
 		<property name="jsonConfigurationFile" value="${log.config.json.file}"></property>
+		<!-- Explicit property injection for debugObjectMapper to ensure @Autowired works -->
+		<property name="mapper" ref="debugObjectMapper"></property>
 	</bean>
 	
 	<bean id="logResource" class="jp.aegif.nemaki.rest.LogResource">

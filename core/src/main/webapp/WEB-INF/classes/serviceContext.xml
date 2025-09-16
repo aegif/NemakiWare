@@ -94,7 +94,7 @@
             <ref bean="typeManager" />
         </property>
     </bean>
-    <bean id="typeManager" class="jp.aegif.nemaki.cmis.aspect.type.impl.TypeManagerImpl" init-method="init" depends-on="typeService,nemakiApplicationContextLoader" lazy-init="false">
+    <bean id="typeManager" class="jp.aegif.nemaki.cmis.aspect.type.impl.TypeManagerImpl" init-method="init" depends-on="typeService" lazy-init="false">
         <property name="typeService">
             <ref bean="typeService" />
         </property>
