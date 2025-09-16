@@ -2,7 +2,7 @@ package jp.aegif.nemaki.util.spring;
 
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.beans.factory.config.PropertyPlaceholderConfigurer;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.web.context.support.XmlWebApplicationContext;
@@ -10,7 +10,7 @@ import org.springframework.web.context.support.XmlWebApplicationContext;
 public class NemakiApplicationContextLoader implements ApplicationContextAware,
 		InitializingBean {
 	private XmlWebApplicationContext applicationContext;
-	private PropertyPlaceholderConfigurer propertyConfigurer;
+	private Object propertyConfigurer;
 	private String[] configLocations;
 
 	@Override
@@ -31,15 +31,14 @@ public class NemakiApplicationContextLoader implements ApplicationContextAware,
 			}
 		}
 		applicationContext.setConfigLocations(configLocations);
-		applicationContext.addBeanFactoryPostProcessor(propertyConfigurer);
+		applicationContext.addBeanFactoryPostProcessor((BeanFactoryPostProcessor) propertyConfigurer);
 		System.out.println("=== CONTEXT LOADER DEBUG: About to call applicationContext.refresh() ===");
 		applicationContext.refresh();
 		System.out.println("=== CONTEXT LOADER DEBUG: applicationContext.refresh() completed successfully ===");
 	}
 
-	public void setPropertyConfigurer(
-			PropertyPlaceholderConfigurer propertyConfigurer) {
-		this.propertyConfigurer = propertyConfigurer;
+	public void setPropertyConfigurer(Object propertyConfigurer) {
+		this.propertyConfigurer = (BeanFactoryPostProcessor) propertyConfigurer;
 	}
 
 	public void setConfigLocations(String[] configLocations) {

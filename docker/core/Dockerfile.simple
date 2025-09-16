@@ -40,6 +40,9 @@ COPY ./app-server-core.properties /usr/local/tomcat/webapps/core/WEB-INF/classes
 COPY ./nemakiware.properties /usr/local/tomcat/conf/nemakiware.properties
 COPY ./nemakiware.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware.properties
 
+# Copy updated propertyContext.xml with PropertySourcesPlaceholderConfigurer
+COPY ./propertyContext.xml /usr/local/tomcat/webapps/core/WEB-INF/classes/propertyContext.xml
+
 # Copy additional property files that SpringPropertiesUtil requires from local build context
 COPY ./nemakiware-capability.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware-capability.properties
 COPY ./nemakiware-property.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware-property.properties
