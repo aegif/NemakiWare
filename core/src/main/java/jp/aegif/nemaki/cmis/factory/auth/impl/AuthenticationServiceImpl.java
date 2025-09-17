@@ -194,7 +194,15 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	}
 
 	private UserItem getAuthenticatedUserItem(String repositoryId, String userId, String password) {
+		System.out.println("=== AUTH DEBUG: getAuthenticatedUserItem called ===");
+		System.out.println("=== AUTH DEBUG: repositoryId=" + repositoryId + ", userId=" + userId + " ===");
+		
 		UserItem u = contentService.getUserItemById(repositoryId, userId);
+		
+		System.out.println("=== AUTH DEBUG: UserItem retrieved: " + (u != null ? "FOUND" : "NOT FOUND") + " ===");
+		if (u != null) {
+			System.out.println("=== AUTH DEBUG: UserItem details - userId=" + u.getUserId() + ", passwordHash=" + u.getPassowrd() + " ===");
+		}
 		
 		if (log.isDebugEnabled()) {
 			log.debug("Authentication attempt - repositoryId: " + repositoryId + ", userId: " + userId + 
@@ -203,6 +211,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		// パスワード認証とセキュリティアップグレード
 		if (u != null && StringUtils.isNotBlank(u.getPassowrd())) {
+			System.out.println("=== AUTH DEBUG: Password field is not blank, attempting match ===");
+			System.out.println("=== AUTH DEBUG: Input password=" + password + ", stored hash=" + u.getPassowrd() + " ===");
+			
 			if (log.isDebugEnabled()) {
 				log.debug("Password field is not blank, attempting match with upgrade");
 			}
@@ -211,7 +222,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			AuthenticationUtil.PasswordMatchResult result = 
 				AuthenticationUtil.passwordMatchesWithUpgrade(password, u.getPassowrd());
 			
+			System.out.println("=== AUTH DEBUG: Password match result: " + result.matches() + " ===");
+			
 			if (result.matches()) {
+				System.out.println("=== AUTH DEBUG: Password match SUCCESS ===");
 				if (log.isDebugEnabled()) {
 					log.debug("Password match SUCCESS");
 				}
@@ -242,11 +256,13 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 				log.debug(String.format( "[%s][%s]Get authenticated user successfully ! , Is admin?  : %s", repositoryId, userId , u.isAdmin()));
 				return u;
 			} else {
+				System.out.println("=== AUTH DEBUG: Password match FAILED ===");
 				if (log.isDebugEnabled()) {
 					log.debug("Password match FAILED");
 				}
 			}
 		} else {
+			System.out.println("=== AUTH DEBUG: Password field is blank or user is null ===");
 			if (log.isDebugEnabled()) {
 				log.debug("Password field is blank or user is null");
 			}
