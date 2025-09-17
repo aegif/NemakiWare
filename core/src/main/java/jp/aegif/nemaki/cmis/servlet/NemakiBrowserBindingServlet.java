@@ -706,13 +706,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
         
         try {
-            // CRITICAL FIX: Use proper HTTP method delegation instead of service()
+            // CRITICAL FIX: Only handle POST requests in service method, let GET requests go to doGet override
             if ("POST".equalsIgnoreCase(method)) {
                 log.error("NEMAKI SERVLET: Calling super.doPost() for POST request delegation");
                 super.doPost(finalRequest, response);
-            } else if ("GET".equalsIgnoreCase(method)) {
-                log.error("NEMAKI SERVLET: Calling super.doGet() for GET request delegation");
-                super.doGet(finalRequest, response);
             } else {
                 log.error("NEMAKI SERVLET: Calling super.service() for " + method + " request delegation");
                 super.service(finalRequest, response);
@@ -1753,8 +1750,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     }
     
     /**
-     * CRITICAL FIX: Override doGet to confirm which requests reach our servlet.
-     * This helps us understand OpenCMIS routing behavior.
+     * CRITICAL FIX: Override doGet to handle GET requests properly.
+     * Browser binding GET requests should be processed by our servlet, not delegated to parent.
      */
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) 
@@ -1763,8 +1760,37 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         System.err.println("!!! DOGET OVERRIDE: GET REQUEST INTERCEPTED !!!");
         System.err.println("!!! DOGET OVERRIDE: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
         
-        // Force routing through our custom service method
-        this.service(request, response);
+        // Handle GET requests directly instead of delegating to super
+        try {
+            // Extract repository ID from path
+            String pathInfo = request.getPathInfo();
+            if (pathInfo != null && pathInfo.startsWith("/")) {
+                pathInfo = pathInfo.substring(1);
+            }
+            
+            String repositoryId = pathInfo;
+            if (repositoryId == null || repositoryId.isEmpty()) {
+                repositoryId = "bedroom"; // Default repository
+            }
+            
+            System.err.println("!!! DOGET OVERRIDE: Processing GET for repository: " + repositoryId + " !!!");
+            
+            // Handle repository-level GET request (get repository info)
+            handleRepositoryLevelRequestWithoutSelector(request, response, repositoryId);
+            
+        } catch (Exception e) {
+            System.err.println("!!! DOGET OVERRIDE: Error processing GET request: " + e.getMessage() + " !!!");
+            e.printStackTrace();
+            
+            // Convert to ServletException since doGet can only throw ServletException or IOException
+            if (e instanceof ServletException) {
+                throw (ServletException) e;
+            } else if (e instanceof IOException) {
+                throw (IOException) e;
+            } else {
+                throw new ServletException("Error processing GET request", e);
+            }
+        }
     }
     
     /**
