@@ -706,7 +706,17 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
         
         try {
-            super.service(finalRequest, response);
+            // CRITICAL FIX: Use proper HTTP method delegation instead of service()
+            if ("POST".equalsIgnoreCase(method)) {
+                log.error("NEMAKI SERVLET: Calling super.doPost() for POST request delegation");
+                super.doPost(finalRequest, response);
+            } else if ("GET".equalsIgnoreCase(method)) {
+                log.error("NEMAKI SERVLET: Calling super.doGet() for GET request delegation");
+                super.doGet(finalRequest, response);
+            } else {
+                log.error("NEMAKI SERVLET: Calling super.service() for " + method + " request delegation");
+                super.service(finalRequest, response);
+            }
         } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException objNotFoundException) {
             // CRITICAL FIX: Specific handling for CmisObjectNotFoundException to apply proper HTTP 404 status code
             log.error("CmisObjectNotFoundException caught - applying custom HTTP status code mapping: " + objNotFoundException.getMessage());
@@ -2279,6 +2289,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 case "createFolder":
                     return handleCreateFolderOperation(request, response, pathInfo);
                     
+                case "createDocument":
+                    System.err.println("*** CMIS ROUTER: Routing createDocument to parent servlet ***");
+                    return false; // Delegate to parent servlet for standard OpenCMIS processing
+                    
                 case "createType":
                     return handleCreateTypeOperation(request, response, pathInfo);
                     
@@ -3234,7 +3248,32 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                                 properties.put(propertyId, propertyValue);
                                 System.err.println("*** PROPERTY EXTRACTION SUCCESS: " + propertyId + " = " + propertyValue + " ***");
                             } else {
-                                System.err.println("*** PROPERTY EXTRACTION ERROR: Invalid colon position in subSpec: '" + subSpec + "' (secondColonIndex=" + secondColonIndex + ", length=" + subSpec.length() + ") ***");
+                                System.err.println("*** PROPERTY EXTRACTION FALLBACK: Attempting alternative parsing for: '" + subSpec + "' ***");
+                                
+                                // Check if this might be a property without explicit value separator
+                                if (subSpec.startsWith("cmis:name") && subSpec.length() > "cmis:name".length()) {
+                                    // Extract everything after "cmis:name" as the value
+                                    String value = subSpec.substring("cmis:name".length()).trim();
+                                    if (value.startsWith(":") || value.startsWith("=")) {
+                                        value = value.substring(1).trim();
+                                    }
+                                    if (!value.isEmpty()) {
+                                        properties.put("cmis:name", value);
+                                        System.err.println("*** PROPERTY EXTRACTION FALLBACK SUCCESS: cmis:name = " + value + " ***");
+                                    }
+                                } else if (subSpec.startsWith("cmis:objectTypeId") && subSpec.length() > "cmis:objectTypeId".length()) {
+                                    // Extract everything after "cmis:objectTypeId" as the value
+                                    String value = subSpec.substring("cmis:objectTypeId".length()).trim();
+                                    if (value.startsWith(":") || value.startsWith("=")) {
+                                        value = value.substring(1).trim();
+                                    }
+                                    if (!value.isEmpty()) {
+                                        properties.put("cmis:objectTypeId", value);
+                                        System.err.println("*** PROPERTY EXTRACTION FALLBACK SUCCESS: cmis:objectTypeId = " + value + " ***");
+                                    }
+                                } else {
+                                    System.err.println("*** PROPERTY EXTRACTION ERROR: Invalid colon position in subSpec: '" + subSpec + "' (secondColonIndex=" + secondColonIndex + ", length=" + subSpec.length() + ") ***");
+                                }
                             }
                         } else {
                             System.err.println("*** PROPERTY EXTRACTION ERROR: No colon found in subSpec: '" + subSpec + "' ***");
