@@ -80,7 +80,7 @@ import jp.aegif.nemaki.cmis.service.PolicyService;
 import jp.aegif.nemaki.cmis.service.RelationshipService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
-import jp.aegif.nemaki.plugin.action.JavaBackedAction;
+// import jp.aegif.nemaki.plugin.action.JavaBackedAction;
 
 /**
  * Nemaki CMIS service.

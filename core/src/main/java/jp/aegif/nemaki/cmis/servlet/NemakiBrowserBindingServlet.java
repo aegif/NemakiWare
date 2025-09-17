@@ -3245,64 +3245,125 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     
                     // CRITICAL FIX: Handle comma-separated format within single parameter
                     // Split by comma and process each property specification
+                    // BUT: Be careful not to split on commas within property values
                     String[] propertySpecs;
-                    if (propertySpec.contains(",")) {
+                    
+                    // ULTRA CRITICAL FIX: Never split by comma for equals-based properties
+                    // The input "cmis:objectTypeId=cmis:folder" should be treated as a single property
+                    boolean shouldSplitByComma = false;
+                    if (propertySpec.contains(",") && !propertySpec.contains("=")) {
+                        shouldSplitByComma = true;
+                    }
+                    // CRITICAL: Never split comma when equals signs are present - treat as single property
+                    
+                    if (shouldSplitByComma) {
                         propertySpecs = propertySpec.split(",");
-                        System.err.println("*** PROPERTY EXTRACTION DEBUG: Split comma-separated into " + propertySpecs.length + " specs: " + java.util.Arrays.toString(propertySpecs) + " ***");
+                        System.err.println("*** PROPERTY EXTRACTION DEBUG: Split comma-separated format into " + propertySpecs.length + " specs: " + java.util.Arrays.toString(propertySpecs) + " ***");
                     } else {
                         propertySpecs = new String[]{propertySpec};
-                        System.err.println("*** PROPERTY EXTRACTION DEBUG: Single spec (no comma): '" + propertySpec + "' ***");
+                        System.err.println("*** PROPERTY EXTRACTION DEBUG: Single spec (no comma splitting): '" + propertySpec + "' ***");
                     }
                     
                     for (int j = 0; j < propertySpecs.length; j++) {
                         String subSpec = propertySpecs[j].trim();
                         System.err.println("*** PROPERTY EXTRACTION DEBUG: Processing subSpec[" + j + "] = '" + subSpec + "' ***");
                         
-                        if (subSpec.contains(":")) {
-                            // CRITICAL FIX: For CMIS properties like "cmis:name:value" or "cmis:objectTypeId:cmis:folder"
+                        // CRITICAL FIX: Handle both equals and colon formats - PRIORITIZE EQUALS
+                        
+                        String propertyId = null;
+                        String propertyValue = null;
+                        
+                        System.err.println("*** CRITICAL DEBUG: About to check subSpec.contains('=') for: '" + subSpec + "' ***");
+                        boolean containsEquals = subSpec.contains("=");
+                        System.err.println("*** CRITICAL DEBUG: subSpec.contains('=') result: " + containsEquals + " ***");
+                        
+                        // ULTRA CRITICAL FIX: Force equals parsing to execute first
+                        System.err.println("*** ULTRA CRITICAL: FORCING EQUALS PARSING EXECUTION ***");
+                        
+                        if (containsEquals) {
+                            // Handle equals format: "cmis:name=value" or "cmis:objectTypeId=cmis:folder"
+                            // CRITICAL FIX: Find the FIRST equals sign to handle standard property format
+                            int equalsIndex = subSpec.indexOf("=");
+                            System.err.println("*** PROPERTY EXTRACTION DEBUG: EQUALS DETECTED - subSpec='" + subSpec + "' ***");
+                            System.err.println("*** PROPERTY EXTRACTION DEBUG: Found equals at index " + equalsIndex + " (using indexOf) ***");
+                            
+                            if (equalsIndex > 0 && equalsIndex < subSpec.length() - 1) {
+                                // CRITICAL FIX: Ensure proper substring extraction for equals parsing
+                                propertyId = subSpec.substring(0, equalsIndex).trim();
+                                propertyValue = subSpec.substring(equalsIndex + 1).trim();
+                                
+                                System.err.println("*** PROPERTY EXTRACTION DEBUG: RAW EXTRACTION - subSpec='" + subSpec + "', equalsIndex=" + equalsIndex + " ***");
+                                System.err.println("*** PROPERTY EXTRACTION DEBUG: EXTRACTED - propertyId='" + propertyId + "', propertyValue='" + propertyValue + "' ***");
+                                
+                                // CRITICAL FIX: Validate extracted property ID and value
+                                if (propertyId != null && propertyValue != null && !propertyId.isEmpty() && !propertyValue.isEmpty()) {
+                                    propertyValue = propertyValue.replaceAll("\\s+", " ").trim();
+                                    
+                                    // CRITICAL DEBUG: Verify final values before adding to map
+                                    System.err.println("*** PROPERTY EXTRACTION DEBUG: FINAL VALUES - propertyId='" + propertyId + "', propertyValue='" + propertyValue + "' ***");
+                                    
+                                    properties.put(propertyId, propertyValue);
+                                    System.err.println("*** PROPERTY EXTRACTION SUCCESS: " + propertyId + " = " + propertyValue + " ***");
+                                    
+                                    // CRITICAL: Always continue after successful equals parsing to prevent colon parsing
+                                    System.err.println("*** EQUALS PARSING COMPLETE - SKIPPING COLON PARSING ***");
+                                    continue;
+                                } else {
+                                    System.err.println("*** PROPERTY EXTRACTION ERROR: Invalid extracted values - propertyId='" + propertyId + "', propertyValue='" + propertyValue + "' ***");
+                                }
+                            } else {
+                                System.err.println("*** PROPERTY EXTRACTION DEBUG: Equals format FAILED - invalid equals index ***");
+                                // CRITICAL: If equals parsing fails, don't try colon parsing - skip this spec
+                                System.err.println("*** PROPERTY EXTRACTION ERROR: Skipping invalid equals format: '" + subSpec + "' ***");
+                            }
+                        } else if (subSpec.contains(":")) {
+                            // Handle colon format: "cmis:name:value" (fallback when equals parsing fails)
                             // We need to find the SECOND colon (after the property namespace)
                             int firstColonIndex = subSpec.indexOf(":");
                             int secondColonIndex = subSpec.indexOf(":", firstColonIndex + 1);
+                            System.err.println("*** PROPERTY EXTRACTION DEBUG: COLON FALLBACK - subSpec='" + subSpec + "' ***");
                             System.err.println("*** PROPERTY EXTRACTION DEBUG: firstColonIndex = " + firstColonIndex + ", secondColonIndex = " + secondColonIndex + " ***");
                             
                             if (secondColonIndex > 0 && secondColonIndex < subSpec.length() - 1) {
-                                String propertyId = subSpec.substring(0, secondColonIndex).trim();
-                                String propertyValue = subSpec.substring(secondColonIndex + 1).trim();
-                                
-                                System.err.println("*** PROPERTY EXTRACTION DEBUG: Extracted propertyId = '" + propertyId + "', propertyValue = '" + propertyValue + "' ***");
-                                
-                                properties.put(propertyId, propertyValue);
-                                System.err.println("*** PROPERTY EXTRACTION SUCCESS: " + propertyId + " = " + propertyValue + " ***");
+                                propertyId = subSpec.substring(0, secondColonIndex).trim();
+                                propertyValue = subSpec.substring(secondColonIndex + 1).trim();
+                                System.err.println("*** PROPERTY EXTRACTION DEBUG: Pure colon format SUCCESS - propertyId = '" + propertyId + "', propertyValue = '" + propertyValue + "' ***");
+                                System.err.println("*** PROPERTY CONVERSION: " + propertyId + " = " + propertyValue + " ***");
                             } else {
-                                System.err.println("*** PROPERTY EXTRACTION FALLBACK: Attempting alternative parsing for: '" + subSpec + "' ***");
-                                
-                                // Check if this might be a property without explicit value separator
-                                if (subSpec.startsWith("cmis:name") && subSpec.length() > "cmis:name".length()) {
-                                    // Extract everything after "cmis:name" as the value
-                                    String value = subSpec.substring("cmis:name".length()).trim();
-                                    if (value.startsWith(":") || value.startsWith("=")) {
-                                        value = value.substring(1).trim();
-                                    }
-                                    if (!value.isEmpty()) {
-                                        properties.put("cmis:name", value);
-                                        System.err.println("*** PROPERTY EXTRACTION FALLBACK SUCCESS: cmis:name = " + value + " ***");
-                                    }
-                                } else if (subSpec.startsWith("cmis:objectTypeId") && subSpec.length() > "cmis:objectTypeId".length()) {
-                                    // Extract everything after "cmis:objectTypeId" as the value
-                                    String value = subSpec.substring("cmis:objectTypeId".length()).trim();
-                                    if (value.startsWith(":") || value.startsWith("=")) {
-                                        value = value.substring(1).trim();
-                                    }
-                                    if (!value.isEmpty()) {
-                                        properties.put("cmis:objectTypeId", value);
-                                        System.err.println("*** PROPERTY EXTRACTION FALLBACK SUCCESS: cmis:objectTypeId = " + value + " ***");
-                                    }
-                                } else {
-                                    System.err.println("*** PROPERTY EXTRACTION ERROR: Invalid colon position in subSpec: '" + subSpec + "' (secondColonIndex=" + secondColonIndex + ", length=" + subSpec.length() + ") ***");
-                                }
+                                System.err.println("*** PROPERTY EXTRACTION DEBUG: Pure colon format FAILED - invalid colon indices ***");
                             }
+                        }
+                        
+                        if (propertyId != null && propertyValue != null && !propertyId.isEmpty() && !propertyValue.isEmpty()) {
+                            properties.put(propertyId, propertyValue);
+                            System.err.println("*** PROPERTY EXTRACTION SUCCESS: " + propertyId + " = " + propertyValue + " ***");
                         } else {
-                            System.err.println("*** PROPERTY EXTRACTION ERROR: No colon found in subSpec: '" + subSpec + "' ***");
+                            System.err.println("*** PROPERTY EXTRACTION FALLBACK: Attempting alternative parsing for: '" + subSpec + "' ***");
+                            
+                            // Check if this might be a property without explicit value separator
+                            if (subSpec.startsWith("cmis:name") && subSpec.length() > "cmis:name".length()) {
+                                // Extract everything after "cmis:name" as the value
+                                String value = subSpec.substring("cmis:name".length()).trim();
+                                if (value.startsWith(":") || value.startsWith("=")) {
+                                    value = value.substring(1).trim();
+                                }
+                                if (!value.isEmpty()) {
+                                    properties.put("cmis:name", value);
+                                    System.err.println("*** PROPERTY EXTRACTION FALLBACK SUCCESS: cmis:name = " + value + " ***");
+                                }
+                            } else if (subSpec.startsWith("cmis:objectTypeId") && subSpec.length() > "cmis:objectTypeId".length()) {
+                                // Extract everything after "cmis:objectTypeId" as the value
+                                String value = subSpec.substring("cmis:objectTypeId".length()).trim();
+                                if (value.startsWith(":") || value.startsWith("=")) {
+                                    value = value.substring(1).trim();
+                                }
+                                if (!value.isEmpty()) {
+                                    properties.put("cmis:objectTypeId", value);
+                                    System.err.println("*** PROPERTY EXTRACTION FALLBACK SUCCESS: cmis:objectTypeId = " + value + " ***");
+                                }
+                            } else {
+                                System.err.println("*** PROPERTY EXTRACTION ERROR: Could not parse subSpec: '" + subSpec + "' ***");
+                            }
                         }
                     }
                 } else {
@@ -3339,7 +3400,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         System.err.println("*** BRACKET FORMAT DEBUG: Completed bracket format processing ***");
         
         System.err.println("*** PROPERTY EXTRACTION: Found " + properties.size() + " properties: " + properties.keySet() + " ***");
+        System.err.println("*** PROPERTY EXTRACTION: Properties map contents: " + properties + " ***");
         System.err.println("*** EXTRACT PROPERTIES: METHOD EXIT - Returning properties map ***");
+        System.err.flush();
         return properties;
     }
     

@@ -57,6 +57,8 @@
 	</dependencyManagement>
 
 	<dependencies>
+		<!-- Commented out nemakiware-action dependency - plugin module is in suspended-modules directory -->
+		<!--
 		<dependency>
 			<groupId>jp.aegif.nemaki.plugin</groupId>
 			<artifactId>nemakiware-action</artifactId>
@@ -74,7 +76,6 @@
 					<groupId>ch.qos.logback</groupId>
 					<artifactId>logback-classic</artifactId>
 				</exclusion>
-				<!-- Exclude OpenCMIS 1.1.0 transitive dependencies to prevent JAR conflicts -->
 				<exclusion>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-server-support</artifactId>
@@ -93,6 +94,7 @@
 				</exclusion>
 			</exclusions>
 		</dependency>
+		-->
 		<dependency>
 			<groupId>jp.aegif.nemaki.common</groupId>
 			<artifactId>nemakiware-common</artifactId>
