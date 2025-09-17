@@ -353,9 +353,13 @@ public class SolrQueryProcessor implements QueryProcessor {
 						: descendant.isIncludedInSupertypeQuery();
 				if (!isq)
 					continue;
-			}
-			String table = descendant.getQueryName();
+		}
+		String table = descendant.getQueryName();
+		if (table != null && !table.trim().isEmpty()) {
 			tables.add(table.replaceAll(":", "\\\\:"));
+		} else {
+			logger.warn("Skipping descendant type with null or empty queryName: " + descendant.getId());
+		}
 		}
 		
 //		Term t = new Term(
