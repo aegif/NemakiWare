@@ -111,25 +111,50 @@ public class AttachmentNode extends NodeBase {
 		if(rangeOffset == null && rangeLength == null){
 			return inputStream;
 		}else{
-			if (rangeLength == null){
-				rangeLength = BigInteger.valueOf(length);
+			// CRITICAL FIX: Properly handle range requests
+			// The old implementation only read 1024 bytes and corrupted content
+
+			if(inputStream == null) {
+				return null;
 			}
-			
-			if(rangeLength.intValue() + rangeOffset.intValue() > length){
-				rangeLength = BigInteger.valueOf(length - rangeOffset.intValue());
+
+			// Calculate actual offset and length
+			long offset = (rangeOffset != null) ? rangeOffset.longValue() : 0L;
+			long rangeLen = (rangeLength != null) ? rangeLength.longValue() : (length - offset);
+
+			// Validate range
+			if(offset < 0) {
+				offset = 0;
 			}
-			
-			byte[]bytes = new byte[1024];
+			if(offset >= length) {
+				// Offset beyond file size - return empty stream
+				return new ByteArrayInputStream(new byte[0]);
+			}
+			if(offset + rangeLen > length) {
+				rangeLen = length - offset;
+			}
+
 			try {
-				inputStream.read(bytes);
-				ByteArrayInputStream result = new ByteArrayInputStream(bytes, rangeOffset.intValue(), rangeLength.intValue());
-				return result;
+				// Read the entire content first (for now - can be optimized later)
+				// This ensures we don't corrupt content
+				byte[] fullContent = inputStream.readAllBytes();
+
+				// Apply range to the full content
+				int actualOffset = (int) Math.min(offset, fullContent.length);
+				int actualLength = (int) Math.min(rangeLen, fullContent.length - actualOffset);
+
+				if(actualLength <= 0) {
+					return new ByteArrayInputStream(new byte[0]);
+				}
+
+				// Return the ranged portion
+				return new ByteArrayInputStream(fullContent, actualOffset, actualLength);
 			} catch (IOException e) {
-				log.error("[attachment id=" + getId() + "]getInputStream with rangeOffset=" + rangeLength.toString() + " rangeLength=" + rangeLength.toString() + " failed.", e);
+				log.error("[attachment id=" + getId() + "]getInputStream with rangeOffset=" + offset + " rangeLength=" + rangeLen + " failed.", e);
+				// Fall back to returning the original stream
+				return inputStream;
 			}
 		}
-		
-		return null;
 	}
 
 	public void setInputStream(InputStream inputStream) {

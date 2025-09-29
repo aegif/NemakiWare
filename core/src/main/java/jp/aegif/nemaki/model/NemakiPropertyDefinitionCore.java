@@ -46,17 +46,19 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 		setCreator(n.getCreator());
 		setModified(n.getModified());
 		setModifier(n.getModifier());
-		
+
 		// CRITICAL FIX FOR CLOUDANT SDK MIGRATION: Preserve _rev field
 		// In Ektorp era, _rev was handled automatically by the library
 		// With Cloudant SDK, application must manually preserve _rev for subsequent updates
 		setRevision(n.getRevision());
-		
-		// Initialize PropertyDefinition-specific fields to prevent contamination
-		this.propertyId = null;        
-		this.propertyType = null;      
-		this.queryName = null;         
-		this.cardinality = null;       
+
+		// TCK FIX: Don't initialize PropertyDefinition-specific fields to null
+		// These will be set by the caller (e.g., CouchPropertyDefinitionCore.convert())
+		// Initializing to null here causes property types to be lost
+		// this.propertyId = null;
+		// this.propertyType = null;
+		// this.queryName = null;
+		// this.cardinality = null;
 	}
 
 	public NemakiPropertyDefinitionCore(NemakiPropertyDefinition p){

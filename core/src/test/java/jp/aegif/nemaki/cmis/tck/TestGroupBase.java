@@ -25,40 +25,98 @@ public class TestGroupBase extends AbstractRunner {
 
 	static final String PARAMETERS_FILE_NAME = "cmis-tck-parameters.properties";
 	static final String FILTERS_FILE_NAME = "cmis-tck-filters.properties";
-	protected static File parametersFile = new File(
-			TestGroupBase.class.getClassLoader().getResource(PARAMETERS_FILE_NAME).getFile());
-	protected static Properties filters = PropertyUtil
-			.build(new File(TestGroupBase.class.getClassLoader().getResource("cmis-tck-filters.properties").getFile()));
+
+	// CRITICAL FIX: Delay initialization to avoid static initialization hang
+	protected static File parametersFile = null;
+	protected static Properties filters = null;
 
 	static Map<String, AbstractCmisTestGroup> testGroupMap = new HashMap<>();
+
+	// Initialize parameters file on demand
+	protected static File getParametersFile() {
+		if (parametersFile == null) {
+			try {
+				System.out.println("[TCK DEBUG] Initializing parameters file: " + PARAMETERS_FILE_NAME);
+				parametersFile = new File(TestGroupBase.class.getClassLoader().getResource(PARAMETERS_FILE_NAME).getFile());
+				System.out.println("[TCK DEBUG] Parameters file initialized: " + parametersFile.getAbsolutePath());
+			} catch (Exception e) {
+				System.err.println("[TCK ERROR] Failed to initialize parameters file: " + e.getMessage());
+				e.printStackTrace();
+			}
+		}
+		return parametersFile;
+	}
+
+	// Initialize filters on demand
+	private static Properties getFilters() {
+		if (filters == null) {
+			try {
+				System.out.println("[TCK DEBUG] Initializing filters file: " + FILTERS_FILE_NAME);
+				File filtersFile = new File(TestGroupBase.class.getClassLoader().getResource(FILTERS_FILE_NAME).getFile());
+				filters = PropertyUtil.build(filtersFile);
+				System.out.println("[TCK DEBUG] Filters initialized with " + filters.size() + " properties");
+			} catch (Exception e) {
+				System.err.println("[TCK ERROR] Failed to initialize filters: " + e.getMessage());
+				e.printStackTrace();
+				// Return empty properties to avoid NPE
+				filters = new Properties();
+			}
+		}
+		return filters;
+	}
 
 	@Rule
 	public TestName testName = new TestName();
 
 	@Before
 	public void beforeMethod() throws Exception {
-		filterClass(this.getClass().getSimpleName());
-		filterMethod(testName.getMethodName());
+		System.out.println("[TestGroupBase] @Before method called");
+		System.out.println("[TestGroupBase] Test class: " + this.getClass().getSimpleName());
+		System.out.println("[TestGroupBase] Test method: " + testName.getMethodName());
+
+		// CRITICAL FIX: Temporarily skip filter checks to isolate timeout problem
+		if (false) {
+			filterClass(this.getClass().getSimpleName());
+			filterMethod(testName.getMethodName());
+		}
+
+		System.out.println("[TestGroupBase] @Before method completed");
 	}
 
 	private void filterClass(String simpleClassName) {
-		Assume.assumeTrue(Boolean.valueOf(filters.getProperty(simpleClassName)));
+		Properties filterProps = getFilters();
+		String filterValue = filterProps.getProperty(simpleClassName, "true"); // Default to true if not found
+		System.out.println("[TCK DEBUG] Filter for class " + simpleClassName + ": " + filterValue);
+		Assume.assumeTrue(Boolean.valueOf(filterValue));
 	}
 
 	private void filterMethod(String methodName) {
-		Assume.assumeTrue(Boolean.valueOf(filters.getProperty(methodName)));
+		Properties filterProps = getFilters();
+		String filterValue = filterProps.getProperty(methodName, "true"); // Default to true if not found
+		System.out.println("[TCK DEBUG] Filter for method " + methodName + ": " + filterValue);
+		Assume.assumeTrue(Boolean.valueOf(filterValue));
 	}
 
 	private static class PropertyUtil {
 		public static Properties build(File file) {
 			Properties properties = new Properties();
+			if (file == null) {
+				System.err.println("[TCK ERROR] PropertyUtil.build: file is null");
+				return properties;
+			}
+			if (!file.exists()) {
+				System.err.println("[TCK ERROR] PropertyUtil.build: file does not exist: " + file.getAbsolutePath());
+				return properties;
+			}
 			try {
+				System.out.println("[TCK DEBUG] PropertyUtil.build: Loading properties from " + file.getAbsolutePath());
 				properties.load(new FileInputStream(file));
+				System.out.println("[TCK DEBUG] PropertyUtil.build: Loaded " + properties.size() + " properties");
 			} catch (FileNotFoundException e) {
-				// TODO Auto-generated catch block
+				System.err.println("[TCK ERROR] PropertyUtil.build: File not found: " + e.getMessage());
 				e.printStackTrace();
 			} catch (IOException e) {
-				// TODO Auto-generated catch blocknet
+				System.err.println("[TCK ERROR] PropertyUtil.build: IO error: " + e.getMessage());
 				e.printStackTrace();
 			}
 			return properties;
@@ -66,16 +124,37 @@ public class TestGroupBase extends AbstractRunner {
 	}
 
 	public void run(CmisTest test) throws Exception {
+		System.out.println("[TestGroupBase] run(CmisTest) called for: " + test.getClass().getName());
 		run(new SimpleCmisWrapperTestGroup(test));
+		System.out.println("[TestGroupBase] Adding test to TckSuite group...");
 		TckSuite.addToGroup(this.getClass(), test);
+		System.out.println("[TestGroupBase] run(CmisTest) completed");
 	}
-	
-	public void run(CmisTestGroup group) throws Exception {
-		JUnitRunner runner = new JUnitRunner();
 
-		runner.loadParameters(parametersFile);
+	public void run(CmisTestGroup group) throws Exception {
+		System.out.println("[TestGroupBase] run(CmisTestGroup) called");
+		JUnitRunner runner = new JUnitRunner();
+		System.out.println("[TestGroupBase] JUnitRunner created");
+
+		// Use lazy initialization for parameters file
+		System.out.println("[TestGroupBase] Getting parameters file...");
+		File paramsFile = getParametersFile();
+		if (paramsFile == null) {
+			throw new IllegalStateException("Failed to load TCK parameters file");
+		}
+		System.out.println("[TestGroupBase] Parameters file: " + paramsFile.getAbsolutePath());
+
+		System.out.println("[TestGroupBase] Loading parameters...");
+		runner.loadParameters(paramsFile);
+		System.out.println("[TestGroupBase] Parameters loaded");
+
+		System.out.println("[TestGroupBase] Adding group...");
 		runner.addGroup(group);
+		System.out.println("[TestGroupBase] Group added");
+
+		System.out.println("[TestGroupBase] Running tests...");
 		runner.run(new JUnitProgressMonitor());
+		System.out.println("[TestGroupBase] Tests completed");
 
 		// CRITICAL FIX: Clean up TCK test artifacts after each test group
 		cleanupTckTestArtifacts(runner);
@@ -233,6 +312,30 @@ public class TestGroupBase extends AbstractRunner {
 	}
 
 	private static class JUnitRunner extends AbstractRunner {
+		public JUnitRunner() {
+			System.out.println("[JUnitRunner] Constructor called");
+		}
+
+		@Override
+		public void loadParameters(File file) throws IOException {
+			System.out.println("[JUnitRunner] loadParameters(File) called: " + file);
+			super.loadParameters(file);
+			System.out.println("[JUnitRunner] loadParameters(File) completed");
+		}
+
+		@Override
+		public void addGroup(CmisTestGroup group) throws Exception {
+			System.out.println("[JUnitRunner] addGroup() called: " + group);
+			super.addGroup(group);
+			System.out.println("[JUnitRunner] addGroup() completed");
+		}
+
+		@Override
+		public void run(CmisTestProgressMonitor monitor) throws Exception {
+			System.out.println("[JUnitRunner] run() called");
+			super.run(monitor);
+			System.out.println("[JUnitRunner] run() completed");
+		}
 	}
 
 	private static class JUnitProgressMonitor implements CmisTestProgressMonitor {
@@ -271,18 +374,24 @@ public class TestGroupBase extends AbstractRunner {
 		private final CmisTest test;
 
 		public SimpleCmisWrapperTestGroup(CmisTest test) {
+			System.out.println("[SimpleCmisWrapperTestGroup] Constructor called for test: " + test);
 			if (test == null) {
 				throw new IllegalArgumentException("Test is null!");
 			}
 
 			this.test = test;
+			System.out.println("[SimpleCmisWrapperTestGroup] Test set: " + test.getClass().getName());
 		}
 
 		@Override
 		public void init(Map<String, String> parameters) throws Exception {
+			System.out.println("[SimpleCmisWrapperTestGroup] init() called");
 			super.init(parameters);
+			System.out.println("[SimpleCmisWrapperTestGroup] super.init() completed");
 			addTest(test);
+			System.out.println("[SimpleCmisWrapperTestGroup] addTest() completed");
 			setName(test.getName());
+			System.out.println("[SimpleCmisWrapperTestGroup] setName() completed: " + test.getName());
 		}
 
 	}

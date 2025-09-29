@@ -961,8 +961,10 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		
-		exceptionService.invalidArgumentRequired("properties", properties);
+
+		// Allow null properties for secondary type operations
+		// Properties can be null when only modifying secondary types
+		// exceptionService.invalidArgumentRequired("properties", properties);
 		Content content = contentService.getContent(repositoryId, objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
 		if (content.isDocument()) {
@@ -977,8 +979,11 @@ public class ObjectServiceImpl implements ObjectService {
 				content);
 		exceptionService.updateConflict(content, changeToken);
 
-		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content);
-		exceptionService.constraintPropertyValue(repositoryId, tdf, properties, objectId.getValue());
+		// Check property constraints only if properties are provided
+		if (properties != null) {
+			TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content);
+			exceptionService.constraintPropertyValue(repositoryId, tdf, properties, objectId.getValue());
+		}
 
 		return content;
 	}

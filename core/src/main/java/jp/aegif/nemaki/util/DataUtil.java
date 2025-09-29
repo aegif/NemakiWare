@@ -368,14 +368,18 @@ public class DataUtil {
 			BigDecimal decimalMaxValue, Long maxLength
 
 	) {
-		// CRITICAL FIX: PropertyType should never be null due to determinePropertyTypeFromPropertyId() 
+		// CRITICAL FIX: PropertyType should never be null due to determinePropertyTypeFromPropertyId()
 		// providing fallback to STRING type. Remove dangerous null return logic.
 		if (datatype == null) {
-			log.error("CRITICAL BUG: createPropDef called with null datatype for property: " + id + 
+			log.error("CRITICAL BUG: createPropDef called with null datatype for property: " + id +
 					". This should never happen due to PropertyType determination logic. Using STRING fallback.");
 			datatype = PropertyType.STRING; // Emergency fallback instead of returning null
 		}
-		
+
+		// TCK DEBUG: Log what property type we're creating
+		System.err.println("TCK DataUtil.createPropDef: Creating property " + id +
+			" with PropertyType=" + datatype);
+
 		PropertyDefinition<?> result = null;
 		switch (datatype) {
 			case BOOLEAN:
@@ -506,20 +510,26 @@ public class DataUtil {
 
 	/**
 	 * Generate human-readable display name from property ID
-	 * Example: "cmis:name" → "Name", "user_id" → "User Id"
+	 * Example: "cmis:name" → "Name", "cmis:objectId" → "Object Id", "user_id" → "User Id"
 	 */
 	private static String generateDisplayName(String propertyId) {
 		if (propertyId == null) return "Unknown Property";
 		
-		// Extract local name and convert to title case
+		// Extract local name and convert to title case with camelCase support
 		String localName = extractLocalName(propertyId);
 		StringBuilder displayName = new StringBuilder();
 		
 		boolean capitalizeNext = true;
-		for (char c : localName.toCharArray()) {
+		for (int i = 0; i < localName.length(); i++) {
+			char c = localName.charAt(i);
+			
 			if (c == '_' || c == '-') {
 				displayName.append(' ');
 				capitalizeNext = true;
+			} else if (Character.isUpperCase(c) && i > 0) {
+				displayName.append(' ');
+				displayName.append(Character.toUpperCase(c));
+				capitalizeNext = false;
 			} else if (capitalizeNext) {
 				displayName.append(Character.toUpperCase(c));
 				capitalizeNext = false;

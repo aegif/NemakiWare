@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.cmis.aspect.type.impl;
 
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -56,7 +57,9 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
+import org.apache.chemistry.opencmis.commons.enums.DateTimeResolution;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
@@ -112,7 +115,7 @@ public class TypeManagerImpl implements TypeManager {
 	/**
 	 * Constant
 	 */
-	private final static boolean REQUIRED = true;
+	private final static boolean REQUIRED = false;
 	private final static boolean QUERYABLE = true;
 	private final static boolean ORDERABLE = true;
 
@@ -121,26 +124,26 @@ public class TypeManagerImpl implements TypeManager {
 	 */
 	// Map of all types
 	//private Map<String, TypeDefinitionContainer> types;
-	// CRITICAL FIX: Reverted from static - each instance should maintain its own type cache
-	private Map<String, Map<String, TypeDefinitionContainer>> TYPES;
+	// CRITICAL FIX: TYPES must be static to be shared across all instances for TCK compliance
+	private static Map<String, Map<String, TypeDefinitionContainer>> TYPES;
 
 	// Map of all base types
-	// CRITICAL FIX: Reverted from static - instance-specific base types
-	private Map<String, TypeDefinitionContainer> basetypes;
+	// CRITICAL FIX: basetypes must be static to be shared across all instances for TCK compliance
+	private static Map<String, TypeDefinitionContainer> basetypes;
 
 	// Map of subtype-specific property
-	// CRITICAL FIX: Reverted from static - instance-specific subtype properties
-	private Map<String, List<PropertyDefinition<?>>> subTypeProperties;
+	// CRITICAL FIX: subTypeProperties must be static to be shared across all instances for TCK compliance
+	private static Map<String, List<PropertyDefinition<?>>> subTypeProperties;
 
 	// FUNDAMENTAL FIX: Separate Maps to prevent key collisions between propertyId and queryName
-	// CRITICAL FIX: Reverted from static - instance-specific property definitions
-	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresByPropertyId;
-	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresByQueryName;
-	
+	// CRITICAL FIX: Property definition maps must be static to be shared across all instances for TCK compliance
+	private static Map<String, PropertyDefinition<?>> propertyDefinitionCoresByPropertyId;
+	private static Map<String, PropertyDefinition<?>> propertyDefinitionCoresByQueryName;
+
 	// Flag to track initialization
-	// CRITICAL FIX: Reverted from static - instance-specific initialization state
-	private volatile boolean initialized = false;
-	private final Object initLock = new Object();
+	// CRITICAL FIX: initialized flag must be static to be shared across all instances for TCK compliance
+	private static volatile boolean initialized = false;
+	private static final Object initLock = new Object();
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
 	private final Set<String> typesBeingDeleted = new HashSet<>();
@@ -165,13 +168,23 @@ public class TypeManagerImpl implements TypeManager {
 		if (log.isDebugEnabled()) {
 			log.debug("TypeManagerImpl constructor called - instance: " + this.hashCode());
 		}
-		
-		// Initialize instance fields in constructor
-		TYPES = new ConcurrentHashMap<>();
-		basetypes = new ConcurrentHashMap<>();
-		subTypeProperties = new ConcurrentHashMap<>();
-		propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
-		propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
+
+		// Initialize static fields only if not already initialized
+		if (TYPES == null) {
+			TYPES = new ConcurrentHashMap<>();
+		}
+		if (basetypes == null) {
+			basetypes = new ConcurrentHashMap<>();
+		}
+		if (subTypeProperties == null) {
+			subTypeProperties = new ConcurrentHashMap<>();
+		}
+		if (propertyDefinitionCoresByPropertyId == null) {
+			propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
+		}
+		if (propertyDefinitionCoresByQueryName == null) {
+			propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
+		}
 	}
 	
 	public void init() {
@@ -594,17 +607,15 @@ public class TypeManagerImpl implements TypeManager {
 			}
 
 			initGlobalTypes();
-			
+
+			// CRITICAL FIX: Clear existing maps but DO NOT create new instances
+			// Static fields must retain their references for consistency
 			basetypes.clear();
-			basetypes = new HashMap<String, TypeDefinitionContainer>();
-			
+
 			subTypeProperties.clear();
-			subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
-			
+
 			propertyDefinitionCoresByPropertyId.clear();
 			propertyDefinitionCoresByQueryName.clear();
-			propertyDefinitionCoresByPropertyId = new HashMap<String, PropertyDefinition<?>>();
-			propertyDefinitionCoresByQueryName = new HashMap<String, PropertyDefinition<?>>();
 
 			// CRITICAL FIX: Clear shared TypeDefinition and PropertyDefinition caches to prevent stale references
 			// This ensures getTypeDefinition() and getTypesDescendants() use the same instances after refresh
@@ -707,7 +718,9 @@ public class TypeManagerImpl implements TypeManager {
 		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		documentType.setTypeMutability(typeMutability);
 
+		log.error("CRITICAL DEBUG: About to call addBasePropertyDefinitions for cmis:document");
 		addBasePropertyDefinitions(repositoryId, documentType);
+		log.error("CRITICAL DEBUG: Finished addBasePropertyDefinitions for cmis:document");
 		addDocumentPropertyDefinitions(repositoryId, documentType);
 
 		addTypeInternal(TYPES.get(repositoryId), documentType);
@@ -1074,137 +1087,167 @@ public class TypeManagerImpl implements TypeManager {
 	}
 	
 	private void addBasePropertyDefinitions(String repositoryId, AbstractTypeDefinition type, boolean isInherited) {
-		log.info("=== ADD BASE PROPERTIES DEBUG: Starting for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
+		System.out.println("=== SYSTEM DEBUG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
+		log.error("=== ERROR LOG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
 		
-		// Get initial property count
-		Map<String, PropertyDefinition<?>> initialProps = type.getPropertyDefinitions();
-		int initialCount = (initialProps != null) ? initialProps.size() : 0;
-		log.info("DEBUG: Initial property definitions count: " + initialCount);
-		if (initialProps != null) {
-			log.info("DEBUG: Initial property keys: " + initialProps.keySet());
+		String typeId = type.getId();
+		
+		log.error("*** FLOW DEBUG: Entered addBasePropertyDefinitions method body for typeId=" + typeId + " ***");
+		System.err.println("*** FLOW DEBUG: Entered addBasePropertyDefinitions method body for typeId=" + typeId + " ***");
+		
+		try {
+			log.error("*** FLOW DEBUG: About to get initial property definitions ***");
+			System.err.println("*** FLOW DEBUG: About to get initial property definitions ***");
+			
+			// Get initial property count
+			Map<String, PropertyDefinition<?>> initialProps = type.getPropertyDefinitions();
+			int initialCount = (initialProps != null) ? initialProps.size() : 0;
+			
+			log.error("*** FLOW DEBUG: Got initial props, count=" + initialCount + " ***");
+			System.err.println("*** FLOW DEBUG: Got initial props, count=" + initialCount + " ***");
+			
+			log.info("DEBUG: Initial property definitions count: " + initialCount);
+			if (initialProps != null) {
+				log.info("DEBUG: Initial property keys: " + initialProps.keySet());
+			}
+			
+			log.error("*** FLOW DEBUG: Got typeId=" + typeId + ", proceeding to property setup ***");
+			System.err.println("*** FLOW DEBUG: Got typeId=" + typeId + ", proceeding to property setup ***");
+		} catch (Exception e) {
+			log.error("*** FLOW DEBUG: Exception in initial setup: " + e.getMessage() + " ***", e);
+			System.err.println("*** FLOW DEBUG: Exception in initial setup: " + e.getMessage() + " ***");
+			throw e;
 		}
 		
 		//cmis:name
+		log.error("*** EXECUTION DEBUG: Starting cmis:name property setup for type " + typeId + " ***");
+		System.err.println("*** EXECUTION DEBUG: Starting cmis:name property setup for type " + typeId + " ***");
+		
 		String _updatability_name = propertyManager.readValue(PropertyKey.PROPERTY_NAME_UPDATABILITY);
+		log.error("*** EXECUTION DEBUG: Got updatability_name: " + _updatability_name + " ***");
+		
 		Updatability updatability_name = Updatability.fromValue(_updatability_name);
 		boolean queryable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_QUERYABLE);
 		boolean orderable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_ORDERABLE);
+		
+		log.error("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		System.err.println("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		
+		log.error("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		boolean inherited_name = shouldBeInherited(PropertyIds.NAME, typeId);
+		log.error("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_name + " for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_name + " for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		log.info("TCK DEBUG buildTypeDefinitionFromDB: Setting inherited=" + inherited_name + " for " + PropertyIds.NAME + " in type " + typeId);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.NAME, PropertyType.STRING,
-				Cardinality.SINGLE, updatability_name, REQUIRED, queryable_name, orderable_name, null, isInherited));
-		log.info("DEBUG: Added cmis:name property");
+				Cardinality.SINGLE, updatability_name, REQUIRED, queryable_name, orderable_name, null, inherited_name));
+		log.info("DEBUG: Added cmis:name property (inherited=" + inherited_name + ")");
 
 		//cmis:description
 		String _updatability_description = propertyManager.readValue(PropertyKey.PROPERTY_DESCRIPTION_UPDATABILITY);
 		Updatability updatability_description = Updatability.fromValue(_updatability_description);
 		boolean queryable_description = propertyManager.readBoolean(PropertyKey.PROPERTY_DESCRIPTION_QUERYABLE);
 		boolean orderable_description = propertyManager.readBoolean(PropertyKey.PROPERTY_DESCRIPTION_ORDERABLE);
+		boolean inherited_description = shouldBeInherited(PropertyIds.DESCRIPTION, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.DESCRIPTION,
 				PropertyType.STRING, Cardinality.SINGLE, updatability_description,
-				!REQUIRED, queryable_description, orderable_description, null, isInherited));
-		log.info("DEBUG: Added cmis:description property");
+				!REQUIRED, queryable_description, orderable_description, null, inherited_description));
+		log.info("DEBUG: Added cmis:description property (inherited=" + inherited_description + ")");
 
 		//cmis:objectId
+		log.error("*** EXECUTION DEBUG: Starting cmis:objectId property setup for type " + typeId + " ***");
+		System.err.println("*** EXECUTION DEBUG: Starting cmis:objectId property setup for type " + typeId + " ***");
+		
 		boolean orderable_objectId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_ID_ORDERABLE);
+		
+		log.error("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
+		System.err.println("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
+		
+		log.error("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
+		boolean inherited_objectId = shouldBeInherited(PropertyIds.OBJECT_ID, typeId);
+		log.error("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_objectId + " for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_objectId + " for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.OBJECT_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READONLY, REQUIRED, QUERYABLE, orderable_objectId, null, isInherited));
-		log.info("DEBUG: Added cmis:objectId property");
+				Updatability.READONLY, !REQUIRED, QUERYABLE, orderable_objectId, null, inherited_objectId));
+		log.info("DEBUG: Added cmis:objectId property (inherited=" + inherited_objectId + ")");
 
 		//cmis:baseTypeId
 		boolean queryable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_QUERYABLE);
 		boolean orderable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_ORDERABLE);
+		log.error("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.BASE_TYPE_ID + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.BASE_TYPE_ID + " in type " + typeId + " ***");
+		boolean inherited_baseTypeId = shouldBeInherited(PropertyIds.BASE_TYPE_ID, typeId);
+		log.error("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_baseTypeId + " for " + PropertyIds.BASE_TYPE_ID + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_baseTypeId + " for " + PropertyIds.BASE_TYPE_ID + " in type " + typeId + " ***");
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.BASE_TYPE_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null, isInherited));
-		log.info("DEBUG: Added cmis:baseTypeId property");
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null, inherited_baseTypeId));
+		log.info("DEBUG: Added cmis:baseTypeId property (inherited=" + inherited_baseTypeId + ")");
 
 		//cmis:objectTypeId
 		boolean queryable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_QUERYABLE);
 		boolean orderable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_ORDERABLE);
+		boolean inherited_objectTypeId = shouldBeInherited(PropertyIds.OBJECT_TYPE_ID, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.OBJECT_TYPE_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.ONCREATE, REQUIRED,
-				queryable_objectTypeId, orderable_objectTypeId, null, isInherited));
-		log.info("DEBUG: Added cmis:objectTypeId property");
+				queryable_objectTypeId, orderable_objectTypeId, null, inherited_objectTypeId));
+		log.info("DEBUG: Added cmis:objectTypeId property (inherited=" + inherited_objectTypeId + ")");
 
 		//cmis:secondaryObjectTypeIds - CRITICAL CMIS 1.1 REQUIREMENT
 		String _updatability_secondaryObjectTypeIds = propertyManager.readValue(PropertyKey.PROPERTY_SECONDARY_OBJECT_TYPE_IDS_UPDATABILITY);
 		Updatability updatability_secondaryObjectTypeIds = Updatability.fromValue(_updatability_secondaryObjectTypeIds);
 		boolean queryable_secondaryObjectTypeIds = propertyManager.readBoolean(PropertyKey.PROPERTY_SECONDARY_OBJECT_TYPE_IDS_QUERYABLE);
+		boolean inherited_secondaryObjectTypeIds = shouldBeInherited(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.SECONDARY_OBJECT_TYPE_IDS,
 				PropertyType.ID, Cardinality.MULTI, updatability_secondaryObjectTypeIds,
-				!REQUIRED, queryable_secondaryObjectTypeIds, !ORDERABLE, null, isInherited));
-		log.info("DEBUG: Added cmis:secondaryObjectTypeIds property");
+				!REQUIRED, queryable_secondaryObjectTypeIds, !ORDERABLE, null, inherited_secondaryObjectTypeIds));
+		log.info("DEBUG: Added cmis:secondaryObjectTypeIds property (inherited=" + inherited_secondaryObjectTypeIds + ")");
 
+		boolean inherited_createdBy = shouldBeInherited(PropertyIds.CREATED_BY, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.CREATED_BY, PropertyType.STRING, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null, isInherited));
-		log.info("DEBUG: Added cmis:createdBy property");
+				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null, inherited_createdBy));
+		log.info("DEBUG: Added cmis:createdBy property (inherited=" + inherited_createdBy + ")");
 
+		boolean inherited_creationDate = shouldBeInherited(PropertyIds.CREATION_DATE, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CREATION_DATE,
 				PropertyType.DATETIME, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null, isInherited));
-		log.info("DEBUG: Added cmis:creationDate property");
+				!REQUIRED, QUERYABLE, ORDERABLE, null, inherited_creationDate));
+		log.info("DEBUG: Added cmis:creationDate property (inherited=" + inherited_creationDate + ")");
 
+		boolean inherited_lastModifiedBy = shouldBeInherited(PropertyIds.LAST_MODIFIED_BY, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.LAST_MODIFIED_BY,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null, isInherited));
-		log.info("DEBUG: Added cmis:lastModifiedBy property");
+				!REQUIRED, QUERYABLE, ORDERABLE, null, inherited_lastModifiedBy));
+		log.info("DEBUG: Added cmis:lastModifiedBy property (inherited=" + inherited_lastModifiedBy + ")");
 
+		boolean inherited_lastModificationDate = shouldBeInherited(PropertyIds.LAST_MODIFICATION_DATE, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.LAST_MODIFICATION_DATE,
 				PropertyType.DATETIME, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null, isInherited));
-		log.info("DEBUG: Added cmis:lastModificationDate property");
+				!REQUIRED, QUERYABLE, ORDERABLE, null, inherited_lastModificationDate));
+		log.info("DEBUG: Added cmis:lastModificationDate property (inherited=" + inherited_lastModificationDate + ")");
 
+		boolean inherited_changeToken = shouldBeInherited(PropertyIds.CHANGE_TOKEN, typeId);
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CHANGE_TOKEN,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, !QUERYABLE, !ORDERABLE, null, isInherited));
-		log.info("DEBUG: Added cmis:changeToken property");
+				!REQUIRED, QUERYABLE, ORDERABLE, null, inherited_changeToken));
+		log.info("DEBUG: Added cmis:changeToken property (inherited=" + inherited_changeToken + ")");
 		
-		// Get final property count and detailed analysis
+		// Get final property count
 		Map<String, PropertyDefinition<?>> finalProps = type.getPropertyDefinitions();
 		int finalCount = (finalProps != null) ? finalProps.size() : 0;
-		int addedCount = finalCount - initialCount;
+		log.info("DEBUG: Final property definitions count: " + finalCount);
 		
-		log.info("=== ADD BASE PROPERTIES SUMMARY ===");
-		log.info("DEBUG: Initial properties: " + initialCount + " → Final properties: " + finalCount + " (Added: " + addedCount + ")");
-		
-		if (finalProps != null) {
-			log.info("DEBUG: Final property keys: " + finalProps.keySet());
-			
-			// Check critical CMIS properties individually
-			String[] criticalProps = {
-				PropertyIds.NAME, PropertyIds.OBJECT_ID, PropertyIds.BASE_TYPE_ID, 
-				PropertyIds.OBJECT_TYPE_ID, PropertyIds.SECONDARY_OBJECT_TYPE_IDS,
-				PropertyIds.CREATED_BY, PropertyIds.CREATION_DATE, PropertyIds.LAST_MODIFIED_BY,
-				PropertyIds.LAST_MODIFICATION_DATE, PropertyIds.CHANGE_TOKEN
-			};
-			
-			for (String propId : criticalProps) {
-				if (finalProps.containsKey(propId)) {
-					log.info("DEBUG: ✅ " + propId + " is present");
-				} else {
-					log.error("DEBUG: ❌ MISSING CRITICAL PROPERTY: " + propId);
-				}
-			}
-			
-			if (finalProps.containsKey(PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
-				log.info("DEBUG: CONFIRMATION: cmis:secondaryObjectTypeIds IS PRESENT in final property definitions");
-			} else {
-				log.error("DEBUG: CRITICAL ERROR: cmis:secondaryObjectTypeIds IS MISSING from final property definitions");
-			}
-		} else {
-			log.error("DEBUG: CRITICAL ERROR: Final properties map is NULL");
-		}
-		
-		log.info("=== ADD BASE PROPERTIES DEBUG: Completed for type: " + type.getId() + " ===");
 	}
 
 	private void addFolderPropertyDefinitions(String repositoryId, FolderTypeDefinitionImpl type) {
@@ -1583,9 +1626,36 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			container.setChildren(new ArrayList<TypeDefinitionContainer>());
 
 			if (types.get(typeId) == null) {
+				// DEBUG: Log what we're caching
+				AbstractTypeDefinition typeDef = (AbstractTypeDefinition) container.getTypeDefinition();
+				System.err.println("=== CACHING TYPE " + typeId + " ===");
+				System.err.println("Type has " + typeDef.getPropertyDefinitions().size() + " properties");
+				for (String propId : typeDef.getPropertyDefinitions().keySet()) {
+					if (!propId.startsWith("cmis:")) {
+						System.err.println("  Caching custom property: " + propId);
+					}
+				}
 				types.put(typeId, container);
 			} else {
-				log.debug("Type '" + typeId + "' already exists in container, skipping overwrite");
+				// CRITICAL FIX: Update existing type if it has more properties (custom properties added)
+				TypeDefinitionContainer existing = types.get(typeId);
+				AbstractTypeDefinition existingDef = (AbstractTypeDefinition) existing.getTypeDefinition();
+				AbstractTypeDefinition newDef = (AbstractTypeDefinition) container.getTypeDefinition();
+
+				// If new definition has more properties, it likely has custom properties that were added later
+				if (newDef.getPropertyDefinitions().size() > existingDef.getPropertyDefinitions().size()) {
+					System.err.println("=== UPDATING CACHED TYPE " + typeId + " ===");
+					System.err.println("Old type had " + existingDef.getPropertyDefinitions().size() + " properties");
+					System.err.println("New type has " + newDef.getPropertyDefinitions().size() + " properties");
+					for (String propId : newDef.getPropertyDefinitions().keySet()) {
+						if (!propId.startsWith("cmis:") && !existingDef.getPropertyDefinitions().containsKey(propId)) {
+							System.err.println("  Adding custom property to cache: " + propId);
+						}
+					}
+					types.put(typeId, container);
+				} else {
+					log.debug("Type '" + typeId + "' already exists in container with same or more properties, skipping overwrite");
+				}
 			}
 
 			// CRITICAL FIX: Null safety and circular reference prevention for children processing
@@ -1665,22 +1735,36 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	private DocumentTypeDefinitionImpl buildDocumentTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
+		log.error("CRITICAL DEBUG: buildDocumentTypeDefinitionFromDB called for typeId=" + nemakiType.getTypeId() + ", repositoryId=" + repositoryId);
 		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
-		
+
 		DocumentTypeDefinitionImpl type = new DocumentTypeDefinitionImpl();
-		
+
 		// CRITICAL FIX: Add null safety for parent type lookup with baseId fallback
 		String parentId = nemakiType.getParentId();
 		String baseId = nemakiType.getBaseId() != null ? nemakiType.getBaseId().value() : null;
 		String targetParentId = (parentId != null) ? parentId : baseId;
-		
+
+		// DEBUG: Log parent type lookup
+		System.err.println("=== PARENT TYPE LOOKUP DEBUG for child " + nemakiType.getTypeId() + " ===");
+		System.err.println("Looking for parent type: " + targetParentId);
+
+		// Get parent type from cache (no rebuild to avoid infinite recursion)
+		DocumentTypeDefinitionImpl parentType = null;
 		TypeDefinitionContainer parentContainer = types.get(targetParentId);
 		if (parentContainer == null) {
 			log.error("Parent type container not found for ID: " + targetParentId + ". Available types: " + types.keySet());
 			throw new RuntimeException("Parent type not found: " + targetParentId);
 		}
-		
-		DocumentTypeDefinitionImpl parentType = (DocumentTypeDefinitionImpl) parentContainer.getTypeDefinition();
+		parentType = (DocumentTypeDefinitionImpl) parentContainer.getTypeDefinition();
+
+		// DEBUG: Log parent type properties
+		System.err.println("Parent type " + targetParentId + " has " + parentType.getPropertyDefinitions().size() + " properties");
+		for (String propId : parentType.getPropertyDefinitions().keySet()) {
+			if (!propId.startsWith("cmis:")) {
+				System.err.println("  Parent type custom property: " + propId);
+			}
+		}
 
 		// Set base attributes, and properties(with specific properties included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
@@ -1688,8 +1772,19 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL FIX: All document types need CMIS properties for TCK compliance
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId());
+		log.error("CRITICAL DEBUG: About to call addBasePropertyDefinitions for typeId=" + nemakiType.getTypeId() + ", isBaseType=" + isBaseType + ", inherited=" + !isBaseType);
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
-		addDocumentPropertyDefinitions(repositoryId, type);
+		log.error("CRITICAL DEBUG: Finished addBasePropertyDefinitions for typeId=" + nemakiType.getTypeId());
+
+		// CRITICAL FIX: Only add document-specific properties to the base cmis:document type
+		// Custom types that inherit from cmis:document should NOT have these properties added directly
+		// They will inherit them from their parent type
+		if (isBaseType) {
+			addDocumentPropertyDefinitions(repositoryId, type);
+			log.error("CRITICAL DEBUG: Added document properties to base type cmis:document");
+		} else {
+			log.error("CRITICAL DEBUG: SKIPPING addDocumentPropertyDefinitions for custom type " + nemakiType.getTypeId() + " - will inherit from parent");
+		}
 
 		// Add specific attributes
 		ContentStreamAllowed contentStreamAllowed = (nemakiType
@@ -1706,6 +1801,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	private FolderTypeDefinitionImpl buildFolderTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
+		log.error("CRITICAL DEBUG: buildFolderTypeDefinitionFromDB called for typeId=" + nemakiType.getTypeId() + ", repositoryId=" + repositoryId);
 		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
 		
 		FolderTypeDefinitionImpl type = new FolderTypeDefinitionImpl();
@@ -1719,8 +1815,15 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL FIX: All folder types need CMIS properties for TCK compliance
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId());
+		log.error("CRITICAL DEBUG: About to call addBasePropertyDefinitions for typeId=" + nemakiType.getTypeId() + ", isBaseType=" + isBaseType + ", inherited=" + !isBaseType);
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
-		addFolderPropertyDefinitions(repositoryId, type);
+		log.error("CRITICAL DEBUG: Finished addBasePropertyDefinitions for typeId=" + nemakiType.getTypeId());
+
+		// CRITICAL FIX: Only add folder-specific properties to the base cmis:folder type
+		// Custom types that inherit from cmis:folder should NOT have these properties added directly
+		if (isBaseType) {
+			addFolderPropertyDefinitions(repositoryId, type);
+		}
 
 		return type;
 	}
@@ -1741,6 +1844,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_RELATIONSHIP.value().equals(nemakiType.getTypeId());
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
+
+		// CRITICAL FIX: Only add relationship-specific properties to the base cmis:relationship type
+		// Custom types that inherit from cmis:relationship should NOT have these properties added directly
 		if (isBaseType) {
 			addRelationshipPropertyDefinitions(repositoryId, type);
 		}
@@ -1768,6 +1874,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_POLICY.value().equals(nemakiType.getTypeId());
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
+
+		// CRITICAL FIX: Only add policy-specific properties to the base cmis:policy type
+		// Custom types that inherit from cmis:policy should NOT have these properties added directly
 		if (isBaseType) {
 			addPolicyPropertyDefinitions(repositoryId, type);
 		}
@@ -1989,35 +2098,87 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		typeMutability.setCanDelete(delete);
 		type.setTypeMutability(typeMutability);
 
-		// SIMPLIFIED FIX: Copy parent properties with correct inherited flags
-		Map<String, PropertyDefinition<?>> parentProperties;
+		// CRITICAL FIX: Copy parent properties and mark them as inherited
+		Map<String, PropertyDefinition<?>> parentProperties = new HashMap<>();
 		if (parentType != null && parentType.getPropertyDefinitions() != null) {
-			// Copy parent properties and set correct inherited flags
-			parentProperties = new HashMap<>();
-			
+			// DEBUG: Log parent type properties before copying
+			System.err.println("=== INHERITANCE DEBUG: Copying properties from parent type " + parentType.getId() + " to child type " + nemakiType.getTypeId() + " ===");
+			System.err.println("Parent type has " + parentType.getPropertyDefinitions().size() + " properties");
+			for (String propId : parentType.getPropertyDefinitions().keySet()) {
+				if (!propId.startsWith("cmis:")) {
+					System.err.println("  Parent custom property available for inheritance: " + propId);
+				}
+			}
+
+			// Clone parent properties and mark them as inherited
 			for (Map.Entry<String, PropertyDefinition<?>> entry : parentType.getPropertyDefinitions().entrySet()) {
 				String propertyId = entry.getKey();
 				PropertyDefinition<?> parentProperty = entry.getValue();
-				
-				// For derived types, all properties from parent should be marked as inherited
-				if (parentProperty instanceof AbstractPropertyDefinition) {
-					AbstractPropertyDefinition<?> inheritedProperty = (AbstractPropertyDefinition<?>) parentProperty;
-					
-					// Properties inherited from parent are always inherited=true in child
-					if (!inheritedProperty.isInherited()) {
-						inheritedProperty.setIsInherited(true);
-						
-						if (log.isDebugEnabled()) {
-							log.debug("SIMPLIFIED INHERITANCE: Set inherited=true for " + propertyId + 
-								" in derived type " + nemakiType.getId());
-						}
-					}
+
+				// CRITICAL: Create a clone of the property to avoid modifying the parent type
+				// Extract type-specific values from parent property
+				Long minValue = null;
+				Long maxValue = null;
+				DecimalPrecision precision = null;
+				BigDecimal decimalMin = null;
+				BigDecimal decimalMax = null;
+				Long maxLength = null;
+
+				// Extract values based on property type
+				if (parentProperty instanceof PropertyIntegerDefinition) {
+					PropertyIntegerDefinition intProp = (PropertyIntegerDefinition) parentProperty;
+					minValue = intProp.getMinValue() != null ? intProp.getMinValue().longValue() : null;
+					maxValue = intProp.getMaxValue() != null ? intProp.getMaxValue().longValue() : null;
+				} else if (parentProperty instanceof PropertyDecimalDefinition) {
+					PropertyDecimalDefinition decProp = (PropertyDecimalDefinition) parentProperty;
+					precision = decProp.getPrecision();
+					decimalMin = decProp.getMinValue();
+					decimalMax = decProp.getMaxValue();
+				} else if (parentProperty instanceof PropertyDateTimeDefinition) {
+					// DateTimeResolution is handled internally by DataUtil
+				} else if (parentProperty instanceof PropertyStringDefinition) {
+					PropertyStringDefinition strProp = (PropertyStringDefinition) parentProperty;
+					maxLength = strProp.getMaxLength() != null ? strProp.getMaxLength().longValue() : null;
 				}
-				
-				parentProperties.put(propertyId, parentProperty);
+
+				PropertyDefinition<?> clonedProperty = DataUtil.createPropDef(
+					parentProperty.getId(),
+					parentProperty.getLocalName(),
+					null, // localNameSpace not available in PropertyDefinition interface
+					parentProperty.getQueryName(),
+					parentProperty.getDisplayName(),
+					parentProperty.getDescription(),
+					parentProperty.getPropertyType(),
+					parentProperty.getCardinality(),
+					parentProperty.getUpdatability(),
+					parentProperty.isRequired(),
+					parentProperty.isQueryable(),
+					true, // CRITICAL: All properties from parent are inherited
+					null, // choices - TODO: clone if needed
+					false, // openChoice
+					parentProperty.isOrderable(),
+					parentProperty.getDefaultValue(),
+					minValue, maxValue, null, precision, decimalMin, decimalMax, maxLength
+				);
+
+				parentProperties.put(propertyId, clonedProperty);
+
+				if (log.isDebugEnabled()) {
+					log.debug("INHERITANCE: Copied property " + propertyId +
+						" from parent type with inherited=true for type " + nemakiType.getId());
+				}
+			}
+
+			// DEBUG: Log what was actually copied
+			System.err.println("=== INHERITANCE DEBUG: Finished copying parent properties ===");
+			System.err.println("Copied " + parentProperties.size() + " properties from parent");
+			for (String propId : parentProperties.keySet()) {
+				if (!propId.startsWith("cmis:")) {
+					System.err.println("  Copied custom property: " + propId);
+				}
 			}
 		} else {
-			parentProperties = new HashMap<String, PropertyDefinition<?>>();
+			System.err.println("=== INHERITANCE DEBUG: No parent type or no parent properties to copy for type " + nemakiType.getTypeId() + " ===");
 		}
 		type.setPropertyDefinitions(parentProperties);
 
@@ -2026,6 +2187,18 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// difference of attributes
 		Map<String, PropertyDefinition<?>> properties = type
 				.getPropertyDefinitions();
+
+		// DEBUG: Log what custom properties this type has
+		System.err.println("=== CUSTOM PROPERTIES DEBUG for type " + nemakiType.getTypeId() + " ===");
+		System.err.println("NemakiType has " +
+			(nemakiType.getProperties() != null ? nemakiType.getProperties().size() : 0) +
+			" property detail IDs");
+		if (nemakiType.getProperties() != null) {
+			for (String propDetailId : nemakiType.getProperties()) {
+				System.err.println("  Property detail ID: " + propDetailId);
+			}
+		}
+
 		List<PropertyDefinition<?>> specificProperties = new ArrayList<PropertyDefinition<?>>();
 		if (!CollectionUtils.isEmpty(nemakiType.getProperties())) {
 					for (String propertyDetailId : nemakiType.getProperties()) {
@@ -2049,10 +2222,21 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					continue;
 				}
 
-				// CRITICAL FIX: Use existing PropertyDefinition instances - no cloning or rebuilding
-				// TCK tests require object identity (== comparison) to pass
-				// Create NemakiPropertyDefinition using existing core and detail
-				NemakiPropertyDefinition p = new NemakiPropertyDefinition(originalCore, detail);
+				// CRITICAL FIX: Always create a deep clone to prevent contamination
+				// PropertyDefinitionCore objects from database can be contaminated
+				// due to object reuse in global caches
+				NemakiPropertyDefinitionCore clonedCore = originalCore.deepClone();
+
+				// CRITICAL DEBUG: Verify deep clone actually worked
+				System.err.println("TCK DEEP CLONE VERIFICATION:");
+				System.err.println("  originalCore.propertyId=" + originalCore.getPropertyId());
+				System.err.println("  clonedCore.propertyId=" + clonedCore.getPropertyId());
+				System.err.println("  detail.localName=" + detail.getLocalName());
+				System.err.println("  originalCore object identity=" + System.identityHashCode(originalCore));
+				System.err.println("  clonedCore object identity=" + System.identityHashCode(clonedCore));
+
+				// Create NemakiPropertyDefinition using cloned core and detail
+				NemakiPropertyDefinition p = new NemakiPropertyDefinition(clonedCore, detail);
 				
 				// Determine if property is inherited (properties from parent types are inherited)
 				boolean isInherited = parentType != null && 
@@ -2060,21 +2244,62 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					parentType.getPropertyDefinitions().containsKey(p.getPropertyId());
 				
 				// CRITICAL FIX: Reuse existing PropertyDefinition instances for TCK compliance
-				// First, try to get the existing PropertyDefinition from the global cache
-				PropertyDefinition<?> property = propertyDefinitionCoresByPropertyId.get(p.getPropertyId());
-				
-				// If not in cache, check if parent has this property (for inheritance)
-				if (property == null && parentType != null && parentType.getPropertyDefinitions() != null) {
-					property = parentType.getPropertyDefinitions().get(p.getPropertyId());
+				// TCK FIX: Don't reuse cached PropertyDefinitions for custom properties
+				// as they may have different types across different type definitions
+				PropertyDefinition<?> property = null;
+
+				// CRITICAL DEBUG: Log cache lookup attempt
+				System.err.println("TCK CACHE DEBUG: Looking up property " + p.getPropertyId() +
+					" (is custom: " + !p.getPropertyId().startsWith("cmis:") + ")");
+
+				// CRITICAL FIX: Do NOT use cache for properties - it causes contamination
+				// The cache can contain properties with wrong IDs due to reuse of PropertyDefinitionCore objects
+				// Always create new instances to avoid contamination
+				property = null;
+
+				// CRITICAL FIX: Skip CMIS properties that are already inherited from parent
+				// CMIS properties should NOT be in the type's specific properties list
+				// They are already added from parent with inherited=true
+				if (p.getPropertyId() != null && p.getPropertyId().startsWith("cmis:")) {
+					// Check if this CMIS property is already in the properties map (from parent)
+					if (properties.containsKey(p.getPropertyId())) {
+						System.err.println("TCK DEBUG: Skipping CMIS property " + p.getPropertyId() +
+							" as it's already inherited from parent");
+						continue; // Skip to next property
+					}
+					System.err.println("TCK WARNING: CMIS property " + p.getPropertyId() +
+						" not found in parent - this shouldn't happen");
+				} else {
+					System.err.println("TCK CACHE DEBUG: Processing custom property " +
+						p.getPropertyId() + " for type");
 				}
 				
 				// Only create new instance if absolutely necessary (should rarely happen)
 				if (property == null) {
+					// TCK DEBUG: Log the property type we're about to pass to createPropDef
+					PropertyType propType = p.getPropertyType();
+					System.err.println("TCK TYPE MANAGER DEBUG: Creating property " + p.getPropertyId() +
+						" with PropertyType=" + propType + " (from NemakiPropertyDefinition)");
+
+					if (propType == null) {
+						System.err.println("TCK TYPE MANAGER CRITICAL: PropertyType is NULL for " + p.getPropertyId());
+						System.err.println("TCK TYPE MANAGER CRITICAL: p.class=" + p.getClass().getName());
+						// Try to get type from core directly
+						if (originalCore != null) {
+							PropertyType coreType = originalCore.getPropertyType();
+							System.err.println("TCK TYPE MANAGER CRITICAL: originalCore.propertyType=" + coreType);
+							if (coreType != null) {
+								propType = coreType;
+								System.err.println("TCK TYPE MANAGER CRITICAL: Using originalCore propertyType");
+							}
+						}
+					}
+
 					property = DataUtil.createPropDef(
 						p.getPropertyId(), p.getLocalName(),
 						p.getLocalNameSpace(), p.getQueryName(),
 						p.getDisplayName(), p.getDescription(),
-						p.getPropertyType(), p.getCardinality(),
+						propType, p.getCardinality(),
 						p.getUpdatability(), p.isRequired(), p.isQueryable(),
 						isInherited, p.getChoices(), p.isOpenChoice(),
 						p.isOrderable(), p.getDefaultValue(), p.getMinValue(),
@@ -2082,8 +2307,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 						p.getDecimalPrecision(), p.getDecimalMinValue(),
 						p.getDecimalMaxValue(), p.getMaxLength());
 						
-					// Add to global cache for future reuse
-					if (property != null) {
+					// CRITICAL FIX: Do NOT add custom properties to global cache
+					// The cache gets contaminated when PropertyDefinitionCore objects are reused
+					// Only add CMIS standard properties to cache
+					if (property != null && p.getPropertyId() != null && p.getPropertyId().startsWith("cmis:")) {
 						propertyDefinitionCoresByPropertyId.put(p.getPropertyId(), property);
 						propertyDefinitionCoresByQueryName.put(p.getQueryName(), property);
 					}
@@ -2097,9 +2324,17 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				// CRITICAL FIX: Only add to properties map if property is NOT NULL
 				// This prevents NULL PropertyDefinition objects from being serialized in JSON responses
 				if (property != null) {
+					// CRITICAL DEBUG: Check for PropertyID contamination
+					if (!property.getId().equals(p.getPropertyId())) {
+						System.err.println("TCK CONTAMINATION DETECTED: Expected propertyId=" + p.getPropertyId() +
+							" but property.getId()=" + property.getId());
+					} else {
+						System.err.println("TCK PROPERTY OK: propertyId=" + p.getPropertyId() + " matches");
+					}
+
 					// Use the clean property ID from the builder as the key
 					properties.put(property.getId(), property);
-							
+
 					// Also add to subTypeProperties for inheritance
 					specificProperties.add(property);
 				} else {
@@ -2119,24 +2354,35 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		} else {
 			subTypeProperties.put(type.getId(), specificProperties);
 		}
+
+		// DEBUG: Log final type properties
+		System.err.println("=== FINAL TYPE PROPERTIES for " + type.getId() + " ===");
+		System.err.println("Type has " + type.getPropertyDefinitions().size() + " properties total");
+		for (String propId : type.getPropertyDefinitions().keySet()) {
+			if (!propId.startsWith("cmis:")) {
+				System.err.println("  Final custom property: " + propId);
+			}
+		}
 	}
 
 
 	/**
-	 * CRITICAL TCK FIX: Simplified PropertyDefinition inheritance logic
+	 * CRITICAL TCK FIX: PropertyDefinition inheritance logic for CMIS 1.1 compliance
 	 * 
-	 * Based on vk/61b7-tck-type-t approach that achieved 100% Docker QA success.
-	 * 
-	 * Key insight: When copying properties from parent to child type, ALL properties
-	 * from parent should be marked as inherited=true in the child type.
-	 * This is the correct CMIS 1.1 interpretation for PropertyDefinition inheritance.
+	 * Key insight: PropertyDefinition inheritance flags must be set correctly:
+	 * - Base types: inherited=false for their own CMIS properties
+	 * - Derived types: inherited=true for properties inherited from parent types
 	 * 
 	 * @param propertyId Property identifier
 	 * @param typeId Type identifier (for logging)
 	 * @return true if the property should be marked as inherited=true
 	 */
 	private boolean shouldBeInherited(String propertyId, String typeId) {
+		log.info("REAL TCK DEBUG shouldBeInherited: propertyId=" + propertyId + ", typeId=" + typeId);
+		System.err.println("*** REAL TCK DEBUG shouldBeInherited: propertyId=" + propertyId + ", typeId=" + typeId + " ***");
+		
 		if (propertyId == null) {
+			log.warn("REAL TCK DEBUG shouldBeInherited: propertyId is null, returning false");
 			return false;
 		}
 		
@@ -2144,6 +2390,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Check if this is a base type first
 		if (typeId != null && isBaseType(typeId)) {
 			// Base types define their own CMIS properties with inherited=false
+			log.info("REAL TCK DEBUG shouldBeInherited: " + typeId + " is base type, returning false for " + propertyId);
+			System.err.println("*** REAL TCK DEBUG shouldBeInherited: " + typeId + " is base type, returning false for " + propertyId + " ***");
 			return false;
 		}
 		
@@ -2153,6 +2401,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Since this method is called when copying from parent to child,
 		// the child should mark these as inherited=true
 		if (propertyId.startsWith("cmis:")) {
+			log.info("REAL TCK DEBUG shouldBeInherited: " + propertyId + " is CMIS property in derived type " + typeId + ", returning true");
+			System.err.println("*** REAL TCK DEBUG shouldBeInherited: " + propertyId + " is CMIS property in derived type " + typeId + ", returning true ***");
 			return true;
 		}
 		
@@ -2163,11 +2413,15 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (propertyId.contains(":") && !propertyId.startsWith("cmis:")) {
 			// Since this method is called when copying from parent to child,
 			// ALL properties from parent should be marked as inherited in child
+			log.info("REAL TCK DEBUG shouldBeInherited: " + propertyId + " is custom property in derived type " + typeId + ", returning true");
+			System.err.println("*** REAL TCK DEBUG shouldBeInherited: " + propertyId + " is custom property in derived type " + typeId + ", returning true ***");
 			return true;
 		}
 		
 		// STRATEGY 3: Non-namespaced properties
 		// Default to inherited for compatibility
+		log.info("REAL TCK DEBUG shouldBeInherited: " + propertyId + " is non-namespaced property, returning true");
+		System.err.println("*** REAL TCK DEBUG shouldBeInherited: " + propertyId + " is non-namespaced property, returning true ***");
 		return true;
 	}
 
@@ -2462,6 +2716,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL DEBUG: Entry point logging
 		System.err.println("*** getTypeDefinition CALLED: repo=" + repositoryId + ", type=" + typeId + " ***");
 		System.err.println("*** THIS INSTANCE: " + this.hashCode() + " ***");
+		log.debug("OBJECT_IDENTITY: getTypeDefinition called for " + typeId); // (important-comment)
+		log.warn("INHERITANCE DEBUG: getTypeDefinition method called for repositoryId=" + repositoryId + ", typeId=" + typeId);
 		System.err.println("*** ClassLoader: " + this.getClass().getClassLoader() + " ***");
 		System.err.println("*** ClassLoader Identity: " + System.identityHashCode(this.getClass().getClassLoader()) + " ***");
 		System.err.println("*** TYPES MAP: " + (TYPES != null ? "EXISTS" : "NULL") + " ***");
@@ -2564,6 +2820,35 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 		TypeDefinition typeDefinition = tc.getTypeDefinition();
 		
+		// CRITICAL DEBUG: Log actual PropertyDefinition inherited flags being returned to TCK
+		if ("nemaki:user".equals(typeId)) {
+			System.err.println("*** NEMAKI:USER DEBUG: About to return type definition for nemaki:user ***");
+			System.err.println("*** NEMAKI:USER DEBUG: typeDefinition is " + (typeDefinition != null ? "NOT NULL" : "NULL") + " ***");
+			
+			if (typeDefinition != null) {
+				System.err.println("*** NEMAKI:USER DEBUG: typeDefinition class: " + typeDefinition.getClass().getName() + " ***");
+				System.err.println("*** NEMAKI:USER DEBUG: PropertyDefinitions is " + (typeDefinition.getPropertyDefinitions() != null ? "NOT NULL" : "NULL") + " ***");
+				
+				if (typeDefinition.getPropertyDefinitions() != null) {
+					System.err.println("*** NEMAKI:USER DEBUG: PropertyDefinitions count: " + typeDefinition.getPropertyDefinitions().size() + " ***");
+					System.err.println("*** NEMAKI:USER DEBUG: PropertyDefinition keys: " + typeDefinition.getPropertyDefinitions().keySet() + " ***");
+					
+					for (PropertyDefinition<?> prop : typeDefinition.getPropertyDefinitions().values()) {
+						if (prop != null) {
+							System.err.println("*** NEMAKI:USER DEBUG: Property " + prop.getId() + " inherited=" + prop.isInherited() + " ***");
+							if (prop.getId().equals("cmis:objectId") || prop.getId().equals("cmis:baseTypeId")) {
+								log.error("NEMAKI:USER CRITICAL: PropertyDefinition " + prop.getId() + " inherited=" + prop.isInherited() + " for type " + typeId);
+							}
+						}
+					}
+				} else {
+					System.err.println("*** NEMAKI:USER DEBUG: PropertyDefinitions is NULL - this is the problem! ***");
+				}
+			} else {
+				System.err.println("*** NEMAKI:USER DEBUG: typeDefinition is NULL - this is the problem! ***");
+			}
+		}
+		
 		// Check for property contamination patterns
 		if (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null) {
 					
@@ -2636,18 +2921,76 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				" has NULL property definitions");
 		}
 
-		// CRITICAL CONSISTENCY FIX: Use shared TypeDefinition system for normal path
-		// This ensures both normal and refresh paths return TypeDefinition objects with identical object identity
-		TypeDefinition sharedTypeDefinition = getSharedTypeDefinition(repositoryId, typeDefinition.getId(), typeDefinition);
-		if (log.isDebugEnabled()) {
-			log.debug("TYPE DEFINITION SHARING: Applied getSharedTypeDefinition() to normal path for type " + (typeDefinition != null ? typeDefinition.getId() : "null"));
+	// CRITICAL FIX: Check inheritance flags and force regeneration if incorrect
+	if (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null) {
+		boolean inheritanceFlagsIncorrect = false;
+		
+		// Check if this is a base type (cmis:document, cmis:folder, etc.)
+		String currentTypeId = typeDefinition.getId();
+		boolean isBaseType = currentTypeId != null && (
+			currentTypeId.equals("cmis:document") || currentTypeId.equals("cmis:folder") || 
+			currentTypeId.equals("cmis:relationship") || currentTypeId.equals("cmis:policy") || 
+			currentTypeId.equals("cmis:item") || currentTypeId.equals("cmis:secondary")
+		);
+		
+		if (isBaseType) {
+			// For base types, all properties should have inherited=false
+			for (PropertyDefinition<?> prop : typeDefinition.getPropertyDefinitions().values()) {
+				if (prop != null && prop.isInherited()) {
+					log.warn("INHERITANCE FIX: Base type " + currentTypeId + " has property " + prop.getId() + " with inherited=true, should be false");
+					inheritanceFlagsIncorrect = true;
+					break;
+				}
+			}
+		} else {
+			// For derived types, check if CMIS base properties have inherited=true
+			PropertyDefinition<?> objectIdProp = typeDefinition.getPropertyDefinitions().get("cmis:objectId");
+			PropertyDefinition<?> baseTypeIdProp = typeDefinition.getPropertyDefinitions().get("cmis:baseTypeId");
+			
+			if ((objectIdProp != null && !objectIdProp.isInherited()) || 
+				(baseTypeIdProp != null && !baseTypeIdProp.isInherited())) {
+				log.warn("INHERITANCE FIX: Derived type " + currentTypeId + " has CMIS base properties with inherited=false, should be true");
+				inheritanceFlagsIncorrect = true;
+			}
 		}
 		
-		if (log.isDebugEnabled()) {
-			log.debug("getTypeDefinition EXIT: typeId=" + (sharedTypeDefinition != null ? sharedTypeDefinition.getId() : "null"));
+		// If inheritance flags are incorrect, force cache regeneration
+		if (inheritanceFlagsIncorrect) {
+			log.warn("INHERITANCE FIX: Forcing cache regeneration for type " + currentTypeId + " due to incorrect inheritance flags");
+			
+			try {
+				// Invalidate cache and force regeneration
+				invalidateTypeDefinitionCache(repositoryId);
+				
+				// Regenerate types with correct inheritance logic
+				generate(repositoryId);
+				
+				Map<String, TypeDefinitionContainer> refreshedTypes = TYPES.get(repositoryId);
+				if (refreshedTypes != null) {
+					TypeDefinitionContainer refreshedTc = refreshedTypes.get(typeDefinition.getId());
+					if (refreshedTc != null) {
+						typeDefinition = refreshedTc.getTypeDefinition();
+						log.info("INHERITANCE FIX: Successfully regenerated type " + currentTypeId + " with correct inheritance flags");
+					}
+				}
+			} catch (Exception e) {
+				log.error("INHERITANCE FIX: Failed to regenerate type " + currentTypeId + ": " + e.getMessage(), e);
+			}
 		}
-		
-		return sharedTypeDefinition;
+	}
+
+	// CRITICAL CONSISTENCY FIX: Use shared TypeDefinition system for normal path
+	// This ensures both normal and refresh paths return TypeDefinition objects with identical object identity
+	TypeDefinition sharedTypeDefinition = getSharedTypeDefinition(repositoryId, typeDefinition.getId(), typeDefinition);
+	if (log.isDebugEnabled()) {
+		log.debug("TYPE DEFINITION SHARING: Applied getSharedTypeDefinition() to normal path for type " + (typeDefinition != null ? typeDefinition.getId() : "null"));
+	}
+	
+	if (log.isDebugEnabled()) {
+		log.debug("getTypeDefinition EXIT: typeId=" + (sharedTypeDefinition != null ? sharedTypeDefinition.getId() : "null"));
+	}
+	
+	return sharedTypeDefinition;
 	}
 
 	@Override
@@ -2987,15 +3330,20 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			repositoryId, k -> new ConcurrentHashMap<>());
 		
 		// Return existing shared instance or create new one
-		return repoCache.computeIfAbsent(cacheKey, k -> {
-			if (log.isDebugEnabled()) {
-				log.debug("Creating shared TypeDefinition instance for " + cacheKey);
-			}
+		TypeDefinition result = repoCache.computeIfAbsent(cacheKey, k -> {
+			System.out.println("OBJECT_IDENTITY: Creating shared TypeDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(originalDefinition) + ")"); // (important-comment)
 			
 			// Apply PropertyDefinition sharing first, then use as shared TypeDefinition
 			TypeDefinition consistentTypeDefinition = ensureConsistentPropertyDefinitions(repositoryId, originalDefinition);
+			log.debug("OBJECT_IDENTITY: After ensureConsistentPropertyDefinitions for " + cacheKey + " (hash: " + System.identityHashCode(consistentTypeDefinition) + ")"); // (important-comment)
 			return consistentTypeDefinition;
 		});
+		
+		if (result == repoCache.get(cacheKey)) {
+			System.out.println("OBJECT_IDENTITY: Returning cached TypeDefinition for " + cacheKey + " (hash: " + System.identityHashCode(result) + ")"); // (important-comment)
+		}
+		
+		return result;
 	}
 	
 	/**
@@ -3010,42 +3358,73 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * @param originalDefinition Original PropertyDefinition to use as template
 	 * @return Shared PropertyDefinition instance
 	 */
-	private PropertyDefinition<?> getSharedPropertyDefinition(String repositoryId, String typeId, 
+	private PropertyDefinition<?> getSharedPropertyDefinition(String repositoryId, String typeId,
 			String propertyId, PropertyDefinition<?> originalDefinition) {
-		
+
 		if (originalDefinition == null) return null;
-		
+
 		// CRITICAL FIX: Include both typeId and inherited flag in cache key
 		// Each type needs its own PropertyDefinition instances with correct inherited flags
 		// Base types have inherited=false, derived types have inherited=true for CMIS properties
 		boolean isInherited = originalDefinition.isInherited();
-		
-		// For base types, force inherited=false for CMIS properties
-		if (isBaseType(typeId) && propertyId.startsWith("cmis:")) {
-			isInherited = false;
-			if (originalDefinition instanceof AbstractPropertyDefinition) {
-				((AbstractPropertyDefinition<?>) originalDefinition).setIsInherited(false);
+
+		// CRITICAL FIX: Set correct inherited flag based on type hierarchy
+		// Create a copy before modifying to avoid side effects
+		PropertyDefinition<?> definitionToCache = originalDefinition;
+		if (propertyId.startsWith("cmis:")) {
+			if (isBaseType(typeId)) {
+				// For base types, force inherited=false for CMIS properties
+				if (isInherited != false) {
+					definitionToCache = DataUtil.clonePropertyDefinition(originalDefinition);
+					isInherited = false;
+					if (definitionToCache instanceof AbstractPropertyDefinition) {
+						((AbstractPropertyDefinition<?>) definitionToCache).setIsInherited(false);
+					}
+					log.warn("DEBUG: Setting inherited=false for CMIS property " + propertyId + " in base type " + typeId);
+				}
+			} else {
+				// For derived types, force inherited=true for CMIS properties
+				if (isInherited != true) {
+					definitionToCache = DataUtil.clonePropertyDefinition(originalDefinition);
+					isInherited = true;
+					if (definitionToCache instanceof AbstractPropertyDefinition) {
+						((AbstractPropertyDefinition<?>) definitionToCache).setIsInherited(true);
+					}
+					log.warn("DEBUG: Setting inherited=true for CMIS property " + propertyId + " in derived type " + typeId);
+				}
 			}
 		}
-		
+
 		String cacheKey = repositoryId + ":" + typeId + ":" + propertyId + ":" + isInherited;
-		
+
 		// Get or create repository-level cache
 		Map<String, PropertyDefinition<?>> repoCache = SHARED_PROPERTY_DEFINITIONS.computeIfAbsent(
 			repositoryId, k -> new ConcurrentHashMap<>());
-		
+
 		// Return existing shared instance or create new one
-		return repoCache.computeIfAbsent(cacheKey, k -> {
-			if (log.isDebugEnabled()) {
-				log.debug("Creating shared PropertyDefinition instance for " + cacheKey);
-			}
-			
-			// For first occurrence, use the original definition as the shared instance
-			// This ensures each type gets its own PropertyDefinition instance with correct inherited flag
-			return originalDefinition;
+		PropertyDefinition<?> finalDefinition = definitionToCache;
+		PropertyDefinition<?> result = repoCache.computeIfAbsent(cacheKey, k -> {
+			System.out.println("OBJECT_IDENTITY: Creating shared PropertyDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(finalDefinition) + ")"); // (important-comment)
+			return finalDefinition;
 		});
+		
+		if (result == repoCache.get(cacheKey)) {
+			System.out.println("OBJECT_IDENTITY: Returning cached PropertyDefinition for " + cacheKey + " (hash: " + System.identityHashCode(result) + ")"); // (important-comment)
+		}
+
+		return result;
 	}
 	
+	
+	/**
+	 * Helper method to determine if a type is a base type
+	 */
+	private boolean isBaseType(String typeId) {
+		return "cmis:document".equals(typeId) || "cmis:folder".equals(typeId) || 
+			   "cmis:relationship".equals(typeId) || "cmis:policy".equals(typeId) || 
+			   "cmis:item".equals(typeId) || "cmis:secondary".equals(typeId);
+	}
+
 	/**
 	 * RESTORED: Ensure TypeDefinition uses consistent PropertyDefinition instances
 	 * @param repositoryId Repository identifier
@@ -3057,16 +3436,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		String typeId = typeDefinition.getId();
 		
-		if (log.isDebugEnabled()) {
-			log.debug("RESTORED: Ensuring consistent properties for type " + typeId);
-		}
+		log.debug("OBJECT_IDENTITY: Ensuring consistent properties for type " + typeId + " (original hash: " + System.identityHashCode(typeDefinition) + ")"); // (important-comment)
 		
 		Map<String, PropertyDefinition<?>> originalProps = typeDefinition.getPropertyDefinitions();
 		
 		if (originalProps == null || originalProps.isEmpty()) {
-			if (log.isDebugEnabled()) {
-				log.debug("No properties to process for type " + typeId);
-			}
+			log.debug("OBJECT_IDENTITY: No properties to process for type " + typeId); // (important-comment)
 			return typeDefinition;
 		}
 		
@@ -3085,15 +3460,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			sharedCount++;
 			
 			// Log CMIS property sharing specifically
-			if (propertyId.startsWith("cmis:") && log.isDebugEnabled()) {
-				log.debug("SHARED PROPERTY: " + propertyId + " -> instance@" + 
-					System.identityHashCode(sharedProp) + " for type " + typeId);
+			if (propertyId.startsWith("cmis:")) {
+				log.debug("OBJECT_IDENTITY: Replaced " + propertyId + " with shared instance (original hash: " + 
+				         System.identityHashCode(originalProp) + ", shared hash: " + System.identityHashCode(sharedProp) + ")"); // (important-comment)
 			}
 		}
 		
-		if (log.isDebugEnabled()) {
-			log.debug("CONSISTENCY SYSTEM: Applied sharing to " + sharedCount + " properties for type " + typeId);
-		}
+		log.debug("OBJECT_IDENTITY: Applied sharing to " + sharedCount + " properties for type " + typeId); // (important-comment)
 		
 		// RESTORED FIX: Modify original TypeDefinition instance directly to preserve object identity
 		// TCK compliance requires both getTypeDefinition() and getTypesDescendants() to return 
@@ -3104,10 +3477,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				((org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) typeDefinition)
 					.setPropertyDefinitions(sharedProps);
 				
-				if (log.isDebugEnabled()) {
-					log.debug("RESTORED FIX: Modified original TypeDefinition instance directly for " + typeId + 
-						" - preserving object identity for TCK compliance");
-				}
+				log.debug("OBJECT_IDENTITY: Successfully updated PropertyDefinitions map for type " + typeId + 
+				         " (final hash: " + System.identityHashCode(typeDefinition) + ")"); // (important-comment)
 				
 				return typeDefinition; // Return the SAME instance
 			}
@@ -3117,8 +3488,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		return typeDefinition; // Return original instance
 	}
-	
-	
+
 	
 	
 	
@@ -3284,8 +3654,108 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	public void addTypeDefinition(String repositoryId,
 			TypeDefinition typeDefinition, boolean addInheritedProperties) {
-		// TODO Auto-generated method stub
+		// CRITICAL FIX: Add a single type to cache without clearing everything
+		if (repositoryId == null || typeDefinition == null) {
+			log.warn("Cannot add null type definition to cache");
+			return;
+		}
 
+		System.out.println("\n=== addTypeDefinition called for type: " + typeDefinition.getId() + " ===");
+		log.info("=== addTypeDefinition called for type: " + typeDefinition.getId() + " ===");
+
+		synchronized (initLock) {
+			// Ensure cache is initialized
+			if (!initialized) {
+				initGlobalTypes();
+			}
+
+			Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+			if (types == null) {
+				log.warn("No type cache for repository: " + repositoryId);
+				return;
+			}
+
+			// Check current cache state
+			System.out.println("Current cache contains " + types.size() + " types");
+			log.info("Current cache contains " + types.size() + " types");
+			if (typeDefinition.getParentTypeId() != null) {
+				System.out.println("Type " + typeDefinition.getId() + " has parent: " + typeDefinition.getParentTypeId());
+				log.info("Type " + typeDefinition.getId() + " has parent: " + typeDefinition.getParentTypeId());
+				TypeDefinitionContainer parentInCache = types.get(typeDefinition.getParentTypeId());
+				if (parentInCache != null) {
+					TypeDefinition parentDef = parentInCache.getTypeDefinition();
+					System.out.println("Parent type " + typeDefinition.getParentTypeId() + " found in cache with " +
+						parentDef.getPropertyDefinitions().size() + " properties");
+					log.info("Parent type " + typeDefinition.getParentTypeId() + " found in cache with " +
+						parentDef.getPropertyDefinitions().size() + " properties");
+					// Log parent's custom properties
+					int customCount = 0;
+					for (String propId : parentDef.getPropertyDefinitions().keySet()) {
+						if (!propId.startsWith("cmis:")) {
+							System.out.println("  Parent custom property in cache: " + propId);
+							log.info("  Parent custom property in cache: " + propId);
+							customCount++;
+						}
+					}
+					System.out.println("Parent has " + customCount + " custom properties in cache");
+				} else {
+					System.out.println("Parent type " + typeDefinition.getParentTypeId() + " NOT in cache yet");
+					log.info("Parent type " + typeDefinition.getParentTypeId() + " NOT in cache yet");
+				}
+			}
+
+			// Build the complete type definition from database
+			NemakiTypeDefinition nemakiType = typeService.getTypeDefinition(repositoryId, typeDefinition.getId());
+			if (nemakiType == null) {
+				log.warn("Type not found in database: " + typeDefinition.getId());
+				return;
+			}
+
+			// Build the complete type with all properties using the existing method
+			AbstractTypeDefinition builtType = buildTypeDefinitionFromDB(repositoryId, nemakiType);
+
+			if (builtType != null) {
+				// Remove old version if exists
+				if (types.containsKey(typeDefinition.getId())) {
+					types.remove(typeDefinition.getId());
+				}
+
+				// Add the new type
+				addTypeInternal(types, builtType);
+
+				System.out.println("Added/Updated type in cache: " + typeDefinition.getId() +
+						 " with " + builtType.getPropertyDefinitions().size() + " properties");
+				log.info("Added/Updated type in cache: " + typeDefinition.getId() +
+						 " with " + builtType.getPropertyDefinitions().size() + " properties");
+
+				// Log custom properties added
+				for (String propId : builtType.getPropertyDefinitions().keySet()) {
+					PropertyDefinition<?> prop = builtType.getPropertyDefinitions().get(propId);
+					if (!propId.startsWith("cmis:")) {
+						System.out.println("  Type has custom property: " + propId + " (inherited=" + prop.isInherited() + ")");
+						log.info("  Type has custom property: " + propId + " (inherited=" + prop.isInherited() + ")");
+					}
+				}
+
+				// Check if this affects parent type in cache
+				if (typeDefinition.getParentTypeId() != null) {
+					TypeDefinitionContainer parentAfterAdd = types.get(typeDefinition.getParentTypeId());
+					if (parentAfterAdd != null) {
+						TypeDefinition parentDef = parentAfterAdd.getTypeDefinition();
+						System.out.println("After adding child, parent " + typeDefinition.getParentTypeId() +
+							" still has " + parentDef.getPropertyDefinitions().size() + " properties");
+						log.info("After adding child, parent " + typeDefinition.getParentTypeId() +
+							" still has " + parentDef.getPropertyDefinitions().size() + " properties");
+						for (String propId : parentDef.getPropertyDefinitions().keySet()) {
+							if (!propId.startsWith("cmis:")) {
+								System.out.println("  Parent still has custom property: " + propId);
+								log.info("  Parent still has custom property: " + propId);
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	public void updateTypeDefinition(String repositoryId, TypeDefinition typeDefinition) {
@@ -3394,18 +3864,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		return childTypes;
 	}
 
-	/**
-	 * Check if the specified type is a base type (cannot be deleted)
-	 */
-	private boolean isBaseType(String typeId) {
-		// CMIS base types that cannot be deleted
-		return BaseTypeId.CMIS_DOCUMENT.value().equals(typeId) ||
-			   BaseTypeId.CMIS_FOLDER.value().equals(typeId) ||
-			   BaseTypeId.CMIS_RELATIONSHIP.value().equals(typeId) ||
-			   BaseTypeId.CMIS_POLICY.value().equals(typeId) ||
-			   BaseTypeId.CMIS_ITEM.value().equals(typeId) ||
-			   BaseTypeId.CMIS_SECONDARY.value().equals(typeId);
-	}
 
 	/**
 	 * Check if the type has existing instances in the repository

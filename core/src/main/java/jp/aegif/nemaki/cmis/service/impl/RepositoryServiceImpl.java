@@ -87,11 +87,22 @@ public class RepositoryServiceImpl implements RepositoryService,
 	 */
 	private TypeDefinition getSharedTypeDefinition(String repositoryId, String typeId) {
 		String cacheKey = repositoryId + ":" + typeId;
+
+		// CRITICAL FIX: Check if we have a cached version with 0 properties and invalidate it
+		TypeDefinition cached = SHARED_TYPE_DEFINITIONS.get(cacheKey);
+		if (cached != null && (cached.getPropertyDefinitions() == null || cached.getPropertyDefinitions().isEmpty())) {
+			// Custom types should have properties, if we have 0 it means the cache is stale
+			if (!typeId.startsWith("cmis:")) { // Don't invalidate base types with no custom properties
+				log.warn("TCK FIX: Cached TypeDefinition for " + typeId + " has 0 properties, invalidating cache");
+				SHARED_TYPE_DEFINITIONS.remove(cacheKey);
+			}
+		}
+
 		return SHARED_TYPE_DEFINITIONS.computeIfAbsent(cacheKey, k -> {
 			if (log.isDebugEnabled()) {
 				log.debug("Creating shared TypeDefinition for " + typeId);
 			}
-			
+
 			TypeDefinition td = typeManager.getTypeDefinition(repositoryId, typeId);
 			if (td != null && td.getPropertyDefinitions() != null) {
 				int validPropCount = 0;
@@ -110,6 +121,11 @@ public class RepositoryServiceImpl implements RepositoryService,
 				}
 				if (log.isDebugEnabled()) {
 					log.debug("TypeDefinition " + typeId + " has " + validPropCount + " valid properties and " + nullPropCount + " null properties");
+				}
+
+				// CRITICAL FIX: Log warning if we're about to cache a type with 0 properties
+				if (validPropCount == 0 && !typeId.startsWith("cmis:")) {
+					log.error("TCK WARNING: About to cache custom type " + typeId + " with 0 properties!");
 				}
 			}
 			return td;
@@ -224,7 +240,17 @@ public class RepositoryServiceImpl implements RepositoryService,
 		try {
 			// CRITICAL FIX: Use shared TypeDefinition instance for TCK object identity comparison
 			TypeDefinition typeDefinition = getSharedTypeDefinition(repositoryId, typeId);
-			
+
+			// TCK DEBUG: Check what we're returning
+			System.err.println("TCK DEBUG RepositoryServiceImpl.getTypeDefinition: Returning type " + typeId +
+				" with " + (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null ?
+				typeDefinition.getPropertyDefinitions().size() : 0) + " properties");
+			if (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null &&
+				typeDefinition.getPropertyDefinitions().size() > 0) {
+				System.err.println("TCK DEBUG: First property: " +
+					typeDefinition.getPropertyDefinitions().values().iterator().next().getId());
+			}
+
 			exceptionService.objectNotFound(DomainType.OBJECT_TYPE, typeDefinition, typeId);
 			return typeDefinition;
 			
@@ -291,45 +317,50 @@ public class RepositoryServiceImpl implements RepositoryService,
 		}
 
 		ntd.setProperties(new ArrayList<String>());
-		
-		// CRITICAL FIX: Inherit parent type property definitions
-		String parentTypeId = type.getParentTypeId();
-		if (parentTypeId != null) {
-			TypeDefinition parentType = typeManager.getTypeDefinition(repositoryId, parentTypeId);
-			if (parentType != null && parentType.getPropertyDefinitions() != null) {
-				
-				// Get parent type definition from database to find property IDs
-				// FIX: Use typeService to get NemakiTypeDefinition directly from database
-				NemakiTypeDefinition parentTypeDef = typeService.getTypeDefinition(repositoryId, parentTypeId);
-				if (parentTypeDef != null && parentTypeDef.getProperties() != null) {
-					
-					// Inherit all property IDs from parent type
-					for (String parentPropId : parentTypeDef.getProperties()) {
-						List<String> l = ntd.getProperties();
-						if (!l.contains(parentPropId)) {
-							l.add(parentPropId);
-							ntd.setProperties(l);
-						}
-					}
-				}
-			}
-		}
+
+		// CRITICAL FIX: Do NOT inherit parent property IDs directly
+		// Parent properties are automatically inherited through the type hierarchy
+		// in TypeManagerImpl.buildTypeDefinitionBaseFromDB() which copies parent properties
+		// with the correct inherited=true flag.
+		// Child types should only store their own custom property IDs, not parent's IDs.
 		
 		// Add custom property definitions (existing logic)
 		if (MapUtils.isNotEmpty(propDefs)) {
+			log.error("TCK DEBUG: Processing " + propDefs.size() + " property definitions");
 			for (String key : propDefs.keySet()) {
 				PropertyDefinition<?> propDef = propDefs.get(key);
-				
+
+				log.error("TCK DEBUG: Processing property key=" + key + ", systemIds.contains=" + systemIds.contains(key));
+
 				if (!systemIds.contains(key)) {
+					// CRITICAL DEBUG: Log all property information
+					System.err.println("=== TCK PROPERTY CREATION FROM PROPDEF ===");
+					System.err.println("  Map key: " + key);
+					System.err.println("  propDef.getId(): " + propDef.getId());
+					System.err.println("  propDef.getLocalName(): " + propDef.getLocalName());
+					System.err.println("  propDef.getDisplayName(): " + propDef.getDisplayName());
+					System.err.println("  propDef.getQueryName(): " + propDef.getQueryName());
+					System.err.println("  propDef.getPropertyType(): " + propDef.getPropertyType());
+					System.err.println("  propDef.getClass(): " + propDef.getClass().getName());
+
+					log.error("TCK DEBUG: Creating custom property: " + key);
 					//Check PropertyDefinition
 					exceptionService.constraintQueryName(propDef);
 					exceptionService.constraintPropertyDefinition(type, propDef);
 
 					// CRITICAL FIX: Preserve original property ID to prevent contamination
 					String originalPropertyId = propDef.getId();
-					log.info("DEBUG: Creating property definition for original ID: " + originalPropertyId);
+					log.error("TCK DEBUG: Creating property definition for original ID: " + originalPropertyId);
 					
 					NemakiPropertyDefinition create = new NemakiPropertyDefinition(propDef);
+
+					// CRITICAL FIX: For custom properties, ensure localName matches property ID
+					if (originalPropertyId != null && originalPropertyId.contains(":") &&
+						!originalPropertyId.startsWith("cmis:")) {
+						// Custom property - force localName to be the property ID
+						create.setLocalName(originalPropertyId);
+						log.error("TCK CRITICAL: Setting localName to propertyId for custom property: " + originalPropertyId);
+					}
 					
 					// CRITICAL DEBUG: Verify the NemakiPropertyDefinition preserves the correct property ID
 					if (!originalPropertyId.equals(create.getPropertyId())) {
@@ -340,10 +371,22 @@ public class RepositoryServiceImpl implements RepositoryService,
 						create.setPropertyId(originalPropertyId);
 						log.info("DEBUG: Property ID forced back to correct value: " + originalPropertyId);
 					}
-					
+
 					NemakiPropertyDefinitionDetail created = typeService
 							.createPropertyDefinition(repositoryId, create);
-					
+
+					// CRITICAL VALIDATION: Ensure the created detail has correct localName
+					if (originalPropertyId != null && originalPropertyId.contains(":") &&
+						!originalPropertyId.startsWith("cmis:")) {
+						if (!originalPropertyId.equals(created.getLocalName())) {
+							log.error("TCK CRITICAL: Detail localName mismatch! Expected: " + originalPropertyId +
+								", Got: " + created.getLocalName());
+							// Force correct localName
+							created.setLocalName(originalPropertyId);
+							typeService.updatePropertyDefinitionDetail(repositoryId, created);
+						}
+					}
+
 					// CRITICAL FIX: Enhanced contamination detection and handling
 					NemakiPropertyDefinition retrievedProp = typeService.getPropertyDefinition(repositoryId, created.getId());
 					if (retrievedProp != null) {
@@ -368,9 +411,23 @@ public class RepositoryServiceImpl implements RepositoryService,
 					}
 
 					List<String> l = ntd.getProperties();
-					// CRITICAL FIX: Add the property ID (e.g., "tck:boolean"), NOT the database ID
-					l.add(propDef.getId());  // Use the actual property ID, not the database ID
+					// CRITICAL FIX: Store the detail ID (database reference), not the property ID
+					// The detail ID links to the PropertyDefinitionDetail which contains the correct localName
+					log.error("TCK DEBUG: Adding detail ID to type properties: detailId=" + created.getId() +
+						", propertyId=" + originalPropertyId + ", localName=" + created.getLocalName());
+					l.add(created.getId());  // Store the detail ID for database reference
 					ntd.setProperties(l);
+
+					// DEBUG: Verify what we're storing
+					System.err.println("=== PROPERTY STORAGE DEBUG ===");
+					System.err.println("  Original Property ID: " + originalPropertyId);
+					System.err.println("  Created Detail ID: " + created.getId());
+					System.err.println("  Created Detail LocalName: " + created.getLocalName());
+					System.err.println("  Storing in Type.properties: " + created.getId());
+					System.err.println("=== END PROPERTY STORAGE ===");
+
+					log.info("DEBUG: Stored detail ID '" + created.getId() + "' for property '" + originalPropertyId + "'");
+					log.info("DEBUG: Type definition properties list now contains: " + ntd.getProperties());
 				}
 			}
 		}
@@ -381,10 +438,21 @@ public class RepositoryServiceImpl implements RepositoryService,
 			log.info("DEBUG: Final property IDs: " + ntd.getProperties());
 		}
 
+		// CRITICAL DEBUG: Log the properties list before creation
+		log.error("TCK DEBUG: Before createTypeDefinition, ntd.properties = " + ntd.getProperties());
+		if (ntd.getProperties() != null && !ntd.getProperties().isEmpty()) {
+			for (String propId : ntd.getProperties()) {
+				log.error("TCK DEBUG: Property in list: " + propId);
+			}
+		}
+
 		// Create
 		log.info("DEBUG: Calling typeService.createTypeDefinition()");
 		NemakiTypeDefinition created = typeService.createTypeDefinition(repositoryId, ntd);
 		log.info("DEBUG: typeService.createTypeDefinition() completed - Created type ID: " + created.getTypeId());
+
+		// CRITICAL DEBUG: Log the created type's properties
+		log.error("TCK DEBUG: After createTypeDefinition, created.properties = " + created.getProperties());
 		
 		// CRITICAL FIX: Instead of full refresh, force specific repository cache refresh
 		log.info("DEBUG: Refreshing TypeManager cache");
@@ -531,6 +599,18 @@ public class RepositoryServiceImpl implements RepositoryService,
 		if (MapUtils.isNotEmpty(propDefs)) {
 			for (String key : propDefs.keySet()) {
 				PropertyDefinition<?> propDef = propDefs.get(key);
+
+				// CRITICAL DEBUG: Log incoming property definitions from TCK
+				if (key != null && key.startsWith("tck:")) {
+					System.err.println("=== TCK PROPERTY FROM CLIENT ===");
+					System.err.println("  Key (from map): " + key);
+					System.err.println("  PropDef.getId(): " + propDef.getId());
+					System.err.println("  PropDef.getLocalName(): " + propDef.getLocalName());
+					System.err.println("  PropDef.getQueryName(): " + propDef.getQueryName());
+					System.err.println("  PropDef.getPropertyType(): " + propDef.getPropertyType());
+					System.err.println("=== END TCK PROPERTY ===");
+				}
+
 				if (systemIds.contains(key))
 					continue;
 
@@ -583,12 +663,20 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// CRITICAL NOTE: Type is automatically set by NemakiTypeDefinition constructor to NodeType.TYPE_DEFINITION.value() = "typeDefinition"
 		// This ensures that newly created types are correctly identified in the typeDefinitions view
 
-		// To avoid the conflict of typeId, add suffix
-		if (typeManager.getTypeById(repositoryId, typeDefinition.getId()) == null) {
-			ntd.setTypeId(typeDefinition.getId());
+		// TCK FIX: Always preserve the original type ID provided by the client
+		// TCK tests create types with specific IDs (including timestamps) that must be preserved
+		String requestedTypeId = typeDefinition.getId();
+
+		// Check if this exact type ID already exists
+		if (typeManager.getTypeById(repositoryId, requestedTypeId) != null) {
+			// Type with this ID already exists - this shouldn't happen in TCK tests
+			log.warn("TCK WARNING: Type with ID " + requestedTypeId + " already exists!");
+			// Add timestamp suffix to avoid conflict
+			ntd.setTypeId(requestedTypeId + "_" + String.valueOf(System.currentTimeMillis()));
 		} else {
-			ntd.setTypeId(typeDefinition.getId() + "_"
-					+ String.valueOf(System.currentTimeMillis()));
+			// Use the exact type ID provided by the client (including any timestamps)
+			ntd.setTypeId(requestedTypeId);
+			log.info("TCK DEBUG: Using exact type ID from client: " + requestedTypeId);
 		}
 		ntd.setLocalName(typeDefinition.getLocalName());
 		ntd.setLocalNameSpace(typeDefinition.getLocalNamespace());
@@ -646,54 +734,58 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 		// CRITICAL FIX: Proper property ID mapping without contamination
 		LinkedHashMap<String, PropertyDefinition<?>> finalMap = new LinkedHashMap<String, PropertyDefinition<?>>();
-		
+
 		Map<String, PropertyDefinition<?>> criterionProps = criterion.getPropertyDefinitions();
-		
-		// Step 1: Add ALL properties from database (includes CMIS base properties)
+
+		// CRITICAL FIX: Use the properties from the database type definition directly
+		// The buildTypeDefinitionFromDB method has already created the correct property definitions
+		// with the right IDs (including custom properties with their correct IDs)
+		// We should NOT try to match by type as that causes contamination
 		if (propDefs != null) {
+			// Simply add all properties from the database type definition
+			// These already have the correct IDs set
 			for (Entry<String, PropertyDefinition<?>> entry : propDefs.entrySet()) {
-				finalMap.put(entry.getKey(), entry.getValue());
+				String mapKey = entry.getKey();
+				PropertyDefinition<?> propertyDef = entry.getValue();
+
+				// CRITICAL: Use the property's actual ID, not the map key
+				// The propertyDef.getId() contains the correct ID (e.g., "tck:boolean")
+				// while the map key might be different
+				String correctPropertyId = propertyDef.getId();
+
+				// Log for debugging TCK issues
+				if (!mapKey.equals(correctPropertyId)) {
+					log.error("TCK CRITICAL: Property ID mismatch in sortPropertyDefinitions - " +
+						"map key='" + mapKey + "' but property.getId()='" + correctPropertyId + "'");
+				}
+
+				// Always use the property's own ID
+				finalMap.put(correctPropertyId, propertyDef);
 			}
 		}
-		
-		// Step 2: CAREFULLY add criterion properties WITHOUT overwriting existing property IDs
+
+		// Step 2: Override ordering based on criterion if needed
+		// But DO NOT change the property IDs or definitions
 		if (MapUtils.isNotEmpty(criterionProps)) {
-			
-			for (Entry<String, PropertyDefinition<?>> criterionEntry : criterionProps.entrySet()) {
-				String criterionPropertyId = criterionEntry.getKey();
-				PropertyDefinition<?> criterionPropertyDef = criterionEntry.getValue();
-				
-				// CRITICAL: Check if this is a custom property (non-CMIS namespace)
-				if (!criterionPropertyId.startsWith("cmis:")) {
-					
-					// Find the correct database property definition by property type match
-					PropertyDefinition<?> correctDbProperty = null;
-					for (Entry<String, PropertyDefinition<?>> dbEntry : propDefs.entrySet()) {
-						PropertyDefinition<?> dbProperty = dbEntry.getValue();
-						
-						// Match by property type and ID (the REAL property ID, not the map key)
-						if (dbProperty.getPropertyType() == criterionPropertyDef.getPropertyType() &&
-							criterionPropertyId.equals(dbProperty.getId())) {
-							correctDbProperty = dbProperty;
-							break;
-						}
-					}
-					
-					if (correctDbProperty != null) {
-						// Use the criterion property ID (correct custom property name) with the database property definition
-						finalMap.put(criterionPropertyId, correctDbProperty);
-					} else {
-						// This should not happen if property creation worked correctly
-						// Fall back to criterion property but log it
-						finalMap.put(criterionPropertyId, criterionPropertyDef);
-					}
-				} else {
-					// CMIS standard properties - keep as-is from database if already present
-					if (!finalMap.containsKey(criterionPropertyId)) {
-						finalMap.put(criterionPropertyId, criterionPropertyDef);
-					}
+			// If we need to preserve the order from the criterion,
+			// rebuild the map in that order but keep the same property definitions
+			LinkedHashMap<String, PropertyDefinition<?>> orderedMap = new LinkedHashMap<>();
+
+			// First add properties in the order they appear in criterion
+			for (String criterionKey : criterionProps.keySet()) {
+				if (finalMap.containsKey(criterionKey)) {
+					orderedMap.put(criterionKey, finalMap.get(criterionKey));
 				}
 			}
+
+			// Then add any remaining properties not in criterion
+			for (Entry<String, PropertyDefinition<?>> entry : finalMap.entrySet()) {
+				if (!orderedMap.containsKey(entry.getKey())) {
+					orderedMap.put(entry.getKey(), entry.getValue());
+				}
+			}
+
+			finalMap = orderedMap;
 		}
 
 		// Set the corrected property definitions

@@ -266,12 +266,13 @@
 
 		<!-- Jakarta EE JAX-WS Runtime (Metro RI) -->
 
-		<!-- Updated to 1.1.0 Jakarta version - test-util removed as it's not directly used -->
+		<!-- Updated to 1.1.0-nemakiware Jakarta version with systemPath -->
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-test-tck</artifactId>
-			<version>1.1.0</version>
-			<scope>test</scope>
+			<version>1.1.0-nemakiware</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-test-tck-1.1.0-nemakiware.jar</systemPath>
 		</dependency>
 
 		<!-- ANTLR runtime dependency for OpenCMIS query parsing -->

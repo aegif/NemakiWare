@@ -449,7 +449,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					return null; // Return null instead of processing contaminated data
 				}
 				
+				System.err.println("TCK DEBUG: About to call convert() on CouchPropertyDefinitionCore with propertyId=" +
+					cpdc.getPropertyId() + ", propertyType=" + cpdc.getPropertyType());
 				NemakiPropertyDefinitionCore result = cpdc.convert();
+				System.err.println("TCK DEBUG: After convert(), NemakiPropertyDefinitionCore has propertyId=" +
+					result.getPropertyId() + ", propertyType=" + result.getPropertyType());
 				return result;
 			}
 			
@@ -2281,6 +2285,40 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					if (attachmentObj != null && attachmentObj instanceof InputStream) {
 						InputStream attachmentStream = (InputStream) attachmentObj;
 						log.error("Successfully retrieved binary attachment stream for: " + attachmentId);
+
+						// DEBUG: Log retrieved content details
+						log.error("=== ATTACHMENT RETRIEVAL DEBUG ===");
+						log.error("Attachment ID: " + attachmentId);
+						try {
+							// Try to peek at the content without consuming it
+							if (attachmentStream.markSupported()) {
+								attachmentStream.mark(100);
+								byte[] firstBytes = new byte[50];
+								int bytesRead = attachmentStream.read(firstBytes);
+								if (bytesRead > 0) {
+									String preview = new String(firstBytes, 0, bytesRead, "UTF-8");
+									log.error("Retrieved content preview: " + preview);
+									log.error("Retrieved bytes read: " + bytesRead);
+								}
+								attachmentStream.reset();
+							} else {
+								// Wrap in BufferedInputStream to support mark/reset
+								java.io.BufferedInputStream bufferedStream = new java.io.BufferedInputStream(attachmentStream);
+								bufferedStream.mark(100);
+								byte[] firstBytes = new byte[50];
+								int bytesRead = bufferedStream.read(firstBytes);
+								if (bytesRead > 0) {
+									String preview = new String(firstBytes, 0, bytesRead, "UTF-8");
+									log.error("Retrieved content preview (buffered): " + preview);
+									log.error("Retrieved bytes read: " + bytesRead);
+								}
+								bufferedStream.reset();
+								attachmentStream = bufferedStream;
+							}
+						} catch (Exception debugEx) {
+							log.error("Could not preview retrieved content: " + debugEx.getMessage());
+						}
+
 						result.setInputStream(attachmentStream);
 					} else {
 						log.error("WARNING: No binary attachment stream found for: " + attachmentId);
@@ -2523,9 +2561,30 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			if (contentStream != null && contentStream.getStream() != null) {
 				try {
 					String attachmentName = "content"; // Standard attachment name
-					String contentType = contentStream.getMimeType() != null ? 
+					String contentType = contentStream.getMimeType() != null ?
 						contentStream.getMimeType() : "application/octet-stream";
-					
+
+					// DEBUG: Log content details
+					log.error("=== ATTACHMENT CREATION DEBUG ===");
+					log.error("Document ID: " + documentId);
+					log.error("Content Type: " + contentType);
+					try {
+						// Mark and reset to read content without consuming
+						InputStream debugStream = contentStream.getStream();
+						if (debugStream.markSupported()) {
+							debugStream.mark(100);
+							byte[] firstBytes = new byte[50];
+							int bytesRead = debugStream.read(firstBytes);
+							if (bytesRead > 0) {
+								String preview = new String(firstBytes, 0, bytesRead, "UTF-8");
+								log.error("Content preview: " + preview);
+							}
+							debugStream.reset();
+						}
+					} catch (Exception debugEx) {
+						log.error("Could not preview content: " + debugEx.getMessage());
+					}
+
 					log.debug("STAGE 2: Adding binary attachment to document: " + documentId + " (revision: " + documentRevision + ")");
 					
 					// Retry logic for attachment creation as well

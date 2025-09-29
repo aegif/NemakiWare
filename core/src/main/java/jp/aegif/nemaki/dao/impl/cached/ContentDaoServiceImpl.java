@@ -177,17 +177,32 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		String cacheKey = "prop_def_cores_all";
 		NemakiCache cache = nemakiCachePool.get(repositoryId).getPropertyDefinitionCache();
 		List<NemakiPropertyDefinitionCore> cached = (List<NemakiPropertyDefinitionCore>) cache.get(cacheKey);
-		
+
 		if (cached != null) {
-			return cached;
+			// CRITICAL FIX: Return deep clones of all elements to prevent contamination
+			List<NemakiPropertyDefinitionCore> clonedList = new ArrayList<>();
+			for (NemakiPropertyDefinitionCore core : cached) {
+				if (core != null) {
+					clonedList.add(core.deepClone());
+				}
+			}
+			return clonedList;
 		}
-		
+
 		// Load from database and cache
 		List<NemakiPropertyDefinitionCore> result = nonCachedContentDaoService.getPropertyDefinitionCores(repositoryId);
 		if (result != null) {
 			cache.put(cacheKey, result);
+			// CRITICAL FIX: Return deep clones even for fresh data
+			List<NemakiPropertyDefinitionCore> clonedList = new ArrayList<>();
+			for (NemakiPropertyDefinitionCore core : result) {
+				if (core != null) {
+					clonedList.add(core.deepClone());
+				}
+			}
+			return clonedList;
 		}
-		
+
 		return result;
 	}
 
@@ -197,18 +212,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		String cacheKey = "prop_def_core_" + nodeId;
 		NemakiCache<NemakiPropertyDefinitionCore> cache = nemakiCachePool.get(repositoryId).getPropertyDefinitionCache();
 		NemakiPropertyDefinitionCore cached = cache.get(cacheKey);
-		
+
 		if (cached != null) {
-			return cached;
+			// CRITICAL FIX: Return a deep clone to prevent cache contamination
+			// Multiple type definitions may reference the same PropertyDefinitionCore
+			// but with different property IDs, causing contamination
+			return cached.deepClone();
 		}
-		
+
 		// Load from database and cache
 		NemakiPropertyDefinitionCore result = nonCachedContentDaoService.getPropertyDefinitionCore(repositoryId, nodeId);
 		if (result != null) {
 			cache.put(cacheKey, result);
+			// CRITICAL FIX: Return a deep clone even for fresh data to ensure consistency
+			return result.deepClone();
 		}
-		
-		return result;
+
+		return null;
 	}
 
 	@Override
@@ -217,18 +237,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		String cacheKey = "prop_def_" + propertyId;
 		NemakiCache<NemakiPropertyDefinitionCore> cache = nemakiCachePool.get(repositoryId).getPropertyDefinitionCache();
 		NemakiPropertyDefinitionCore cached = cache.get(cacheKey);
-		
+
 		if (cached != null) {
-			return cached;
+			// CRITICAL FIX: Return a deep clone to prevent cache contamination
+			return cached.deepClone();
 		}
-		
+
 		// Load from database and cache
 		NemakiPropertyDefinitionCore propDef = nonCachedContentDaoService.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 		if (propDef != null) {
 			cache.put(cacheKey, propDef);
+			// CRITICAL FIX: Return a deep clone even for fresh data
+			return propDef.deepClone();
 		}
-		
-		return propDef;
+
+		return null;
 	}
 
 	@Override
