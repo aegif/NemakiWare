@@ -24,3 +24,23 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Playwright Testing
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Test artifacts
+tests/fixtures/auth-state.json
+test-results.json
+
+# Coverage reports
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Logs
+logs/
+*.log
