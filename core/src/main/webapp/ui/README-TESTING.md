@@ -124,6 +124,43 @@ tests/
 - パスワード: `admin`
 - リポジトリ: `bedroom`
 
+## 現在の状況
+
+### ✅ 完了済み
+- Playwright テスト環境のセットアップ
+- 包括的なテストケースの実装（認証、ドキュメント管理）
+- CI/CD パイプラインの設定
+- テストヘルパーとユーティリティの作成
+- 基本的な接続テストの動作確認
+
+### ⚠️ 既知の問題
+**静的アセット配信の問題**: React UIのJavaScriptファイル（index-*.js）が404エラーで配信されない
+
+- **症状**: index.htmlは正常に配信されるが、JavaScriptとCSSファイルが404エラー
+- **影響**: React アプリが初期化されず、ログインフォームが表示されない
+- **原因**: Tomcatの静的ファイル配信設定またはMIMEタイプの問題と推測
+- **状況**: WAR ファイルには正しく JavaScript ファイルが含まれている（確認済み）
+
+### 🔍 診断結果
+```bash
+# 正常: HTML ファイル
+curl http://localhost:8080/core/ui/dist/index.html
+# → HTTP 200
+
+# 異常: JavaScript ファイル
+curl http://localhost:8080/core/ui/dist/assets/index-B81QkMzs.js
+# → HTTP 404
+
+# 診断テスト実行結果
+npx playwright test tests/basic-connectivity.spec.ts
+# → 0 form elements, 0 Ant Design elements, 0 input elements
+```
+
+### 📝 次のステップ
+1. Tomcat web.xml の MIME タイプ設定確認
+2. 静的リソースのマッピング設定確認
+3. WAR デプロイメント設定の検証
+
 ## トラブルシューティング
 
 ### よくある問題
@@ -145,6 +182,13 @@ tests/
 
 4. **ポート競合**
    → `playwright.config.ts` の `webServer.port` を変更
+
+5. **React UI が読み込まれない（既知の問題）**
+   ```
+   Found 0 form elements
+   Found 0 Ant Design elements
+   ```
+   → 現在調査中：静的アセット配信問題を解決する必要があります（上記「既知の問題」参照）
 
 ### デバッグ
 

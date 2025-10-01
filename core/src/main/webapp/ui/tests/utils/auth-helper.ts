@@ -29,21 +29,21 @@ export class AuthHelper {
     await this.page.goto('/core/ui/dist/');
 
     // Wait for login form to be visible
-    await this.page.waitForSelector('input[placeholder*="admin"], input[name="username"]', {
+    await this.page.waitForSelector('input[placeholder="ユーザー名"]', {
       timeout: 10000,
     });
 
     // Fill username
-    const usernameField = this.page.locator('input[placeholder*="admin"], input[name="username"]').first();
+    const usernameField = this.page.locator('input[placeholder="ユーザー名"]');
     await usernameField.fill(credentials.username);
 
     // Fill password
-    const passwordField = this.page.locator('input[type="password"]').first();
+    const passwordField = this.page.locator('input[placeholder="パスワード"]');
     await passwordField.fill(credentials.password);
 
     // Select repository if dropdown exists
     if (credentials.repository) {
-      const repositorySelect = this.page.locator('select, .ant-select');
+      const repositorySelect = this.page.locator('.ant-select');
       if (await repositorySelect.count() > 0) {
         await repositorySelect.click();
         await this.page.getByText(credentials.repository).click();
@@ -51,7 +51,7 @@ export class AuthHelper {
     }
 
     // Click login button
-    const loginButton = this.page.getByRole('button', { name: /login|ログイン/i });
+    const loginButton = this.page.getByRole('button', { name: 'ログイン' });
     await loginButton.click();
 
     // Wait for successful login (URL change)
@@ -83,7 +83,7 @@ export class AuthHelper {
     await this.page.waitForURL('**/ui/dist/', { timeout: 5000 });
 
     // Verify we're back at login page
-    await expect(this.page.locator('input[type="password"]')).toBeVisible();
+    await expect(this.page.locator('input[placeholder="パスワード"]')).toBeVisible();
   }
 
   /**
@@ -110,7 +110,7 @@ export class AuthHelper {
       }
 
       // Check for login form (indicates not logged in)
-      const loginForm = this.page.locator('input[type="password"]');
+      const loginForm = this.page.locator('input[placeholder="パスワード"]');
       return await loginForm.count() === 0;
 
     } catch {

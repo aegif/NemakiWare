@@ -20,8 +20,8 @@ async function globalSetup(config: FullConfig) {
 
     console.log(`📡 Checking NemakiWare backend at ${baseURL}`);
 
-    // Test basic connectivity to CMIS repository
-    const response = await page.goto(`${baseURL}/core/atom/bedroom`, {
+    // Test basic connectivity to NemakiWare UI endpoint (public access)
+    const response = await page.goto(`${baseURL}/core/ui/dist/`, {
       waitUntil: 'networkidle',
       timeout: 30000,
     });
@@ -51,22 +51,70 @@ async function globalSetup(config: FullConfig) {
 
     await page.goto(`${baseURL}/core/ui/dist/`);
 
-    // Wait for login form to load
-    await page.waitForSelector('input[placeholder*="admin"]', { timeout: 10000 });
+    // Wait for React app to load by waiting for content in the root div
+    console.log('⏳ Waiting for React app to load...');
+    await page.waitForFunction(() => {
+      const root = document.getElementById('root');
+      return root && root.innerHTML.length > 0;
+    }, { timeout: 30000 });
+
+    console.log('⏳ Waiting for React app to stabilize...');
+    await page.waitForTimeout(2000); // Additional time for React components to render
+
+    // Take a screenshot for debugging
+    await page.screenshot({ path: 'debug-login-page.png', fullPage: true });
+    console.log('📸 Screenshot saved as debug-login-page.png');
+
+    // Log page content for debugging
+    const pageContent = await page.content();
+    console.log('📄 Page title:', await page.title());
+    console.log('📄 Page URL:', page.url());
+    console.log('📄 Root div content length:', pageContent.includes('<div id="root">') ? 'Found' : 'Not found');
+
+    // Check for JavaScript errors
+    const jsErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        jsErrors.push(msg.text());
+      }
+    });
+
+    // Wait for login form to load with more specific debugging
+    try {
+      await page.waitForSelector('input[placeholder="ユーザー名"]', { timeout: 10000 });
+    } catch (error) {
+      console.log('❌ Username field not found, checking available inputs...');
+      const inputs = await page.locator('input').all();
+      console.log(`Found ${inputs.length} input elements`);
+      for (let i = 0; i < inputs.length; i++) {
+        const input = inputs[i];
+        const placeholder = await input.getAttribute('placeholder');
+        const type = await input.getAttribute('type');
+        const name = await input.getAttribute('name');
+        console.log(`Input ${i}: placeholder="${placeholder}", type="${type}", name="${name}"`);
+      }
+
+      if (jsErrors.length > 0) {
+        console.log('JavaScript errors detected:');
+        jsErrors.forEach(err => console.log('  ', err));
+      }
+
+      throw error;
+    }
 
     // Test login functionality
-    await page.fill('input[placeholder*="admin"]', 'admin');
-    await page.fill('input[type="password"]', 'admin');
+    await page.fill('input[placeholder="ユーザー名"]', 'admin');
+    await page.fill('input[placeholder="パスワード"]', 'admin');
 
     // Select bedroom repository if dropdown exists
-    const repositorySelect = page.locator('select, .ant-select');
+    const repositorySelect = page.locator('.ant-select');
     if (await repositorySelect.count() > 0) {
       await repositorySelect.click();
       await page.getByText('bedroom').click();
     }
 
     // Click login button
-    await page.getByRole('button', { name: /login|ログイン/i }).click();
+    await page.getByRole('button', { name: 'ログイン' }).click();
 
     // Wait for successful login (URL change or specific element)
     await page.waitForURL('**/ui/dist/**', { timeout: 15000 });
