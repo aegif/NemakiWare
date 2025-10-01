@@ -153,26 +153,44 @@ public class DirectTckTestRunner {
             test.run();
             
             System.out.println("=== RESULTS FOR " + testName + " ===");
+            System.err.println("=== RESULTS FOR " + testName + " ===");
             boolean hasFailures = false;
             int resultCount = 0;
-            
+
             for (CmisTestResult result : test.getResults()) {
                 resultCount++;
-                System.out.println("Result #" + resultCount + ": " + result.getStatus() + " - " + result.getMessage());
-                
+                String resultMsg = "Result #" + resultCount + ": " + result.getStatus() + " - " + result.getMessage();
+                System.out.println(resultMsg);
+                System.err.println(resultMsg);
+
                 if (result.getStatus().getLevel() >= CmisTestResultStatus.FAILURE.getLevel()) {
                     hasFailures = true;
-                    System.out.println("  *** FAILURE DETECTED ***");
+                    String failureMsg = "  *** FAILURE DETECTED ***";
+                    System.out.println(failureMsg);
+                    System.err.println(failureMsg);
                     if (result.getException() != null) {
-                        System.out.println("  Exception: " + result.getException().getMessage());
+                        String exceptionMsg = "  Exception: " + result.getException().getMessage();
+                        System.out.println(exceptionMsg);
+                        System.err.println(exceptionMsg);
+                        result.getException().printStackTrace();
                     }
                 }
-                
+
                 if (result.getChildren() != null && !result.getChildren().isEmpty()) {
                     for (CmisTestResult child : result.getChildren()) {
-                        System.out.println("  Child: " + child.getStatus() + " - " + child.getMessage());
+                        String childMsg = "  Child: " + child.getStatus() + " - " + child.getMessage();
+                        System.out.println(childMsg);
+                        System.err.println(childMsg);
                         if (child.getStatus().getLevel() >= CmisTestResultStatus.FAILURE.getLevel()) {
                             hasFailures = true;
+                            String childFailureMsg = "    *** CHILD FAILURE ***";
+                            System.out.println(childFailureMsg);
+                            System.err.println(childFailureMsg);
+                            if (child.getException() != null) {
+                                String childExceptionMsg = "    Child Exception: " + child.getException().getMessage();
+                                System.out.println(childExceptionMsg);
+                                System.err.println(childExceptionMsg);
+                            }
                         }
                     }
                 }

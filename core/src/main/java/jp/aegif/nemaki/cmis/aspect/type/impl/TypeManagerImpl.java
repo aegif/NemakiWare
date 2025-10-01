@@ -1198,9 +1198,11 @@ public class TypeManagerImpl implements TypeManager {
 		boolean queryable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_QUERYABLE);
 		boolean orderable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_ORDERABLE);
 		boolean inherited_objectTypeId = shouldBeInherited(PropertyIds.OBJECT_TYPE_ID, typeId);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:objectTypeId Updatability: READONLY
+		// Changed from ONCREATE to READONLY per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.OBJECT_TYPE_ID,
-				PropertyType.ID, Cardinality.SINGLE, Updatability.ONCREATE, REQUIRED,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY, REQUIRED,
 				queryable_objectTypeId, orderable_objectTypeId, null, inherited_objectTypeId));
 		log.info("DEBUG: Added cmis:objectTypeId property (inherited=" + inherited_objectTypeId + ")");
 
