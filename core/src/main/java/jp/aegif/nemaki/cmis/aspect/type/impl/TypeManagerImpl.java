@@ -1382,7 +1382,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId,
 				PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, PropertyType.BOOLEAN,
-				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_isVersionSeriesCheckedOut, orderable_isVersionSeriesCheckedOut, null));
+				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_isVersionSeriesCheckedOut, orderable_isVersionSeriesCheckedOut, null, isInherited));
 
 		//cmis:versionSeriesCheckedOutBy
 		boolean queryable_versionSeriesCheckedOutBy = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_BY_QUERYABLE);

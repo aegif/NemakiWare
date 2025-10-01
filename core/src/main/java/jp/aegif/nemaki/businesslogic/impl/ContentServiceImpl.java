@@ -955,8 +955,39 @@ public class ContentServiceImpl implements ContentService {
 		// Create PWC itself
 		Document result = contentDaoService.create(repositoryId, pwc);
 
+		// CRITICAL TCK FIX: Set versionSeriesCheckedOutId for PWC after it has been created and has an ID
+		log.error("*** CRITICAL TCK FIX: Setting versionSeriesCheckedOutId for PWC {} ***", result.getId());
+		result.setVersionSeriesCheckedOutId(result.getId());
+		result.setVersionSeriesCheckedOut(true);
+		result.setVersionSeriesCheckedOutBy(callContext.getUsername());
+		contentDaoService.update(repositoryId, result);
+		log.error("*** CRITICAL TCK FIX: PWC versionSeriesCheckedOutId set to: {} ***", result.getVersionSeriesCheckedOutId());
+
 		// Modify versionSeries
-		updateVersionSeriesWithPwc(callContext, repositoryId, getVersionSeries(repositoryId, result), result);
+		VersionSeries vs = getVersionSeries(repositoryId, result);
+		updateVersionSeriesWithPwc(callContext, repositoryId, vs, result);
+
+		// CRITICAL TCK FIX: Update all versions in version series to reflect checked-out state
+		// This ensures cmis:isVersionSeriesCheckedOut and related properties are updated
+		log.error("*** CRITICAL TCK FIX: Starting version series update for VS: {} ***", vs.getId());
+		List<Document> versions = contentDaoService.getAllVersions(repositoryId, vs.getId());
+		log.error("*** CRITICAL TCK FIX: Found {} versions in version series ***", (versions != null ? versions.size() : 0));
+		if (CollectionUtils.isNotEmpty(versions)) {
+			for (Document version : versions) {
+				log.error("*** CRITICAL TCK FIX: Processing version {} (PWC: {}) ***", version.getId(), version.isPrivateWorkingCopy());
+				if (!version.isPrivateWorkingCopy()) { // Don't update PWC, it already has correct properties
+					// Update versioning properties to reflect VersionSeries state
+					log.error("*** CRITICAL TCK FIX: Updating version {} with checkout properties ***", version.getId());
+					version.setVersionSeriesCheckedOut(true);
+					version.setVersionSeriesCheckedOutBy(callContext.getUsername());
+					version.setVersionSeriesCheckedOutId(result.getId());
+					contentDaoService.update(repositoryId, version);
+					log.error("*** CRITICAL TCK FIX: Updated version {} successfully ***", version.getId());
+				}
+			}
+		} else {
+			log.error("*** CRITICAL TCK FIX: No versions found in version series {} ***", vs.getId());
+		}
 
 		// Write change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
@@ -987,11 +1018,16 @@ public class ContentServiceImpl implements ContentService {
 		vs.setVersionSeriesCheckedOutId("");
 		contentDaoService.update(repositoryId, vs);
 
-		List<Document> versions = getAllVersions(callContext, repositoryId, vs.getId());
+		// CRITICAL TCK FIX: Update all versions in version series to reflect canceled checkout state
+		// This ensures cmis:isVersionSeriesCheckedOut and related properties are updated
+		List<Document> versions = contentDaoService.getAllVersions(repositoryId, vs.getId());
 		if (CollectionUtils.isNotEmpty(versions)) {
-			// Collections.sort(versions, new VersionComparator());
 			for (Document version : versions) {
-				contentDaoService.refreshCmisObjectData(repositoryId, version.getId());
+				// Update versioning properties to reflect VersionSeries state (no PWC filtering needed)
+				version.setVersionSeriesCheckedOut(false);
+				version.setVersionSeriesCheckedOutBy("");
+				version.setVersionSeriesCheckedOutId("");
+				contentDaoService.update(repositoryId, version);
 			}
 		}
 
@@ -1241,6 +1277,7 @@ public class ContentServiceImpl implements ContentService {
 			d.setLatestMajorVersion(false);
 			d.setPrivateWorkingCopy(true);
 			// CRITICAL TCK FIX: Set versioning properties required by VersioningStateCreateTest
+			d.setVersionSeriesCheckedOut(true); // Mark as checked out
 			d.setVersionSeriesCheckedOutBy(callContext.getUsername());
 			d.setVersionSeriesCheckedOutId(d.getId()); // PWC's own ID
 			// former latestVersion/latestMajorVersion remains unchanged

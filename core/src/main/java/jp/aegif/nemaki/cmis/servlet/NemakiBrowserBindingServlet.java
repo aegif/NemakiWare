@@ -69,13 +69,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     private static final long serialVersionUID = 1L;
     private static final Log log = LogFactory.getLog(NemakiBrowserBindingServlet.class);
 
-    @Override
-    public void init() throws ServletException {
-        System.err.println("*** NEMAKIBROWSERBINDINGSERVLET INIT CALLED ***");
-        super.init();
-    }
-    
-    
     /**
      * Constructor
      */
@@ -83,7 +76,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         super();
         log.info("NEMAKI SERVLET: NemakiBrowserBindingServlet constructor called");
     }
-    
+
     @Override
     public void init() throws ServletException {
         super.init();
@@ -112,10 +105,21 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         log.error("!!! NEMAKIBROWSERBINDINGSERVLET SERVICE METHOD CALLED !!!");
         log.error("!!! SERVICE METHOD: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
 
-        // CRITICAL FIX: Check for applyACL action immediately in service method
+        // CRITICAL FIX: Check for versioning and applyACL actions immediately in service method
         if ("POST".equals(request.getMethod())) {
             String postMethodCmisaction = request.getParameter("cmisaction");
             log.error("!!! SERVICE METHOD: POST request with cmisaction = '" + postMethodCmisaction + "' !!!");
+
+            // CRITICAL TCK FIX: Handle versioning operations directly
+            if ("checkOut".equals(postMethodCmisaction) || "checkIn".equals(postMethodCmisaction) || "cancelCheckOut".equals(postMethodCmisaction)) {
+                log.error("!!! SERVICE METHOD: Versioning action " + postMethodCmisaction + " detected - forcing custom routing !!!");
+                // Force routing through our CMIS action router
+                String pathInfo = request.getPathInfo();
+                if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
+                    log.error("!!! SERVICE METHOD: Versioning action " + postMethodCmisaction + " handled successfully !!!");
+                    return;
+                }
+            }
 
             if ("applyACL".equals(postMethodCmisaction)) {
                 log.error("!!! SERVICE METHOD: applyACL detected - forcing custom routing !!!");
@@ -2964,14 +2968,41 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
             switch (cmisaction) {
                 case "checkOut":
-                    org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
-                        new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
-                    org.apache.chemistry.opencmis.commons.spi.Holder<Boolean> contentCopiedHolder =
-                        new org.apache.chemistry.opencmis.commons.spi.Holder<Boolean>();
+                    // CRITICAL TCK FIX: Use NemakiWare ContentService directly to ensure versioning properties are set correctly
+                    try {
+                        // Get NemakiWare ContentService from Spring context
+                        org.springframework.web.context.WebApplicationContext webAppContext =
+                            org.springframework.web.context.support.WebApplicationContextUtils.getWebApplicationContext(getServletContext());
 
-                    // CRITICAL TCK FIX: Correct CmisService.checkOut signature without CallContext
-                    cmisService.checkOut(repositoryId, objectIdHolder, null, contentCopiedHolder);
-                    resultObjectId = objectIdHolder.getValue(); // PWC ID
+                        if (webAppContext != null) {
+                            jp.aegif.nemaki.businesslogic.ContentService contentService =
+                                webAppContext.getBean("contentService", jp.aegif.nemaki.businesslogic.ContentService.class);
+
+                            System.err.println("*** VERSIONING HANDLER: Using NemakiWare ContentService for checkOut ***");
+
+                            // Call NemakiWare's checkOut method which includes the versioning property fixes
+                            jp.aegif.nemaki.model.Document pwcDocument = contentService.checkOut(callContext, repositoryId, objectId, null);
+                            resultObjectId = pwcDocument.getId(); // PWC ID
+
+                            System.err.println("*** VERSIONING HANDLER: PWC created with ID: " + resultObjectId + " ***");
+
+                        } else {
+                            System.err.println("*** VERSIONING HANDLER: WebApplicationContext not available, falling back to CmisService ***");
+
+                            // Fallback to standard OpenCMIS implementation
+                            org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
+                                new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
+                            org.apache.chemistry.opencmis.commons.spi.Holder<Boolean> contentCopiedHolder =
+                                new org.apache.chemistry.opencmis.commons.spi.Holder<Boolean>();
+
+                            cmisService.checkOut(repositoryId, objectIdHolder, null, contentCopiedHolder);
+                            resultObjectId = objectIdHolder.getValue(); // PWC ID
+                        }
+                    } catch (Exception e) {
+                        System.err.println("*** VERSIONING HANDLER: Error in checkOut: " + e.getMessage() + " ***");
+                        e.printStackTrace();
+                        throw e;
+                    }
                     break;
 
                 case "checkIn":
