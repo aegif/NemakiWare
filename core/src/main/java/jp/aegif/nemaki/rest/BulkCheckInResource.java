@@ -210,7 +210,9 @@ public class BulkCheckInResource extends ResourceBase {
 			VersionSeries vs = contentService.getVersionSeries(repositoryId, doc);
 			Holder<String> docIdHolder = new Holder<String>(objectId);
 			typeId = doc.getObjectType();
-			if (force && !vs.isVersionSeriesCheckedOut()){
+			// TCK FIX: Null-safe version series checked out check
+			Boolean isCheckedOut = vs.isVersionSeriesCheckedOut();
+			if (force && (isCheckedOut == null || !isCheckedOut.booleanValue())){
 				versioningService.checkOut(callContext, repositoryId, docIdHolder , new Holder<Boolean>(true), null);
 			}
 			// Check in with the property set and comment

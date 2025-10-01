@@ -44,7 +44,8 @@ public class CouchVersionSeries extends CouchNodeBase{
 	
 	@JsonProperty("versionSeriesCheckedOut")
 	public Boolean isVersionSeriesCheckedOut() {
-		return versionSeriesCheckedOut;
+		// TCK FIX: Return false when null to prevent NullPointerException
+		return versionSeriesCheckedOut != null ? versionSeriesCheckedOut : false;
 	}
 	public void setVersionSeriesCheckedOut(Boolean versionSeriesCheckedOut) {
 		this.versionSeriesCheckedOut = versionSeriesCheckedOut;

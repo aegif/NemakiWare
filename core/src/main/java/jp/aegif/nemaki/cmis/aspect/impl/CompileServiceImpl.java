@@ -1228,8 +1228,10 @@ public class CompileServiceImpl implements CompileService {
 			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_ID, document.getVersionSeriesId());
 			addProperty(properties, tdf, PropertyIds.CHECKIN_COMMENT, document.getCheckinComment());
 
-			// CRITICAL CMIS 1.1 COMPLIANCE: Use Document's isVersionSeriesCheckedOut property directly
-			addProperty(properties, tdf, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, document.isVersionSeriesCheckedOut());
+			// CRITICAL CMIS 1.1 COMPLIANCE: Use Document's isVersionSeriesCheckedOut property with null safety
+			Boolean isCheckedOut = document.isVersionSeriesCheckedOut();
+			addProperty(properties, tdf, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT,
+				isCheckedOut != null ? isCheckedOut : false);
 			
 			// COMPLETE CMIS 1.1 VERSIONING COMPLIANCE: Only include NOT REQUIRED properties when they have meaningful values
 			String checkedOutBy = document.getVersionSeriesCheckedOutBy();
