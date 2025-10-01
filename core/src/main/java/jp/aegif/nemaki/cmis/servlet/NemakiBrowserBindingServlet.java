@@ -96,11 +96,29 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     @Override
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        
-        
-        
+
+        // CRITICAL DEBUG: Force output to stderr to ensure visibility
+        log.error("!!! NEMAKIBROWSERBINDINGSERVLET SERVICE METHOD CALLED !!!");
+        log.error("!!! SERVICE METHOD: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
+
+        // CRITICAL FIX: Check for applyACL action immediately in service method
+        if ("POST".equals(request.getMethod())) {
+            String cmisaction = request.getParameter("cmisaction");
+            log.error("!!! SERVICE METHOD: POST request with cmisaction = '" + cmisaction + "' !!!");
+
+            if ("applyACL".equals(cmisaction)) {
+                log.error("!!! SERVICE METHOD: applyACL detected - forcing custom routing !!!");
+                // Force routing through our CMIS action router
+                String pathInfo = request.getPathInfo();
+                if (routeCmisAction(cmisaction, request, response, pathInfo, "POST")) {
+                    log.error("!!! SERVICE METHOD: applyACL handled successfully !!!");
+                    return;
+                }
+            }
+        }
+
         // CRITICAL DEBUG: ALWAYS log every request that reaches this servlet
-        log.error("=== NEMAKIBROWSERBINDINGSERVLET SERVICE INVOKED === Method: " + request.getMethod() + " URI: " + request.getRequestURI() + " QueryString: " + request.getQueryString());
+        log.error("=== NEMAKIBROWSERBINDINGSERVLET SERVICE INVOKED UPDATED VERSION === Method: " + request.getMethod() + " URI: " + request.getRequestURI() + " QueryString: " + request.getQueryString());
         String method = request.getMethod();
         
         // SPRING 6.X URL PARSING FIX: Enhanced pathInfo extraction with fallback logic
@@ -1594,13 +1612,24 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * but not GET requests. This method forces all POST requests through our custom logic.
      */
     @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse response) 
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        
+
         System.err.println("!!! DOPOST OVERRIDE: POST REQUEST INTERCEPTED !!!");
         System.err.println("!!! DOPOST OVERRIDE: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
-        
-        // Force routing through our custom service method
+
+        // CRITICAL FIX: Check for applyACL action and route through our custom handler
+        String cmisaction = request.getParameter("cmisaction");
+        System.err.println("!!! DOPOST OVERRIDE: cmisaction = '" + cmisaction + "' !!!");
+
+        if ("applyACL".equals(cmisaction)) {
+            System.err.println("!!! DOPOST OVERRIDE: Forcing applyACL through custom service method !!!");
+            // Force routing through our custom service method to handle applyACL
+            this.service(request, response);
+            return;
+        }
+
+        // For all other POST requests, also use our custom service method
         this.service(request, response);
     }
     
@@ -2161,7 +2190,17 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 case "getTypesChildren":
                     System.err.println("*** CMIS ROUTER: Routing getTypeChildren/getTypesChildren action ***");
                     return handleGetTypeChildrenOperation(request, response, pathInfo, method);
-                    
+
+                // CRITICAL TCK FIX: Add applyAcl action support for ACL compliance - handle both case variations
+                case "applyAcl":
+                    System.err.println("*** CMIS ROUTER: CASE MATCH - applyAcl (lowercase) ***");
+                    System.err.println("*** CMIS ROUTER: Routing applyAcl action ***");
+                    return handleApplyAclOperation(request, response, pathInfo);
+                case "applyACL":
+                    System.err.println("*** CMIS ROUTER: CASE MATCH - applyACL (uppercase) ***");
+                    System.err.println("*** CMIS ROUTER: Routing applyACL action ***");
+                    return handleApplyAclOperation(request, response, pathInfo);
+
                 default:
                     System.err.println("*** CMIS ROUTER: Action '" + cmisaction + "' not handled by router - delegating to parent ***");
                     return false; // Let parent handle other actions
@@ -2864,7 +2903,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             throw e;
         }
     }
-    
+
+
+
     // Helper methods for CMIS router
     
     /**
@@ -3014,12 +3055,29 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         if (pathInfo == null || pathInfo.length() <= 1) {
             return null;
         }
-        
+
         String[] pathParts = pathInfo.split("/");
         if (pathParts.length >= 2) {
             return pathParts[1]; // First part after leading slash
         }
-        
+
+        return null;
+    }
+
+    /**
+     * Extract object ID from path.
+     * Path format: /repositoryId/objectId
+     */
+    private String extractObjectIdFromPath(String pathInfo) {
+        if (pathInfo == null || pathInfo.length() <= 1) {
+            return null;
+        }
+
+        String[] pathParts = pathInfo.split("/");
+        if (pathParts.length >= 3) {
+            return pathParts[2]; // Second part after leading slash (repositoryId/objectId)
+        }
+
         return null;
     }
     
@@ -3285,5 +3343,132 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             return originalTypeDef;
         }
     }
-    
+
+    /**
+     * Handle CMIS applyAcl operation via Browser Binding.
+     * Implements the applyAcl functionality for ACL TCK compliance.
+     */
+    private boolean handleApplyAclOperation(HttpServletRequest request, HttpServletResponse response, String pathInfo)
+            throws IOException, ServletException, Exception {
+
+        System.err.println("*** APPLY ACL HANDLER: Starting applyAcl operation ***");
+
+        try {
+            // Extract object ID from path or parameters
+            String objectId = request.getParameter("objectId");
+            if (objectId == null || objectId.isEmpty()) {
+                // Try extracting from pathInfo if not in parameters
+                objectId = extractObjectIdFromPath(pathInfo);
+            }
+
+            if (objectId == null || objectId.isEmpty()) {
+                throw new IllegalArgumentException("objectId parameter is required for applyAcl operation");
+            }
+
+            String repositoryId = extractRepositoryIdFromPath(pathInfo);
+            if (repositoryId == null) {
+                throw new IllegalArgumentException("Could not determine repository ID from path: " + pathInfo);
+            }
+
+            System.err.println("*** APPLY ACL HANDLER: Processing ACL for object: " + objectId + " ***");
+
+            // Get the CMIS service
+            org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
+            CmisService cmisService = getCmisService(callContext);
+
+            // Extract ACL from request parameters
+            java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> addAces = extractAclFromRequest(request, "addACE");
+            java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> removeAces = extractAclFromRequest(request, "removeACE");
+
+            System.err.println("*** APPLY ACL HANDLER: Add ACEs: " + (addAces != null ? addAces.size() : 0) +
+                             ", Remove ACEs: " + (removeAces != null ? removeAces.size() : 0) + " ***");
+
+            // Apply ACL using CMIS service - convert List<Ace> to Acl objects
+            org.apache.chemistry.opencmis.commons.data.Acl addAcl = null;
+            org.apache.chemistry.opencmis.commons.data.Acl removeAcl = null;
+
+            if (addAces != null && !addAces.isEmpty()) {
+                addAcl = new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(addAces);
+            }
+
+            if (removeAces != null && !removeAces.isEmpty()) {
+                removeAcl = new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(removeAces);
+            }
+
+            org.apache.chemistry.opencmis.commons.data.Acl resultAcl = cmisService.applyAcl(repositoryId, objectId, addAcl, removeAcl,
+                    org.apache.chemistry.opencmis.commons.enums.AclPropagation.REPOSITORYDETERMINED, null);
+
+            System.err.println("*** APPLY ACL HANDLER: ACL applied successfully ***");
+
+            // Return success response with ACL data
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+
+            try (java.io.PrintWriter writer = response.getWriter()) {
+                // Build JSON response with ACL information
+                java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> aces = resultAcl != null ? resultAcl.getAces() : new java.util.ArrayList<>();
+
+                StringBuilder json = new StringBuilder();
+                json.append("{\"acl\":{\"aces\":[");
+
+                for (int i = 0; i < aces.size(); i++) {
+                    if (i > 0) json.append(",");
+                    org.apache.chemistry.opencmis.commons.data.Ace ace = aces.get(i);
+                    json.append("{\"principal\":\"").append(ace.getPrincipal().getId()).append("\",");
+                    json.append("\"permissions\":[");
+
+                    java.util.List<String> permissions = ace.getPermissions();
+                    for (int j = 0; j < permissions.size(); j++) {
+                        if (j > 0) json.append(",");
+                        json.append("\"").append(permissions.get(j)).append("\"");
+                    }
+                    json.append("]}");
+                }
+
+                json.append("]}}");
+                writer.write(json.toString());
+            }
+
+            return true; // We handled the response
+
+        } catch (Exception e) {
+            System.err.println("*** APPLY ACL HANDLER ERROR: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
+            throw e;
+        }
+    }
+
+    /**
+     * Extract ACL entries from request parameters.
+     * Expected format: multiple parameters with names like addACE[0][principal], addACE[0][permission][0], etc.
+     */
+    private java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> extractAclFromRequest(HttpServletRequest request, String paramPrefix) {
+        java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> aces = new java.util.ArrayList<>();
+
+        try {
+            // Simple implementation for basic ACL support
+            String principalId = request.getParameter(paramPrefix + "[principal]");
+            String[] permissions = request.getParameterValues(paramPrefix + "[permission]");
+
+            if (principalId != null && permissions != null && permissions.length > 0) {
+                java.util.List<String> permissionList = java.util.Arrays.asList(permissions);
+
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl principal =
+                    new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl(principalId.trim());
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl ace =
+                    new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl(principal, permissionList);
+
+                aces.add(ace);
+
+                System.err.println("*** EXTRACT ACL: Created ACE for principal: " + principalId + " with " + permissions.length + " permissions ***");
+            }
+
+        } catch (Exception e) {
+            System.err.println("*** EXTRACT ACL ERROR: " + e.getMessage() + " ***");
+            // Return empty list if extraction fails
+        }
+
+        return aces;
+    }
+
 }
