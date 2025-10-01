@@ -23,6 +23,7 @@ package jp.aegif.nemaki.cmis.service.impl;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -327,7 +328,14 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// Add custom property definitions (existing logic)
 		if (MapUtils.isNotEmpty(propDefs)) {
 			log.error("TCK DEBUG: Processing " + propDefs.size() + " property definitions");
-			for (String key : propDefs.keySet()) {
+
+			// CRITICAL FIX: Sort property keys to ensure consistent processing order
+			// This prevents the property type shifting issue in TCK tests
+			List<String> sortedKeys = new ArrayList<>(propDefs.keySet());
+			Collections.sort(sortedKeys);
+			log.error("TCK DEBUG: Processing properties in sorted order: " + sortedKeys);
+
+			for (String key : sortedKeys) {
 				PropertyDefinition<?> propDef = propDefs.get(key);
 
 				log.error("TCK DEBUG: Processing property key=" + key + ", systemIds.contains=" + systemIds.contains(key));
@@ -597,7 +605,13 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 		ntd.setProperties(new ArrayList<String>());
 		if (MapUtils.isNotEmpty(propDefs)) {
-			for (String key : propDefs.keySet()) {
+			// CRITICAL FIX: Sort property keys to ensure consistent processing order
+			// This prevents the property type shifting issue in TCK tests
+			List<String> sortedKeys = new ArrayList<>(propDefs.keySet());
+			Collections.sort(sortedKeys);
+			log.error("TCK DEBUG: Processing properties in sorted order: " + sortedKeys);
+
+			for (String key : sortedKeys) {
 				PropertyDefinition<?> propDef = propDefs.get(key);
 
 				// CRITICAL DEBUG: Log incoming property definitions from TCK

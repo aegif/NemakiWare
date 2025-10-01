@@ -1133,9 +1133,9 @@ public class TypeManagerImpl implements TypeManager {
 		log.error("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
 		System.err.println("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
 		
-		log.error("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
-		System.err.println("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
-		boolean inherited_name = shouldBeInherited(PropertyIds.NAME, typeId);
+		log.error("*** CRITICAL DEBUG: Using isInherited parameter for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: Using isInherited parameter for " + PropertyIds.NAME + " in type " + typeId + " ***");
+		boolean inherited_name = isInherited;
 		log.error("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_name + " for " + PropertyIds.NAME + " in type " + typeId + " ***");
 		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_name + " for " + PropertyIds.NAME + " in type " + typeId + " ***");
 		log.info("TCK DEBUG buildTypeDefinitionFromDB: Setting inherited=" + inherited_name + " for " + PropertyIds.NAME + " in type " + typeId);
@@ -1149,7 +1149,7 @@ public class TypeManagerImpl implements TypeManager {
 		Updatability updatability_description = Updatability.fromValue(_updatability_description);
 		boolean queryable_description = propertyManager.readBoolean(PropertyKey.PROPERTY_DESCRIPTION_QUERYABLE);
 		boolean orderable_description = propertyManager.readBoolean(PropertyKey.PROPERTY_DESCRIPTION_ORDERABLE);
-		boolean inherited_description = shouldBeInherited(PropertyIds.DESCRIPTION, typeId);
+		boolean inherited_description = isInherited;
 		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:description Required: FALSE
 		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
@@ -1167,9 +1167,9 @@ public class TypeManagerImpl implements TypeManager {
 		log.error("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
 		System.err.println("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
 		
-		log.error("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
-		System.err.println("*** CRITICAL DEBUG: About to call shouldBeInherited for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
-		boolean inherited_objectId = shouldBeInherited(PropertyIds.OBJECT_ID, typeId);
+		log.error("*** CRITICAL DEBUG: Using isInherited parameter for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
+		System.err.println("*** CRITICAL DEBUG: Using isInherited parameter for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
+		boolean inherited_objectId = isInherited;
 		log.error("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_objectId + " for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
 		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_objectId + " for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
 		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:objectId Required: FALSE
@@ -1198,9 +1198,9 @@ public class TypeManagerImpl implements TypeManager {
 		//cmis:objectTypeId
 		boolean queryable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_QUERYABLE);
 		boolean orderable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_ORDERABLE);
-		// CRITICAL TCK FIX: cmis:objectTypeId is always inherited=false (each type defines its own objectTypeId)
-		// This property is NOT inherited from parent types per CMIS 1.1 specification
-		boolean inherited_objectTypeId = false;
+		// CRITICAL TCK FIX: cmis:objectTypeId inheritance depends on type hierarchy
+		// Base types define it originally (inherited=false), custom types inherit it (inherited=true)
+		boolean inherited_objectTypeId = isInherited;
 		// CRITICAL TCK FIX: OpenCMIS TCK expects cmis:objectTypeId Required: TRUE, Updatability: ONCREATE
 		// TCK validation: PropertyIds.OBJECT_TYPE_ID, true (required), PropertyType.ID, Cardinality.SINGLE, Updatability.ONCREATE
 		type.addPropertyDefinition(createDefaultPropDef(
@@ -1223,7 +1223,7 @@ public class TypeManagerImpl implements TypeManager {
 				REQUIRED, queryable_secondaryObjectTypeIds, !ORDERABLE, null, inherited_secondaryObjectTypeIds));
 		log.info("DEBUG: Added cmis:secondaryObjectTypeIds property (inherited=" + inherited_secondaryObjectTypeIds + ")");
 
-		boolean inherited_createdBy = shouldBeInherited(PropertyIds.CREATED_BY, typeId);
+		boolean inherited_createdBy = isInherited;
 		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:createdBy Required: FALSE
 		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
@@ -1231,7 +1231,7 @@ public class TypeManagerImpl implements TypeManager {
 				Updatability.READONLY, REQUIRED, QUERYABLE, ORDERABLE, null, inherited_createdBy));
 		log.info("DEBUG: Added cmis:createdBy property (inherited=" + inherited_createdBy + ")");
 
-		boolean inherited_creationDate = shouldBeInherited(PropertyIds.CREATION_DATE, typeId);
+		boolean inherited_creationDate = isInherited;
 		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:creationDate Required: FALSE
 		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
@@ -1240,7 +1240,7 @@ public class TypeManagerImpl implements TypeManager {
 				REQUIRED, QUERYABLE, ORDERABLE, null, inherited_creationDate));
 		log.info("DEBUG: Added cmis:creationDate property (inherited=" + inherited_creationDate + ")");
 
-		boolean inherited_lastModifiedBy = shouldBeInherited(PropertyIds.LAST_MODIFIED_BY, typeId);
+		boolean inherited_lastModifiedBy = isInherited;
 		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:lastModifiedBy Required: FALSE
 		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
@@ -1249,7 +1249,7 @@ public class TypeManagerImpl implements TypeManager {
 				REQUIRED, QUERYABLE, ORDERABLE, null, inherited_lastModifiedBy));
 		log.info("DEBUG: Added cmis:lastModifiedBy property (inherited=" + inherited_lastModifiedBy + ")");
 
-		boolean inherited_lastModificationDate = shouldBeInherited(PropertyIds.LAST_MODIFICATION_DATE, typeId);
+		boolean inherited_lastModificationDate = isInherited;
 		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:lastModificationDate Required: FALSE
 		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
@@ -1258,7 +1258,7 @@ public class TypeManagerImpl implements TypeManager {
 				REQUIRED, QUERYABLE, ORDERABLE, null, inherited_lastModificationDate));
 		log.info("DEBUG: Added cmis:lastModificationDate property (inherited=" + inherited_lastModificationDate + ")");
 
-		boolean inherited_changeToken = shouldBeInherited(PropertyIds.CHANGE_TOKEN, typeId);
+		boolean inherited_changeToken = isInherited;
 		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:changeToken Required: FALSE
 		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
