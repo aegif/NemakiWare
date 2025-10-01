@@ -103,14 +103,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
         // CRITICAL FIX: Check for applyACL action immediately in service method
         if ("POST".equals(request.getMethod())) {
-            String cmisaction = request.getParameter("cmisaction");
-            log.error("!!! SERVICE METHOD: POST request with cmisaction = '" + cmisaction + "' !!!");
+            String postMethodCmisaction = request.getParameter("cmisaction");
+            log.error("!!! SERVICE METHOD: POST request with cmisaction = '" + postMethodCmisaction + "' !!!");
 
-            if ("applyACL".equals(cmisaction)) {
+            if ("applyACL".equals(postMethodCmisaction)) {
                 log.error("!!! SERVICE METHOD: applyACL detected - forcing custom routing !!!");
                 // Force routing through our CMIS action router
                 String pathInfo = request.getPathInfo();
-                if (routeCmisAction(cmisaction, request, response, pathInfo, "POST")) {
+                if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
                     log.error("!!! SERVICE METHOD: applyACL handled successfully !!!");
                     return;
                 }
@@ -224,6 +224,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // CRITICAL FIX: Extract cmisaction once at global scope to avoid null-initialization bug
         // Use finalRequest instead of request to ensure proper parameter handling
         String cmisaction = finalRequest.getParameter("cmisaction");
+
+        // CRITICAL FIX: Extract cmisselector at method scope to avoid undefined variable errors
+        String cmisselector = finalRequest.getParameter("cmisselector");
 
         // Log critical service parameters for debugging
         log.debug("SERVICE: cmisaction='" + cmisaction + "', method=" + method + ", pathInfo=" + pathInfo);
@@ -391,7 +394,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // CRITICAL FIX: Handle repository-level typeDefinition requests  
         // ===============================
         if ("GET".equals(method) && queryString != null) {
-            String cmisselector = request.getParameter("cmisselector");
             String typeId = request.getParameter("typeId");
             
             // Debug parameter extraction
@@ -573,7 +575,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         // CRITICAL FIX: Intercept content selector requests to handle null ContentStream properly
         // Root cause: Parent OpenCMIS servlet converts null ContentStream to HTTP 500 instead of HTTP 404
-        String cmisselector = finalRequest.getParameter("cmisselector");
         if ("GET".equals(method) && "content".equals(cmisselector)) {
             try {
                 // Extract repository ID and object ID from URL structure
@@ -1619,10 +1620,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         System.err.println("!!! DOPOST OVERRIDE: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
 
         // CRITICAL FIX: Check for applyACL action and route through our custom handler
-        String cmisaction = request.getParameter("cmisaction");
-        System.err.println("!!! DOPOST OVERRIDE: cmisaction = '" + cmisaction + "' !!!");
+        String postCmisaction = request.getParameter("cmisaction");
+        System.err.println("!!! DOPOST OVERRIDE: cmisaction = '" + postCmisaction + "' !!!");
 
-        if ("applyACL".equals(cmisaction)) {
+        if ("applyACL".equals(postCmisaction)) {
             System.err.println("!!! DOPOST OVERRIDE: Forcing applyACL through custom service method !!!");
             // Force routing through our custom service method to handle applyACL
             this.service(request, response);
