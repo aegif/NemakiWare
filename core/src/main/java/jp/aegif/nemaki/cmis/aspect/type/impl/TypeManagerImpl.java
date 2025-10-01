@@ -1150,10 +1150,12 @@ public class TypeManagerImpl implements TypeManager {
 		boolean queryable_description = propertyManager.readBoolean(PropertyKey.PROPERTY_DESCRIPTION_QUERYABLE);
 		boolean orderable_description = propertyManager.readBoolean(PropertyKey.PROPERTY_DESCRIPTION_ORDERABLE);
 		boolean inherited_description = shouldBeInherited(PropertyIds.DESCRIPTION, typeId);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:description Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.DESCRIPTION,
 				PropertyType.STRING, Cardinality.SINGLE, updatability_description,
-				!REQUIRED, queryable_description, orderable_description, null, inherited_description));
+				REQUIRED, queryable_description, orderable_description, null, inherited_description));
 		log.info("DEBUG: Added cmis:description property (inherited=" + inherited_description + ")");
 
 		//cmis:objectId
@@ -1170,9 +1172,11 @@ public class TypeManagerImpl implements TypeManager {
 		boolean inherited_objectId = shouldBeInherited(PropertyIds.OBJECT_ID, typeId);
 		log.error("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_objectId + " for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
 		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_objectId + " for " + PropertyIds.OBJECT_ID + " in type " + typeId + " ***");
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:objectId Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.OBJECT_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, QUERYABLE, orderable_objectId, null, inherited_objectId));
+				Updatability.READONLY, REQUIRED, QUERYABLE, orderable_objectId, null, inherited_objectId));
 		log.info("DEBUG: Added cmis:objectId property (inherited=" + inherited_objectId + ")");
 
 		//cmis:baseTypeId
@@ -1183,9 +1187,11 @@ public class TypeManagerImpl implements TypeManager {
 		boolean inherited_baseTypeId = shouldBeInherited(PropertyIds.BASE_TYPE_ID, typeId);
 		log.error("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_baseTypeId + " for " + PropertyIds.BASE_TYPE_ID + " in type " + typeId + " ***");
 		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_baseTypeId + " for " + PropertyIds.BASE_TYPE_ID + " in type " + typeId + " ***");
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:baseTypeId Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.BASE_TYPE_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null, inherited_baseTypeId));
+				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null, inherited_baseTypeId));
 		log.info("DEBUG: Added cmis:baseTypeId property (inherited=" + inherited_baseTypeId + ")");
 
 		//cmis:objectTypeId
@@ -1203,44 +1209,56 @@ public class TypeManagerImpl implements TypeManager {
 		Updatability updatability_secondaryObjectTypeIds = Updatability.fromValue(_updatability_secondaryObjectTypeIds);
 		boolean queryable_secondaryObjectTypeIds = propertyManager.readBoolean(PropertyKey.PROPERTY_SECONDARY_OBJECT_TYPE_IDS_QUERYABLE);
 		boolean inherited_secondaryObjectTypeIds = shouldBeInherited(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, typeId);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:secondaryObjectTypeIds Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.SECONDARY_OBJECT_TYPE_IDS,
 				PropertyType.ID, Cardinality.MULTI, updatability_secondaryObjectTypeIds,
-				!REQUIRED, queryable_secondaryObjectTypeIds, !ORDERABLE, null, inherited_secondaryObjectTypeIds));
+				REQUIRED, queryable_secondaryObjectTypeIds, !ORDERABLE, null, inherited_secondaryObjectTypeIds));
 		log.info("DEBUG: Added cmis:secondaryObjectTypeIds property (inherited=" + inherited_secondaryObjectTypeIds + ")");
 
 		boolean inherited_createdBy = shouldBeInherited(PropertyIds.CREATED_BY, typeId);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:createdBy Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.CREATED_BY, PropertyType.STRING, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null, inherited_createdBy));
+				Updatability.READONLY, REQUIRED, QUERYABLE, ORDERABLE, null, inherited_createdBy));
 		log.info("DEBUG: Added cmis:createdBy property (inherited=" + inherited_createdBy + ")");
 
 		boolean inherited_creationDate = shouldBeInherited(PropertyIds.CREATION_DATE, typeId);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:creationDate Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CREATION_DATE,
 				PropertyType.DATETIME, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null, inherited_creationDate));
+				REQUIRED, QUERYABLE, ORDERABLE, null, inherited_creationDate));
 		log.info("DEBUG: Added cmis:creationDate property (inherited=" + inherited_creationDate + ")");
 
 		boolean inherited_lastModifiedBy = shouldBeInherited(PropertyIds.LAST_MODIFIED_BY, typeId);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:lastModifiedBy Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.LAST_MODIFIED_BY,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null, inherited_lastModifiedBy));
+				REQUIRED, QUERYABLE, ORDERABLE, null, inherited_lastModifiedBy));
 		log.info("DEBUG: Added cmis:lastModifiedBy property (inherited=" + inherited_lastModifiedBy + ")");
 
 		boolean inherited_lastModificationDate = shouldBeInherited(PropertyIds.LAST_MODIFICATION_DATE, typeId);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:lastModificationDate Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.LAST_MODIFICATION_DATE,
 				PropertyType.DATETIME, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null, inherited_lastModificationDate));
+				REQUIRED, QUERYABLE, ORDERABLE, null, inherited_lastModificationDate));
 		log.info("DEBUG: Added cmis:lastModificationDate property (inherited=" + inherited_lastModificationDate + ")");
 
 		boolean inherited_changeToken = shouldBeInherited(PropertyIds.CHANGE_TOKEN, typeId);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:changeToken Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CHANGE_TOKEN,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null, inherited_changeToken));
+				REQUIRED, QUERYABLE, ORDERABLE, null, inherited_changeToken));
 		log.info("DEBUG: Added cmis:changeToken property (inherited=" + inherited_changeToken + ")");
 		
 		// Get final property count
@@ -1253,146 +1271,182 @@ public class TypeManagerImpl implements TypeManager {
 	private void addFolderPropertyDefinitions(String repositoryId, FolderTypeDefinitionImpl type) {
 		//cmis:parentId
 		boolean queryable_parentId = propertyManager.readBoolean(PropertyKey.PROPERTY_PARENT_ID_QUERYABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:parentId Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.PARENT_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, queryable_parentId, !ORDERABLE, null));
+				Updatability.READONLY, REQUIRED, queryable_parentId, !ORDERABLE, null));
 
 		//cmis:path
 		boolean queryable_path = propertyManager.readBoolean(PropertyKey.PROPERTY_PATH_QUERYABLE);
 		boolean orderable_path = propertyManager.readBoolean(PropertyKey.PROPERTY_PATH_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:path Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.PATH, PropertyType.STRING, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, queryable_path, orderable_path, null));
+				Updatability.READONLY, REQUIRED, queryable_path, orderable_path, null));
 
 		List<String> defaults = new ArrayList<String>();
 		defaults.add(BaseTypeId.CMIS_FOLDER.value());
 		defaults.add(BaseTypeId.CMIS_DOCUMENT.value());
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:allowedChildObjectTypeIds Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS,
 				PropertyType.ID, Cardinality.MULTI, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, !ORDERABLE, defaults));
+				REQUIRED, QUERYABLE, !ORDERABLE, defaults));
 	}
 
 	private void addDocumentPropertyDefinitions(String repositoryId, DocumentTypeDefinitionImpl type) {
 		//cmis:isImmutable
 		boolean queryable_isImmutable = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_IMMUTABLE_QUERYABLE);
 		boolean orderable_isImmutable = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_IMMUTABLE_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:isImmutable Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.IS_IMMUTABLE,
 				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_isImmutable, orderable_isImmutable, Arrays.asList(false)));
+				REQUIRED, queryable_isImmutable, orderable_isImmutable, Arrays.asList(false)));
 
 		//cmis:isLatestVersion
 		boolean queryable_isLatestVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_VERSION_QUERYABLE);
 		boolean orderable_isLatestVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_VERSION_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:isLatestVersion Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.IS_LATEST_VERSION,
 				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_isLatestVersion, orderable_isLatestVersion, null));
+				REQUIRED, queryable_isLatestVersion, orderable_isLatestVersion, null));
 
 		//cmis:isMajorVersion
 		boolean queryable_isMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_MAJOR_VERSION_QUERYABLE);
 		boolean orderable_isMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_MAJOR_VERSION_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:isMajorVersion Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.IS_MAJOR_VERSION,
 				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_isMajorVersion, orderable_isMajorVersion, null));
+				REQUIRED, queryable_isMajorVersion, orderable_isMajorVersion, null));
 
 		//cmis:isLatestMajorVersion
 		boolean queryable_isLatestMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_MAJOR_VERSION_QUERYABLE);
 		boolean orderable_isLatestMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_MAJOR_VERSION_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:isLatestMajorVersion Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.IS_LATEST_MAJOR_VERSION,
 				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_isLatestMajorVersion, orderable_isLatestMajorVersion, null));
+				REQUIRED, queryable_isLatestMajorVersion, orderable_isLatestMajorVersion, null));
 
 		//cmis:isPrivateWorkingCopy
 		boolean queryable_isPrivateWorkingCopy = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_PRIVATE_WORKING_COPY_QUERYABLE);
 		boolean orderable_isPrivateWorkingCopy = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_PRIVATE_WORKING_COPY_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:isPrivateWorkingCopy Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.IS_PRIVATE_WORKING_COPY,
 				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_isPrivateWorkingCopy, orderable_isPrivateWorkingCopy, null));
+				REQUIRED, queryable_isPrivateWorkingCopy, orderable_isPrivateWorkingCopy, null));
 
 		//cmis:versionLabel
 		boolean queryable_versionLabel = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_LABEL_QUERYABLE);
 		boolean orderable_versionLabel = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_LABEL_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:versionLabel Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.VERSION_LABEL,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_versionLabel, orderable_versionLabel, null));
+				REQUIRED, queryable_versionLabel, orderable_versionLabel, null));
 
 		//cmis:versionSeriesId
 		boolean queryable_versionSeriesId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_ID_QUERYABLE);
 		boolean orderable_versionSeriesId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_ID_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:versionSeriesId Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.VERSION_SERIES_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_versionSeriesId, orderable_versionSeriesId, null));
+				REQUIRED, queryable_versionSeriesId, orderable_versionSeriesId, null));
 
 		//cmis:isVersionSeriesCheckedOut
 		boolean queryable_isVersionSeriesCheckedOut = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_VERSION_SERIES_CHECKED_OUT_QUERYABLE);
 		boolean orderable_isVersionSeriesCheckedOut = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_VERSION_SERIES_CHECKED_OUT_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:isVersionSeriesCheckedOut Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId,
 				PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, PropertyType.BOOLEAN,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED, queryable_isVersionSeriesCheckedOut, orderable_isVersionSeriesCheckedOut, null));
+				Cardinality.SINGLE, Updatability.READONLY, REQUIRED, queryable_isVersionSeriesCheckedOut, orderable_isVersionSeriesCheckedOut, null));
 
 		//cmis:versionSeriesCheckedOutBy
 		boolean queryable_versionSeriesCheckedOutBy = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_BY_QUERYABLE);
 		boolean orderable_versionSeriesCheckedOutBy = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_BY_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:versionSeriesCheckedOutBy Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_versionSeriesCheckedOutBy, orderable_versionSeriesCheckedOutBy, null));
+				REQUIRED, queryable_versionSeriesCheckedOutBy, orderable_versionSeriesCheckedOutBy, null));
 
 		//cmis:versionSeriesCheckedOutId
 		boolean queryable_versionSeriesCheckedOutId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_ID_QUERYABLE);
 		boolean orderable_versionSeriesCheckedOutId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_ID_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:versionSeriesCheckedOutId Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_versionSeriesCheckedOutId, orderable_versionSeriesCheckedOutId, null));
+				REQUIRED, queryable_versionSeriesCheckedOutId, orderable_versionSeriesCheckedOutId, null));
 
 		//cmis:checkInComment
 		boolean queryable_checkInComment = propertyManager.readBoolean(PropertyKey.PROPERTY_CHECK_IN_COMMENT_QUERYABLE);
 		boolean orderable_checkInComment = propertyManager.readBoolean(PropertyKey.PROPERTY_CHECK_IN_COMMENT_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:checkinComment Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CHECKIN_COMMENT,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_checkInComment, orderable_checkInComment, null));
+				REQUIRED, queryable_checkInComment, orderable_checkInComment, null));
 
 		//cmis:contentStreamLength
 		boolean queryable_contentStreamLength = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_LENGTH_QUERYABLE);
 		boolean orderable_contentStreamLength = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_LENGTH_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:contentStreamLength Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CONTENT_STREAM_LENGTH,
 				PropertyType.INTEGER, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_contentStreamLength, orderable_contentStreamLength, null));
+				REQUIRED, queryable_contentStreamLength, orderable_contentStreamLength, null));
 
 		//cmis:contentStreamMimeType
 		boolean queryable_contentStreamMimeType = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_MIME_TYPE_QUERYABLE);
 		boolean orderable_contentStreamMimeType = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_MIME_TYPE_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:contentStreamMimeType Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CONTENT_STREAM_MIME_TYPE,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_contentStreamMimeType, orderable_contentStreamMimeType, null));
+				REQUIRED, queryable_contentStreamMimeType, orderable_contentStreamMimeType, null));
 
 		//cmis:contentStreamMimeType
 		boolean queryable_contentStreamFileName = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_FILE_NAME_QUERYABLE);
 		boolean orderable_contentStreamFileName = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_FILE_NAME_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:contentStreamFileName Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CONTENT_STREAM_FILE_NAME,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_contentStreamFileName, orderable_contentStreamFileName, null));
+				REQUIRED, queryable_contentStreamFileName, orderable_contentStreamFileName, null));
 
 		//cmis:contentStreamId
 		boolean queryable_contentStreamId = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_ID_QUERYABLE);
 		boolean orderable_contentStreamId = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_ID_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:contentStreamId Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CONTENT_STREAM_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_contentStreamId, orderable_contentStreamId, null));
+				REQUIRED, queryable_contentStreamId, orderable_contentStreamId, null));
 	}
 
 	private void addRelationshipPropertyDefinitions(
@@ -1416,10 +1470,12 @@ public class TypeManagerImpl implements TypeManager {
 		//cmis:policyText
 		boolean queryable_policyText = propertyManager.readBoolean(PropertyKey.PROPERTY_POLICY_TEXT_QUERYABLE);
 		boolean orderable_policyText = propertyManager.readBoolean(PropertyKey.PROPERTY_POLICY_TEXT_ORDERABLE);
+		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:policyText Required: FALSE
+		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.POLICY_TEXT,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_policyText, orderable_policyText, null));
+				REQUIRED, queryable_policyText, orderable_policyText, null));
 	}
 
 	private PropertyDefinition<?> createDefaultPropDef(String repositoryId,

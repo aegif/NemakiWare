@@ -67,15 +67,11 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 		setPropertyType(p.getPropertyType());
 		setQueryName(p.getQueryName());
 		setCardinality(p.getCardinality());
-		
-		// CRITICAL FIX: Set inherited flag based on property namespace
-		// CMIS standard properties (cmis:*) are inherited, custom properties are not
-		String propertyId = p.getPropertyId();
-		if (propertyId != null && propertyId.startsWith("cmis:")) {
-			setInherited(true);  // CMIS standard properties are inherited
-		} else {
-			setInherited(false); // Custom properties are not inherited
-		}
+
+		// CRITICAL TCK FIX: Do not set inherited flag here
+		// The inherited flag must be set by TypeManagerImpl based on type hierarchy
+		// Setting it here based on cmis: prefix is incorrect and causes TCK failures
+		setInherited(false); // Default value, will be corrected by TypeManagerImpl
 	}
 
 	/**
@@ -86,23 +82,20 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 	public NemakiPropertyDefinitionCore(org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> propertyDefinition) {
 		super();
 		setType(NodeType.PROPERTY_DEFINITION_CORE.value());
-		
+
 		// CRITICAL FIX: Directly extract properties from PropertyDefinition without contamination
 		String originalPropertyId = propertyDefinition.getId();
-		
+
 		// CRITICAL FIX: Preserve exact property ID and type from source PropertyDefinition
 		setPropertyId(originalPropertyId);
 		setPropertyType(propertyDefinition.getPropertyType());
 		setQueryName(propertyDefinition.getQueryName());
 		setCardinality(propertyDefinition.getCardinality());
-		
-		// CRITICAL FIX: Set inherited flag based on property namespace
-		// CMIS standard properties (cmis:*) are inherited, custom properties are not
-		if (originalPropertyId != null && originalPropertyId.startsWith("cmis:")) {
-			setInherited(true);  // CMIS standard properties are inherited
-		} else {
-			setInherited(false); // Custom properties are not inherited
-		}
+
+		// CRITICAL TCK FIX: Use inherited flag from source PropertyDefinition
+		// The inherited flag indicates type hierarchy inheritance, not namespace prefix
+		Boolean sourceInherited = propertyDefinition.isInherited();
+		setInherited(sourceInherited != null ? sourceInherited : false);
 	}
 
 	public String getPropertyId() {
