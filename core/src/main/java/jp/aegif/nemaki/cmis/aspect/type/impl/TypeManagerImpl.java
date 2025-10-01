@@ -721,7 +721,7 @@ public class TypeManagerImpl implements TypeManager {
 		log.error("CRITICAL DEBUG: About to call addBasePropertyDefinitions for cmis:document");
 		addBasePropertyDefinitions(repositoryId, documentType);
 		log.error("CRITICAL DEBUG: Finished addBasePropertyDefinitions for cmis:document");
-		addDocumentPropertyDefinitions(repositoryId, documentType);
+		addDocumentPropertyDefinitions(repositoryId, documentType, false);
 
 		addTypeInternal(TYPES.get(repositoryId), documentType);
 		addTypeInternal(basetypes, documentType);
@@ -1303,7 +1303,7 @@ public class TypeManagerImpl implements TypeManager {
 				REQUIRED, QUERYABLE, !ORDERABLE, defaults));
 	}
 
-	private void addDocumentPropertyDefinitions(String repositoryId, DocumentTypeDefinitionImpl type) {
+	private void addDocumentPropertyDefinitions(String repositoryId, DocumentTypeDefinitionImpl type, boolean isInherited) {
 		//cmis:isImmutable
 		boolean queryable_isImmutable = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_IMMUTABLE_QUERYABLE);
 		boolean orderable_isImmutable = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_IMMUTABLE_ORDERABLE);
@@ -1392,7 +1392,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				REQUIRED, queryable_versionSeriesCheckedOutBy, orderable_versionSeriesCheckedOutBy, null));
+				REQUIRED, queryable_versionSeriesCheckedOutBy, orderable_versionSeriesCheckedOutBy, null, isInherited));
 
 		//cmis:versionSeriesCheckedOutId
 		boolean queryable_versionSeriesCheckedOutId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_ID_QUERYABLE);
@@ -1402,7 +1402,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				REQUIRED, queryable_versionSeriesCheckedOutId, orderable_versionSeriesCheckedOutId, null));
+				REQUIRED, queryable_versionSeriesCheckedOutId, orderable_versionSeriesCheckedOutId, null, isInherited));
 
 		//cmis:checkInComment
 		boolean queryable_checkInComment = propertyManager.readBoolean(PropertyKey.PROPERTY_CHECK_IN_COMMENT_QUERYABLE);
@@ -1846,7 +1846,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Custom types that inherit from cmis:document should NOT have these properties added directly
 		// They will inherit them from their parent type
 		if (isBaseType) {
-			addDocumentPropertyDefinitions(repositoryId, type);
+			addDocumentPropertyDefinitions(repositoryId, type, false);
 			log.error("CRITICAL DEBUG: Added document properties to base type cmis:document");
 		} else {
 			log.error("CRITICAL DEBUG: SKIPPING addDocumentPropertyDefinitions for custom type " + nemakiType.getTypeId() + " - will inherit from parent");

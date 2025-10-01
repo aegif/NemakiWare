@@ -62,8 +62,18 @@ import org.apache.commons.logging.LogFactory;
  */
 public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
+    static {
+        System.err.println("*** NEMAKIBROWSERBINDINGSERVLET CLASS LOADED ***");
+    }
+
     private static final long serialVersionUID = 1L;
     private static final Log log = LogFactory.getLog(NemakiBrowserBindingServlet.class);
+
+    @Override
+    public void init() throws ServletException {
+        System.err.println("*** NEMAKIBROWSERBINDINGSERVLET INIT CALLED ***");
+        super.init();
+    }
     
     
     /**
@@ -96,6 +106,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     @Override
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
+        System.err.println("*** NEMAKIBROWSERBINDINGSERVLET SERVICE METHOD CALLED ***");
 
         // CRITICAL DEBUG: Force output to stderr to ensure visibility
         log.error("!!! NEMAKIBROWSERBINDINGSERVLET SERVICE METHOD CALLED !!!");
@@ -230,6 +241,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
         // Log critical service parameters for debugging
         log.debug("SERVICE: cmisaction='" + cmisaction + "', method=" + method + ", pathInfo=" + pathInfo);
+        System.err.println("*** SERVICE DEBUG: cmisaction='" + cmisaction + "', method=" + method + " ***");
 
         // Debug logging for multipart parameters
         if (contentType != null && contentType.startsWith("multipart/form-data")) {
@@ -242,8 +254,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         if (contentType != null && contentType.startsWith("multipart/form-data")) {
             try {
                 // Use OpenCMIS HttpUtils to properly parse multipart parameters
-                cmisaction = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "cmisaction");
-                
+                String multipartCmisaction = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "cmisaction");
+                if (multipartCmisaction != null && !multipartCmisaction.isEmpty()) {
+                    cmisaction = multipartCmisaction;
+                    System.err.println("*** MULTIPART FIX: Extracted cmisaction='" + cmisaction + "' from multipart data ***");
+                } else {
+                    System.err.println("*** MULTIPART FIX: No cmisaction found in multipart data ***");
+                }
+
                 // CRITICAL FIX: Handle TCK Browser Binding folderId parameter mapping
                 // TCK tests use "folderId" parameter for document creation, but NemakiWare expects "objectId"
                 String folderId = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "folderId");
@@ -318,8 +336,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
             }
         }
-        
+
+        System.err.println("*** ROUTING CHECK: cmisaction='" + cmisaction + "' ***");
         if (cmisaction != null) {
+            System.err.println("*** ROUTING ENTERING: cmisaction is not null, proceeding with routing ***");
             // Enhanced logging for createDocument operations (development debugging)
             if ("createDocument".equals(cmisaction)) {
                 log.debug("createDocument operation detected");
@@ -2202,6 +2222,13 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     System.err.println("*** CMIS ROUTER: Routing applyACL action ***");
                     return handleApplyAclOperation(request, response, pathInfo);
 
+                // CRITICAL TCK FIX: Add versioning actions for VersioningStateCreateTest
+                case "checkOut":
+                case "checkIn":
+                case "cancelCheckOut":
+                    System.err.println("*** CMIS ROUTER: Routing versioning action: " + cmisaction + " ***");
+                    return handleVersioningOperation(request, response, pathInfo, cmisaction);
+
                 default:
                     System.err.println("*** CMIS ROUTER: Action '" + cmisaction + "' not handled by router - delegating to parent ***");
                     return false; // Let parent handle other actions
@@ -2901,6 +2928,111 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
         } catch (Exception e) {
             System.err.println("*** DELETE CONTENT HANDLER ERROR: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
+            throw e;
+        }
+    }
+
+    /**
+     * Handle CMIS versioning operations (checkOut, checkIn, cancelCheckOut) via Browser Binding.
+     * CRITICAL TCK FIX: Implements versioning actions required by VersioningStateCreateTest.
+     */
+    private boolean handleVersioningOperation(HttpServletRequest request, HttpServletResponse response,
+                                            String pathInfo, String cmisaction)
+            throws IOException, ServletException, Exception {
+
+        System.err.println("*** VERSIONING HANDLER: Starting " + cmisaction + " operation ***");
+
+        try {
+            // Extract object ID
+            String objectId = request.getParameter("objectId");
+            if (objectId == null || objectId.isEmpty()) {
+                throw new IllegalArgumentException("objectId parameter is required for " + cmisaction + " operation");
+            }
+
+            String repositoryId = extractRepositoryIdFromPath(pathInfo);
+            if (repositoryId == null) {
+                throw new IllegalArgumentException("Could not determine repository ID from path: " + pathInfo);
+            }
+
+            System.err.println("*** VERSIONING HANDLER: " + cmisaction + " for object: " + objectId + " ***");
+
+            // Get the CMIS service
+            org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
+            CmisService cmisService = getCmisService(callContext);
+
+            String resultObjectId = null;
+
+            switch (cmisaction) {
+                case "checkOut":
+                    org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
+                        new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
+                    org.apache.chemistry.opencmis.commons.spi.Holder<Boolean> contentCopiedHolder =
+                        new org.apache.chemistry.opencmis.commons.spi.Holder<Boolean>();
+
+                    // CRITICAL TCK FIX: Correct CmisService.checkOut signature without CallContext
+                    cmisService.checkOut(repositoryId, objectIdHolder, null, contentCopiedHolder);
+                    resultObjectId = objectIdHolder.getValue(); // PWC ID
+                    break;
+
+                case "checkIn":
+                    String checkinComment = request.getParameter("checkinComment");
+                    String major = request.getParameter("major");
+                    Boolean isMajor = (major != null) ? Boolean.parseBoolean(major) : Boolean.FALSE;
+
+                    // Extract properties if any (for checkin comment, etc.)
+                    java.util.Map<String, Object> properties = extractPropertiesFromRequest(request);
+                    if (checkinComment != null) {
+                        properties.put("cmis:checkinComment", checkinComment);
+                    }
+
+                    org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl cmisProperties =
+                        properties.isEmpty() ? null : convertToCmisProperties(properties);
+
+                    // Extract content stream if provided
+                    org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = null;
+                    String contentType = request.getContentType();
+                    if (contentType != null && contentType.startsWith("multipart/form-data")) {
+                        contentStream = extractContentStreamFromMultipartParameters(request);
+                    }
+
+                    org.apache.chemistry.opencmis.commons.spi.Holder<String> checkinObjectIdHolder =
+                        new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
+
+                    // CRITICAL TCK FIX: Correct CmisService.checkIn signature without CallContext
+                    cmisService.checkIn(repositoryId, checkinObjectIdHolder, isMajor, cmisProperties,
+                                      contentStream, checkinComment, null, null, null, null);
+                    resultObjectId = checkinObjectIdHolder.getValue();
+                    break;
+
+                case "cancelCheckOut":
+                    // CRITICAL TCK FIX: Correct CmisService.cancelCheckOut signature without CallContext
+                    cmisService.cancelCheckOut(repositoryId, objectId, null);
+                    resultObjectId = objectId; // Original document ID
+                    break;
+
+                default:
+                    throw new IllegalArgumentException("Unsupported versioning action: " + cmisaction);
+            }
+
+            System.err.println("*** VERSIONING HANDLER: " + cmisaction + " completed successfully, result object: " + resultObjectId + " ***");
+
+            // Return success response with object info
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+
+            try (java.io.PrintWriter writer = response.getWriter()) {
+                if (resultObjectId != null) {
+                    writer.write("{\"succinctProperties\":{\"cmis:objectId\":\"" + resultObjectId + "\"}}");
+                } else {
+                    writer.write("{}"); // Empty JSON response indicates success
+                }
+            }
+
+            return true; // Successfully handled
+
+        } catch (Exception e) {
+            System.err.println("*** VERSIONING HANDLER ERROR: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
             throw e;
         }
     }

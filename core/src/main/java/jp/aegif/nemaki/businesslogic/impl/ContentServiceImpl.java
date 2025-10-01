@@ -1240,7 +1240,11 @@ public class ContentServiceImpl implements ContentService {
 			d.setMajorVersion(false);
 			d.setLatestMajorVersion(false);
 			d.setPrivateWorkingCopy(true);
+			// CRITICAL TCK FIX: Set versioning properties required by VersioningStateCreateTest
+			d.setVersionSeriesCheckedOutBy(callContext.getUsername());
+			d.setVersionSeriesCheckedOutId(d.getId()); // PWC's own ID
 			// former latestVersion/latestMajorVersion remains unchanged
+			break;
 		default:
 			break;
 		}
