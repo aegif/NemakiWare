@@ -1440,7 +1440,8 @@ private PropertyDefinition<?> createDefaultPropDef(String repositoryId,
 
 	// Default values with CMIS 1.1 compliance
 	String localName = id;
-	String localNameSpace = getNameSpace(repositoryId);
+	// CRITICAL TCK NAMESPACE FIX: Pass null to let DataUtil decide namespace based on property ID
+	String localNameSpace = null;  // DataUtil will use CMIS namespace for cmis: properties
 	String queryName = localName;  // CMIS 1.1: queryName must equal localName
 	String displayName = null;  // Let DataUtil generate human-readable displayName
 	String description = id;
@@ -1477,6 +1478,7 @@ private PropertyDefinition<?> createDefaultPropDef(String repositoryId,
 		}
 	}
 
+	System.err.println("TCK NAMESPACE TRACE: TypeManagerImpl.createDefaultPropDef calling DataUtil.createPropDef for " + id + " with localNameSpace=" + localNameSpace);
 	result = DataUtil.createPropDef(id, localName, localNameSpace,
 			queryName, displayName, description, datatype, cardinality,
 			updatability, required, queryable, inherited, null, openChoice,
@@ -2295,9 +2297,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 						}
 					}
 
+					// CRITICAL NAMESPACE DEBUG: Log what we're passing to DataUtil
+					System.err.println("TCK NAMESPACE DEBUG: Creating property " + p.getPropertyId() +
+						" with null namespace (forcing DataUtil logic)");
+
 					property = DataUtil.createPropDef(
 						p.getPropertyId(), p.getLocalName(),
-						p.getLocalNameSpace(), p.getQueryName(),
+						null, p.getQueryName(),
 						p.getDisplayName(), p.getDescription(),
 						propType, p.getCardinality(),
 						p.getUpdatability(), p.isRequired(), p.isQueryable(),

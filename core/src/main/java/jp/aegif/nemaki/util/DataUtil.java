@@ -60,6 +60,7 @@ import java.util.TimeZone;
 
 public class DataUtil {
 	public static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
+	public static final String CMIS_NAMESPACE = "http://docs.oasis-open.org/ns/cmis/core/200908/";
 
 
 	private static final Log log = LogFactory.getLog(DataUtil.class);
@@ -667,6 +668,7 @@ public class DataUtil {
 			boolean openChoice, List<String> defaultValue) {
 		// Set base attributes
 		PropertyIdDefinitionImpl result = new PropertyIdDefinitionImpl();
+		System.err.println("TCK NAMESPACE TRACE: createPropIdDef calling createPropBaseDef for " + id + " with localNameSpace=" + localNameSpace);
 		result = (PropertyIdDefinitionImpl) createPropBaseDef(result, id,
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
@@ -709,6 +711,7 @@ public class DataUtil {
 			boolean openChoice, List<String> defaultValue, BigInteger maxLength) {
 		// Set base attributes
 		PropertyStringDefinitionImpl result = new PropertyStringDefinitionImpl();
+		System.err.println("TCK NAMESPACE TRACE: createPropStringDef calling createPropBaseDef for " + id + " with localNameSpace=" + localNameSpace);
 		result = (PropertyStringDefinitionImpl) createPropBaseDef(result, id,
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
@@ -748,7 +751,21 @@ public class DataUtil {
 			boolean queryable, boolean orderable, boolean openChoice) {
 		// Set default value if not set(null)
 		localName = (localName == null) ? id : localName;
-		localNameSpace = (localNameSpace == null) ? NAMESPACE : localNameSpace;
+
+		// CRITICAL TCK NAMESPACE FIX: Use correct namespace for CMIS vs custom properties
+		if (localNameSpace == null) {
+			if (id != null && id.startsWith("cmis:")) {
+				// CMIS standard properties must use CMIS namespace for TCK compliance
+				localNameSpace = CMIS_NAMESPACE;
+				System.err.println("TCK NAMESPACE FIX: Setting CMIS namespace for " + id + " = " + CMIS_NAMESPACE);
+			} else {
+				// Custom properties use NemakiWare namespace
+				localNameSpace = NAMESPACE;
+				System.err.println("TCK NAMESPACE FIX: Setting NemakiWare namespace for " + id + " = " + NAMESPACE);
+			}
+		} else {
+			System.err.println("TCK NAMESPACE DEBUG: Property " + id + " already has namespace: " + localNameSpace);
+		}
 		
 		// CMIS 1.1 COMPLIANCE CRITICAL FIX (CORRECTED): 
 		// queryName MUST equal localName ONLY for SYSTEM properties (cmis:*)
@@ -827,11 +844,12 @@ public class DataUtil {
 			}
 		}
 		
-		// CRITICAL FIX: CMIS 1.1 inherited flag - CMIS standard properties are inherited from base types
+		// CRITICAL FIX: CMIS 1.1 inherited flag for PropertyDefinitionCore objects
+		// PropertyDefinitionCore objects are base templates - cmis: properties default to inherited=false
+		// The actual inherited flag will be set correctly when building type-specific PropertyDefinitions
 		boolean inherited = false;
-		if (id != null && id.startsWith("cmis:")) {
-			inherited = true;  // CMIS standard properties are inherited from base types
-		}
+		// Note: For base types (cmis:document, cmis:folder), cmis: properties are NOT inherited (inherited=false)
+		// For subtypes, the inherited flag will be set to true during type-specific property construction
 		
 		PropertyDefinition<?> core = createPropDef(id, null, null, queryName,
 				null, null, propertyType, cardinality, null, false, false,

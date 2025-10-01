@@ -1162,6 +1162,8 @@ public class ContentServiceImpl implements ContentService {
 			d.setVersionSeriesCheckedOut(false);
 			d.setVersionSeriesCheckedOutBy(null);
 			d.setVersionSeriesCheckedOutId(null);
+			// CMIS 1.1 compliance: provide empty string default for required cmis:checkinComment
+			d.setCheckinComment("");
 			break;
 		case CHECKEDOUT:
 			d.setLatestVersion(false);
@@ -1185,6 +1187,8 @@ public class ContentServiceImpl implements ContentService {
 			// Clear additional versioning properties for non-checked out documents
 			d.setVersionSeriesCheckedOutBy(null);
 			d.setVersionSeriesCheckedOutId(null);
+			// CMIS 1.1 compliance: provide empty string default for required cmis:checkinComment
+			d.setCheckinComment("");
 			break;
 		case MINOR:
 			d.setLatestVersion(true);
@@ -1197,6 +1201,8 @@ public class ContentServiceImpl implements ContentService {
 			// Clear additional versioning properties for non-checked out documents
 			d.setVersionSeriesCheckedOutBy(null);
 			d.setVersionSeriesCheckedOutId(null);
+			// CMIS 1.1 compliance: provide empty string default for required cmis:checkinComment
+			d.setCheckinComment("");
 			break;
 		default:
 			break;
@@ -1499,11 +1505,13 @@ public class ContentServiceImpl implements ContentService {
 		String name = DataUtil.getStringProperty(properties, PropertyIds.NAME);
 		content.setName(name);
 
-		// Description
-		content.setDescription(DataUtil.getStringProperty(properties, PropertyIds.DESCRIPTION));
+		// Description - CMIS 1.1 compliance: provide empty string default for required property
+		String description = DataUtil.getStringProperty(properties, PropertyIds.DESCRIPTION);
+		content.setDescription(description != null ? description : "");
 
-		// Secondary Type IDs
-		content.setSecondaryIds(DataUtil.getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
+		// Secondary Type IDs - CMIS 1.1 compliance: provide empty list default for required property
+		List<String> secondaryTypeIds = DataUtil.getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+		content.setSecondaryIds(secondaryTypeIds != null ? secondaryTypeIds : new ArrayList<String>());
 
 		// Subtype properties
 		List<Property> subTypeProperties = buildSubTypeProperties(repositoryId, properties, content);
@@ -2189,16 +2197,27 @@ public class ContentServiceImpl implements ContentService {
 		a.setMimeType(contentStream.getMimeType());
 		
 		// CRITICAL FIX: Calculate actual stream size when length is unknown (-1) or invalid (0 or negative)
+		// BUT avoid consuming the stream if it doesn't support mark/reset
 		long streamLength = contentStream.getLength();
 		if (streamLength <= 0) {
-			log.warn("ContentStream length is " + streamLength + " (unknown/invalid), calculating actual size for: " + contentStream.getFileName());
-			streamLength = calculateStreamSize(contentStream.getStream());
-			
-			if (streamLength >= 0) {
-				log.info("Calculated actual stream size: " + streamLength + " bytes for: " + contentStream.getFileName());
+			log.warn("ContentStream length is " + streamLength + " (unknown/invalid) for: " + contentStream.getFileName());
+
+			// TCK COMPATIBILITY FIX: Only calculate size if stream supports mark/reset
+			// This prevents consuming the stream content during size calculation
+			InputStream stream = contentStream.getStream();
+			if (stream != null && stream.markSupported()) {
+				log.debug("Stream supports mark/reset, calculating actual size for: " + contentStream.getFileName());
+				streamLength = calculateStreamSize(stream);
+
+				if (streamLength >= 0) {
+					log.info("Calculated actual stream size: " + streamLength + " bytes for: " + contentStream.getFileName());
+				} else {
+					log.error("Failed to calculate stream size, using -1 (unknown) for: " + contentStream.getFileName());
+					streamLength = -1L; // Use -1 to indicate unknown size to DAO layer
+				}
 			} else {
-				log.error("Failed to calculate stream size, using default value 0 for: " + contentStream.getFileName());
-				streamLength = 0L; // Fallback to 0 instead of -1
+				log.debug("Stream does not support mark/reset, preserving content and using -1 (unknown size) for: " + contentStream.getFileName());
+				streamLength = -1L; // Let DAO layer handle unknown size without consuming content
 			}
 		}
 		

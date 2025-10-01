@@ -1231,9 +1231,15 @@ public class CompileServiceImpl implements CompileService {
 			// CRITICAL CMIS 1.1 COMPLIANCE: Use Document's isVersionSeriesCheckedOut property directly
 			addProperty(properties, tdf, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, document.isVersionSeriesCheckedOut());
 			
-			// COMPLETE CMIS 1.1 VERSIONING COMPLIANCE: Use Document's properties for all versioning info
-			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, document.getVersionSeriesCheckedOutBy());
-			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, document.getVersionSeriesCheckedOutId());
+			// COMPLETE CMIS 1.1 VERSIONING COMPLIANCE: Only include NOT REQUIRED properties when they have meaningful values
+			String checkedOutBy = document.getVersionSeriesCheckedOutBy();
+			if (checkedOutBy != null && !checkedOutBy.trim().isEmpty()) {
+				addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, checkedOutBy);
+			}
+			String checkedOutId = document.getVersionSeriesCheckedOutId();
+			if (checkedOutId != null && !checkedOutId.trim().isEmpty()) {
+				addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, checkedOutId);
+			}
 
 			// TODO comment
 		} else {
@@ -1246,8 +1252,8 @@ public class CompileServiceImpl implements CompileService {
 			addProperty(properties, tdf, PropertyIds.CHECKIN_COMMENT, "");
 			addProperty(properties, tdf, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, false);
 
-			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, "");
-			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, "");
+			// CMIS 1.1 COMPLIANCE: NOT REQUIRED properties omitted entirely for non-versionable documents
+			// VERSION_SERIES_CHECKED_OUT_ID and VERSION_SERIES_CHECKED_OUT_BY are intentionally omitted
 		}
 	}
 

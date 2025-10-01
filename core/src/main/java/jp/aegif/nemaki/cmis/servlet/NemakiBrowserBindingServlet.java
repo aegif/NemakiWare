@@ -2683,9 +2683,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 properties.put("cmis:secondaryObjectTypeIds", currentSecondaryTypes);
             }
 
-            // Convert properties to CMIS format (can be null if no properties)
+            // Convert properties to CMIS format (always create Properties object for ConformanceCmisServiceWrapper)
             org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl cmisProperties =
-                properties.isEmpty() ? null : convertToCmisProperties(properties);
+                properties.isEmpty() ? new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl() : convertToCmisProperties(properties);
+
+            System.err.println("*** CONFORMANCE FIX: Created PropertiesImpl object, null=" + (cmisProperties == null) + ", properties count=" +
+                             (cmisProperties.getProperties() != null ? cmisProperties.getProperties().size() : 0) + " ***");
 
             // Use holders to receive the updated object ID
             org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder = new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
