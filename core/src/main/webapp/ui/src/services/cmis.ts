@@ -72,7 +72,7 @@ export class CMISService {
 
   private getSafeIntegerProperty(props: Record<string, any>, key: string): number | undefined {
     const property = props[key];
-    
+
     // Handle Browser Binding format: {id: "cmis:contentStreamLength", value: number}
     if (property && typeof property === 'object' && property.value !== undefined) {
       const value = property.value;
@@ -83,7 +83,7 @@ export class CMISService {
         return isNaN(parsed) ? undefined : parsed;
       }
     }
-    
+
     // Handle direct value
     if (typeof property === 'number') {
       return property;
@@ -91,8 +91,115 @@ export class CMISService {
       const parsed = parseInt(property);
       return isNaN(parsed) ? undefined : parsed;
     }
-    
+
     return undefined;
+  }
+
+  private getSafeBooleanProperty(props: Record<string, any>, key: string): boolean | undefined {
+    const property = props[key];
+
+    if (property && typeof property === 'object' && property.value !== undefined) {
+      const value = property.value;
+      if (typeof value === 'boolean') {
+        return value;
+      } else if (typeof value === 'string') {
+        return value.toLowerCase() === 'true';
+      } else if (Array.isArray(value) && value.length > 0) {
+        const first = value[0];
+        if (typeof first === 'boolean') {
+          return first;
+        }
+        if (typeof first === 'string') {
+          return first.toLowerCase() === 'true';
+        }
+      }
+    }
+
+    if (typeof property === 'boolean') {
+      return property;
+    }
+
+    if (typeof property === 'string') {
+      return property.toLowerCase() === 'true';
+    }
+
+    return undefined;
+  }
+
+  private extractAllowableActions(allowableActionsData: any): string[] {
+    if (!allowableActionsData) {
+      return [];
+    }
+
+    const data = allowableActionsData.allowableActions ?? allowableActionsData;
+
+    if (Array.isArray(data)) {
+      return data.map(action => String(action));
+    }
+
+    if (typeof data === 'object') {
+      return Object.entries(data)
+        .filter(([, value]) => value === true || value === 'true')
+        .map(([key]) => key);
+    }
+
+    return [];
+  }
+
+  private encodeObjectIdSegment(objectId?: string): string {
+    if (!objectId || objectId === 'root') {
+      return 'root';
+    }
+
+    return encodeURIComponent(objectId);
+  }
+
+  private appendPropertiesToFormData(formData: FormData, properties: Record<string, any>, defaults: Record<string, any> = {}) {
+    const merged = { ...defaults, ...properties };
+    let propertyIndex = 0;
+
+    Object.entries(merged).forEach(([key, value]) => {
+      if (value === undefined || value === null) {
+        return;
+      }
+
+      formData.append(`propertyId[${propertyIndex}]`, key);
+      formData.append(`propertyValue[${propertyIndex}]`, String(value));
+      propertyIndex++;
+    });
+  }
+
+  private buildCmisObjectFromBrowserData(data: any): CMISObject {
+    const props = data.succinctProperties || data.properties || {};
+    
+    return {
+      id: this.getSafeStringProperty(props, 'cmis:objectId', ''),
+      name: this.getSafeStringProperty(props, 'cmis:name', 'Unknown'),
+      objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
+      baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
+      properties: props,
+      allowableActions: this.extractAllowableActions(data.allowableActions),
+      createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
+      lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
+      creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
+      lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
+      contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
+      path: this.getSafeStringProperty(props, 'cmis:path')
+    };
+  }
+
+  private buildTypeDefinitionFromBrowserData(rawType: any): TypeDefinition {
+    return {
+      id: rawType?.id || 'unknown',
+      displayName: rawType?.displayName || rawType?.id || 'Unknown Type',
+      description: rawType?.description || `${rawType?.displayName || rawType?.id || 'Unknown'} type definition`,
+      baseTypeId: rawType?.baseTypeId || rawType?.baseId || (rawType?.id?.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document'),
+      parentTypeId: rawType?.parentTypeId || rawType?.parentId,
+      creatable: rawType?.creatable !== false,
+      fileable: rawType?.fileable !== false,
+      queryable: rawType?.queryable !== false,
+      deletable: rawType?.typeMutability?.delete !== false && rawType?.deletable !== false
+    };
   }
 
   private getAuthHeaders() {
@@ -542,162 +649,113 @@ export class CMISService {
   }
 
   async createDocument(repositoryId: string, parentId: string, file: File, properties: Record<string, any>): Promise<CMISObject> {
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
+      const parentSegment = this.encodeObjectIdSegment(parentId);
       const xhr = new XMLHttpRequest();
-      
-      const browserUrl = `/core/browser/${repositoryId}/root`;
-      console.log('CMIS DEBUG: createDocument using Browser binding URL:', browserUrl);
-      xhr.open('POST', browserUrl, true);
-      
-      const documentName = properties.name || file.name;
-      
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/${parentSegment}`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      console.log('CMIS DEBUG: createDocument set auth headers');
-      
-      console.log('CMIS DEBUG: createDocument file:', file.name, file.size, file.type);
 
-      try {
-        const formData = new FormData();
-        formData.append('cmisaction', 'createDocument');
-        formData.append('propertyId[0]', 'cmis:objectTypeId');
-        formData.append('propertyValue[0]', 'cmis:document');
-        formData.append('propertyId[1]', 'cmis:name');
-        formData.append('propertyValue[1]', documentName + '_' + Date.now());
-        formData.append('filename', file, documentName);
-        formData.append('_charset_', 'UTF-8');
-        
-        console.log('CMIS DEBUG: createDocument using Browser binding with FormData');
-        
-        xhr.onreadystatechange = () => {
-          console.log('CMIS DEBUG: createDocument readyState:', xhr.readyState, 'status:', xhr.status);
-          if (xhr.readyState === 1) {
-            console.log('CMIS DEBUG: XMLHttpRequest opened');
-          } else if (xhr.readyState === 2) {
-            console.log('CMIS DEBUG: XMLHttpRequest headers received');
-          } else if (xhr.readyState === 3) {
-            console.log('CMIS DEBUG: XMLHttpRequest loading');
-          }
-          if (xhr.readyState === 4) {
-            if (xhr.status === 200 || xhr.status === 201) {
-              try {
-                console.log('CMIS DEBUG: createDocument success, response:', xhr.responseText);
-                
-                try {
-                  const jsonResponse = JSON.parse(xhr.responseText);
-                  console.log('CMIS DEBUG: Parsed JSON response:', jsonResponse);
-                  
-                  const objectId = jsonResponse.succinctProperties?.['cmis:objectId']?.value || 
-                                 jsonResponse.properties?.['cmis:objectId']?.value || '';
-                  const objectName = jsonResponse.succinctProperties?.['cmis:name']?.value || 
-                                   jsonResponse.properties?.['cmis:name']?.value || documentName;
-                  
-                  const createdObject: CMISObject = {
-                    id: objectId,
-                    name: objectName,
-                    objectType: 'cmis:document',
-                    baseType: 'cmis:document',
-                    properties: jsonResponse.properties || {},
-                    allowableActions: []
-                  };
-                  
-                  console.log('CMIS DEBUG: Created object from JSON:', createdObject);
-                  resolve(createdObject);
-                  return;
-                } catch (jsonError) {
-                  console.log('CMIS DEBUG: Not JSON, trying XML parsing...');
-                }
-                
-                const parser = new DOMParser();
-                const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-                const entry = xmlDoc.querySelector('entry');
-                
-                if (!entry) {
-                  reject(new Error('No entry found in response and not valid JSON'));
-                  return;
-                }
-                
-                const id = entry.querySelector('id')?.textContent || '';
-                const title = entry.querySelector('title')?.textContent || '';
-                
-                const createdObject: CMISObject = {
-                  id: id.split('/').pop() || id,
-                  name: title || documentName,
-                  objectType: 'cmis:document',
-                  baseType: 'cmis:document',
-                  properties: {},
-                  allowableActions: []
-                };
-                resolve(createdObject);
-              } catch (e) {
-                console.error('CMIS DEBUG: createDocument parse error:', e);
-                reject(new Error('Invalid response format'));
-              }
-            } else {
-              console.error('CMIS DEBUG: createDocument HTTP error:', xhr.status, xhr.statusText);
-              console.error('CMIS DEBUG: createDocument response text:', xhr.responseText);
-              console.error('CMIS DEBUG: createDocument response headers:', xhr.getAllResponseHeaders());
-              reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText} - ${xhr.responseText}`));
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 201) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              const created = this.buildCmisObjectFromBrowserData(response);
+              resolve(created);
+            } catch (e) {
+              reject(new Error('Failed to parse Browser Binding response'));
             }
+          } else {
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
-        };
-        
-        xhr.onerror = (event) => {
-          console.error('CMIS DEBUG: createDocument network error:', event);
-          console.error('CMIS DEBUG: createDocument xhr status:', xhr.status);
-          console.error('CMIS DEBUG: createDocument xhr statusText:', xhr.statusText);
-          reject(new Error('Network error'));
-        };
-        
-        xhr.onload = () => {
-          console.log('CMIS DEBUG: createDocument onload triggered, status:', xhr.status);
-        };
-        
-        xhr.ontimeout = () => {
-          console.error('CMIS DEBUG: createDocument timeout');
-          reject(new Error('Request timeout'));
-        };
-        
-        console.log('CMIS DEBUG: About to send XMLHttpRequest');
-        xhr.send(formData);
-      } catch (e) {
-        console.error('CMIS DEBUG: createDocument file processing error:', e);
-        reject(new Error('Failed to process file'));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Network error'));
+
+      const documentName = properties?.['cmis:name'] || properties?.name || file.name;
+      const defaults = {
+        'cmis:objectTypeId': properties?.['cmis:objectTypeId'] || 'cmis:document',
+        'cmis:name': documentName
+      };
+
+      const formData = new FormData();
+      formData.append('cmisaction', 'createDocument');
+      formData.append('succinct', 'true');
+      formData.append('_charset_', 'UTF-8');
+      if (parentId) {
+        formData.append('folderId', parentId);
+        formData.append('objectId', parentId);
+      } else {
+        formData.append('folderId', 'root');
+        formData.append('objectId', 'root');
       }
+
+      this.appendPropertiesToFormData(formData, properties || {}, defaults);
+      formData.append('content', file, documentName);
+      if (file.type) {
+        formData.append('contentType', file.type);
+      }
+
+      xhr.send(formData);
     });
   }
 
   async createFolder(repositoryId: string, parentId: string, name: string, properties: Record<string, any> = {}): Promise<CMISObject> {
     return new Promise((resolve, reject) => {
+      const parentSegment = this.encodeObjectIdSegment(parentId);
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/folder/create`, true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/${parentSegment}`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
+          if (xhr.status === 200 || xhr.status === 201) {
             try {
               const response = JSON.parse(xhr.responseText);
-              resolve(response.object);
+              const created = this.buildCmisObjectFromBrowserData(response);
+              resolve(created);
             } catch (e) {
-              reject(new Error('Invalid response format'));
+              reject(new Error('Failed to parse Browser Binding response'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
+
       xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send(JSON.stringify({ parentId, name, ...properties }));
+
+      const defaults = {
+        'cmis:objectTypeId': properties?.['cmis:objectTypeId'] || 'cmis:folder',
+        'cmis:name': properties?.['cmis:name'] || name
+      };
+
+      const formData = new FormData();
+      formData.append('cmisaction', 'createFolder');
+      formData.append('succinct', 'true');
+      if (parentId) {
+        formData.append('folderId', parentId);
+        formData.append('objectId', parentId);
+      } else {
+        formData.append('folderId', 'root');
+        formData.append('objectId', 'root');
+      }
+
+      this.appendPropertiesToFormData(formData, properties || {}, defaults);
+      xhr.send(formData);
     });
   }
 
@@ -1474,53 +1532,36 @@ export class CMISService {
   }
 
   async getType(repositoryId: string, typeId: string): Promise<TypeDefinition> {
-    console.log('CMIS DEBUG: getType called with repositoryId:', repositoryId, 'typeId:', typeId);
-    
-    const mockTypeDefinition: TypeDefinition = {
-      id: typeId,
-      displayName: typeId,
-      description: `Mock type definition for ${typeId}`,
-      baseTypeId: typeId.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
-      parentTypeId: typeId.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
-      creatable: true,
-      fileable: true,
-      queryable: true,
-      propertyDefinitions: {
-        'cmis:name': {
-          id: 'cmis:name',
-          displayName: 'Name',
-          description: 'Name of the object',
-          propertyType: 'string',
-          cardinality: 'single',
-          updatable: true,
-          required: true,
-          queryable: true
-        },
-        'cmis:objectId': {
-          id: 'cmis:objectId',
-          displayName: 'Object ID',
-          description: 'Unique identifier of the object',
-          propertyType: 'string',
-          cardinality: 'single',
-          updatable: false,
-          required: true,
-          queryable: true
-        },
-        'cmis:objectTypeId': {
-          id: 'cmis:objectTypeId',
-          displayName: 'Object Type ID',
-          description: 'Type of the object',
-          propertyType: 'string',
-          cardinality: 'single',
-          updatable: false,
-          required: true,
-          queryable: true
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}?cmisselector=typeDefinition&typeId=${encodeURIComponent(typeId)}`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              const typeDefinition = this.buildTypeDefinitionFromBrowserData(response);
+              resolve(typeDefinition);
+            } catch (e) {
+              reject(new Error('Failed to parse type definition response'));
+            }
+          } else {
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
+          }
         }
-      }
-    };
-    
-    console.log('CMIS DEBUG: getType returning mock type definition:', mockTypeDefinition);
-    return Promise.resolve(mockTypeDefinition);
+      };
+
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async createType(repositoryId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
