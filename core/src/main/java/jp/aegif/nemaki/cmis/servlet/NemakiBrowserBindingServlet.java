@@ -62,10 +62,6 @@ import org.apache.commons.logging.LogFactory;
  */
 public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
-    static {
-        System.err.println("*** NEMAKIBROWSERBINDINGSERVLET CLASS LOADED ***");
-    }
-
     private static final long serialVersionUID = 1L;
     private static final Log log = LogFactory.getLog(NemakiBrowserBindingServlet.class);
 
@@ -82,10 +78,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         super.init();
         
         try {
-            log.error("=== NEMAKIBROWSERBINDINGSERVLET INIT START ===");
-            log.error("NEMAKI SERVLET: NemakiBrowserBindingServlet initialization completed successfully");
-            log.error("=== NEMAKIBROWSERBINDINGSERVLET INIT END ===");
-            
+            log.info("NemakiBrowserBindingServlet initialization started");
+            log.info("NemakiBrowserBindingServlet initialization completed successfully");
+
         } catch (Exception e) {
             log.error("NEMAKI SERVLET: Initialization failed", e);
             throw new ServletException("NemakiBrowserBindingServlet initialization failed", e);
@@ -99,41 +94,39 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     @Override
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        System.err.println("*** NEMAKIBROWSERBINDINGSERVLET SERVICE METHOD CALLED ***");
-
-        // CRITICAL DEBUG: Force output to stderr to ensure visibility
-        log.error("!!! NEMAKIBROWSERBINDINGSERVLET SERVICE METHOD CALLED !!!");
-        log.error("!!! SERVICE METHOD: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
+        log.debug("NemakiBrowserBindingServlet service invoked");
+        log.debug("Service method: " + request.getMethod() + " " + request.getRequestURI());
 
         // CRITICAL FIX: Check for versioning and applyACL actions immediately in service method
         if ("POST".equals(request.getMethod())) {
             String postMethodCmisaction = request.getParameter("cmisaction");
-            log.error("!!! SERVICE METHOD: POST request with cmisaction = '" + postMethodCmisaction + "' !!!");
+            log.debug("POST request with cmisaction='" + postMethodCmisaction + "'");
 
             // CRITICAL TCK FIX: Handle versioning operations directly
             if ("checkOut".equals(postMethodCmisaction) || "checkIn".equals(postMethodCmisaction) || "cancelCheckOut".equals(postMethodCmisaction)) {
-                log.error("!!! SERVICE METHOD: Versioning action " + postMethodCmisaction + " detected - forcing custom routing !!!");
+                log.debug("Versioning action '" + postMethodCmisaction + "' detected - routing through CMIS action handler");
                 // Force routing through our CMIS action router
                 String pathInfo = request.getPathInfo();
                 if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
-                    log.error("!!! SERVICE METHOD: Versioning action " + postMethodCmisaction + " handled successfully !!!");
+                    log.debug("Versioning action '" + postMethodCmisaction + "' handled successfully");
                     return;
                 }
             }
 
             if ("applyACL".equals(postMethodCmisaction)) {
-                log.error("!!! SERVICE METHOD: applyACL detected - forcing custom routing !!!");
+                log.debug("applyACL detected - routing through CMIS action handler");
                 // Force routing through our CMIS action router
                 String pathInfo = request.getPathInfo();
                 if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
-                    log.error("!!! SERVICE METHOD: applyACL handled successfully !!!");
+                    log.debug("applyACL handled successfully");
                     return;
                 }
             }
         }
 
         // CRITICAL DEBUG: ALWAYS log every request that reaches this servlet
-        log.error("=== NEMAKIBROWSERBINDINGSERVLET SERVICE INVOKED UPDATED VERSION === Method: " + request.getMethod() + " URI: " + request.getRequestURI() + " QueryString: " + request.getQueryString());
+        log.debug("Service invocation details - Method: " + request.getMethod() + ", URI: " + request.getRequestURI()
+                + ", QueryString: " + request.getQueryString());
         String method = request.getMethod();
         
         // SPRING 6.X URL PARSING FIX: Enhanced pathInfo extraction with fallback logic
