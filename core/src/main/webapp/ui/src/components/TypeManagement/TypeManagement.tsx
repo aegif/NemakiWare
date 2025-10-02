@@ -131,30 +131,43 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     {
       title: 'アクション',
       key: 'actions',
-      width: 150,
+      width: 200,
       render: (_, record: TypeDefinition) => (
         <Space>
-          <Button 
-            icon={<EditOutlined />} 
+          <Button
+            icon={<EditOutlined />}
             size="small"
             onClick={() => handleEdit(record)}
+            disabled={!record.deletable && record.id.startsWith('cmis:')}
+            title={!record.deletable && record.id.startsWith('cmis:') ? '標準CMISタイプは編集できません' : ''}
           >
             編集
           </Button>
-          <Popconfirm
-            title="このタイプを削除しますか？"
-            onConfirm={() => handleDelete(record.id)}
-            okText="はい"
-            cancelText="いいえ"
-          >
-            <Button 
-              icon={<DeleteOutlined />} 
+          {record.deletable !== false && !record.id.startsWith('cmis:') ? (
+            <Popconfirm
+              title="このタイプを削除しますか？"
+              onConfirm={() => handleDelete(record.id)}
+              okText="はい"
+              cancelText="いいえ"
+            >
+              <Button
+                icon={<DeleteOutlined />}
+                size="small"
+                danger
+              >
+                削除
+              </Button>
+            </Popconfirm>
+          ) : (
+            <Button
+              icon={<DeleteOutlined />}
               size="small"
-              danger
+              disabled
+              title="標準CMISタイプは削除できません"
             >
               削除
             </Button>
-          </Popconfirm>
+          )}
         </Space>
       ),
     },

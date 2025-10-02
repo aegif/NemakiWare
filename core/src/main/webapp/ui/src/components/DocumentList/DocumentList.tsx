@@ -49,26 +49,50 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
 
+  // Initialize root folder ID immediately
   useEffect(() => {
-    if (currentFolderId) {
-      loadObjects();
-    } else {
+    if (!currentFolderId) {
+      console.log('DocumentList DEBUG: Initializing with root folder ID');
       setCurrentFolderId('e02f784f8360a02cc14d1314c10038ff');
     }
-  }, [currentFolderId, repositoryId]);
+  }, [repositoryId]); // Only depend on repositoryId
+
+  // Load objects when currentFolderId changes
+  useEffect(() => {
+    if (currentFolderId) {
+      console.log('DocumentList DEBUG: currentFolderId changed, loading objects for:', currentFolderId);
+      loadObjects();
+    }
+  }, [currentFolderId]);
 
   const loadObjects = async () => {
-    if (!currentFolderId) return;
-    
-    console.log('LOAD OBJECTS DEBUG: Loading children for folder:', currentFolderId);
+    if (!currentFolderId) {
+      console.warn('LOAD OBJECTS DEBUG: No currentFolderId, skipping load');
+      return;
+    }
+
+    console.log('LOAD OBJECTS DEBUG: Loading children for repository:', repositoryId, 'folder:', currentFolderId);
     setLoading(true);
     try {
       const children = await cmisService.getChildren(repositoryId, currentFolderId);
-      console.log('LOAD OBJECTS DEBUG: Received children:', children);
+      console.log('LOAD OBJECTS DEBUG: Successfully received', children.length, 'children:', children);
       setObjects(children);
+
+      // Update folder path for root folder
+      if (currentFolderId === 'e02f784f8360a02cc14d1314c10038ff') {
+        setCurrentFolderPath('/');
+        console.log('LOAD OBJECTS DEBUG: Set root folder path');
+      }
     } catch (error) {
       console.error('LOAD OBJECTS DEBUG: Error loading children:', error);
-      message.error('オブジェクトの読み込みに失敗しました');
+      console.error('LOAD OBJECTS DEBUG: Error details:', {
+        repositoryId,
+        currentFolderId,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error'
+      });
+      message.error(`オブジェクトの読み込みに失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Clear objects on error to show empty state
+      setObjects([]);
     } finally {
       setLoading(false);
     }

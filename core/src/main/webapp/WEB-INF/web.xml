@@ -246,10 +246,6 @@
         <param-name>jakarta.ws.rs.Application</param-name>
         <param-value>jp.aegif.nemaki.rest.NemakiRestApplication</param-value>
     </init-param>
-    <init-param>
-        <param-name>jersey.config.servlet.filter.staticContentRegex</param-name>
-        <param-value>/(ui|static)/.*</param-value>
-    </init-param>
     <!-- Enable Jersey-Spring integration -->
     <init-param>
         <param-name>jersey.config.server.provider.classnames</param-name>
@@ -349,6 +345,16 @@
  <servlet-mapping>
   <servlet-name>default</servlet-name>
   <url-pattern>*.eot</url-pattern>
+ </servlet-mapping>
+
+ <!-- UI directory mapping for React SPA -->
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>/ui/*</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.html</url-pattern>
  </servlet-mapping>
 
 

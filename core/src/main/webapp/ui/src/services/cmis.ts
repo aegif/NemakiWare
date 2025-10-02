@@ -280,27 +280,17 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       
-      // Use Browser Binding for root folder, AtomPub for subfolders (Browser Binding doesn't support subfolders properly)
+      // Use AtomPub for all folder children queries due to Browser Binding issues with empty results
       let url: string;
-      let useAtomPub = false;
-      
-      if (folderId === 'e02f784f8360a02cc14d1314c10038ff') {
-        // Root folder uses Browser Binding /root endpoint (known to work)
-        url = `${this.baseUrl}/${repositoryId}/root?cmisselector=children`;
-      } else {
-        // Use AtomPub for subfolders as Browser Binding doesn't support object ID-based queries
-        useAtomPub = true;
-        url = `/core/atom/${repositoryId}/children?id=${folderId}`;
-      }
+      let useAtomPub = true;
+
+      // Always use AtomPub for children queries - more reliable than Browser Binding
+      url = `/core/atom/${repositoryId}/children?id=${folderId}`;
       
       xhr.open('GET', url, true);
-      
-      // Set headers AFTER xhr.open()
-      if (useAtomPub) {
-        xhr.setRequestHeader('Accept', 'application/atom+xml');
-      } else {
-        xhr.setRequestHeader('Accept', 'application/json');
-      }
+
+      // Set headers AFTER xhr.open() - always use AtomPub
+      xhr.setRequestHeader('Accept', 'application/atom+xml');
       
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
@@ -314,140 +304,112 @@ export class CMISService {
               console.log('CMIS DEBUG: getChildren response:', xhr.responseText.substring(0, 500));
               
               const children: CMISObject[] = [];
-              
-              if (useAtomPub) {
-                // Parse AtomPub XML response
-                const parser = new DOMParser();
-                const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-                
-                console.log('CMIS DEBUG: AtomPub XML response received, parsing...');
-                
-                // Check for parse errors
-                const parseError = xmlDoc.querySelector('parsererror');
-                if (parseError) {
-                  console.error('CMIS DEBUG: XML parse error:', parseError.textContent);
-                  reject(new Error('Invalid XML response'));
-                  return;
+
+              // Parse AtomPub XML response
+              const parser = new DOMParser();
+              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
+
+              console.log('CMIS DEBUG: AtomPub XML response received, parsing...');
+
+              // Check for parse errors
+              const parseError = xmlDoc.querySelector('parsererror');
+              if (parseError) {
+                console.error('CMIS DEBUG: XML parse error:', parseError.textContent);
+                reject(new Error('Invalid XML response'));
+                return;
+              }
+
+              // Try both atom:entry and entry
+              const entries = xmlDoc.getElementsByTagName('atom:entry').length > 0
+                ? xmlDoc.getElementsByTagName('atom:entry')
+                : xmlDoc.getElementsByTagName('entry');
+
+              console.log('CMIS DEBUG: Found', entries.length, 'entries in AtomPub response');
+
+              for (let i = 0; i < entries.length; i++) {
+                const entry = entries[i];
+
+                // Extract simple data from atom:entry first
+                const atomTitle = entry.querySelector('title')?.textContent || 'Unknown';
+                const atomId = entry.querySelector('id')?.textContent || '';
+
+                // Get cmisra:object for properties
+                const cmisObject = entry.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/restatom/200908/', 'object')[0] ||
+                                  entry.querySelector('cmisra\\:object, object');
+
+                let properties = null;
+                if (cmisObject) {
+                  properties = cmisObject.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'properties')[0] ||
+                             cmisObject.querySelector('cmis\\:properties, properties');
                 }
-                
-                // Try both atom:entry and entry
-                const entries = xmlDoc.getElementsByTagName('atom:entry').length > 0 
-                  ? xmlDoc.getElementsByTagName('atom:entry') 
-                  : xmlDoc.getElementsByTagName('entry');
-                
-                console.log('CMIS DEBUG: Found', entries.length, 'entries in AtomPub response');
-                
-                for (let i = 0; i < entries.length; i++) {
-                  const entry = entries[i];
-                  
-                  // Extract simple data from atom:entry first
-                  const atomTitle = entry.querySelector('title')?.textContent || 'Unknown';
-                  const atomId = entry.querySelector('id')?.textContent || '';
-                  
-                  // Get cmisra:object for properties
-                  const cmisObject = entry.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/restatom/200908/', 'object')[0] ||
-                                    entry.querySelector('cmisra\\:object, object');
-                  
-                  let properties = null;
-                  if (cmisObject) {
-                    properties = cmisObject.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'properties')[0] ||
-                               cmisObject.querySelector('cmis\\:properties, properties');
-                  }
-                  
-                  if (!properties) {
-                    // Fallback: look for properties directly under entry
-                    properties = entry.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'properties')[0] ||
-                               entry.querySelector('cmis\\:properties, properties');
-                  }
-                  
-                  if (properties) {
-                    // Helper function to get property value
-                    const getPropertyValue = (propName: string, propType: string = 'propertyString') => {
-                      const propElements = properties.getElementsByTagName(`cmis:${propType}`);
-                      for (let j = 0; j < propElements.length; j++) {
-                        const elem = propElements[j];
-                        if (elem.getAttribute('propertyDefinitionId') === propName) {
-                          const valueElem = elem.querySelector('cmis\\:value, value');
-                          return valueElem?.textContent || '';
-                        }
+
+                if (!properties) {
+                  // Fallback: look for properties directly under entry
+                  properties = entry.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'properties')[0] ||
+                             entry.querySelector('cmis\\:properties, properties');
+                }
+
+                if (properties) {
+                  // Helper function to get property value
+                  const getPropertyValue = (propName: string, propType: string = 'propertyString') => {
+                    const propElements = properties.getElementsByTagName(`cmis:${propType}`);
+                    for (let j = 0; j < propElements.length; j++) {
+                      const elem = propElements[j];
+                      if (elem.getAttribute('propertyDefinitionId') === propName) {
+                        const valueElem = elem.querySelector('cmis\\:value, value');
+                        return valueElem?.textContent || '';
                       }
-                      return '';
-                    };
-                    
-                    const id = getPropertyValue('cmis:objectId', 'propertyId') || atomId;
-                    const name = getPropertyValue('cmis:name', 'propertyString') || atomTitle;
-                    const objectType = getPropertyValue('cmis:objectTypeId', 'propertyId') || 'cmis:document';
-                    const createdBy = getPropertyValue('cmis:createdBy', 'propertyString');
-                    const lastModifiedBy = getPropertyValue('cmis:lastModifiedBy', 'propertyString');
-                    const creationDate = getPropertyValue('cmis:creationDate', 'propertyDateTime');
-                    const lastModificationDate = getPropertyValue('cmis:lastModificationDate', 'propertyDateTime');
-                    const contentStreamLengthStr = getPropertyValue('cmis:contentStreamLength', 'propertyInteger');
-                    
-                    const cmisObject: CMISObject = {
-                      id: id,
-                      name: name,
-                      objectType: objectType,
-                      baseType: objectType.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
-                      properties: { 
-                        'cmis:name': name, 
-                        'cmis:objectId': id, 
-                        'cmis:objectTypeId': objectType,
-                        'cmis:createdBy': createdBy,
-                        'cmis:lastModifiedBy': lastModifiedBy,
-                        'cmis:creationDate': creationDate,
-                        'cmis:lastModificationDate': lastModificationDate,
-                        'cmis:contentStreamLength': contentStreamLengthStr ? parseInt(contentStreamLengthStr) : undefined
-                      },
-                      allowableActions: [],
-                      createdBy: createdBy,
-                      lastModifiedBy: lastModifiedBy,
-                      creationDate: creationDate,
-                      lastModificationDate: lastModificationDate,
-                      contentStreamLength: contentStreamLengthStr ? parseInt(contentStreamLengthStr) : undefined
-                    };
-                    children.push(cmisObject);
-                  } else {
-                    // プロパティが見つからない場合の簡易処理
-                    console.log('CMIS DEBUG: No properties found for entry', i, ', using fallback');
-                    const fallbackObject: CMISObject = {
-                      id: atomId.split('/').pop() || `entry-${i}`,
-                      name: atomTitle,
-                      objectType: 'cmis:document',
-                      baseType: 'cmis:document',
-                      properties: {
-                        'cmis:name': atomTitle,
-                        'cmis:objectId': atomId.split('/').pop() || `entry-${i}`
-                      },
-                      allowableActions: []
-                    };
-                    children.push(fallbackObject);
-                  }
-                }
-              } else {
-                // Parse Browser Binding JSON response
-                const response = JSON.parse(xhr.responseText);
-                console.log('CMIS DEBUG: getChildren parsed response:', response);
-                
-                if (response.objects && Array.isArray(response.objects)) {
-                  response.objects.forEach((obj: any) => {
-                    const props = obj.object?.succinctProperties || obj.object?.properties || {};
-                    
-                    const objectTypeId = this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document');
-                    const cmisObject: CMISObject = {
-                      id: this.getSafeStringProperty(props, 'cmis:objectId'),
-                      name: this.getSafeStringProperty(props, 'cmis:name'),
-                      objectType: objectTypeId,
-                      baseType: objectTypeId.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
-                      properties: props,
-                      allowableActions: [],
-                      createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
-                      lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
-                      creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
-                      lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
-                      contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength')
-                    };
-                    children.push(cmisObject);
-                  });
+                    }
+                    return '';
+                  };
+
+                  const id = getPropertyValue('cmis:objectId', 'propertyId') || atomId;
+                  const name = getPropertyValue('cmis:name', 'propertyString') || atomTitle;
+                  const objectType = getPropertyValue('cmis:objectTypeId', 'propertyId') || 'cmis:document';
+                  const createdBy = getPropertyValue('cmis:createdBy', 'propertyString');
+                  const lastModifiedBy = getPropertyValue('cmis:lastModifiedBy', 'propertyString');
+                  const creationDate = getPropertyValue('cmis:creationDate', 'propertyDateTime');
+                  const lastModificationDate = getPropertyValue('cmis:lastModificationDate', 'propertyDateTime');
+                  const contentStreamLengthStr = getPropertyValue('cmis:contentStreamLength', 'propertyInteger');
+
+                  const cmisObject: CMISObject = {
+                    id: id,
+                    name: name,
+                    objectType: objectType,
+                    baseType: objectType.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
+                    properties: {
+                      'cmis:name': name,
+                      'cmis:objectId': id,
+                      'cmis:objectTypeId': objectType,
+                      'cmis:createdBy': createdBy,
+                      'cmis:lastModifiedBy': lastModifiedBy,
+                      'cmis:creationDate': creationDate,
+                      'cmis:lastModificationDate': lastModificationDate,
+                      'cmis:contentStreamLength': contentStreamLengthStr ? parseInt(contentStreamLengthStr) : undefined
+                    },
+                    allowableActions: [],
+                    createdBy: createdBy,
+                    lastModifiedBy: lastModifiedBy,
+                    creationDate: creationDate,
+                    lastModificationDate: lastModificationDate,
+                    contentStreamLength: contentStreamLengthStr ? parseInt(contentStreamLengthStr) : undefined
+                  };
+                  children.push(cmisObject);
+                } else {
+                  // プロパティが見つからない場合の簡易処理
+                  console.log('CMIS DEBUG: No properties found for entry', i, ', using fallback');
+                  const fallbackObject: CMISObject = {
+                    id: atomId.split('/').pop() || `entry-${i}`,
+                    name: atomTitle,
+                    objectType: 'cmis:document',
+                    baseType: 'cmis:document',
+                    properties: {
+                      'cmis:name': atomTitle,
+                      'cmis:objectId': atomId.split('/').pop() || `entry-${i}`
+                    },
+                    allowableActions: []
+                  };
+                  children.push(fallbackObject);
                 }
               }
               
@@ -1441,74 +1403,72 @@ export class CMISService {
   async getTypes(repositoryId: string): Promise<TypeDefinition[]> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      // Use AtomPub binding for type definitions
-      xhr.open('GET', `/core/atom/${repositoryId}/types`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-      
+      // Use Browser Binding for type definitions (returns clean JSON)
+      xhr.open('GET', `/core/browser/${repositoryId}?cmisselector=typeChildren`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
             try {
-              // Parse AtomPub XML response for type definitions
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-              const entries = xmlDoc.getElementsByTagName('entry');
-              
-              const types: TypeDefinition[] = [];
-              for (let i = 0; i < entries.length; i++) {
-                const entry = entries[i];
-                const title = entry.querySelector('title')?.textContent || 'Unknown Type';
-                const id = entry.querySelector('id')?.textContent || '';
-                
-                // Extract type ID from the entry id or title
-                const typeId = title; // Use title directly as it contains the correct type ID
-                
-                // Extract additional type information from CMIS type element
-                const typeElement = entry.querySelector('cmisra\\:type, type');
-                const baseTypeId = typeElement?.querySelector('cmis\\:baseId, baseId')?.textContent || 
-                                 (typeId.startsWith('cmis:folder') ? 'cmis:folder' : 
-                                  typeId.startsWith('cmis:document') ? 'cmis:document' : 
-                                  typeId.startsWith('cmis:relationship') ? 'cmis:relationship' :
-                                  typeId.startsWith('cmis:policy') ? 'cmis:policy' :
-                                  typeId.startsWith('cmis:secondary') ? 'cmis:secondary' : 'cmis:item');
-                
-                const displayName = typeElement?.querySelector('cmis\\:displayName, displayName')?.textContent || title;
-                const description = typeElement?.querySelector('cmis\\:description, description')?.textContent || (title + ' type definition');
-                const creatable = typeElement?.querySelector('cmis\\:creatable, creatable')?.textContent === 'true';
-                const fileable = typeElement?.querySelector('cmis\\:fileable, fileable')?.textContent === 'true';
-                const queryable = typeElement?.querySelector('cmis\\:queryable, queryable')?.textContent === 'true';
-                
-                types.push({
-                  id: typeId,
-                  displayName: displayName,
-                  description: description,
-                  baseTypeId: baseTypeId,
-                  creatable: creatable,
-                  fileable: fileable,
-                  queryable: queryable,
-                  propertyDefinitions: {}
-                });
+              console.log('CMIS DEBUG: getTypes response:', xhr.responseText.substring(0, 500));
+
+              // Parse Browser Binding JSON response for type definitions
+              const jsonResponse = JSON.parse(xhr.responseText);
+              console.log('CMIS DEBUG: getTypes JSON response:', jsonResponse);
+
+              if (!jsonResponse.types || !Array.isArray(jsonResponse.types)) {
+                console.error('CMIS DEBUG: Invalid response format - no types array');
+                reject(new Error('Invalid response format'));
+                return;
               }
-              
+
+              const types: TypeDefinition[] = jsonResponse.types.map((type: any) => {
+                // Determine if type is deletable (standard CMIS types should not be deletable)
+                const isStandardType = type.id.startsWith('cmis:');
+                const deletable = !isStandardType && (type.typeMutability?.delete !== false);
+
+                const typeDefinition: TypeDefinition = {
+                  id: type.id || 'unknown',
+                  displayName: type.displayName || type.id || 'Unknown Type',
+                  description: type.description || (type.displayName || type.id) + ' type definition',
+                  baseTypeId: type.baseId || type.id,
+                  creatable: type.creatable !== false,
+                  fileable: type.fileable !== false,
+                  queryable: type.queryable !== false,
+                  deletable: deletable,
+                  propertyDefinitions: {}
+                };
+
+                console.log(`CMIS DEBUG: Added type: ${type.id} (deletable: ${deletable})`);
+                return typeDefinition;
+              });
+
+              console.log('CMIS DEBUG: getTypes parsed types count:', types.length);
               console.log('CMIS DEBUG: getTypes parsed types:', types);
               resolve(types);
             } catch (e) {
               console.error('CMIS DEBUG: getTypes parse error:', e);
-              reject(new Error('Failed to parse type definitions XML'));
+              reject(new Error('Failed to parse type definitions JSON'));
             }
           } else {
+            console.error('CMIS DEBUG: getTypes HTTP error:', xhr.status, xhr.statusText);
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => {
+        console.error('CMIS DEBUG: getTypes network error');
+        reject(new Error('Network error'));
+      };
+
       xhr.send();
     });
   }

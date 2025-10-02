@@ -29,6 +29,7 @@ export interface TypeDefinition {
   creatable: boolean;
   fileable: boolean;
   queryable: boolean;
+  deletable?: boolean;
 }
 
 export interface Permission {
