@@ -40,19 +40,31 @@ export class TestHelper {
 
   /**
    * Check for JavaScript errors on the page
+   * Sets up listeners and waits for a period to collect errors
    */
-  async checkForJSErrors(): Promise<string[]> {
+  async checkForJSErrors(waitTimeMs: number = 1000): Promise<string[]> {
     const errors: string[] = [];
 
-    this.page.on('console', (msg) => {
+    const consoleHandler = (msg: any) => {
       if (msg.type() === 'error') {
         errors.push(msg.text());
       }
-    });
+    };
 
-    this.page.on('pageerror', (error) => {
+    const pageErrorHandler = (error: any) => {
       errors.push(error.message);
-    });
+    };
+
+    // Set up listeners
+    this.page.on('console', consoleHandler);
+    this.page.on('pageerror', pageErrorHandler);
+
+    // Wait for specified time to collect errors
+    await this.page.waitForTimeout(waitTimeMs);
+
+    // Clean up listeners
+    this.page.off('console', consoleHandler);
+    this.page.off('pageerror', pageErrorHandler);
 
     return errors;
   }
@@ -73,18 +85,29 @@ export class TestHelper {
 
   /**
    * Verify no network errors occurred
+   * Sets up listeners and waits for network activity to complete
    */
-  async verifyNoNetworkErrors(): Promise<void> {
+  async verifyNoNetworkErrors(waitTimeMs: number = 2000): Promise<void> {
     const responses: Array<{ url: string; status: number }> = [];
 
-    this.page.on('response', (response) => {
+    const responseHandler = (response: any) => {
       if (response.status() >= 400) {
         responses.push({
           url: response.url(),
           status: response.status(),
         });
       }
-    });
+    };
+
+    // Set up listener
+    this.page.on('response', responseHandler);
+
+    // Wait for network activity to complete
+    await this.page.waitForLoadState('networkidle');
+    await this.page.waitForTimeout(waitTimeMs);
+
+    // Clean up listener
+    this.page.off('response', responseHandler);
 
     if (responses.length > 0) {
       const errorDetails = responses.map(r => `${r.status}: ${r.url}`).join('\n');
@@ -95,16 +118,26 @@ export class TestHelper {
   /**
    * Upload a test file
    */
-  async uploadTestFile(fileInputSelector: string, fileName: string, content: string): Promise<void> {
+  async uploadTestFile(fileInputSelector: string | any, fileName: string, content: string): Promise<void> {
     // Create a temporary file
     const buffer = Buffer.from(content, 'utf8');
 
-    // Set the file input
-    await this.page.setInputFiles(fileInputSelector, {
-      name: fileName,
-      mimeType: 'text/plain',
-      buffer: buffer,
-    });
+    // Handle both string selectors and Locator objects
+    if (typeof fileInputSelector === 'string') {
+      // Set the file input using string selector
+      await this.page.setInputFiles(fileInputSelector, {
+        name: fileName,
+        mimeType: 'text/plain',
+        buffer: buffer,
+      });
+    } else {
+      // Assume it's a Locator object
+      await fileInputSelector.setInputFiles({
+        name: fileName,
+        mimeType: 'text/plain',
+        buffer: buffer,
+      });
+    }
   }
 
   /**
@@ -116,16 +149,20 @@ export class TestHelper {
 
     // Wait for element to stop moving/changing
     await this.page.waitForFunction(
-      (sel) => {
+      async (sel) => {
         const el = document.querySelector(sel);
         if (!el) return false;
 
         const rect1 = el.getBoundingClientRect();
-        setTimeout(() => {
-          const rect2 = el.getBoundingClientRect();
-          return rect1.top === rect2.top && rect1.left === rect2.left;
-        }, 100);
-        return true;
+
+        // Wait a bit and check again
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const rect2 = el.getBoundingClientRect();
+        return rect1.top === rect2.top &&
+               rect1.left === rect2.left &&
+               rect1.width === rect2.width &&
+               rect1.height === rect2.height;
       },
       selector,
       { timeout }

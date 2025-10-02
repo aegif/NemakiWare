@@ -18,7 +18,7 @@ test.describe('NemakiWare Authentication', () => {
     await expect(page).toHaveTitle(/NemakiWare|CMIS/);
 
     // Verify login form elements are present
-    await expect(page.locator('input[placeholder*="admin"], input[name="username"]')).toBeVisible();
+    await expect(page.locator('input[placeholder*="admin"], input[placeholder*="ユーザー名"], input[name="username"], input[type="text"]:not([type="password"])')).toBeVisible();
     await expect(page.locator('input[type="password"]')).toBeVisible();
     await expect(page.getByRole('button', { name: /login|ログイン/i })).toBeVisible();
 
@@ -75,7 +75,7 @@ test.describe('NemakiWare Authentication', () => {
     await page.goto('/core/ui/dist/');
 
     // Try to login with invalid credentials
-    await page.locator('input[placeholder*="admin"], input[name="username"]').fill('invalid');
+    await page.locator('input[placeholder*="admin"], input[placeholder*="ユーザー名"], input[name="username"], input[type="text"]:not([type="password"])').fill('invalid');
     await page.locator('input[type="password"]').fill('invalid');
 
     // Select repository if dropdown exists

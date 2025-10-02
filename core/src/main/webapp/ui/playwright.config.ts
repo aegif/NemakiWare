@@ -48,6 +48,10 @@ export default defineConfig({
     // Base URL for tests
     baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:8080',
 
+    // Force headless mode for Docker/CI environments
+    // This prevents GTK/GStreamer dependency issues in containers
+    headless: process.env.CI || process.env.DOCKER_ENV ? true : undefined,
+
     // Collect trace when retrying the failed test
     trace: 'on-first-retry',
 
@@ -115,26 +119,18 @@ export default defineConfig({
     },
   ],
 
-  // Run your local dev server before starting the tests
-  webServer: [
-    {
-      command: 'npm run dev',
-      port: 5173,
-      reuseExistingServer: !process.env.CI,
-      stdout: 'ignore',
-      stderr: 'pipe',
-    },
-    // Optional: Start NemakiWare backend if not already running
-    // Uncomment if you want Playwright to manage the backend
-    /*
-    {
-      command: 'cd ../../../.. && mvn jetty:run -Djetty.port=8081',
-      port: 8081,
-      reuseExistingServer: true,
-      timeout: 120 * 1000,
-    },
-    */
-  ],
+  // Web server configuration for NemakiWare tests
+  // Tests connect to the actual NemakiWare server on port 8080
+  // The Vite dev server is not needed for E2E tests as we test the production build
+  // webServer: [
+  //   {
+  //     command: 'npm run dev',
+  //     port: 5173,
+  //     reuseExistingServer: !process.env.CI,
+  //     stdout: 'ignore',
+  //     stderr: 'pipe',
+  //   },
+  // ],
 
   // Global setup and teardown (temporarily disabled for initial testing)
   // globalSetup: require.resolve('./tests/global-setup.ts'),

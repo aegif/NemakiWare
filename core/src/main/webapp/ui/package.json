@@ -28,7 +28,10 @@
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:debug": "playwright test --debug",
-    "test:headed": "playwright test --headed"
+    "test:headed": "playwright test --headed",
+    "test:docker": "DOCKER_ENV=1 playwright test --reporter=list",
+    "playwright:install": "playwright install",
+    "playwright:install-deps": "playwright install-deps"
   },
   "devDependencies": {
     "@playwright/test": "^1.45.0",

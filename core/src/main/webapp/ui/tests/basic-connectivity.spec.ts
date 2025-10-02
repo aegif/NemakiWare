@@ -26,17 +26,36 @@ test.describe('Basic Connectivity Tests', () => {
   });
 
   test('should check for required static assets', async ({ page }) => {
-    // Check if main assets exist
-    const assets = [
-      '/core/ui/dist/assets/index-B81QkMzs.js',
-      '/core/ui/dist/assets/index-D9wpoSK3.css',
-    ];
+    // Get the index.html content and parse asset references dynamically
+    const response = await page.request.get('http://localhost:8080/core/ui/dist/');
+    expect(response.status()).toBe(200);
 
-    for (const asset of assets) {
-      const response = await page.request.get(`http://localhost:8080${asset}`);
-      console.log(`Asset ${asset}: ${response.status()}`);
-      expect(response.status()).toBe(200);
+    const htmlContent = await response.text();
+
+    // Extract JS and CSS asset paths from index.html
+    const jsAssetMatch = htmlContent.match(/src="([^"]*\.js)"/);
+    const cssAssetMatch = htmlContent.match(/href="([^"]*\.css)"/);
+
+    const assets: string[] = [];
+    if (jsAssetMatch && jsAssetMatch[1]) {
+      assets.push(jsAssetMatch[1]);
     }
+    if (cssAssetMatch && cssAssetMatch[1]) {
+      assets.push(cssAssetMatch[1]);
+    }
+
+    console.log('Detected assets from index.html:', assets);
+
+    // Check if detected assets exist
+    for (const asset of assets) {
+      const assetResponse = await page.request.get(`http://localhost:8080${asset}`);
+      console.log(`Asset ${asset}: ${assetResponse.status()}`);
+      expect(assetResponse.status()).toBe(200);
+    }
+
+    // Ensure we found at least one JS and one CSS asset
+    expect(assets.some(asset => asset.endsWith('.js'))).toBe(true);
+    expect(assets.some(asset => asset.endsWith('.css'))).toBe(true);
   });
 
   test('should wait for React app initialization', async ({ page }) => {

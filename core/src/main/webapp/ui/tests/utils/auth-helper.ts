@@ -54,11 +54,34 @@ export class AuthHelper {
     const loginButton = this.page.getByRole('button', { name: 'ログイン' });
     await loginButton.click();
 
-    // Wait for successful login (URL change)
-    await this.page.waitForURL('**/ui/dist/**', { timeout: 15000 });
+    // Wait for successful login by checking for authenticated elements
+    // Rather than URL pattern which can match login page too
+    await this.page.waitForFunction(
+      () => {
+        // Check if login form is gone (password field not visible)
+        const passwordField = document.querySelector('input[placeholder="パスワード"]');
+        if (passwordField && passwordField.offsetParent !== null) {
+          return false; // Still on login page
+        }
 
-    // Verify we're logged in by checking for logout option or user info
-    await expect(this.page.locator('body')).not.toContainText('Login');
+        // Check for main application elements
+        const mainElements = [
+          '.ant-layout-sider', // Sidebar
+          '.ant-layout-content', // Main content
+          '.document-list', // Document management
+          '[data-testid="main-app"]' // Main app container
+        ];
+
+        return mainElements.some(selector => {
+          const element = document.querySelector(selector);
+          return element && element.offsetParent !== null;
+        });
+      },
+      { timeout: 15000 }
+    );
+
+    // Additional verification: ensure we're not on login page anymore
+    await expect(this.page.locator('input[placeholder="パスワード"]')).not.toBeVisible();
   }
 
   /**
