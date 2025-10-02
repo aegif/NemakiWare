@@ -529,7 +529,12 @@ export class CMISService {
     });
   }
 
-  async createDocument(repositoryId: string, parentId: string, file: File, properties: Record<string, any>): Promise<CMISObject> {
+  async createDocument(
+    repositoryId: string,
+    parentId: string,
+    file?: File | Blob | null,
+    properties: Record<string, any> = {}
+  ): Promise<CMISObject> {
     return new Promise((resolve, reject) => {
       const parentSegment = this.encodeObjectIdSegment(parentId);
       const xhr = new XMLHttpRequest();
@@ -560,7 +565,8 @@ export class CMISService {
 
       xhr.onerror = () => reject(new Error('Network error'));
 
-      const documentName = properties?.['cmis:name'] || properties?.name || file.name;
+      const fileName = file && 'name' in file ? (file as File).name : '';
+      const documentName = properties?.['cmis:name'] || properties?.name || fileName || 'untitled';
       const defaults = {
         'cmis:objectTypeId': properties?.['cmis:objectTypeId'] || 'cmis:document',
         'cmis:name': documentName
@@ -572,16 +578,18 @@ export class CMISService {
       formData.append('_charset_', 'UTF-8');
       if (parentId) {
         formData.append('folderId', parentId);
-        formData.append('objectId', parentId);
       } else {
         formData.append('folderId', 'root');
-        formData.append('objectId', 'root');
       }
 
       this.appendPropertiesToFormData(formData, properties || {}, defaults);
-      formData.append('content', file, documentName);
-      if (file.type) {
-        formData.append('contentType', file.type);
+
+      if (file) {
+        const contentName = documentName || fileName || 'content';
+        formData.append('content', file, contentName);
+        if ('type' in file && file.type) {
+          formData.append('contentType', file.type);
+        }
       }
 
       xhr.send(formData);
@@ -629,10 +637,8 @@ export class CMISService {
       formData.append('succinct', 'true');
       if (parentId) {
         formData.append('folderId', parentId);
-        formData.append('objectId', parentId);
       } else {
         formData.append('folderId', 'root');
-        formData.append('objectId', 'root');
       }
 
       this.appendPropertiesToFormData(formData, properties || {}, defaults);
