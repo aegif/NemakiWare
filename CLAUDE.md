@@ -121,10 +121,23 @@ timeout 600s mvn test -f core/pom.xml -Pdevelopment
 2. Content stream retrieval operations
 3. Possibly TCK test harness initialization or session management
 
-**Recommended Fixes (Updated):**
+**Performance Optimization Implemented (2025-10-04):**
+1. ✅ **Archive Creation Disabling Feature**:
+   - Added `archive.create.enabled` configuration property to PropertyKey
+   - Modified ContentServiceImpl.delete() to skip archive creation when disabled
+   - Updated docker/core/nemakiware.properties: `archive.create.enabled=false`
+   - Files Modified:
+     - `core/src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java:2032-2039`
+     - `core/src/main/java/jp/aegif/nemaki/util/constant/PropertyKey.java:52-53`
+     - `core/src/main/webapp/WEB-INF/classes/nemakiware.properties:55-60`
+     - `docker/core/nemakiware.properties:56-60`
+   - Expected Improvement: Eliminates 20+ CouchDB write operations for 20-document test
+   - Testing Status: In progress - createAndDeleteDocumentTest running
+
+**Previous Optimization Attempts:**
 1. ~~Disable TCK debug mode for performance~~ ✅ DONE - No improvement
 2. ~~Extend readtimeout configuration~~ ✅ DONE - No improvement
-3. ⚠️ Investigate deletion operation performance (ContentServiceImpl.delete, archive creation)
+3. ✅ Archive creation disabling - Testing in progress
 4. ⚠️ Investigate content stream retrieval performance (possibly caching issue)
 5. ⚠️ Consider reducing test scope (fewer documents, skip content stream tests)
 6. ⚠️ Investigate TestGroupBase cleanup logic (cleanupTckTestArtifacts currently disabled)
