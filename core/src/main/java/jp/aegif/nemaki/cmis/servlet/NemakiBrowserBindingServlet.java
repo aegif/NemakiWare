@@ -2692,6 +2692,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
             
             // Extract properties to update
+            
+            // DEBUG: Log all request parameters to diagnose secondary type parameter issue
+            System.err.println("*** UPDATE PROPERTIES DEBUG: Content-Type = " + request.getContentType() + " ***");
+            System.err.println("*** UPDATE PROPERTIES DEBUG: All parameter names: " + java.util.Collections.list(request.getParameterNames()) + " ***");
+            java.util.Enumeration<String> paramNames = request.getParameterNames();
+            while (paramNames.hasMoreElements()) {
+                String paramName = paramNames.nextElement();
+                String[] paramValues = request.getParameterValues(paramName);
+                System.err.println("***   Parameter: " + paramName + " = " + java.util.Arrays.toString(paramValues) + " ***");
+            }
+            
+            // Extract properties to update
             java.util.Map<String, Object> properties = extractPropertiesFromRequest(request);
 
             // Extract secondary type operations
@@ -3264,10 +3276,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 String[] idValues = paramMap.get(paramName);
                 String[] propValues = paramMap.get(valueParamName);
                 
-                if (idValues != null && idValues.length > 0 && propValues != null && propValues.length > 0) {
+                if (idValues != null && idValues.length > 0) {
                     String propertyId = idValues[0];
-                    String propertyValue = propValues[0];
-                    properties.put(propertyId, propertyValue);
+                    if (propValues != null && propValues.length > 0) {
+                        String propertyValue = propValues[0];
+                        properties.put(propertyId, propertyValue);
+                    } else {
+                        // CRITICAL TCK FIX: Empty propertyValue means empty list (e.g., clearing secondary types)
+                        if ("cmis:secondaryObjectTypeIds".equals(propertyId)) {
+                            properties.put(propertyId, new java.util.ArrayList<String>());
+                            System.err.println("*** TCK FIX: Empty propertyValue for cmis:secondaryObjectTypeIds - treating as empty list ***");
+                        }
+                    }
                 }
             }
         }
@@ -3290,17 +3310,32 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             Object value = entry.getValue();
             
             System.err.println("*** PROPERTY CONVERSION: " + propertyId + " = " + value + " ***");
-            
+
+            // CRITICAL TCK FIX: cmis:secondaryObjectTypeIds is a multi-value ID property
+            if ("cmis:secondaryObjectTypeIds".equals(propertyId)) {
+                java.util.List<String> valueList;
+                if (value instanceof java.util.List) {
+                    valueList = (java.util.List<String>) value;
+                } else if (value instanceof String) {
+                    valueList = java.util.Arrays.asList(value.toString());
+                } else {
+                    valueList = new java.util.ArrayList<>();
+                }
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl idProp =
+                    new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(propertyId, valueList);
+                cmisProperties.addProperty(idProp);
+                System.err.println("*** TCK FIX: Created multi-value PropertyIdImpl for cmis:secondaryObjectTypeIds: " + valueList + " ***");
+            }
             // CRITICAL FIX: Create PropertyIdImpl for cmis:objectTypeId (CMIS 1.1 spec compliance)
-            if ("cmis:objectTypeId".equals(propertyId)) {
-                org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl idProp = 
+            else if ("cmis:objectTypeId".equals(propertyId)) {
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl idProp =
                     new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(propertyId, value.toString());
                 cmisProperties.addProperty(idProp);
                 System.err.println("*** FIXED: Created PropertyIdImpl for cmis:objectTypeId: " + value + " ***");
-            } 
+            }
             // Other CMIS ID properties should also use PropertyIdImpl for consistency
             else if (propertyId.endsWith("Id") && (propertyId.startsWith("cmis:") || propertyId.contains("ObjectId"))) {
-                org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl idProp = 
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl idProp =
                     new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(propertyId, value.toString());
                 cmisProperties.addProperty(idProp);
                 System.err.println("*** FIXED: Created PropertyIdImpl for ID property: " + propertyId + " = " + value + " ***");

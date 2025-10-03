@@ -1232,16 +1232,13 @@ public class CompileServiceImpl implements CompileService {
 			Boolean isCheckedOut = document.isVersionSeriesCheckedOut();
 			addProperty(properties, tdf, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT,
 				isCheckedOut != null ? isCheckedOut : false);
-			
-			// COMPLETE CMIS 1.1 VERSIONING COMPLIANCE: Only include NOT REQUIRED properties when they have meaningful values
+			// CRITICAL TCK FIX: CMIS 1.1 spec requires these properties to be present even when null
+			// Type definition includes these properties, so they must be in the response (with null value if not set)
 			String checkedOutBy = document.getVersionSeriesCheckedOutBy();
-			if (checkedOutBy != null && !checkedOutBy.trim().isEmpty()) {
-				addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, checkedOutBy);
-			}
+			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, checkedOutBy);
+
 			String checkedOutId = document.getVersionSeriesCheckedOutId();
-			if (checkedOutId != null && !checkedOutId.trim().isEmpty()) {
-				addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, checkedOutId);
-			}
+			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, checkedOutId);
 
 			// TODO comment
 		} else {
