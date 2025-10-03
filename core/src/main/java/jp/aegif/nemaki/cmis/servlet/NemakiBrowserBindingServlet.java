@@ -1053,13 +1053,13 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      */
     private Object handleContentOperation(CmisService service, String repositoryId, String objectId, 
                                         HttpServletRequest request, HttpServletResponse response) {
-        log.error("=== HANDLECONTENTOPERATION INVOKED === objectId: " + objectId + " repositoryId: " + repositoryId);
+        log.debug("handleContentOperation called for objectId: " + objectId + " in repository: " + repositoryId);
         try {
             // Parse parameters
             String streamId = HttpUtils.getStringParameter(request, "streamId");
             java.math.BigInteger offset = getBigIntegerParameterSafe(request, "offset");
             java.math.BigInteger length = getBigIntegerParameterSafe(request, "length");
-            
+
             // Call CMIS service to get content stream
             org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = null;
             try {
@@ -1089,17 +1089,17 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             if (contentStream == null) {
                 log.debug("No content stream available for document: " + objectId + " - returning HTTP 404");
                 if (!response.isCommitted()) {
-                    response.sendError(HttpServletResponse.SC_NOT_FOUND, 
+                    response.sendError(HttpServletResponse.SC_NOT_FOUND,
                         "Document " + objectId + " does not have a content stream");
                 }
                 return null;
             }
-            
+
             java.io.InputStream inputStream = contentStream.getStream();
             if (inputStream == null) {
                 log.debug("Content stream has null InputStream for document: " + objectId + " - returning HTTP 404");
                 if (!response.isCommitted()) {
-                    response.sendError(HttpServletResponse.SC_NOT_FOUND, 
+                    response.sendError(HttpServletResponse.SC_NOT_FOUND,
                         "Document " + objectId + " content stream has null InputStream");
                 }
                 return null;
@@ -1135,7 +1135,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     outputStream.write(buffer, 0, bytesRead);
                 }
                 outputStream.flush();
-                
+
                 log.debug("Content stream transfer completed successfully for document: " + objectId);
                 
                 
