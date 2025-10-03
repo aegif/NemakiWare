@@ -2692,18 +2692,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
             
             // Extract properties to update
-            
-            // DEBUG: Log all request parameters to diagnose secondary type parameter issue
-            System.err.println("*** UPDATE PROPERTIES DEBUG: Content-Type = " + request.getContentType() + " ***");
-            System.err.println("*** UPDATE PROPERTIES DEBUG: All parameter names: " + java.util.Collections.list(request.getParameterNames()) + " ***");
-            java.util.Enumeration<String> paramNames = request.getParameterNames();
-            while (paramNames.hasMoreElements()) {
-                String paramName = paramNames.nextElement();
-                String[] paramValues = request.getParameterValues(paramName);
-                System.err.println("***   Parameter: " + paramName + " = " + java.util.Arrays.toString(paramValues) + " ***");
-            }
-            
-            // Extract properties to update
             java.util.Map<String, Object> properties = extractPropertiesFromRequest(request);
 
             // Extract secondary type operations
@@ -3285,14 +3273,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         // CRITICAL TCK FIX: Empty propertyValue means empty list (e.g., clearing secondary types)
                         if ("cmis:secondaryObjectTypeIds".equals(propertyId)) {
                             properties.put(propertyId, new java.util.ArrayList<String>());
-                            System.err.println("*** TCK FIX: Empty propertyValue for cmis:secondaryObjectTypeIds - treating as empty list ***");
                         }
                     }
                 }
             }
         }
         
-        System.err.println("*** PROPERTY EXTRACTION: Found " + properties.size() + " properties: " + properties.keySet() + " ***");
         return properties;
     }
     
@@ -3309,7 +3295,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             String propertyId = entry.getKey();
             Object value = entry.getValue();
             
-            System.err.println("*** PROPERTY CONVERSION: " + propertyId + " = " + value + " ***");
 
             // CRITICAL TCK FIX: cmis:secondaryObjectTypeIds is a multi-value ID property
             if ("cmis:secondaryObjectTypeIds".equals(propertyId)) {
@@ -3324,7 +3309,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl idProp =
                     new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(propertyId, valueList);
                 cmisProperties.addProperty(idProp);
-                System.err.println("*** TCK FIX: Created multi-value PropertyIdImpl for cmis:secondaryObjectTypeIds: " + valueList + " ***");
             }
             // CRITICAL FIX: Create PropertyIdImpl for cmis:objectTypeId (CMIS 1.1 spec compliance)
             else if ("cmis:objectTypeId".equals(propertyId)) {
