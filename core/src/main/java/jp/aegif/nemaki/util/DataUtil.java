@@ -378,7 +378,7 @@ public class DataUtil {
 		}
 
 		// TCK DEBUG: Log what property type we're creating
-		System.err.println("TCK DataUtil.createPropDef: Creating property " + id +
+		log.debug("TCK DataUtil.createPropDef: Creating property " + id +
 			" with PropertyType=" + datatype);
 
 		PropertyDefinition<?> result = null;
@@ -668,7 +668,7 @@ public class DataUtil {
 			boolean openChoice, List<String> defaultValue) {
 		// Set base attributes
 		PropertyIdDefinitionImpl result = new PropertyIdDefinitionImpl();
-		System.err.println("TCK NAMESPACE TRACE: createPropIdDef calling createPropBaseDef for " + id + " with localNameSpace=" + localNameSpace);
+		log.debug("TCK NAMESPACE TRACE: createPropIdDef calling createPropBaseDef for " + id + " with localNameSpace=" + localNameSpace);
 		result = (PropertyIdDefinitionImpl) createPropBaseDef(result, id,
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
@@ -711,7 +711,7 @@ public class DataUtil {
 			boolean openChoice, List<String> defaultValue, BigInteger maxLength) {
 		// Set base attributes
 		PropertyStringDefinitionImpl result = new PropertyStringDefinitionImpl();
-		System.err.println("TCK NAMESPACE TRACE: createPropStringDef calling createPropBaseDef for " + id + " with localNameSpace=" + localNameSpace);
+		log.debug("TCK NAMESPACE TRACE: createPropStringDef calling createPropBaseDef for " + id + " with localNameSpace=" + localNameSpace);
 		result = (PropertyStringDefinitionImpl) createPropBaseDef(result, id,
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
@@ -757,14 +757,14 @@ public class DataUtil {
 			if (id != null && id.startsWith("cmis:")) {
 				// CMIS standard properties must use CMIS namespace for TCK compliance
 				localNameSpace = CMIS_NAMESPACE;
-				System.err.println("TCK NAMESPACE FIX: Setting CMIS namespace for " + id + " = " + CMIS_NAMESPACE);
+				log.debug("TCK NAMESPACE FIX: Setting CMIS namespace for " + id + " = " + CMIS_NAMESPACE);
 			} else {
 				// Custom properties use NemakiWare namespace
 				localNameSpace = NAMESPACE;
-				System.err.println("TCK NAMESPACE FIX: Setting NemakiWare namespace for " + id + " = " + NAMESPACE);
+				log.debug("TCK NAMESPACE FIX: Setting NemakiWare namespace for " + id + " = " + NAMESPACE);
 			}
 		} else {
-			System.err.println("TCK NAMESPACE DEBUG: Property " + id + " already has namespace: " + localNameSpace);
+			log.debug("TCK NAMESPACE DEBUG: Property " + id + " already has namespace: " + localNameSpace);
 		}
 		
 		// CMIS 1.1 COMPLIANCE CRITICAL FIX (CORRECTED): 
