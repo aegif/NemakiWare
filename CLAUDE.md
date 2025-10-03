@@ -73,10 +73,42 @@ mvn test -Dtest=CrudTestGroup#createInvalidTypeTest -f core/pom.xml -Pdevelopmen
 timeout 600s mvn test -f core/pom.xml -Pdevelopment
 ```
 
+**TCK Test Timeout Investigation (2025-10-04 Continued):**
+
+✅ **Confirmed Fast-Passing Tests (No Timeout):**
+- BasicsTestGroup: 3/3 PASS (22 sec)
+- DirectTckTest: 3/3 PASS (8 sec)
+- ConnectionTestGroup: 2/2 PASS (1.4 sec)
+- CrudTestGroup#createInvalidTypeTest: 1/1 PASS (11.7 sec) - individual execution
+
+⏱️ **Confirmed Timeout Tests (60-180 sec):**
+- CrudTestGroup (full suite) - 20+ min hang
+- CrudTestGroup#createAndDeleteDocumentTest - 60 sec timeout
+- CrudTestGroup#createAndDeleteFolderTest - 60 sec timeout
+- CrudTestGroup#nameCharsetTest - 60 sec timeout
+- QueryTestGroup - 180 sec timeout
+- VersioningTestGroup - 180 sec timeout
+
+**Pattern Analysis:**
+- Simple tests (repositoryInfo, connection checks) pass quickly
+- Tests involving object creation/deletion/cleanup timeout consistently
+- Suggests issue with TCK test initialization, data cleanup, or test harness configuration
+
+**Configuration Review:**
+- cmis-tck-parameters.properties: readtimeout=120000ms (2 min)
+- Debug mode enabled: may impact performance
+- Object cache disabled: org.apache.chemistry.opencmis.session.object.cache=false
+
+**Recommended Fixes:**
+1. Disable TCK debug mode for performance
+2. Extend readtimeout configuration
+3. Add explicit test data cleanup between tests
+4. Investigate TestGroupBase cleanup logic (cleanupTckTestArtifacts currently disabled)
+
 **Next Steps for Full TCK Compliance:**
 1. Investigate nemaki:parentChildRelationship type definition or consider removal
 2. Debug ACL test object lifecycle and deletion handling
-3. Analyze CrudTestGroup individual test execution to identify hanging tests
+3. Fix TCK timeout issues (debug mode, cleanup logic)
 4. Review QueryTestGroup and VersioningTestGroup test data cleanup
 5. Consider enabling selective TCK tests via cmis-tck-filters.properties
 
