@@ -99,11 +99,35 @@ timeout 600s mvn test -f core/pom.xml -Pdevelopment
 - Debug mode enabled: may impact performance
 - Object cache disabled: org.apache.chemistry.opencmis.session.object.cache=false
 
-**Recommended Fixes:**
-1. Disable TCK debug mode for performance
-2. Extend readtimeout configuration
-3. Add explicit test data cleanup between tests
-4. Investigate TestGroupBase cleanup logic (cleanupTckTestArtifacts currently disabled)
+**Timeout Configuration Changes Applied (2025-10-04):**
+1. ✅ readtimeout extended: 120000ms → 600000ms (10 minutes)
+2. ✅ Debug mode disabled: httpinvoker.debug=false, tck.debug=false
+3. ✅ Test artifacts cleaned: 5 cmistck folders manually deleted via deleteTree
+4. ❌ Result: Timeout issues persist - configuration changes insufficient
+
+**Root Cause Analysis (2025-10-04):**
+- **deleteTree Operation Slowness**: Manual deleteTree of 4 test folders timed out after 2 minutes
+- **Test Complexity**: CreateAndDeleteDocumentTest performs:
+  - 20 document creations
+  - Multiple paging operations (page sizes 5, 10 with various skipTo offsets)
+  - 60 content stream retrievals (20 docs × 3 methods: getContentStream, session.getContentStream, getContentStreamByPath)
+  - 20 document deletions
+  - 1 test folder deletion
+- **Hanging Point**: Tests block at TestGroupBase.java:156 `runner.run(new JUnitProgressMonitor())`
+- **Pattern Confirmed**: Simple tests (BasicsTestGroup 22s, createInvalidTypeTest 12s) pass, complex CRUD tests hang indefinitely
+
+**Critical Finding**: The issue is NOT just timeout configuration but fundamental performance problems with:
+1. Deletion operations (deleteTree/document.delete())
+2. Content stream retrieval operations
+3. Possibly TCK test harness initialization or session management
+
+**Recommended Fixes (Updated):**
+1. ~~Disable TCK debug mode for performance~~ ✅ DONE - No improvement
+2. ~~Extend readtimeout configuration~~ ✅ DONE - No improvement
+3. ⚠️ Investigate deletion operation performance (ContentServiceImpl.delete, archive creation)
+4. ⚠️ Investigate content stream retrieval performance (possibly caching issue)
+5. ⚠️ Consider reducing test scope (fewer documents, skip content stream tests)
+6. ⚠️ Investigate TestGroupBase cleanup logic (cleanupTckTestArtifacts currently disabled)
 
 **Next Steps for Full TCK Compliance:**
 1. Investigate nemaki:parentChildRelationship type definition or consider removal
