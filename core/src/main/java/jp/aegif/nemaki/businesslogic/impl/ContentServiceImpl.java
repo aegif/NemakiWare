@@ -1669,7 +1669,9 @@ public class ContentServiceImpl implements ContentService {
 
 		// Secondary
 		List<Aspect> secondary = buildSecondaryTypes(repositoryId, properties, content);
-		if (!CollectionUtils.isEmpty(secondary)) {
+		// CRITICAL FIX: Always set aspects, even if empty list (to allow secondary type removal)
+		// The isEmpty() check prevented secondary type deletion
+		if (secondary != null) {
 			content.setAspects(secondary);
 		}
 

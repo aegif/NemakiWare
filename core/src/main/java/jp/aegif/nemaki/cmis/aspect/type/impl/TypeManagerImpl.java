@@ -718,9 +718,7 @@ public class TypeManagerImpl implements TypeManager {
 		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		documentType.setTypeMutability(typeMutability);
 
-		log.error("CRITICAL DEBUG: About to call addBasePropertyDefinitions for cmis:document");
 		addBasePropertyDefinitions(repositoryId, documentType);
-		log.error("CRITICAL DEBUG: Finished addBasePropertyDefinitions for cmis:document");
 		addDocumentPropertyDefinitions(repositoryId, documentType, false);
 
 		addTypeInternal(TYPES.get(repositoryId), documentType);
@@ -1129,20 +1127,10 @@ public class TypeManagerImpl implements TypeManager {
 		Updatability updatability_name = Updatability.fromValue(_updatability_name);
 		boolean queryable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_QUERYABLE);
 		boolean orderable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_ORDERABLE);
-		
-		log.error("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
-		System.err.println("*** EXECUTION DEBUG: About to call shouldBeInherited for " + PropertyIds.NAME + " in type " + typeId + " ***");
-		
-		log.error("*** CRITICAL DEBUG: Using isInherited parameter for " + PropertyIds.NAME + " in type " + typeId + " ***");
-		System.err.println("*** CRITICAL DEBUG: Using isInherited parameter for " + PropertyIds.NAME + " in type " + typeId + " ***");
 		boolean inherited_name = isInherited;
-		log.error("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_name + " for " + PropertyIds.NAME + " in type " + typeId + " ***");
-		System.err.println("*** CRITICAL DEBUG: shouldBeInherited returned " + inherited_name + " for " + PropertyIds.NAME + " in type " + typeId + " ***");
-		log.info("TCK DEBUG buildTypeDefinitionFromDB: Setting inherited=" + inherited_name + " for " + PropertyIds.NAME + " in type " + typeId);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.NAME, PropertyType.STRING,
 				Cardinality.SINGLE, updatability_name, REQUIRED, queryable_name, orderable_name, null, inherited_name));
-		log.info("DEBUG: Added cmis:name property (inherited=" + inherited_name + ")");
 
 		//cmis:description
 		String _updatability_description = propertyManager.readValue(PropertyKey.PROPERTY_DESCRIPTION_UPDATABILITY);
@@ -1802,7 +1790,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	private DocumentTypeDefinitionImpl buildDocumentTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
 		log.error("CRITICAL DEBUG: buildDocumentTypeDefinitionFromDB called for typeId=" + nemakiType.getTypeId() + ", repositoryId=" + repositoryId);
-		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+
+		// CRITICAL FIX: Ensure TYPES is initialized when creating types post-startup
+		Map<String, TypeDefinitionContainer>types = TYPES != null ? TYPES.get(repositoryId) : null;
+		if (types == null && TYPES != null && !TYPES.containsKey(repositoryId)) {
+			log.warn("buildDocumentTypeDefinitionFromDB: Repository " + repositoryId + " not found in TYPES, forcing initialization");
+			ensureInitialized();
+			types = TYPES.get(repositoryId);
+		}
 
 		DocumentTypeDefinitionImpl type = new DocumentTypeDefinitionImpl();
 
@@ -1868,7 +1863,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	private FolderTypeDefinitionImpl buildFolderTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
 		log.error("CRITICAL DEBUG: buildFolderTypeDefinitionFromDB called for typeId=" + nemakiType.getTypeId() + ", repositoryId=" + repositoryId);
-		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+
+		// CRITICAL FIX: Ensure TYPES is initialized when creating types post-startup
+		Map<String, TypeDefinitionContainer>types = TYPES != null ? TYPES.get(repositoryId) : null;
+		if (types == null && TYPES != null && !TYPES.containsKey(repositoryId)) {
+			log.warn("buildFolderTypeDefinitionFromDB: Repository " + repositoryId + " not found in TYPES, forcing initialization");
+			ensureInitialized();
+			types = TYPES.get(repositoryId);
+		}
 		
 		FolderTypeDefinitionImpl type = new FolderTypeDefinitionImpl();
 		FolderTypeDefinitionImpl parentType = (FolderTypeDefinitionImpl) types
@@ -1896,7 +1898,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	private RelationshipTypeDefinitionImpl buildRelationshipTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
-		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		// CRITICAL FIX: Ensure TYPES is initialized when creating types post-startup
+		Map<String, TypeDefinitionContainer>types = TYPES != null ? TYPES.get(repositoryId) : null;
+		if (types == null && TYPES != null && !TYPES.containsKey(repositoryId)) {
+			log.warn("buildRelationshipTypeDefinitionFromDB: Repository " + repositoryId + " not found in TYPES, forcing initialization");
+			ensureInitialized();
+			types = TYPES.get(repositoryId);
+		}
 		
 		RelationshipTypeDefinitionImpl type = new RelationshipTypeDefinitionImpl();
 		RelationshipTypeDefinitionImpl parentType = (RelationshipTypeDefinitionImpl) types
@@ -1926,7 +1934,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	private PolicyTypeDefinitionImpl buildPolicyTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
-		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		// CRITICAL FIX: Ensure TYPES is initialized when creating types post-startup
+		Map<String, TypeDefinitionContainer>types = TYPES != null ? TYPES.get(repositoryId) : null;
+		if (types == null && TYPES != null && !TYPES.containsKey(repositoryId)) {
+			log.warn("buildPolicyTypeDefinitionFromDB: Repository " + repositoryId + " not found in TYPES, forcing initialization");
+			ensureInitialized();
+			types = TYPES.get(repositoryId);
+		}
 		
 		PolicyTypeDefinitionImpl type = new PolicyTypeDefinitionImpl();
 		PolicyTypeDefinitionImpl parentType = (PolicyTypeDefinitionImpl) types
@@ -1952,7 +1966,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	private ItemTypeDefinitionImpl buildItemTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
-		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		// CRITICAL FIX: Ensure TYPES is initialized when creating types post-startup
+		Map<String, TypeDefinitionContainer>types = TYPES != null ? TYPES.get(repositoryId) : null;
+		if (types == null && TYPES != null && !TYPES.containsKey(repositoryId)) {
+			log.warn("buildItemTypeDefinitionFromDB: Repository " + repositoryId + " not found in TYPES, forcing initialization");
+			ensureInitialized();
+			types = TYPES.get(repositoryId);
+		}
 		
 		ItemTypeDefinitionImpl type = new ItemTypeDefinitionImpl();
 		ItemTypeDefinitionImpl parentType = (ItemTypeDefinitionImpl) types.get(
@@ -1972,10 +1992,19 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	private SecondaryTypeDefinitionImpl buildSecondaryTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
-		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
-		
+		// CRITICAL FIX: Ensure TYPES is initialized when creating types post-startup
+		// This is called during both initial generation and dynamic type creation
+		Map<String, TypeDefinitionContainer>types = TYPES != null ? TYPES.get(repositoryId) : null;
+
+		// If TYPES is null or repository not found, ensure initialization
+		if (types == null && TYPES != null && !TYPES.containsKey(repositoryId)) {
+			log.warn("buildSecondaryTypeDefinitionFromDB: Repository " + repositoryId + " not found in TYPES, forcing initialization");
+			ensureInitialized();
+			types = TYPES.get(repositoryId);
+		}
+
 		SecondaryTypeDefinitionImpl type = new SecondaryTypeDefinitionImpl();
-		SecondaryTypeDefinitionImpl parentType = nemakiType.getParentId() != null ? 
+		SecondaryTypeDefinitionImpl parentType = nemakiType.getParentId() != null && types != null ?
 				(SecondaryTypeDefinitionImpl) types.get(nemakiType.getParentId()).getTypeDefinition() : null;
 
 		// Set base attributes, and properties(with specific properties

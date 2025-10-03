@@ -98,7 +98,10 @@ public class PatchService {
 			// PRIORITY 4: TypeManager cache forced update for TCK compliance
 			// This ensures that PropertyDefinitionDetail changes are immediately reflected in type cache
 			invalidateTypeManagerCaches();
-			
+
+			// TCK REQUIREMENT: Create custom secondary type for TCK tests
+			createTCKSecondaryType();
+
 			// TODO: Initialize test users for QA and development (requires principalService injection)
 			log.info("Test user initialization skipped - requires principalService dependency");
 			
@@ -441,5 +444,75 @@ public class PatchService {
 	 * Phase 1 (database layer) is handled by DatabasePreInitializer using
 	 * pure HTTP operations without dependency on CMIS services.
 	 */
+
+	/**
+	 * TCK REQUIREMENT: Create custom secondary type for TCK tests
+	 *
+	 * The TCK SecondaryTypesTest requires a custom secondary type to test attach/detach operations.
+	 * By default, TCK uses "cmis:secondary" which is a base type and cannot be attached to documents.
+	 * This method creates "tck:testSecondaryType" which extends cmis:secondary and can be attached.
+	 */
+	private void createTCKSecondaryType() {
+		log.info("=== TCK REQUIREMENT: Creating custom secondary type for TCK tests ===");
+
+		if (typeService == null) {
+			log.error("TypeService not injected - cannot create TCK secondary type");
+			return;
+		}
+
+		if (repositoryInfoMap == null) {
+			log.error("RepositoryInfoMap not injected - cannot iterate repositories");
+			return;
+		}
+
+		try {
+			// Iterate through all repositories
+			for (String repositoryId : repositoryInfoMap.keys()) {
+				log.info("Creating TCK secondary type for repository: " + repositoryId);
+
+				// Check if type already exists
+				try {
+					Object existingType = typeService.getTypeDefinition(repositoryId, "tck:testSecondaryType");
+					if (existingType != null) {
+						log.info("TCK secondary type already exists in repository: " + repositoryId);
+						continue;
+					}
+				} catch (Exception e) {
+					// Type doesn't exist, create it
+					log.debug("TCK secondary type doesn't exist, will create it");
+				}
+
+				// Create secondary type definition
+				jp.aegif.nemaki.model.NemakiTypeDefinition typeDef = new jp.aegif.nemaki.model.NemakiTypeDefinition();
+				typeDef.setId("tck:testSecondaryType");
+				typeDef.setLocalName("testSecondaryType");
+				typeDef.setLocalNameSpace("http://tck.opencmis.apache.org");
+				typeDef.setDisplayName("TCK Test Secondary Type");
+				typeDef.setQueryName("tck:testSecondaryType");
+				typeDef.setDescription("Secondary type for TCK compliance tests");
+				typeDef.setBaseId(org.apache.chemistry.opencmis.commons.enums.BaseTypeId.CMIS_SECONDARY);
+				typeDef.setParentId("cmis:secondary");
+				typeDef.setCreatable(false);
+				typeDef.setFilable(false);
+				typeDef.setQueryable(true);
+				typeDef.setFulltextIndexed(false);
+				typeDef.setIncludedInSupertypeQuery(true);
+				typeDef.setControllablePolicy(false);
+				typeDef.setControllableACL(true);
+
+				// Create the type
+				typeService.createTypeDefinition(repositoryId, typeDef);
+				log.info("✅ TCK secondary type created successfully in repository: " + repositoryId);
+			}
+
+			// Invalidate type manager caches to ensure new type is immediately available
+			invalidateTypeManagerCaches();
+
+			log.info("✅ TCK custom secondary type creation completed successfully");
+		} catch (Exception e) {
+			log.error("❌ Failed to create TCK secondary type", e);
+			// Continue with startup even if this fails
+		}
+	}
 
 }
