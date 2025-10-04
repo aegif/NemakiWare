@@ -2912,20 +2912,27 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // Get the CMIS service and delete content
             org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
             CmisService cmisService = getCmisService(callContext);
-            
-            cmisService.deleteContentStream(repositoryId, 
-                new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId), 
-                new org.apache.chemistry.opencmis.commons.spi.Holder<String>(null), null);
-            
+
+            // CRITICAL TCK FIX: Use Holders to capture updated objectId and changeToken
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
+                new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> changeTokenHolder =
+                new org.apache.chemistry.opencmis.commons.spi.Holder<String>(null);
+
+            cmisService.deleteContentStream(repositoryId, objectIdHolder, changeTokenHolder, null);
+
             System.err.println("*** DELETE CONTENT HANDLER: Content deleted successfully ***");
-            
-            // Return success response
+            System.err.println("*** DELETE CONTENT HANDLER: New objectId: " + objectIdHolder.getValue() + " ***");
+
+            // CRITICAL TCK FIX: Return object with objectId (required by CMIS Browser Binding spec)
+            // TCK expects deleteContentStream() to return the new object id
             response.setStatus(HttpServletResponse.SC_OK);
             response.setContentType("application/json");
             response.setCharacterEncoding("UTF-8");
-            
+
             try (java.io.PrintWriter writer = response.getWriter()) {
-                writer.write("{}"); // Empty JSON response indicates success
+                // Return JSON with objectId as per CMIS Browser Binding specification
+                writer.write("{\"objectId\":\"" + objectIdHolder.getValue() + "\"}");
             }
             
             return true; // Successfully handled

@@ -766,6 +766,13 @@ public class ObjectServiceImpl implements ObjectService {
 			// //////////////////
 			contentService.deleteContentStream(callContext, repositoryId, objectId);
 
+			// CRITICAL TCK FIX: Update changeToken with the modified document's token
+			// After deleting content stream, get the updated document and return its changeToken
+			Document updatedDocument = contentService.getDocument(repositoryId, objectId.getValue());
+			if (updatedDocument != null && changeToken != null) {
+				changeToken.setValue(updatedDocument.getChangeToken());
+			}
+
 			nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());
 
 		} finally {

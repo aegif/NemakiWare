@@ -2076,8 +2076,35 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public void deleteContentStream(CallContext callContext, String repositoryId, Holder<String> objectId) {
-		// TODO Auto-generated method stub
+		// CRITICAL TCK FIX: Implement deleteContentStream to remove content from document
+		String docId = objectId.getValue();
 
+		// Get current document
+		Document document = getDocument(repositoryId, docId);
+		if (document == null) {
+			log.error("Document not found for deleteContentStream: " + docId);
+			return;
+		}
+
+		// Delete attachment if exists
+		if (document.getAttachmentNodeId() != null) {
+			String attachmentId = document.getAttachmentNodeId();
+			log.debug("Deleting attachment: " + attachmentId + " for document: " + docId);
+			deleteAttachment(callContext, repositoryId, attachmentId);
+		}
+
+		// Clear content stream properties
+		document.setAttachmentNodeId(null);
+
+		// Update document in database
+		Document updated = contentDaoService.update(repositoryId, document);
+
+		// CMIS 1.1 COMPLIANCE: Update objectId holder with result
+		// For non-versioned documents, return the same id
+		// For versioned documents, this would create a PWC and return its id
+		objectId.setValue(updated.getId());
+
+		log.debug("deleteContentStream completed for document: " + docId + ", new id: " + updated.getId());
 	}
 
 	@Override

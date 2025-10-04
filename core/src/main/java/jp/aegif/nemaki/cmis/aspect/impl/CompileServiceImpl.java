@@ -1394,6 +1394,17 @@ public class CompileServiceImpl implements CompileService {
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_MIME_TYPE, null);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_FILE_NAME, null);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_ID, null);
+		} else if (ContentStreamAllowed.ALLOWED == csa && attachment == null && StringUtils.isBlank(document.getAttachmentNodeId())) {
+			// CRITICAL TCK FIX: Case 3.5 - ALLOWED content stream deleted (attachmentNodeId is null)
+			// TCK expects properties to exist with null/-1 values after deleteContentStream()
+			// This is different from never having content - properties must exist but be null/empty
+			if (log.isDebugEnabled()) {
+				log.debug("CASE 3.5: ALLOWED content stream deleted - setting properties to null/-1");
+			}
+			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_LENGTH, -1L);
+			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_MIME_TYPE, null);
+			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_FILE_NAME, null);
+			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_ID, null);
 		} else {
 			// Case 4: ContentStreamAllowed.ALLOWED with no content stream - don't set properties
 			// Case 5: ContentStreamAllowed.NOTALLOWED - don't set properties
