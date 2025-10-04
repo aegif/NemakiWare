@@ -1185,6 +1185,14 @@ public class ContentServiceImpl implements ContentService {
 		// Version properties
 		// CASE:New VersionSeries
 		VersionSeries vs;
+
+		// CRITICAL FIX: Handle null versioningState for non-versionable documents
+		// For versionable=false document types, versioningState may be null from Browser Binding
+		if (versioningState == null) {
+			versioningState = VersioningState.NONE;
+			log.debug("versioningState was null, defaulting to NONE for non-versionable document");
+		}
+
 		vs = createVersionSeries(callContext, repositoryId, versioningState);
 		d.setVersionSeriesId(vs.getId());
 		switch (versioningState) {
