@@ -1251,8 +1251,14 @@ public class CompileServiceImpl implements CompileService {
 			addProperty(properties, tdf, PropertyIds.CHECKIN_COMMENT, "");
 			addProperty(properties, tdf, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, false);
 
-			// CMIS 1.1 COMPLIANCE: NOT REQUIRED properties omitted entirely for non-versionable documents
-			// VERSION_SERIES_CHECKED_OUT_ID and VERSION_SERIES_CHECKED_OUT_BY are intentionally omitted
+			// CRITICAL TCK FIX: CMIS 1.1 requires properties defined in type definition to be present
+			// Even for non-versionable documents, these properties must exist with null values
+			// Type definition includes these properties (required: false), so TCK expects them in response
+			String checkedOutBy = null;  // null for non-versionable documents
+			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, checkedOutBy);
+
+			String checkedOutId = null;  // null for non-versionable documents
+			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, checkedOutId);
 		}
 	}
 
