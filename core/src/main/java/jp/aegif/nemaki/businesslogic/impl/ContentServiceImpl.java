@@ -764,7 +764,15 @@ public class ContentServiceImpl implements ContentService {
 		// PHASE 3: Version properties and other metadata
 		setVersionProperties(callContext, repositoryId, versioningState, copy);
 		copy.setParentId(target.getId());
-		updateProperties(callContext, repositoryId, properties, copy);
+
+		// CRITICAL TCK FIX: Properties parameter is optional for createDocumentFromSource
+		// If properties is null or empty, keep the properties from source document (already copied in buildCopyDocument)
+		if (properties != null && properties.getProperties() != null && !properties.getProperties().isEmpty()) {
+			updateProperties(callContext, repositoryId, properties, copy);
+		} else {
+			log.debug("createDocumentFromSource: properties is null/empty, using properties from source document");
+		}
+
 		setSignature(callContext, copy);
 
 		// PHASE 4: Atomic Document creation (single CouchDB write)
@@ -846,6 +854,11 @@ public class ContentServiceImpl implements ContentService {
 
 		// PHASE 4: Version properties update
 		updateVersionProperties(callContext, repositoryId, VersioningState.MINOR, copy, original);
+
+		// CRITICAL TCK FIX: Generate new change token for optimistic locking
+		// CMIS spec requires change token on new versions
+		String newChangeToken = String.valueOf(System.currentTimeMillis());
+		copy.setChangeToken(newChangeToken);
 
 		// PHASE 5: Atomic Document creation (single CouchDB write)
 		atomicResult = contentDaoService.create(repositoryId, copy);
@@ -931,10 +944,86 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, originalPwc, ChangeType.UPDATED);
 
 		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
+		// TODO: Update with specific document indexing
 		// solrUtil.indexDocument(repositoryId, content);
 
 		return originalPwc;
+	}
+
+	@Override
+	public Document updateDocumentWithNewStream(CallContext callContext, String repositoryId, Document original,
+			ContentStream contentStream) {
+		// CRITICAL TCK FIX: Update non-versionable document in place
+		// This method updates the existing document's attachment without creating a new version
+		// ensuring the object ID remains unchanged per CMIS spec for non-versionable documents
+
+		log.debug("=== UPDATE NON-VERSIONABLE DOCUMENT WITH NEW STREAM ===");
+		log.debug("Repository: {}, Document: {}", repositoryId, original.getId());
+
+		// CRITICAL TCK FIX: Handle both cases - document with/without existing attachment
+		AttachmentNode an = null;
+		if (original.getAttachmentNodeId() != null) {
+			// Case 1: Document already has attachment - update it
+			an = contentDaoService.getAttachment(repositoryId, original.getAttachmentNodeId());
+			contentDaoService.updateAttachment(repositoryId, an, contentStream);
+		} else {
+			// Case 2: Document created without content - create new attachment
+			String attachmentId = createAttachmentAtomic(callContext, repositoryId, contentStream);
+			original.setAttachmentNodeId(attachmentId);
+			an = contentDaoService.getAttachment(repositoryId, attachmentId);
+			log.debug("Created new attachment for document without content: {}", attachmentId);
+		}
+
+		// Update rendition contentStream if preview is enabled
+		if (isPreviewEnabled()) {
+			ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(),
+					contentStream.getMimeType(), an.getInputStream());
+
+			if (renditionManager.checkConvertible(previewCS.getMimeType())) {
+				List<String> renditionIds = original.getRenditionIds();
+				if (CollectionUtils.isNotEmpty(renditionIds)) {
+					List<String> removedRenditionIds = new ArrayList<String>();
+
+					// Create preview
+					for (String renditionId : renditionIds) {
+						Rendition rd = contentDaoService.getRendition(repositoryId, renditionId);
+						if (RenditionKind.CMIS_PREVIEW.equals(rd.getKind())) {
+							removedRenditionIds.add(renditionId);
+							createPreview(callContext, repositoryId, previewCS, original);
+						}
+					}
+
+					// Update reference to preview ID
+					renditionIds.removeAll(removedRenditionIds);
+					original.setRenditionIds(renditionIds);
+				}
+			}
+		}
+
+		// Modify signature
+		setSignature(callContext, original);
+
+		// CRITICAL TCK FIX: Update change token for optimistic locking
+		String newChangeToken = String.valueOf(System.currentTimeMillis());
+		original.setChangeToken(newChangeToken);
+
+		// Update the document in CouchDB
+		Document result = contentDaoService.update(repositoryId, original);
+
+		// Record the change event
+		writeChangeEvent(callContext, repositoryId, result, ChangeType.UPDATED);
+
+		// Call Solr indexing (optional)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, result);
+			}
+		} catch (Exception e) {
+			log.warn("Solr indexing failed for updated document {} (non-critical): {}", result.getId(), e.getMessage());
+		}
+
+		log.debug("=== UPDATE NON-VERSIONABLE DOCUMENT SUCCESS: {} ===", result.getId());
+		return result;
 	}
 
 	@Override
@@ -1397,14 +1486,22 @@ public class ContentServiceImpl implements ContentService {
 			List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
 
+		String sourceId = DataUtil.getIdProperty(properties, PropertyIds.SOURCE_ID);
+		String targetId = DataUtil.getIdProperty(properties, PropertyIds.TARGET_ID);
+		System.err.println("*** CREATE RELATIONSHIP: sourceId=" + sourceId + " targetId=" + targetId + " ***");
+
 		Relationship rel = new Relationship();
 		setBaseProperties(callContext, repositoryId, properties, rel, null);
-		rel.setSourceId(DataUtil.getIdProperty(properties, PropertyIds.SOURCE_ID));
-		rel.setTargetId(DataUtil.getIdProperty(properties, PropertyIds.TARGET_ID));
+		rel.setSourceId(sourceId);
+		rel.setTargetId(targetId);
+		System.err.println("*** CREATE RELATIONSHIP: Relationship object type=" + rel.getType() + " ***");
+
 		// Set ACL
 		setAclOnCreated(callContext, repositoryId, rel, addAces, removeAces);
 
 		Relationship relationship = contentDaoService.create(repositoryId, rel);
+		System.err.println("*** CREATE RELATIONSHIP: Created relationship id=" + relationship.getId() +
+			" source=" + relationship.getSourceId() + " target=" + relationship.getTargetId() + " ***");
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, relationship, ChangeType.CREATED);
@@ -1824,6 +1921,11 @@ public class ContentServiceImpl implements ContentService {
 
 		Content modified = modifyProperties(callContext, repositoryId, properties, content);
 
+		// CRITICAL TCK FIX: Generate new change token for optimistic locking
+		// CMIS spec requires updating change token on each modification
+		String newChangeToken = String.valueOf(System.currentTimeMillis());
+		modified.setChangeToken(newChangeToken);
+
 		Content result = updateInternal(repositoryId, modified);
 
 		// Record the change event
@@ -2075,15 +2177,15 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void deleteContentStream(CallContext callContext, String repositoryId, Holder<String> objectId) {
-		// CRITICAL TCK FIX: Implement deleteContentStream to remove content from document
+	public Document deleteContentStream(CallContext callContext, String repositoryId, Holder<String> objectId) {
+		// CRITICAL TCK FIX: Return updated document to prevent race condition
 		String docId = objectId.getValue();
 
 		// Get current document
 		Document document = getDocument(repositoryId, docId);
 		if (document == null) {
 			log.error("Document not found for deleteContentStream: " + docId);
-			return;
+			return null;
 		}
 
 		// Delete attachment if exists
@@ -2093,8 +2195,13 @@ public class ContentServiceImpl implements ContentService {
 			deleteAttachment(callContext, repositoryId, attachmentId);
 		}
 
-		// Clear content stream properties
+		// Clear content stream reference
 		document.setAttachmentNodeId(null);
+
+		// CRITICAL TCK FIX: Update modification signature and change token
+		setModifiedSignature(callContext, document);
+		String newChangeToken = String.valueOf(System.currentTimeMillis());
+		document.setChangeToken(newChangeToken);
 
 		// Update document in database
 		Document updated = contentDaoService.update(repositoryId, document);
@@ -2104,7 +2211,11 @@ public class ContentServiceImpl implements ContentService {
 		// For versioned documents, this would create a PWC and return its id
 		objectId.setValue(updated.getId());
 
-		log.debug("deleteContentStream completed for document: " + docId + ", new id: " + updated.getId());
+		// Write change event
+		writeChangeEvent(callContext, repositoryId, updated, ChangeType.UPDATED);
+
+		log.debug("deleteContentStream completed for document: " + docId + ", new change token: " + newChangeToken);
+		return updated;
 	}
 
 	@Override
@@ -2383,17 +2494,54 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public void appendAttachment(CallContext callContext, String repositoryId, Holder<String> objectId,
 			Holder<String> changeToken, ContentStream contentStream, boolean isLastChunk, ExtensionsData extension) {
+		System.err.println("*** APPEND ATTACHMENT: Starting append operation ***");
 		Document document = contentDaoService.getDocument(repositoryId, objectId.getValue());
+		System.err.println("*** APPEND ATTACHMENT: Document ID: " + document.getId() + ", AttachmentNodeId: " + document.getAttachmentNodeId() + " ***");
+
 		AttachmentNode attachment = getAttachment(repositoryId, document.getAttachmentNodeId());
+		System.err.println("*** APPEND ATTACHMENT: Attachment retrieved - ID: " + attachment.getId() + ", Length: " + attachment.getLength() + " ***");
+
 		InputStream is = attachment.getInputStream();
+		System.err.println("*** APPEND ATTACHMENT: Existing InputStream: " + (is != null ? "NOT NULL" : "NULL") + " ***");
+
 		// Append
 		SequenceInputStream sis = new SequenceInputStream(is, contentStream.getStream());
 		// appendStream will be used for a huge file, so avoid reading stream
-		long length = attachment.getLength() + contentStream.getLength();
-		ContentStream cs = new ContentStreamImpl("content", BigInteger.valueOf(length), attachment.getMimeType(), sis);
-		contentDaoService.updateAttachment(repositoryId, attachment, cs);
+		long existingLength = attachment.getLength();
+		long newLength = contentStream.getLength();
+		long totalLength = existingLength + newLength;
 
-		writeChangeEvent(callContext, repositoryId, document, ChangeType.UPDATED);
+		System.err.println("*** APPEND ATTACHMENT: Existing length: " + existingLength + ", New length: " + newLength + ", Total: " + totalLength + " ***");
+
+		ContentStream cs = new ContentStreamImpl("content", BigInteger.valueOf(totalLength), attachment.getMimeType(), sis);
+		System.err.println("*** APPEND ATTACHMENT: Calling updateAttachment with combined stream ***");
+		contentDaoService.updateAttachment(repositoryId, attachment, cs);
+		System.err.println("*** APPEND ATTACHMENT: updateAttachment completed ***");
+
+		// CRITICAL TCK FIX: Update Document with new change token
+		// Note: contentStreamLength is now dynamically retrieved from actual CouchDB size
+		// via CompileServiceImpl, so no need to update AttachmentNode.length metadata
+		Document freshDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
+		String newChangeToken = String.valueOf(System.currentTimeMillis());
+		freshDocument.setChangeToken(newChangeToken);
+		System.err.println("*** APPEND ATTACHMENT: New change token generated: " + newChangeToken + " ***");
+
+		// Update document with new change token
+		contentDaoService.update(repositoryId, freshDocument);
+		System.err.println("*** APPEND ATTACHMENT: Document updated with new change token ***");
+
+		// Get the updated document to return
+		Document updatedDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
+
+		// Update holders with new change token and object ID
+		if (changeToken != null) {
+			changeToken.setValue(updatedDocument.getChangeToken());
+		}
+		if (objectId != null) {
+			objectId.setValue(updatedDocument.getId());
+		}
+
+		writeChangeEvent(callContext, repositoryId, updatedDocument, ChangeType.UPDATED);
 	}
 
 	@Override
@@ -2818,6 +2966,13 @@ public class ContentServiceImpl implements ContentService {
 	private String increasedVersionLabel(Document document, VersioningState versioningState) {
 		// e.g. #{major}(.{#minor})
 		String label = document.getVersionLabel();
+
+		// CRITICAL TCK FIX: Handle null version label (document without initial version)
+		if (label == null || label.isEmpty()) {
+			// Default to 0.0 if no version label exists
+			label = "0.0";
+		}
+
 		int major = 0;
 		int minor = 0;
 
@@ -2843,11 +2998,30 @@ public class ContentServiceImpl implements ContentService {
 		n.setCreated(getTimeStamp());
 		n.setModifier(callContext.getUsername());
 		n.setModified(getTimeStamp());
+
+		// CRITICAL TCK FIX: Initialize change token on creation
+		// CMIS spec requires change tokens for optimistic locking
+		if (n instanceof Content) {
+			Content content = (Content) n;
+			String initialChangeToken = String.valueOf(System.currentTimeMillis());
+			content.setChangeToken(initialChangeToken);
+		}
 	}
 
 	private void setModifiedSignature(CallContext callContext, NodeBase n) {
 		n.setModifier(callContext.getUsername());
 		n.setModified(getTimeStamp());
+
+		// CRITICAL TCK FIX: Update change token on modification
+		// CMIS spec requires updating change token after any modification
+		if (n instanceof Content) {
+			Content content = (Content) n;
+			String oldChangeToken = content.getChangeToken();
+			String newChangeToken = String.valueOf(System.currentTimeMillis());
+			content.setChangeToken(newChangeToken);
+			System.err.println("*** SET MODIFIED SIGNATURE: Updated change token for " + content.getId() +
+				" from '" + oldChangeToken + "' to '" + newChangeToken + "' ***");
+		}
 	}
 
 	private GregorianCalendar getTimeStamp() {

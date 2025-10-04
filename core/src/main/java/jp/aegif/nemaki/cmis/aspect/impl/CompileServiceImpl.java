@@ -653,6 +653,9 @@ public class CompileServiceImpl implements CompileService {
 				.getPermissionMapping();
 		String baseType = content.getType();
 
+
+		// CRITICAL DEBUG: Log content type at entry
+
 		// Calculate AllowableActions
 		Set<Action> actionSet = new HashSet<Action>();
 		VersionSeries versionSeries = null;
@@ -720,6 +723,12 @@ public class CompileServiceImpl implements CompileService {
 		}
 		AllowableActionsImpl allowableActions = new AllowableActionsImpl();
 		allowableActions.setAllowableActions(actionSet);
+
+		// CRITICAL DEBUG: Log final allowable actions for relationships
+		if (content.getObjectType().equals("cmis:relationship") ||
+		    (tdf != null && BaseTypeId.CMIS_RELATIONSHIP == tdf.getBaseTypeId())) {
+		}
+
 		return allowableActions;
 	}
 
@@ -833,8 +842,14 @@ public class CompileServiceImpl implements CompileService {
 			// Document-only actions
 			return BaseTypeId.CMIS_DOCUMENT == tdf.getBaseTypeId();
 		} else if (isFolderOnlyAction(key)) {
-			// Folder-only actions  
+			// Folder-only actions
 			return BaseTypeId.CMIS_FOLDER == tdf.getBaseTypeId();
+		} else if (isFileableOnlyAction(key)) {
+			// Fileable-only actions (move, add/remove from folder)
+			// Only documents and folders are fileable in CMIS
+			boolean result = BaseTypeId.CMIS_DOCUMENT == tdf.getBaseTypeId() ||
+			                 BaseTypeId.CMIS_FOLDER == tdf.getBaseTypeId();
+			return result;
 		} else if (isVersioningAction(key)) {
 			// Versioning actions - only for versionable documents
 			if (BaseTypeId.CMIS_DOCUMENT != tdf.getBaseTypeId()) {
@@ -1313,12 +1328,13 @@ public class CompileServiceImpl implements CompileService {
 					log.debug("Attachment raw length from DB: " + attachmentLength);
 				}
 				
-				if (attachmentLength <= 0) {
+				// CRITICAL TCK FIX: Always retrieve actual size from CouchDB
+				// This ensures cmis:contentStreamLength is always accurate, even after appendContent
+				if (true) {
 					if (log.isDebugEnabled()) {
-						log.debug("Attachment length is 0 or negative, attempting to retrieve actual size");
-						log.debug("Attachment has invalid length (" + attachmentLength + "), attempting to retrieve actual size");
+						log.debug("Retrieving actual attachment size from CouchDB for " + attachment.getId());
 					}
-					
+
 					// CLOUDANT SDK: Try to get actual attachment size with _rev safety
 					try {
 						Long actualSize = contentService.getAttachmentActualSize(repositoryId, attachment.getId());
@@ -1342,11 +1358,6 @@ public class CompileServiceImpl implements CompileService {
 						if (log.isDebugEnabled()) {
 							log.debug("Exception occurred, using -1L for unknown length (CMIS 1.1 compliant)");
 						}
-					}
-				} else {
-					length = attachmentLength;
-					if (log.isDebugEnabled()) {
-						log.debug("Using attachment length: " + attachmentLength);
 					}
 				}
 				
@@ -1995,6 +2006,19 @@ public class CompileServiceImpl implements CompileService {
 			   PermissionMapping.CAN_CREATE_FOLDER_FOLDER.equals(key) ||
 			   PermissionMapping.CAN_DELETE_TREE_FOLDER.equals(key) ||
 			   PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT.equals(key);
+	}
+
+	/**
+	 * CMIS Compliance Helper: Check if action is only applicable to fileable objects
+	 * Fileable objects are those that can exist in a folder hierarchy (Documents and Folders).
+	 * Non-fileable objects (Relationships, Policies, Items) cannot be moved or added/removed from folders.
+	 */
+	private boolean isFileableOnlyAction(String key) {
+		return PermissionMapping.CAN_MOVE_OBJECT.equals(key) ||
+			   PermissionMapping.CAN_MOVE_SOURCE.equals(key) ||
+			   PermissionMapping.CAN_MOVE_TARGET.equals(key) ||
+			   PermissionMapping.CAN_ADD_TO_FOLDER_OBJECT.equals(key) ||
+			   PermissionMapping.CAN_REMOVE_FROM_FOLDER_OBJECT.equals(key);
 	}
 
 	/**

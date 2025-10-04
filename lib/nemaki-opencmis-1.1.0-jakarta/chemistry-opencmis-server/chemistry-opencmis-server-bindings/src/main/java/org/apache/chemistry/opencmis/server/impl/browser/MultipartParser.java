@@ -685,8 +685,52 @@ public class MultipartParser {
                             // File content part
                             filename = part.getSubmittedFileName();
                             contentType = part.getContentType();
-                            contentSize = java.math.BigInteger.valueOf(part.getSize());
-                            contentStream = part.getInputStream();
+
+                            // CRITICAL TCK FIX: Part.getSize() may return 0 if Content-Length header is not present
+                            // In that case, read the InputStream to calculate actual size
+                            long partSize = part.getSize();
+                            System.out.println("MULTIPART DEBUG: Part.getSize() returned: " + partSize);
+
+                            if (partSize > 0) {
+                                contentSize = java.math.BigInteger.valueOf(partSize);
+                                contentStream = part.getInputStream();
+                                System.out.println("MULTIPART DEBUG: Using Part.getSize() value: " + partSize);
+                            } else {
+                                // Read InputStream into ByteArrayOutputStream to calculate size
+                                System.out.println("MULTIPART DEBUG: Part.getSize()=0, attempting to read InputStream...");
+                                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                                java.io.InputStream partStream = part.getInputStream();
+                                System.out.println("MULTIPART DEBUG: InputStream obtained, class: " + partStream.getClass().getName());
+
+                                try {
+                                    int available = partStream.available();
+                                    System.out.println("MULTIPART DEBUG: InputStream.available() = " + available);
+                                } catch (Exception e) {
+                                    System.out.println("MULTIPART DEBUG: InputStream.available() threw exception: " + e.getMessage());
+                                }
+
+                                try {
+                                    byte[] buffer = new byte[8192];
+                                    int bytesRead;
+                                    int totalBytesRead = 0;
+                                    int readCount = 0;
+                                    while ((bytesRead = partStream.read(buffer)) != -1) {
+                                        readCount++;
+                                        totalBytesRead += bytesRead;
+                                        baos.write(buffer, 0, bytesRead);
+                                        System.out.println("MULTIPART DEBUG: Read iteration " + readCount + ": " + bytesRead + " bytes (total: " + totalBytesRead + ")");
+                                    }
+                                    System.out.println("MULTIPART DEBUG: InputStream read complete, total bytes: " + totalBytesRead);
+                                } finally {
+                                    partStream.close();
+                                }
+
+                                byte[] contentBytes = baos.toByteArray();
+                                contentSize = java.math.BigInteger.valueOf(contentBytes.length);
+                                contentStream = new java.io.ByteArrayInputStream(contentBytes);
+                                System.out.println("MULTIPART FIX: Calculated actual size from InputStream: " + contentSize + " bytes");
+                            }
+
                             hasContent = true;
                             System.out.println("MULTIPART FIX: Found content part - filename: " + filename + ", type: " + contentType + ", size: " + contentSize);
                         } else {

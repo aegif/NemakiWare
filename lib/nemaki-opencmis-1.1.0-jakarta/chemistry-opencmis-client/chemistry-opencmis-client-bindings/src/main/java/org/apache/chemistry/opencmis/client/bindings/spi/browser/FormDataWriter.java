@@ -282,7 +282,24 @@ public final class FormDataWriter {
             writeLine(out, "Content-Transfer-Encoding: binary");
             writeLine(out);
 
+            // CRITICAL TCK DEBUG: Log content stream details before copying
+            System.out.println("FORMDATAWRITER DEBUG: About to copy content stream");
+            System.out.println("FORMDATAWRITER DEBUG: Filename: " + filename);
+            System.out.println("FORMDATAWRITER DEBUG: MediaType: " + mediaType);
+            System.out.println("FORMDATAWRITER DEBUG: ContentStream class: " + contentStream.getClass().getName());
+            System.out.println("FORMDATAWRITER DEBUG: ContentStream.getLength(): " + contentStream.getLength());
+            System.out.println("FORMDATAWRITER DEBUG: ContentStream.getBigLength(): " + contentStream.getBigLength());
+            System.out.println("FORMDATAWRITER DEBUG: InputStream class: " + stream.getClass().getName());
+
+            try {
+                int available = stream.available();
+                System.out.println("FORMDATAWRITER DEBUG: InputStream.available(): " + available);
+            } catch (Exception e) {
+                System.out.println("FORMDATAWRITER DEBUG: InputStream.available() threw exception: " + e.getMessage());
+            }
+
             IOUtils.copy(stream, out, BUFFER_SIZE);
+            System.out.println("FORMDATAWRITER DEBUG: Content stream copy completed");
 
             writeLine(out);
             writeLine(out, "--" + boundary + "--");

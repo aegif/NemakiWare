@@ -290,6 +290,19 @@ public interface ContentService {
 	Document createDocumentWithNewStream(CallContext callContext,
 			String repositoryId, Document original, ContentStream contentStream);
 
+	/**
+	 * Update a non-versionable document with new content stream in place.
+	 * This method updates the existing document's attachment without creating a new version.
+	 * Used for non-versionable documents per CMIS spec.
+	 *
+	 * @param callContext
+	 * @param repositoryId
+	 * @param original The document to update
+	 * @param contentStream New content stream
+	 * @return Updated document with same object ID
+	 */
+	Document updateDocumentWithNewStream(CallContext callContext, String repositoryId, Document original, ContentStream contentStream);
+
 	Document replacePwc(CallContext callContext, String repositoryId, Document original, ContentStream contentStream);
 
 	/**
@@ -509,8 +522,9 @@ public interface ContentService {
 	 * @param callContext
 	 * @param repositoryId TODO
 	 * @param objectId
+	 * @return Updated document with new change token (CRITICAL: prevents race conditions)
 	 */
-	void deleteContentStream(CallContext callContext, String repositoryId, Holder<String> objectId);
+	Document deleteContentStream(CallContext callContext, String repositoryId, Holder<String> objectId);
 
 	/**
 	 * Delete a whole folder tree

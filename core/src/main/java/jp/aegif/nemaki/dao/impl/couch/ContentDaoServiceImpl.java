@@ -743,6 +743,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public NodeBase getNodeBase(String repositoryId, String objectId) {
 		CouchNodeBase cnb = connectorPool.getClient(repositoryId).get(CouchNodeBase.class, objectId);
+		// CRITICAL TCK FIX: Handle case where object was already deleted
+		if (cnb == null) {
+			return null;
+		}
 		return cnb.convert();
 	}
 
@@ -1320,18 +1324,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Relationship> getRelationshipsBySource(String repositoryId, String sourceId) {
 		try {
+			System.err.println("*** GET RELATIONSHIPS BY SOURCE: sourceId=" + sourceId + " ***");
 			// Query relationshipsBySource view with sourceId
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			List<CouchRelationship> couchRels = client.queryView("_repo", "relationshipsBySource", sourceId, CouchRelationship.class);
-			
+			System.err.println("*** GET RELATIONSHIPS BY SOURCE: Found " + couchRels.size() + " relationships ***");
+
 			List<Relationship> relationships = new ArrayList<Relationship>();
 			for (CouchRelationship couchRel : couchRels) {
-				relationships.add(couchRel.convert());
+				Relationship rel = couchRel.convert();
+				System.err.println("*** GET RELATIONSHIPS BY SOURCE: Relationship " + rel.getId() + " source=" + rel.getSourceId() + " target=" + rel.getTargetId() + " ***");
+				relationships.add(rel);
 			}
-			
+
 			return relationships;
 		} catch (Exception e) {
 			log.error("Error getting relationships by source: " + sourceId + " in repository: " + repositoryId, e);
+			System.err.println("*** GET RELATIONSHIPS BY SOURCE ERROR: " + e.getMessage() + " ***");
 			return new ArrayList<Relationship>();
 		}
 	}
@@ -1339,18 +1348,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Relationship> getRelationshipsByTarget(String repositoryId, String targetId) {
 		try {
+			System.err.println("*** GET RELATIONSHIPS BY TARGET: targetId=" + targetId + " ***");
 			// Query relationshipsByTarget view with targetId
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			List<CouchRelationship> couchRels = client.queryView("_repo", "relationshipsByTarget", targetId, CouchRelationship.class);
-			
+			System.err.println("*** GET RELATIONSHIPS BY TARGET: Found " + couchRels.size() + " relationships ***");
+
 			List<Relationship> relationships = new ArrayList<Relationship>();
 			for (CouchRelationship couchRel : couchRels) {
-				relationships.add(couchRel.convert());
+				Relationship rel = couchRel.convert();
+				System.err.println("*** GET RELATIONSHIPS BY TARGET: Relationship " + rel.getId() + " source=" + rel.getSourceId() + " target=" + rel.getTargetId() + " ***");
+				relationships.add(rel);
 			}
-			
+
 			return relationships;
 		} catch (Exception e) {
 			log.error("Error getting relationships by target: " + targetId + " in repository: " + repositoryId, e);
+			System.err.println("*** GET RELATIONSHIPS BY TARGET ERROR: " + e.getMessage() + " ***");
 			return new ArrayList<Relationship>();
 		}
 	}
@@ -1833,9 +1847,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Relationship create(String repositoryId, Relationship relationship) {
+		System.err.println("*** DAO CREATE RELATIONSHIP: id=" + relationship.getId() + " source=" + relationship.getSourceId() + " target=" + relationship.getTargetId() + " type=" + relationship.getType() + " ***");
 		CouchRelationship cr = new CouchRelationship(relationship);
+		System.err.println("*** DAO CREATE RELATIONSHIP: CouchRelationship id=" + cr.getId() + " source=" + cr.getSourceId() + " target=" + cr.getTargetId() + " type=" + cr.getType() + " ***");
 		connectorPool.getClient(repositoryId).create(cr);
-		return cr.convert();
+		System.err.println("*** DAO CREATE RELATIONSHIP: Successfully created in CouchDB ***");
+		Relationship result = cr.convert();
+		System.err.println("*** DAO CREATE RELATIONSHIP: Converted result id=" + result.getId() + " source=" + result.getSourceId() + " target=" + result.getTargetId() + " ***");
+		return result;
 	}
 
 	@Override
@@ -2778,22 +2797,45 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachment.getId());
 						revisionToUse = doc != null ? doc.getRev() : null;
 								}
-					
+
 					// Update attachment with binary content
 					String attachmentName = "content"; // Standard attachment name for content
-					String contentType = contentStream.getMimeType() != null ? 
+					String contentType = contentStream.getMimeType() != null ?
 						contentStream.getMimeType() : "application/octet-stream";
-					
+
+					System.err.println("*** UPDATE ATTACHMENT STAGE 2: About to call createAttachment ***");
+					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Attachment ID: " + attachment.getId() + " ***");
+					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Revision: " + revisionToUse + " ***");
+					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Content length from metadata: " + contentStream.getLength() + " ***");
+
+					// DEBUG: Read the InputStream and count actual bytes
+					InputStream originalStream = contentStream.getStream();
+					java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+					byte[] buffer = new byte[8192];
+					int bytesRead;
+					int totalBytesRead = 0;
+					while ((bytesRead = originalStream.read(buffer)) != -1) {
+						baos.write(buffer, 0, bytesRead);
+						totalBytesRead += bytesRead;
+					}
+					byte[] allBytes = baos.toByteArray();
+					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Actually read " + totalBytesRead + " bytes from InputStream ***");
+					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Content preview: " + new String(allBytes, 0, Math.min(100, allBytes.length)) + " ***");
+
+					// Create new InputStream from the bytes we read
+					java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(allBytes);
+
 					String newRevision = client.createAttachment(
-						attachment.getId(), 
-						revisionToUse, 
-						attachmentName, 
-						contentStream.getStream(), 
+						attachment.getId(),
+						revisionToUse,
+						attachmentName,
+						bais,
 						contentType
 					);
-					
+
+					System.err.println("*** UPDATE ATTACHMENT STAGE 2: createAttachment completed with new revision: " + newRevision + " ***");
 								log.debug("Updated binary content as attachment for: " + attachment.getId() + " (revision: " + newRevision + ")");
-					
+
 				} catch (Exception attachmentError) {
 					log.warn("Failed to update binary content as attachment for: " + attachment.getId() + ". Metadata updated only.", attachmentError);
 				}
@@ -3080,6 +3122,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		CouchArchive ca = new CouchArchive(archive);
 		CouchNodeBase cnb = connectorPool.getClient(repositoryId).get(CouchNodeBase.class, archive.getOriginalId());
+
+		// CRITICAL TCK FIX: Handle case where attachment was already deleted
+		// This can happen when multiple versions reference the same attachment
+		if (cnb == null) {
+			log.warn(buildLogMsg(archive.getOriginalId(),
+					"attachment no longer exists (may have been deleted by another version)"));
+			// Return archive without lastRevision set
+			connectorPool.get(archiveId).create(ca);
+			return ca.convert();
+		}
+
 		ca.setLastRevision(cnb.getRevision());
 
 		connectorPool.get(archiveId).create(ca);
@@ -3284,90 +3337,32 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {
+		System.err.println("*** GET ATTACHMENT ACTUAL SIZE: Called for attachmentId: " + attachmentId);
+
 		if (attachmentId == null || attachmentId.trim().isEmpty()) {
-			if (log.isDebugEnabled()) {
-				log.debug("getAttachmentActualSize: attachmentId is null or empty");
-			}
+			System.err.println("*** GET ATTACHMENT ACTUAL SIZE: attachmentId is null or empty");
 			return null;
 		}
-		
+
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			if (client == null) {
-				log.error("CloudantClientWrapper is null for repository: " + repositoryId);
+				System.err.println("*** GET ATTACHMENT ACTUAL SIZE: CloudantClientWrapper is null");
 				return null;
 			}
-			
-			com.ibm.cloud.cloudant.v1.model.Document doc = null;
-			try {
-				doc = client.get(attachmentId);
-			} catch (Exception getEx) {
-				if (log.isDebugEnabled()) {
-					log.debug("Failed to retrieve attachment document " + attachmentId + ": " + getEx.getMessage());
-				}
-				return null;
+
+			// CRITICAL FIX: Use HEAD request to get attachment size directly from CouchDB
+			// This bypasses Cloudant SDK limitations with _attachments metadata
+			Long size = client.getAttachmentSize(attachmentId, "content");
+			System.err.println("*** GET ATTACHMENT ACTUAL SIZE: HEAD request returned size: " + size);
+
+			if (size != null && size > 0) {
+				return size;
 			}
-			
-			if (doc == null) {
-				if (log.isDebugEnabled()) {
-					log.debug("Attachment document not found: " + attachmentId);
-				}
-				return null;
-			}
-			
-			Map<String, Object> properties = doc.getProperties();
-			if (properties == null) {
-				if (log.isDebugEnabled()) {
-					log.debug("No properties found in document: " + attachmentId);
-				}
-				return null;
-			}
-			
-			Object attachmentsObj = properties.get("_attachments");
-			if (attachmentsObj instanceof Map) {
-				@SuppressWarnings("unchecked")
-				Map<String, Object> attachments = (Map<String, Object>) attachmentsObj;
-				
-				Object contentObj = attachments.get("content");
-				if (contentObj instanceof Map) {
-					@SuppressWarnings("unchecked")
-					Map<String, Object> contentAttachment = (Map<String, Object>) contentObj;
-					
-					Object lengthObj = contentAttachment.get("length");
-					if (lengthObj instanceof Number) {
-						long actualSize = ((Number) lengthObj).longValue();
-						if (actualSize > 0) {
-							if (log.isDebugEnabled()) {
-								log.debug("Found actual attachment size: " + actualSize + " bytes for " + attachmentId);
-							}
-							return actualSize;
-						} else {
-							if (log.isDebugEnabled()) {
-								log.debug("Attachment size is zero or negative for: " + attachmentId);
-							}
-						}
-					} else {
-						if (log.isDebugEnabled()) {
-							log.debug("Attachment length is not a number for: " + attachmentId + 
-								" (type: " + (lengthObj != null ? lengthObj.getClass().getSimpleName() : "null") + ")");
-						}
-					}
-				} else {
-					if (log.isDebugEnabled()) {
-						log.debug("No 'content' attachment found for: " + attachmentId);
-					}
-				}
-			} else {
-				if (log.isDebugEnabled()) {
-					log.debug("No _attachments metadata found for: " + attachmentId);
-				}
-			}
-			
-			if (log.isDebugEnabled()) {
-				log.debug("No valid attachment size found for: " + attachmentId);
-			}
+
+			System.err.println("*** GET ATTACHMENT ACTUAL SIZE: No valid attachment size found for: " + attachmentId);
 			return null;
-			
+
 		} catch (Exception e) {
 			log.error("Error retrieving attachment size for " + attachmentId + ": " + e.getMessage(), e);
 			return null;

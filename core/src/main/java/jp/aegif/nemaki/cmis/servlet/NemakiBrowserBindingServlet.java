@@ -36,6 +36,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.enums.DateTimeFormat;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.impl.Constants;
 import org.apache.chemistry.opencmis.commons.impl.JSONConverter;
 import org.apache.chemistry.opencmis.commons.impl.json.JSONObject;
@@ -146,6 +147,15 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 String pathInfo = request.getPathInfo();
                 if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
                     log.error("!!! SERVICE METHOD: setContentStream handled successfully !!!");
+                    return;
+                }
+            }
+
+            if ("appendContentStream".equals(postMethodCmisaction) || "appendContent".equals(postMethodCmisaction)) {
+                log.error("!!! SERVICE METHOD: appendContentStream detected - forcing custom routing !!!");
+                String pathInfo = request.getPathInfo();
+                if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
+                    log.error("!!! SERVICE METHOD: appendContentStream handled successfully !!!");
                     return;
                 }
             }
@@ -1103,12 +1113,13 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 return null;
             }
             
-            // CRITICAL TCK COMPLIANCE FIX: Return HTTP 404 for null content streams
-            // This will be converted to CmisObjectNotFoundException by AbstractBrowserBindingService.convertStatusCode()
+            // CRITICAL TCK COMPLIANCE FIX: Return HTTP 409 CONFLICT for documents without content streams
+            // HTTP 404 would be converted to CmisObjectNotFoundException (object doesn't exist)
+            // HTTP 409 is converted to CmisConstraintException (constraint violation - no content stream)
             if (contentStream == null) {
-                log.debug("No content stream available for document: " + objectId + " - returning HTTP 404");
+                log.debug("No content stream available for document: " + objectId + " - returning HTTP 409 CONFLICT");
                 if (!response.isCommitted()) {
-                    response.sendError(HttpServletResponse.SC_NOT_FOUND, 
+                    response.sendError(HttpServletResponse.SC_CONFLICT,
                         "Document " + objectId + " does not have a content stream");
                 }
                 return null;
@@ -1116,9 +1127,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             java.io.InputStream inputStream = contentStream.getStream();
             if (inputStream == null) {
-                log.debug("Content stream has null InputStream for document: " + objectId + " - returning HTTP 404");
+                log.debug("Content stream has null InputStream for document: " + objectId + " - returning HTTP 409 CONFLICT");
                 if (!response.isCommitted()) {
-                    response.sendError(HttpServletResponse.SC_NOT_FOUND, 
+                    response.sendError(HttpServletResponse.SC_CONFLICT,
                         "Document " + objectId + " content stream has null InputStream");
                 }
                 return null;
@@ -1352,20 +1363,58 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     }
     
     /**
+     * Get CMIS-compliant exception name for Browser Binding JSON responses
+     * Per CMIS 1.1 specification, exception names must use camelCase format
+     */
+    private String getCmisExceptionName(Exception e) {
+        System.err.println("*** GET CMIS EXCEPTION NAME: Exception class: " + e.getClass().getName() + " ***");
+
+        if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException) {
+            System.err.println("*** GET CMIS EXCEPTION NAME: Matched CmisUpdateConflictException ***");
+            return "updateConflict";
+        } else if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException) {
+            System.err.println("*** GET CMIS EXCEPTION NAME: Matched CmisConstraintException ***");
+            return "constraint";
+        } else if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException) {
+            System.err.println("*** GET CMIS EXCEPTION NAME: Matched CmisObjectNotFoundException ***");
+            return "objectNotFound";
+        } else if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException) {
+            System.err.println("*** GET CMIS EXCEPTION NAME: Matched CmisInvalidArgumentException ***");
+            return "invalidArgument";
+        } else if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException) {
+            System.err.println("*** GET CMIS EXCEPTION NAME: Matched CmisPermissionDeniedException ***");
+            return "permissionDenied";
+        } else if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException) {
+            System.err.println("*** GET CMIS EXCEPTION NAME: Matched CmisVersioningException ***");
+            return "versioning";
+        } else if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException) {
+            // Fallback: convert class name to camelCase
+            System.err.println("*** GET CMIS EXCEPTION NAME: Using fallback for CmisBaseException ***");
+            String simpleName = e.getClass().getSimpleName();
+            simpleName = simpleName.replace("Cmis", "");
+            String result = Character.toLowerCase(simpleName.charAt(0)) + simpleName.substring(1);
+            System.err.println("*** GET CMIS EXCEPTION NAME: Fallback result: '" + result + "' ***");
+            return result;
+        }
+        System.err.println("*** GET CMIS EXCEPTION NAME: Using 'runtime' default ***");
+        return "runtime";
+    }
+
+    /**
      * Write error response in Browser Binding JSON format with proper HTTP status codes
      */
     private void writeErrorResponse(HttpServletResponse response, Exception e) throws Exception {
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
-        
+
         if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException) {
-            org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException cmisException = 
+            org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException cmisException =
                 (org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException) e;
-            // CRITICAL FIX: Use proper HTTP status code mapping instead of always HTTP 400
+            // CRITICAL TCK FIX: Use proper HTTP status code mapping and CMIS-compliant exception names
             response.setStatus(getHttpStatusCode(e));
-            
+
             try (java.io.PrintWriter writer = response.getWriter()) {
-                writer.write("{\"exception\":\"" + cmisException.getClass().getSimpleName().toLowerCase().replace("cmis", "") + 
+                writer.write("{\"exception\":\"" + getCmisExceptionName(e) +
                            "\",\"message\":\"" + cmisException.getMessage() + "\"}");
             }
         } else {
@@ -1797,43 +1846,45 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      */
     private org.apache.chemistry.opencmis.commons.data.ContentStream extractContentStreamFromFormParameters(
             HttpServletRequest request, String cmisaction) {
-        
-        // Only handle createDocument operations with content parameter
-        if (!"createDocument".equals(cmisaction)) {
-            System.err.println("*** FORM CONTENT EXTRACTION: Not a createDocument operation ***");
+
+        // CRITICAL TCK FIX: Support createDocument, setContent, and setContentStream operations
+        if (!"createDocument".equals(cmisaction) && !"setContentStream".equals(cmisaction) && !"setContent".equals(cmisaction)) {
+            System.err.println("*** FORM CONTENT EXTRACTION: Not a createDocument, setContent, or setContentStream operation ***");
             return null;
         }
-        
+
         String contentParam = request.getParameter("content");
         if (contentParam == null || contentParam.isEmpty()) {
             System.err.println("*** FORM CONTENT EXTRACTION: No 'content' parameter found ***");
             return null;
         }
-        
+
         System.err.println("*** FORM CONTENT EXTRACTION: Found content parameter, length = " + contentParam.length() + " ***");
         System.err.println("*** FORM CONTENT EXTRACTION: Content preview: " + contentParam.substring(0, Math.min(50, contentParam.length())) + "... ***");
-        
+
         try {
             // Extract filename and mime type from other parameters
             String tempFilename = "document.txt"; // Default filename
             final String mimeType = "text/plain"; // Default mime type
-            
-            // Look for filename in cmis:name property for form-encoded requests
-            String[] propertyIds = request.getParameterValues("propertyId");
-            String[] propertyValues = request.getParameterValues("propertyValue");
-            
-            if (propertyIds != null && propertyValues != null) {
-                System.err.println("*** FORM CONTENT EXTRACTION: Found " + propertyIds.length + " property IDs ***");
-                for (int i = 0; i < Math.min(propertyIds.length, propertyValues.length); i++) {
-                    System.err.println("*** FORM CONTENT EXTRACTION: Property[" + i + "]: " + propertyIds[i] + " = " + propertyValues[i] + " ***");
-                    if ("cmis:name".equals(propertyIds[i])) {
-                        tempFilename = propertyValues[i];
-                        System.err.println("*** FORM CONTENT EXTRACTION: Using filename from cmis:name = " + tempFilename + " ***");
-                        break;
+
+            // Look for filename in cmis:name property for form-encoded requests (only for createDocument)
+            if ("createDocument".equals(cmisaction)) {
+                String[] propertyIds = request.getParameterValues("propertyId");
+                String[] propertyValues = request.getParameterValues("propertyValue");
+
+                if (propertyIds != null && propertyValues != null) {
+                    System.err.println("*** FORM CONTENT EXTRACTION: Found " + propertyIds.length + " property IDs ***");
+                    for (int i = 0; i < Math.min(propertyIds.length, propertyValues.length); i++) {
+                        System.err.println("*** FORM CONTENT EXTRACTION: Property[" + i + "]: " + propertyIds[i] + " = " + propertyValues[i] + " ***");
+                        if ("cmis:name".equals(propertyIds[i])) {
+                            tempFilename = propertyValues[i];
+                            System.err.println("*** FORM CONTENT EXTRACTION: Using filename from cmis:name = " + tempFilename + " ***");
+                            break;
+                        }
                     }
                 }
             }
-            
+
             final String filename = tempFilename; // Make final for anonymous class
             
             // Create ContentStream from string content
@@ -1898,76 +1949,103 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      */
     private org.apache.chemistry.opencmis.commons.data.ContentStream extractContentStreamFromMultipartParameters(
             HttpServletRequest request) {
-        
-        log.debug("MULTIPART CONTENT EXTRACTION: Starting simplified extraction");
-        
+
+        System.err.println("*** MULTIPART CONTENT EXTRACTION: Starting multipart extraction ***");
+
         try {
-            // SIMPLIFIED APPROACH: Only try parameter-based approach to avoid hanging
-            String contentParam = request.getParameter("content");
-            if (contentParam == null || contentParam.isEmpty()) {
-                log.debug("MULTIPART CONTENT EXTRACTION: No 'content' parameter found");
-                return null;
+            // CRITICAL TCK FIX: For multipart/form-data, use Jakarta Servlet Part API
+            // TCK sends content as a multipart Part, not as a parameter
+            jakarta.servlet.http.Part contentPart = null;
+
+            // Try to get "content" or "stream" part (Browser Binding standard names)
+            try {
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: About to call request.getPart('content') ***");
+                contentPart = request.getPart("content");
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: Found 'content' part ***");
+            } catch (Exception e) {
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: No 'content' part - Exception: " + e.getClass().getName() + ": " + e.getMessage() + " ***");
+                e.printStackTrace(System.err);
             }
-            
-            log.debug("MULTIPART CONTENT EXTRACTION: Found content parameter, length = " + contentParam.length());
-            
-            // Extract filename from cmis:name property
-            String filename = "document.txt"; // Default filename
-            String[] propertyIds = request.getParameterValues("propertyId");
-            String[] propertyValues = request.getParameterValues("propertyValue");
-            
-            if (propertyIds != null && propertyValues != null) {
-                for (int i = 0; i < Math.min(propertyIds.length, propertyValues.length); i++) {
-                    if ("cmis:name".equals(propertyIds[i])) {
-                        filename = propertyValues[i];
-                        log.debug("MULTIPART CONTENT EXTRACTION: Using filename from cmis:name = " + filename);
-                        break;
-                    }
+
+            if (contentPart == null) {
+                try {
+                    contentPart = request.getPart("stream");
+                    System.err.println("*** MULTIPART CONTENT EXTRACTION: Found 'stream' part ***");
+                } catch (Exception e) {
+                    System.err.println("*** MULTIPART CONTENT EXTRACTION: No 'stream' part: " + e.getMessage() + " ***");
                 }
             }
-            
-            // Create ContentStream with simplified implementation
+
+            if (contentPart == null) {
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: No content part found in multipart request ***");
+                return null;
+            }
+
+            // Extract filename from part
+            String filename = contentPart.getSubmittedFileName();
+            if (filename == null || filename.isEmpty()) {
+                filename = "document.txt"; // Default filename
+            }
+            System.err.println("*** MULTIPART CONTENT EXTRACTION: Filename = '" + filename + "' ***");
+
+            // Extract mime type from part
+            String mimeType = contentPart.getContentType();
+            if (mimeType == null || mimeType.isEmpty()) {
+                mimeType = "application/octet-stream"; // Default mime type
+            }
+            System.err.println("*** MULTIPART CONTENT EXTRACTION: Mime type = '" + mimeType + "' ***");
+
+            // Read content from part input stream
+            final byte[] contentBytes;
+            try (java.io.InputStream inputStream = contentPart.getInputStream()) {
+                contentBytes = inputStream.readAllBytes();
+            }
+            System.err.println("*** MULTIPART CONTENT EXTRACTION: Content size = " + contentBytes.length + " bytes ***");
+
             final String finalFilename = filename;
-            final byte[] contentBytes = contentParam.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            
+            final String finalMimeType = mimeType;
+
+            System.err.println("*** MULTIPART CONTENT EXTRACTION: Creating ContentStream with filename='" + filename + "', size=" + contentBytes.length + " ***");
+
             return new org.apache.chemistry.opencmis.commons.data.ContentStream() {
                 @Override
                 public String getFileName() {
                     return finalFilename;
                 }
-                
+
                 @Override
                 public long getLength() {
                     return contentBytes.length;
                 }
-                
+
                 @Override
                 public java.math.BigInteger getBigLength() {
                     return java.math.BigInteger.valueOf(contentBytes.length);
                 }
-                
+
                 @Override
                 public String getMimeType() {
-                    return "text/plain";
+                    return finalMimeType;
                 }
-                
+
                 @Override
                 public java.io.InputStream getStream() {
                     return new java.io.ByteArrayInputStream(contentBytes);
                 }
-                
+
                 @Override
                 public java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> getExtensions() {
                     return null;
                 }
-                
+
                 @Override
                 public void setExtensions(java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> extensions) {
                 }
             };
-            
+
         } catch (Exception e) {
-            log.error("MULTIPART CONTENT EXTRACTION ERROR: " + e.getMessage(), e);
+            System.err.println("*** MULTIPART CONTENT EXTRACTION ERROR: " + e.getClass().getName() + ": " + e.getMessage() + " ***");
+            e.printStackTrace();
             return null;
         }
     }
@@ -2224,7 +2302,11 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 case "setContent":
                 case "setContentStream":
                     return handleSetContentOperation(request, response, pathInfo);
-                    
+
+                case "appendContent":
+                case "appendContentStream":
+                    return handleAppendContentOperation(request, response, pathInfo);
+
                 case "deleteContent":
                 case "deleteContentStream":
                     return handleDeleteContentOperation(request, response, pathInfo);
@@ -2782,9 +2864,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
             // Use holders to receive the updated object ID
             org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder = new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
-            org.apache.chemistry.opencmis.commons.spi.Holder<String> changeTokenHolder = new org.apache.chemistry.opencmis.commons.spi.Holder<String>(null);
+
+            // CRITICAL TCK FIX: Get change token from request parameter
+            // Browser Binding passes changeToken as a request parameter
+            String changeTokenParam = request.getParameter("changeToken");
+            System.err.println("*** UPDATE PROPERTIES HANDLER: changeToken from request: '" + changeTokenParam + "' ***");
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> changeTokenHolder = new org.apache.chemistry.opencmis.commons.spi.Holder<String>(changeTokenParam);
 
             cmisService.updateProperties(repositoryId, objectIdHolder, changeTokenHolder, cmisProperties, null);
+
+            System.err.println("*** UPDATE PROPERTIES HANDLER: Updated changeToken: '" + changeTokenHolder.getValue() + "' ***");
 
             System.err.println("*** UPDATE PROPERTIES HANDLER: Properties updated successfully ***");
             System.err.println("*** Updated object ID: " + objectIdHolder.getValue() + " ***");
@@ -2820,10 +2909,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
             
             return true; // Successfully handled
-            
+
         } catch (Exception e) {
             System.err.println("*** UPDATE PROPERTIES HANDLER ERROR: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
-            throw e;
+            // CRITICAL TCK FIX: Write proper CMIS error response instead of re-throwing
+            writeErrorResponse(response, e);
+            return true; // Handled
         }
     }
     
@@ -2849,18 +2940,33 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
             
             log.debug("Setting content stream for object: " + objectId);
-            
+
+            // CRITICAL TCK FIX: Get cmisaction parameter to pass to content extraction
+            String cmisaction = request.getParameter("cmisaction");
+            System.err.println("*** SET CONTENT DEBUG: cmisaction = '" + cmisaction + "' ***");
+            if (cmisaction == null) {
+                cmisaction = "setContentStream"; // Default fallback
+            }
+
             // Extract content stream from request using existing methods
             org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = null;
-            
+
             String contentType = request.getContentType();
+            System.err.println("*** SET CONTENT DEBUG: Content-Type = '" + contentType + "' ***");
+
             if (contentType != null && contentType.startsWith("multipart/form-data")) {
+                System.err.println("*** SET CONTENT DEBUG: Using multipart extraction ***");
                 contentStream = extractContentStreamFromMultipartParameters(request);
             } else if (contentType != null && contentType.startsWith("application/x-www-form-urlencoded")) {
-                contentStream = extractContentStreamFromFormParameters(request, "setContentStream");
+                System.err.println("*** SET CONTENT DEBUG: Using form-encoded extraction with cmisaction='" + cmisaction + "' ***");
+                contentStream = extractContentStreamFromFormParameters(request, cmisaction);
+                System.err.println("*** SET CONTENT DEBUG: After extraction, contentStream = " + (contentStream != null ? "NOT NULL" : "NULL") + " ***");
+            } else {
+                System.err.println("*** SET CONTENT DEBUG: No supported Content-Type for extraction ***");
             }
             
             if (contentStream == null) {
+                System.err.println("*** SET CONTENT DEBUG: Content stream is NULL - returning error ***");
                 response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                 response.setContentType("application/json");
                 response.setCharacterEncoding("UTF-8");
@@ -2869,42 +2975,189 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
                 return true;
             }
-            
+
+            System.err.println("*** SET CONTENT DEBUG: Content stream extracted successfully, size=" + contentStream.getLength() + " ***");
+
             // Get CMIS service and call setContentStream
             org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
             CmisService cmisService = getCmisService(callContext);
-            
+
+            System.err.println("*** SET CONTENT DEBUG: CmisService obtained, about to call setContentStream ***");
+
             // Extract overwrite flag parameter
             String overwriteFlagStr = request.getParameter("overwriteFlag");
             boolean overwriteFlag = (overwriteFlagStr != null) ? Boolean.parseBoolean(overwriteFlagStr) : true;
-            
+
             // Call the service layer
-            org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder = 
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
                 new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
-            org.apache.chemistry.opencmis.commons.spi.Holder<String> changeTokenHolder = 
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> changeTokenHolder =
                 new org.apache.chemistry.opencmis.commons.spi.Holder<String>(request.getParameter("changeToken"));
-                
+
+            System.err.println("*** SET CONTENT DEBUG: Calling setContentStream with objectId=" + objectId + " ***");
+
             cmisService.setContentStream(repositoryId, objectIdHolder, overwriteFlag, changeTokenHolder, contentStream, null);
-            
+
+            System.err.println("*** SET CONTENT DEBUG: setContentStream returned successfully ***");
+
             log.debug("Content stream set successfully for object: " + objectId);
-            
-            // Return success response
-            response.setStatus(HttpServletResponse.SC_OK);
+
+            System.err.println("*** SET CONTENT DEBUG: setContentStream call completed, preparing ObjectData response ***");
+
+            // CRITICAL TCK FIX: Return complete ObjectData as per CMIS Browser Binding spec
+            // Standard OpenCMIS implementation returns full object, not just objectId
+            String newObjectId = (objectIdHolder.getValue() != null) ? objectIdHolder.getValue() : objectId;
+            System.err.println("*** SET CONTENT DEBUG: newObjectId = " + newObjectId + " ***");
+
+            // Get the updated object
+            org.apache.chemistry.opencmis.commons.data.ObjectData objectData =
+                cmisService.getObject(repositoryId, newObjectId, "*", true,
+                    org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.BOTH,
+                    "*", true, true, null);
+
+            if (objectData == null) {
+                throw new CmisRuntimeException("Object is null after setContentStream!");
+            }
+
+            System.err.println("*** SET CONTENT DEBUG: Retrieved ObjectData for response ***");
+
+            // Parse succinct parameter (default false if not present)
+            String succinctParam = request.getParameter(Constants.PARAM_SUCCINCT);
+            boolean succinct = (succinctParam != null) ? Boolean.parseBoolean(succinctParam) : false;
+            System.err.println("*** SET CONTENT DEBUG: succinct = " + succinct + " ***");
+
+            // Convert to JSON using OpenCMIS JSONConverter
+            org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonObject =
+                JSONConverter.convert(objectData, null,
+                    JSONConverter.PropertyMode.OBJECT, succinct,
+                    DateTimeFormat.SIMPLE);
+
+            System.err.println("*** SET CONTENT DEBUG: JSONObject created, length = " + jsonObject.toJSONString().length() + " ***");
+            System.err.println("*** SET CONTENT DEBUG: JSONObject sample = " + jsonObject.toJSONString().substring(0, Math.min(200, jsonObject.toJSONString().length())) + " ***");
+
+            // Write response
+            response.setStatus(HttpServletResponse.SC_CREATED);
             response.setContentType("application/json");
             response.setCharacterEncoding("UTF-8");
-            
+
             try (java.io.PrintWriter writer = response.getWriter()) {
-                writer.write("{}"); // Empty JSON response indicates success
+                writer.write(jsonObject.toJSONString());
             }
-            
+
+            System.err.println("*** SET CONTENT DEBUG: Response written successfully ***");
             return true; // We handled the response
-            
+
         } catch (Exception e) {
             System.err.println("*** SET CONTENT HANDLER ERROR: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
             throw e;
         }
     }
-    
+
+    /**
+     * Handle CMIS appendContent operation via Browser Binding.
+     * Implements the missing appendContent functionality per CMIS 1.1 spec.
+     */
+    private boolean handleAppendContentOperation(HttpServletRequest request, HttpServletResponse response, String pathInfo)
+            throws IOException, ServletException, Exception {
+
+        System.err.println("*** APPEND CONTENT HANDLER: Starting appendContent operation ***");
+
+        try {
+            // Extract object ID
+            String objectId = request.getParameter("objectId");
+            if (objectId == null || objectId.isEmpty()) {
+                throw new IllegalArgumentException("objectId parameter is required for appendContent operation");
+            }
+
+            String repositoryId = extractRepositoryIdFromPath(pathInfo);
+            if (repositoryId == null) {
+                throw new IllegalArgumentException("Could not determine repository ID from path: " + pathInfo);
+            }
+
+            System.err.println("*** APPEND CONTENT HANDLER: Appending content for object: " + objectId + " ***");
+
+            // Extract content stream
+            org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = null;
+            String contentType = request.getContentType();
+
+            if (contentType != null && contentType.startsWith("multipart/form-data")) {
+                contentStream = extractContentStreamFromMultipartParameters(request);
+            }
+
+            if (contentStream == null) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                response.setContentType("application/json");
+                response.setCharacterEncoding("UTF-8");
+                try (java.io.PrintWriter writer = response.getWriter()) {
+                    writer.write("{\"exception\":\"invalidArgument\",\"message\":\"Content stream is required for appendContent operation\"}");
+                }
+                return true;
+            }
+
+            System.err.println("*** APPEND CONTENT HANDLER: Content stream extracted, size=" + contentStream.getLength() + " ***");
+
+            // Get CMIS service
+            org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
+            CmisService cmisService = getCmisService(callContext);
+
+            // Extract parameters
+            String changeToken = request.getParameter("changeToken");
+            String isLastChunkStr = request.getParameter("isLastChunk");
+            boolean isLastChunk = (isLastChunkStr != null) ? Boolean.parseBoolean(isLastChunkStr) : true;
+
+            System.err.println("*** APPEND CONTENT HANDLER: changeToken=" + changeToken + ", isLastChunk=" + isLastChunk + " ***");
+
+            // Call the service layer
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
+                new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
+            org.apache.chemistry.opencmis.commons.spi.Holder<String> changeTokenHolder =
+                (changeToken == null ? null : new org.apache.chemistry.opencmis.commons.spi.Holder<String>(changeToken));
+
+            cmisService.appendContentStream(repositoryId, objectIdHolder, changeTokenHolder, contentStream, isLastChunk, null);
+
+            System.err.println("*** APPEND CONTENT HANDLER: appendContentStream completed successfully ***");
+
+            // Get the updated object
+            String newObjectId = (objectIdHolder.getValue() != null) ? objectIdHolder.getValue() : objectId;
+
+            org.apache.chemistry.opencmis.commons.data.ObjectData objectData =
+                cmisService.getObject(repositoryId, newObjectId, "*", true,
+                    org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.BOTH,
+                    "*", true, true, null);
+
+            if (objectData == null) {
+                throw new CmisRuntimeException("Object is null after appendContentStream!");
+            }
+
+            // Parse succinct parameter
+            String succinctParam = request.getParameter(Constants.PARAM_SUCCINCT);
+            boolean succinct = (succinctParam != null) ? Boolean.parseBoolean(succinctParam) : false;
+
+            // Convert to JSON using OpenCMIS JSONConverter
+            org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonObject =
+                JSONConverter.convert(objectData, null,
+                    JSONConverter.PropertyMode.OBJECT, succinct,
+                    DateTimeFormat.SIMPLE);
+
+            // Write response
+            response.setStatus(HttpServletResponse.SC_CREATED);
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+
+            try (java.io.PrintWriter writer = response.getWriter()) {
+                writer.write(jsonObject.toJSONString());
+            }
+
+            System.err.println("*** APPEND CONTENT HANDLER: Response written successfully ***");
+            return true;
+
+        } catch (Exception e) {
+            System.err.println("*** APPEND CONTENT HANDLER ERROR: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
+            e.printStackTrace(System.err);
+            throw e;
+        }
+    }
+
     /**
      * Handle CMIS deleteContent operation via Browser Binding.
      * Implements the missing deleteContent functionality.
@@ -3667,34 +3920,100 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
     /**
      * Extract ACL entries from request parameters.
-     * Expected format: multiple parameters with names like addACE[0][principal], addACE[0][permission][0], etc.
+     * Supports OpenCMIS standard format: addACEPrincipal[0], addACEPermission[0][0], etc.
      */
     private java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> extractAclFromRequest(HttpServletRequest request, String paramPrefix) {
         java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> aces = new java.util.ArrayList<>();
 
         try {
-            // Simple implementation for basic ACL support
-            String principalId = request.getParameter(paramPrefix + "[principal]");
-            String[] permissions = request.getParameterValues(paramPrefix + "[permission]");
+            // OpenCMIS standard parameter names
+            String principalParamName = paramPrefix + "Principal";
+            String permissionParamName = paramPrefix + "Permission";
 
-            if (principalId != null && permissions != null && permissions.length > 0) {
-                java.util.List<String> permissionList = java.util.Arrays.asList(permissions);
+            System.err.println("*** EXTRACT ACL: Looking for principals with prefix: " + principalParamName + " ***");
 
-                org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl principal =
-                    new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl(principalId.trim());
-                org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl ace =
-                    new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl(principal, permissionList);
+            // Collect all principal indices by scanning parameter map
+            java.util.Map<Integer, String> principals = new java.util.TreeMap<>();
+            java.util.Map<Integer, java.util.List<String>> permissions = new java.util.TreeMap<>();
 
-                aces.add(ace);
+            java.util.Map<String, String[]> parameterMap = request.getParameterMap();
+            System.err.println("*** EXTRACT ACL: Total parameters in request: " + parameterMap.size() + " ***");
 
-                System.err.println("*** EXTRACT ACL: Created ACE for principal: " + principalId + " with " + permissions.length + " permissions ***");
+            for (java.util.Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
+                String paramName = entry.getKey();
+                System.err.println("*** EXTRACT ACL: Checking parameter: " + paramName + " ***");
+
+                // Check for principal parameters: addACEPrincipal[0], addACEPrincipal[1], etc.
+                if (paramName.startsWith(principalParamName + "[")) {
+                    try {
+                        int startIdx = paramName.indexOf('[');
+                        int endIdx = paramName.indexOf(']');
+                        if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+                            String indexStr = paramName.substring(startIdx + 1, endIdx);
+                            int index = Integer.parseInt(indexStr);
+                            String principal = entry.getValue()[0];
+                            principals.put(index, principal);
+                            System.err.println("*** EXTRACT ACL: Found principal[" + index + "] = " + principal + " ***");
+                        }
+                    } catch (Exception e) {
+                        System.err.println("*** EXTRACT ACL: Error parsing principal index: " + e.getMessage() + " ***");
+                    }
+                }
+
+                // Check for permission parameters: addACEPermission[0][0], addACEPermission[0][1], etc.
+                if (paramName.startsWith(permissionParamName + "[")) {
+                    try {
+                        // Parse addACEPermission[0][1] -> aceIndex=0, permIndex=1
+                        int firstStart = paramName.indexOf('[');
+                        int firstEnd = paramName.indexOf(']');
+                        int secondStart = paramName.indexOf('[', firstEnd);
+                        int secondEnd = paramName.indexOf(']', secondStart);
+
+                        if (firstStart != -1 && firstEnd != -1 &&
+                            secondStart != -1 && secondEnd != -1) {
+                            String aceIndexStr = paramName.substring(firstStart + 1, firstEnd);
+                            int aceIndex = Integer.parseInt(aceIndexStr);
+                            String permission = entry.getValue()[0];
+
+                            permissions.putIfAbsent(aceIndex, new java.util.ArrayList<>());
+                            permissions.get(aceIndex).add(permission);
+                            System.err.println("*** EXTRACT ACL: Found permission[" + aceIndex + "] = " + permission + " ***");
+                        }
+                    } catch (Exception e) {
+                        System.err.println("*** EXTRACT ACL: Error parsing permission index: " + e.getMessage() + " ***");
+                    }
+                }
+            }
+
+            System.err.println("*** EXTRACT ACL: Found " + principals.size() + " principals ***");
+
+            // Build ACEs from collected principals and permissions
+            for (java.util.Map.Entry<Integer, String> principalEntry : principals.entrySet()) {
+                int index = principalEntry.getKey();
+                String principalId = principalEntry.getValue();
+                java.util.List<String> permissionList = permissions.get(index);
+
+                if (principalId != null && !principalId.trim().isEmpty() &&
+                    permissionList != null && !permissionList.isEmpty()) {
+
+                    org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl principal =
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl(principalId.trim());
+                    org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl ace =
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl(principal, permissionList);
+
+                    aces.add(ace);
+                    System.err.println("*** EXTRACT ACL: Created ACE for principal: " + principalId +
+                                     " with " + permissionList.size() + " permissions ***");
+                }
             }
 
         } catch (Exception e) {
             System.err.println("*** EXTRACT ACL ERROR: " + e.getMessage() + " ***");
+            e.printStackTrace();
             // Return empty list if extraction fails
         }
 
+        System.err.println("*** EXTRACT ACL: Returning " + aces.size() + " ACEs ***");
         return aces;
     }
 

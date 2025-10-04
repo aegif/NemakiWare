@@ -444,43 +444,110 @@ public class CloudantClientWrapper {
 	}
 
 	/**
+	 * Get a document with attachments metadata
+	 * CRITICAL: Includes _attachments field for retrieving attachment metadata
+	 */
+	public com.ibm.cloud.cloudant.v1.model.Document getWithAttachments(String id) {
+		try {
+			// Regular document retrieval with attachments metadata
+			GetDocumentOptions options = new GetDocumentOptions.Builder()
+				.db(databaseName)
+				.docId(id)
+				.attachments(true)  // CRITICAL: Include _attachments metadata
+				.attEncodingInfo(true)  // Include attachment encoding info (size, etc.)
+				.build();
+
+			com.ibm.cloud.cloudant.v1.model.Document result = client.getDocument(options).execute().getResult();
+			log.debug("Retrieved document with attachments metadata for ID: " + id);
+
+			return result;
+
+		} catch (NotFoundException e) {
+			log.debug("Document not found with ID: " + id);
+			return null;
+		} catch (Exception e) {
+			log.warn("Error retrieving document with attachments for ID '" + id + "' from database '" + databaseName + "': " + e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Get attachment content length using HEAD request
+	 * CRITICAL: Returns actual attachment size from CouchDB without downloading content
+	 * @param docId Document ID
+	 * @param attachmentName Attachment name (e.g., "content")
+	 * @return Attachment size in bytes, or null if not found
+	 */
+	public Long getAttachmentSize(String docId, String attachmentName) {
+		try {
+			// CRITICAL TCK FIX: HEAD request returns gzip-encoded size, not actual content size
+			// CouchDB automatically gzip-encodes attachments, so HEAD Content-Length is encoded size
+			// We need to GET the attachment and count actual bytes to get the correct CMIS contentStreamLength
+			GetAttachmentOptions options = new GetAttachmentOptions.Builder()
+				.db(databaseName)
+				.docId(docId)
+				.attachmentName(attachmentName)
+				.build();
+
+			// GET request with automatic decompression
+			com.ibm.cloud.sdk.core.http.Response<java.io.InputStream> response = client.getAttachment(options).execute();
+			java.io.InputStream stream = response.getResult();
+
+			// Count actual bytes (decompressed)
+			long totalBytes = 0;
+			byte[] buffer = new byte[8192];
+			int bytesRead;
+			while ((bytesRead = stream.read(buffer)) != -1) {
+				totalBytes += bytesRead;
+			}
+			stream.close();
+
+			log.debug("Attachment actual size for " + docId + "/" + attachmentName + ": " + totalBytes + " bytes (decompressed)");
+			return totalBytes;
+
+		} catch (NotFoundException e) {
+			log.debug("Attachment not found: " + docId + "/" + attachmentName);
+			return null;
+		} catch (Exception e) {
+			log.warn("Error getting attachment size for " + docId + "/" + attachmentName + ": " + e.getMessage());
+			return null;
+		}
+	}
+
+	/**
 	 * Update a document
 	 */
 	public DocumentResult update(Map<String, Object> document) {
 		try {
 			String id = (String) document.get("_id");
 			String rev = (String) document.get("_rev");
-			
+
 			if (id == null) {
 				throw new IllegalArgumentException("Document must have '_id' field for update");
 			}
-			
-			// CRITICAL FIX: Type-safe JSON processing instead of naive round-trip conversion
-			// OLD PROBLEMATIC APPROACH:
-			//   String jsonString = mapper.writeValueAsString(document);
-			//   Document doc = mapper.readValue(jsonString, Document.class);
-			// PROBLEM: Type information lost during JSON serialization, especially Gson LazilyParsedNumber
-			// 
-			// NEW APPROACH: Pre-process document to ensure type safety before JSON conversion
+
+			// CRITICAL TCK FIX: Use PostDocumentOptions with JSON string to avoid Document serialization issues
+			// The Document class has read-only propertyNames field that causes UnsupportedOperationException
+			// when Jackson tries to serialize Map -> Document
 			Map<String, Object> typeSafeDocument = normalizeDataTypes(document);
-			
+
 			ObjectMapper mapper = getObjectMapper();
 			String jsonString = mapper.writeValueAsString(typeSafeDocument);
-			com.ibm.cloud.cloudant.v1.model.Document doc = mapper.readValue(jsonString, com.ibm.cloud.cloudant.v1.model.Document.class);
 
-			PutDocumentOptions options = new PutDocumentOptions.Builder()
+			// Use PostDocumentOptions with JSON body instead of PutDocumentOptions with Document
+			PostDocumentOptions options = new PostDocumentOptions.Builder()
 				.db(databaseName)
-				.docId(id)
-				.document(doc)
+				.body(new java.io.ByteArrayInputStream(jsonString.getBytes("UTF-8")))
+				.contentType("application/json")
 				.build();
 
-			DocumentResult result = client.putDocument(options).execute().getResult();
-			log.debug("Updated document with ID: " + id);
-			
+			DocumentResult result = client.postDocument(options).execute().getResult();
+			log.debug("Updated document with ID: " + id + " (new rev: " + result.getRev() + ")");
+
 			return result;
 
 		} catch (Exception e) {
-			log.warn("Error updating document in database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			log.error("Error updating document in database '" + databaseName + "': " + e.getMessage(), e);
 			return null;
 		}
 	}
@@ -761,11 +828,13 @@ public class CloudantClientWrapper {
 							docMap.put("_rev", doc.getRev());
 						}
 						
-						log.debug("DEBUG: Document properties keys: " + docMap.keySet());
-						log.debug("DEBUG: _id field value: " + docMap.get("_id"));
-						
-						// Use convertValue but ensure proper field mapping by pre-processing the map
-						T obj = mapper.convertValue(docMap, clazz);
+					log.debug("DEBUG: Document properties keys: " + docMap.keySet());
+					log.debug("DEBUG: _id field value: " + docMap.get("_id"));
+					
+					// CRITICAL FIX: Use readValue instead of convertValue to ensure @JsonCreator is called
+					// convertValue() doesn't properly invoke @JsonCreator constructors with date parsing logic
+					String jsonString = mapper.writeValueAsString(docMap);
+					T obj = mapper.readValue(jsonString, clazz);
 						
 						// CRITICAL FIX: If ID is still null after conversion, manually set it
 						if (obj instanceof jp.aegif.nemaki.model.couch.CouchNodeBase) {
@@ -975,6 +1044,11 @@ public class CloudantClientWrapper {
 			
 			// Use PostDocumentOptions for auto-generated ID
 			String jsonString = mapper.writeValueAsString(documentMap);
+		// CRITICAL DEBUG: Log JSON for CouchRelationship to diagnose view query issues
+		if (document instanceof jp.aegif.nemaki.model.couch.CouchRelationship) {
+			System.err.println("*** CLOUDANT CREATE RELATIONSHIP JSON: " + jsonString + " ***");
+		}
+
 			
 			// Send JSON directly as a raw string to preserve all content
 			
@@ -985,6 +1059,24 @@ public class CloudantClientWrapper {
 				.build();
 
 			DocumentResult result = client.postDocument(options).execute().getResult();
+
+		// CRITICAL DEBUG: Verify CouchRelationship was saved correctly
+		if (document instanceof jp.aegif.nemaki.model.couch.CouchRelationship) {
+			try {
+				GetDocumentOptions getOpts = new GetDocumentOptions.Builder()
+					.db(databaseName)
+					.docId(result.getId())
+					.build();
+				com.ibm.cloud.cloudant.v1.model.Document savedDoc = client.getDocument(getOpts).execute().getResult();
+				Map<String, Object> props = savedDoc.getProperties();
+				System.err.println("*** CLOUDANT VERIFY RELATIONSHIP SAVED: id=" + savedDoc.getId() +
+					" type=" + props.get("type") +
+					" sourceId=" + props.get("sourceId") +
+					" targetId=" + props.get("targetId") + " ***");
+			} catch (Exception verifyEx) {
+				System.err.println("*** CLOUDANT VERIFY ERROR: " + verifyEx.getMessage() + " ***");
+			}
+		}
 			log.debug("Created document with ID: " + result.getId());
 			
 			// Set the generated ID and revision back to the original object
