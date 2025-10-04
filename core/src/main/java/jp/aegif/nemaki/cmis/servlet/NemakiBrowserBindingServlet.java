@@ -130,6 +130,25 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     return;
                 }
             }
+
+            // CRITICAL TCK FIX: Handle content stream operations directly to bypass parent class
+            if ("deleteContentStream".equals(postMethodCmisaction) || "deleteContent".equals(postMethodCmisaction)) {
+                log.error("!!! SERVICE METHOD: deleteContentStream detected - forcing custom routing !!!");
+                String pathInfo = request.getPathInfo();
+                if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
+                    log.error("!!! SERVICE METHOD: deleteContentStream handled successfully !!!");
+                    return;
+                }
+            }
+
+            if ("setContentStream".equals(postMethodCmisaction) || "setContent".equals(postMethodCmisaction)) {
+                log.error("!!! SERVICE METHOD: setContentStream detected - forcing custom routing !!!");
+                String pathInfo = request.getPathInfo();
+                if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
+                    log.error("!!! SERVICE METHOD: setContentStream handled successfully !!!");
+                    return;
+                }
+            }
         }
 
         // CRITICAL DEBUG: ALWAYS log every request that reaches this servlet
@@ -2922,17 +2941,35 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             cmisService.deleteContentStream(repositoryId, objectIdHolder, changeTokenHolder, null);
 
             System.err.println("*** DELETE CONTENT HANDLER: Content deleted successfully ***");
-            System.err.println("*** DELETE CONTENT HANDLER: New objectId: " + objectIdHolder.getValue() + " ***");
 
-            // CRITICAL TCK FIX: Return object with objectId (required by CMIS Browser Binding spec)
-            // TCK expects deleteContentStream() to return the new object id
+            // CRITICAL TCK FIX: Get the updated object and return as ObjectData JSON
+            // Standard OpenCMIS Browser Binding returns complete ObjectData, not just objectId
+            String newObjectId = (objectIdHolder.getValue() == null ? objectId : objectIdHolder.getValue());
+            System.err.println("*** DELETE CONTENT HANDLER: New objectId: " + newObjectId + " ***");
+
+            // Get the object data using the same pattern as standard OpenCMIS
+            org.apache.chemistry.opencmis.commons.data.ObjectData objectData =
+                cmisService.getObject(repositoryId, newObjectId, null, false,
+                    org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.NONE,
+                    "cmis:none", false, false, null);
+
+            if (objectData == null) {
+                throw new RuntimeException("Object is null after deleteContentStream!");
+            }
+
+            // Convert ObjectData to JSON using OpenCMIS JSONConverter
+            org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonObject =
+                org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(objectData, null,
+                    org.apache.chemistry.opencmis.commons.impl.JSONConverter.PropertyMode.OBJECT, false,
+                    org.apache.chemistry.opencmis.commons.enums.DateTimeFormat.SIMPLE);
+
             response.setStatus(HttpServletResponse.SC_OK);
             response.setContentType("application/json");
             response.setCharacterEncoding("UTF-8");
 
             try (java.io.PrintWriter writer = response.getWriter()) {
-                // Return JSON with objectId as per CMIS Browser Binding specification
-                writer.write("{\"objectId\":\"" + objectIdHolder.getValue() + "\"}");
+                // Write complete ObjectData JSON as per CMIS Browser Binding specification
+                writer.write(jsonObject.toJSONString());
             }
             
             return true; // Successfully handled
