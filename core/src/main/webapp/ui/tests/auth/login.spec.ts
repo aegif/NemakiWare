@@ -12,7 +12,7 @@ test.describe('NemakiWare Authentication', () => {
   test('should display login page correctly', async ({ page }) => {
     const testHelper = new TestHelper(page);
 
-    await page.goto('/core/ui/dist/');
+    await page.goto('/core/ui/dist/index.html');
 
     // Check page title
     await expect(page).toHaveTitle(/NemakiWare|CMIS/);
@@ -20,7 +20,7 @@ test.describe('NemakiWare Authentication', () => {
     // Verify login form elements are present
     await expect(page.locator('input[placeholder*="admin"], input[placeholder*="ユーザー名"], input[name="username"], input[type="text"]:not([type="password"])')).toBeVisible();
     await expect(page.locator('input[type="password"]')).toBeVisible();
-    await expect(page.getByRole('button', { name: /login|ログイン/i })).toBeVisible();
+    await expect(page.locator('button[type="submit"]').getByText('ログイン')).toBeVisible();
 
     // Check for repository selection if available
     const repositorySelect = page.locator('select, .ant-select');
@@ -72,7 +72,7 @@ test.describe('NemakiWare Authentication', () => {
   test('should fail login with invalid credentials', async ({ page }) => {
     const authHelper = new AuthHelper(page);
 
-    await page.goto('/core/ui/dist/');
+    await page.goto('/core/ui/dist/index.html');
 
     // Try to login with invalid credentials
     await page.locator('input[placeholder*="admin"], input[placeholder*="ユーザー名"], input[name="username"], input[type="text"]:not([type="password"])').fill('invalid');
@@ -82,10 +82,11 @@ test.describe('NemakiWare Authentication', () => {
     const repositorySelect = page.locator('select, .ant-select');
     if (await repositorySelect.count() > 0) {
       await repositorySelect.click();
-      await page.getByText('bedroom').click();
+      await page.waitForSelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)', { timeout: 5000 });
+      await page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'bedroom' }).first().click({ force: true });
     }
 
-    await page.getByRole('button', { name: /login|ログイン/i }).click();
+    await page.locator('button[type="submit"]').getByText('ログイン').click();
 
     // Should remain on login page or show error
     await page.waitForTimeout(2000); // Wait for potential error message
@@ -114,10 +115,10 @@ test.describe('NemakiWare Authentication', () => {
   });
 
   test('should handle empty credentials', async ({ page }) => {
-    await page.goto('/core/ui/dist/');
+    await page.goto('/core/ui/dist/index.html');
 
     // Try to login with empty credentials
-    await page.getByRole('button', { name: /login|ログイン/i }).click();
+    await page.locator('button[type="submit"]').getByText('ログイン').click();
 
     // Should remain on login page
     await expect(page.locator('input[type="password"]')).toBeVisible();
@@ -160,7 +161,7 @@ test.describe('NemakiWare Authentication', () => {
 
   test('should redirect to login when accessing protected routes without authentication', async ({ page }) => {
     // Try to access a protected route directly
-    await page.goto('/core/ui/dist/documents');
+    await page.goto('/core/ui/dist/index.html#/documents');
 
     // Should redirect to login or show login form
     await page.waitForTimeout(2000);

@@ -26,7 +26,7 @@ export class AuthHelper {
    */
   async login(credentials: LoginCredentials = AuthHelper.DEFAULT_CREDENTIALS): Promise<void> {
     // Navigate to login page
-    await this.page.goto('/core/ui/dist/');
+    await this.page.goto('/core/ui/dist/index.html');
 
     // Wait for login form to be visible
     await this.page.waitForSelector('input[placeholder="ユーザー名"]', {
@@ -46,12 +46,14 @@ export class AuthHelper {
       const repositorySelect = this.page.locator('.ant-select');
       if (await repositorySelect.count() > 0) {
         await repositorySelect.click();
-        await this.page.getByText(credentials.repository).click();
+        // Wait for dropdown to be fully opened and find option in dropdown portal
+        await this.page.waitForSelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)', { timeout: 5000 });
+        await this.page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: credentials.repository }).first().click({ force: true });
       }
     }
 
-    // Click login button
-    const loginButton = this.page.getByRole('button', { name: 'ログイン' });
+    // Click login button (primary button with type="submit")
+    const loginButton = this.page.locator('button[type="submit"]').getByText('ログイン');
     await loginButton.click();
 
     // Wait for successful login by checking for authenticated elements
@@ -103,7 +105,7 @@ export class AuthHelper {
     }
 
     // Wait for redirect to login page
-    await this.page.waitForURL('**/ui/dist/', { timeout: 5000 });
+    await this.page.waitForURL('**/ui/dist/**', { timeout: 5000 });
 
     // Verify we're back at login page
     await expect(this.page.locator('input[placeholder="パスワード"]')).toBeVisible();
