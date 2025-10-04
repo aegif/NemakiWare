@@ -63,10 +63,6 @@ import org.apache.commons.logging.LogFactory;
  */
 public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
-    static {
-        System.err.println("*** NEMAKIBROWSERBINDINGSERVLET CLASS LOADED ***");
-    }
-
     private static final long serialVersionUID = 1L;
     private static final Log log = LogFactory.getLog(NemakiBrowserBindingServlet.class);
 
@@ -75,18 +71,17 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      */
     public NemakiBrowserBindingServlet() {
         super();
-        log.info("NEMAKI SERVLET: NemakiBrowserBindingServlet constructor called");
+        if (log.isDebugEnabled()) {
+            log.debug("NemakiBrowserBindingServlet constructor called");
+        }
     }
 
     @Override
     public void init() throws ServletException {
         super.init();
-        
+
         try {
-            log.error("=== NEMAKIBROWSERBINDINGSERVLET INIT START ===");
-            log.error("NEMAKI SERVLET: NemakiBrowserBindingServlet initialization completed successfully");
-            log.error("=== NEMAKIBROWSERBINDINGSERVLET INIT END ===");
-            
+            log.info("NemakiBrowserBindingServlet initialization completed successfully");
         } catch (Exception e) {
             log.error("NEMAKI SERVLET: Initialization failed", e);
             throw new ServletException("NemakiBrowserBindingServlet initialization failed", e);
@@ -100,69 +95,72 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     @Override
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        System.err.println("*** NEMAKIBROWSERBINDINGSERVLET SERVICE METHOD CALLED ***");
 
-        // CRITICAL DEBUG: Force output to stderr to ensure visibility
-        log.error("!!! NEMAKIBROWSERBINDINGSERVLET SERVICE METHOD CALLED !!!");
-        log.error("!!! SERVICE METHOD: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
+        if (log.isDebugEnabled()) {
+            log.debug("Browser Binding service: " + request.getMethod() + " " + request.getRequestURI());
+        }
 
         // CRITICAL FIX: Check for versioning and applyACL actions immediately in service method
         if ("POST".equals(request.getMethod())) {
             String postMethodCmisaction = request.getParameter("cmisaction");
-            log.error("!!! SERVICE METHOD: POST request with cmisaction = '" + postMethodCmisaction + "' !!!");
+
+            if (log.isDebugEnabled()) {
+                log.debug("POST request with cmisaction: " + postMethodCmisaction);
+            }
 
             // CRITICAL TCK FIX: Handle versioning operations directly
             if ("checkOut".equals(postMethodCmisaction) || "checkIn".equals(postMethodCmisaction) || "cancelCheckOut".equals(postMethodCmisaction)) {
-                log.error("!!! SERVICE METHOD: Versioning action " + postMethodCmisaction + " detected - forcing custom routing !!!");
-                // Force routing through our CMIS action router
+                if (log.isDebugEnabled()) {
+                    log.debug("Routing versioning action: " + postMethodCmisaction);
+                }
                 String pathInfo = request.getPathInfo();
                 if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
-                    log.error("!!! SERVICE METHOD: Versioning action " + postMethodCmisaction + " handled successfully !!!");
                     return;
                 }
             }
 
             if ("applyACL".equals(postMethodCmisaction)) {
-                log.error("!!! SERVICE METHOD: applyACL detected - forcing custom routing !!!");
-                // Force routing through our CMIS action router
+                if (log.isDebugEnabled()) {
+                    log.debug("Routing applyACL action");
+                }
                 String pathInfo = request.getPathInfo();
                 if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
-                    log.error("!!! SERVICE METHOD: applyACL handled successfully !!!");
                     return;
                 }
             }
 
             // CRITICAL TCK FIX: Handle content stream operations directly to bypass parent class
             if ("deleteContentStream".equals(postMethodCmisaction) || "deleteContent".equals(postMethodCmisaction)) {
-                log.error("!!! SERVICE METHOD: deleteContentStream detected - forcing custom routing !!!");
+                if (log.isDebugEnabled()) {
+                    log.debug("Routing deleteContentStream action");
+                }
                 String pathInfo = request.getPathInfo();
                 if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
-                    log.error("!!! SERVICE METHOD: deleteContentStream handled successfully !!!");
                     return;
                 }
             }
 
             if ("setContentStream".equals(postMethodCmisaction) || "setContent".equals(postMethodCmisaction)) {
-                log.error("!!! SERVICE METHOD: setContentStream detected - forcing custom routing !!!");
+                if (log.isDebugEnabled()) {
+                    log.debug("Routing setContentStream action");
+                }
                 String pathInfo = request.getPathInfo();
                 if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
-                    log.error("!!! SERVICE METHOD: setContentStream handled successfully !!!");
                     return;
                 }
             }
 
             if ("appendContentStream".equals(postMethodCmisaction) || "appendContent".equals(postMethodCmisaction)) {
-                log.error("!!! SERVICE METHOD: appendContentStream detected - forcing custom routing !!!");
+                if (log.isDebugEnabled()) {
+                    log.debug("Routing appendContentStream action");
+                }
                 String pathInfo = request.getPathInfo();
                 if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
-                    log.error("!!! SERVICE METHOD: appendContentStream handled successfully !!!");
                     return;
                 }
             }
         }
 
-        // CRITICAL DEBUG: ALWAYS log every request that reaches this servlet
-        log.error("=== NEMAKIBROWSERBINDINGSERVLET SERVICE INVOKED UPDATED VERSION === Method: " + request.getMethod() + " URI: " + request.getRequestURI() + " QueryString: " + request.getQueryString());
         String method = request.getMethod();
         
         // SPRING 6.X URL PARSING FIX: Enhanced pathInfo extraction with fallback logic

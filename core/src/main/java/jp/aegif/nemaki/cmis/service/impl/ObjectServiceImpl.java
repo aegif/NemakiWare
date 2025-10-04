@@ -806,7 +806,7 @@ public class ObjectServiceImpl implements ObjectService {
 			// Exception
 			// //////////////////
 			Document document = contentService.getDocument(repositoryId, objectId.getValue());
-			exceptionService.objectNotFound(DomainType.OBJECT, document, document.getId());
+			exceptionService.objectNotFound(DomainType.OBJECT, document, objectId.getValue());
 			exceptionService.constraintContentStreamRequired(repositoryId, document);
 
 		// //////////////////
