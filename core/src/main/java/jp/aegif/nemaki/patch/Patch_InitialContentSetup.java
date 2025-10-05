@@ -74,41 +74,30 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
         try {
             ContentService contentService = patchUtil.getContentService();
             if (contentService == null) {
-                log.error("ContentService not available, cannot apply Initial Content Setup patch");
-                return;
+                throw new IllegalStateException("ContentService not available, cannot apply Initial Content Setup patch");
             }
 
             if (patchUtil.getRepositoryInfoMap() == null) {
-                log.warn("RepositoryInfoMap not available yet. Skipping Initial Content Setup for: " + repositoryId);
-                return;
+                throw new IllegalStateException("RepositoryInfoMap not available yet for repository: " + repositoryId);
             }
 
             if (patchUtil.getRepositoryInfoMap().get(repositoryId) == null) {
-                log.warn("Repository info not available for: " + repositoryId + ". Skipping Initial Content Setup.");
-                return;
+                throw new IllegalStateException("Repository info not available for repository: " + repositoryId);
             }
 
             String rootFolderId = patchUtil.getRepositoryInfoMap().get(repositoryId).getRootFolderId();
             if (rootFolderId == null) {
-                log.warn("Root folder ID not available for repository: " + repositoryId + ". Skipping Initial Content Setup.");
-                return;
+                throw new IllegalStateException("Root folder ID not available for repository: " + repositoryId);
             }
 
             log.info("Using root folder ID: " + rootFolderId + " for repository: " + repositoryId);
 
-            // Verify root folder exists
-            try {
-                Folder rootFolder = (Folder) contentService.getContent(repositoryId, rootFolderId);
-                if (rootFolder == null) {
-                    log.warn("Root folder not found for repository: " + repositoryId + ". Repository may not be fully initialized yet.");
-                    return;
-                }
-
-                log.info("Root folder verified for repository: " + repositoryId + ", proceeding with initial content setup");
-            } catch (Exception e) {
-                log.warn("Cannot access root folder for repository: " + repositoryId + ". Repository may not be fully initialized yet. Error: " + e.getMessage());
-                return;
+            Folder rootFolder = (Folder) contentService.getContent(repositoryId, rootFolderId);
+            if (rootFolder == null) {
+                throw new IllegalStateException("Root folder not found for repository: " + repositoryId);
             }
+
+            log.info("Root folder verified for repository: " + repositoryId + ", proceeding with initial content setup");
 
             // Create SystemCallContext for operations
             SystemCallContext callContext = new SystemCallContext(repositoryId);
@@ -116,23 +105,29 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
             // Create Sites folder if it doesn't exist
             log.error("=== CREATING SITES FOLDER ===");
             String sitesFolderId = createFolderIfNotExists(contentService, callContext, repositoryId, rootFolderId, SITES_FOLDER_NAME);
-            log.error("=== SITES FOLDER RESULT: " + (sitesFolderId != null ? "SUCCESS (ID: " + sitesFolderId + ")" : "FAILED") + " ===");
+            if (sitesFolderId == null) {
+                throw new IllegalStateException("Failed to create Sites folder for repository: " + repositoryId);
+            }
+            log.error("=== SITES FOLDER RESULT: SUCCESS (ID: " + sitesFolderId + ") ===");
 
             // Create Technical Documents folder if it doesn't exist
             log.error("=== CREATING TECHNICAL DOCUMENTS FOLDER ===");
             String technicalDocsFolderId = createFolderIfNotExists(contentService, callContext, repositoryId, rootFolderId, TECHNICAL_DOCS_FOLDER_NAME);
-            log.error("=== TECHNICAL DOCUMENTS FOLDER RESULT: " + (technicalDocsFolderId != null ? "SUCCESS (ID: " + technicalDocsFolderId + ")" : "FAILED") + " ===");
+            if (technicalDocsFolderId == null) {
+                throw new IllegalStateException("Failed to create Technical Documents folder for repository: " + repositoryId);
+            }
+            log.error("=== TECHNICAL DOCUMENTS FOLDER RESULT: SUCCESS (ID: " + technicalDocsFolderId + ") ===");
 
             // Register CMIS specification PDF if Technical Documents folder was created
-            if (technicalDocsFolderId != null) {
-                registerCMISSpecificationPDF(contentService, callContext, repositoryId, technicalDocsFolderId);
+            if (!registerCMISSpecificationPDF(contentService, callContext, repositoryId, technicalDocsFolderId)) {
+                throw new IllegalStateException("Failed to create welcome document in Technical Documents folder for repository: " + repositoryId);
             }
 
             log.error("=== INITIAL CONTENT SETUP PATCH COMPLETED SUCCESSFULLY for repository: " + repositoryId + " ===");
 
         } catch (Exception e) {
             log.error("=== ERROR DURING INITIAL CONTENT SETUP PATCH for repository: " + repositoryId + " ===", e);
-            // Don't throw - patch failures should not prevent application startup
+            throw new RuntimeException("Initial Content Setup Patch failed for repository: " + repositoryId, e);
         }
     }
 
@@ -271,7 +266,7 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
      * Register welcome document in Technical Documents folder
      * Creates a simple welcome text document for new installations
      */
-    private void registerCMISSpecificationPDF(ContentService contentService, SystemCallContext callContext,
+    private boolean registerCMISSpecificationPDF(ContentService contentService, SystemCallContext callContext,
                                              String repositoryId, String parentFolderId) {
         try {
             final String documentName = "Welcome to NemakiWare.txt";
@@ -282,7 +277,7 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
             Document existingDoc = findExistingDocumentByName(repositoryId, parentFolderId, documentName);
             if (existingDoc != null) {
                 log.info("Welcome document already exists, skipping registration");
-                return;
+                return true;
             }
 
             // Create welcome document with content
@@ -298,13 +293,12 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
                     "For more information, visit: https://github.com/aegif/NemakiWare\n\n" +
                     "This document was automatically created during system initialization.\n";
 
-            createDocumentWithContent(contentService, callContext, repositoryId, parentFolderId,
+            return createDocumentWithContent(contentService, callContext, repositoryId, parentFolderId,
                                     documentName, "text/plain", welcomeContent);
-
-            log.info("✅ Welcome document created successfully in Technical Documents folder");
 
         } catch (Exception e) {
             log.error("Error registering welcome document", e);
+            return false;
         }
     }
 
@@ -359,7 +353,7 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
     /**
      * Create document with text content
      */
-    private void createDocumentWithContent(ContentService contentService, SystemCallContext callContext,
+    private boolean createDocumentWithContent(ContentService contentService, SystemCallContext callContext,
                                           String repositoryId, String parentFolderId,
                                           String documentName, String mimeType, String textContent) {
         try {
@@ -376,7 +370,7 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
             Folder parentFolder = (Folder) contentService.getContent(repositoryId, parentFolderId);
             if (parentFolder == null) {
                 log.error("Parent folder not found with ID: " + parentFolderId);
-                return;
+                return false;
             }
 
             // Create content stream from text
@@ -405,9 +399,11 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
                                                            null); // removeAces
 
             log.info("✅ Document '" + documentName + "' created successfully with ID: " + created.getId());
+            return true;
 
         } catch (Exception e) {
             log.error("Failed to create document: " + documentName, e);
+            return false;
         }
     }
 }
