@@ -2502,7 +2502,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             // Get the CMIS service to perform the delete
             org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
-            CmisService cmisService = getCmisService(callContext);
+            CmisService cmisService = null;
+            try {
+                cmisService = getCmisService(callContext);
             
             // Perform the delete operation using CmisService
             cmisService.deleteObject(repositoryId, objectId, Boolean.TRUE, null); // allVersions = true, no extensions
@@ -2518,7 +2520,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 writer.write("{}"); // Empty JSON response indicates success
             }
             
-            return true; // Successfully handled
+                return true; // Successfully handled
+            } finally {
+                if (cmisService != null) {
+                    cmisService.close();
+                }
+            }
             
         } catch (Exception e) {
             
@@ -2572,7 +2579,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             // Get the CMIS service and create the folder
             org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
-            CmisService cmisService = getCmisService(callContext);
+            CmisService cmisService = null;
+            try {
+                cmisService = getCmisService(callContext);
             
             // Convert properties to CMIS format
             org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl cmisProperties = 
@@ -2591,7 +2600,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 writer.write("{\"succinctProperties\":{\"cmis:objectId\":\"" + newFolderId + "\"}}");
             }
             
-            return true; // Successfully handled
+                return true; // Successfully handled
+            } finally {
+                if (cmisService != null) {
+                    cmisService.close();
+                }
+            }
             
         } catch (Exception e) {
             
@@ -2735,7 +2749,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             // Get the CMIS service and create the type
             CallContext callContext = createCallContext(request, repositoryId, response);
-            CmisService cmisService = getCmisService(callContext);
+            CmisService cmisService = null;
+            try {
+                cmisService = getCmisService(callContext);
             
             // Create the type definition
             org.apache.chemistry.opencmis.commons.definitions.TypeDefinition createdType = 
@@ -2757,7 +2773,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 writer.write(jsonType.toJSONString());
             }
             
-            return true; // Successfully handled
+                return true; // Successfully handled
+            } finally {
+                if (cmisService != null) {
+                    cmisService.close();
+                }
+            }
             
         } catch (Exception e) {
             e.printStackTrace();
@@ -2808,7 +2829,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
             // Get the current object to retrieve existing secondary types if needed
             org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
-            CmisService cmisService = getCmisService(callContext);
+            CmisService cmisService = null;
+            try {
+                cmisService = getCmisService(callContext);
 
             // Handle secondary type operations by updating the cmis:secondaryObjectTypeIds property
             if (addSecondaryTypeIds != null || removeSecondaryTypeIds != null) {
@@ -2901,7 +2924,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 writer.write(jsonObject.toJSONString());
             }
             
-            return true; // Successfully handled
+                return true; // Successfully handled
+            } finally {
+                if (cmisService != null) {
+                    cmisService.close();
+                }
+            }
 
         } catch (Exception e) {
             
@@ -2973,7 +3001,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
             // Get CMIS service and call setContentStream
             org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
-            CmisService cmisService = getCmisService(callContext);
+            CmisService cmisService = null;
+            try {
+                cmisService = getCmisService(callContext);
 
             
 
@@ -3038,7 +3068,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
 
             
-            return true; // We handled the response
+                return true; // We handled the response
+            } finally {
+                if (cmisService != null) {
+                    cmisService.close();
+                }
+            }
 
         } catch (Exception e) {
             
@@ -3091,7 +3126,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
             // Get CMIS service
             org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
-            CmisService cmisService = getCmisService(callContext);
+            CmisService cmisService = null;
+            try {
+                cmisService = getCmisService(callContext);
 
             // Extract parameters
             String changeToken = request.getParameter("changeToken");
@@ -3142,7 +3179,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
 
             
-            return true;
+                return true;
+            } finally {
+                if (cmisService != null) {
+                    cmisService.close();
+                }
+            }
 
         } catch (Exception e) {
             
@@ -3176,7 +3218,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             // Get the CMIS service and delete content
             org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
-            CmisService cmisService = getCmisService(callContext);
+            CmisService cmisService = null;
+            try {
+                cmisService = getCmisService(callContext);
 
             // CRITICAL TCK FIX: Use Holders to capture updated objectId and changeToken
             org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
@@ -3218,7 +3262,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 writer.write(jsonObject.toJSONString());
             }
             
-            return true; // Successfully handled
+                return true; // Successfully handled
+            } finally {
+                if (cmisService != null) {
+                    cmisService.close();
+                }
+            }
             
         } catch (Exception e) {
             
@@ -3252,7 +3301,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
             // Get the CMIS service
             org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
-            CmisService cmisService = getCmisService(callContext);
+            CmisService cmisService = null;
+            try {
+                cmisService = getCmisService(callContext);
 
             String resultObjectId = null;
 
@@ -3350,7 +3401,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
             }
 
-            return true; // Successfully handled
+                return true; // Successfully handled
+            } finally {
+                if (cmisService != null) {
+                    cmisService.close();
+                }
+            }
 
         } catch (Exception e) {
             
@@ -3841,7 +3897,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
             // Get the CMIS service
             org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
-            CmisService cmisService = getCmisService(callContext);
+            CmisService cmisService = null;
+            try {
+                cmisService = getCmisService(callContext);
 
             // Extract ACL from request parameters
             java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> addAces = extractAclFromRequest(request, "addACE");
@@ -3896,7 +3954,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 writer.write(json.toString());
             }
 
-            return true; // We handled the response
+                return true; // We handled the response
+            } finally {
+                if (cmisService != null) {
+                    cmisService.close();
+                }
+            }
 
         } catch (Exception e) {
             
