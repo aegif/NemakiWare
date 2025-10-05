@@ -30,6 +30,7 @@ contentCache:
 
 treeCache:
   statisticsEnabled: false
+  maxElementsInMemory: 0  # Disable TreeCache due to initialization timing issues with patches
 
 versionSeriesCache:
   statisticsEnabled: false

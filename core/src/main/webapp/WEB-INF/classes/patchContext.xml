@@ -34,6 +34,7 @@
 					</property>
 				</bean>
 				<!-- Initial content setup: Sites, Technical Documents folders and CMIS spec PDF -->
+				<!-- MUST run after SystemFolderSetup but before any caching initialization -->
 				<bean class="jp.aegif.nemaki.patch.Patch_InitialContentSetup">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />
@@ -46,12 +47,6 @@
 					</property>
 				</bean>
 				<bean class="jp.aegif.nemaki.patch.Patch_TestUserInitialization">
-					<property name="patchUtil">
-						<ref bean="patchUtil" />
-					</property>
-				</bean>
-				<!-- Initial Content Setup: Create Sites and Technical Documents folders with proper ACL -->
-				<bean class="jp.aegif.nemaki.patch.Patch_InitialContentSetup">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />
 					</property>
