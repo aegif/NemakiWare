@@ -35,10 +35,11 @@ function AppContent() {
   }
 
   return (
-    <Router basename="/core/ui">
+    <Router basename="/core/ui/dist">
       <Layout repositoryId={authToken.repositoryId}>
         <Routes>
           <Route path="/" element={<Navigate to="/documents" replace />} />
+          <Route path="/index.html" element={<Navigate to="/documents" replace />} />
           <Route path="/documents" element={
             <ProtectedRoute>
               <DocumentList repositoryId={authToken.repositoryId} />
