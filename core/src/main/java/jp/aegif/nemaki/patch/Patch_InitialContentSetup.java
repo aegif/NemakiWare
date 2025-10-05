@@ -5,6 +5,7 @@ import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
@@ -267,36 +268,146 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
     }
 
     /**
-     * Register CMIS specification PDF in Technical Documents folder
-     *
-     * TODO: Implement PDF document registration
-     * Currently just logs placeholder - actual implementation requires:
-     * - PDF file resource in classpath (e.g., /resources/cmis-spec-v1.1.pdf)
-     * - Document creation with content stream
-     * - Proper MIME type and metadata
+     * Register welcome document in Technical Documents folder
+     * Creates a simple welcome text document for new installations
      */
     private void registerCMISSpecificationPDF(ContentService contentService, SystemCallContext callContext,
                                              String repositoryId, String parentFolderId) {
         try {
-            log.info("CMIS specification PDF registration placeholder for repository: " + repositoryId);
-            log.info("TODO: Add CMIS spec PDF to /resources and implement createDocument with content stream");
+            final String documentName = "Welcome to NemakiWare.txt";
+
+            log.info("Checking for welcome document in Technical Documents folder: " + repositoryId);
 
             // Check if document already exists
-            // Document existingDoc = findExistingDocumentByName(repositoryId, parentFolderId, "CMIS-v1.1-Specification.pdf");
-            // if (existingDoc != null) {
-            //     log.info("CMIS specification PDF already exists, skipping registration");
-            //     return;
-            // }
+            Document existingDoc = findExistingDocumentByName(repositoryId, parentFolderId, documentName);
+            if (existingDoc != null) {
+                log.info("Welcome document already exists, skipping registration");
+                return;
+            }
 
-            // TODO: Load PDF from classpath and create document
-            // InputStream pdfStream = getClass().getResourceAsStream("/resources/cmis-spec-v1.1.pdf");
-            // if (pdfStream != null) {
-            //     createDocumentWithContent(contentService, callContext, repositoryId, parentFolderId,
-            //                               "CMIS-v1.1-Specification.pdf", "application/pdf", pdfStream);
-            // }
+            // Create welcome document with content
+            String welcomeContent = "Welcome to NemakiWare - Open Source CMIS Repository\n" +
+                    "================================================\n\n" +
+                    "NemakiWare is a CMIS 1.1 compliant content management system.\n\n" +
+                    "Features:\n" +
+                    "- CMIS 1.1 full compliance (AtomPub, Browser Binding, Web Services)\n" +
+                    "- Document versioning and workflow\n" +
+                    "- Full-text search with Apache Solr\n" +
+                    "- Access control and permissions management\n" +
+                    "- React-based modern UI\n\n" +
+                    "For more information, visit: https://github.com/aegif/NemakiWare\n\n" +
+                    "This document was automatically created during system initialization.\n";
+
+            createDocumentWithContent(contentService, callContext, repositoryId, parentFolderId,
+                                    documentName, "text/plain", welcomeContent);
+
+            log.info("✅ Welcome document created successfully in Technical Documents folder");
 
         } catch (Exception e) {
-            log.error("Error registering CMIS specification PDF", e);
+            log.error("Error registering welcome document", e);
+        }
+    }
+
+    /**
+     * Find existing document by name using CouchDB children view
+     */
+    private Document findExistingDocumentByName(String repositoryId, String parentFolderId, String documentName) {
+        try {
+            CloudantClientWrapper client = patchUtil.getConnectorPool().getClient(repositoryId);
+            if (client == null) {
+                log.error("Could not get Cloudant client for repository: " + repositoryId);
+                return null;
+            }
+
+            Map<String, Object> queryParams = new HashMap<>();
+            queryParams.put("key", parentFolderId);
+            queryParams.put("include_docs", true);
+
+            com.ibm.cloud.cloudant.v1.model.ViewResult result = client.queryView("_repo", "children", queryParams);
+
+            if (result.getRows() != null) {
+                for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
+                    if (row.getDoc() != null) {
+                        com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+                        Map<String, Object> docProperties = doc.getProperties();
+
+                        if (docProperties != null) {
+                            String name = (String) docProperties.get("name");
+                            String type = (String) docProperties.get("type");
+
+                            if ("cmis:document".equals(type) && documentName.equals(name)) {
+                                log.info("Found existing document: " + documentName + " with ID: " + row.getId());
+                                ContentService contentService = patchUtil.getContentService();
+                                Content content = contentService.getContent(repositoryId, row.getId());
+                                if (content instanceof Document) {
+                                    return (Document) content;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return null;
+
+        } catch (Exception e) {
+            log.warn("Error checking for existing document: " + documentName, e);
+            return null;
+        }
+    }
+
+    /**
+     * Create document with text content
+     */
+    private void createDocumentWithContent(ContentService contentService, SystemCallContext callContext,
+                                          String repositoryId, String parentFolderId,
+                                          String documentName, String mimeType, String textContent) {
+        try {
+            log.info("Creating document: " + documentName + " in folder: " + parentFolderId);
+
+            // Prepare CMIS properties
+            PropertiesImpl properties = new PropertiesImpl();
+            PropertyIdImpl objectTypeId = new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:document");
+            properties.addProperty(objectTypeId);
+            PropertyStringImpl name = new PropertyStringImpl(PropertyIds.NAME, documentName);
+            properties.addProperty(name);
+
+            // Get parent folder
+            Folder parentFolder = (Folder) contentService.getContent(repositoryId, parentFolderId);
+            if (parentFolder == null) {
+                log.error("Parent folder not found with ID: " + parentFolderId);
+                return;
+            }
+
+            // Create content stream from text
+            byte[] contentBytes = textContent.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            java.io.ByteArrayInputStream contentStream = new java.io.ByteArrayInputStream(contentBytes);
+
+            org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl cmisContentStream =
+                new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
+                    documentName,
+                    java.math.BigInteger.valueOf(contentBytes.length),
+                    mimeType,
+                    contentStream
+                );
+
+            // Create ACL for document (same as folders: admin:all, GROUP_EVERYONE:read, system:all)
+            org.apache.chemistry.opencmis.commons.data.Acl acl = createDefaultFolderAcl();
+
+            // Create document with content
+            // Parameters: callContext, repositoryId, properties, parentFolder, contentStream,
+            //             versioningState, policies, addAces, removeAces
+            Document created = contentService.createDocument(callContext, repositoryId, properties,
+                                                           parentFolder, cmisContentStream,
+                                                           null,  // versioningState
+                                                           null,  // policies
+                                                           acl,   // addAces
+                                                           null); // removeAces
+
+            log.info("✅ Document '" + documentName + "' created successfully with ID: " + created.getId());
+
+        } catch (Exception e) {
+            log.error("Failed to create document: " + documentName, e);
         }
     }
 }

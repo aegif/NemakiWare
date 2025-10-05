@@ -1600,29 +1600,50 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		try {
 			// Use ViewQuery to get all group items from groupItemsById view
 			Map<String, Object> queryParams = new HashMap<String, Object>();
+			queryParams.put("include_docs", true);  // CRITICAL: Include full documents
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams);
-			
+
 			List<GroupItem> groupItems = new ArrayList<GroupItem>();
-			
+
+			log.error("getGroupItems DEBUG: result.getRows() = " + (result.getRows() != null ? result.getRows().size() + " rows" : "null"));
+
 			if (result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
+					log.error("getGroupItems DEBUG: Processing row with ID: " + row.getId());
+					log.error("getGroupItems DEBUG: row.getDoc() = " + (row.getDoc() != null ? "present" : "NULL"));
 					if (row.getDoc() != null) {
 						try {
 							ObjectMapper mapper = createConfiguredObjectMapper();
-							CouchGroupItem cgi = mapper.convertValue(row.getDoc(), CouchGroupItem.class);
+
+							// CRITICAL FIX: Use Document.getProperties() to get Map<String, Object>
+							// Cloudant SDK Document needs to be converted to Map before passing to ObjectMapper
+							com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+							log.error("getGroupItems DEBUG: doc type = " + doc.getClass().getName());
+							Map<String, Object> docProperties = doc.getProperties();
+							log.error("getGroupItems DEBUG: docProperties = " + (docProperties != null ? "present, size=" + docProperties.size() : "NULL"));
+							if (docProperties != null && docProperties.containsKey("groupId")) {
+								log.error("getGroupItems DEBUG: groupId in map = " + docProperties.get("groupId"));
+							}
+
+							log.error("getGroupItems DEBUG: Converting doc for ID: " + row.getId());
+							CouchGroupItem cgi = mapper.convertValue(docProperties, CouchGroupItem.class);
+							log.error("getGroupItems DEBUG: Converted CGI: groupId=" + (cgi != null ? cgi.getGroupId() : "null"));
 							if (cgi != null) {
-								groupItems.add(cgi.convert());
+								GroupItem gi = cgi.convert();
+								log.error("getGroupItems DEBUG: Converted GroupItem: groupId=" + (gi != null ? gi.getGroupId() : "null"));
+								groupItems.add(gi);
 							}
 						} catch (Exception e) {
-							log.warn("Failed to convert group item document: " + e.getMessage());
+							log.error("Failed to convert group item document: " + e.getMessage(), e);
 						}
 					}
 				}
 			}
-			
+
+			log.error("getGroupItems DEBUG: Returning " + groupItems.size() + " group items");
 			return groupItems;
 		} catch (Exception e) {
-			log.error("Error getting group items for repository: " + repositoryId + ", error: " + e.getMessage());
+			log.error("Error getting group items for repository: " + repositoryId + ", error: " + e.getMessage(), e);
 			return new ArrayList<GroupItem>();
 		}
 	}
