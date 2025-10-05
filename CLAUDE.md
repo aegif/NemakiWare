@@ -305,7 +305,7 @@ Total time: 02:27 min
 
 ### TCK Test Suite Status Update (2025-10-05 Evening)
 
-**CRITICAL SUCCESS**: Core TCK test groups achieving 100% pass rate with 12/12 tests successful
+**STATUS**: Partial TCK compliance - Core operations passing, CRUD/Query operations require timeout resolution
 
 **Test Execution Summary (2025-10-05 23:28)**:
 ```bash
@@ -322,45 +322,88 @@ Total time: 02:28 min
 - ✅ **ControlTestGroup**: 1/1 PASS (10.086 sec) - ACL smoke test
 - ✅ **FilingTestGroup**: 1 SKIPPED (0.002 sec) - intentionally disabled
 - ✅ **VersioningTestGroup**: 4/4 PASS (30.339 sec) - versioning operations
+- ❌ **CrudTestGroup**: TIMEOUT (19 tests blocked - investigation in progress)
+- ❌ **QueryTestGroup**: TIMEOUT (investigation in progress)
 
 **CMIS 1.1 Compliance Status**:
-- **Core Functionality**: ✅ FULLY COMPLIANT (12/12 tests passing)
-- **Type System**: ✅ FULLY COMPLIANT (nemaki:parentChildRelationship resolved)
-- **Access Control**: ✅ FULLY COMPLIANT (ACL operations working)
-- **Versioning**: ✅ FULLY COMPLIANT (all versioning tests passing)
+- **Basic Operations**: ✅ VERIFIED (repository, types, ACL, versioning)
+- **CRUD Operations**: ❌ **INCOMPLETE** - Timeout preventing full validation
+- **Query System**: ❌ **INCOMPLETE** - Timeout preventing full validation
+- **Overall TCK Status**: ⚠️ **NOT 100% COMPLIANT** - Requires timeout resolution
 
-**Known Limitations (TCK Framework Issues)**:
+**Known Issues Requiring Resolution**:
 - ⚠️ **CrudTestGroup** (19 tests): Timeout after folder creation phase
-  - Root Cause: Test hangs in verification phase after successful folder creation
+  - Symptom: Test hangs in verification phase after successful folder creation
   - Server Behavior: Correctly processes all requests (verified via server logs)
-  - Impact: Individual test `createInvalidTypeTest` passes (5.4 sec), full suite hangs
-  - Diagnosis: OpenCMIS TCK framework issue or parameter mismatch, NOT server implementation
+  - Individual Test: `createInvalidTypeTest` passes (5.4 sec)
+  - Multiple Tests: Hang/timeout when running together
+  - **Action Required**: Identify root cause and implement fix
 
 - ⚠️ **QueryTestGroup**: Timeout (similar pattern to CrudTestGroup)
+  - **Action Required**: Investigate after CrudTestGroup resolution
 
-**Timeout Investigation Findings (2025-10-05)**:
+**Timeout Investigation Findings (2025-10-05 Evening - Detailed Analysis)**:
+
+**Individual Test Results** (60 second timeout each):
 ```
-Server Log Analysis:
-- Folders Created: 5 successful (createFolder operations logged)
-- Last Operation: getFolderParent at 14:22:30
-- Delete Operations: NONE (test never reached deletion phase)
-- Test Timeout: 14:22:45 (15 seconds after last request)
+PASS ✅:
+- createBigDocument (single large document)
+- createDocumentWithoutContent (document without content stream)
+- createInvalidTypeTest (invalid type validation)
+- createAndDeleteRelationshipTest (relationship CRUD)
+- setAndDeleteContentTest (content stream operations)
 
-Conclusion: Test framework hangs client-side after server successfully processes requests
+TIMEOUT ❌:
+- createAndDeleteFolderTest (folder CRUD operations)
+- createAndDeleteDocumentTest (multiple document CRUD)
+- createAndDeleteItemTest (item CRUD operations)
+- deleteTreeTest (tree deletion operations)
 ```
 
-**Configuration Status**:
+**Pattern Analysis**:
+- ✅ **Relationship/Content deletions**: PASS
+- ❌ **Primary object deletions** (Document, Folder, Item): TIMEOUT
+- ❌ **Multiple object operations**: TIMEOUT
+- ✅ **Single object operations** (no delete): PASS
+
+**Hang Point Identification** (from surefire output):
+```
+[TestGroupBase] Running tests...
+[JUnitRunner] run() called
+  Create and Delete Folder Test (BROWSER)
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Session created successfully
+<HANG - No further output>
+```
+
+**Conclusion**: Hang occurs **immediately after session creation**, before any test logic execution. Not a server-side issue - server receives NO requests after session creation.
+
+**Root Cause Hypothesis**:
+OpenCMIS client session initialization for CRUD tests attempts post-session operations (e.g., test folder creation, repository introspection) that block indefinitely. This does NOT occur for simple read-only tests (BasicsTestGroup, TypesTestGroup).
+
+**Server Log Analysis**:
+- Server processes all requests successfully
+- DELETE operations never received (test hangs before reaching delete phase)
+- Last operations: getContentStream, getAllowableActions, getAppliedPolicies
+- No errors or exceptions in server logs
+
+**Configuration Attempts** (no improvement):
 - Archive Creation: Disabled (`archive.create.enabled=false`)
-- Read Timeout: 600000ms (10 minutes)
-- Connect Timeout: 30000ms (30 seconds)
-- Debug Mode: Temporarily enabled for investigation
+- Read Timeout: Extended to 600000ms (10 minutes)
+- TCK Parameters: Added documentcount=5, foldercount=3
+- Debug Mode: Enabled httpinvoker.debug and tck.debug
 
-**Recommendation**:
-Focus on core compliance validation (12/12 passing tests) rather than TCK framework compatibility issues. CrudTestGroup and QueryTestGroup timeouts are client-side test framework issues, not server implementation problems.
+**Next Actions Required**:
+1. ⚠️ Investigate OpenCMIS client session initialization for CRUD tests
+2. ⚠️ Compare session creation flow between passing tests (BasicsTestGroup) and failing tests (CrudTestGroup)
+3. ⚠️ Check for threading issues or resource locking in OpenCMIS client libraries
+4. ⚠️ Consider alternative: Mark timeout tests as @Ignore and document limitation
 
 ### Code Review Response: Production Readiness Hardening (2025-10-05 - Post-TCK)
 
-**QUALITY ASSURANCE MILESTONE**: Addressed external code review findings while maintaining 100% TCK test pass rate, focusing on production readiness and operational excellence.
+**QUALITY ASSURANCE MILESTONE**: Addressed external code review findings while maintaining passing TCK test compliance for core operations, focusing on production readiness and operational excellence.
+
+**NOTE**: This section was written before full TCK timeout investigation. Current status: 12/12 core tests passing, CrudTestGroup/QueryTestGroup require further investigation.
 
 **Review Context**: External reviewer analyzed the codebase for production readiness after TCK completion, identifying three quality findings across logging, error handling, and data cleanup patterns.
 
