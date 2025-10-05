@@ -8,6 +8,87 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Recent Major Changes (2025-10-05)
 
+### CMIS Folder Visibility Fix - Document Type Casting Issue
+
+**CRITICAL FOLDER VISIBILITY FIX**: Resolved folder visibility issue where CMIS API returned `numItems=0` despite CouchDB containing 3 folders (.system, Sites, Technical Documents).
+
+**Problem Summary (2025-10-05 Evening Session)**:
+- **Symptom**: CMIS AtomPub and Browser Binding returned `<cmisra:numItems>0</cmisra:numItems>` for root folder
+- **Impact**: Playwright ACL tests failing, React UI showing no folders
+- **Investigation Time**: ~3 hours of detailed debugging with System.err.println() traces
+
+**Root Cause Discovered**:
+```java
+// Line 1176 in ContentDaoServiceImpl.java - BEFORE
+Map<String, Object> doc = (Map<String, Object>) row.getDoc();
+// ClassCastException: com.ibm.cloud.cloudant.v1.model.Document cannot be cast to java.util.Map
+```
+
+**Technical Analysis**:
+- Cloudant Java SDK's `ViewResultRow.getDoc()` returns `com.ibm.cloud.cloudant.v1.model.Document` object
+- Legacy Ektorp-based code expected `Map<String, Object>`
+- ClassCastException occurred in all 3 child folder iterations, resulting in 0 children returned
+- Exception was silently caught, making the issue difficult to diagnose
+
+**Solution Implemented** (ContentDaoServiceImpl.java Lines 1176-1191):
+```java
+// Convert document to appropriate Content type
+Object docObj = row.getDoc();
+String objectId = null;
+String type = null;
+
+if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
+    com.ibm.cloud.cloudant.v1.model.Document document = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
+    objectId = document.getId();
+    Map<String, Object> props = document.getProperties();
+    if (props != null) {
+        type = (String) props.get("type");
+    }
+} else if (docObj instanceof Map) {
+    Map<String, Object> doc = (Map<String, Object>) docObj;
+    objectId = (String) doc.get("_id");
+    type = (String) doc.get("type");
+}
+```
+
+**Verification Results**:
+```bash
+# AtomPub Binding
+curl -u admin:admin "http://localhost:8080/core/atom/bedroom/children?id=e02f784f8360a02cc14d1314c10038ff"
+# Result: <cmisra:numItems>3</cmisra:numItems> ✅
+
+# Browser Binding
+curl -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisselector=children" | jq '.objects | length'
+# Result: 3 ✅
+
+# Folder Names
+curl -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisselector=children" | jq -r '.objects[].object.properties."cmis:name".value'
+# Result:
+# Technical Documents
+# Sites
+# .system
+```
+
+**Files Modified**:
+- `core/src/main/java/jp/aegif/nemaki/dao/impl/couch/ContentDaoServiceImpl.java` (Lines 1173-1191)
+
+**Impact**:
+- ✅ CMIS folder retrieval now working correctly
+- ✅ React UI can now display folder tree
+- ✅ Playwright ACL tests can now access folders for permission testing
+- ✅ Both AtomPub and Browser Binding return correct child counts
+
+**Debugging Techniques Used**:
+1. System.err.println() to bypass log frameworks
+2. Reflection to inspect proxy objects and method signatures
+3. Direct CouchDB curl queries to verify data existence
+4. Incremental code simplification to isolate the issue
+5. rows variable caching to avoid multiple getRows() calls
+
+**Related Issue**: This fix is part of the Cloudant SDK migration from legacy Ektorp library, where Document object handling differs between the two libraries.
+
+---
+
 ### TCK CrudTestGroup and ControlTestGroup CMIS Compliance Fixes
 
 **CRITICAL TCK COMPLIANCE MILESTONE**: Resolved two major CMIS 1.1 compliance violations in relationship handling and ACL operations, achieving 100% success rate in verified test groups.

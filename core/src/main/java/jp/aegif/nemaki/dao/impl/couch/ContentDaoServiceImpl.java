@@ -1173,9 +1173,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					if (row.getDoc() != null) {
 						try {
 							// Convert document to appropriate Content type
-							Map<String, Object> doc = (Map<String, Object>) row.getDoc();
-							String type = (String) doc.get("type");
-							String objectId = (String) doc.get("_id");
+							Object docObj = row.getDoc();
+							String objectId = null;
+							String type = null;
+
+							if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
+								com.ibm.cloud.cloudant.v1.model.Document document = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
+								objectId = document.getId();
+								Map<String, Object> props = document.getProperties();
+								if (props != null) {
+									type = (String) props.get("type");
+								}
+							} else if (docObj instanceof Map) {
+								Map<String, Object> doc = (Map<String, Object>) docObj;
+								objectId = (String) doc.get("_id");
+								type = (String) doc.get("type");
+							}
 							
 							log.debug("DEBUG getChildren: processing objectId=" + objectId + ", type=" + type);
 							
