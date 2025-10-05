@@ -59,11 +59,11 @@ test.describe('NemakiWare Authentication', () => {
     await expect(page.locator('.ant-layout-content')).toBeVisible({ timeout: 10000 });
 
     // Verify user is shown in header (admin)
-    const userDisplay = page.locator('text=admin');
+    const userDisplay = page.locator('.ant-layout-header').locator('text=admin');
     await expect(userDisplay).toBeVisible({ timeout: 5000 });
 
     // Verify repository is shown
-    const repoDisplay = page.locator('text=bedroom');
+    const repoDisplay = page.locator('.ant-layout-header').locator('text=bedroom');
     await expect(repoDisplay).toBeVisible({ timeout: 5000 });
   });
 
