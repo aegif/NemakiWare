@@ -3502,8 +3502,75 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     
                     return datetimeProp;
                     
-                default:
+                case DECIMAL:
+                    org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalDefinitionImpl decimalProp = 
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalDefinitionImpl();
+                    copyCommonPropertyAttributes(decimalProp, originalPropDef, correctId);
                     
+                    // Copy Decimal-specific attributes if original is DecimalPropertyDefinition
+                    if (originalPropDef instanceof org.apache.chemistry.opencmis.commons.definitions.PropertyDecimalDefinition) {
+                        org.apache.chemistry.opencmis.commons.definitions.PropertyDecimalDefinition originalDecimalProp = 
+                            (org.apache.chemistry.opencmis.commons.definitions.PropertyDecimalDefinition) originalPropDef;
+                        decimalProp.setMinValue(originalDecimalProp.getMinValue());
+                        decimalProp.setMaxValue(originalDecimalProp.getMaxValue());
+                        decimalProp.setPrecision(originalDecimalProp.getPrecision());
+                        decimalProp.setDefaultValue((java.util.List<java.math.BigDecimal>) originalDecimalProp.getDefaultValue());
+                        decimalProp.setChoices((java.util.List<org.apache.chemistry.opencmis.commons.definitions.Choice<java.math.BigDecimal>>) originalDecimalProp.getChoices());
+                    }
+                    
+                    return decimalProp;
+                    
+                case ID:
+                    org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdDefinitionImpl idProp = 
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdDefinitionImpl();
+                    copyCommonPropertyAttributes(idProp, originalPropDef, correctId);
+                    
+                    // Copy Id-specific attributes if original is IdPropertyDefinition
+                    if (originalPropDef instanceof org.apache.chemistry.opencmis.commons.definitions.PropertyIdDefinition) {
+                        org.apache.chemistry.opencmis.commons.definitions.PropertyIdDefinition originalIdProp = 
+                            (org.apache.chemistry.opencmis.commons.definitions.PropertyIdDefinition) originalPropDef;
+                        idProp.setDefaultValue((java.util.List<String>) originalIdProp.getDefaultValue());
+                        idProp.setChoices((java.util.List<org.apache.chemistry.opencmis.commons.definitions.Choice<String>>) originalIdProp.getChoices());
+                    }
+                    
+                    return idProp;
+                    
+                case URI:
+                    org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyUriDefinitionImpl uriProp = 
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyUriDefinitionImpl();
+                    copyCommonPropertyAttributes(uriProp, originalPropDef, correctId);
+                    
+                    // Copy Uri-specific attributes if original is UriPropertyDefinition
+                    if (originalPropDef instanceof org.apache.chemistry.opencmis.commons.definitions.PropertyUriDefinition) {
+                        org.apache.chemistry.opencmis.commons.definitions.PropertyUriDefinition originalUriProp = 
+                            (org.apache.chemistry.opencmis.commons.definitions.PropertyUriDefinition) originalPropDef;
+                        uriProp.setDefaultValue((java.util.List<String>) originalUriProp.getDefaultValue());
+                        uriProp.setChoices((java.util.List<org.apache.chemistry.opencmis.commons.definitions.Choice<String>>) originalUriProp.getChoices());
+                    }
+                    
+                    return uriProp;
+                    
+                case HTML:
+                    org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyHtmlDefinitionImpl htmlProp = 
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyHtmlDefinitionImpl();
+                    copyCommonPropertyAttributes(htmlProp, originalPropDef, correctId);
+                    
+                    // Copy Html-specific attributes if original is HtmlPropertyDefinition
+                    if (originalPropDef instanceof org.apache.chemistry.opencmis.commons.definitions.PropertyHtmlDefinition) {
+                        org.apache.chemistry.opencmis.commons.definitions.PropertyHtmlDefinition originalHtmlProp = 
+                            (org.apache.chemistry.opencmis.commons.definitions.PropertyHtmlDefinition) originalPropDef;
+                        htmlProp.setDefaultValue((java.util.List<String>) originalHtmlProp.getDefaultValue());
+                        htmlProp.setChoices((java.util.List<org.apache.chemistry.opencmis.commons.definitions.Choice<String>>) originalHtmlProp.getChoices());
+                    }
+                    
+                    return htmlProp;
+                    
+                default:
+                    // CMIS 1.1 COMPLIANCE: All standard property types (STRING, BOOLEAN, INTEGER, DATETIME, 
+                    // DECIMAL, ID, URI, HTML) are now handled. This fallback should never be reached for
+                    // CMIS-compliant type definitions. If reached, it indicates an unknown property type.
+                    log.warn("Unknown property type " + propertyType + " for property " + correctId + 
+                             ", falling back to String definition");
                     
                     // Fallback: create a generic String property
                     org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl fallbackProp = 
