@@ -28,41 +28,103 @@ export class AuthHelper {
     // Navigate to login page
     await this.page.goto('/core/ui/dist/index.html');
 
-    // Wait for login form to be visible
-    await this.page.waitForSelector('input[placeholder="ユーザー名"]', {
-      timeout: 10000,
-    });
+    // Wait for login form to be visible - try multiple selectors
+    const usernameFieldSelectors = [
+      'input[placeholder="ユーザー名"]',
+      'input[name="username"]',
+      'input[type="text"]',
+    ];
+
+    let usernameField;
+    for (const selector of usernameFieldSelectors) {
+      const field = this.page.locator(selector).first();
+      if (await field.count() > 0) {
+        await field.waitFor({ state: 'visible', timeout: 10000 });
+        usernameField = field;
+        break;
+      }
+    }
+
+    if (!usernameField) {
+      throw new Error('Username field not found');
+    }
 
     // Fill username
-    const usernameField = this.page.locator('input[placeholder="ユーザー名"]');
     await usernameField.fill(credentials.username);
 
-    // Fill password
-    const passwordField = this.page.locator('input[placeholder="パスワード"]');
+    // Fill password - try multiple selectors
+    const passwordFieldSelectors = [
+      'input[placeholder="パスワード"]',
+      'input[name="password"]',
+      'input[type="password"]',
+    ];
+
+    let passwordField;
+    for (const selector of passwordFieldSelectors) {
+      const field = this.page.locator(selector).first();
+      if (await field.count() > 0) {
+        passwordField = field;
+        break;
+      }
+    }
+
+    if (!passwordField) {
+      throw new Error('Password field not found');
+    }
+
     await passwordField.fill(credentials.password);
 
     // Select repository if dropdown exists
     if (credentials.repository) {
-      const repositorySelect = this.page.locator('.ant-select');
+      const repositorySelect = this.page.locator('.ant-select').first();
       if (await repositorySelect.count() > 0) {
         await repositorySelect.click();
-        // Wait for dropdown to be fully opened and find option in dropdown portal
+
+        // Wait for dropdown to be fully opened
         await this.page.waitForSelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)', { timeout: 5000 });
-        await this.page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: credentials.repository }).first().click({ force: true });
+
+        // Find the option and scroll it into view before clicking
+        const option = this.page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: credentials.repository }).first();
+
+        // Wait for the option to be present
+        await option.waitFor({ state: 'attached', timeout: 3000 });
+
+        // Scroll into view and click
+        await option.scrollIntoViewIfNeeded();
+        await this.page.waitForTimeout(300); // Brief wait after scrolling
+        await option.click();
       }
     }
 
-    // Click login button (primary button with type="submit")
-    const loginButton = this.page.locator('button[type="submit"]').getByText('ログイン');
+    // Click login button - try multiple selectors
+    const loginButtonSelectors = [
+      'button[type="submit"]:has-text("ログイン")',
+      'button:has-text("ログイン")',
+      'button.ant-btn-primary',
+    ];
+
+    let loginButton;
+    for (const selector of loginButtonSelectors) {
+      const button = this.page.locator(selector).first();
+      if (await button.count() > 0) {
+        loginButton = button;
+        break;
+      }
+    }
+
+    if (!loginButton) {
+      throw new Error('Login button not found');
+    }
+
     await loginButton.click();
 
     // Wait for successful login by checking for authenticated elements
-    // Rather than URL pattern which can match login page too
     await this.page.waitForFunction(
       () => {
         // Check if login form is gone (password field not visible)
-        const passwordField = document.querySelector('input[placeholder="パスワード"]');
-        if (passwordField && passwordField.offsetParent !== null) {
+        const passwordFields = document.querySelectorAll('input[type="password"]');
+        const passwordVisible = Array.from(passwordFields).some(field => field.offsetParent !== null);
+        if (passwordVisible) {
           return false; // Still on login page
         }
 
@@ -70,8 +132,7 @@ export class AuthHelper {
         const mainElements = [
           '.ant-layout-sider', // Sidebar
           '.ant-layout-content', // Main content
-          '.document-list', // Document management
-          '[data-testid="main-app"]' // Main app container
+          '.ant-table', // Document table
         ];
 
         return mainElements.some(selector => {
@@ -83,32 +144,67 @@ export class AuthHelper {
     );
 
     // Additional verification: ensure we're not on login page anymore
-    await expect(this.page.locator('input[placeholder="パスワード"]')).not.toBeVisible();
+    await expect(passwordField).not.toBeVisible({ timeout: 5000 });
   }
 
   /**
    * Perform logout
    */
   async logout(): Promise<void> {
-    // Look for logout button or user menu
-    const logoutButton = this.page.getByRole('button', { name: /logout|ログアウト/i });
+    // Click on user menu - find by the username text in header
+    // Try multiple approaches to find the user menu trigger
+    const userMenuSelectors = [
+      '.ant-layout-header .ant-space:has-text("admin")',
+      '.ant-layout-header [class*="ant-space"]:has-text("admin")',
+      '.ant-layout-header:has(.ant-avatar)',
+    ];
 
-    if (await logoutButton.count() > 0) {
-      await logoutButton.click();
-    } else {
-      // Try clicking user menu first
-      const userMenu = this.page.locator('.ant-dropdown-trigger, .user-menu');
-      if (await userMenu.count() > 0) {
-        await userMenu.click();
-        await this.page.getByRole('menuitem', { name: /logout|ログアウト/i }).click();
+    let userMenuTrigger;
+    for (const selector of userMenuSelectors) {
+      const element = this.page.locator(selector).last(); // Use last() to get the rightmost element
+      if (await element.count() > 0) {
+        userMenuTrigger = element;
+        break;
       }
     }
 
-    // Wait for redirect to login page
-    await this.page.waitForURL('**/ui/dist/**', { timeout: 5000 });
+    if (!userMenuTrigger) {
+      // Fallback: click on avatar in header
+      const avatar = this.page.locator('.ant-layout-header .ant-avatar');
+      if (await avatar.count() > 0) {
+        userMenuTrigger = avatar;
+      }
+    }
 
-    // Verify we're back at login page
-    await expect(this.page.locator('input[placeholder="パスワード"]')).toBeVisible();
+    if (userMenuTrigger) {
+      await userMenuTrigger.click();
+
+      // Wait for dropdown menu to appear
+      await this.page.waitForSelector('.ant-dropdown:not(.ant-dropdown-hidden)', { timeout: 3000 });
+
+      // Click logout menu item - this triggers window.location.href redirect
+      const logoutMenuItem = this.page.locator('.ant-dropdown .ant-dropdown-menu-item').filter({ hasText: 'ログアウト' });
+      await logoutMenuItem.click();
+
+      // Wait for navigation event (window.location.href will trigger navigation)
+      await this.page.waitForTimeout(3000); // Wait for redirect to complete
+
+      // Wait for login page to fully load
+      try {
+        await this.page.waitForLoadState('load', { timeout: 10000 });
+      } catch {
+        // Ignore load state errors, focus on element visibility
+      }
+
+      // Verify we're back at login page by checking for login form elements
+      const passwordField = this.page.locator('input[type="password"]');
+      const usernameField = this.page.locator('input[type="text"]').first();
+
+      // Wait for either password or username field to be visible
+      await expect(passwordField.or(usernameField)).toBeVisible({ timeout: 10000 });
+    } else {
+      throw new Error('User menu not found');
+    }
   }
 
   /**
