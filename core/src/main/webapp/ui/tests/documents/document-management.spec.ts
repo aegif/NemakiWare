@@ -236,6 +236,109 @@ test.describe('Document Management', () => {
     }
   });
 
+  test('should handle folder creation', async ({ page }) => {
+    // Wait for page to load
+    await page.waitForTimeout(2000);
+
+    // Look for folder creation button (フォルダ作成)
+    const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
+    const buttonCount = await createFolderButton.count();
+
+    if (buttonCount > 0) {
+      // Click create folder button to open modal
+      await createFolderButton.click();
+
+      // Wait for modal to appear
+      await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
+
+      // Generate unique folder name with timestamp
+      const timestamp = Date.now();
+      const folderName = `test-folder-${timestamp}`;
+
+      // Fill in folder name
+      const nameInput = page.locator('.ant-modal input[placeholder*="名前"], .ant-modal input[id*="name"]');
+      await nameInput.fill(folderName);
+
+      // Click submit button
+      const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary');
+      await submitButton.click();
+
+      // Wait for success message
+      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+
+      // Wait for modal to close
+      await page.waitForTimeout(1000);
+
+      // Verify folder appears in the list
+      const createdFolder = page.locator(`text=${folderName}`);
+      await expect(createdFolder).toBeVisible({ timeout: 5000 });
+    } else {
+      test.skip('Folder creation functionality not found in current UI');
+    }
+  });
+
+  test('should handle document deletion', async ({ page }) => {
+    // Wait for page to load
+    await page.waitForTimeout(2000);
+
+    // First upload a test document to delete
+    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    if (await uploadButton.count() > 0) {
+      await uploadButton.click();
+      await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
+
+      const timestamp = Date.now();
+      const filename = `test-delete-${timestamp}.txt`;
+
+      const fileInput = page.locator('.ant-modal input[type="file"]');
+      await testHelper.uploadTestFile(
+        '.ant-modal input[type="file"]',
+        filename,
+        'This document will be deleted.'
+      );
+
+      await page.waitForTimeout(1000);
+
+      const submitBtn = page.locator('.ant-modal button[type="submit"]');
+      await submitBtn.click();
+
+      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+      await page.waitForTimeout(2000);
+
+      // Now find and delete the uploaded document
+      // Look for delete button in the row containing the filename
+      const documentRow = page.locator('tr').filter({ hasText: filename });
+      const deleteButton = documentRow.locator('button').filter({ has: page.locator('[data-icon="delete"]') });
+
+      if (await deleteButton.count() > 0) {
+        await deleteButton.click();
+
+        // Wait for confirmation popconfirm
+        await page.waitForTimeout(500);
+
+        // Click OK/確認 button in popconfirm
+        const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button:has-text("OK")');
+        if (await confirmButton.count() > 0) {
+          await confirmButton.click();
+
+          // Wait for success message
+          await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+
+          // Verify document is removed from list
+          await page.waitForTimeout(1000);
+          const deletedDoc = page.locator(`text=${filename}`);
+          await expect(deletedDoc).not.toBeVisible({ timeout: 5000 });
+        } else {
+          test.skip('Delete confirmation not found');
+        }
+      } else {
+        test.skip('Delete button not found');
+      }
+    } else {
+      test.skip('Upload functionality not available for deletion test');
+    }
+  });
+
   test('should handle document download', async ({ page }) => {
     // Wait for table to load
     await page.waitForTimeout(2000);
