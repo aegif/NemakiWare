@@ -50,6 +50,12 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Initial Content Setup: Create Sites and Technical Documents folders with proper ACL -->
+				<bean class="jp.aegif.nemaki.patch.Patch_InitialContentSetup">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
