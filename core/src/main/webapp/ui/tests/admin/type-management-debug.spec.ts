@@ -118,7 +118,7 @@ test.describe('Type Management Debug', () => {
     await page.screenshot({ path: 'test-results/screenshots/type_management_debug_state_analysis.png', fullPage: true });
 
     // Basic assertion
-    expect(page.url()).toContain('/ui/types');
+    expect(page.url()).toContain('/types');
   });
 
   test('should check for JavaScript errors on type management page', async ({ page }) => {

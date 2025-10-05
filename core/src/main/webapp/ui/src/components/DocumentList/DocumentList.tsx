@@ -43,7 +43,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [currentFolderPath, setCurrentFolderPath] = useState<string>('/');
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [folderModalVisible, setFolderModalVisible] = useState(false);
-  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchMode, setIsSearchMode] = useState(false);
+
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const { handleAuthError } = useAuth();
@@ -160,6 +162,33 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const handleDownload = (objectId: string) => {
     const url = cmisService.getDownloadUrl(repositoryId, objectId);
     window.open(url, '_blank');
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) {
+      message.warning('検索キーワードを入力してください');
+      return;
+    }
+
+    setIsSearchMode(true);
+    setLoading(true);
+
+    try {
+      const query = `SELECT * FROM cmis:document WHERE cmis:name LIKE '%${searchQuery}%'`;
+      const searchResult = await cmisService.search(repositoryId, query);
+      setObjects(searchResult.objects);
+    } catch (error) {
+      console.error('Search error:', error);
+      message.error(`検索に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setIsSearchMode(false);
+    loadObjects();
   };
 
   const columns = [
@@ -290,14 +319,26 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Breadcrumb items={breadcrumbItems} />
                 <Space>
-                  <Button 
-                    type="primary" 
+                  <Input
+                    placeholder="ドキュメント検索"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onPressEnter={handleSearch}
+                    style={{ width: 200 }}
+                    className="search-input"
+                  />
+                  <Button onClick={handleSearch} className="search-button">検索</Button>
+                  {isSearchMode && (
+                    <Button onClick={handleClearSearch}>クリア</Button>
+                  )}
+                  <Button
+                    type="primary"
                     icon={<UploadOutlined />}
                     onClick={() => setUploadModalVisible(true)}
                   >
                     ファイルアップロード
                   </Button>
-                  <Button 
+                  <Button
                     icon={<PlusOutlined />}
                     onClick={() => setFolderModalVisible(true)}
                   >
