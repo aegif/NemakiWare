@@ -1993,11 +1993,11 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
             
 
-            // Read content from part input stream
-            final byte[] contentBytes;
-            try (java.io.InputStream inputStream = contentPart.getInputStream()) {
-                contentBytes = inputStream.readAllBytes();
-            }
+            // MEMORY OPTIMIZATION: Keep Part reference instead of reading all bytes into memory
+            // This avoids loading entire file into heap (which could cause OOM for large uploads)
+            // Jakarta Servlet Part.getInputStream() can be called multiple times safely
+            final jakarta.servlet.http.Part finalContentPart = contentPart;
+            final long contentLength = contentPart.getSize();
             
 
             final String finalFilename = filename;
@@ -2013,12 +2013,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
                 @Override
                 public long getLength() {
-                    return contentBytes.length;
+                    return contentLength;
                 }
 
                 @Override
                 public java.math.BigInteger getBigLength() {
-                    return java.math.BigInteger.valueOf(contentBytes.length);
+                    return java.math.BigInteger.valueOf(contentLength);
                 }
 
                 @Override
@@ -2028,7 +2028,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
                 @Override
                 public java.io.InputStream getStream() {
-                    return new java.io.ByteArrayInputStream(contentBytes);
+                    try {
+                        return finalContentPart.getInputStream();
+                    } catch (java.io.IOException e) {
+                        log.error("Failed to get input stream from multipart Part", e);
+                        return new java.io.ByteArrayInputStream(new byte[0]);
+                    }
                 }
 
                 @Override
