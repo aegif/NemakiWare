@@ -105,17 +105,13 @@ test.describe('Document Management', () => {
     // Wait for page to load
     await page.waitForTimeout(2000);
 
-    // Debug: Take screenshot
-    await page.screenshot({ path: 'test-results/debug-file-upload.png', fullPage: true });
-
-    // Debug: List all buttons
-    const allButtons = await page.locator('button').allTextContents();
-    console.log('All buttons on page:', allButtons);
+    // Generate unique filename with timestamp to avoid conflicts
+    const timestamp = Date.now();
+    const filename = `test-upload-${timestamp}.txt`;
 
     // Look for upload button (ファイルアップロード)
     const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
     const buttonCount = await uploadButton.count();
-    console.log('Upload button count:', buttonCount);
 
     if (buttonCount > 0) {
       // Click upload button to open modal
@@ -129,57 +125,34 @@ test.describe('Document Management', () => {
       const fileInput = page.locator('.ant-modal input[type="file"]');
       await fileInput.waitFor({ state: 'attached', timeout: 5000 });
 
-      // Upload test file
+      // Upload test file with unique filename
       await testHelper.uploadTestFile(
         '.ant-modal input[type="file"]',
-        'test-playwright-upload.txt',
+        filename,
         'This is a test document for Playwright testing.'
       );
 
       // Wait for file to be selected (filename should appear)
       await page.waitForTimeout(1000);
 
-      // Click アップロード button in modal (it's a submit button)
-      const modalUploadButton = page.locator('.ant-modal button[type="primary"]').filter({ hasText: 'アップロード' });
-      const submitButton = page.locator('.ant-modal button[type="submit"]');
+      // Click アップロード button in modal (submit button)
+      const uploadBtn = page.locator('.ant-modal button[type="submit"]');
+      await uploadBtn.click();
 
-      // Try to find the button (either by text or by htmlType)
-      const uploadBtn = await modalUploadButton.count() > 0 ? modalUploadButton : submitButton;
+      // Wait for success message
+      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
 
-      console.log('Upload button in modal count:', await uploadBtn.count());
+      // Wait for modal to close
+      await page.waitForTimeout(2000);
 
-      if (await uploadBtn.count() > 0) {
-        await uploadBtn.click();
+      // Verify modal is closed
+      const modalVisible = await page.locator('.ant-modal:not(.ant-modal-hidden)').isVisible().catch(() => false);
+      expect(modalVisible).toBe(false);
 
-        // Wait for upload to complete - check for success or error message
-        try {
-          // Wait for either success or error message
-          await Promise.race([
-            page.waitForSelector('.ant-message-success', { timeout: 15000 }),
-            page.waitForSelector('.ant-message-error', { timeout: 15000 })
-          ]);
-        } catch (e) {
-          console.log('No success/error message appeared:', e);
-        }
-
-        // Wait additional time for modal to close
-        await page.waitForTimeout(3000);
-
-        // Check if modal is still visible
-        const modalStillVisible = await page.locator('.ant-modal:not(.ant-modal-hidden)').isVisible().catch(() => false);
-
-        // If modal is still visible, check for error messages
-        if (modalStillVisible) {
-          const errorMessage = await page.locator('.ant-message-error').textContent().catch(() => null);
-          console.log('Upload failed, error message:', errorMessage);
-          test.skip('Upload failed: ' + (errorMessage || 'unknown error'));
-        } else {
-          // Upload succeeded - modal closed
-          expect(modalStillVisible).toBe(false);
-        }
-      } else {
-        test.skip('Upload button in modal not found');
-      }
+      // Verify uploaded file appears in the list
+      await page.waitForTimeout(1000);
+      const uploadedFile = page.locator(`text=${filename}`);
+      await expect(uploadedFile).toBeVisible({ timeout: 5000 });
     } else {
       test.skip('Upload functionality not found in current UI');
     }
