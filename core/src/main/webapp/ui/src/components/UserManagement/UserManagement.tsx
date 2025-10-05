@@ -29,6 +29,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
 
   const cmisService = new CMISService();
@@ -149,6 +150,17 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
     form.resetFields();
   };
 
+  // Filter users based on search text
+  const filteredUsers = users.filter(user => {
+    if (!searchText) return true;
+    const searchLower = searchText.toLowerCase();
+    return (
+      user.id.toLowerCase().includes(searchLower) ||
+      user.name?.toLowerCase().includes(searchLower) ||
+      user.email?.toLowerCase().includes(searchLower)
+    );
+  });
+
   const columns = [
     {
       title: 'ユーザーID',
@@ -215,8 +227,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
         <h2 style={{ margin: 0 }}>
           <UserOutlined /> ユーザー管理
         </h2>
-        <Button 
-          type="primary" 
+        <Button
+          type="primary"
           icon={<PlusOutlined />}
           onClick={() => setModalVisible(true)}
         >
@@ -224,9 +236,19 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
         </Button>
       </div>
 
+      <Input.Search
+        placeholder="ユーザーを検索 (ID、名前、メールアドレス)"
+        allowClear
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
+        onSearch={(value) => setSearchText(value)}
+        style={{ marginBottom: 16 }}
+        className="ant-input-search"
+      />
+
       <Table
         columns={columns}
-        dataSource={users}
+        dataSource={filteredUsers}
         rowKey="id"
         loading={loading}
         pagination={{ pageSize: 20 }}

@@ -84,27 +84,34 @@ public class AuthenticationFilter implements Filter {
 		hres.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
 		hres.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, AUTH_TOKEN, nemaki_auth_token");
 
-		// Check if this is an /all/ path that should bypass authentication
+		// Check if this is a path that should bypass authentication
 		String requestURI = hreq.getRequestURI();
 		String servletPath = hreq.getServletPath();
 		String pathInfo = hreq.getPathInfo();
-		
+
 		log.info("=== AUTH DEBUG: requestURI=" + requestURI + ", servletPath=" + servletPath + ", pathInfo=" + pathInfo + " ===");
-		
+
+		// UI paths should bypass REST authentication (handled by SPA)
+		if (requestURI != null && requestURI.contains("/ui/")) {
+			log.info("Bypassing REST authentication for UI path: " + requestURI);
+			chain.doFilter(req, res);
+			return;
+		}
+
 		// Check various URI patterns for /all/ paths
 		if (requestURI != null && requestURI.contains("/rest/all/")) {
 			log.info("Bypassing authentication for /rest/all/ URI: " + requestURI);
 			chain.doFilter(req, res);
 			return;
 		}
-		
+
 		// For servlet mappings, pathInfo might be null, so check servletPath
 		if (servletPath != null && servletPath.contains("/all/")) {
 			log.info("Bypassing authentication for /all/ servletPath: " + servletPath);
 			chain.doFilter(req, res);
 			return;
 		}
-		
+
 		if (pathInfo != null && pathInfo.startsWith("/all/")) {
 			log.info("Bypassing authentication for /all/ pathInfo: " + pathInfo);
 			chain.doFilter(req, res);

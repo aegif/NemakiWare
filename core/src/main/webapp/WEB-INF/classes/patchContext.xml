@@ -13,20 +13,28 @@
 
     <context:annotation-config />
 	<context:component-scan base-package="jp.aegif.nemaki.patch" />
-	<context:component-scan base-package="jp.aegif.nemaki.init" />
+	<!-- Component scanning for jp.aegif.nemaki.init intentionally disabled to prevent conflicts -->
+	<!-- CMISPostInitializer is registered as explicit bean definition below instead -->
 
-	<!-- 
+	<!--
 		Phase 2: CMIS Post-Initializer (New Architecture)
-		
-		Uses InitializingBean to execute CMIS operations after all Spring services
-		are fully initialized. This replaces the problematic init-method approach
-		and ensures proper dependency resolution.
+
+		CRITICAL FIX: Changed from InitializingBean to ContextRefreshedEvent
+		Uses @EventListener to execute CMIS operations AFTER entire Spring context
+		is fully initialized, ensuring TypeManager and all services are operational.
+		This prevents "TYPES is empty" errors during patch execution.
 	-->
 	<bean id="cmisPostInitializer" class="jp.aegif.nemaki.init.CMISPostInitializer">
 		<property name="cmisPatchList">
 			<list>
 				<!-- CRITICAL: System folder must be created first for other patches to work -->
 				<bean class="jp.aegif.nemaki.patch.Patch_SystemFolderSetup">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Initial content setup: Sites, Technical Documents folders and CMIS spec PDF -->
+				<bean class="jp.aegif.nemaki.patch.Patch_InitialContentSetup">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />
 					</property>
@@ -46,46 +54,20 @@
 		</property>
 	</bean>
 
-	<!-- 
-		PatchService with PropertyDefinitionDetail initialization
-		
-		CRITICAL FIX: Added init-method to ensure PropertyDefinitionDetail initialization
-		for system CMIS properties, which is essential for TCK TypesTestGroup success.
+	<!--
+		PatchService Bean Definition - DISABLED
+
+		CONFLICT RESOLUTION: Removed explicit bean definition to prevent conflicts with @Component annotation.
+		PatchService is now registered via @Component annotation in PatchService.java class.
+
+		This avoids bean registration conflicts and ensures proper initialization via component scanning.
+		Properties are injected via @Autowired in the class itself.
 	-->
+	<!-- DISABLED: Bean definition conflicts with @Component annotation
 	<bean id="PatchService" class="jp.aegif.nemaki.patch.PatchService" init-method="applyPatchesOnStartup">
-		<property name="repositoryInfoMap">
-			<ref bean="repositoryInfoMap" />
-		</property>
-		<property name="connectorPool">
-			<ref bean="connectorPool" />
-		</property>
-		<property name="propertyManager">
-			<ref bean="propertyManager" />
-		</property>
-		<property name="typeService">
-			<ref bean="TypeService" />
-		</property>
-		<property name="typeManager">
-			<ref bean="TypeManager" />
-		</property>
-		<property name="couchdbUrl">
-			<value>${db.couchdb.url}</value>
-		</property>
-		<property name="couchdbUsername">
-			<value>${db.couchdb.auth.username}</value>
-		</property>
-		<property name="couchdbPassword">
-			<value>${db.couchdb.auth.password}</value>
-		</property>
-		<property name="patchList">
-			<list>
-				<!-- CRITICAL FIX: Removed duplicate patch execution to prevent folder duplication -->
-				<!-- All CMIS patches are now exclusively handled by CMISPostInitializer to prevent double execution -->
-				<!-- This PatchService is kept for PropertyDefinitionDetail initialization and manual operations -->
-				<!-- Future patches can be added here if they need manual execution -->
-			</list>
-		</property>
+		...
 	</bean>
+	-->
 
 	<bean id="patchUtil" class="jp.aegif.nemaki.patch.PatchUtil">
 		<property name="propertyManager">
@@ -114,8 +96,28 @@
 		</property>
 	</bean>
 
-	<!-- Standard CMIS Views Patch Bean -->
+	<!-- Individual Patch Bean Definitions for ServletContextListener access -->
+	<!-- CRITICAL: These beans are also used by ServletContextListener for reliable patch execution -->
+
+	<bean id="patch_SystemFolderSetup" class="jp.aegif.nemaki.patch.Patch_SystemFolderSetup">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_InitialContentSetup" class="jp.aegif.nemaki.patch.Patch_InitialContentSetup">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
 	<bean id="patch_StandardCmisViews" class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_TestUserInitialization" class="jp.aegif.nemaki.patch.Patch_TestUserInitialization">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

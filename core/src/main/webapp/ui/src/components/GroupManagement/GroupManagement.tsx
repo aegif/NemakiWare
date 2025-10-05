@@ -33,6 +33,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
+  const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
 
   const cmisService = new CMISService();
@@ -162,6 +163,17 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
     form.resetFields();
   };
 
+  // Filter groups based on search text
+  const filteredGroups = groups.filter(group => {
+    if (!searchText) return true;
+    const searchLower = searchText.toLowerCase();
+    return (
+      group.id.toLowerCase().includes(searchLower) ||
+      group.name?.toLowerCase().includes(searchLower) ||
+      group.members?.some(member => member.toLowerCase().includes(searchLower))
+    );
+  });
+
   const columns = [
     {
       title: 'グループID',
@@ -228,8 +240,8 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
         <h2 style={{ margin: 0 }}>
           <TeamOutlined /> グループ管理
         </h2>
-        <Button 
-          type="primary" 
+        <Button
+          type="primary"
           icon={<PlusOutlined />}
           onClick={() => setModalVisible(true)}
         >
@@ -237,9 +249,19 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
         </Button>
       </div>
 
+      <Input.Search
+        placeholder="グループを検索 (ID、名前、メンバー)"
+        allowClear
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
+        onSearch={(value) => setSearchText(value)}
+        style={{ marginBottom: 16 }}
+        className="ant-input-search"
+      />
+
       <Table
         columns={columns}
-        dataSource={groups}
+        dataSource={filteredGroups}
         rowKey="id"
         loading={loading}
         pagination={{ pageSize: 20 }}

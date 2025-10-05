@@ -34,7 +34,14 @@
     <listener>
 		<listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
     </listener>
-    
+
+    <!-- NemakiWare Patch Initialization Listener - MUST execute AFTER Spring ContextLoaderListener -->
+    <!-- CRITICAL: This listener applies CMIS patches (folder creation, initial content) -->
+    <!-- after Spring context is fully initialized with all services available -->
+    <listener>
+		<listener-class>jp.aegif.nemaki.init.NemakiPatchInitializationListener</listener-class>
+    </listener>
+
     <!-- EHCache Shutdown Listener to prevent memory leaks and thread issues -->
     <listener>
 		<listener-class>jp.aegif.nemaki.util.EHCacheShutdownListener</listener-class>

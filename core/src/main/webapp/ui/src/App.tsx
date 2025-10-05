@@ -82,6 +82,8 @@ function AppContent() {
           } />
           <Route path="/oidc-callback" element={<Login onLogin={() => {}} />} />
           <Route path="/saml-callback" element={<Login onLogin={() => {}} />} />
+          {/* 404 - 存在しないページはログインページにリダイレクト */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>
     </Router>

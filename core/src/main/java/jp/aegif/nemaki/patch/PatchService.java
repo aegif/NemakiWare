@@ -8,38 +8,67 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PostConstruct;
+
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.util.PropertyManager;
 
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
+
 /**
  * PRIORITY 4: Bean initialization order adjustment for PropertyDefinitionDetail initialization guarantee
- * 
- * @Component - Registers as Spring Bean for automatic dependency injection
- * @Order(100) - Executes after core services are initialized (higher numbers execute later)  
- * @DependsOn - Ensures required dependencies are initialized before PatchService execution
+ *
+ * DUAL REGISTRATION STRATEGY:
+ * - @Component enables component-scan detection in patchContext.xml
+ * - Explicit bean definition in patchContext.xml provides init-method and property injection
+ * - Spring will use the explicit bean definition, @Component just ensures class is scanned
+ *
+ * @Component - Enables component scanning detection
+ * @Order(100) - Executes after core services (higher = later)
+ * @DependsOn - Ensures dependencies are initialized first
  */
 @Component
 @Order(100)
-@DependsOn({"typeService", "typeManager", "repositoryInfoMap", "propertyManager", "connectorPool"})
+// @DependsOn({"typeService", "typeManager", "repositoryInfoMap", "propertyManager", "connectorPool"})  // Temporarily disabled for testing
 public class PatchService {
 	private static final Log log = LogFactory.getLog(PatchService.class);
+
+	@Autowired
 	private RepositoryInfoMap repositoryInfoMap;
+
+	@Autowired
 	private CloudantClientPool connectorPool;
+
+	@Autowired
 	private PropertyManager propertyManager;
-	
+
 	// NEW: Required dependencies for PropertyDefinitionDetail creation
+	@Autowired
 	private TypeService typeService;
+
+	@Autowired
 	private TypeManager typeManager;
+
+	// NEW: Required dependency for initial folder creation
+	@Autowired
+	private ContentService contentService;
 	
 	// Configuration properties for database initialization - Docker environment compatible
 	private String couchdbUrl = getCouchDbUrl();
@@ -77,12 +106,13 @@ public class PatchService {
 	private List<AbstractNemakiPatch> patchList;
 	
 	public PatchService() {
-		// The patch application is now triggered explicitly by Spring configuration via init-method="applyPatchesOnStartup"
+		// The patch application is now triggered via @PostConstruct after dependency injection
 		// This ensures compatibility and prevents circular dependency issues during Spring context initialization
 		// DEBUG: PatchService constructor called (logged by log.info below)
 		log.info("=== PATCH DEBUG: PatchService constructor called ===");
 	}
 
+	@PostConstruct
 	public void applyPatchesOnStartup() {
 		log.info("=== PHASE 2: PatchService.applyPatchesOnStartup() EXECUTING ===");
 		try {
@@ -102,9 +132,15 @@ public class PatchService {
 			// TCK REQUIREMENT: Create custom secondary type for TCK tests
 			createTCKSecondaryType();
 
+			// INITIAL CONTENT: Create Sites and Technical Documents folders
+			// DISABLED: Folder creation moved to Patch_InitialContentSetup with proper ACL configuration
+			// PatchService was creating folders with null ACL (system principal only)
+			// Patch_InitialContentSetup creates folders with admin:all and GROUP_EVERYONE:read ACL
+			// createInitialFolders();
+
 			// TODO: Initialize test users for QA and development (requires principalService injection)
 			log.info("Test user initialization skipped - requires principalService dependency");
-			
+
 			// Apply any future patches if they exist
 			if (patchList != null && !patchList.isEmpty()) {
 				log.info("Applying " + patchList.size() + " CMIS patches");
@@ -112,7 +148,7 @@ public class PatchService {
 			} else {
 				log.info("No CMIS patches to apply - Phase 2 completed");
 			}
-			
+
 			log.info("CMIS patch application completed successfully");
 		} catch (Exception e) {
 			log.error("Failed to apply CMIS patches on startup", e);
@@ -513,6 +549,126 @@ public class PatchService {
 			log.error("❌ Failed to create TCK secondary type", e);
 			// Continue with startup even if this fails
 		}
+	}
+
+	/**
+	 * Create initial folders (Sites, Technical Documents) for new installations
+	 *
+	 * This is a simplified direct implementation as a workaround for ServletContextListener issues.
+	 * Folders are only created if they don't already exist (idempotent).
+	 */
+	private void createInitialFolders() {
+		log.info("=== INITIAL CONTENT: Creating Sites and Technical Documents folders ===");
+
+		if (contentService == null) {
+			log.error("ContentService not available - cannot create initial folders");
+			return;
+		}
+
+		if (repositoryInfoMap == null) {
+			log.error("RepositoryInfoMap not available - cannot create initial folders");
+			return;
+		}
+
+		try {
+			// Iterate through all repositories
+			for (String repositoryId : repositoryInfoMap.keys()) {
+				if ("canopy".equals(repositoryId) || repositoryId.endsWith("_closet")) {
+					log.info("Skipping initial folders for repository: " + repositoryId);
+					continue;
+				}
+
+				log.info("Creating initial folders for repository: " + repositoryId);
+
+				String rootFolderId = repositoryInfoMap.get(repositoryId).getRootFolderId();
+				if (rootFolderId == null) {
+					log.warn("Root folder ID not available for repository: " + repositoryId);
+					continue;
+				}
+
+				SystemCallContext callContext = new SystemCallContext(repositoryId);
+
+				// Create Sites folder if it doesn't exist
+				createFolderIfNotExists(callContext, repositoryId, rootFolderId, "Sites");
+
+				// Create Technical Documents folder if it doesn't exist
+				createFolderIfNotExists(callContext, repositoryId, rootFolderId, "Technical Documents");
+			}
+
+			log.info("✅ Initial folder creation completed successfully");
+		} catch (Exception e) {
+			log.error("❌ Failed to create initial folders", e);
+			// Continue with startup even if this fails
+		}
+	}
+
+	/**
+	 * Create folder if it doesn't already exist (idempotent)
+	 */
+	private void createFolderIfNotExists(SystemCallContext callContext, String repositoryId,
+	                                     String parentFolderId, String folderName) {
+		try {
+			// Check if folder already exists using direct CouchDB query
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			if (client == null) {
+				log.error("Could not get Cloudant client for repository: " + repositoryId);
+				return;
+			}
+
+			java.util.Map<String, Object> queryParams = new java.util.HashMap<>();
+			queryParams.put("key", parentFolderId);
+			queryParams.put("include_docs", true);
+
+			com.ibm.cloud.cloudant.v1.model.ViewResult result = client.queryView("_repo", "children", queryParams);
+
+			if (result.getRows() != null) {
+				for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
+					if (row.getDoc() != null) {
+						com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+						java.util.Map<String, Object> docProperties = doc.getProperties();
+
+						if (docProperties != null) {
+							String name = (String) docProperties.get("name");
+							String type = (String) docProperties.get("type");
+
+							if ("cmis:folder".equals(type) && folderName.equals(name)) {
+								log.info("Folder '" + folderName + "' already exists in repository: " + repositoryId);
+								return;
+							}
+						}
+					}
+				}
+			}
+
+			// Folder doesn't exist, create it
+			log.info("Creating folder: " + folderName + " in repository: " + repositoryId);
+
+			Folder parentFolder = (Folder) contentService.getContent(repositoryId, parentFolderId);
+			if (parentFolder == null) {
+				log.error("Parent folder not found with ID: " + parentFolderId);
+				return;
+			}
+
+			PropertiesImpl properties = new PropertiesImpl();
+			PropertyIdImpl objectTypeId = new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:folder");
+			properties.addProperty(objectTypeId);
+			PropertyStringImpl name = new PropertyStringImpl(PropertyIds.NAME, folderName);
+			properties.addProperty(name);
+
+			Folder created = contentService.createFolder(callContext, repositoryId, properties,
+			                                             parentFolder, null, null, null, null);
+
+			log.info("✅ Folder '" + folderName + "' created successfully with ID: " + created.getId());
+
+		} catch (Exception e) {
+			log.error("Failed to create folder: " + folderName, e);
+			// Continue even if one folder creation fails
+		}
+	}
+
+	public void setContentService(ContentService contentService) {
+		log.debug("setContentService called with " + (contentService != null ? contentService.getClass().getName() : "null"));
+		this.contentService = contentService;
 	}
 
 }

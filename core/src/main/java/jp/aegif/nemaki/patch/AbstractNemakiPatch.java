@@ -17,46 +17,36 @@ public abstract class AbstractNemakiPatch {
 
 
 	public void apply(){
-		if (log.isDebugEnabled()) {
-			log.debug("AbstractNemakiPatch.apply() called");
-		}
-		log.info("AbstractNemakiPatch.apply() called");
+		System.err.println("!!! AbstractNemakiPatch.apply() called for patch: " + (getName() != null ? getName() : "UNKNOWN") + " !!!");
+		log.error("=== AbstractNemakiPatch.apply() called for patch: " + getName() + " ===");
 		applySystemPatch();
 
 		for(String repositoryId : patchUtil.getRepositoryInfoMap().keys()){
-			if (log.isDebugEnabled()) {
-				log.debug("Processing repository: " + repositoryId);
-			}
-			log.info("Processing repository: " + repositoryId);
+			log.error("Processing repository: " + repositoryId + " for patch: " + getName());
 			boolean isApplied = patchUtil.isApplied(repositoryId, getName());
 			if(isApplied){
-				log.info("[patch=" + getName() + ", repositoryId=" + repositoryId + "]" +  "already applied, skipped");
+				log.error("[patch=" + getName() + ", repositoryId=" + repositoryId + "] already applied, skipped");
 				continue;
 			}else{
 				try{
-					if (log.isDebugEnabled()) {
-						log.debug("Calling applyPerRepositoryPatch for: " + repositoryId);
-					}
-					log.info("Calling applyPerRepositoryPatch for: " + repositoryId);
+					log.error("Calling applyPerRepositoryPatch for repository: " + repositoryId + ", patch: " + getName());
 					applyPerRepositoryPatch(repositoryId);
 
 					patchUtil.createPathHistory(repositoryId, getName());
-					log.info("[patch=" + getName() + ", repositoryId=" + repositoryId + "]" +  "applied");
+					log.error("[patch=" + getName() + ", repositoryId=" + repositoryId + "] applied successfully");
 				}catch(Exception e){
-					log.error("[patch=" + getName() + ", repositoryId=" + repositoryId + "]" +  "failed", e);
+					log.error("[patch=" + getName() + ", repositoryId=" + repositoryId + "] failed", e);
 				}
 			}
 		}
+		log.error("=== AbstractNemakiPatch.apply() completed for patch: " + getName() + " ===");
 	}
 	protected abstract void applySystemPatch();
 	protected abstract void applyPerRepositoryPatch(String repositoryId);
 	public abstract String getName();
 
 	public void setPatchUtil(PatchUtil patchUtil) {
-		if (log.isDebugEnabled()) {
-			log.debug("setPatchUtil called with " + (patchUtil != null ? patchUtil.getClass().getName() : "null"));
-		}
-		log.info("setPatchUtil called with " + (patchUtil != null ? patchUtil.getClass().getName() : "null"));
+		log.error("=== setPatchUtil called for " + this.getClass().getSimpleName() + " with " + (patchUtil != null ? patchUtil.getClass().getName() : "null") + " ===");
 		this.patchUtil = patchUtil;
 	}
 
