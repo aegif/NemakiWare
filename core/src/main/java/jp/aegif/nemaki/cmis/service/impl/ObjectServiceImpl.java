@@ -304,7 +304,6 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 
 		// CRITICAL TCK DEBUG: Verify InputStream contains data after getAttachment()
-		System.err.println("=== OBJECTSERVICEIMPL GET CONTENT STREAM DEBUG ===");
 		System.err.println("InputStream class: " + is.getClass().getName());
 		System.err.println("InputStream.markSupported(): " + is.markSupported());
 
@@ -317,22 +316,16 @@ public class ObjectServiceImpl implements ObjectService {
 				is.mark(100);
 				byte[] testBuffer = new byte[50];
 				int testBytesRead = is.read(testBuffer);
-				System.err.println("Test read from InputStream: " + testBytesRead + " bytes");
 				if (testBytesRead > 0) {
 					String preview = new String(testBuffer, 0, testBytesRead, "UTF-8");
-					System.err.println("Test read preview: " + preview);
 				}
 				is.reset();
-				System.err.println("InputStream successfully reset after test read");
 			} else {
-				System.err.println("WARNING: InputStream does not support mark/reset!");
 			}
 		} catch (Exception debugEx) {
 			System.err.println("DEBUG exception during InputStream verification: " + debugEx.getMessage());
 			debugEx.printStackTrace();
 		}
-		System.err.println("=== END OBJECTSERVICEIMPL DEBUG ===");
-
 		// CRITICAL TCK FIX: Always use actual size from CouchDB _attachments metadata
 		// This ensures we get the correct size even after appendContent operations
 		// which may update binary content without updating AttachmentNode.length field
@@ -341,16 +334,11 @@ public class ObjectServiceImpl implements ObjectService {
 		System.err.println("*** GET CONTENT STREAM: Getting actual content size from CouchDB attachment metadata for: " + document.getAttachmentNodeId());
 
 		Long actualSizeFromDB = contentService.getAttachmentActualSize(repositoryId, document.getAttachmentNodeId());
-		System.err.println("*** GET CONTENT STREAM: actualSizeFromDB = " + actualSizeFromDB);
-
 		if (actualSizeFromDB != null && actualSizeFromDB > 0) {
 			length = BigInteger.valueOf(actualSizeFromDB);
-			System.err.println("*** GET CONTENT STREAM: Using actual size from CouchDB: " + actualSizeFromDB + " bytes for: " + name);
 		} else {
 			// Fallback: Use AttachmentNode.length if CouchDB metadata unavailable
 			long attachmentLength = attachment.getLength();
-			System.err.println("*** GET CONTENT STREAM: CouchDB metadata unavailable, using AttachmentNode.length: " + attachmentLength);
-
 			if (attachmentLength > 0) {
 				length = BigInteger.valueOf(attachmentLength);
 			} else {
@@ -358,8 +346,6 @@ public class ObjectServiceImpl implements ObjectService {
 				System.err.println("*** GET CONTENT STREAM: Using CMIS standard -1 (unknown size) for: " + name);
 			}
 		}
-		System.err.println("*** GET CONTENT STREAM: Final length = " + length);
-	
 	if (log.isDebugEnabled()) {
 		log.debug("Creating ContentStreamImpl with final length: " + length);
 	}
@@ -654,13 +640,10 @@ public class ObjectServiceImpl implements ObjectService {
 		
 		Document document = contentService.createDocument(callContext, repositoryId, properties, parentFolder,
 				contentStream, versioningState, policies, addAces, removeAces);
-		
-		System.err.println("=== SECONDARY TYPES TEST DEBUG - CONTENT SERVICE RETURNED ===");
 		System.err.println("Returned document.getId(): " + document.getId());
 		System.err.println("Returned document.getAttachmentNodeId(): " + document.getAttachmentNodeId());
 		
 		if (document.getAttachmentNodeId() == null) {
-			System.err.println("⚠️  CRITICAL: ObjectServiceImpl received document with NULL attachmentNodeId!");
 			System.err.println("⚠️  This will cause getContentStream() to return null and trigger the SecondaryTypesTest failure!");
 		} else {
 			System.err.println("✅ SUCCESS: ObjectServiceImpl received document with valid attachmentNodeId: " + document.getAttachmentNodeId());
@@ -864,7 +847,6 @@ public class ObjectServiceImpl implements ObjectService {
 			String currentChangeToken = doc.getChangeToken();
 			if (currentChangeToken != null && !"null".equals(currentChangeToken)) {
 				changeToken = new Holder<String>(currentChangeToken);
-				System.err.println("*** APPEND CONTENT: Auto-filled change token from document: " + currentChangeToken + " ***");
 			}
 		}
 			exceptionService.updateConflict(doc, changeToken);
@@ -1027,9 +1009,7 @@ public class ObjectServiceImpl implements ObjectService {
 			String newChangeToken = updatedContent.getChangeToken();
 			changeToken.setValue(newChangeToken);
 			System.err.println("*** UPDATE PROPERTIES: Object " + objectId.getValue() + " NEW change token: '" + newChangeToken + "' ***");
-			System.err.println("*** UPDATE PROPERTIES: Change token holder updated successfully ***");
 		} else {
-			System.err.println("*** UPDATE PROPERTIES: WARNING - changeToken or updatedContent is null ***");
 		}
 
 		nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());

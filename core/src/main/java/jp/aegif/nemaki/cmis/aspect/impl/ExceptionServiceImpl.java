@@ -1354,24 +1354,18 @@ public class ExceptionServiceImpl implements ExceptionService,
 		// NemakiWare often sets change token to null, which becomes "null" string in properties
 		String contentChangeToken = content.getChangeToken();
 		String requestChangeToken = (changeToken != null) ? changeToken.getValue() : null;
-
-		System.err.println("*** CHANGE TOKEN VALIDATION DEBUG ***");
-		System.err.println("Content change token: '" + contentChangeToken + "'");
-		System.err.println("Request change token: '" + requestChangeToken + "'");
 		System.err.println("Content ID: " + content.getId());
 		System.err.println("Content type: " + content.getObjectType());
 
 		// If both are null or "null", allow the update (no conflict)
 		if (isNullOrNullString(contentChangeToken) && isNullOrNullString(requestChangeToken)) {
 			// No change token enforcement when both are null - allow update
-			System.err.println("*** CHANGE TOKEN: Both null/empty - allowing update ***");
 			return;
 		}
 
 		// CRITICAL TCK FIX: Proper change token validation
 		// If request has no change token but content has one, require it
 		if (isNullOrNullString(requestChangeToken) && !isNullOrNullString(contentChangeToken)) {
-			System.err.println("*** CHANGE TOKEN: Missing request token - throwing UpdateConflict ***");
 			throw new CmisUpdateConflictException(
 					"Change token is required to update", HTTP_STATUS_CODE_409);
 		}
@@ -1379,14 +1373,10 @@ public class ExceptionServiceImpl implements ExceptionService,
 		// CRITICAL TCK FIX: Strict change token mismatch detection
 		// If change tokens don't match, conflict detected - no exceptions for "null" strings
 		if (!java.util.Objects.equals(requestChangeToken, contentChangeToken)) {
-			System.err.println("*** CHANGE TOKEN: Mismatch detected - throwing UpdateConflict ***");
-			System.err.println("*** Expected: '" + contentChangeToken + "', Got: '" + requestChangeToken + "' ***");
 			throw new CmisUpdateConflictException(
 					"Cannot update because the changeToken conflicts",
 					HTTP_STATUS_CODE_409);
 		}
-
-		System.err.println("*** CHANGE TOKEN: Validation passed - no conflict ***");
 	}
 
 	/**

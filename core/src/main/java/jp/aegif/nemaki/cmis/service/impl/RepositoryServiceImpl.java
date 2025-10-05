@@ -266,7 +266,6 @@ public class RepositoryServiceImpl implements RepositoryService,
 			String repositoryId, TypeDefinition type, ExtensionsData extension) {
 		
 		log.info("=== REPOSITORY SERVICE DEBUG: createType() called ===");
-		log.info("DEBUG: repositoryId=" + repositoryId);
 		log.info("DEBUG: typeId=" + (type != null ? type.getId() : "null"));
 		log.info("DEBUG: user=" + (callContext != null ? callContext.getUsername() : "null"));
 		log.info("DEBUG: type class=" + (type != null ? type.getClass().getName() : "null"));
@@ -283,12 +282,10 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// General Exception
 		// //////////////////
 		try {
-			log.info("DEBUG: Performing permission and validation checks for createType");
 			exceptionService.perimissionAdmin(callContext, repositoryId);
 			exceptionService.invalidArgumentRequired("typeDefinition", type);
 			exceptionService.invalidArgumentCreatableType(repositoryId, type);
 			exceptionService.constraintDuplicatePropertyDefinition(repositoryId, type);
-			log.info("DEBUG: All validation checks passed for createType");
 		} catch (ClassCastException e) {
 			log.error("ClassCastException during validation checks: ", e);
 			log.error("Stack trace details:");
@@ -301,7 +298,6 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// Body of the method
 		// //////////////////
 		// Attributes
-		log.info("DEBUG: Setting type attributes for createType");
 		NemakiTypeDefinition ntd = setNemakiTypeDefinitionAttributes(repositoryId, type);
 		log.info("DEBUG: Type attributes set successfully - NemakiTypeDefinition ID: " + ntd.getTypeId());
 
@@ -342,8 +338,6 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 				if (!systemIds.contains(key)) {
 					// CRITICAL DEBUG: Log all property information
-					System.err.println("=== TCK PROPERTY CREATION FROM PROPDEF ===");
-					System.err.println("  Map key: " + key);
 					System.err.println("  propDef.getId(): " + propDef.getId());
 					System.err.println("  propDef.getLocalName(): " + propDef.getLocalName());
 					System.err.println("  propDef.getDisplayName(): " + propDef.getDisplayName());
@@ -377,7 +371,6 @@ public class RepositoryServiceImpl implements RepositoryService,
 						
 						// CRITICAL FIX: Force correct property ID back into the object
 						create.setPropertyId(originalPropertyId);
-						log.info("DEBUG: Property ID forced back to correct value: " + originalPropertyId);
 					}
 
 					NemakiPropertyDefinitionDetail created = typeService
@@ -414,7 +407,6 @@ public class RepositoryServiceImpl implements RepositoryService,
 							updatedDetail.setLocalName(originalPropertyId);  // Ensure localName matches property ID
 							
 							typeService.updatePropertyDefinitionDetail(repositoryId, updatedDetail);
-							log.info("DEBUG: Property definition updated with correct property ID: " + originalPropertyId);
 						}
 					}
 
@@ -427,13 +419,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 					ntd.setProperties(l);
 
 					// DEBUG: Verify what we're storing
-					System.err.println("=== PROPERTY STORAGE DEBUG ===");
-					System.err.println("  Original Property ID: " + originalPropertyId);
 					System.err.println("  Created Detail ID: " + created.getId());
 					System.err.println("  Created Detail LocalName: " + created.getLocalName());
 					System.err.println("  Storing in Type.properties: " + created.getId());
-					System.err.println("=== END PROPERTY STORAGE ===");
-
 					log.info("DEBUG: Stored detail ID '" + created.getId() + "' for property '" + originalPropertyId + "'");
 					log.info("DEBUG: Type definition properties list now contains: " + ntd.getProperties());
 				}
@@ -463,12 +451,8 @@ public class RepositoryServiceImpl implements RepositoryService,
 		log.error("TCK DEBUG: After createTypeDefinition, created.properties = " + created.getProperties());
 		
 		// CRITICAL FIX: Instead of full refresh, force specific repository cache refresh
-		log.info("DEBUG: Refreshing TypeManager cache");
 		typeManager.refreshTypes();
-		log.info("DEBUG: TypeManager cache refresh completed");
-		
 		// ADDITIONAL CHECK: Verify the created type is now in cache
-		log.info("DEBUG: Verifying created type in cache");
 		TypeDefinition verifyType = typeManager.getTypeDefinition(repositoryId, created.getTypeId());
 		if (verifyType == null) {
 			log.error("ERROR: Type not found in cache after refresh - this will cause deletion to fail");
@@ -479,10 +463,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 		// Sort the order of properties
 		try {
-			log.info("DEBUG: Sorting property definitions");
 			TypeDefinition result = sortPropertyDefinitions(repositoryId, created, type);
-			log.info("DEBUG: Property definitions sorted successfully");
-			
 			// CRITICAL FIX: Clear shared type caches after type creation
 			clearSharedTypeCaches();
 			
@@ -616,13 +597,11 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 				// CRITICAL DEBUG: Log incoming property definitions from TCK
 				if (key != null && key.startsWith("tck:")) {
-					System.err.println("=== TCK PROPERTY FROM CLIENT ===");
 					System.err.println("  Key (from map): " + key);
 					System.err.println("  PropDef.getId(): " + propDef.getId());
 					System.err.println("  PropDef.getLocalName(): " + propDef.getLocalName());
 					System.err.println("  PropDef.getQueryName(): " + propDef.getQueryName());
 					System.err.println("  PropDef.getPropertyType(): " + propDef.getPropertyType());
-					System.err.println("=== END TCK PROPERTY ===");
 				}
 
 				if (systemIds.contains(key))

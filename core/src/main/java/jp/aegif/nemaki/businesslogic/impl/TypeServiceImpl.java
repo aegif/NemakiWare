@@ -106,7 +106,6 @@ public class TypeServiceImpl implements TypeService{
 		log.info("DEBUG: BaseId: " + typeDefinition.getBaseId() + ", ParentId: " + typeDefinition.getParentId());
 
 		// First, create the type definition in database
-		log.info("DEBUG: Creating type definition in database");
 		NemakiTypeDefinition created = contentDaoService.createTypeDefinition(repositoryId, typeDefinition);
 		log.info("DEBUG: Type definition created with ID: " + created.getId());
 
@@ -117,21 +116,16 @@ public class TypeServiceImpl implements TypeService{
 		String parentTypeId = created.getParentId();
 		if (parentTypeId == null && created.getBaseId() != null) {
 			parentTypeId = created.getBaseId().value();
-			log.info("DEBUG: Using BaseId as parent: " + parentTypeId);
 		}
 
 		if (parentTypeId != null) {
-			log.info("DEBUG: Type has parent: " + parentTypeId + " - CMIS properties will be inherited automatically");
 			// CMIS properties are inherited automatically by TypeManager when it builds the type
 			// We don't need to explicitly add them to the type's properties list
 		} else {
-			log.info("DEBUG: No parent type - this is a base type");
 		}
 
 		if (typeManager != null) {
 			System.out.println("DEBUG: TypeManager is not null, adding new type to cache");
-			log.info("DEBUG: Adding new type to TypeManager cache");
-
 			// Debug: Check what properties the created type has
 			System.out.println("DEBUG: Created NemakiTypeDefinition has " +
 				(created.getProperties() != null ? created.getProperties().size() : 0) +
@@ -235,7 +229,6 @@ public class TypeServiceImpl implements TypeService{
 		}
 		
 		if (typeManager != null) {
-			log.info("DEBUG: Invalidating TypeManager cache after type deletion");
 			typeManager.invalidateTypeCache(repositoryId);
 		}
 	}
@@ -274,8 +267,6 @@ public class TypeServiceImpl implements TypeService{
 		}
 
 		// CRITICAL DEBUG: Log to stderr for immediate visibility
-		System.err.println("TCK CREATE PROPERTY DEBUG: originalPropertyId=" + originalPropertyId);
-		System.err.println("TCK CREATE PROPERTY DEBUG: isCustomProperty=" + isCustomProperty);
 		System.err.println("TCK CREATE PROPERTY DEBUG: propertyType=" + propertyDefinition.getPropertyType());
 
 		log.debug("CUSTOM PROPERTY DETECTION: " + isCustomProperty);
@@ -287,7 +278,6 @@ public class TypeServiceImpl implements TypeService{
 		
 		if (isCustomProperty) {
 			// CUSTOM PROPERTIES: Create dedicated cores with preserved original IDs
-			System.err.println("TCK CUSTOM PROPERTY PATH: ENTERING for " + originalPropertyId);
 			log.debug("=== CUSTOM PROPERTY PATH ACTIVATED ===");
 			if (log.isInfoEnabled()) {
 				log.info("Creating custom property: " + originalPropertyId + " (preserving exact ID)");
@@ -441,7 +431,6 @@ public class TypeServiceImpl implements TypeService{
 		if (propertyId != null && propertyId.contains(":") && !propertyId.startsWith("cmis:")) {
 			// This is a custom property (e.g., tck:boolean, tck:id, etc.)
 			// Only check against CMIS system properties, not against existing custom properties
-			System.err.println("TCK CUSTOM PROPERTY UNIQUENESS: " + propertyId + " - allowing reuse for TCK compliance");
 			return !systemIds.contains(propertyId);
 		}
 

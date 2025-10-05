@@ -75,8 +75,6 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
      * Constructor - log bean instantiation for debugging
      */
     public CMISPostInitializer() {
-        System.err.println("!!! CMISPostInitializer CONSTRUCTOR called !!!");
-        log.error("*** CMISPostInitializer CONSTRUCTOR called ***");
     }
 
     /**
@@ -95,7 +93,6 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
 
         // Ensure this runs only once
         if (!initialized.compareAndSet(false, true)) {
-            log.error("*** CMIS POST-INITIALIZATION already executed, skipping duplicate event ***");
             return;
         }
 

@@ -1046,7 +1046,6 @@ public class CloudantClientWrapper {
 			String jsonString = mapper.writeValueAsString(documentMap);
 		// CRITICAL DEBUG: Log JSON for CouchRelationship to diagnose view query issues
 		if (document instanceof jp.aegif.nemaki.model.couch.CouchRelationship) {
-			System.err.println("*** CLOUDANT CREATE RELATIONSHIP JSON: " + jsonString + " ***");
 		}
 
 			
@@ -1217,7 +1216,6 @@ public class CloudantClientWrapper {
 							throw deserEx;
 						}
 					} else {
-						System.err.println("TCK DEBUG: Document properties is NULL for CouchPropertyDefinitionCore");
 					}
 				}
 

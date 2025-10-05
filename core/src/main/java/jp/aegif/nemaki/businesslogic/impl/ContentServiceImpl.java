@@ -1488,8 +1488,6 @@ public class ContentServiceImpl implements ContentService {
 
 		String sourceId = DataUtil.getIdProperty(properties, PropertyIds.SOURCE_ID);
 		String targetId = DataUtil.getIdProperty(properties, PropertyIds.TARGET_ID);
-		System.err.println("*** CREATE RELATIONSHIP: sourceId=" + sourceId + " targetId=" + targetId + " ***");
-
 		Relationship rel = new Relationship();
 		setBaseProperties(callContext, repositoryId, properties, rel, null);
 		rel.setSourceId(sourceId);
@@ -2494,7 +2492,6 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public void appendAttachment(CallContext callContext, String repositoryId, Holder<String> objectId,
 			Holder<String> changeToken, ContentStream contentStream, boolean isLastChunk, ExtensionsData extension) {
-		System.err.println("*** APPEND ATTACHMENT: Starting append operation ***");
 		Document document = contentDaoService.getDocument(repositoryId, objectId.getValue());
 		System.err.println("*** APPEND ATTACHMENT: Document ID: " + document.getId() + ", AttachmentNodeId: " + document.getAttachmentNodeId() + " ***");
 
@@ -2510,26 +2507,16 @@ public class ContentServiceImpl implements ContentService {
 		long existingLength = attachment.getLength();
 		long newLength = contentStream.getLength();
 		long totalLength = existingLength + newLength;
-
-		System.err.println("*** APPEND ATTACHMENT: Existing length: " + existingLength + ", New length: " + newLength + ", Total: " + totalLength + " ***");
-
 		ContentStream cs = new ContentStreamImpl("content", BigInteger.valueOf(totalLength), attachment.getMimeType(), sis);
-		System.err.println("*** APPEND ATTACHMENT: Calling updateAttachment with combined stream ***");
 		contentDaoService.updateAttachment(repositoryId, attachment, cs);
-		System.err.println("*** APPEND ATTACHMENT: updateAttachment completed ***");
-
 		// CRITICAL TCK FIX: Update Document with new change token
 		// Note: contentStreamLength is now dynamically retrieved from actual CouchDB size
 		// via CompileServiceImpl, so no need to update AttachmentNode.length metadata
 		Document freshDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
 		String newChangeToken = String.valueOf(System.currentTimeMillis());
 		freshDocument.setChangeToken(newChangeToken);
-		System.err.println("*** APPEND ATTACHMENT: New change token generated: " + newChangeToken + " ***");
-
 		// Update document with new change token
 		contentDaoService.update(repositoryId, freshDocument);
-		System.err.println("*** APPEND ATTACHMENT: Document updated with new change token ***");
-
 		// Get the updated document to return
 		Document updatedDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
 

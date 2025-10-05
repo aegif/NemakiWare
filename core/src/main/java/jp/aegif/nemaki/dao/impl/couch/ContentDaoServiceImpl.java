@@ -1337,7 +1337,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Relationship> getRelationshipsBySource(String repositoryId, String sourceId) {
 		try {
-			System.err.println("*** GET RELATIONSHIPS BY SOURCE: sourceId=" + sourceId + " ***");
 			// Query relationshipsBySource view with sourceId
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			List<CouchRelationship> couchRels = client.queryView("_repo", "relationshipsBySource", sourceId, CouchRelationship.class);
@@ -1361,7 +1360,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Relationship> getRelationshipsByTarget(String repositoryId, String targetId) {
 		try {
-			System.err.println("*** GET RELATIONSHIPS BY TARGET: targetId=" + targetId + " ***");
 			// Query relationshipsByTarget view with targetId
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			List<CouchRelationship> couchRels = client.queryView("_repo", "relationshipsByTarget", targetId, CouchRelationship.class);
@@ -1872,7 +1870,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchRelationship cr = new CouchRelationship(relationship);
 		System.err.println("*** DAO CREATE RELATIONSHIP: CouchRelationship id=" + cr.getId() + " source=" + cr.getSourceId() + " target=" + cr.getTargetId() + " type=" + cr.getType() + " ***");
 		connectorPool.getClient(repositoryId).create(cr);
-		System.err.println("*** DAO CREATE RELATIONSHIP: Successfully created in CouchDB ***");
 		Relationship result = cr.convert();
 		System.err.println("*** DAO CREATE RELATIONSHIP: Converted result id=" + result.getId() + " source=" + result.getSourceId() + " target=" + result.getTargetId() + " ***");
 		return result;
@@ -2823,10 +2820,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					String attachmentName = "content"; // Standard attachment name for content
 					String contentType = contentStream.getMimeType() != null ?
 						contentStream.getMimeType() : "application/octet-stream";
-
-					System.err.println("*** UPDATE ATTACHMENT STAGE 2: About to call createAttachment ***");
 					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Attachment ID: " + attachment.getId() + " ***");
-					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Revision: " + revisionToUse + " ***");
 					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Content length from metadata: " + contentStream.getLength() + " ***");
 
 					// DEBUG: Read the InputStream and count actual bytes
@@ -2840,7 +2834,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						totalBytesRead += bytesRead;
 					}
 					byte[] allBytes = baos.toByteArray();
-					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Actually read " + totalBytesRead + " bytes from InputStream ***");
 					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Content preview: " + new String(allBytes, 0, Math.min(100, allBytes.length)) + " ***");
 
 					// Create new InputStream from the bytes we read
@@ -2853,8 +2846,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						bais,
 						contentType
 					);
-
-					System.err.println("*** UPDATE ATTACHMENT STAGE 2: createAttachment completed with new revision: " + newRevision + " ***");
 								log.debug("Updated binary content as attachment for: " + attachment.getId() + " (revision: " + newRevision + ")");
 
 				} catch (Exception attachmentError) {
@@ -3358,30 +3349,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {
-		System.err.println("*** GET ATTACHMENT ACTUAL SIZE: Called for attachmentId: " + attachmentId);
-
 		if (attachmentId == null || attachmentId.trim().isEmpty()) {
-			System.err.println("*** GET ATTACHMENT ACTUAL SIZE: attachmentId is null or empty");
 			return null;
 		}
 
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			if (client == null) {
-				System.err.println("*** GET ATTACHMENT ACTUAL SIZE: CloudantClientWrapper is null");
 				return null;
 			}
 
 			// CRITICAL FIX: Use HEAD request to get attachment size directly from CouchDB
 			// This bypasses Cloudant SDK limitations with _attachments metadata
 			Long size = client.getAttachmentSize(attachmentId, "content");
-			System.err.println("*** GET ATTACHMENT ACTUAL SIZE: HEAD request returned size: " + size);
-
 			if (size != null && size > 0) {
 				return size;
 			}
-
-			System.err.println("*** GET ATTACHMENT ACTUAL SIZE: No valid attachment size found for: " + attachmentId);
 			return null;
 
 		} catch (Exception e) {

@@ -56,15 +56,11 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 		super(properties); // 親クラスのMapコンストラクタを呼び出し
 
 		// TCK DEBUG: Log entire Map contents
-		System.err.println("TCK DEBUG: CouchPropertyDefinitionCore Map constructor called with properties: " + properties);
-
 		// CRITICAL FIX: super() doesn't preserve PropertyDefinitionCore-specific fields
 		// We need to manually set them from the properties map
 		if (properties != null) {
 			// TCK DEBUG: Log propertyId extraction
 			String propertyIdFromMap = (String) properties.get("propertyId");
-			System.err.println("TCK DEBUG: propertyId from Map: " + propertyIdFromMap);
-
 			// ✅ 汚染防止システム通過: setterメソッド経由で処理
 			setPropertyId(propertyIdFromMap);
 			setQueryName((String) properties.get("queryName"));
@@ -80,14 +76,12 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 				if (propTypeObj instanceof PropertyType) {
 					// Already a PropertyType enum
 					setPropertyType((PropertyType) propTypeObj);
-					System.err.println("TCK PROPERTY TYPE DEBUG: Direct PropertyType enum set: " + propTypeObj);
 				} else if (propTypeObj instanceof String) {
 					String propTypeStr = (String) propTypeObj;
 					if (propTypeStr != null && !propTypeStr.isEmpty()) {
 						try {
 							PropertyType pt = PropertyType.fromValue(propTypeStr.toLowerCase());
 							setPropertyType(pt);
-							System.err.println("TCK PROPERTY TYPE DEBUG: Converted string '" + propTypeStr + "' to PropertyType: " + pt);
 						} catch (Exception e) {
 							// TCK FIX: Default to STRING if conversion fails
 							System.err.println("TCK PROPERTY TYPE ERROR: Failed to convert '" + propTypeStr + "' to PropertyType: " + e.getMessage() + ". Defaulting to STRING");
@@ -96,12 +90,9 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 					}
 				}
 			} else {
-				System.err.println("TCK PROPERTY TYPE WARNING: No propertyType key in properties map!");
 			}
 
 			// Verify PropertyType was set
-			System.err.println("TCK PROPERTY TYPE VERIFY: After processing, this.propertyType = " + this.propertyType);
-
 			// Cardinality列挙型の処理
 			if (properties.containsKey("cardinality")) {
 				Object cardinalityObj = properties.get("cardinality");

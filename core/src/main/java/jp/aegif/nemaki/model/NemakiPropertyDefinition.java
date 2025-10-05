@@ -109,22 +109,16 @@ public class NemakiPropertyDefinition extends NodeBase {
 		String intendedPropertyId = determineCorrectPropertyId(detail, core);
 
 		// CRITICAL DEBUG: Log what we're about to set as propertyId
-		System.err.println("TCK CONSTRUCTOR DEBUG: NemakiPropertyDefinition constructor");
 		System.err.println("  core.propertyId=" + core.getPropertyId());
 		System.err.println("  detail.localName=" + detail.getLocalName());
 		System.err.println("  detail.displayName=" + detail.getDisplayName());
-		System.err.println("  intendedPropertyId=" + intendedPropertyId);
-
 		// CRITICAL: Detect contamination
 		if (core.getPropertyId() != null && core.getPropertyId().startsWith("cmis:") &&
 			detail.getLocalName() != null && detail.getLocalName().startsWith("tck:")) {
-			System.err.println("*** CONTAMINATION DETECTED ***");
 			System.err.println("  Core has CMIS ID: " + core.getPropertyId());
 			System.err.println("  But Detail has TCK localName: " + detail.getLocalName());
-			System.err.println("  This indicates PropertyDefinitionCore contamination!");
 			// Force use of localName when contamination is detected
 			intendedPropertyId = detail.getLocalName();
-			System.err.println("  OVERRIDE: Using detail.localName=" + intendedPropertyId);
 		}
 
 		setPropertyId(intendedPropertyId);
@@ -226,7 +220,6 @@ public class NemakiPropertyDefinition extends NodeBase {
 				// Check if core has a timestamp suffix (e.g., tck:boolean_1758180525722)
 				if (corePropertyId.matches(".*_\\d{10,}$")) {
 					// This is a timestamped custom property ID - use it as-is
-					System.err.println("TCK PROPERTY ID: Using timestamped core.propertyId=" + corePropertyId);
 					return corePropertyId;
 				}
 			}
@@ -297,10 +290,6 @@ public class NemakiPropertyDefinition extends NodeBase {
 		// CRITICAL FIX: Apply contamination prevention to this constructor too
 		String originalPropertyId = propertyDefinition.getId();
 		String correctedPropertyId = applySafetyContaminationCheck(originalPropertyId, propertyDefinition);
-
-		System.err.println("  Corrected PropertyID: " + correctedPropertyId);
-		System.err.println("=== END Constructor ===");
-
 		setPropertyId(correctedPropertyId);
 		setLocalName(propertyDefinition.getLocalName());
 		setLocalNameSpace(propertyDefinition.getLocalNamespace());
