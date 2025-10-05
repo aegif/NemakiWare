@@ -69,7 +69,7 @@ Total time: 02:32 min
 
 ```bash
 # Re-run TCK tests
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=/path/to/java17-jdk
 mvn test -Dtest=TypesTestGroup,ControlTestGroup,BasicsTestGroup,VersioningTestGroup,FilingTestGroup \
   -f core/pom.xml -Pdevelopment
 
