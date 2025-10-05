@@ -78,6 +78,25 @@ curl -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisselecto
 - ✅ Playwright ACL tests can now access folders for permission testing
 - ✅ Both AtomPub and Browser Binding return correct child counts
 
+**Playwright Test Verification Results (2025-10-05 Post-Fix)**:
+- **basic-connectivity.spec.ts**: 24/24 PASS ✅ (All browsers including mobile)
+- **auth/login.spec.ts**: 40/42 PASS ✅ (2 session-related failures unrelated to folder visibility)
+- **admin/initial-content-setup.spec.ts**: 30/30 PASS ✅ **CRITICAL** - Direct proof of folder visibility fix
+  - ✅ Sites folder found: `c5e44874660261b7ed1070af1d050787`
+  - ✅ Technical Documents folder found: `c5e44874660261b7ed1070af1d051353`
+  - ✅ ACL entries validated (system, admin, GROUP_EVERYONE)
+  - ✅ Regression test passed: Multi-principal ACL confirmed
+- **documents/document-management.spec.ts**: 21/54 PASS ⚠️
+  - ✅ Folder structure navigation working
+  - ✅ Document list display working
+  - ⚠️ UI operations (upload, create, delete) timeouts are separate UI implementation issues
+
+**Test Execution Command**:
+```bash
+cd /Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui
+npm run test:docker -- tests/admin/initial-content-setup.spec.ts
+```
+
 **Debugging Techniques Used**:
 1. System.err.println() to bypass log frameworks
 2. Reflection to inspect proxy objects and method signatures
