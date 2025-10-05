@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" name="jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup" time="3.835" tests="3" errors="0" skipped="0" failures="0">
+  <testcase name="rootFolderTest" classname="jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup" time="3.306" />
+  <testcase name="securityTest" classname="jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup" time="0.247" />
+  <testcase name="repositoryInfoTest" classname="jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup" time="0.267" />
+</testsuite>

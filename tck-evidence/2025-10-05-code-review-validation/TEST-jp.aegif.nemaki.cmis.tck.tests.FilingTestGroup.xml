@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" name="jp.aegif.nemaki.cmis.tck.tests.FilingTestGroup" time="0.003" tests="1" errors="0" skipped="1" failures="0">
+  <testcase name="jp.aegif.nemaki.cmis.tck.tests.FilingTestGroup" classname="jp.aegif.nemaki.cmis.tck.tests.FilingTestGroup" time="0">
+    <skipped message="NemakiWare does not support Multifiling/Unfiling - product specification" />
+  </testcase>
+</testsuite>
