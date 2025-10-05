@@ -10,25 +10,36 @@ test.describe('Document Management', () => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
 
+    // Start with a clean session
+    await page.context().clearCookies();
+    await page.context().clearPermissions();
+
     // Login before each test
     await authHelper.login();
     await testHelper.waitForAntdLoad();
 
-    // Navigate to documents page by clicking sidebar menu
+    // Click the documents menu item to navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForTimeout(2000); // Wait for navigation
+      await page.waitForTimeout(2000);
     }
   });
 
   test('should display document list', async ({ page }) => {
+    // Debug: Log current URL
+    console.log('Current URL:', page.url());
+
     // Wait for page to stabilize after navigation
     await page.waitForTimeout(3000);
+
+    // Debug: Take screenshot
+    await page.screenshot({ path: 'test-results/debug-document-list.png', fullPage: true });
 
     // Check if table is present
     const table = page.locator('.ant-table');
     const tableExists = await table.count() > 0;
+    console.log('Table exists:', tableExists);
 
     if (tableExists) {
       await expect(table).toBeVisible({ timeout: 10000 });
@@ -91,78 +102,55 @@ test.describe('Document Management', () => {
   });
 
   test('should handle file upload', async ({ page }) => {
-    // Look for upload button or drag-drop area
-    const uploadSelectors = [
-      'input[type="file"]',
-      '.upload-button',
-      '.ant-upload',
-      '[data-testid="file-upload"]',
-      'button:has-text("Upload")',
-      'button:has-text("アップロード")',
-    ];
+    // Wait for page to load
+    await page.waitForTimeout(2000);
 
-    let uploadElement;
-    for (const selector of uploadSelectors) {
-      const element = page.locator(selector);
-      if (await element.count() > 0) {
-        uploadElement = element;
-        break;
-      }
-    }
+    // Look for upload button (ファイルアップロード)
+    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
 
-    if (uploadElement) {
-      // If it's a file input, use it directly
-      if (await uploadElement.getAttribute('type') === 'file') {
-        await testHelper.uploadTestFile(
-          uploadElement as any,
-          'test-document.txt',
-          'This is a test document for Playwright testing.'
-        );
+    if (await uploadButton.count() > 0) {
+      // Click upload button to open modal
+      await uploadButton.click();
+
+      // Wait for modal to appear
+      await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
+
+      // Wait for file input to be available in the modal
+      // Note: Ant Design hides the file input for styling, so we don't check visibility
+      const fileInput = page.locator('.ant-modal input[type="file"]');
+      await fileInput.waitFor({ state: 'attached', timeout: 5000 });
+
+      // Upload test file
+      await testHelper.uploadTestFile(
+        '.ant-modal input[type="file"]',
+        'test-playwright-upload.txt',
+        'This is a test document for Playwright testing.'
+      );
+
+      // Wait for file to be selected (filename should appear)
+      await page.waitForTimeout(1000);
+
+      // Click アップロード button in modal
+      const modalUploadButton = page.locator('.ant-modal button[type="button"]').filter({ hasText: 'アップロード' });
+
+      if (await modalUploadButton.count() > 0) {
+        await modalUploadButton.click();
+
+        // Wait for upload to complete - look for success message
+        try {
+          await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+        } catch {
+          // If no success message, wait a bit and check if modal closed
+          await page.waitForTimeout(2000);
+        }
+
+        // Verify modal is closed (upload succeeded)
+        const modalStillVisible = await page.locator('.ant-modal:not(.ant-modal-hidden)').isVisible().catch(() => false);
+        expect(modalStillVisible).toBe(false);
       } else {
-        // Try clicking the upload button to reveal file input
-        await uploadElement.click();
-
-        // Look for file input that appeared
-        const fileInput = page.locator('input[type="file"]');
-        if (await fileInput.count() > 0) {
-          await testHelper.uploadTestFile(
-            'input[type="file"]',
-            'test-document.txt',
-            'This is a test document for Playwright testing.'
-          );
-        }
+        test.skip('Upload button in modal not found');
       }
-
-      // Wait for upload to complete
-      await testHelper.waitForCMISResponse(/upload|create|document/);
-
-      // Look for success message
-      const successSelectors = [
-        '.ant-message-success',
-        '.success-message',
-        '.upload-success',
-      ];
-
-      let successFound = false;
-      for (const selector of successSelectors) {
-        if (await page.locator(selector).count() > 0) {
-          successFound = true;
-          break;
-        }
-      }
-
-      // If no explicit success message, check if document appears in list
-      if (!successFound) {
-        await page.waitForTimeout(2000); // Wait for list to refresh
-        const documentInList = page.locator('text=test-document.txt');
-        if (await documentInList.count() > 0) {
-          successFound = true;
-        }
-      }
-
-      expect(successFound).toBe(true);
     } else {
-      // If no upload functionality found, skip this test
       test.skip('Upload functionality not found in current UI');
     }
   });

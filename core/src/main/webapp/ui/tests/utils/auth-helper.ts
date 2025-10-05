@@ -145,6 +145,13 @@ export class AuthHelper {
 
     // Additional verification: ensure we're not on login page anymore
     await expect(passwordField).not.toBeVisible({ timeout: 5000 });
+
+    // CRITICAL FIX: Reload index.html to trigger React Router
+    // Router has a route for /index.html that redirects to /documents
+    await this.page.goto('/core/ui/dist/index.html');
+
+    // Wait for React Router to process /index.html route and redirect to /documents
+    await this.page.waitForTimeout(3000);
   }
 
   /**
@@ -184,24 +191,42 @@ export class AuthHelper {
 
       // Click logout menu item - this triggers window.location.href redirect
       const logoutMenuItem = this.page.locator('.ant-dropdown .ant-dropdown-menu-item').filter({ hasText: 'ログアウト' });
+
+      console.log('AuthHelper: Clicking logout menu item');
       await logoutMenuItem.click();
 
-      // Wait for navigation event (window.location.href will trigger navigation)
-      await this.page.waitForTimeout(3000); // Wait for redirect to complete
-
-      // Wait for login page to fully load
+      // Wait for navigation to complete (window.location.href causes a hard navigation)
+      // Wait for URL to change to the login page
+      console.log('AuthHelper: Waiting for navigation...');
       try {
-        await this.page.waitForLoadState('load', { timeout: 10000 });
-      } catch {
-        // Ignore load state errors, focus on element visibility
+        await this.page.waitForURL('**/ui/dist/**', { timeout: 5000 });
+        console.log('AuthHelper: URL changed to:', this.page.url());
+      } catch (e) {
+        console.log('AuthHelper: URL wait timed out, current URL:', this.page.url());
       }
 
-      // Verify we're back at login page by checking for login form elements
-      const passwordField = this.page.locator('input[type="password"]');
-      const usernameField = this.page.locator('input[type="text"]').first();
+      // Wait additional time for page to fully reload
+      await this.page.waitForTimeout(2000);
 
-      // Wait for either password or username field to be visible
-      await expect(passwordField.or(usernameField)).toBeVisible({ timeout: 10000 });
+      // Debug: Check what's on the page
+      const bodyText = await this.page.locator('body').textContent();
+      console.log('AuthHelper: Page body text:', bodyText?.substring(0, 200));
+
+      // Try to find login page elements
+      const loginFormExists = await this.page.locator('input[type="password"]').count() > 0;
+      const usernameExists = await this.page.locator('input[placeholder="ユーザー名"]').count() > 0;
+
+      console.log('AuthHelper: Login form exists:', loginFormExists);
+      console.log('AuthHelper: Username field exists:', usernameExists);
+
+      // If we found login elements, we're successfully logged out
+      if (loginFormExists || usernameExists) {
+        console.log('AuthHelper: Successfully returned to login page');
+        return;
+      }
+
+      // If we didn't find login elements, throw error with debug info
+      throw new Error(`Logout failed: No login form found. URL: ${this.page.url()}`);
     } else {
       throw new Error('User menu not found');
     }

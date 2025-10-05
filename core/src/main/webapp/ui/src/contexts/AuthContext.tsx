@@ -76,9 +76,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     authService.logout();
     setAuthToken(null);
     setIsAuthenticated(false);
-    
+
     // Clear any error states and redirect to login
-    window.location.href = '/core/ui/dist/';
+    window.location.href = '/core/ui/dist/index.html';
   }, []);
 
   const handleAuthError = useCallback((error: any) => {
