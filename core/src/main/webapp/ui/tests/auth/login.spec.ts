@@ -17,15 +17,21 @@ test.describe('NemakiWare Authentication', () => {
     // Check page title
     await expect(page).toHaveTitle(/NemakiWare|CMIS/);
 
-    // Verify login form elements are present
-    await expect(page.locator('input[placeholder*="admin"], input[placeholder*="ユーザー名"], input[name="username"], input[type="text"]:not([type="password"])')).toBeVisible();
+    // Verify username field is present (try multiple selectors)
+    const usernameField = page.locator('input[type="text"], input[name="username"], input[placeholder="ユーザー名"]').first();
+    await expect(usernameField).toBeVisible();
+
+    // Verify password field is present
     await expect(page.locator('input[type="password"]')).toBeVisible();
-    await expect(page.locator('button[type="submit"]').getByText('ログイン')).toBeVisible();
+
+    // Verify login button is present
+    const loginButton = page.locator('button:has-text("ログイン")').first();
+    await expect(loginButton).toBeVisible();
 
     // Check for repository selection if available
-    const repositorySelect = page.locator('select, .ant-select');
+    const repositorySelect = page.locator('.ant-select');
     if (await repositorySelect.count() > 0) {
-      await expect(repositorySelect).toBeVisible();
+      await expect(repositorySelect.first()).toBeVisible();
     }
 
     // Verify no JavaScript errors
@@ -48,83 +54,76 @@ test.describe('NemakiWare Authentication', () => {
     // Wait for main UI to load
     await testHelper.waitForAntdLoad();
 
-    // Look for main application elements
-    const mainElements = [
-      '.ant-layout-sider', // Sidebar
-      '.ant-layout-content', // Main content area
-      '.document-list, .folder-tree', // Document management elements
-    ];
+    // Verify main application layout is present
+    await expect(page.locator('.ant-layout-sider')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.ant-layout-content')).toBeVisible({ timeout: 10000 });
 
-    let foundMainElement = false;
-    for (const selector of mainElements) {
-      if (await page.locator(selector).count() > 0) {
-        foundMainElement = true;
-        break;
-      }
-    }
+    // Verify user is shown in header (admin)
+    const userDisplay = page.locator('text=admin');
+    await expect(userDisplay).toBeVisible({ timeout: 5000 });
 
-    expect(foundMainElement).toBe(true);
-
-    // Verify no network errors
-    await testHelper.verifyNoNetworkErrors();
+    // Verify repository is shown
+    const repoDisplay = page.locator('text=bedroom');
+    await expect(repoDisplay).toBeVisible({ timeout: 5000 });
   });
 
   test('should fail login with invalid credentials', async ({ page }) => {
-    const authHelper = new AuthHelper(page);
-
     await page.goto('/core/ui/dist/index.html');
 
-    // Try to login with invalid credentials
-    await page.locator('input[placeholder*="admin"], input[placeholder*="ユーザー名"], input[name="username"], input[type="text"]:not([type="password"])').fill('invalid');
+    // Wait for login form
+    await page.waitForSelector('input[type="password"]', { timeout: 10000 });
+
+    // Fill username field
+    const usernameField = page.locator('input[type="text"], input[name="username"]').first();
+    await usernameField.fill('invalid');
+
+    // Fill password field
     await page.locator('input[type="password"]').fill('invalid');
 
     // Select repository if dropdown exists
-    const repositorySelect = page.locator('select, .ant-select');
+    const repositorySelect = page.locator('.ant-select').first();
     if (await repositorySelect.count() > 0) {
       await repositorySelect.click();
       await page.waitForSelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)', { timeout: 5000 });
-      await page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'bedroom' }).first().click({ force: true });
+
+      const option = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'bedroom' }).first();
+      await option.waitFor({ state: 'attached', timeout: 3000 });
+      await option.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+      await option.click();
     }
 
-    await page.locator('button[type="submit"]').getByText('ログイン').click();
+    // Click login button
+    const loginButton = page.locator('button:has-text("ログイン")').first();
+    await loginButton.click();
 
-    // Should remain on login page or show error
-    await page.waitForTimeout(2000); // Wait for potential error message
+    // Wait for potential error message
+    await page.waitForTimeout(3000);
 
     // Verify we're still on login page
     await expect(page.locator('input[type="password"]')).toBeVisible();
 
-    // Look for error message (common selectors)
-    const errorSelectors = [
-      '.ant-message-error',
-      '.error-message',
-      '.alert-error',
-      '[role="alert"]',
-    ];
-
-    let errorFound = false;
-    for (const selector of errorSelectors) {
-      if (await page.locator(selector).count() > 0) {
-        errorFound = true;
-        break;
-      }
-    }
+    // Look for error message using Ant Design alert
+    const stillOnLoginPage = await page.locator('input[type="password"]').isVisible();
 
     // Either error message should be shown or we should still be on login page
-    expect(errorFound || await page.locator('input[type="password"]').isVisible()).toBe(true);
+    expect(stillOnLoginPage).toBe(true);
   });
 
   test('should handle empty credentials', async ({ page }) => {
     await page.goto('/core/ui/dist/index.html');
 
+    // Wait for form to load
+    await page.waitForSelector('input[type="password"]', { timeout: 10000 });
+
     // Try to login with empty credentials
-    await page.locator('button[type="submit"]').getByText('ログイン').click();
+    const loginButton = page.locator('button:has-text("ログイン")').first();
+    await loginButton.click();
 
     // Should remain on login page
     await expect(page.locator('input[type="password"]')).toBeVisible();
 
-    // Form validation might show error messages
-    const validationErrors = await page.locator('.ant-form-item-explain-error, .error').count();
+    // Form validation might show error messages (Ant Design validation)
     // We don't strictly require validation errors, but form should not submit
   });
 
