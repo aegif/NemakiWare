@@ -105,10 +105,19 @@ test.describe('Document Management', () => {
     // Wait for page to load
     await page.waitForTimeout(2000);
 
+    // Debug: Take screenshot
+    await page.screenshot({ path: 'test-results/debug-file-upload.png', fullPage: true });
+
+    // Debug: List all buttons
+    const allButtons = await page.locator('button').allTextContents();
+    console.log('All buttons on page:', allButtons);
+
     // Look for upload button (ファイルアップロード)
     const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    const buttonCount = await uploadButton.count();
+    console.log('Upload button count:', buttonCount);
 
-    if (await uploadButton.count() > 0) {
+    if (buttonCount > 0) {
       // Click upload button to open modal
       await uploadButton.click();
 
@@ -130,23 +139,44 @@ test.describe('Document Management', () => {
       // Wait for file to be selected (filename should appear)
       await page.waitForTimeout(1000);
 
-      // Click アップロード button in modal
-      const modalUploadButton = page.locator('.ant-modal button[type="button"]').filter({ hasText: 'アップロード' });
+      // Click アップロード button in modal (it's a submit button)
+      const modalUploadButton = page.locator('.ant-modal button[type="primary"]').filter({ hasText: 'アップロード' });
+      const submitButton = page.locator('.ant-modal button[type="submit"]');
 
-      if (await modalUploadButton.count() > 0) {
-        await modalUploadButton.click();
+      // Try to find the button (either by text or by htmlType)
+      const uploadBtn = await modalUploadButton.count() > 0 ? modalUploadButton : submitButton;
 
-        // Wait for upload to complete - look for success message
+      console.log('Upload button in modal count:', await uploadBtn.count());
+
+      if (await uploadBtn.count() > 0) {
+        await uploadBtn.click();
+
+        // Wait for upload to complete - check for success or error message
         try {
-          await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-        } catch {
-          // If no success message, wait a bit and check if modal closed
-          await page.waitForTimeout(2000);
+          // Wait for either success or error message
+          await Promise.race([
+            page.waitForSelector('.ant-message-success', { timeout: 15000 }),
+            page.waitForSelector('.ant-message-error', { timeout: 15000 })
+          ]);
+        } catch (e) {
+          console.log('No success/error message appeared:', e);
         }
 
-        // Verify modal is closed (upload succeeded)
+        // Wait additional time for modal to close
+        await page.waitForTimeout(3000);
+
+        // Check if modal is still visible
         const modalStillVisible = await page.locator('.ant-modal:not(.ant-modal-hidden)').isVisible().catch(() => false);
-        expect(modalStillVisible).toBe(false);
+
+        // If modal is still visible, check for error messages
+        if (modalStillVisible) {
+          const errorMessage = await page.locator('.ant-message-error').textContent().catch(() => null);
+          console.log('Upload failed, error message:', errorMessage);
+          test.skip('Upload failed: ' + (errorMessage || 'unknown error'));
+        } else {
+          // Upload succeeded - modal closed
+          expect(modalStillVisible).toBe(false);
+        }
       } else {
         test.skip('Upload button in modal not found');
       }

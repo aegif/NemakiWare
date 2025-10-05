@@ -47,7 +47,7 @@ class ErrorBoundary extends React.Component<
     if (error.message.includes('401') || error.message.includes('Unauthorized')) {
       // Clear authentication and redirect to login
       localStorage.removeItem('nemakiware_auth');
-      window.location.href = '/core/ui/dist/';
+      window.location.href = '/core/ui/dist/index.html';
     }
   }
 
