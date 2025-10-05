@@ -650,9 +650,10 @@ export class CMISService {
 
   async createDocument(repositoryId: string, parentId: string, file: File, properties: Record<string, any>): Promise<CMISObject> {
     return new Promise((resolve, reject) => {
-      const parentSegment = this.encodeObjectIdSegment(parentId);
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/${parentSegment}`, true);
+      // Browser Binding createDocument uses repository base URL, not object-specific URL
+      // Parent folder is specified via folderId parameter in form data
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
       xhr.setRequestHeader('Accept', 'application/json');
 
       const headers = this.getAuthHeaders();

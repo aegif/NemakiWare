@@ -124,7 +124,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         return;
       }
       
-      await cmisService.createDocument(repositoryId, currentFolderId, actualFile, { name });
+      await cmisService.createDocument(repositoryId, currentFolderId, actualFile, { 'cmis:name': name });
       message.success('ファイルをアップロードしました');
       setUploadModalVisible(false);
       form.resetFields();
