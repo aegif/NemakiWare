@@ -1,0 +1,366 @@
+[TestGroupBase] @Before method called
+[TestGroupBase] Test class: VersioningTestGroup
+[TestGroupBase] Test method: versionDeleteTest
+[TestGroupBase] @Before method completed
+[TestGroupBase] run(CmisTest) called for: org.apache.chemistry.opencmis.tck.tests.versioning.VersionDeleteTest
+[SimpleCmisWrapperTestGroup] Constructor called for test: org.apache.chemistry.opencmis.tck.tests.versioning.VersionDeleteTest@48a242ce
+[SimpleCmisWrapperTestGroup] Test set: org.apache.chemistry.opencmis.tck.tests.versioning.VersionDeleteTest
+[TestGroupBase] run(CmisTestGroup) called
+[JUnitRunner] Constructor called
+[TestGroupBase] JUnitRunner created
+[TestGroupBase] Getting parameters file...
+[TCK DEBUG] Initializing parameters file: cmis-tck-parameters.properties
+[TCK DEBUG] Parameters file initialized: /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/c284-/core/target/test-classes/cmis-tck-parameters.properties
+[TestGroupBase] Parameters file: /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/c284-/core/target/test-classes/cmis-tck-parameters.properties
+[TestGroupBase] Loading parameters...
+[JUnitRunner] loadParameters(File) called: /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/c284-/core/target/test-classes/cmis-tck-parameters.properties
+[JUnitRunner] loadParameters(File) completed
+[TestGroupBase] Parameters loaded
+[TestGroupBase] Adding group...
+[JUnitRunner] addGroup() called: jp.aegif.nemaki.cmis.tck.TestGroupBase$SimpleCmisWrapperTestGroup@1442d7b5
+[SimpleCmisWrapperTestGroup] init() called
+[SimpleCmisWrapperTestGroup] super.init() completed
+[SimpleCmisWrapperTestGroup] addTest() completed
+[SimpleCmisWrapperTestGroup] setName() completed: Versioning Delete Test (BROWSER)
+[JUnitRunner] addGroup() completed
+[TestGroupBase] Group added
+[TestGroupBase] Running tests...
+[JUnitRunner] run() called
+  Versioning Delete Test (BROWSER)
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+SLF4J(W): Class path contains multiple SLF4J providers.
+SLF4J(W): Found provider [ch.qos.logback.classic.spi.LogbackServiceProvider@4c1d9d4b]
+SLF4J(W): Found provider [org.apache.logging.slf4j.SLF4JServiceProvider@7b227d8d]
+SLF4J(W): See https://www.slf4j.org/codes.html#multiple_bindings for an explanation.
+SLF4J(I): Actual provider is of type [ch.qos.logback.classic.spi.LogbackServiceProvider@4c1d9d4b]
+09:38:34.690 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.browser.CmisBrowserBindingSpi -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: Initializing Browser Binding SPI...
+09:38:34.705 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom
+[AbstractSessionTest] Session created successfully
+09:38:34.980 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root/?cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:38:35.227 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis%3Afolder
+09:38:35.499 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: POST http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff
+09:38:38.193 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis%3Adocument
+09:38:38.433 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401446e1&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:38:38.678 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401446e1&cmisselector=allowableActions
+09:38:38.920 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeChildren&includePropertyDefinitions=false&maxItems=100&skipCount=0
+09:38:39.159 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401446e1&cmisselector=policies&filter=*&succinct=true
+09:38:39.400 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis%3Aitem
+09:38:39.665 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401446e1&cmisselector=parent&filter=cmis%3AobjectId&succinct=true
+09:38:39.942 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff&cmisselector=object&includeAllowableActions=true&includeRelationships=none&renditionFilter=cmis%3Anone&includePolicyIds=false&includeACL=false&succinct=true
+09:38:40.184 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401446e1&cmisselector=parent&filter=cmis%3AobjectId&succinct=true
+09:38:40.420 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff&cmisselector=object&includeAllowableActions=true&includeRelationships=none&renditionFilter=cmis%3Anone&includePolicyIds=false&includeACL=false&succinct=true
+09:38:40.655 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff&cmisselector=children&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePathSegment=true&maxItems=100&skipCount=0&succinct=true
+09:38:40.909 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: POST http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401446e1
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: versiondeletetest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 2
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 2
+FORMDATAWRITER DEBUG: InputStream class: java.io.ByteArrayInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 2
+FORMDATAWRITER DEBUG: Content stream copy completed
+09:38:43.632 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740146301&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:38:43.875 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740146301&cmisselector=allowableActions
+09:38:44.109 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740146301&cmisselector=policies&filter=*&succinct=true
+09:38:44.346 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740146301&cmisselector=content
+09:38:44.585 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740146301&cmisselector=parents&filter=cmis%3AobjectId%2Ccmis%3Apath&includeAllowableActions=false&includeRelationships=none&includeRelativePathSegment=true&succinct=true
+09:38:44.881 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740146301&cmisselector=content
+09:38:45.132 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740146301&cmisselector=content
+09:38:45.372 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740146301&cmisselector=parents&filter=cmis%3AobjectId&includeAllowableActions=false&includeRelationships=none&includeRelativePathSegment=false&succinct=true
+09:38:45.608 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401446e1&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:38:45.847 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: POST http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740146301
+09:38:48.711 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: POST http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401446e1
+09:38:51.575 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 74e99296-e3f2-43fb-9cdf-43d8407e076d: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401446e1&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+[JUnitRunner] run() completed
+[TestGroupBase] Tests completed
+=== TCK CLEANUP: Starting test artifact cleanup ===
+TCK CLEANUP: DISABLED - Session access needs refactoring
+=== TCK TEST RESULT ANALYSIS: Versioning Delete Test (BROWSER) ===
+Total results count: 1
+Test class: org.apache.chemistry.opencmis.tck.tests.versioning.VersionDeleteTest
+
+--- Result #0 ---
+  Status: SKIPPED (level=1)
+  Message: 'Test type is not versionable. Test skipped!'
+  URL: null
+  Request: null
+  Response: null
+  Children count: 0
+=== END TCK TEST RESULT ANALYSIS ===
+
+[TestGroupBase] Adding test to TckSuite group...
+[TckSuite] addToGroup called for class: VersioningTestGroup
+[TckSuite] Skipping report generation for now
+[TestGroupBase] run(CmisTest) completed
+[TestGroupBase] @Before method called
+[TestGroupBase] Test class: VersioningTestGroup
+[TestGroupBase] Test method: versioningStateCreateTest
+[TestGroupBase] @Before method completed
+[TestGroupBase] run(CmisTest) called for: org.apache.chemistry.opencmis.tck.tests.versioning.VersioningStateCreateTest
+[SimpleCmisWrapperTestGroup] Constructor called for test: org.apache.chemistry.opencmis.tck.tests.versioning.VersioningStateCreateTest@235ecd9f
+[SimpleCmisWrapperTestGroup] Test set: org.apache.chemistry.opencmis.tck.tests.versioning.VersioningStateCreateTest
+[TestGroupBase] run(CmisTestGroup) called
+[JUnitRunner] Constructor called
+[TestGroupBase] JUnitRunner created
+[TestGroupBase] Getting parameters file...
+[TestGroupBase] Parameters file: /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/c284-/core/target/test-classes/cmis-tck-parameters.properties
+[TestGroupBase] Loading parameters...
+[JUnitRunner] loadParameters(File) called: /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/c284-/core/target/test-classes/cmis-tck-parameters.properties
+[JUnitRunner] loadParameters(File) completed
+[TestGroupBase] Parameters loaded
+[TestGroupBase] Adding group...
+[JUnitRunner] addGroup() called: jp.aegif.nemaki.cmis.tck.TestGroupBase$SimpleCmisWrapperTestGroup@74d1dc36
+[SimpleCmisWrapperTestGroup] init() called
+[SimpleCmisWrapperTestGroup] super.init() completed
+[SimpleCmisWrapperTestGroup] addTest() completed
+[SimpleCmisWrapperTestGroup] setName() completed: Versioning State Create Test (BROWSER)
+[JUnitRunner] addGroup() completed
+[TestGroupBase] Group added
+[TestGroupBase] Running tests...
+[JUnitRunner] run() called
+  Versioning State Create Test (BROWSER)
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+09:38:51.833 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.browser.CmisBrowserBindingSpi -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: Initializing Browser Binding SPI...
+09:38:51.834 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom
+[AbstractSessionTest] Session created successfully
+09:38:52.069 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom/root/?cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:38:52.346 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis%3Afolder
+09:38:52.584 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: POST http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff
+09:38:55.293 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis%3Adocument
+09:38:55.530 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740147de4&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:38:55.770 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740147de4&cmisselector=allowableActions
+09:38:56.004 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeChildren&includePropertyDefinitions=false&maxItems=100&skipCount=0
+09:38:56.321 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740147de4&cmisselector=policies&filter=*&succinct=true
+09:38:56.563 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis%3Aitem
+09:38:56.799 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740147de4&cmisselector=parent&filter=cmis%3AobjectId&succinct=true
+09:38:57.035 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff&cmisselector=object&includeAllowableActions=true&includeRelationships=none&renditionFilter=cmis%3Anone&includePolicyIds=false&includeACL=false&succinct=true
+09:38:57.270 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740147de4&cmisselector=parent&filter=cmis%3AobjectId&succinct=true
+09:38:57.505 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff&cmisselector=object&includeAllowableActions=true&includeRelationships=none&renditionFilter=cmis%3Anone&includePolicyIds=false&includeACL=false&succinct=true
+09:38:57.743 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff&cmisselector=children&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePathSegment=true&maxItems=100&skipCount=0&succinct=true
+09:38:57.996 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: POST http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740147de4
+09:39:00.777 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session c9681fd0-7f4d-4364-b1f5-9535a9a59238: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e855740147de4&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+[JUnitRunner] run() completed
+[TestGroupBase] Tests completed
+=== TCK CLEANUP: Starting test artifact cleanup ===
+TCK CLEANUP: DISABLED - Session access needs refactoring
+=== TCK TEST RESULT ANALYSIS: Versioning State Create Test (BROWSER) ===
+Total results count: 1
+Test class: org.apache.chemistry.opencmis.tck.tests.versioning.VersioningStateCreateTest
+
+--- Result #0 ---
+  Status: SKIPPED (level=1)
+  Message: 'Test type is not versionable. Test skipped!'
+  URL: null
+  Request: null
+  Response: null
+  Children count: 0
+=== END TCK TEST RESULT ANALYSIS ===
+
+[TestGroupBase] Adding test to TckSuite group...
+[TckSuite] addToGroup called for class: VersioningTestGroup
+[TckSuite] Skipping report generation for now
+[TestGroupBase] run(CmisTest) completed
+[TestGroupBase] @Before method called
+[TestGroupBase] Test class: VersioningTestGroup
+[TestGroupBase] Test method: checkedOutTest
+[TestGroupBase] @Before method completed
+[TestGroupBase] run(CmisTest) called for: org.apache.chemistry.opencmis.tck.tests.versioning.CheckedOutTest
+[SimpleCmisWrapperTestGroup] Constructor called for test: org.apache.chemistry.opencmis.tck.tests.versioning.CheckedOutTest@53045c6c
+[SimpleCmisWrapperTestGroup] Test set: org.apache.chemistry.opencmis.tck.tests.versioning.CheckedOutTest
+[TestGroupBase] run(CmisTestGroup) called
+[JUnitRunner] Constructor called
+[TestGroupBase] JUnitRunner created
+[TestGroupBase] Getting parameters file...
+[TestGroupBase] Parameters file: /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/c284-/core/target/test-classes/cmis-tck-parameters.properties
+[TestGroupBase] Loading parameters...
+[JUnitRunner] loadParameters(File) called: /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/c284-/core/target/test-classes/cmis-tck-parameters.properties
+[JUnitRunner] loadParameters(File) completed
+[TestGroupBase] Parameters loaded
+[TestGroupBase] Adding group...
+[JUnitRunner] addGroup() called: jp.aegif.nemaki.cmis.tck.TestGroupBase$SimpleCmisWrapperTestGroup@548d708a
+[SimpleCmisWrapperTestGroup] init() called
+[SimpleCmisWrapperTestGroup] super.init() completed
+[SimpleCmisWrapperTestGroup] addTest() completed
+[SimpleCmisWrapperTestGroup] setName() completed: Checked out Test (BROWSER)
+[JUnitRunner] addGroup() completed
+[TestGroupBase] Group added
+[TestGroupBase] Running tests...
+[JUnitRunner] run() called
+  Checked out Test (BROWSER)
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+09:39:01.048 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.browser.CmisBrowserBindingSpi -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: Initializing Browser Binding SPI...
+09:39:01.048 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom
+[AbstractSessionTest] Session created successfully
+09:39:01.338 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root/?cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:39:01.615 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis%3Afolder
+09:39:01.851 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: POST http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff
+09:39:04.579 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis%3Adocument
+09:39:04.817 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401499b1&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:39:05.059 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401499b1&cmisselector=allowableActions
+09:39:05.295 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeChildren&includePropertyDefinitions=false&maxItems=100&skipCount=0
+09:39:05.529 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401499b1&cmisselector=policies&filter=*&succinct=true
+09:39:05.766 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis%3Aitem
+09:39:06.030 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401499b1&cmisselector=parent&filter=cmis%3AobjectId&succinct=true
+09:39:06.323 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff&cmisselector=object&includeAllowableActions=true&includeRelationships=none&renditionFilter=cmis%3Anone&includePolicyIds=false&includeACL=false&succinct=true
+09:39:06.564 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401499b1&cmisselector=parent&filter=cmis%3AobjectId&succinct=true
+09:39:06.799 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff&cmisselector=object&includeAllowableActions=true&includeRelationships=none&renditionFilter=cmis%3Anone&includePolicyIds=false&includeACL=false&succinct=true
+09:39:07.034 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff&cmisselector=children&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePathSegment=true&maxItems=100&skipCount=0&succinct=true
+09:39:07.287 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: POST http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401499b1
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: checkedouttest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 11
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 11
+FORMDATAWRITER DEBUG: InputStream class: java.io.ByteArrayInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 11
+FORMDATAWRITER DEBUG: Content stream copy completed
+09:39:10.087 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014c385&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:39:10.328 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014c385&cmisselector=allowableActions
+09:39:10.564 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014c385&cmisselector=policies&filter=*&succinct=true
+09:39:10.801 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014c385&cmisselector=content
+09:39:11.041 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014c385&cmisselector=parents&filter=cmis%3AobjectId%2Ccmis%3Apath&includeAllowableActions=false&includeRelationships=none&includeRelativePathSegment=true&succinct=true
+09:39:11.342 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014c385&cmisselector=content
+09:39:11.583 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014c385&cmisselector=content
+09:39:11.819 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014c385&cmisselector=parents&filter=cmis%3AobjectId&includeAllowableActions=false&includeRelationships=none&includeRelativePathSegment=false&succinct=true
+09:39:12.054 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401499b1&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:39:12.293 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom?cmisselector=checkedout&filter=*&orderBy=cmis%3Aname&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&maxItems=100&skipCount=0&succinct=true
+09:39:12.530 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401499b1&cmisselector=checkedout&filter=*&orderBy=cmis%3Aname&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&maxItems=100&skipCount=0&succinct=true
+09:39:12.770 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: POST http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014c385
+09:39:15.608 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014c385&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:39:15.849 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: POST http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401499b1
+09:39:18.709 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session 566af8b7-f35a-4a8d-ae14-325f966d8352: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401499b1&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+[JUnitRunner] run() completed
+[TestGroupBase] Tests completed
+=== TCK CLEANUP: Starting test artifact cleanup ===
+TCK CLEANUP: DISABLED - Session access needs refactoring
+=== TCK TEST RESULT ANALYSIS: Checked out Test (BROWSER) ===
+Total results count: 3
+Test class: org.apache.chemistry.opencmis.tck.tests.versioning.CheckedOutTest
+
+--- Result #0 ---
+  Status: WARNING (level=3)
+  Message: 'Test type is not versionable. Check out skipped!'
+  URL: null
+  Request: null
+  Response: null
+  Children count: 0
+
+--- Result #1 ---
+  Status: INFO (level=0)
+  Message: '0 checked out document(s) overall.'
+  URL: null
+  Request: null
+  Response: null
+  Children count: 0
+
+--- Result #2 ---
+  Status: INFO (level=0)
+  Message: '0 checked out document(s) in the test folder.'
+  URL: null
+  Request: null
+  Response: null
+  Children count: 0
+=== END TCK TEST RESULT ANALYSIS ===
+
+[TestGroupBase] Adding test to TckSuite group...
+[TckSuite] addToGroup called for class: VersioningTestGroup
+[TckSuite] Skipping report generation for now
+[TestGroupBase] run(CmisTest) completed
+[TestGroupBase] @Before method called
+[TestGroupBase] Test class: VersioningTestGroup
+[TestGroupBase] Test method: versioningSmokeTest
+[TestGroupBase] @Before method completed
+[TestGroupBase] run(CmisTest) called for: org.apache.chemistry.opencmis.tck.tests.versioning.VersioningSmokeTest
+[SimpleCmisWrapperTestGroup] Constructor called for test: org.apache.chemistry.opencmis.tck.tests.versioning.VersioningSmokeTest@15043a2f
+[SimpleCmisWrapperTestGroup] Test set: org.apache.chemistry.opencmis.tck.tests.versioning.VersioningSmokeTest
+[TestGroupBase] run(CmisTestGroup) called
+[JUnitRunner] Constructor called
+[TestGroupBase] JUnitRunner created
+[TestGroupBase] Getting parameters file...
+[TestGroupBase] Parameters file: /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/c284-/core/target/test-classes/cmis-tck-parameters.properties
+[TestGroupBase] Loading parameters...
+[JUnitRunner] loadParameters(File) called: /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/c284-/core/target/test-classes/cmis-tck-parameters.properties
+[JUnitRunner] loadParameters(File) completed
+[TestGroupBase] Parameters loaded
+[TestGroupBase] Adding group...
+[JUnitRunner] addGroup() called: jp.aegif.nemaki.cmis.tck.TestGroupBase$SimpleCmisWrapperTestGroup@28261e8e
+[SimpleCmisWrapperTestGroup] init() called
+[SimpleCmisWrapperTestGroup] super.init() completed
+[SimpleCmisWrapperTestGroup] addTest() completed
+[SimpleCmisWrapperTestGroup] setName() completed: Versioning Smoke Test (BROWSER)
+[JUnitRunner] addGroup() completed
+[TestGroupBase] Group added
+[TestGroupBase] Running tests...
+[JUnitRunner] run() called
+  Versioning Smoke Test (BROWSER)
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+09:39:18.956 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.browser.CmisBrowserBindingSpi -- Session ddac0683-6e25-47bb-a50e-82583a521da8: Initializing Browser Binding SPI...
+09:39:18.956 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom
+[AbstractSessionTest] Session created successfully
+09:39:19.191 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root/?cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:39:19.429 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis%3Afolder
+09:39:19.666 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: POST http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff
+09:39:22.524 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis%3Adocument
+09:39:22.762 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014f997&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:39:23.004 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014f997&cmisselector=allowableActions
+09:39:23.239 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeChildren&includePropertyDefinitions=false&maxItems=100&skipCount=0
+09:39:23.473 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014f997&cmisselector=policies&filter=*&succinct=true
+09:39:23.721 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom?cmisselector=typeDefinition&typeId=cmis%3Aitem
+09:39:23.956 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014f997&cmisselector=parent&filter=cmis%3AobjectId&succinct=true
+09:39:24.193 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff&cmisselector=object&includeAllowableActions=true&includeRelationships=none&renditionFilter=cmis%3Anone&includePolicyIds=false&includeACL=false&succinct=true
+09:39:24.428 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014f997&cmisselector=parent&filter=cmis%3AobjectId&succinct=true
+09:39:24.663 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff&cmisselector=object&includeAllowableActions=true&includeRelationships=none&renditionFilter=cmis%3Anone&includePolicyIds=false&includeACL=false&succinct=true
+09:39:24.899 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=e02f784f8360a02cc14d1314c10038ff&cmisselector=children&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePathSegment=true&maxItems=100&skipCount=0&succinct=true
+09:39:25.154 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: POST http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014f997
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: versioningtest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 10
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 10
+FORMDATAWRITER DEBUG: InputStream class: java.io.ByteArrayInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 10
+FORMDATAWRITER DEBUG: Content stream copy completed
+09:39:28.023 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401534d1&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:39:28.262 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401534d1&cmisselector=allowableActions
+09:39:28.497 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401534d1&cmisselector=policies&filter=*&succinct=true
+09:39:28.734 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401534d1&cmisselector=content
+09:39:28.972 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401534d1&cmisselector=parents&filter=cmis%3AobjectId%2Ccmis%3Apath&includeAllowableActions=false&includeRelationships=none&includeRelativePathSegment=true&succinct=true
+09:39:29.208 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401534d1&cmisselector=content
+09:39:29.445 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401534d1&cmisselector=content
+09:39:29.679 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401534d1&cmisselector=parents&filter=cmis%3AobjectId&includeAllowableActions=false&includeRelationships=none&includeRelativePathSegment=false&succinct=true
+09:39:29.915 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014f997&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+09:39:30.158 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: POST http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e8557401534d1
+09:39:33.122 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: POST http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014f997
+09:39:35.897 [main] DEBUG org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker -- Session ddac0683-6e25-47bb-a50e-82583a521da8: GET http://localhost:8080/core/browser/bedroom/root?objectId=85583dd3836942812a7e85574014f997&cmisselector=object&filter=*&includeAllowableActions=true&includeRelationships=both&renditionFilter=*&includePolicyIds=true&includeACL=true&succinct=true
+[JUnitRunner] run() completed
+[TestGroupBase] Tests completed
+=== TCK CLEANUP: Starting test artifact cleanup ===
+TCK CLEANUP: DISABLED - Session access needs refactoring
+=== TCK TEST RESULT ANALYSIS: Versioning Smoke Test (BROWSER) ===
+Total results count: 1
+Test class: org.apache.chemistry.opencmis.tck.tests.versioning.VersioningSmokeTest
+
+--- Result #0 ---
+  Status: SKIPPED (level=1)
+  Message: 'Test type is not versionable. Test skipped!'
+  URL: null
+  Request: null
+  Response: null
+  Children count: 0
+=== END TCK TEST RESULT ANALYSIS ===
+
+[TestGroupBase] Adding test to TckSuite group...
+[TckSuite] addToGroup called for class: VersioningTestGroup
+[TckSuite] Skipping report generation for now
+[TestGroupBase] run(CmisTest) completed
