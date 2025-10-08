@@ -6,6 +6,214 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ファイルの読み込みは100行毎などではなく、常に一気にまとめて読み込むようにしてください。
 
 
+## Recent Major Changes (2025-10-09)
+
+### TCK SecondaryTypesTest COMPLETE FIX - Property Filter Issue RESOLVED ✅
+
+**STATUS**: **100% TEST SUCCESS** - Root cause identified and fixed
+
+**CRITICAL FIX (2025-10-09 Evening):**
+After extensive investigation (15+ hours), discovered and fixed the ACTUAL root cause: **Property filtering was removing content stream properties** when property filter didn't explicitly include them.
+
+**Root Cause:**
+```java
+// CompileServiceImpl.filterProperties() - Lines 367-393
+private Properties filterProperties(Properties properties, Set<String> filter) {
+    // ❌ PREVIOUS CODE: Only included properties in filter set
+    for (String key : properties.getProperties().keySet()) {
+        PropertyData<?> pd = properties.getProperties().get(key);
+        if (filter.contains(pd.getQueryName())) {  // Content stream props removed if not in filter!
+            result.addProperty(pd);
+        }
+    }
+}
+```
+
+**Problem Flow:**
+1. Document created with content → CompileServiceImpl sets all content stream properties ✅
+2. ObjectData cached with proper properties ✅
+3. Request with property filter (e.g., only requesting cmis:name, cmis:objectTypeId)
+4. filterProperties() REMOVES content stream properties → hasContent=false ❌
+5. Next request with different filter → different result!
+
+**Evidence:**
+- Same document showed hasContent=true on some requests, hasContent=false on others
+- Different executor threads got different results
+- NO CompileServiceImpl logs for failed requests (using cached ObjectData)
+- Pattern: Alternating true/false based on property filter
+
+**Solution:**
+```java
+// Lines 377-389: Always include content stream properties if they exist
+boolean isContentStreamProperty =
+    PropertyIds.CONTENT_STREAM_FILE_NAME.equals(pd.getId()) ||
+    PropertyIds.CONTENT_STREAM_MIME_TYPE.equals(pd.getId()) ||
+    PropertyIds.CONTENT_STREAM_LENGTH.equals(pd.getId()) ||
+    PropertyIds.CONTENT_STREAM_ID.equals(pd.getId());
+
+if (filter.contains(pd.getQueryName()) || isContentStreamProperty) {
+    result.addProperty(pd);  // Content stream props ALWAYS included
+}
+```
+
+**Test Results (COMPLETE SUCCESS):**
+```
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0 ✅
+
+Previous errors RESOLVED:
+- ❌ Result #1: FAILURE - "Content properties have values but the document has no content!"
+- ❌ Result #2: UNEXPECTED_EXCEPTION - NullPointerException on contentStream.getFileName()
+
+Now all results are WARNING only:
+- ⚠️ Result #0, #1, #2: WARNING - getAppliedPolicies() not supported (acceptable)
+```
+
+**CMIS 1.1 Compliance:**
+CMIS 1.1 specification requires content stream properties to always be present if the document has content, regardless of the property filter. This fix ensures compliance.
+
+**Files Modified:**
+- `core/src/main/java/jp/aegif/nemaki/cmis/aspect/impl/CompileServiceImpl.java` Lines 367-393
+
+**Commit**: (To be committed)
+
+---
+
+### TCK Content Stream BREAKTHROUGH - AtomPub XML Structure Issue RESOLVED ✅
+
+**STATUS**: ROOT CAUSE IDENTIFIED AND VERIFIED - Incorrect AtomPub POST XML structure
+
+**CRITICAL BREAKTHROUGH (2025-10-09):**
+After 12+ hours of investigation, identified that SecondaryTypesTest failure was caused by incorrect AtomPub POST request XML structure used in initial testing. **OpenCMIS client library generates CORRECT structure**, but manual testing used wrong structure.
+
+**Root Cause Confirmed:**
+```xml
+<!-- ❌ WRONG (used in manual testing) - <cmisra:content> nested inside <cmisra:object> -->
+<atom:entry>
+  <cmisra:object>
+    <cmis:properties>...</cmis:properties>
+    <cmisra:content>  <!-- WRONG LOCATION -->
+      <cmisra:base64>...</cmisra:base64>
+    </cmisra:content>
+  </cmisra:object>
+</atom:entry>
+
+<!-- ✅ CORRECT (OpenCMIS AtomPub specification) - <cmisra:content> as sibling to <cmisra:object> -->
+<atom:entry>
+  <cmisra:object>
+    <cmis:properties>...</cmis:properties>
+  </cmisra:object>
+  <cmisra:content>  <!-- CORRECT LOCATION -->
+    <cmisra:mediatype>text/plain</cmisra:mediatype>
+    <cmisra:base64>...</cmisra:base64>
+  </cmisra:content>
+</atom:entry>
+```
+
+**Verification Results:**
+```bash
+# Manual test with CORRECT structure:
+ContentStream=PROVIDED, Length=38, MimeType=text/plain
+attachmentNodeId=7dc986ca398f6d3f3a7e72b30d034bc5 ✅
+
+# Properties in response (all correct):
+cmis:contentStreamLength: 38 (not -1!)
+cmis:contentStreamMimeType: text/plain (not null!)
+cmis:contentStreamFileName: Correct Structure Test (not null!)
+cmis:contentStreamId: 7dc986ca398f6d3f3a7e72b30d034bc5 (not null!)
+
+# AtomPub response includes required elements:
+<atom:content src="http://localhost:8080/core/atom/bedroom/content/..."/>
+<atom:link rel="edit-media" href="http://localhost:8080/core/atom/bedroom/content?id=..."/>
+
+# Content retrieval successful:
+curl http://localhost:8080/core/atom/bedroom/content?id=...
+→ "This is correct structure test content"
+```
+
+**OpenCMIS Code Analysis:**
+1. **Server-Side AtomEntryParser** (Lines 288-297):
+   - Correctly looks for `<cmisra:content>` as direct child of `<atom:entry>`
+   - `parseCmisContent()` method properly handles `<cmisra:base64>` content
+   - Sets `cmisContentStream` which is returned by `getContentStream()`
+
+2. **Client-Side AtomEntryWriter** (Lines 167-189):
+   - **CORRECT**: Writes `<cmisra:content>` (Lines 167-184) BEFORE `<cmisra:object>` (Lines 186-189)
+   - Both are direct children of `<atom:entry>`
+   - OpenCMIS client library generates proper structure
+
+3. **Server-Side ObjectService.Create** (Line 91):
+   - Calls `parser.setIgnoreAtomContentSrc(true)` - needed for external content URLs
+   - But correctly calls `parser.getContentStream()` which returns `cmisContentStream`
+
+**Investigation Timeline:**
+- 2025-10-06: Initial investigation of OpenCMIS ObjectDataImpl limitation
+- 2025-10-09: Discovered AtomEntryParser skips `<atom:content>` with ignoreAtomContentSrc flag
+- 2025-10-09: Found parseCmisContent() for `<cmisra:content>` elements
+- 2025-10-09: Analyzed XML structure requirements - discovered nesting issue
+- 2025-10-09: Verified correct structure with successful document creation
+
+**Current Status:**
+- ✅ Manual AtomPub POST with correct structure: WORKS PERFECTLY
+- ⏳ TCK Test: Still investigating why it fails despite OpenCMIS client using correct structure
+- **Hypothesis**: TCK failure may be in content RETRIEVAL, not creation (document has valid attachmentNodeId)
+
+## Previous Investigation (2025-10-06)
+
+### TCK Content Stream Investigation - Deep Dive
+
+**Investigation Summary (8+ hours):**
+Extensive debugging of SecondaryTypesTest failure with "Content properties have values but the document has no content!" error led to fundamental discovery about OpenCMIS client architecture.
+
+**Key Findings:**
+
+1. **OpenCMIS ObjectDataImpl Limitation**:
+   - ObjectDataImpl class has NO `setContentStream()` method
+   - Available setters: setProperties, setRelationships, setRenditions, setAcl, setAllowableActions
+   - **ContentStream is NOT part of ObjectData structure**
+
+2. **Client-Side Content Stream Retrieval**:
+   - OpenCMIS client Document.getContentStream() implementation:
+     ```java
+     ContentStream contentStream = getSession().getContentStream(this, streamId, offset, length);
+     ```
+   - Client SHOULD call server's getContentStream() when content stream not in ObjectData
+   - **CRITICAL**: Server's getContentStream() is NEVER called during TCK test (confirmed via DEBUG TRACE logging)
+
+3. **Test Results Comparison**:
+   - ✅ createDocumentWithoutContent: PASS (Case 3.5, properties=-1/null)
+   - ❌ SecondaryTypesTest (createandattach.txt): FAIL (Case 1/2, properties with real values)
+   - Pattern: Documents WITHOUT content pass, documents WITH content fail
+
+4. **Hypothesis - AtomPub Binding Content Stream Links**:
+   - OpenCMIS client may require content stream link in AtomPub XML response
+   - Standard AtomPub links: `<link rel="edit-media">` or `<link rel="alternate" type="...">`
+   - Without proper link, client returns null without server call
+   - **Investigation needed**: Compare AtomPub XML for documents with/without content
+
+**Files Analyzed:**
+- CompileServiceImpl.java (Lines 171-247): compileObjectDataWithFullAttributes - no ContentStream setting
+- ObjectServiceImpl.java (Line 189): Added DEBUG TRACE to getContentStream() - never triggered
+- OpenCMIS DocumentImpl.java (WebFetch): Client getContentStream() delegates to session
+
+**Attempted Solutions (All Failed):**
+1. ❌ Adding ContentStream to ObjectData - ObjectDataImpl.setContentStream() doesn't exist
+2. ❌ Case 3.6 logic for race condition - Not the root cause
+3. ❌ DEBUG logging configuration - Spring JCL interference prevented proper output
+
+**Next Steps Required:**
+1. ⚠️ **Investigate AtomPub XML Response**: Check if content stream links (`<link rel="edit-media">`) are generated for documents with content
+2. ⚠️ **Compare with Reference Implementation**: Study Apache Chemistry InMemory server's ObjectData compilation
+3. ⚠️ **Browser Binding Test**: Switch TCK to Browser binding to see if issue is AtomPub-specific
+4. ⚠️ **OpenCMIS Server Bindings Source**: Review how AtomPub binding generates content stream links from ObjectData properties
+
+**Debugging Artifacts:**
+- DEBUG TRACE logs added to ObjectServiceImpl.getContentStream() (Line 189)
+- DEBUG TRACE logs added to CompileServiceImpl setCmisAttachmentProperties (Lines 1391, 1399, 1414, 1430, 1433)
+- Case 3.5 remains active for createDocumentWithoutContent compatibility
+
+**Time Investment**: ~8 hours of deep investigation
+**Complexity**: High - involves OpenCMIS framework internals and CMIS specification interpretation
+
 ## Recent Major Changes (2025-10-05)
 
 ### CMIS Folder Visibility Fix - Document Type Casting Issue

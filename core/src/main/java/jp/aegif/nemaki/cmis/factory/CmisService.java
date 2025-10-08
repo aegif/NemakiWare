@@ -211,10 +211,20 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		String streamId = getIdProperty(object, PropertyIds.CONTENT_STREAM_ID);
 		BigInteger length = getIntegerProperty(object, PropertyIds.CONTENT_STREAM_LENGTH);
 		boolean hasContent = fileName != null || mimeType != null || streamId != null || length != null;
+
+		// DEBUG TRACE for content stream investigation
+		log.error("DEBUG TRACE: ObjectInfo content check - objectId=" + object.getId() +
+			", hasContent=" + hasContent +
+			", fileName=" + fileName +
+			", mimeType=" + mimeType +
+			", streamId=" + streamId +
+			", length=" + length);
+
 		if (hasContent) {
 			info.setHasContent(hasContent);
 			info.setContentType(mimeType);
 			info.setFileName(fileName);
+			log.error("DEBUG TRACE: ObjectInfo.setHasContent(true) called for " + object.getId());
 		} else {
 			info.setHasContent(false);
 			info.setContentType(null);

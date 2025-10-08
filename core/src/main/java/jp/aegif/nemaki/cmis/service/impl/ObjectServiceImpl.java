@@ -185,7 +185,8 @@ public class ObjectServiceImpl implements ObjectService {
 	@Override
 	public ContentStream getContentStream(CallContext callContext, String repositoryId, String objectId,
 			String streamId, BigInteger offset, BigInteger length) {
-		
+
+		log.error("DEBUG TRACE: getContentStream() called - objectId=" + objectId + ", streamId=" + streamId);
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
@@ -568,11 +569,19 @@ public class ObjectServiceImpl implements ObjectService {
 	public String createDocument(CallContext callContext, String repositoryId, Properties properties, String folderId,
 			ContentStream contentStream, VersioningState versioningState, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
-		
+
 		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
-		
+
+		// CRITICAL DEBUG: Always log contentStream status at ERROR level
+		Object nameProperty = properties.getProperties().get("cmis:name");
+		log.error("DEBUG TRACE: ObjectServiceImpl.createDocument - DocumentName=" + nameProperty +
+			", ContentStream=" + (contentStream != null ? "PROVIDED" : "NULL"));
+		if (contentStream != null) {
+			log.error("DEBUG TRACE: ContentStream details - Length=" + contentStream.getLength() +
+				", MimeType=" + contentStream.getMimeType() + ", FileName=" + contentStream.getFileName());
+		}
+
 		if (log.isDebugEnabled()) {
-			Object nameProperty = properties.getProperties().get("cmis:name");
 			Object secondaryTypeIds = properties.getProperties().get("cmis:secondaryObjectTypeIds");
 			log.debug("ObjectServiceImpl.createDocument called:");
 			log.debug("  - Document Name: " + (nameProperty != null ? nameProperty : "NULL"));
