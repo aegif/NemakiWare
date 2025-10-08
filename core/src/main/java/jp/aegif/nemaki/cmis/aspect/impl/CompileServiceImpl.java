@@ -374,17 +374,25 @@ public class CompileServiceImpl implements CompileService {
 			for (String key : properties.getProperties().keySet()) {
 				PropertyData<?> pd = properties.getProperties().get(key);
 
-				// CRITICAL TCK FIX (2025-10-09): Always include content stream properties if they exist
+				// CRITICAL TCK FIX (2025-10-09): Always include content stream properties WITH VALID VALUES
 				// CMIS 1.1 specification requires content stream properties to always be present
 				// if the document has content, regardless of the property filter.
 				// This fixes the issue where hasContent alternates between true/false based on filter.
-				boolean isContentStreamProperty =
-					PropertyIds.CONTENT_STREAM_FILE_NAME.equals(pd.getId()) ||
-					PropertyIds.CONTENT_STREAM_MIME_TYPE.equals(pd.getId()) ||
-					PropertyIds.CONTENT_STREAM_LENGTH.equals(pd.getId()) ||
-					PropertyIds.CONTENT_STREAM_ID.equals(pd.getId());
+				//
+				// IMPORTANT: Only include properties with VALID content indicators:
+				// - length: Must be non-null AND not -1 (CMIS uses -1 for "no content")
+				// - mimeType/fileName/streamId: Must be non-null
+				boolean hasValidContentStreamProperty = false;
+				if (PropertyIds.CONTENT_STREAM_LENGTH.equals(pd.getId())) {
+					Object value = pd.getFirstValue();
+					hasValidContentStreamProperty = value != null && !Long.valueOf(-1L).equals(value);
+				} else if (PropertyIds.CONTENT_STREAM_MIME_TYPE.equals(pd.getId()) ||
+						   PropertyIds.CONTENT_STREAM_FILE_NAME.equals(pd.getId()) ||
+						   PropertyIds.CONTENT_STREAM_ID.equals(pd.getId())) {
+					hasValidContentStreamProperty = pd.getFirstValue() != null;
+				}
 
-				if (filter.contains(pd.getQueryName()) || isContentStreamProperty) {
+				if (filter.contains(pd.getQueryName()) || hasValidContentStreamProperty) {
 					result.addProperty(pd);
 				}
 			}

@@ -210,7 +210,11 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		String mimeType = getStringProperty(object, PropertyIds.CONTENT_STREAM_MIME_TYPE);
 		String streamId = getIdProperty(object, PropertyIds.CONTENT_STREAM_ID);
 		BigInteger length = getIntegerProperty(object, PropertyIds.CONTENT_STREAM_LENGTH);
-		boolean hasContent = fileName != null || mimeType != null || streamId != null || length != null;
+
+		// CRITICAL TCK FIX (2025-10-09): Treat length=-1 as "no content" for CMIS 1.1 compliance
+		// CMIS uses -1 to indicate unknown/no content length (see CASE 3.5 in CompileServiceImpl)
+		boolean hasValidLength = length != null && !BigInteger.valueOf(-1L).equals(length);
+		boolean hasContent = fileName != null || mimeType != null || streamId != null || hasValidLength;
 
 		// DEBUG TRACE for content stream investigation
 		log.error("DEBUG TRACE: ObjectInfo content check - objectId=" + object.getId() +
