@@ -58,11 +58,13 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 			Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
-		
+
+		System.out.println("========== TCK ALIAS DEBUG [DiscoveryServiceImpl]: query() called with statement: " + statement);
+
 		if (log.isDebugEnabled()) {
 			log.debug("DiscoveryServiceImpl.query called with statement: " + statement + " for repository: " + repositoryId);
 		}
-		
+
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -75,9 +77,12 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 
 		// //////////////////
 		// Body of the method
-		return queryProcessor.query(context, repositoryId, statement,
+		System.out.println("========== TCK ALIAS DEBUG [DiscoveryServiceImpl]: Calling queryProcessor.query()");
+		ObjectList result = queryProcessor.query(context, repositoryId, statement,
 				searchAllVersions, includeAllowableActions, includeRelationships,
 				renditionFilter, maxItems, skipCount, extension);
+		System.out.println("========== TCK ALIAS DEBUG [DiscoveryServiceImpl]: queryProcessor returned " + (result != null ? result.getObjects().size() : 0) + " objects");
+		return result;
 	}
 
 	/**

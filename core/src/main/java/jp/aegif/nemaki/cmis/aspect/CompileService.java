@@ -23,6 +23,7 @@ package jp.aegif.nemaki.cmis.aspect;
 
 import java.math.BigInteger;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import jp.aegif.nemaki.model.Acl;
@@ -48,6 +49,20 @@ public interface CompileService {
 	
 	public <T extends Content> ObjectList compileObjectDataListForSearchResult(CallContext callContext,
 			String repositoryId, List<T> contents, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly, String orderBy, long numFound);
+
+	/**
+	 * TCK CRITICAL FIX: Query alias support
+	 *
+	 * Compile ObjectData list for search results with CMIS query alias support.
+	 * This method supports "AS" clause in CMIS SQL queries, mapping property names to aliases in query results.
+	 *
+	 * @param propertyAliases Map of aliases to property names (key=alias, value=propertyId/queryName).
+	 *                        Example: {"folderName" => "cmis:name", "folderId" => "cmis:objectId"}
+	 *                        When null, no alias mapping is applied.
+	 */
+	public <T extends Content> ObjectList compileObjectDataListForSearchResult(CallContext callContext,
+			String repositoryId, List<T> contents, String filter, Map<String, String> propertyAliases,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly, String orderBy, long numFound);
 
 	public ObjectList compileChangeDataList(CallContext context, String repositoryId,
