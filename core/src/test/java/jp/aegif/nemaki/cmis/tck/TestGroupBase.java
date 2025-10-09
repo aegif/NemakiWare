@@ -26,42 +26,76 @@ public class TestGroupBase extends AbstractRunner {
 	static final String PARAMETERS_FILE_NAME = "cmis-tck-parameters.properties";
 	static final String FILTERS_FILE_NAME = "cmis-tck-filters.properties";
 
-	// CRITICAL FIX: Delay initialization to avoid static initialization hang
-	protected static File parametersFile = null;
-	protected static Properties filters = null;
+	protected static File parametersFile;
+	protected static Properties filters;
+	private static boolean parametersLoaded = false;
+	private static Map<String, String> loadedParameters;
+
+	// CRITICAL FIX: Load parameters once in static initializer to avoid hang
+	// This resolves the timeout issue where loadParameters hangs on 2nd+ calls
+	static {
+		System.out.println("[TCK] Static initialization starting");
+		try {
+			java.net.URL paramUrl = TestGroupBase.class.getClassLoader().getResource(PARAMETERS_FILE_NAME);
+			if (paramUrl == null) {
+				System.err.println("[TCK] Could not find resource: " + PARAMETERS_FILE_NAME);
+				parametersFile = new File("core/src/test/resources/" + PARAMETERS_FILE_NAME);
+				if (parametersFile.exists()) {
+					System.out.println("[TCK] Found parameters file at: " + parametersFile.getAbsolutePath());
+				} else {
+					System.err.println("[TCK] Parameters file does not exist at: " + parametersFile.getAbsolutePath());
+				}
+			} else {
+				parametersFile = new File(paramUrl.getFile());
+				System.out.println("[TCK] Parameters file loaded from classpath: " + parametersFile);
+			}
+
+			java.net.URL filterUrl = TestGroupBase.class.getClassLoader().getResource(FILTERS_FILE_NAME);
+			if (filterUrl == null) {
+				System.err.println("[TCK] Could not find resource: " + FILTERS_FILE_NAME);
+				filters = new Properties();
+			} else {
+				filters = PropertyUtil.build(new File(filterUrl.getFile()));
+				System.out.println("[TCK] Filters loaded with " + filters.size() + " properties");
+			}
+
+			// CRITICAL FIX: Load parameters once in static initializer
+			// This avoids the hang issue with multiple loadParameters calls
+			if (parametersFile != null && parametersFile.exists()) {
+				System.out.println("[TCK] Preloading parameters in static initializer");
+				try {
+					JUnitRunner tempRunner = new JUnitRunner();
+					tempRunner.loadParameters(parametersFile);
+					loadedParameters = tempRunner.getParameters();
+					parametersLoaded = true;
+					System.out.println("[TCK] Parameters preloaded successfully (count: " + (loadedParameters != null ? loadedParameters.size() : 0) + ")");
+				} catch (Exception loadEx) {
+					System.err.println("[TCK] Failed to preload parameters: " + loadEx);
+					// Continue without parameters - tests may fail but won't hang
+				}
+			}
+		} catch (Exception e) {
+			System.err.println("[TCK] Error in static initialization: " + e);
+			e.printStackTrace();
+			// Initialize with empty properties to prevent NPE
+			if (filters == null) {
+				filters = new Properties();
+			}
+			if (parametersFile == null) {
+				parametersFile = new File("core/src/test/resources/" + PARAMETERS_FILE_NAME);
+			}
+		}
+		System.out.println("[TCK] Static initialization completed");
+	}
 
 	static Map<String, AbstractCmisTestGroup> testGroupMap = new HashMap<>();
 
-	// Initialize parameters file on demand
+	// Accessor methods for backward compatibility
 	protected static File getParametersFile() {
-		if (parametersFile == null) {
-			try {
-				System.out.println("[TCK DEBUG] Initializing parameters file: " + PARAMETERS_FILE_NAME);
-				parametersFile = new File(TestGroupBase.class.getClassLoader().getResource(PARAMETERS_FILE_NAME).getFile());
-				System.out.println("[TCK DEBUG] Parameters file initialized: " + parametersFile.getAbsolutePath());
-			} catch (Exception e) {
-				System.err.println("[TCK ERROR] Failed to initialize parameters file: " + e.getMessage());
-				e.printStackTrace();
-			}
-		}
 		return parametersFile;
 	}
 
-	// Initialize filters on demand
 	private static Properties getFilters() {
-		if (filters == null) {
-			try {
-				System.out.println("[TCK DEBUG] Initializing filters file: " + FILTERS_FILE_NAME);
-				File filtersFile = new File(TestGroupBase.class.getClassLoader().getResource(FILTERS_FILE_NAME).getFile());
-				filters = PropertyUtil.build(filtersFile);
-				System.out.println("[TCK DEBUG] Filters initialized with " + filters.size() + " properties");
-			} catch (Exception e) {
-				System.err.println("[TCK ERROR] Failed to initialize filters: " + e.getMessage());
-				e.printStackTrace();
-				// Return empty properties to avoid NPE
-				filters = new Properties();
-			}
-		}
 		return filters;
 	}
 
@@ -136,17 +170,19 @@ public class TestGroupBase extends AbstractRunner {
 		JUnitRunner runner = new JUnitRunner();
 		System.out.println("[TestGroupBase] JUnitRunner created");
 
-		// Use lazy initialization for parameters file
-		System.out.println("[TestGroupBase] Getting parameters file...");
-		File paramsFile = getParametersFile();
-		if (paramsFile == null) {
-			throw new IllegalStateException("Failed to load TCK parameters file");
+		// CRITICAL FIX: Use preloaded parameters instead of loading again
+		// This avoids the hang issue with multiple loadParameters calls
+		if (parametersLoaded && loadedParameters != null) {
+			System.out.println("[TestGroupBase] Using preloaded parameters (count: " + loadedParameters.size() + ")");
+			runner.setParameters(loadedParameters);
+		} else {
+			System.out.println("[TestGroupBase] Loading parameters from file (fallback)");
+			if (parametersFile == null || !parametersFile.exists()) {
+				throw new IllegalStateException("Failed to load TCK parameters file");
+			}
+			runner.loadParameters(parametersFile);
 		}
-		System.out.println("[TestGroupBase] Parameters file: " + paramsFile.getAbsolutePath());
-
-		System.out.println("[TestGroupBase] Loading parameters...");
-		runner.loadParameters(paramsFile);
-		System.out.println("[TestGroupBase] Parameters loaded");
+		System.out.println("[TestGroupBase] Parameters ready");
 
 		System.out.println("[TestGroupBase] Adding group...");
 		runner.addGroup(group);
