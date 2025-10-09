@@ -4,6 +4,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.model.Content;
@@ -127,6 +128,9 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
             if (technicalDocsFolderId != null) {
                 registerCMISSpecificationPDF(contentService, callContext, repositoryId, technicalDocsFolderId);
             }
+
+            // TCK CRITICAL FIX: Index root folder in Solr for query tests
+            indexRootFolderInSolr(contentService, repositoryId, rootFolderId);
 
             log.error("=== INITIAL CONTENT SETUP PATCH COMPLETED SUCCESSFULLY for repository: " + repositoryId + " ===");
 
@@ -408,6 +412,52 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
 
         } catch (Exception e) {
             log.error("Failed to create document: " + documentName, e);
+        }
+    }
+
+    /**
+     * TCK CRITICAL FIX: Index root folder in Solr for query tests
+     * Root folders created from database dumps are not automatically indexed
+     */
+    private void indexRootFolderInSolr(ContentService contentService, String repositoryId, String rootFolderId) {
+        try {
+            log.info("=== TCK FIX: Indexing root folder in Solr for repository: " + repositoryId + " ===");
+
+            Content rootContent = contentService.getContent(repositoryId, rootFolderId);
+            if (rootContent == null) {
+                log.warn("Root folder not found for Solr indexing: " + rootFolderId);
+                return;
+            }
+
+            // Fix objectType if null (CMIS compliance)
+            if (rootContent.getObjectType() == null || rootContent.getObjectType().isEmpty()) {
+                log.info("Fixing root folder objectType: null -> cmis:folder");
+                rootContent.setObjectType("cmis:folder");
+                contentService.update(new SystemCallContext(repositoryId), repositoryId, rootContent);
+                log.info("Root folder objectType updated in database");
+            }
+
+            // Get SolrUtil bean from patchUtil
+            SolrUtil solrUtil = patchUtil.getSolrUtil();
+            if (solrUtil == null) {
+                log.warn("SolrUtil not available - skipping root folder Solr indexing");
+                return;
+            }
+
+            // Index in Solr
+            if (rootContent instanceof Folder) {
+                log.info("Indexing root folder in Solr: " + rootFolderId);
+                solrUtil.indexDocument(repositoryId, (Folder) rootContent);
+                log.info("✅ Root folder indexed successfully in Solr");
+            } else {
+                log.warn("Root content is not a Folder instance: " + rootContent.getClass().getName());
+            }
+
+        } catch (Exception e) {
+            log.warn("Failed to index root folder in Solr (non-critical): " + e.getMessage());
+            if (log.isDebugEnabled()) {
+                log.debug("Root folder Solr indexing error details", e);
+            }
         }
     }
 }

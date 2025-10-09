@@ -91,6 +91,9 @@
 		<property name="typeManager">
 			<ref bean="TypeManager" />
 		</property>
+		<property name="solrUtil">
+			<ref bean="solrUtil" />
+		</property>
 	</bean>
 
 	<!-- Individual Patch Bean Definitions for ServletContextListener access -->
