@@ -287,7 +287,16 @@ public class ExceptionServiceImpl implements ExceptionService,
 			}
 			
 		} catch (Exception e) {
-			msg = "Internal error during type validation";
+			log.error("CRITICAL DEBUG: Exception caught during type validation", e);
+			log.error("Exception class: " + e.getClass().getName());
+			log.error("Exception message: " + e.getMessage());
+			log.error("Type ID: " + (type != null ? type.getId() : "null"));
+			log.error("Parent Type ID: " + (type != null ? type.getParentTypeId() : "null"));
+			log.error("Base Type ID: " + (type != null && type.getBaseTypeId() != null ? type.getBaseTypeId().value() : "null"));
+			if (e.getCause() != null) {
+				log.error("Caused by: " + e.getCause().getClass().getName() + ": " + e.getCause().getMessage());
+			}
+			msg = "Internal error during type validation: " + e.getClass().getSimpleName() + " - " + e.getMessage();
 		}
 
 		if (!StringUtils.isEmpty(msg)) {

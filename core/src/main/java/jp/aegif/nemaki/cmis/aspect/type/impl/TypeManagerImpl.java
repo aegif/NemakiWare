@@ -2670,7 +2670,41 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public TypeDefinitionContainer getTypeById(String repositoryId, String typeId) {
 		ensureInitialized();
+
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+
+		if (types == null) {
+			// CRITICAL FIX: Dynamically initialize missing repository
+			// This handles cases where repositoryInfoMap doesn't include the repository at startup
+			synchronized (initLock) {
+				// Double-check after acquiring lock
+				types = TYPES.get(repositoryId);
+				if (types == null) {
+					log.warn("Repository not found in TYPES cache, initializing dynamically: " + repositoryId);
+					TYPES.put(repositoryId, new ConcurrentHashMap<String, TypeDefinitionContainer>());
+
+					// Force re-initialization for this repository
+					try {
+						if (log.isDebugEnabled()) {
+							log.debug("Forcing TypeManager re-initialization for repository: " + repositoryId);
+						}
+						initialized = false;
+						init();
+
+						// Check again after re-initialization
+						types = TYPES.get(repositoryId);
+						if (types == null) {
+							log.error("Repository still not initialized after dynamic init: " + repositoryId);
+							return null;
+						}
+					} catch (Exception e) {
+						log.error("Exception during dynamic repository initialization for " + repositoryId, e);
+						return null;
+					}
+				}
+			}
+		}
+
 		return types.get(typeId);
 	}
 
@@ -2678,7 +2712,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	public TypeDefinition getTypeByQueryName(String repositoryId, String typeQueryName) {
 		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
-		
+		if (types == null) {
+			log.error("CRITICAL: TYPES map is null for repository: " + repositoryId + " in getTypeByQueryName()");
+			return null;
+		}
+
 		for (Entry<String, TypeDefinitionContainer> entry : types.entrySet()) {
 			if (entry.getValue().getTypeDefinition().getQueryName()
 					.equals(typeQueryName))
