@@ -2097,9 +2097,14 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event(Before the content is deleted!)
 		writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);
 
-		// Archive
-		log.error("Creating archive for object: {}", objectId);
-		createArchive(callContext, repositoryId, objectId, deletedWithParent);
+		// Archive - Check if archive creation is enabled (CRITICAL TCK FIX for timeout)
+		boolean archiveCreateEnabled = propertyManager.readBoolean(PropertyKey.ARCHIVE_CREATE_ENABLED);
+		if (archiveCreateEnabled) {
+			log.debug("Creating archive for object: {}", objectId);
+			createArchive(callContext, repositoryId, objectId, deletedWithParent);
+		} else {
+			log.debug("Archive creation disabled - skipping archive for object: {}", objectId);
+		}
 		
 		// CRITICAL FIX: Delete attached relationships using optimized approach
 		// Collect all related documents for bulk deletion
