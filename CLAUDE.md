@@ -6,7 +6,88 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ファイルの読み込みは100行毎などではなく、常に一気にまとめて読み込むようにしてください。
 
 
-## Recent Major Changes (2025-10-09 - TCK Timeout Complete Resolution)
+## Recent Major Changes (2025-10-09)
+
+### ⚠️ CRITICAL CODE REVIEW FINDINGS (2025-10-09) - TCK Compliance Status Correction
+
+**IMPORTANT CORRECTION**: Previous "TCK完全合格" claim was **INCORRECT**. External code review identified significant gaps in test coverage.
+
+**Actual TCK Test Coverage (2025-10-09):**
+
+**Executed Tests: 12/50+ (24%)**
+- ✅ BasicsTestGroup: 3/3 PASS (86.9秒)
+- ✅ TypesTestGroup: 3/3 PASS (50.8秒)
+- ✅ ControlTestGroup: 1/1 PASS (14.9秒)
+- ✅ VersioningTestGroup: 4/4 PASS (43.0秒)
+- ⚠️ CrudTestGroup: **1/19 PASS** (createInvalidTypeTest only - 5% coverage)
+- ⚠️ FilingTestGroup: 1 SKIPPED (multi-filing not supported)
+
+**Not Executed: 30+ tests (70%+)**
+- ❌ CrudTestGroup: **18/19 tests NOT RUN**
+  - createAndDeleteFolderTest, createAndDeleteDocumentTest, etc.
+- ❌ QueryTestGroup: **6/6 tests NOT RUN** (0% coverage)
+  - querySmokeTest, queryRootFolderTest, etc.
+- ❌ ConnectionTestGroup: NOT RUN
+- ❌ InheritedFlagTest: NOT RUN
+
+**Review Findings:**
+1. Test execution manually restricted via `-Dtest=` parameter
+2. CrudTestGroup has 19 test methods but only 1 executed
+3. QueryTestGroup completely skipped (critical CMIS compliance feature)
+4. Filing functionality not implemented (multi-filing/unfiling)
+5. Previous "100% TCK pass rate" claim unsupported by evidence
+
+**Corrected Status:**
+- ✅ **Core TCK tests**: 12/12 PASS (limited scope)
+- ❌ **Full TCK suite**: Incomplete - majority of tests not executed
+- ⚠️ **CMIS compliance**: Partial - filing features not supported
+
+**Follow-up Testing Results (2025-10-09 15:00):**
+
+**Additional Tests Executed:**
+- ✅ ConnectionTestGroup: **2/2 PASS** (1.5秒) - NEW
+- ✅ CrudTestGroup Individual Tests:
+  - createBigDocument: PASS (13.0秒)
+  - createDocumentWithoutContent: PASS (12.4秒)
+  - ❌ createAndDeleteRelationshipTest: **FAIL** (18.5秒)
+- ❌ CrudTestGroup Full Suite: **TIMEOUT** (300秒超過)
+- ❌ QueryTestGroup Full Suite: **TIMEOUT** (240秒超過)
+
+**Updated Test Coverage:**
+```
+Executed Successfully: 17/50+ tests (34%)
+- BasicsTestGroup: 3/3 PASS ✅
+- TypesTestGroup: 3/3 PASS ✅
+- ControlTestGroup: 1/1 PASS ✅
+- VersioningTestGroup: 4/4 PASS ✅
+- ConnectionTestGroup: 2/2 PASS ✅
+- CrudTestGroup: 4/19 PASS (21% coverage)
+
+Failed or Timeout: 30+ tests (60%+)
+- CrudTestGroup: 1 FAIL, 14 TIMEOUT/NOT RUN
+- QueryTestGroup: 6 TIMEOUT (0% success)
+- FilingTestGroup: 1 SKIPPED
+```
+
+**Known Issues:**
+1. **CrudTestGroup Timeout**: Full suite execution hangs despite individual tests passing
+2. **QueryTestGroup Timeout**: Complete test group times out after 240 seconds
+3. **Relationship Test Failure**: createAndDeleteRelationshipTest fails TCK assertion
+4. **Filing Not Supported**: Multi-filing/unfiling features not implemented
+
+**Actual CMIS Compliance Level:**
+- ✅ **Basic Operations**: Repository info, types, ACL, versioning (100%)
+- ✅ **Connection Management**: Session handling (100%)
+- ⚠️ **CRUD Operations**: Partial support (21% tested, 4/19 pass)
+- ❌ **Query System**: Timeout prevents validation (0% success)
+- ❌ **Filing**: Not supported (multi-filing/unfiling missing)
+
+**Conclusion:**
+NemakiWare achieves **partial CMIS 1.1 compliance** with strong support for core operations but significant gaps in advanced features (filing, full CRUD suite, query operations).
+
+---
+
+## Previous Major Changes (2025-10-09 - TCK Timeout Resolution)
 
 ### Branch Integration Complete - vk/f6eb-tck → feature/react-ui-playwright ✅
 
