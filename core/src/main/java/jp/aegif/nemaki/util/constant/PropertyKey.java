@@ -272,4 +272,7 @@ public interface PropertyKey {
 
 	//Thread
 	final String THREAD_MAX = "thread.max";
+
+	//Archive
+	final String ARCHIVE_CREATE_ENABLED = "archive.create.enabled";
 }
