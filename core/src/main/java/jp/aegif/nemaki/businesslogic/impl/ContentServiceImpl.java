@@ -1492,14 +1492,11 @@ public class ContentServiceImpl implements ContentService {
 		setBaseProperties(callContext, repositoryId, properties, rel, null);
 		rel.setSourceId(sourceId);
 		rel.setTargetId(targetId);
-		System.err.println("*** CREATE RELATIONSHIP: Relationship object type=" + rel.getType() + " ***");
 
 		// Set ACL
 		setAclOnCreated(callContext, repositoryId, rel, addAces, removeAces);
 
 		Relationship relationship = contentDaoService.create(repositoryId, rel);
-		System.err.println("*** CREATE RELATIONSHIP: Created relationship id=" + relationship.getId() +
-			" source=" + relationship.getSourceId() + " target=" + relationship.getTargetId() + " ***");
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, relationship, ChangeType.CREATED);
@@ -2498,13 +2495,9 @@ public class ContentServiceImpl implements ContentService {
 	public void appendAttachment(CallContext callContext, String repositoryId, Holder<String> objectId,
 			Holder<String> changeToken, ContentStream contentStream, boolean isLastChunk, ExtensionsData extension) {
 		Document document = contentDaoService.getDocument(repositoryId, objectId.getValue());
-		System.err.println("*** APPEND ATTACHMENT: Document ID: " + document.getId() + ", AttachmentNodeId: " + document.getAttachmentNodeId() + " ***");
-
 		AttachmentNode attachment = getAttachment(repositoryId, document.getAttachmentNodeId());
-		System.err.println("*** APPEND ATTACHMENT: Attachment retrieved - ID: " + attachment.getId() + ", Length: " + attachment.getLength() + " ***");
 
 		InputStream is = attachment.getInputStream();
-		System.err.println("*** APPEND ATTACHMENT: Existing InputStream: " + (is != null ? "NOT NULL" : "NULL") + " ***");
 
 		// Append
 		SequenceInputStream sis = new SequenceInputStream(is, contentStream.getStream());
@@ -3011,8 +3004,6 @@ public class ContentServiceImpl implements ContentService {
 			String oldChangeToken = content.getChangeToken();
 			String newChangeToken = String.valueOf(System.currentTimeMillis());
 			content.setChangeToken(newChangeToken);
-			System.err.println("*** SET MODIFIED SIGNATURE: Updated change token for " + content.getId() +
-				" from '" + oldChangeToken + "' to '" + newChangeToken + "' ***");
 		}
 	}
 
