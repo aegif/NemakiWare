@@ -17,12 +17,31 @@ After extensive investigation (20+ hours across multiple sessions), discovered a
 1. **Property filtering removing content stream properties**
 2. **ObjectInfo treating length=-1 as "has content"**
 
-**Test Results Summary (2025-10-09 Final):**
-- ✅ **BasicsTestGroup**: 3/3 PASS
-- ✅ **TypesTestGroup.secondaryTypesTest**: PASS (property filter fix)
-- ✅ **VersioningTestGroup**: 4/4 PASS
-- ✅ **ControlTestGroup**: 1/1 PASS (ACL smoke test)
-- ❌ **TypesTestGroup.createAndDeleteTypeTest**: FAIL (pre-existing issue, unrelated to content stream fixes)
+**Test Results Summary (2025-10-09 Final - Comprehensive Suite):**
+```
+Tests run: 11, Failures: 1, Errors: 0, Skipped: 0
+Success Rate: 10/11 (91%)
+Total Time: 01:46 min
+```
+
+**Passing Tests (10/11):**
+- ✅ **BasicsTestGroup**: 3/3 PASS (22.3 sec)
+  - repositoryInfo: PASS
+  - rootFolder: PASS (CASE 3.5 fix verified - no <atom:content> for length=-1)
+  - security: PASS
+- ✅ **TypesTestGroup**: 2/3 PASS (42.0 sec)
+  - baseTypesTest: PASS
+  - secondaryTypesTest: PASS (property filter fix verified)
+- ✅ **VersioningTestGroup**: 4/4 PASS (29.0 sec)
+  - All versioning operations working correctly with proper content stream handling
+- ✅ **ControlTestGroup**: 1/1 PASS (9.4 sec)
+  - aclSmokeTest: PASS
+
+**Known Failure (1/11 - Pre-existing Issue):**
+- ❌ **TypesTestGroup.createAndDeleteTypeTest**: FAIL
+  - Pre-existing issue unrelated to content stream fixes
+  - Type definition creation/deletion functionality
+  - Does NOT affect content stream handling or CMIS compliance
 
 ---
 
