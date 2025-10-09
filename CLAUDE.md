@@ -84,17 +84,31 @@ private Properties filterProperties(Properties properties, Set<String> filter) {
 
 **Solution:**
 ```java
-// Lines 377-389: Always include content stream properties if they exist
-boolean isContentStreamProperty =
-    PropertyIds.CONTENT_STREAM_FILE_NAME.equals(pd.getId()) ||
-    PropertyIds.CONTENT_STREAM_MIME_TYPE.equals(pd.getId()) ||
-    PropertyIds.CONTENT_STREAM_LENGTH.equals(pd.getId()) ||
-    PropertyIds.CONTENT_STREAM_ID.equals(pd.getId());
+// Lines 377-393: Always include content stream properties WITH VALID VALUES
+// IMPORTANT: Only include properties with VALID content indicators:
+// - length: Must be non-null AND not -1 (CMIS uses -1 for "no content")
+// - mimeType/fileName/streamId: Must be non-null
+boolean hasValidContentStreamProperty = false;
+if (PropertyIds.CONTENT_STREAM_LENGTH.equals(pd.getId())) {
+    Object value = pd.getFirstValue();
+    hasValidContentStreamProperty = value != null && !Long.valueOf(-1L).equals(value);
+} else if (PropertyIds.CONTENT_STREAM_MIME_TYPE.equals(pd.getId()) ||
+           PropertyIds.CONTENT_STREAM_FILE_NAME.equals(pd.getId()) ||
+           PropertyIds.CONTENT_STREAM_ID.equals(pd.getId())) {
+    hasValidContentStreamProperty = pd.getFirstValue() != null;
+}
 
-if (filter.contains(pd.getQueryName()) || isContentStreamProperty) {
-    result.addProperty(pd);  // Content stream props ALWAYS included
+if (filter.contains(pd.getQueryName()) || hasValidContentStreamProperty) {
+    result.addProperty(pd);  // Content stream props with VALID values ALWAYS included
 }
 ```
+
+**CMIS 1.1 Spec Compliance Note:**
+- CMIS spec states: "MUST return this property with a non-empty value if the property filter does not exclude it"
+- Strict interpretation: Property filter CAN exclude content stream properties
+- **NemakiWare Implementation**: Always includes VALID content stream properties to ensure consistent ObjectInfo.hasContent determination
+- **Rationale**: ObjectInfo is generated from ObjectData (after filtering). If content stream properties are filtered out, hasContent becomes unstable
+- **Trade-off**: Slight deviation from strict spec for practical TCK compliance and consistent AtomPub XML generation
 
 **Test Results (COMPLETE SUCCESS):**
 ```
@@ -170,8 +184,26 @@ VersioningTestGroup: 4/4 PASS ✅
 ControlTestGroup: 1/1 PASS ✅
 ```
 
-**CMIS 1.1 Compliance:**
-CMIS 1.1 specification uses length=-1 to indicate "unknown or no content length". For ContentStreamAllowed=ALLOWED documents without content, length=-1 should NOT trigger hasContent=true in ObjectInfo.
+**CMIS 1.1 Compliance Analysis:**
+
+**Specification Findings (2025-10-09 Verification):**
+1. **"Not Set" Definition**: CMIS 1.1 spec states "A property MAY be in a 'not set' state, but CMIS does not support 'null' property value"
+   - XML representation: `<cmis:propertyInteger propertyDefinitionId="cmis:contentStreamLength"/>` (no value element)
+   - Client library: "not set" is represented as null
+   - **IMPORTANT**: CMIS spec does NOT define length=-1 as "not set"
+
+2. **Content Stream Properties**: "If the document has no content stream, the repository MUST return 'not set'."
+
+3. **Current NemakiWare Implementation**:
+   - CASE 3.5 sets length=-1 for ALLOWED documents without content
+   - This is NemakiWare-specific behavior, NOT mandated by CMIS spec
+   - Spec-compliant approach would be: length=null or omit value element
+
+**Implementation Decision:**
+- Maintained CASE 3.5 behavior (length=-1) for TCK compatibility
+- Added CmisService fix to treat length=-1 as "no content" in ObjectInfo generation
+- This prevents incorrect `<atom:content>` element generation
+- **Future Consideration**: Evaluate changing CASE 3.5 to use length=null for strict spec compliance
 
 **Files Modified:**
 - `core/src/main/java/jp/aegif/nemaki/cmis/factory/CmisService.java` Lines 208-217
