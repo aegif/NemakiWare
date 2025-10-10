@@ -17,6 +17,7 @@ import jakarta.annotation.PostConstruct;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TypeService;
+import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -69,7 +70,11 @@ public class PatchService {
 	// NEW: Required dependency for initial folder creation
 	@Autowired
 	private ContentService contentService;
-	
+
+	// NEW: Required dependency for Solr indexing
+	@Autowired
+	private SolrUtil solrUtil;
+
 	// Configuration properties for database initialization - Docker environment compatible
 	private String couchdbUrl = getCouchDbUrl();
 	private String couchdbUsername = "admin";
@@ -137,6 +142,9 @@ public class PatchService {
 			// PatchService was creating folders with null ACL (system principal only)
 			// Patch_InitialContentSetup creates folders with admin:all and GROUP_EVERYONE:read ACL
 			// createInitialFolders();
+
+			// CRITICAL TCK FIX: Index root folders in Solr for query tests
+			indexRootFoldersInSolr();
 
 			// TODO: Initialize test users for QA and development (requires principalService injection)
 			log.info("Test user initialization skipped - requires principalService dependency");
@@ -588,6 +596,25 @@ public class PatchService {
 
 				SystemCallContext callContext = new SystemCallContext(repositoryId);
 
+				// CRITICAL TCK FIX: Index root folder in Solr for query tests
+				try {
+					Folder rootFolder = (Folder) contentService.getContent(repositoryId, rootFolderId);
+					if (rootFolder != null && solrUtil != null) {
+						log.info("Indexing root folder in Solr: " + rootFolderId);
+						solrUtil.indexDocument(repositoryId, rootFolder);
+						log.debug("Root folder indexed successfully in Solr");
+					} else {
+						if (rootFolder == null) {
+							log.warn("Root folder not found in repository: " + repositoryId);
+						}
+						if (solrUtil == null) {
+							log.warn("SolrUtil not available - skipping root folder indexing");
+						}
+					}
+				} catch (Exception solrEx) {
+					log.warn("Failed to index root folder in Solr (non-critical): " + solrEx.getMessage());
+				}
+
 				// Create Sites folder if it doesn't exist
 				createFolderIfNotExists(callContext, repositoryId, rootFolderId, "Sites");
 
@@ -669,6 +696,51 @@ public class PatchService {
 	public void setContentService(ContentService contentService) {
 		log.debug("setContentService called with " + (contentService != null ? contentService.getClass().getName() : "null"));
 		this.contentService = contentService;
+	}
+
+	/**
+	 * CRITICAL TCK FIX: Index root folders in Solr for query tests
+	 * Root folders are created from database dumps and not automatically indexed
+	 */
+	private void indexRootFoldersInSolr() {
+		if (repositoryInfoMap == null) {
+			log.warn("RepositoryInfoMap not available - skipping root folder Solr indexing");
+			return;
+		}
+
+		try {
+			for (String repositoryId : repositoryInfoMap.keys()) {
+				if (repositoryId.endsWith("_closet")) {
+					continue;
+				}
+
+				String rootFolderId = repositoryInfoMap.get(repositoryId).getRootFolderId();
+				if (rootFolderId == null) {
+					log.warn("Root folder ID not available for repository: " + repositoryId);
+					continue;
+				}
+
+				try {
+					Folder rootFolder = (Folder) contentService.getContent(repositoryId, rootFolderId);
+					if (rootFolder != null && solrUtil != null) {
+						log.info("Indexing root folder in Solr for repository " + repositoryId + ": " + rootFolderId);
+						solrUtil.indexDocument(repositoryId, rootFolder);
+						log.info("Root folder indexed successfully in Solr");
+					} else {
+						if (rootFolder == null) {
+							log.warn("Root folder not found in repository: " + repositoryId);
+						}
+						if (solrUtil == null) {
+							log.warn("SolrUtil not available - skipping root folder indexing");
+						}
+					}
+				} catch (Exception solrEx) {
+					log.warn("Failed to index root folder in Solr for " + repositoryId + " (non-critical): " + solrEx.getMessage());
+				}
+			}
+		} catch (Exception e) {
+			log.error("Error indexing root folders in Solr", e);
+		}
 	}
 
 }

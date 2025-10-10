@@ -144,7 +144,7 @@ public class CompileServiceImpl implements CompileService {
 
 		ObjectDataImpl objData = getRawObjectData(callContext, repositoryId, content, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, includeAcl);
-		ObjectData result = filterObjectData(repositoryId, objData, filter, includeAllowableActions,
+		ObjectData result = filterObjectData(repositoryId, objData, filter, null, includeAllowableActions,
 				includeRelationships, renditionFilter, includeAcl);
 		return result;
 	}
@@ -265,14 +265,14 @@ public class CompileServiceImpl implements CompileService {
 	}
 
 	private ObjectData filterObjectData(String repositoryId, ObjectData fullObjectData, String filter,
-			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
+			Map<String, String> propertyAliases, Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includeAcl) {
 
 		// Debug logging for BaseTypeId checking
 		if (log.isDebugEnabled()) {
-			log.debug("filterObjectData called: includeAllowableActions=" + includeAllowableActions + 
+			log.debug("filterObjectData called: includeAllowableActions=" + includeAllowableActions +
 				" objectId=" + (fullObjectData != null && fullObjectData.getId() != null ? fullObjectData.getId() : "null"));
-			
+
 			if (fullObjectData != null) {
 				log.debug("BaseTypeId: " + fullObjectData.getBaseTypeId());
 			}
@@ -284,7 +284,8 @@ public class CompileServiceImpl implements CompileService {
 		Cloner cloner = new Cloner();
 		ObjectDataImpl result = DataUtil.convertObjectDataImpl(cloner.deepClone(fullObjectData));
 
-		Properties filteredProperties = filterProperties(result.getProperties(), splitFilter(filter));
+		// TCK CRITICAL FIX: Pass propertyAliases to filterProperties for query alias support
+		Properties filteredProperties = filterProperties(result.getProperties(), splitFilter(filter), propertyAliases);
 		result.setProperties(filteredProperties);
 
 		// CRITICAL CMIS 1.1 COMPLIANCE FIX: Always include AllowableActions for query results
@@ -345,13 +346,13 @@ public class CompileServiceImpl implements CompileService {
 	}
 
 	private ObjectData filterObjectDataInList(CallContext callContext, String repositoryId, ObjectData fullObjectData,
-			String filter, Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String filter, Map<String, String> propertyAliases, Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includeAcl) {
 		// IMPORTANT: Permission filtering should be done at Content level, not ObjectData level
 		// The current approach is problematic because:
 		// 1. It requires AllowableActions to be computed even when not requested by the client
 		// 2. Permission checks have already been done at Content level (line 268-269 in SolrQueryProcessor)
-		// 
+		//
 		// The correct approach is to:
 		// 1. Always compute AllowableActions internally for permission checks (done)
 		// 2. Only include them in the response if requested by the client (done)
@@ -360,11 +361,21 @@ public class CompileServiceImpl implements CompileService {
 		// For now, we skip ObjectData-level permission check since it's redundant
 		// and causes issues when AllowableActions are not requested by the client
 		// CRITICAL FIX: Pass CallContext to ensure proper filtering with CMIS compliance logic
-		return filterObjectData(repositoryId, fullObjectData, filter, includeAllowableActions, includeRelationships,
+		// TCK CRITICAL FIX: Pass propertyAliases for query alias support
+		return filterObjectData(repositoryId, fullObjectData, filter, propertyAliases, includeAllowableActions, includeRelationships,
 			renditionFilter, includeAcl);
 	}
 
-	private Properties filterProperties(Properties properties, Set<String> filter) {
+	/**
+	 * TCK CRITICAL FIX: Query alias support
+	 * Filter properties and apply query aliases if provided
+	 *
+	 * @param properties Original properties
+	 * @param filter Set of property names/aliases to include
+	 * @param propertyAliases Map of aliases to property names (key=alias, value=propertyId/queryName)
+	 *                        When null, no alias mapping is applied.
+	 */
+	private Properties filterProperties(Properties properties, Set<String> filter, Map<String, String> propertyAliases) {
 		PropertiesImpl result = new PropertiesImpl();
 
 		// null filter as NO FILTER: do nothing
@@ -393,6 +404,24 @@ public class CompileServiceImpl implements CompileService {
 				}
 
 				if (filter.contains(pd.getQueryName()) || hasValidContentStreamProperty) {
+					// TCK CRITICAL FIX: Apply query alias if propertyAliases map is provided
+					// Check if this property's queryName matches any value in the aliases map
+					// If it does, set the property's queryName to the corresponding alias (key)
+					if (propertyAliases != null && !propertyAliases.isEmpty()) {
+						for (Map.Entry<String, String> aliasEntry : propertyAliases.entrySet()) {
+							String alias = aliasEntry.getKey();
+							String propertyName = aliasEntry.getValue();
+							// Match property by queryName or id
+							if (propertyName.equals(pd.getQueryName()) || propertyName.equals(pd.getId())) {
+								// Set queryName to alias (e.g., "folderName" instead of "cmis:name")
+								// PropertyData is an interface, need to cast to AbstractPropertyData to set queryName
+								if (pd instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData) {
+									((org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData<?>) pd).setQueryName(alias);
+								}
+								break;
+							}
+						}
+					}
 					result.addProperty(pd);
 				}
 			}
@@ -451,7 +480,7 @@ public class CompileServiceImpl implements CompileService {
 				ObjectDataImpl rawObjectData = getRawObjectData(callContext, repositoryId, content, filter,
 						includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 				ObjectData filteredObjectData = filterObjectDataInList(callContext, repositoryId, rawObjectData, filter,
-						includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+						null, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 
 				if (filteredObjectData != null) {
 					objectDataList.add(filteredObjectData);
@@ -483,11 +512,30 @@ public class CompileServiceImpl implements CompileService {
 			return list;
 		}
 	}
+
+	/**
+	 * Legacy method without propertyAliases support - delegates to new method with null aliases
+	 */
 	@Override
 	public <T extends Content> ObjectList compileObjectDataListForSearchResult(CallContext callContext, String repositoryId,
 			List<T> contents, String filter, Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly,
 			String orderBy, long numFound) {
+		// Delegate to new method with null propertyAliases (no alias mapping)
+		return compileObjectDataListForSearchResult(callContext, repositoryId, contents, filter, null,
+				includeAllowableActions, includeRelationships, renditionFilter, includeAcl, maxItems, skipCount,
+				folderOnly, orderBy, numFound);
+	}
+
+	/**
+	 * TCK CRITICAL FIX: Query alias support
+	 * New implementation with CMIS query alias support for "AS" clause
+	 */
+	@Override
+	public <T extends Content> ObjectList compileObjectDataListForSearchResult(CallContext callContext, String repositoryId,
+			List<T> contents, String filter, Map<String, String> propertyAliases, Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems,
+			BigInteger skipCount, boolean folderOnly, String orderBy, long numFound) {
 		if (CollectionUtils.isEmpty(contents)) {
 			// Empty list
 			ObjectListImpl list = new ObjectListImpl();
@@ -505,8 +553,9 @@ public class CompileServiceImpl implements CompileService {
 				// Get each ObjectData
 				ObjectDataImpl rawObjectData = getRawObjectData(callContext, repositoryId, content, filter,
 						includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+				// TCK CRITICAL FIX: Pass propertyAliases to enable query alias support
 				ObjectData filteredObjectData = filterObjectDataInList(callContext, repositoryId, rawObjectData, filter,
-						includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+						propertyAliases, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 
 				if (filteredObjectData != null) {
 					objectDataList.add(filteredObjectData);

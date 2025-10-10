@@ -58,11 +58,11 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 			Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
-		
+
 		if (log.isDebugEnabled()) {
 			log.debug("DiscoveryServiceImpl.query called with statement: " + statement + " for repository: " + repositoryId);
 		}
-		
+
 		// //////////////////
 		// General Exception
 		// //////////////////

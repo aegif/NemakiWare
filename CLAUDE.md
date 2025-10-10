@@ -6,6 +6,256 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ファイルの読み込みは100行毎などではなく、常に一気にまとめて読み込むようにしてください。
 
 
+## TCK Complete Pass - Strict Criteria (2025-10-09 Established)
+
+**CRITICAL**: Do NOT report "TCK完全合格" unless ALL criteria below are met.
+
+### Strict Criteria for TCK Complete Pass
+
+**Mandatory Requirements**:
+
+1. **Full Test Suite Execution** - All test groups MUST be executed together in a single Maven command, not individually:
+   ```bash
+   mvn test -Dtest=BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup,CrudTestGroup,QueryTestGroup,ConnectionTestGroup -f core/pom.xml -Pdevelopment
+   ```
+
+2. **100% Test Pass Rate** (excluding intentionally skipped tests):
+   - ✅ BasicsTestGroup: 3/3 PASS (all tests)
+   - ✅ TypesTestGroup: 3/3 PASS (all tests)
+   - ✅ ControlTestGroup: 1/1 PASS (all tests)
+   - ✅ VersioningTestGroup: 4/4 PASS (all tests)
+   - ✅ CrudTestGroup: **19/19 PASS** (ALL tests, not 1/19)
+   - ✅ QueryTestGroup: **6/6 PASS** (ALL tests, not 0/6)
+   - ✅ ConnectionTestGroup: All tests PASS
+   - ⚠️ FilingTestGroup: SKIP allowed (unimplemented feature)
+
+3. **Maven Build Status**:
+   ```
+   Tests run: X, Failures: 0, Errors: 0, Skipped: Y
+   [INFO] BUILD SUCCESS
+   ```
+
+4. **No Timeouts or Hangs**:
+   - All tests complete within Surefire timeout (600 seconds per test)
+   - No manual termination required
+
+**Current Status: ⚠️ SIGNIFICANT PROGRESS** (Multiple group execution: 32/35 tests PASS, 91% - 3 failures remaining)
+
+### Multiple Test Group Execution Results (2025-10-09 23:28) - MAJOR MILESTONE
+
+**CRITICAL BREAKTHROUGH**: First successful execution of 6 test groups together in single Maven command, completing within 3-hour fork timeout.
+
+**Command Executed**:
+```bash
+mvn test -Dtest=TypesTestGroup,ControlTestGroup,VersioningTestGroup,ConnectionTestGroup,CrudTestGroup,QueryTestGroup -f core/pom.xml -Pdevelopment
+```
+
+**Overall Results**:
+```
+Tests run: 35, Failures: 3, Errors: 0, Skipped: 0
+Total time: 01:12 h
+[INFO] BUILD FAILURE (due to 3 test failures)
+```
+
+**Test Group Results (Execution Order)**:
+
+1. ✅ **CrudTestGroup**: 19 tests run, **18/19 PASS**, 0 errors, 0 skipped (2,782 sec = 46 min)
+   - ❌ FAILURE: createAndDeleteRelationshipTest (35.2 sec)
+
+2. ⚠️ **QueryTestGroup**: 6 tests run, **4/6 PASS**, 0 errors, 0 skipped (1,320 sec = 22 min)
+   - ❌ FAILURE: queryLikeTest (568 sec = 9.5 min)
+   - ❌ FAILURE: queryRootFolderTest (1.7 sec)
+
+3. ✅ **TypesTestGroup**: 3 tests run, **3/3 PASS**, 0 errors, 0 skipped (85 sec) - PERFECT ✅
+
+4. ✅ **ControlTestGroup**: 1 test run, **1/1 PASS**, 0 errors, 0 skipped (37 sec) - PERFECT ✅
+
+5. ✅ **VersioningTestGroup**: 4 tests run, **4/4 PASS**, 0 errors, 0 skipped (95 sec) - PERFECT ✅
+
+6. ✅ **ConnectionTestGroup**: 2 tests run, **2/2 PASS**, 0 errors, 0 skipped (1.2 sec) - PERFECT ✅
+
+**Total**: 35 tests, 32 PASS, 3 FAIL (91% pass rate)
+
+**Key Achievements**:
+- ✅ **No Fork Timeout**: Extended `forkedProcessTimeoutInSeconds` to 10800 (3 hours) successfully prevented timeout
+- ✅ **6 Test Groups Completed**: All executed test groups ran to completion
+- ✅ **4 Perfect Test Groups**: TypesTestGroup, ControlTestGroup, VersioningTestGroup, ConnectionTestGroup all PASS
+- ✅ **QueryTestGroup Improvement**: querySmokeTest now PASSES (was failing in individual execution)
+- ✅ **Stable Execution**: No hangs, no premature terminations, clean completion
+
+**Remaining Issues**:
+- ❌ **BasicsTestGroup Not Included**: Excluded due to rootFolderTest environment contamination issue
+- ❌ **3 Failing Tests**:
+  1. CrudTestGroup.createAndDeleteRelationshipTest
+  2. QueryTestGroup.queryLikeTest
+  3. QueryTestGroup.queryRootFolderTest
+
+**Technical Improvements**:
+- Surefire `reuseForks=true` resolved "Error creating properties files for forking"
+- 3-hour fork timeout sufficient for full test suite (completed in 1h 12min)
+- Static initialization fix from previous session prevented loadParameters() hang
+
+**Next Steps to Achieve TCK Complete Pass**:
+1. ⚠️ Fix 3 failing tests (CrudTestGroup 1, QueryTestGroup 2)
+2. ⚠️ Resolve BasicsTestGroup.rootFolderTest environment contamination
+3. ⚠️ Execute full suite including BasicsTestGroup
+4. ⚠️ Achieve Failures: 0 for BUILD SUCCESS
+
+**Status**: MAJOR PROGRESS - From 24% test coverage to 91% pass rate in multiple group execution. Three test fixes away from TCK complete pass criteria.
+
+---
+
+### Failing Test Investigation Results (2025-10-10 00:47)
+
+**TestGroupBase Enhanced Error Reporting**: Added detailed TCK failure information output to checkForFailures() method for better diagnostics.
+
+**1. QueryTestGroup.queryRootFolderTest (1.9 sec failure)**
+
+**Root Cause Identified**: ルートフォルダがSolrインデックスに含まれていない
+
+**Detailed Error Output**:
+```
+Result #1: FAILURE - The query should return exactly one result but returned 0!
+  Stack: org.apache.chemistry.opencmis.tck.tests.query.QueryRootFolderTest.queryById(QueryRootFolderTest.java:96)
+Result #2: FAILURE - The query returned a total number of items != 1, but there can be only exactly one hit!
+  Stack: org.apache.chemistry.opencmis.tck.tests.query.QueryRootFolderTest.queryById(QueryRootFolderTest.java:101)
+Result #4: FAILURE - The query should return the root folder but does not!
+  Stack: org.apache.chemistry.opencmis.tck.tests.query.QueryRootFolderTest.queryByDate(QueryRootFolderTest.java:148)
+Result #5: FAILURE - The query returned a total number of items < 1, but there must be at least one hit!
+  Stack: org.apache.chemistry.opencmis.tck.tests.query.QueryRootFolderTest.queryByDate(QueryRootFolderTest.java:153)
+```
+
+**Investigation Results**:
+- ✅ Root folder exists in CouchDB: `e02f784f8360a02cc14d1314c10038ff`
+- ❌ Root folder NOT in Solr index: Query `SELECT * FROM cmis:folder WHERE cmis:objectId = 'e02f784f8360a02cc14d1314c10038ff'` returns 0 results
+- ❌ Solr `nemaki` core has 11,272 documents but root folder is missing
+- ⚠️ `/repo/{repositoryId}/search-engine/reindex` endpoint has NullPointerException (solrUtil is null)
+- ⚠️ `/all/search-engine/reindex` endpoint returns admin permission error
+
+**Required Fix**:
+- Ensure root folder is indexed in Solr during repository initialization
+- Fix SolrResource dependency injection (solrUtil is null)
+- Alternative: Add root folder to Solr index programmatically in PatchService
+
+**2. QueryTestGroup.queryLikeTest (568 sec = 9.5 min failure)**
+
+**Status**: Investigation in progress (test takes very long time to execute)
+
+**3. CrudTestGroup.createAndDeleteRelationshipTest (35.2 sec failure)**
+
+**Status**: Not yet investigated
+
+**Files Modified**:
+- `core/src/test/java/jp/aegif/nemaki/cmis/tck/TestGroupBase.java` (Lines 184-223): Enhanced checkForFailures() with detailed error reporting including result index, status, message, exception, and stack trace
+
+**Next Actions Required**:
+1. ⚠️ Fix root folder objectTypeId=null issue (queryRootFolderTest)
+2. ⚠️ Complete investigation of queryLikeTest failure
+3. ⚠️ Investigate createAndDeleteRelationshipTest failure
+4. ⚠️ Re-run full test suite after fixes
+
+---
+
+### Root Folder Solr Indexing Fix Implementation (2025-10-10 00:20)
+
+**Problem**: Root folder not indexed in Solr, causing queryRootFolderTest to return 0 results.
+
+**Solution Implemented**:
+
+1. **Added indexRootFoldersInSolr() method** to PatchService (Lines 698-741)
+   - Iterates through all repositories
+   - Retrieves root folder from ContentService
+   - Indexes root folder in Solr using SolrUtil.indexDocument()
+   - Includes proper error handling and logging
+
+2. **Integrated into applyPatchesOnStartup()** (Line 147)
+   - Called after patch application
+   - Executes automatically during Spring startup
+
+3. **Dependencies added** to PatchService:
+   - `@Autowired private SolrUtil solrUtil;` (Line 75-76)
+   - Import: `jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil` (Line 20)
+
+**Verification Results**:
+```bash
+# Solr indexing confirmed in logs
+SolrUtil.indexDocument called for document: e02f784f8360a02cc14d1314c10038ff in repository: bedroom
+
+# Root folder found in Solr
+curl "http://localhost:8983/solr/nemaki/select?q=id:e02f784f8360a02cc14d1314c10038ff"
+→ numFound: 1 ✅
+```
+
+**New Problem Discovered** (2025-10-10 00:18):
+
+**queryRootFolderTest still failing** with different error:
+```
+BEFORE FIX:
+  Result #1: FAILURE - The query should return exactly one result but returned 0!
+
+AFTER FIX (PROGRESS ✅):
+  Result #1: FAILURE - Query result does not match root folder name!
+  Result #2: FAILURE - Query result does not match root folder id!
+  Result #4: FAILURE - The query should return the root folder but does not!
+```
+
+**Root Cause Analysis**:
+- ✅ Root folder IS indexed in Solr (numFound: 1)
+- ❌ Root folder object_type_id is **null** in both CouchDB and Solr
+- ❌ Root folder should have `objectTypeId="cmis:folder"` but has `objectTypeId=null`
+
+**CouchDB Data**:
+```json
+{
+  "_id": "e02f784f8360a02cc14d1314c10038ff",
+  "type": "cmis:folder",
+  "objectTypeId": null,  // ❌ Should be "cmis:folder"
+  "name": "Repository Root",
+  "parentId": null
+}
+```
+
+**Required Fix**:
+- Root folder initialization must set `objectTypeId="cmis:folder"` in database dump files
+- Alternative: PatchService should correct objectTypeId when indexing root folders
+
+**Files Modified**:
+- `core/src/main/java/jp/aegif/nemaki/patch/PatchService.java`:
+  - Lines 18-20: Added SolrUtil import
+  - Lines 75-76: Added @Autowired SolrUtil solrUtil
+  - Line 147: Added indexRootFoldersInSolr() call
+  - Lines 698-741: Added indexRootFoldersInSolr() method implementation
+- `core/src/test/java/jp/aegif/nemaki/cmis/tck/TestGroupBase.java`:
+  - Lines 184-223: Enhanced checkForFailures() with detailed error reporting
+
+**Status**: Partial progress - Solr indexing working, but root folder data integrity issue discovered.
+
+---
+
+### Individual Test Execution Results (2025-10-09 18:50)
+
+**Note**: Individual execution success does NOT constitute "TCK完全合格". Full suite execution required.
+
+**Test Groups Passing All Tests (6/7)**:
+- ✅ BasicsTestGroup: 3/3 PASS
+- ✅ TypesTestGroup: 3/3 PASS
+- ✅ ControlTestGroup: 1/1 PASS
+- ✅ VersioningTestGroup: 4/4 PASS
+- ✅ ConnectionTestGroup: 2/2 PASS
+
+**Test Groups with Failures**:
+- ⚠️ CrudTestGroup: 18/19 PASS (createAndDeleteRelationshipTest: TCK FAILURE)
+- ⚠️ QueryTestGroup: 3/6 PASS (3 failures: querySmokeTest, queryRootFolderTest, queryLikeTest)
+
+**Total Individual Tests**: 31/34 PASS (91%)
+
+**Next Steps Required**:
+1. Fix 4 failing tests
+2. Execute full test suite: `-Dtest=BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup,CrudTestGroup,QueryTestGroup,ConnectionTestGroup`
+3. Verify BUILD SUCCESS with Failures: 0
+
+---
+
 ## Recent Major Changes (2025-10-09)
 
 ### ⚠️ CRITICAL CODE REVIEW FINDINGS (2025-10-09) - TCK Compliance Status Correction

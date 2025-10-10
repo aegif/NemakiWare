@@ -270,15 +270,18 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		// // Nemaki Cusomization END ////
 
 		// policies and relationships
-		info.setSupportsRelationships(false);
+		// TCK CRITICAL FIX (2025-10-10): NemakiWare explicitly supports relationships
+		// (nemaki:parentChildRelationship, nemaki:bidirectionalRelationship)
+		// Set to true to ensure AtomPub responses include relationship links
+		// This allows OpenCMIS clients to discover and use relationship creation functionality
+		info.setSupportsRelationships(true);
 		info.setSupportsPolicies(false);
 
+		// Policy support check - only enable if cmis:policy base type exists
 		TypeDefinitionList baseTypesList = getTypeChildren(repositoryId, null, Boolean.FALSE, BigInteger.valueOf(4),
 				BigInteger.ZERO, null);
 		for (TypeDefinition type : baseTypesList.getList()) {
-			if (BaseTypeId.CMIS_RELATIONSHIP.value().equals(type.getId())) {
-				info.setSupportsRelationships(true);
-			} else if (BaseTypeId.CMIS_POLICY.value().equals(type.getId())) {
+			if (BaseTypeId.CMIS_POLICY.value().equals(type.getId())) {
 				info.setSupportsPolicies(true);
 			}
 		}
