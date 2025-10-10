@@ -461,16 +461,20 @@ public class SolrQueryProcessor implements QueryProcessor {
 				// TCK CRITICAL FIX: Query alias support - get full alias map instead of just values
 				Map<String, String> requestedWithAliasKey = queryObject
 						.getRequestedPropertiesByAlias();
+				System.out.println("========== TCK ALIAS DEBUG [SolrQueryProcessor]: requestedWithAliasKey=" + requestedWithAliasKey);
 				String filter = null;
 				if (!requestedWithAliasKey.keySet().contains("*")) {
 					// Create filter(queryNames) from query aliases
 					filter = StringUtils.join(requestedWithAliasKey.values(), ",");
 				}
+				System.out.println("========== TCK ALIAS DEBUG [SolrQueryProcessor]: filter=" + filter);
+
 
 				// Build ObjectList
 				String orderBy = orderBy(queryObject);
 				// TCK CRITICAL FIX: Pass propertyAliases map to enable query alias support
 				// Build ObjectList with original includeAllowableActions parameter for final response
+				System.out.println("========== TCK ALIAS DEBUG [SolrQueryProcessor]: Calling compileObjectDataListForSearchResult with propertyAliases");
 				ObjectList result = compileService.compileObjectDataListForSearchResult(
 						callContext, repositoryId, permitted, filter, requestedWithAliasKey,
 						includeAllowableActions, includeRelationships, renditionFilter, false,

@@ -9,11 +9,6 @@ import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.DependsOn;
-import org.springframework.core.annotation.Order;
-import org.springframework.stereotype.Component;
-
-import jakarta.annotation.PostConstruct;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TypeService;
@@ -34,20 +29,12 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 
 /**
- * PRIORITY 4: Bean initialization order adjustment for PropertyDefinitionDetail initialization guarantee
+ * TCK CRITICAL FIX: Bean initialization via explicit XML definition in patchContext.xml
  *
- * DUAL REGISTRATION STRATEGY:
- * - @Component enables component-scan detection in patchContext.xml
- * - Explicit bean definition in patchContext.xml provides init-method and property injection
- * - Spring will use the explicit bean definition, @Component just ensures class is scanned
- *
- * @Component - Enables component scanning detection
- * @Order(100) - Executes after core services (higher = later)
- * @DependsOn - Ensures dependencies are initialized first
+ * @Component removed to prevent conflicts with explicit bean definition
+ * Bean registration and initialization controlled entirely by patchContext.xml:
+ * <bean id="patchService" class="jp.aegif.nemaki.patch.PatchService" init-method="applyPatchesOnStartup">
  */
-@Component
-@Order(100)
-// @DependsOn({"typeService", "typeManager", "repositoryInfoMap", "propertyManager", "connectorPool"})  // Temporarily disabled for testing
 public class PatchService {
 	private static final Log log = LogFactory.getLog(PatchService.class);
 
@@ -111,13 +98,16 @@ public class PatchService {
 	private List<AbstractNemakiPatch> patchList;
 	
 	public PatchService() {
-		// The patch application is now triggered via @PostConstruct after dependency injection
+		// The patch application is triggered via init-method="applyPatchesOnStartup" in patchContext.xml
 		// This ensures compatibility and prevents circular dependency issues during Spring context initialization
 		// DEBUG: PatchService constructor called (logged by log.info below)
 		log.info("=== PATCH DEBUG: PatchService constructor called ===");
 	}
 
-	@PostConstruct
+	/**
+	 * Called by Spring via init-method="applyPatchesOnStartup" in patchContext.xml
+	 * @PostConstruct removed to prevent conflicts with explicit init-method
+	 */
 	public void applyPatchesOnStartup() {
 		log.info("=== PHASE 2: PatchService.applyPatchesOnStartup() EXECUTING ===");
 		try {
@@ -143,11 +133,11 @@ public class PatchService {
 			// Patch_InitialContentSetup creates folders with admin:all and GROUP_EVERYONE:read ACL
 			// createInitialFolders();
 
-			// CRITICAL TCK FIX: Index root folders in Solr for query tests
-			indexRootFoldersInSolr();
-
 			// TODO: Initialize test users for QA and development (requires principalService injection)
 			log.info("Test user initialization skipped - requires principalService dependency");
+
+			// CRITICAL TCK FIX: Index root folders in Solr for query tests
+			indexRootFoldersInSolr();
 
 			// Apply any future patches if they exist
 			if (patchList != null && !patchList.isEmpty()) {
@@ -596,25 +586,6 @@ public class PatchService {
 
 				SystemCallContext callContext = new SystemCallContext(repositoryId);
 
-				// CRITICAL TCK FIX: Index root folder in Solr for query tests
-				try {
-					Folder rootFolder = (Folder) contentService.getContent(repositoryId, rootFolderId);
-					if (rootFolder != null && solrUtil != null) {
-						log.info("Indexing root folder in Solr: " + rootFolderId);
-						solrUtil.indexDocument(repositoryId, rootFolder);
-						log.debug("Root folder indexed successfully in Solr");
-					} else {
-						if (rootFolder == null) {
-							log.warn("Root folder not found in repository: " + repositoryId);
-						}
-						if (solrUtil == null) {
-							log.warn("SolrUtil not available - skipping root folder indexing");
-						}
-					}
-				} catch (Exception solrEx) {
-					log.warn("Failed to index root folder in Solr (non-critical): " + solrEx.getMessage());
-				}
-
 				// Create Sites folder if it doesn't exist
 				createFolderIfNotExists(callContext, repositoryId, rootFolderId, "Sites");
 
@@ -701,16 +672,31 @@ public class PatchService {
 	/**
 	 * CRITICAL TCK FIX: Index root folders in Solr for query tests
 	 * Root folders are created from database dumps and not automatically indexed
+	 *
+	 * This method also fixes the objectTypeId=null issue by setting it to "cmis:folder"
 	 */
 	private void indexRootFoldersInSolr() {
+		log.info("=== CRITICAL TCK FIX: Indexing root folders in Solr ===");
+
 		if (repositoryInfoMap == null) {
 			log.warn("RepositoryInfoMap not available - skipping root folder Solr indexing");
+			return;
+		}
+
+		if (contentService == null) {
+			log.warn("ContentService not available - skipping root folder Solr indexing");
+			return;
+		}
+
+		if (solrUtil == null) {
+			log.warn("SolrUtil not available - skipping root folder Solr indexing");
 			return;
 		}
 
 		try {
 			for (String repositoryId : repositoryInfoMap.keys()) {
 				if (repositoryId.endsWith("_closet")) {
+					log.debug("Skipping closet repository: " + repositoryId);
 					continue;
 				}
 
@@ -721,25 +707,44 @@ public class PatchService {
 				}
 
 				try {
-					Folder rootFolder = (Folder) contentService.getContent(repositoryId, rootFolderId);
-					if (rootFolder != null && solrUtil != null) {
-						log.info("Indexing root folder in Solr for repository " + repositoryId + ": " + rootFolderId);
-						solrUtil.indexDocument(repositoryId, rootFolder);
-						log.info("Root folder indexed successfully in Solr");
+					log.info("Processing root folder for repository " + repositoryId + ": " + rootFolderId);
+
+					Content rootContent = contentService.getContent(repositoryId, rootFolderId);
+					if (rootContent == null) {
+						log.warn("Root folder not found in repository: " + repositoryId);
+						continue;
+					}
+
+					// CRITICAL FIX: Ensure objectType is set correctly
+					if (rootContent.getObjectType() == null || rootContent.getObjectType().isEmpty()) {
+						log.info("Fixing root folder objectType: null -> cmis:folder");
+						rootContent.setObjectType("cmis:folder");
+
+						// Update in database
+						contentService.update(new SystemCallContext(repositoryId), repositoryId, rootContent);
+						log.info("Root folder objectType updated in database");
+					}
+
+					// Index in Solr
+					if (rootContent instanceof Folder) {
+						log.info("Indexing root folder in Solr: " + rootFolderId);
+						solrUtil.indexDocument(repositoryId, (Folder) rootContent);
+						log.info("✅ Root folder indexed successfully in Solr");
 					} else {
-						if (rootFolder == null) {
-							log.warn("Root folder not found in repository: " + repositoryId);
-						}
-						if (solrUtil == null) {
-							log.warn("SolrUtil not available - skipping root folder indexing");
-						}
+						log.warn("Root content is not a Folder instance: " + rootContent.getClass().getName());
 					}
 				} catch (Exception solrEx) {
 					log.warn("Failed to index root folder in Solr for " + repositoryId + " (non-critical): " + solrEx.getMessage());
+					if (log.isDebugEnabled()) {
+						log.debug("Root folder indexing error details", solrEx);
+					}
 				}
 			}
+
+			log.info("✅ Root folder Solr indexing completed");
 		} catch (Exception e) {
-			log.error("Error indexing root folders in Solr", e);
+			log.error("❌ Error indexing root folders in Solr", e);
+			// Continue with startup even if this fails
 		}
 	}
 

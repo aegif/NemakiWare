@@ -2,6 +2,7 @@ package jp.aegif.nemaki.patch;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TypeService;
+import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -41,6 +42,7 @@ public class PatchUtil {
 	protected RepositoryService repositoryService;
 	protected TypeService typeService;
 	protected TypeManager typeManager;
+	protected SolrUtil solrUtil;
 
 	public PatchUtil() {
 		if (log.isDebugEnabled()) {
@@ -260,5 +262,13 @@ public class PatchUtil {
 
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
+	}
+
+	public SolrUtil getSolrUtil() {
+		return solrUtil;
+	}
+
+	public void setSolrUtil(SolrUtil solrUtil) {
+		this.solrUtil = solrUtil;
 	}
 }

@@ -408,12 +408,15 @@ public class CompileServiceImpl implements CompileService {
 					// Check if this property's queryName matches any value in the aliases map
 					// If it does, set the property's queryName to the corresponding alias (key)
 					if (propertyAliases != null && !propertyAliases.isEmpty()) {
+						System.out.println("========== TCK ALIAS DEBUG [filterProperties]: Checking property " + pd.getQueryName() + " (id=" + pd.getId() + ") against " + propertyAliases.size() + " aliases");
 						for (Map.Entry<String, String> aliasEntry : propertyAliases.entrySet()) {
 							String alias = aliasEntry.getKey();
 							String propertyName = aliasEntry.getValue();
+							System.out.println("========== TCK ALIAS DEBUG [filterProperties]: Comparing with alias=" + alias + " -> propertyName=" + propertyName);
 							// Match property by queryName or id
 							if (propertyName.equals(pd.getQueryName()) || propertyName.equals(pd.getId())) {
 								// Set queryName to alias (e.g., "folderName" instead of "cmis:name")
+								System.out.println("========== TCK ALIAS DEBUG [filterProperties]: MATCH! Setting queryName from " + pd.getQueryName() + " to " + alias);
 								// PropertyData is an interface, need to cast to AbstractPropertyData to set queryName
 								if (pd instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData) {
 									((org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData<?>) pd).setQueryName(alias);
