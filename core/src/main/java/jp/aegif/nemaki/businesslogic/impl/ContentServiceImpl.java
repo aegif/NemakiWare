@@ -382,8 +382,12 @@ public class ContentServiceImpl implements ContentService {
 		} else {
 			Content parent = getParent(repositoryId, content.getId());
 			if (parent == null) {
-				log.error("Parent not found for content: " + content.getId() + " in repository: " + repositoryId);
-				throw new RuntimeException("Parent not found for content: " + content.getId());
+				// TCK FIX (2025-10-11): Handle orphaned objects gracefully
+				// Orphaned objects occur when parent is deleted but child remains
+				// Treat as root-level object to prevent RuntimeException during query operations
+				log.warn("Parent not found for content: " + content.getId() + " in repository: " + repositoryId +
+						" - treating as root-level orphaned object");
+				return path;
 			}
 			calculatePathInternal(path, parent, repositoryId);
 		}

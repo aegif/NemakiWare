@@ -26,6 +26,7 @@ import com.ibm.cloud.cloudant.v1.model.DatabaseInformation;
 import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 
+
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.Configuration;
 import jp.aegif.nemaki.model.couch.CouchConfiguration;
@@ -198,6 +199,7 @@ public class CloudantClientPool {
 		try {
 			// Use resolved URL
 			String resolvedUrl = resolveUrl();
+
 			
 			// Configure authentication if enabled
 			if (authEnabled && authUserName != null && authPassword != null) {

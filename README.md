@@ -96,6 +96,37 @@ NemakiWare supports modern Jakarta EE 10 development with Maven Jetty plugin for
 
 For complete setup instructions, see `JAKARTA-EE-QUICKSTART.md`.
 
+## Testing
+
+### TCK (Technology Compatibility Kit) Testing
+
+NemakiWare includes CMIS 1.1 TCK tests to verify full specification compliance.
+
+**Quick TCK Test Execution:**
+```bash
+# Run all TCK tests with automatic database cleanup
+./tck-test-clean.sh
+
+# Run specific test group (e.g., QueryTestGroup)
+./tck-test-clean.sh QueryTestGroup
+
+# Run specific test method
+./tck-test-clean.sh QueryTestGroup#queryLikeTest
+```
+
+**What the test script provides:**
+- Automatic database cleanup before testing (prevents test data accumulation)
+- Docker container health verification
+- Comprehensive test execution with 90-minute timeout protection
+- Detailed performance and success rate reporting
+
+**Important Notes:**
+- Always use the cleanup script for reliable test results
+- Test data accumulation can cause false failures (especially querySmokeTest)
+- Expected execution time: 5-40 minutes depending on test scope
+- Requires 3GB Java heap (configured in docker-compose-simple.yml)
+
+For detailed testing procedures and troubleshooting, see `CLAUDE.md` section "TCK Test Execution (Standard Procedure)".
 
 License
 ----------

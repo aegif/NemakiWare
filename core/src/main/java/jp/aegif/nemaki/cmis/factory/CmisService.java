@@ -216,19 +216,10 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		boolean hasValidLength = length != null && !BigInteger.valueOf(-1L).equals(length);
 		boolean hasContent = fileName != null || mimeType != null || streamId != null || hasValidLength;
 
-		// DEBUG TRACE for content stream investigation
-		log.error("DEBUG TRACE: ObjectInfo content check - objectId=" + object.getId() +
-			", hasContent=" + hasContent +
-			", fileName=" + fileName +
-			", mimeType=" + mimeType +
-			", streamId=" + streamId +
-			", length=" + length);
-
 		if (hasContent) {
 			info.setHasContent(hasContent);
 			info.setContentType(mimeType);
 			info.setFileName(fileName);
-			log.error("DEBUG TRACE: ObjectInfo.setHasContent(true) called for " + object.getId());
 		} else {
 			info.setHasContent(false);
 			info.setContentType(null);
