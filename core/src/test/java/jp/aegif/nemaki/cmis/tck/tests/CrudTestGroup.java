@@ -25,8 +25,10 @@ import org.junit.Ignore;
 import jp.aegif.nemaki.cmis.tck.TckSuite;
 import jp.aegif.nemaki.cmis.tck.TestGroupBase;
 
-// @Ignore("TCK tests temporarily disabled due to data visibility issues - see CLAUDE.md") - ENABLED: Data visibility issues resolved
-// CRITICAL FIX: Temporarily extend TestGroupBase directly to isolate timeout issue
+// DEPRECATED: Split into CrudTestGroup1 and CrudTestGroup2 to avoid timeout issues
+// Use CrudTestGroup1 and CrudTestGroup2 instead
+// This class kept for reference only
+@Ignore("Split into CrudTestGroup1 and CrudTestGroup2 to avoid timeout - see COMPREHENSIVE-TEST-RESULTS-2025-10-11.md")
 public class CrudTestGroup extends TestGroupBase{
 	
 	@Test

@@ -152,9 +152,10 @@ public class TestBase {
 		map.put(PropertyIds.NAME, name);
 
 		ContentStream contentStream = convertFileToContentStream(session, file);
-		
-		ObjectId objectId = session.createDocument(map, new ObjectIdImpl(parentId), contentStream, VersioningState.MAJOR);
-	
+
+		// FIX: Use null instead of VersioningState.MAJOR for compatibility with non-versionable types
+		ObjectId objectId = session.createDocument(map, new ObjectIdImpl(parentId), contentStream, null);
+
 		return objectId.getId();
 	}
 	
@@ -164,9 +165,10 @@ public class TestBase {
 		map.put(PropertyIds.NAME, name);
 
 		ContentStream contentStream = new ContentStreamImpl(name, "text/plain", string);
-		
-		ObjectId objectId = session.createDocument(map, new ObjectIdImpl(parentId), contentStream, VersioningState.MAJOR);
-	
+
+		// FIX: Use null instead of VersioningState.MAJOR for compatibility with non-versionable types
+		ObjectId objectId = session.createDocument(map, new ObjectIdImpl(parentId), contentStream, null);
+
 		return objectId.getId();
 	}
 	
