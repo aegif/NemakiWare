@@ -6,20 +6,129 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ファイルの読み込みは100行毎などではなく、常に一気にまとめて読み込むようにしてください。
 
 
-## Recent Major Changes (2025-10-12 - TCK Cleanup Logic Fix Complete) ✅
+## Recent Major Changes (2025-10-12 - TCK Complete Success with ZERO Skipped Tests) ✅
 
-### TCK Cleanup Logic Root Cause Resolution - 100% Test Success Achieved
+### TCK Complete Success - 33/33 Tests PASS, 0 Skipped, 0 Failures
 
-**CRITICAL BREAKTHROUGH (2025-10-12 00:03)**: Resolved "cumulative resource exhaustion" by re-enabling disabled cleanup logic, achieving 100% success rate across all test groups.
+**HISTORIC ACHIEVEMENT (2025-10-12 04:57)**: Achieved complete CMIS TCK success with **ZERO skipped tests**, addressing user's concern: "時間がかかるのはしかたがないですが、個別スキップは問題だと思います" (Long execution time is acceptable, but individual skips are problematic).
+
+**Final Test Results - 100% SUCCESS with 0 Skipped**:
+
+| Test Group | Tests | Failures | Errors | Skipped | Time | Status |
+|-----------|-------|----------|--------|---------|------|--------|
+| BasicsTestGroup | 3 | 0 | 0 | **0** | 37s | ✅ |
+| ConnectionTestGroup | 2 | 0 | 0 | **0** | 1s | ✅ |
+| TypesTestGroup | 3 | 0 | 0 | **0** | 70s | ✅ |
+| ControlTestGroup | 1 | 0 | 0 | **0** | 26s | ✅ |
+| VersioningTestGroup | 4 | 0 | 0 | **0** | 74s | ✅ |
+| InheritedFlagTest | 1 | 0 | 0 | **0** | 1s | ✅ |
+| **CrudTestGroup1** | **10** | **0** | **0** | **0** | **1646s (27m)** | ✅ |
+| **CrudTestGroup2** | **9** | **0** | **0** | **0** | **786s (13m)** | ✅ |
+
+**Total**: 33 tests, 0 failures, 0 errors, **0 skipped** (100% execution)
+
+#### Journey from 6 Skipped Tests to 0 Skipped Tests
+
+**Starting State** (Post-cleanup fix commit 63d41af68):
+- 8/8 test groups passing (100% success rate)
+- **6 tests still marked with @Ignore** ("Timeout issue - ... hang indefinitely")
+
+**User's Critical Requirement**:
+> "時間がかかるのはしかたがないですが、個別スキップは問題だと思います"
+
+**Discovery**: Tests were not "hanging indefinitely" but were "long-running" (2-7 minutes). Cleanup logic fix (from previous session) had already resolved the underlying data accumulation issue.
+
+**Solution** (Commit: 6d83efb18): Systematically removed all 6 @Ignore annotations and verified each test:
+
+**Previously Skipped Tests - Now ALL PASS**:
+
+| Test | Location | Previous | Result | Time |
+|------|----------|----------|--------|------|
+| createAndDeleteFolderTest | CrudTestGroup1:38 | @Ignore | ✅ PASS | 431s (7m 11s) |
+| createAndDeleteDocumentTest | CrudTestGroup1:45 | @Ignore | ✅ PASS | 292s (4m 52s) |
+| createAndDeleteItemTest | CrudTestGroup1:52 | @Ignore | ✅ PASS | 162s (2m 42s) |
+| bulkUpdatePropertiesTest | CrudTestGroup1:89 | @Ignore | ✅ PASS | 382s (6m 22s) |
+| nameCharsetTest | CrudTestGroup2:31 | @Ignore | ✅ PASS | 245s (4m 5s) |
+| deleteTreeTest | CrudTestGroup2:74 | @Ignore | ✅ PASS | 156s (2m 36s) |
+
+**Total Execution Time for Previously Skipped Tests**: 1,668 seconds (27m 48s)
+
+#### Technical Implementation
+
+**Cleanup Logic Foundation** (Commit: 63d41af68):
+- Re-enabled `cleanupTckTestArtifacts()` at TestGroupBase.java:176
+- Deletes all test artifacts with `cmistck*` prefix after each test group
+- Prevents data accumulation in CouchDB
+
+**@Ignore Removal** (Commit: 6d83efb18):
+```java
+// CrudTestGroup1.java - Example change (Lines 38-43)
+// BEFORE:
+@Ignore("Timeout issue - delete operations hang indefinitely")
+@Test
+public void createAndDeleteFolderTest() throws Exception{
+
+// AFTER:
+// @Ignore removed to test with cleanup fix - was: "Timeout issue - delete operations hang indefinitely"
+@Test
+public void createAndDeleteFolderTest() throws Exception{
+```
+
+**Timeout Configuration**: Extended to 30 minutes (1800s) for full CRUD test group execution to accommodate long-running delete operations.
+
+#### Comprehensive Test Execution Verification
+
+**CrudTestGroup1 Full Execution** (00:40 - 01:08, 1646 seconds):
+```
+Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+**CrudTestGroup2 Full Execution** (03:43 - 03:57, 786 seconds):
+```
+Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+**Combined Execution Time**: 2,432 seconds (40m 32s) for both CRUD test groups
+
+#### Files Modified
+
+- `core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/CrudTestGroup1.java` (Commit: 6d83efb18)
+  - Lines 38, 45, 52, 89: Removed @Ignore from 4 test methods
+  - Added comments documenting original @Ignore reasons
+
+- `core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/CrudTestGroup2.java` (Commit: 6d83efb18)
+  - Lines 31, 74: Removed @Ignore from 2 test methods
+  - Added comments documenting original @Ignore reasons
+
+#### User Requirement Fulfillment
+
+**User's Explicit Concern**: "個別スキップは問題だと思います" (Individual skips are problematic)
+
+**Response**:
+- ✅ Eliminated all 6 individual test skips
+- ✅ Verified each test passes individually (2-7 minutes each)
+- ✅ Verified full test groups pass together (27m and 13m)
+- ✅ Maintained 100% success rate (0 failures, 0 errors)
+- ✅ Accepted long execution times as user stated acceptable
+
+**Conclusion**: Complete CMIS TCK compliance achieved with zero compromises on test coverage.
+
+---
+
+## Previous Major Changes (2025-10-12 - TCK Cleanup Logic Fix) ✅
+
+### TCK Cleanup Logic Root Cause Resolution
+
+**CRITICAL BREAKTHROUGH (2025-10-12 00:03)**: Resolved "cumulative resource exhaustion" by re-enabling disabled cleanup logic.
 
 **User's Challenge That Led to Discovery**:
 > "リソースの枯渇というのは具体的にどのようなリソースがどう枯渇しているのでしょうか？クライアント側の問題であればいったん開放するなどの工夫の余地はありませんか？蓄積の問題ははじめからTCKはクリーンビルド直後を前提としているので、一回のフルTCKで限界に達するということであれば製品性能に問題があるということになると思います。"
->
-> (What specific resource is exhausted? If client-side, can we release it? If accumulation reaches limit in one full TCK run, that's a product performance issue)
 
 **User was RIGHT**: This was a configuration error, not a product performance limit.
 
-#### Root Cause Identified
+#### Root Cause
 
 **Problem**: `cleanupTckTestArtifacts()` was disabled at `TestGroupBase.java:179` (commit 731d11ae44, 2025-10-10)
 ```java
@@ -27,81 +136,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 // cleanupTckTestArtifacts(runner);
 ```
 
-**Impact**: Test artifacts with `cmistck*` prefix accumulated in CouchDB (4334 documents observed), causing "resource exhaustion" in CRUDTestGroup execution.
+**Impact**: Test artifacts accumulated in CouchDB (4334 documents), causing "resource exhaustion".
 
 #### Solution Implemented (Commit: 63d41af68)
 
 1. **Re-enabled cleanup logic** (TestGroupBase.java:176)
-   - Deletes all test artifacts after each test group execution
-   - Prevents data accumulation in CouchDB
-
 2. **Removed class-level @Ignore from CrudTestGroup1 and CrudTestGroup2**
-   - Both were marked as `@Ignore("Cumulative resource exhaustion")`
-   - Root cause was disabled cleanup, not actual resource limits
-
 3. **Cleaned up debug logging**
-   - Production-ready logging levels
-   - Retained essential error logging for troubleshooting
-
-#### Test Results - COMPLETE SUCCESS (8/8 = 100%)
-
-| Test Group | Tests | Failures | Errors | Skipped | Time | Status |
-|-----------|-------|----------|--------|---------|------|--------|
-| BasicsTestGroup | 3 | 0 | 0 | 0 | 37.0s | ✅ SUCCESS |
-| ConnectionTestGroup | 2 | 0 | 0 | 0 | 1.4s | ✅ SUCCESS |
-| TypesTestGroup | 3 | 0 | 0 | 0 | 65.0s | ✅ SUCCESS |
-| ControlTestGroup | 1 | 0 | 0 | 0 | 23.9s | ✅ SUCCESS |
-| VersioningTestGroup | 4 | 0 | 0 | 0 | 65.3s | ✅ SUCCESS |
-| InheritedFlagTest | 1 | 0 | 0 | 0 | 1.2s | ✅ SUCCESS |
-| **CrudTestGroup1** ⭐ | 10 | 0 | 0 | 4 | 187.5s | ✅ **TIMEOUT RESOLVED** |
-| **CrudTestGroup2** ⭐ | 9 | 0 | 0 | 2 | 285.6s | ✅ **TIMEOUT RESOLVED** |
-
-**Total**: 33 tests executed, 0 failures, 0 errors, 6 skipped
-
-**Before Fix**: CrudTestGroup TIMEOUT (indefinite hang at 120+ seconds)
-**After Fix**: CrudTestGroup1 (187s) + CrudTestGroup2 (285s) = **Complete success**
-
-#### Technical Implementation
-
-**Cleanup Method Operation** (TestGroupBase.java:226-347):
-- Creates CMIS session using TCK parameters
-- Retrieves root folder children
-- Deletes all objects with `cmistck*` prefix:
-  - Documents: `deleteAllVersions()`
-  - Folders: `deleteTree(true, null, true)`
-  - Other objects: `delete(true)`
-- 500ms wait for deletion propagation
-
-**Cleanup Evidence** (from test logs):
-```
-TCK CLEANUP: Deleted 1 test artifacts
-```
-
-**Absence of Cleanup Messages**: When no `cmistck*` objects exist, cleanup runs silently (no output) = Expected behavior
-
-#### Files Modified
-
-- `core/src/test/java/jp/aegif/nemaki/cmis/tck/TestGroupBase.java`
-  - Line 176: Re-enabled `cleanupTckTestArtifacts()`
-  - Lines 157-179: Removed verbose debug logging from `run()`
-  - Lines 226-347: Streamlined cleanup method logging
-
-- `core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/CrudTestGroup1.java`
-  - Lines 18-30: Removed `@Ignore`, updated documentation
-
-- `core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/CrudTestGroup2.java`
-  - Lines 17-29: Removed `@Ignore`, updated documentation
 
 #### Lessons Learned
 
 **Critical Insight**: User's direct challenge to explain "what specific resource is exhausted" forced proper investigation instead of accepting superficial explanations.
 
-**Pattern to Avoid**: Claiming "resource exhaustion" without concrete evidence. Always investigate:
-1. What exact resource? (memory, connections, disk, documents)
-2. How is it measured? (logs, metrics, monitoring)
-3. Is it configuration or product limit?
-
-**Proper Approach**: User correctly identified this should be configuration issue, not product performance limit, prompting discovery of disabled cleanup logic.
+**Pattern to Avoid**: Claiming "resource exhaustion" without concrete evidence.
 
 ---
 
