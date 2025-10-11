@@ -1,0 +1,26 @@
+[TCK STATIC INIT] Starting static initialization for TestGroupBase
+[TCK STATIC INIT] Thread: main
+[TCK STATIC INIT] Loading parameter file resource
+[TCK STATIC INIT] Creating JUnitRunner for parameter preloading
+[TCK STATIC INIT] Calling loadParameters() - THIS MAY HANG
+[TCK STATIC INIT] loadParameters() completed successfully
+[TCK STATIC INIT] Parameters preloaded successfully, count: 17
+[TCK STATIC INIT] Static initialization completed
+=== SimpleTckTest: Starting CreateAndDeleteFolder test ===
+  Create and Delete Folder Test (ATOMPUB)
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+[AbstractSessionTest] Session created successfully
+[TckSuite] addToGroup called for class: SimpleTckTest
+[TckSuite] Skipping report generation for now
+=== SimpleTckTest: CreateAndDeleteFolder test completed ===
+=== SimpleTckTest: Starting RepositoryInfo test ===
+  Repository Info Test (ATOMPUB)
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+[AbstractSessionTest] Session created successfully
+[TckSuite] addToGroup called for class: SimpleTckTest
+[TckSuite] Skipping report generation for now
+=== SimpleTckTest: RepositoryInfo test completed ===

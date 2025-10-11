@@ -1,0 +1,130 @@
+SLF4J(W): Class path contains multiple SLF4J providers.
+SLF4J(W): Found provider [ch.qos.logback.classic.spi.LogbackServiceProvider@1a0dcaa]
+SLF4J(W): Found provider [org.apache.logging.slf4j.SLF4JServiceProvider@3bd40a57]
+SLF4J(W): See https://www.slf4j.org/codes.html#multiple_bindings for an explanation.
+SLF4J(I): Actual provider is of type [ch.qos.logback.classic.spi.LogbackServiceProvider@1a0dcaa]
+198eaa8b07955c6b2035d148d09b4a33(task_9.txt) is created.
+198eaa8b07955c6b2035d148d09b9a69(task_1.txt) is created.
+198eaa8b07955c6b2035d148d09bae9c(task_5.txt) is created.
+198eaa8b07955c6b2035d148d09bd264(task_4.txt) is created.
+198eaa8b07955c6b2035d148d09ba86a(task_2.txt) is created.
+198eaa8b07955c6b2035d148d09bc18f(task_10.txt) is created.
+198eaa8b07955c6b2035d148d09b4530(task_8.txt) is created.
+198eaa8b07955c6b2035d148d09b8b70(task_3.txt) is created.
+198eaa8b07955c6b2035d148d09b5222(task_6.txt) is created.
+198eaa8b07955c6b2035d148d09b80ac(task_7.txt) is created.
+198eaa8b07955c6b2035d148d09c3c83(task_11.txt) is created.
+198eaa8b07955c6b2035d148d09c59f5(task_12.txt) is created.
+198eaa8b07955c6b2035d148d09c7d5f(task_13.txt) is created.
+198eaa8b07955c6b2035d148d09ca08a(task_14.txt) is created.
+198eaa8b07955c6b2035d148d09cdf57(task_15.txt) is created.
+198eaa8b07955c6b2035d148d09d0a17(task_16.txt) is created.
+198eaa8b07955c6b2035d148d09d21f6(task_17.txt) is created.
+198eaa8b07955c6b2035d148d09d30c3(task_20.txt) is created.
+198eaa8b07955c6b2035d148d09d0d8e(task_19.txt) is created.
+198eaa8b07955c6b2035d148d09d2eb5(task_18.txt) is created.
+198eaa8b07955c6b2035d148d09d6913(task_21.txt) is created.
+198eaa8b07955c6b2035d148d09d8804(task_22.txt) is created.
+198eaa8b07955c6b2035d148d09da508(task_23.txt) is created.
+198eaa8b07955c6b2035d148d09dc1d2(task_24.txt) is created.
+198eaa8b07955c6b2035d148d09de3ab(task_25.txt) is created.
+198eaa8b07955c6b2035d148d09e17cf(task_27.txt) is created.
+198eaa8b07955c6b2035d148d09e2dc0(task_26.txt) is created.
+198eaa8b07955c6b2035d148d09e42b2(task_29.txt) is created.
+198eaa8b07955c6b2035d148d09e6d6e(task_28.txt) is created.
+198eaa8b07955c6b2035d148d09e7dc5(task_30.txt) is created.
+198eaa8b07955c6b2035d148d09eb470(task_31.txt) is created.
+198eaa8b07955c6b2035d148d09ed1e9(task_32.txt) is created.
+198eaa8b07955c6b2035d148d09ef77c(task_33.txt) is created.
+198eaa8b07955c6b2035d148d09f218b(task_34.txt) is created.
+198eaa8b07955c6b2035d148d09f3872(task_35.txt) is created.
+198eaa8b07955c6b2035d148d09f5eb8(task_36.txt) is created.
+198eaa8b07955c6b2035d148d09f6aaa(task_37.txt) is created.
+198eaa8b07955c6b2035d148d09f9e93(task_38.txt) is created.
+198eaa8b07955c6b2035d148d09fb9a6(task_39.txt) is created.
+198eaa8b07955c6b2035d148d09fd7a8(task_40.txt) is created.
+198eaa8b07955c6b2035d148d0a00295(task_41.txt) is created.
+198eaa8b07955c6b2035d148d0a02e99(task_42.txt) is created.
+198eaa8b07955c6b2035d148d0a04b73(task_43.txt) is created.
+198eaa8b07955c6b2035d148d0a05c87(task_44.txt) is created.
+198eaa8b07955c6b2035d148d0a086ef(task_45.txt) is created.
+198eaa8b07955c6b2035d148d0a0af1f(task_46.txt) is created.
+198eaa8b07955c6b2035d148d0a0c90e(task_47.txt) is created.
+198eaa8b07955c6b2035d148d0a0ebad(task_48.txt) is created.
+198eaa8b07955c6b2035d148d0a107a2(task_49.txt) is created.
+198eaa8b07955c6b2035d148d0a1264c(task_50.txt) is created.
+198eaa8b07955c6b2035d148d0a1571f(task_51.txt) is created.
+198eaa8b07955c6b2035d148d0a17ea3(task_52.txt) is created.
+198eaa8b07955c6b2035d148d0a1ab2e(task_53.txt) is created.
+198eaa8b07955c6b2035d148d0a1bb56(task_54.txt) is created.
+198eaa8b07955c6b2035d148d0a1dc03(task_55.txt) is created.
+198eaa8b07955c6b2035d148d0a1fa20(task_56.txt) is created.
+198eaa8b07955c6b2035d148d0a21c12(task_57.txt) is created.
+198eaa8b07955c6b2035d148d0a24d38(task_59.txt) is created.
+198eaa8b07955c6b2035d148d0a2564b(task_60.txt) is created.
+198eaa8b07955c6b2035d148d0a24a8e(task_58.txt) is created.
+198eaa8b07955c6b2035d148d0a28371(task_61.txt) is created.
+198eaa8b07955c6b2035d148d0a2b35b(task_62.txt) is created.
+198eaa8b07955c6b2035d148d0a2cc98(task_63.txt) is created.
+198eaa8b07955c6b2035d148d0a2e411(task_64.txt) is created.
+198eaa8b07955c6b2035d148d0a2ff90(task_65.txt) is created.
+198eaa8b07955c6b2035d148d0a3182e(task_66.txt) is created.
+198eaa8b07955c6b2035d148d0a34d6b(task_67.txt) is created.
+198eaa8b07955c6b2035d148d0a3686a(task_68.txt) is created.
+198eaa8b07955c6b2035d148d0a3819e(task_69.txt) is created.
+198eaa8b07955c6b2035d148d0a3ad20(task_70.txt) is created.
+198eaa8b07955c6b2035d148d0a3fe51(task_72.txt) is created.
+198eaa8b07955c6b2035d148d0a3dc68(task_71.txt) is created.
+198eaa8b07955c6b2035d148d0a423b1(task_73.txt) is created.
+198eaa8b07955c6b2035d148d0a447c1(task_74.txt) is created.
+198eaa8b07955c6b2035d148d0a46082(task_75.txt) is created.
+198eaa8b07955c6b2035d148d0a4766e(task_76.txt) is created.
+198eaa8b07955c6b2035d148d0a49bf9(task_77.txt) is created.
+198eaa8b07955c6b2035d148d0a4c8ac(task_78.txt) is created.
+198eaa8b07955c6b2035d148d0a4ea41(task_79.txt) is created.
+198eaa8b07955c6b2035d148d0a51ca0(task_80.txt) is created.
+198eaa8b07955c6b2035d148d0a55dc2(task_81.txt) is created.
+198eaa8b07955c6b2035d148d0a552c4(task_82.txt) is created.
+198eaa8b07955c6b2035d148d0a58d0a(task_83.txt) is created.
+198eaa8b07955c6b2035d148d0a5adc8(task_84.txt) is created.
+198eaa8b07955c6b2035d148d0a5ca0a(task_85.txt) is created.
+198eaa8b07955c6b2035d148d0a5eb05(task_86.txt) is created.
+198eaa8b07955c6b2035d148d0a6144b(task_87.txt) is created.
+198eaa8b07955c6b2035d148d0a61dfc(task_88.txt) is created.
+198eaa8b07955c6b2035d148d0a64adb(task_89.txt) is created.
+198eaa8b07955c6b2035d148d0a67481(task_90.txt) is created.
+198eaa8b07955c6b2035d148d0a6a9ee(task_91.txt) is created.
+198eaa8b07955c6b2035d148d0a6c975(task_92.txt) is created.
+198eaa8b07955c6b2035d148d0a6ddff(task_93.txt) is created.
+198eaa8b07955c6b2035d148d0a70d28(task_94.txt) is created.
+198eaa8b07955c6b2035d148d0a72fad(task_95.txt) is created.
+198eaa8b07955c6b2035d148d0a74f8d(task_96.txt) is created.
+198eaa8b07955c6b2035d148d0a7762b(task_97.txt) is created.
+198eaa8b07955c6b2035d148d0a79552(task_98.txt) is created.
+198eaa8b07955c6b2035d148d0a7a0ba(task_99.txt) is created.
+198eaa8b07955c6b2035d148d0a7cfb1(task_100.txt) is created.
+data initilization completed: 100 items
+=== checkOutTest_single started ===
+Created test folder: 198eaa8b07955c6b2035d148d0a7dcb0
+Created test document: 198eaa8b07955c6b2035d148d0a7f940
+Retrieved document object successfully
+checkOutTest_single failed: Object type: cmis:document is not versionbale
+org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException: Object type: cmis:document is not versionbale
+	at org.apache.chemistry.opencmis.client.bindings.spi.atompub.AbstractAtomPubService.convertStatusCode(AbstractAtomPubService.java:514)
+	at org.apache.chemistry.opencmis.client.bindings.spi.atompub.AbstractAtomPubService.post(AbstractAtomPubService.java:717)
+	at org.apache.chemistry.opencmis.client.bindings.spi.atompub.VersioningServiceImpl.checkOut(VersioningServiceImpl.java:96)
+	at org.apache.chemistry.opencmis.client.runtime.DocumentImpl.checkOut(DocumentImpl.java:305)
+	at jp.aegif.nemaki.cmis.original.MultiThreadTest.checkOutTest_single(MultiThreadTest.java:117)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at org.junit.runners.model.FrameworkMethod$1.runReflectiveCall(FrameworkMethod.java:50)
+	at org.junit.internal.runners.model.ReflectiveCallable.run(ReflectiveCallable.java:12)
+	at org.junit.runners.model.FrameworkMethod.invokeExplosively(FrameworkMethod.java:47)
+	at org.junit.internal.runners.statements.InvokeMethod.evaluate(InvokeMethod.java:17)
+	at org.junit.internal.runners.statements.FailOnTimeout$CallableStatement.call(FailOnTimeout.java:298)
+	at org.junit.internal.runners.statements.FailOnTimeout$CallableStatement.call(FailOnTimeout.java:292)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+Cleanup completed for folder: 198eaa8b07955c6b2035d148d0a7dcb0

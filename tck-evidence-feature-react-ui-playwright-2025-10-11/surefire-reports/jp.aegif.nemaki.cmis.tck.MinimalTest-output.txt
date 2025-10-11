@@ -1,0 +1,6 @@
+
+=== MINIMAL TEST START ===
+[MinimalTest] This is a minimal test without any TCK dependencies
+[MinimalTest] If this works, the problem is in TCK framework
+=== MINIMAL TEST END ===
+

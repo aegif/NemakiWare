@@ -1,0 +1,285 @@
+
+============================================================
+CUSTOM TCK TEST SUITE - FRAMEWORK BYPASS MODE
+============================================================
+[CustomTckRunner] Initializing custom TCK runner
+[CustomTckRunner] Default parameters loaded
+[CustomTckRunner] Runner initialized
+[CustomTckRunner] Repository URL: http://localhost:8080/core/browser/bedroom
+[CustomTckRunner] Test folder: /cmistck1760166260024
+[CustomTckRunner] Test group initialized
+[CustomTckTest] Test environment ready
+
+[CustomTckTest] Testing content operations...
+
+[CustomTckRunner] Running test: null (null)
+[CustomTckRunner] Test initialized with parameters and group
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+[AbstractSessionTest] Session created successfully
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: contenttest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 3
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 3
+FORMDATAWRITER DEBUG: InputStream class: java.io.ByteArrayInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 3
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: contenttest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 3
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 3
+FORMDATAWRITER DEBUG: InputStream class: java.io.ByteArrayInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 3
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: contenttest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 5
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 5
+FORMDATAWRITER DEBUG: InputStream class: java.io.ByteArrayInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 5
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 0
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 0
+FORMDATAWRITER DEBUG: InputStream class: java.io.ByteArrayInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 0
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 14
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 14
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 14
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 7
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 7
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 7
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 14
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 14
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 14
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 7
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 7
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 7
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 0
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 0
+FORMDATAWRITER DEBUG: InputStream class: java.io.ByteArrayInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 0
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 14
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 14
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 7
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 7
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 7
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 7
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 14
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 14
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 7
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 7
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 7
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 7
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 0
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 0
+FORMDATAWRITER DEBUG: InputStream class: java.io.ByteArrayInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 0
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 7
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 7
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 7
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 7
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 7
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 7
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 7
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 7
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 7
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 7
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 7
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 7
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 7
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 7
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 7
+FORMDATAWRITER DEBUG: Content stream copy completed
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: appendstreamtest.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 7
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 7
+FORMDATAWRITER DEBUG: InputStream class: org.apache.chemistry.opencmis.client.util.ContentStreamUtils$AutoCloseInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 7
+FORMDATAWRITER DEBUG: Content stream copy completed
+  ⚠ WARNING: Content length does not match!
+  ⚠ WARNING: Content length does not match!
+  ⚠ WARNING: Content length does not match!
+[CustomTckRunner] Test completed: WARNING
+[CustomTckRunner] Duration: 41323ms
+
+[CustomTckTest] Testing document creation without content...
+
+[CustomTckRunner] Running test: null (null)
+[CustomTckRunner] Test initialized with parameters and group
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+[AbstractSessionTest] Session created successfully
+[CustomTckRunner] Test completed: PASSED
+[CustomTckRunner] Duration: 8496ms
+
+[CustomTckTest] Testing update operations...
+
+[CustomTckRunner] Running test: null (null)
+[CustomTckRunner] Test initialized with parameters and group
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+[AbstractSessionTest] Session created successfully
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: updatetest1.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 10
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 10
+FORMDATAWRITER DEBUG: InputStream class: java.io.ByteArrayInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 10
+FORMDATAWRITER DEBUG: Content stream copy completed
+[CustomTckRunner] Test completed: PASSED
+[CustomTckRunner] Duration: 17469ms
+
+[CustomTckTest] Testing copy operations...
+
+[CustomTckRunner] Running test: null (null)
+[CustomTckRunner] Test initialized with parameters and group
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+[AbstractSessionTest] Session created successfully
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: copytestdoc.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 9
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 9
+FORMDATAWRITER DEBUG: InputStream class: java.io.ByteArrayInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 9
+FORMDATAWRITER DEBUG: Content stream copy completed
+[CustomTckRunner] Test completed: PASSED
+[CustomTckRunner] Duration: 20612ms
+
+[CustomTckTest] Testing move operations...
+
+[CustomTckRunner] Running test: null (null)
+[CustomTckRunner] Test initialized with parameters and group
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+[AbstractSessionTest] Session created successfully
+FORMDATAWRITER DEBUG: About to copy content stream
+FORMDATAWRITER DEBUG: Filename: movetestdoc.txt
+FORMDATAWRITER DEBUG: MediaType: text/plain
+FORMDATAWRITER DEBUG: ContentStream class: org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl
+FORMDATAWRITER DEBUG: ContentStream.getLength(): 9
+FORMDATAWRITER DEBUG: ContentStream.getBigLength(): 9
+FORMDATAWRITER DEBUG: InputStream class: java.io.ByteArrayInputStream
+FORMDATAWRITER DEBUG: InputStream.available(): 9
+FORMDATAWRITER DEBUG: Content stream copy completed
+[CustomTckRunner] Test completed: PASSED
+[CustomTckRunner] Duration: 19077ms
+
+[CustomTckTest] Testing folder operations...
+
+[CustomTckRunner] Running test: null (null)
+[CustomTckRunner] Test initialized with parameters and group
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+[AbstractSessionTest] Session created successfully

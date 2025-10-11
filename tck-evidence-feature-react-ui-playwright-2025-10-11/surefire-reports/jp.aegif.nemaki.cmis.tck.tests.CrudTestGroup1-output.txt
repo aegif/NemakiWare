@@ -1,0 +1,46 @@
+[TCK STATIC INIT] Starting static initialization for TestGroupBase
+[TCK STATIC INIT] Thread: main
+[TCK STATIC INIT] Loading parameter file resource
+[TCK STATIC INIT] Creating JUnitRunner for parameter preloading
+[TCK STATIC INIT] Calling loadParameters() - THIS MAY HANG
+[TCK STATIC INIT] loadParameters() completed successfully
+[TCK STATIC INIT] Parameters preloaded successfully, count: 17
+[TCK STATIC INIT] Static initialization completed
+  Create Object With Invalid Type Test (ATOMPUB)
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+SLF4J(W): Class path contains multiple SLF4J providers.
+SLF4J(W): Found provider [ch.qos.logback.classic.spi.LogbackServiceProvider@14d3bc22]
+SLF4J(W): Found provider [org.apache.logging.slf4j.SLF4JServiceProvider@12d4bf7e]
+SLF4J(W): See https://www.slf4j.org/codes.html#multiple_bindings for an explanation.
+SLF4J(I): Actual provider is of type [ch.qos.logback.classic.spi.LogbackServiceProvider@14d3bc22]
+[AbstractSessionTest] Session created successfully
+[TckSuite] addToGroup called for class: CrudTestGroup1
+[TckSuite] Skipping report generation for now
+  Create Document without Content Test (ATOMPUB)
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+[AbstractSessionTest] Session created successfully
+[TckSuite] addToGroup called for class: CrudTestGroup1
+[TckSuite] Skipping report generation for now
+  Content Ranges Test (ATOMPUB)
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+[AbstractSessionTest] Session created successfully
+[TckSuite] addToGroup called for class: CrudTestGroup1
+[TckSuite] Skipping report generation for now
+  Copy Test (ATOMPUB)
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+[AbstractSessionTest] Session created successfully
+[TckSuite] addToGroup called for class: CrudTestGroup1
+[TckSuite] Skipping report generation for now
+  Change Token Test (ATOMPUB)
+[AbstractSessionTest] Initializing SessionFactory...
+[AbstractSessionTest] SessionFactory initialized successfully
+[AbstractSessionTest] Creating session with repository ID: bedroom
+[AbstractSessionTest] Session created successfully

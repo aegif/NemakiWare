@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup
+-------------------------------------------------------------------------------
+Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 61.505 sec - in jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup

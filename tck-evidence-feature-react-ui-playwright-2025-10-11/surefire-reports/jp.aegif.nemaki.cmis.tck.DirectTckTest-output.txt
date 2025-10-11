@@ -1,0 +1,59 @@
+=== DIRECT TCK TEST START ===
+Session created. Repository: bedroom
+
+=== Testing Base Types ===
+✓ cmis:document type found with 26 properties
+✓ cmis:folder type found with 14 properties
+✓ cmis:relationship type found with 13 properties
+✓ cmis:policy type found with 12 properties
+
+=== DIRECT TCK TEST COMPLETE ===
+
+=== DIRECT FOLDER CREATION TEST START ===
+[DIRECT] Step 1: Loading parameters from file...
+[DIRECT] Loaded 16 parameters
+[DIRECT] Step 2: Creating CMIS session...
+[DIRECT] Session created with repository: bedroom
+[DIRECT] Step 3: Getting root folder...
+[DIRECT] Root folder: Repository Root (ID: e02f784f8360a02cc14d1314c10038ff)
+[DIRECT] Step 4: Initializing CreateAndDeleteFolderTest...
+[DIRECT] Test initialized
+[DIRECT] Step 5: Running test...
+
+=== DIRECT FOLDER CREATION TEST FAILED ===
+[DIRECT] Exception: Cannot invoke "org.apache.chemistry.opencmis.tck.impl.AbstractCmisTestGroup.getName()" because "this.group" is null
+java.lang.NullPointerException: Cannot invoke "org.apache.chemistry.opencmis.tck.impl.AbstractCmisTestGroup.getName()" because "this.group" is null
+	at org.apache.chemistry.opencmis.tck.impl.AbstractCmisTest.createResult(AbstractCmisTest.java:122)
+	at org.apache.chemistry.opencmis.tck.impl.AbstractSessionTest.createFolder(AbstractSessionTest.java:379)
+	at org.apache.chemistry.opencmis.tck.impl.AbstractSessionTest.createFolder(AbstractSessionTest.java:328)
+	at org.apache.chemistry.opencmis.tck.impl.AbstractSessionTest.createTestFolder(AbstractSessionTest.java:1017)
+	at org.apache.chemistry.opencmis.tck.tests.crud.CreateAndDeleteFolderTest.run(CreateAndDeleteFolderTest.java:51)
+	at jp.aegif.nemaki.cmis.tck.DirectTckTest.testDirectFolderCreation(DirectTckTest.java:134)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at org.junit.runners.model.FrameworkMethod$1.runReflectiveCall(FrameworkMethod.java:50)
+	at org.junit.internal.runners.model.ReflectiveCallable.run(ReflectiveCallable.java:12)
+	at org.junit.runners.model.FrameworkMethod.invokeExplosively(FrameworkMethod.java:47)
+	at org.junit.internal.runners.statements.InvokeMethod.evaluate(InvokeMethod.java:17)
+	at org.junit.runners.ParentRunner.runLeaf(ParentRunner.java:325)
+	at org.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:78)
+	at org.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:57)
+	at org.junit.runners.ParentRunner$3.run(ParentRunner.java:290)
+	at org.junit.runners.ParentRunner$1.schedule(ParentRunner.java:71)
+	at org.junit.runners.ParentRunner.runChildren(ParentRunner.java:288)
+	at org.junit.runners.ParentRunner.access$000(ParentRunner.java:58)
+	at org.junit.runners.ParentRunner$2.evaluate(ParentRunner.java:268)
+	at org.junit.runners.ParentRunner.run(ParentRunner.java:363)
+	at org.apache.maven.surefire.junit4.JUnit4Provider.execute(JUnit4Provider.java:367)
+	at org.apache.maven.surefire.junit4.JUnit4Provider.executeWithRerun(JUnit4Provider.java:274)
+	at org.apache.maven.surefire.junit4.JUnit4Provider.executeTestSet(JUnit4Provider.java:238)
+	at org.apache.maven.surefire.junit4.JUnit4Provider.invoke(JUnit4Provider.java:161)
+	at org.apache.maven.surefire.booter.ForkedBooter.invokeProviderInSameClassLoader(ForkedBooter.java:290)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:242)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:121)
+=== SIMPLE TYPE CREATION TEST ===
+Creating type: simple:test_1760166008322
+✓ Type created successfully: simple:test_1760166008322
+✓ Type deleted successfully

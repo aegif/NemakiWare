@@ -1,6 +1,0 @@
-<?xml version='1.0' encoding='UTF-8'?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" name="jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup" time="59.949" tests="3" errors="0" skipped="0" failures="0">
-  <testcase name="createAndDeleteTypeTest" classname="jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup" time="2.232" />
-  <testcase name="secondaryTypesTest" classname="jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup" time="35.483" />
-  <testcase name="baseTypesTest" classname="jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup" time="22.221" />
-</testsuite>

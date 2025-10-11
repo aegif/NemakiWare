@@ -1,0 +1,30 @@
+[TCK STATIC INIT] Starting static initialization for TestGroupBase
+[TCK STATIC INIT] Thread: main
+[TCK STATIC INIT] Loading parameter file resource
+[TCK STATIC INIT] Creating JUnitRunner for parameter preloading
+[TCK STATIC INIT] Calling loadParameters() - THIS MAY HANG
+[TCK STATIC INIT] loadParameters() completed successfully
+[TCK STATIC INIT] Parameters preloaded successfully, count: 17
+[TCK STATIC INIT] Static initialization completed
+=== REPOSITORY INFO ONLY TEST START ===
+Creating session factory...
+Getting repositories (this should be quick)...
+SLF4J(W): Class path contains multiple SLF4J providers.
+SLF4J(W): Found provider [ch.qos.logback.classic.spi.LogbackServiceProvider@3d299e3]
+SLF4J(W): Found provider [org.apache.logging.slf4j.SLF4JServiceProvider@55a561cf]
+SLF4J(W): See https://www.slf4j.org/codes.html#multiple_bindings for an explanation.
+SLF4J(I): Actual provider is of type [ch.qos.logback.classic.spi.LogbackServiceProvider@3d299e3]
+Found repositories: 1
+Repository: bedroom (ID: bedroom)
+Vendor: aegif
+Product: NemakiWare 3.0.0
+=== REPOSITORY INFO ONLY TEST SUCCESS ===
+=== BASIC CONNECTION TEST START ===
+Creating session factory...
+Getting repositories...
+Found repositories: 1
+Creating session...
+Session created: bedroom
+Getting root folder...
+Root folder: Repository Root (ID: e02f784f8360a02cc14d1314c10038ff)
+=== BASIC CONNECTION TEST SUCCESS ===
