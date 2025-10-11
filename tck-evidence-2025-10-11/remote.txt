@@ -1,0 +1,2 @@
+origin	https://github.com/aegif/NemakiWare.git (fetch)
+origin	https://github.com/aegif/NemakiWare.git (push)

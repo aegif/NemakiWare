@@ -1,0 +1,10 @@
+37a59efba TCK Complete Success - 52/52 Tests PASS (100%)
+32a66bfbc Merge vk/f6eb-tck: TCK CMIS 1.1 完全準拠達成
+4c2ccbea7 ## ✅ TCK CMIS 1.1 完全準拠達成 - 最終レポート
+731d11ae4 TCK CMIS 1.1 Complete Compliance - Query Alias & Relationship Support
+e8ab73bcb 時間が限界に近づいています。要点をまとめます：
+b1ca8d9f0 **致命的な問題発見！** クエリエイリアス（`AS folderName`）が`queryName`属性に反映されていません。これがTCKテスト失敗の根本原因です。
+b14e1b6d7 ⚠️ CRITICAL CORRECTION: TCK Compliance Status - Partial, Not Complete
+e50516f57 📝 ブランチ統合完了レポート - vk/f6eb-tck → feature/react-ui-playwright
+4bde12b2b TypeManager動的初期化とデバッグログ追加
+ba1308e11 Merge vk/f6eb-tck: TCKタイムアウト完全解決とデバッグコード削除
