@@ -28,7 +28,7 @@ import jp.aegif.nemaki.cmis.tck.TestGroupBase;
 // @Ignore removed to test cleanup fix - was: "Cumulative resource exhaustion - individual tests pass, class execution times out"
 public class CrudTestGroup2 extends TestGroupBase {
 
-	@Ignore("Timeout issue - charset name handling causes indefinite hang")
+	// @Ignore removed to test with cleanup fix - was: "Timeout issue - charset name handling causes indefinite hang"
 	@Test
 	public void nameCharsetTest() throws Exception{
 		NameCharsetTest test = new NameCharsetTest();
@@ -71,7 +71,7 @@ public class CrudTestGroup2 extends TestGroupBase {
 		run(test);
 	}
 
-	@Ignore("Timeout issue - tree deletion hangs indefinitely")
+	// @Ignore removed to test with cleanup fix - was: "Timeout issue - tree deletion hangs indefinitely"
 	@Test
 	public void deleteTreeTest() throws Exception{
 		DeleteTreeTest test = new DeleteTreeTest();

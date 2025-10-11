@@ -35,21 +35,21 @@ public class CrudTestGroup1 extends TestGroupBase {
 		run(test);
 	}
 
-	@Ignore("Timeout issue - delete operations hang indefinitely")
+	// @Ignore removed to test with cleanup fix - was: "Timeout issue - delete operations hang indefinitely"
 	@Test
 	public void createAndDeleteFolderTest() throws Exception{
 		CreateAndDeleteFolderTest test = new CreateAndDeleteFolderTest();
 		run(test);
 	}
 
-	@Ignore("Timeout issue - delete operations hang indefinitely")
+	// @Ignore removed to test with cleanup fix - was: "Timeout issue - delete operations hang indefinitely"
 	@Test
 	public void createAndDeleteDocumentTest() throws Exception{
 		CreateAndDeleteDocumentTest test = new CreateAndDeleteDocumentTest();
 		run(test);
 	}
 
-	@Ignore("Timeout issue - delete operations hang indefinitely")
+	// @Ignore removed to test with cleanup fix - was: "Timeout issue - delete operations hang indefinitely"
 	@Test
 	public void createAndDeleteItemTest() throws Exception{
 		CreateAndDeleteItemTest test = new CreateAndDeleteItemTest();
@@ -86,7 +86,7 @@ public class CrudTestGroup1 extends TestGroupBase {
 		run(test);
 	}
 
-	@Ignore("Timeout issue - bulk update operations hang indefinitely")
+	// @Ignore removed to test with cleanup fix - was: "Timeout issue - bulk update operations hang indefinitely"
 	@Test
 	public void bulkUpdatePropertiesTest() throws Exception{
 		BulkUpdatePropertiesTest test = new BulkUpdatePropertiesTest();
