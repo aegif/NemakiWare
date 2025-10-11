@@ -20,13 +20,13 @@ import jp.aegif.nemaki.cmis.tck.TestGroupBase;
  * Split from original CrudTestGroup to avoid timeout issues
  * Tests: Folder/Document/Item/BigDoc creation, validation, and content operations
  *
- * DEPRECATED (2025-10-11): Class-level @Ignore added due to cumulative resource exhaustion
- * Individual tests pass when run separately, but fail when run as a group due to
- * resource accumulation (likely database/session cleanup issues).
- * Individual successful tests: createInvalidTypeTest, createBigDocument, createDocumentWithoutContent,
+ * UPDATE (2025-10-11): Cleanup logic re-enabled - testing if resource exhaustion is resolved
+ * Previous issue was caused by disabled cleanupTckTestArtifacts() at TestGroupBase.java:179
+ * Re-enabled cleanup should prevent test artifact accumulation
+ * Individual tests: createInvalidTypeTest, createBigDocument, createDocumentWithoutContent,
  * contentRangesTest, changeTokenTest, copyTest (6/10 pass individually)
  */
-@Ignore("Cumulative resource exhaustion - individual tests pass, class execution times out")
+// @Ignore removed to test cleanup fix - was: "Cumulative resource exhaustion - individual tests pass, class execution times out"
 public class CrudTestGroup1 extends TestGroupBase {
 
 	@Test

@@ -106,13 +106,11 @@ public class TestGroupBase extends AbstractRunner {
 
 	@Before
 	public void beforeMethod() throws Exception {
-
 		// CRITICAL FIX: Temporarily skip filter checks to isolate timeout problem
 		if (false) {
 			filterClass(this.getClass().getSimpleName());
 			filterMethod(testName.getMethodName());
 		}
-
 	}
 
 	private void filterClass(String simpleClassName) {
@@ -171,12 +169,11 @@ public class TestGroupBase extends AbstractRunner {
 		}
 
 		runner.addGroup(group);
-
 		runner.run(new JUnitProgressMonitor());
 
 		// CRITICAL FIX: Clean up TCK test artifacts after each test group
-		// TEMPORARILY DISABLED: Testing if cleanup is causing timeout
-		// cleanupTckTestArtifacts(runner);
+		// Re-enabled after investigation: Cleanup was incorrectly disabled causing data accumulation
+		cleanupTckTestArtifacts(runner);
 
 		checkForFailures(runner);
 	}
@@ -232,7 +229,6 @@ public class TestGroupBase extends AbstractRunner {
 			// Create a new session using the test parameters
 			Map<String, String> parameters = runner.getParameters();
 			if (parameters == null || parameters.isEmpty()) {
-				System.err.println("TCK CLEANUP: No parameters available for cleanup");
 				return;
 			}
 
@@ -333,9 +329,6 @@ public class TestGroupBase extends AbstractRunner {
 					// Brief wait for deletions to propagate
 					Thread.sleep(500);
 				}
-
-			} else {
-				System.err.println("TCK CLEANUP: Failed to create session for cleanup");
 			}
 
 		} catch (Exception cleanupEx) {
