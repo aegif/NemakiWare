@@ -6,6 +6,105 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ファイルの読み込みは100行毎などではなく、常に一気にまとめて読み込むようにしてください。
 
 
+## Recent Major Changes (2025-10-12 - TCK Cleanup Logic Fix Complete) ✅
+
+### TCK Cleanup Logic Root Cause Resolution - 100% Test Success Achieved
+
+**CRITICAL BREAKTHROUGH (2025-10-12 00:03)**: Resolved "cumulative resource exhaustion" by re-enabling disabled cleanup logic, achieving 100% success rate across all test groups.
+
+**User's Challenge That Led to Discovery**:
+> "リソースの枯渇というのは具体的にどのようなリソースがどう枯渇しているのでしょうか？クライアント側の問題であればいったん開放するなどの工夫の余地はありませんか？蓄積の問題ははじめからTCKはクリーンビルド直後を前提としているので、一回のフルTCKで限界に達するということであれば製品性能に問題があるということになると思います。"
+>
+> (What specific resource is exhausted? If client-side, can we release it? If accumulation reaches limit in one full TCK run, that's a product performance issue)
+
+**User was RIGHT**: This was a configuration error, not a product performance limit.
+
+#### Root Cause Identified
+
+**Problem**: `cleanupTckTestArtifacts()` was disabled at `TestGroupBase.java:179` (commit 731d11ae44, 2025-10-10)
+```java
+// TEMPORARILY DISABLED: Testing if cleanup is causing timeout
+// cleanupTckTestArtifacts(runner);
+```
+
+**Impact**: Test artifacts with `cmistck*` prefix accumulated in CouchDB (4334 documents observed), causing "resource exhaustion" in CRUDTestGroup execution.
+
+#### Solution Implemented (Commit: 63d41af68)
+
+1. **Re-enabled cleanup logic** (TestGroupBase.java:176)
+   - Deletes all test artifacts after each test group execution
+   - Prevents data accumulation in CouchDB
+
+2. **Removed class-level @Ignore from CrudTestGroup1 and CrudTestGroup2**
+   - Both were marked as `@Ignore("Cumulative resource exhaustion")`
+   - Root cause was disabled cleanup, not actual resource limits
+
+3. **Cleaned up debug logging**
+   - Production-ready logging levels
+   - Retained essential error logging for troubleshooting
+
+#### Test Results - COMPLETE SUCCESS (8/8 = 100%)
+
+| Test Group | Tests | Failures | Errors | Skipped | Time | Status |
+|-----------|-------|----------|--------|---------|------|--------|
+| BasicsTestGroup | 3 | 0 | 0 | 0 | 37.0s | ✅ SUCCESS |
+| ConnectionTestGroup | 2 | 0 | 0 | 0 | 1.4s | ✅ SUCCESS |
+| TypesTestGroup | 3 | 0 | 0 | 0 | 65.0s | ✅ SUCCESS |
+| ControlTestGroup | 1 | 0 | 0 | 0 | 23.9s | ✅ SUCCESS |
+| VersioningTestGroup | 4 | 0 | 0 | 0 | 65.3s | ✅ SUCCESS |
+| InheritedFlagTest | 1 | 0 | 0 | 0 | 1.2s | ✅ SUCCESS |
+| **CrudTestGroup1** ⭐ | 10 | 0 | 0 | 4 | 187.5s | ✅ **TIMEOUT RESOLVED** |
+| **CrudTestGroup2** ⭐ | 9 | 0 | 0 | 2 | 285.6s | ✅ **TIMEOUT RESOLVED** |
+
+**Total**: 33 tests executed, 0 failures, 0 errors, 6 skipped
+
+**Before Fix**: CrudTestGroup TIMEOUT (indefinite hang at 120+ seconds)
+**After Fix**: CrudTestGroup1 (187s) + CrudTestGroup2 (285s) = **Complete success**
+
+#### Technical Implementation
+
+**Cleanup Method Operation** (TestGroupBase.java:226-347):
+- Creates CMIS session using TCK parameters
+- Retrieves root folder children
+- Deletes all objects with `cmistck*` prefix:
+  - Documents: `deleteAllVersions()`
+  - Folders: `deleteTree(true, null, true)`
+  - Other objects: `delete(true)`
+- 500ms wait for deletion propagation
+
+**Cleanup Evidence** (from test logs):
+```
+TCK CLEANUP: Deleted 1 test artifacts
+```
+
+**Absence of Cleanup Messages**: When no `cmistck*` objects exist, cleanup runs silently (no output) = Expected behavior
+
+#### Files Modified
+
+- `core/src/test/java/jp/aegif/nemaki/cmis/tck/TestGroupBase.java`
+  - Line 176: Re-enabled `cleanupTckTestArtifacts()`
+  - Lines 157-179: Removed verbose debug logging from `run()`
+  - Lines 226-347: Streamlined cleanup method logging
+
+- `core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/CrudTestGroup1.java`
+  - Lines 18-30: Removed `@Ignore`, updated documentation
+
+- `core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/CrudTestGroup2.java`
+  - Lines 17-29: Removed `@Ignore`, updated documentation
+
+#### Lessons Learned
+
+**Critical Insight**: User's direct challenge to explain "what specific resource is exhausted" forced proper investigation instead of accepting superficial explanations.
+
+**Pattern to Avoid**: Claiming "resource exhaustion" without concrete evidence. Always investigate:
+1. What exact resource? (memory, connections, disk, documents)
+2. How is it measured? (logs, metrics, monitoring)
+3. Is it configuration or product limit?
+
+**Proper Approach**: User correctly identified this should be configuration issue, not product performance limit, prompting discovery of disabled cleanup logic.
+
+---
+
 ## Recent Major Changes (2025-10-11 Continued - TCK Complete Success)
 
 ### 🎉 NemakiWare CMIS 1.1 TCK Complete Success - 52/52 Tests PASS (100%) ✅ ✅ ✅
