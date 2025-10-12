@@ -34,9 +34,12 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import java.util.Map;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 public class CouchContent extends CouchNodeBase{
 
+	private static final Log log = LogFactory.getLog(CouchContent.class);
 	private static final long serialVersionUID = -4795093916552322103L;
 	private String name;
 	private String description;
@@ -107,9 +110,15 @@ public class CouchContent extends CouchNodeBase{
 		setSubTypeProperties(c.getSubTypeProperties());
 		setAspects(c.getAspects());
 		setSecondaryIds(c.getSecondaryIds());
-		setObjectType(c.getObjectType());
+
+		// DEBUG: Trace objectType for UserItem creation
+		String inputObjectType = c.getObjectType();
+		log.error("CouchContent constructor: input objectType=" + inputObjectType + ", class=" + c.getClass().getName());
+		setObjectType(inputObjectType);
+		log.error("CouchContent constructor: after setObjectType, this.objectType=" + this.objectType);
+
 		setChangeToken(c.getChangeToken());
-		
+
 		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from Content layer
 		setRevision(c.getRevision());
 	}
