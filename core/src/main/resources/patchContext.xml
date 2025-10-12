@@ -46,6 +46,8 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Initial users and groups: testgroup, testuser with firstName/lastName -->
+				<!-- Enhanced version with proper user properties -->
 				<bean class="jp.aegif.nemaki.patch.Patch_TestUserInitialization">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />
