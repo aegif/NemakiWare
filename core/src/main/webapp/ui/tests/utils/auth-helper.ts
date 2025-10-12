@@ -22,9 +22,41 @@ export class AuthHelper {
   };
 
   /**
-   * Perform login with specified credentials
+   * Perform login with specified credentials (method overload - individual parameters)
    */
-  async login(credentials: LoginCredentials = AuthHelper.DEFAULT_CREDENTIALS): Promise<void> {
+  async login(username: string, password: string, repository?: string): Promise<void>;
+
+  /**
+   * Perform login with specified credentials (method overload - credentials object)
+   */
+  async login(credentials?: LoginCredentials): Promise<void>;
+
+  /**
+   * Perform login with specified credentials (implementation)
+   * Supports both calling patterns:
+   * - login('username', 'password', 'repository')
+   * - login({ username: 'user', password: 'pass', repository: 'repo' })
+   * - login() - uses default admin credentials
+   */
+  async login(usernameOrCredentials?: string | LoginCredentials, password?: string, repository?: string): Promise<void> {
+    // Parse parameters to determine credentials
+    let credentials: LoginCredentials;
+
+    if (typeof usernameOrCredentials === 'string') {
+      // Called with individual parameters: login('username', 'password', 'repository')
+      credentials = {
+        username: usernameOrCredentials,
+        password: password!,
+        repository: repository || 'bedroom',
+      };
+    } else if (usernameOrCredentials === undefined) {
+      // Called with no parameters: login() - use defaults
+      credentials = AuthHelper.DEFAULT_CREDENTIALS;
+    } else {
+      // Called with credentials object: login({ username, password, repository })
+      credentials = usernameOrCredentials;
+    }
+
     // Navigate to login page
     await this.page.goto('/core/ui/dist/index.html');
 
