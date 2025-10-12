@@ -8,6 +8,78 @@ test.describe('Access Control and Permissions', () => {
   const restrictedFolderName = `restricted-folder-${Date.now()}`;
   const testDocName = `permission-test-doc-${Date.now()}.txt`;
 
+  // Setup: Create testuser if it doesn't exist
+  test.beforeAll(async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const setupAuthHelper = new AuthHelper(page);
+
+    try {
+      // Login as admin
+      await setupAuthHelper.login();
+      await page.waitForTimeout(2000);
+
+      // Navigate to user management
+      const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
+      if (await adminMenu.count() > 0) {
+        await adminMenu.click();
+        await page.waitForTimeout(1000);
+      }
+
+      const userManagementItem = page.locator('.ant-menu-item:has-text("ユーザー管理")');
+      if (await userManagementItem.count() > 0) {
+        await userManagementItem.click();
+        await page.waitForTimeout(2000);
+
+        // Check if testuser already exists
+        const existingTestUser = page.locator('tr:has-text("testuser")');
+        if (await existingTestUser.count() === 0) {
+          // Create testuser
+          const createButton = page.locator('button').filter({
+            hasText: /新規作成|ユーザー追加|追加/
+          });
+
+          if (await createButton.count() > 0) {
+            await createButton.first().click();
+            await page.waitForTimeout(1000);
+
+            const modal = page.locator('.ant-modal, .ant-drawer');
+            if (await modal.count() > 0) {
+              // Fill username
+              const usernameInput = page.locator('input[id*="username"], input[id*="userId"], input[name="username"], input[name="userId"]');
+              if (await usernameInput.count() > 0) {
+                await usernameInput.first().fill('testuser');
+              }
+
+              // Fill password
+              const passwordInput = page.locator('input[type="password"]').first();
+              if (await passwordInput.count() > 0) {
+                await passwordInput.fill('password');
+              }
+
+              // Confirm password
+              const confirmPasswordInput = page.locator('input[type="password"]').nth(1);
+              if (await confirmPasswordInput.count() > 0) {
+                await confirmPasswordInput.fill('password');
+              }
+
+              // Submit
+              const submitButton = page.locator('.ant-modal button[type="submit"], .ant-drawer button[type="submit"], button:has-text("作成"), button:has-text("保存")');
+              if (await submitButton.count() > 0) {
+                await submitButton.first().click();
+                await page.waitForTimeout(2000);
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.log('Setup: testuser creation failed or user already exists:', error);
+    } finally {
+      await context.close();
+    }
+  });
+
   test.describe('Admin User - Setup Permissions', () => {
     test.beforeEach(async ({ page, browserName }) => {
       authHelper = new AuthHelper(page);
