@@ -632,4 +632,92 @@ test.describe('Access Control and Permissions', () => {
       }
     });
   });
+
+  // Cleanup: Remove accumulated test folders to prevent performance degradation
+  test.afterAll(async ({ browser }) => {
+    console.log('Cleanup: Starting test folder cleanup');
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const cleanupAuthHelper = new AuthHelper(page);
+
+    try {
+      // Login as admin for cleanup operations
+      await cleanupAuthHelper.login();
+      await page.waitForTimeout(2000);
+
+      // Navigate to documents page
+      const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
+      if (await documentsMenuItem.count() > 0) {
+        await documentsMenuItem.click();
+        await page.waitForTimeout(3000); // Wait for folder list to load
+      }
+
+      let deletedCount = 0;
+      const maxDeletions = 10; // Reduced limit to avoid timeout
+
+      // Delete test folders in batches - re-query after each deletion to avoid stale elements
+      for (let batch = 0; batch < maxDeletions; batch++) {
+        try {
+          // Re-query folder rows after each deletion
+          const folderRows = page.locator('tr').filter({
+            has: page.locator('[data-icon="folder"]')
+          });
+          const folderCount = await folderRows.count();
+
+          if (batch === 0) {
+            console.log(`Cleanup: Found ${folderCount} folders on current page`);
+          }
+
+          // Find first test folder on current page
+          let foundTestFolder = false;
+          for (let i = 0; i < folderCount; i++) {
+            const row = folderRows.nth(i);
+            const folderNameButton = row.locator('td').nth(1).locator('button');
+            const folderName = await folderNameButton.textContent();
+
+            if (folderName && (folderName.startsWith('restricted-folder-') || folderName.startsWith('test-folder-'))) {
+              console.log(`Cleanup: Deleting folder: ${folderName}`);
+
+              const deleteButton = row.locator('button').filter({
+                has: page.locator('[data-icon="delete"]')
+              });
+
+              if (await deleteButton.count() > 0) {
+                await deleteButton.first().click({ timeout: 3000 });
+                await page.waitForTimeout(300);
+
+                // Confirm deletion
+                const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary');
+                if (await confirmButton.count() > 0) {
+                  await confirmButton.first().click({ timeout: 3000 });
+                  await page.waitForTimeout(1500); // Wait for deletion to complete
+                  deletedCount++;
+                  foundTestFolder = true;
+                  break; // Exit inner loop after successful deletion
+                }
+              }
+            }
+          }
+
+          // No more test folders found on current page
+          if (!foundTestFolder) {
+            console.log(`Cleanup: No more test folders found on current page after ${deletedCount} deletions`);
+            break;
+          }
+
+        } catch (error) {
+          console.log(`Cleanup: Error deleting folder in batch ${batch}:`, error);
+          break; // Stop on error to avoid cascading failures
+        }
+      }
+
+      console.log(`Cleanup: Successfully deleted ${deletedCount} test folders`);
+
+    } catch (error) {
+      console.log('Cleanup: Test folder cleanup failed:', error);
+      // Don't throw - cleanup failure should not fail the test suite
+    } finally {
+      await context.close();
+    }
+  }, { timeout: 90000 }); // Extended timeout for cleanup operations
 });
