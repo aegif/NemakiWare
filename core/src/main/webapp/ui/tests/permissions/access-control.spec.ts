@@ -12,6 +12,108 @@ test.describe('Access Control and Permissions', () => {
   const testUsername = `testuser${Date.now()}`;
   const testUserPassword = 'TestPass123!';
 
+  // Pre-cleanup: Delete old test folders from previous runs BEFORE tests start
+  test.beforeAll(async ({ browser }) => {
+    console.log('Pre-cleanup: Starting cleanup of old test folders before test execution');
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const cleanupAuthHelper = new AuthHelper(page);
+
+    try {
+      await cleanupAuthHelper.login();
+      await page.waitForTimeout(2000);
+
+      // Navigate to documents
+      const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+      if (await documentsMenu.count() > 0) {
+        await documentsMenu.click();
+        await page.waitForTimeout(2000);
+      }
+
+      // Delete up to 10 old test folders to reduce UI clutter
+      let deletedCount = 0;
+      const maxDeletions = 10;
+
+      while (deletedCount < maxDeletions) {
+        // Re-query folder rows on each iteration to avoid stale elements
+        const folderRows = page.locator('.ant-table-tbody tr');
+        const folderCount = await folderRows.count();
+
+        if (folderCount === 0) {
+          console.log('Pre-cleanup: No folders found on current page');
+          break;
+        }
+
+        // Find first test folder on current page
+        let foundTestFolder = false;
+        for (let i = 0; i < folderCount; i++) {
+          const row = folderRows.nth(i);
+          const folderNameButton = row.locator('td').nth(1).locator('button');
+          const folderName = await folderNameButton.textContent();
+
+          if (folderName && (folderName.startsWith('restricted-folder-') || folderName.startsWith('test-folder-'))) {
+            console.log(`Pre-cleanup: Deleting folder: ${folderName}`);
+
+            const deleteButton = row.locator('button').filter({
+              has: page.locator('[data-icon="delete"]')
+            });
+
+            if (await deleteButton.count() > 0) {
+              await deleteButton.first().click({ timeout: 3000 });
+
+              // Wait for popconfirm to appear and become visible
+              await page.waitForTimeout(1000);
+
+              // Confirm deletion with visibility check
+              const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary');
+              try {
+                // Wait for confirm button to be visible before clicking
+                await confirmButton.first().waitFor({ state: 'visible', timeout: 3000 });
+                await confirmButton.first().click({ timeout: 3000 });
+
+                // Wait for folder to disappear from table (verify deletion completed)
+                let deletionConfirmed = false;
+                for (let attempt = 0; attempt < 5; attempt++) {
+                  await page.waitForTimeout(1000);
+                  const stillExists = page.locator('tr').filter({ hasText: folderName });
+                  if (await stillExists.count() === 0) {
+                    deletionConfirmed = true;
+                    break;
+                  }
+                }
+
+                if (deletionConfirmed) {
+                  console.log(`Pre-cleanup: Folder ${folderName} deletion confirmed`);
+                  deletedCount++;
+                  foundTestFolder = true;
+                  break; // Exit inner loop after successful deletion
+                } else {
+                  console.log(`Pre-cleanup: Warning - Folder ${folderName} still exists after deletion attempt`);
+                  // Don't increment deletedCount, try next folder
+                }
+              } catch (confirmError) {
+                console.log(`Pre-cleanup: Confirm button error for ${folderName}:`, confirmError.message);
+                // Skip this folder and try next one
+              }
+            }
+          }
+        }
+
+        // No more test folders found on current page
+        if (!foundTestFolder) {
+          console.log('Pre-cleanup: No more test folders found on current page');
+          break;
+        }
+      }
+
+      console.log(`Pre-cleanup: Successfully deleted ${deletedCount} old test folders`);
+    } catch (error) {
+      console.log('Pre-cleanup: Error during cleanup:', error);
+    } finally {
+      await context.close();
+    }
+  }, 90000); // 90 second timeout for pre-cleanup
+
   // Setup: Create test user
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext();
