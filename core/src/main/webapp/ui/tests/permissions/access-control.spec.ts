@@ -49,7 +49,7 @@ test.describe('Access Control and Permissions', () => {
 
         // Create test user
         const createButton = page.locator('button').filter({
-          hasText: /新規作成|ユーザー追加|追加/
+          hasText: /新規ユーザー|新規作成|ユーザー追加|追加/
         });
 
         if (await createButton.count() > 0) {
