@@ -626,7 +626,27 @@ test.describe('Access Control and Permissions', () => {
           const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary');
           if (await confirmButton.count() > 0) {
             await confirmButton.click();
-            await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+
+            // Wait for success message with extended timeout (folder with contents takes longer to delete)
+            try {
+              await page.waitForSelector('.ant-message-success', { timeout: 30000 });
+            } catch (timeoutError) {
+              console.log('Cleanup: Success message timeout - verifying deletion by checking if folder disappeared');
+            }
+
+            // Verify folder was deleted by checking it's no longer in the table
+            await page.waitForTimeout(2000);
+            const deletedFolderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
+            const folderStillExists = await deletedFolderRow.count() > 0;
+
+            if (folderStillExists) {
+              console.log(`Cleanup: Warning - Folder ${restrictedFolderName} still exists after deletion attempt`);
+            } else {
+              console.log(`Cleanup: Successfully deleted folder ${restrictedFolderName}`);
+            }
+
+            // Test should pass as long as folder is gone, even if success message didn't appear
+            expect(folderStillExists).toBe(false);
           }
         }
       }
