@@ -22,7 +22,9 @@
 package jp.aegif.nemaki.patch;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -32,6 +34,7 @@ import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.model.GroupItem;
+import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.spring.SpringContext;
 
@@ -163,18 +166,30 @@ public class Patch_TestUserInitialization extends AbstractNemakiPatch {
                     // Create test user with proper constructor (password: test)
                     UserItem testUser = new UserItem(null, NemakiObjectType.nemakiUser, "testuser", "Test User", "test", false, null);
                     testUser.setDescription("Test user for QA and development");
-                    
+
+                    // Set additional properties (firstName, lastName, email)
+                    Map<String, Object> propsMap = new HashMap<>();
+                    propsMap.put("nemaki:firstName", "Test");
+                    propsMap.put("nemaki:lastName", "User");
+                    propsMap.put("nemaki:email", "testuser@example.com");
+
+                    List<Property> properties = new ArrayList<>();
+                    for (String key : propsMap.keySet()) {
+                        properties.add(new Property(key, propsMap.get(key)));
+                    }
+
+                    if (!properties.isEmpty()) {
+                        testUser.setSubTypeProperties(properties);
+                    }
+
                     // Note: Group membership will be handled by the group creation process
                     // UserItem doesn't have a setGroups method - groups are managed via GroupItem
-                    
-                    // Use ContentService to create the user
+
+                    // Use ContentService to create the user with properties
                     UserItem createdUser = contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, testUser);
                     String userId = createdUser.getId();
-                    log.info("Created QA user with ID: " + userId);
-                    
-                    // Note: User will be added to QA group via group management
-                    log.info("QA user created successfully");
-                    
+                    log.info("Created QA user with ID: " + userId + " with firstName: Test, lastName: User");
+
                 } catch (Exception userCreationException) {
                     log.warn("Failed to create QA user (may already exist): " + userCreationException.getMessage());
                     // Continue with patch execution even if user creation fails

@@ -33,10 +33,9 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
-
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class CouchUserItem extends CouchItem{
-	
+
 	private static final long serialVersionUID = 3294975060332894322L;
 
 	@JsonProperty("userId")
@@ -108,7 +107,27 @@ public class CouchUserItem extends CouchItem{
 			if (properties.containsKey("modifier")) {
 				setModifier((String) properties.get("modifier"));
 			}
-			
+
+			// subTypeProperties の処理 (CRITICAL FIX for firstName/lastName display)
+			if (properties.containsKey("subTypeProperties")) {
+				Object subTypePropsObj = properties.get("subTypeProperties");
+				if (subTypePropsObj instanceof List) {
+					@SuppressWarnings("unchecked")
+					List<Map<String, Object>> subTypePropsMapList = (List<Map<String, Object>>) subTypePropsObj;
+					List<Property> subTypePropertyList = new ArrayList<>();
+					for (Map<String, Object> propMap : subTypePropsMapList) {
+						String key = (String) propMap.get("key");
+						Object value = propMap.get("value");
+						if (key != null && value != null) {
+							subTypePropertyList.add(new Property(key, value));
+						}
+					}
+					if (!subTypePropertyList.isEmpty()) {
+						setSubTypeProperties(subTypePropertyList);
+					}
+				}
+			}
+
 			// その他のプロパティを保存
 			this.additionalProperties.putAll(properties);
 		}
@@ -187,13 +206,8 @@ public class CouchUserItem extends CouchItem{
 		this.type = type;
 	}
 	
-	public void setObjectType(String objectType) {
-		// Store in additional properties since CouchContent handles this
-		if (this.additionalProperties == null) {
-			this.additionalProperties = new HashMap<>();
-		}
-		this.additionalProperties.put("objectType", objectType);
-	}
+	// CRITICAL FIX (2025-10-12): Removed setObjectType() override that was putting objectType into additionalProperties
+	// This caused objectType field to remain null. Now using parent CouchContent.setObjectType() implementation.
 
 	public UserItem convert(){
 		UserItem userItem = new UserItem(super.convert());
@@ -206,32 +220,14 @@ public class CouchUserItem extends CouchItem{
 		}
 		
 		String retrievedPassword = getPassword();
-		
+
 		userItem.setPassowrd(retrievedPassword);
 		userItem.setAdmin(isAdmin() != null ? isAdmin() : false);
-		
-		// Add firstName, lastName, email from additionalProperties to subTypeProperties
-		if (additionalProperties != null) {
-			List<Property> subTypeProps = new ArrayList<>();
-			if (userItem.getSubTypeProperties() != null) {
-				subTypeProps.addAll(userItem.getSubTypeProperties());
-			}
-			
-			// Add user-specific properties
-			if (additionalProperties.containsKey("firstName")) {
-				subTypeProps.add(new Property("nemaki:firstName", (String) additionalProperties.get("firstName")));
-			}
-			if (additionalProperties.containsKey("lastName")) {
-				subTypeProps.add(new Property("nemaki:lastName", (String) additionalProperties.get("lastName")));
-			}
-			if (additionalProperties.containsKey("email")) {
-				subTypeProps.add(new Property("nemaki:email", (String) additionalProperties.get("email")));
-			}
-			
-			userItem.setSubTypeProperties(subTypeProps);
-		}
-		
-		
+
+		// FIXED: subTypeProperties are already set by super.convert() from CouchContent
+		// CouchContent's @JsonCreator constructor properly converts the subTypeProperties array from CouchDB
+		// No need to re-process from additionalProperties
+
 		return userItem;
 	}
 }

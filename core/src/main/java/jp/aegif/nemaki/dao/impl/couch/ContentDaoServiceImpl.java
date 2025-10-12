@@ -1522,27 +1522,44 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			log.info("getUserItems: Getting client for repository: " + repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			log.info("getUserItems: Client obtained, querying userItemsById view");
-			
-			List<CouchUserItem> couchUsers = client.queryView("_repo", "userItemsById", null, CouchUserItem.class);
-			log.info("getUserItems: Retrieved " + couchUsers.size() + " raw users from CouchDB");
-			
+
+			// FIXED: Use getValue() like getUserItemById to properly convert subTypeProperties
+			ViewResult result = client.queryView("_repo", "userItemsById");
+
 			List<UserItem> userItems = new ArrayList<UserItem>();
-			for (CouchUserItem couchUser : couchUsers) {
-				log.debug("getUserItems: Converting CouchUserItem with userId: " + couchUser.getUserId());
-				try {
-					UserItem converted = couchUser.convert();
-					if (converted != null) {
-						userItems.add(converted);
-						log.debug("getUserItems: Successfully converted user: " + converted.getUserId());
-					} else {
-						log.warn("getUserItems: convert() returned null for CouchUserItem: " + couchUser.getId());
+			if (result != null && result.getRows() != null) {
+				log.info("getUserItems: Retrieved " + result.getRows().size() + " users from CouchDB");
+
+				for (ViewResultRow row : result.getRows()) {
+					try {
+						Object rawDoc = row.getValue(); // Use getValue() not getDoc()
+
+						if (rawDoc instanceof Map) {
+							@SuppressWarnings("unchecked")
+							Map<String, Object> docMap = (Map<String, Object>) rawDoc;
+
+							// Use Map-based constructor to ensure proper subTypeProperties conversion
+							CouchUserItem cui = new CouchUserItem(docMap);
+
+							if (cui.getUserId() != null && cui.getId() != null && cui.getType() != null) {
+								UserItem converted = cui.convert();
+								if (converted != null) {
+									userItems.add(converted);
+									log.debug("getUserItems: Successfully converted user: " + converted.getUserId());
+								}
+							} else {
+								log.warn("getUserItems: Missing required fields for user: " + cui.getUserId());
+							}
+						} else {
+							log.warn("getUserItems: Raw document is not a Map: " + (rawDoc != null ? rawDoc.getClass().getName() : "null"));
+						}
+					} catch (Exception convertException) {
+						log.error("getUserItems: Exception during conversion", convertException);
+						// Skip failed conversions
 					}
-				} catch (Exception convertException) {
-					log.error("getUserItems: Exception during convert() for CouchUserItem: " + couchUser.getId(), convertException);
-					// 変換に失敗したユーザーはスキップして続行
 				}
 			}
-			
+
 			log.info("getUserItems: Returning " + userItems.size() + " converted users");
 			return userItems;
 		} catch (Exception e) {
