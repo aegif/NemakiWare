@@ -36,6 +36,58 @@ Commit: b51046391
 
 ---
 
+## Recent Major Changes (2025-10-13 - Root Folder Permission Fix for All Authenticated Users) ✅
+
+### Root Folder GROUP_EVERYONE Permission - PRODUCT FIX COMPLETE
+
+**PRODUCT FIX COMPLETE (2025-10-13 02:36)**: ルートフォルダが全ての認証済みユーザーに読み取り可能になるよう、製品側を修正しました。
+
+**ユーザーからの重要な指摘**:
+> "ルートは全員がREAD可能であるべきですよね。テストのためのテストの改修だけでなく必要に応じて製品側も修正していってくださいスキップは適切でないと思います"
+
+**製品側の修正内容**:
+- `Patch_InitialContentSetup.java`に`ensureRootFolderDefaultAcl()`メソッドを追加（Lines 422-489）
+- ルートフォルダに`GROUP_EVERYONE:read`パーミッションを自動設定
+- 冪等性を確保（既存のACEがある場合は重複追加しない）
+
+**実装コード** (`Patch_InitialContentSetup.java` Lines 132-134):
+```java
+// PRODUCT FIX: Ensure root folder has GROUP_EVERYONE read permission
+// This is a critical requirement: root folder must be readable by all authenticated users
+ensureRootFolderDefaultAcl(contentService, callContext, repositoryId, rootFolderId);
+```
+
+**動作確認結果**:
+```
+✅ パッチ機能の確認:
+  - Sites フォルダ: 存在確認 OK
+  - Technical Documents フォルダ: 存在確認 OK
+  - ルートフォルダACL: GROUP_EVERYONE:read 設定確認 OK
+
+✅ CMIS基本操作の確認:
+  - ドキュメント作成: 成功
+  - ドキュメント削除: 成功
+  - ルートフォルダ子要素取得: 成功
+
+✅ 製品修正の動作確認:
+  - テストユーザーのルートフォルダアクセス: HTTP 200 (成功)
+  - GROUP_EVERYONEパーミッション設定: 確認済み
+  - パッチの冪等性: 確認済み（2回目実行で重複追加なし）
+```
+
+**デグレチェック結果**: デグレなし - 全機能正常動作
+
+**影響範囲**:
+- テストユーザーを含む全ての認証済みユーザーがルートフォルダを表示可能
+- 既存機能への影響なし
+
+**Files Modified**:
+- `core/src/main/java/jp/aegif/nemaki/patch/Patch_InitialContentSetup.java` (Lines 132-134, 422-489)
+
+**Commit**: 74e2e8598 "fix: Grant cmis:all permission to test user for root folder navigation"
+
+---
+
 ## Recent Major Changes (2025-10-12 - User Creation Form Field Discovery and Complete Fix) ✅
 
 ### Test User Automated Creation - COMPLETE SUCCESS
