@@ -884,7 +884,8 @@ test.describe('Access Control and Permissions', () => {
           return;
         }
 
-        const folderId = queryResult.results[0]['cmis:objectId'];
+        // CMIS Browser Binding query result structure: results[0].properties['cmis:objectId'].value
+        const folderId = queryResult.results[0].properties?.['cmis:objectId']?.value;
         console.log(`Test: Found folder ID: ${folderId}`);
 
         // Get ACL for the folder
@@ -1187,7 +1188,7 @@ test.describe('Access Control and Permissions', () => {
           return; // Test passes - folder doesn't exist
         }
 
-        const folderId = queryResult.results[0]['cmis:objectId'];
+        const folderId = queryResult.results[0].properties?.['cmis:objectId']?.value;
         console.log(`Cleanup: Found folder ID: ${folderId}`);
 
         // Use CMIS Browser Binding deleteTree operation
