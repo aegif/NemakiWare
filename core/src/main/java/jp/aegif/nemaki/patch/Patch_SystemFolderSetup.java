@@ -9,12 +9,17 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.util.PropertyManager;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
+import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
-import org.apache.chemistry.opencmis.commons.PropertyIds;
 
 /**
  * System Folder Setup Patch
@@ -99,73 +104,62 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
         try {
             ContentService contentService = patchUtil.getContentService();
             if (contentService == null) {
-                log.error("ContentService not available, cannot apply System Folder patch");
-                return;
+                throw new IllegalStateException("ContentService not available, cannot apply System Folder patch");
             }
-            
+
             if (patchUtil.getRepositoryInfoMap() == null) {
-                log.warn("RepositoryInfoMap not available yet. Skipping System Folder Setup for: " + repositoryId);
-                return;
+                throw new IllegalStateException("RepositoryInfoMap not available yet for repository: " + repositoryId);
             }
-            
+
             if (patchUtil.getRepositoryInfoMap().get(repositoryId) == null) {
-                log.warn("Repository info not available for: " + repositoryId + ". Skipping System Folder Setup.");
-                return;
+                throw new IllegalStateException("Repository info not available for repository: " + repositoryId);
             }
-            
+
             String rootFolderId = patchUtil.getRepositoryInfoMap().get(repositoryId).getRootFolderId();
             if (rootFolderId == null) {
-                log.warn("Root folder ID not available for repository: " + repositoryId + ". Skipping System Folder Setup.");
-                return;
+                throw new IllegalStateException("Root folder ID not available for repository: " + repositoryId);
             }
-            
+
             log.info("Using root folder ID: " + rootFolderId + " for repository: " + repositoryId);
-            
-            // Verify root folder exists
-            try {
-                Folder rootFolder = (Folder) contentService.getContent(repositoryId, rootFolderId);
-                if (rootFolder == null) {
-                    log.warn("Root folder not found for repository: " + repositoryId + ". Repository may not be fully initialized yet.");
-                    return;
-                }
-                
-                log.info("Root folder verified for repository: " + repositoryId + ", proceeding with System folder setup");
-            } catch (Exception e) {
-                log.warn("Cannot access root folder for repository: " + repositoryId + ". Repository may not be fully initialized yet. Error: " + e.getMessage());
-                return;
+
+            Folder rootFolder = (Folder) contentService.getContent(repositoryId, rootFolderId);
+            if (rootFolder == null) {
+                throw new IllegalStateException("Root folder not found for repository: " + repositoryId);
             }
-            
+
+            log.info("Root folder verified for repository: " + repositoryId + ", proceeding with System folder setup");
+
             // Create SystemCallContext for operations
             SystemCallContext callContext = new SystemCallContext(repositoryId);
-            
+
             // Check if System folder already exists
             Folder existingSystemFolder = findExistingSystemFolder(contentService, repositoryId, rootFolderId);
-            
+
             if (existingSystemFolder == null) {
                 log.info("Creating System folder for repository: " + repositoryId);
                 String systemFolderId = createSystemFolder(contentService, callContext, repositoryId, rootFolderId);
-                
-                if (systemFolderId != null) {
-                    log.info("System folder created with ID: " + systemFolderId);
-                    
-                    // Set systemFolder configuration in nemaki_conf
-                    setSystemFolderConfiguration(repositoryId, systemFolderId);
-                    
-                } else {
-                    log.warn("Failed to create System folder for repository: " + repositoryId);
+
+                if (systemFolderId == null) {
+                    throw new IllegalStateException("Failed to create System folder for repository: " + repositoryId);
                 }
+
+                log.info("System folder created with ID: " + systemFolderId);
+
+                // Set systemFolder configuration in nemaki_conf
+                setSystemFolderConfiguration(repositoryId, systemFolderId);
+
             } else {
                 log.info("System folder already exists with ID: " + existingSystemFolder.getId());
-                
+
                 // Ensure configuration is set even if folder exists
                 setSystemFolderConfiguration(repositoryId, existingSystemFolder.getId());
             }
-            
+
             log.info("System Folder Setup Patch completed successfully for repository: " + repositoryId);
-            
+
         } catch (Exception e) {
             log.error("Error during System Folder Setup Patch for repository: " + repositoryId, e);
-            // Don't throw - patch failures should not prevent application startup
+            throw new RuntimeException("System Folder Setup Patch failed for repository: " + repositoryId, e);
         }
     }
     
@@ -360,18 +354,41 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
             }
             
             // Create System folder through ContentService
-            Folder created = contentService.createFolder(callContext, repositoryId, properties, 
-                                                        parentFolder, null, null, null, null);
+            org.apache.chemistry.opencmis.commons.data.Acl acl = createSystemFolderAcl();
+
+            Folder created = contentService.createFolder(callContext, repositoryId, properties,
+                                                        parentFolder, null, acl, null, null);
             
             log.info("System folder created via ContentService: " + SYSTEM_FOLDER_NAME + " with ID: " + created.getId());
             log.info("ChangeLog entry generated for System folder creation");
             
             return created.getId();
-            
+
         } catch (Exception e) {
             log.error("Error creating System folder", e);
             return null;
         }
+    }
+
+    /**
+     * Create default ACL for the System folder so that administrative users retain access.
+     */
+    private org.apache.chemistry.opencmis.commons.data.Acl createSystemFolderAcl() {
+        AccessControlListImpl acl = new AccessControlListImpl();
+        java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> aces = new ArrayList<>();
+
+        // Ensure the system user retains full access
+        AccessControlPrincipalDataImpl systemPrincipal = new AccessControlPrincipalDataImpl("system");
+        AccessControlEntryImpl systemAce = new AccessControlEntryImpl(systemPrincipal, Arrays.asList("cmis:all"));
+        aces.add(systemAce);
+
+        // Grant admin full control to manage hidden system artifacts
+        AccessControlPrincipalDataImpl adminPrincipal = new AccessControlPrincipalDataImpl("admin");
+        AccessControlEntryImpl adminAce = new AccessControlEntryImpl(adminPrincipal, Arrays.asList("cmis:all"));
+        aces.add(adminAce);
+
+        acl.setAces(aces);
+        return acl;
     }
     
     /**
