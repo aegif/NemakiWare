@@ -872,7 +872,9 @@ test.describe('Access Control and Permissions', () => {
           }
         );
 
-        expect(queryResponse.ok).toBe(true);
+        console.log('Test: Query response status:', queryResponse.status());
+        console.log('Test: Query response ok:', queryResponse.ok());
+        expect(queryResponse.ok()).toBe(true);
         const queryResult = await queryResponse.json();
         console.log('Test: Query result:', JSON.stringify(queryResult).substring(0, 300));
 
@@ -895,7 +897,8 @@ test.describe('Access Control and Permissions', () => {
           }
         );
 
-        expect(aclResponse.ok).toBe(true);
+        console.log('Test: ACL response status:', aclResponse.status());
+        expect(aclResponse.ok()).toBe(true);
         const aclResult = await aclResponse.json();
         console.log('Test: ACL result:', JSON.stringify(aclResult, null, 2));
 
@@ -934,7 +937,7 @@ test.describe('Access Control and Permissions', () => {
 
         console.log(`Test: Test user CMIS API access response: ${testUserAccessResponse.status()}`);
 
-        if (testUserAccessResponse.ok) {
+        if (testUserAccessResponse.ok()) {
           const folderData = await testUserAccessResponse.json();
           console.log('Test: ✅ Test user CAN access folder via CMIS API');
           console.log('Test: Folder name from API:', folderData.properties?.['cmis:name']?.value);
