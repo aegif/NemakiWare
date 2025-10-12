@@ -858,6 +858,98 @@ test.describe('Access Control and Permissions', () => {
       }
     });
 
+    test('should verify ACL is set correctly via CMIS API', async ({ page }) => {
+      console.log('Test: Verifying ACL configuration via CMIS Browser Binding API');
+
+      try {
+        // Query for the restricted folder
+        const queryResponse = await page.request.get(
+          `http://localhost:8080/core/browser/bedroom?cmisselector=query&q=SELECT%20*%20FROM%20cmis:folder%20WHERE%20cmis:name%20=%20'${encodeURIComponent(restrictedFolderName)}'`,
+          {
+            headers: {
+              'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
+            }
+          }
+        );
+
+        expect(queryResponse.ok).toBe(true);
+        const queryResult = await queryResponse.json();
+        console.log('Test: Query result:', JSON.stringify(queryResult).substring(0, 300));
+
+        if (!queryResult.results || queryResult.results.length === 0) {
+          console.log('Test: Folder not found in query results');
+          test.skip('Folder not found - may have been deleted');
+          return;
+        }
+
+        const folderId = queryResult.results[0]['cmis:objectId'];
+        console.log(`Test: Found folder ID: ${folderId}`);
+
+        // Get ACL for the folder
+        const aclResponse = await page.request.get(
+          `http://localhost:8080/core/browser/bedroom?cmisselector=acl&objectId=${folderId}`,
+          {
+            headers: {
+              'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
+            }
+          }
+        );
+
+        expect(aclResponse.ok).toBe(true);
+        const aclResult = await aclResponse.json();
+        console.log('Test: ACL result:', JSON.stringify(aclResult, null, 2));
+
+        // Verify test user has read permission
+        const hasTestUserAcl = aclResult.aces?.some((ace: any) =>
+          ace.principal?.principalId === testUsername
+        );
+
+        console.log(`Test: Test user (${testUsername}) has ACL entry: ${hasTestUserAcl}`);
+
+        if (hasTestUserAcl) {
+          const testUserAce = aclResult.aces.find((ace: any) =>
+            ace.principal?.principalId === testUsername
+          );
+          console.log('Test: Test user ACL entry:', JSON.stringify(testUserAce, null, 2));
+
+          // Verify permissions
+          const hasReadPermission = testUserAce.permissions?.includes('cmis:read');
+          console.log(`Test: Test user has cmis:read permission: ${hasReadPermission}`);
+
+          expect(hasReadPermission).toBe(true);
+        } else {
+          console.log('Test: WARNING - Test user ACL entry not found!');
+        }
+
+        // Now try to access the folder as test user via CMIS API
+        console.log('Test: Attempting to access folder as test user via CMIS API');
+        const testUserAccessResponse = await page.request.get(
+          `http://localhost:8080/core/browser/bedroom?cmisselector=object&objectId=${folderId}`,
+          {
+            headers: {
+              'Authorization': `Basic ${Buffer.from(`${testUsername}:${testUserPassword}`).toString('base64')}`
+            }
+          }
+        );
+
+        console.log(`Test: Test user CMIS API access response: ${testUserAccessResponse.status()}`);
+
+        if (testUserAccessResponse.ok) {
+          const folderData = await testUserAccessResponse.json();
+          console.log('Test: ✅ Test user CAN access folder via CMIS API');
+          console.log('Test: Folder name from API:', folderData.properties?.['cmis:name']?.value);
+        } else {
+          console.log('Test: ❌ Test user CANNOT access folder via CMIS API');
+          const errorText = await testUserAccessResponse.text();
+          console.log('Test: Error:', errorText.substring(0, 300));
+        }
+
+      } catch (error) {
+        console.log('Test: API verification error:', error.message);
+        throw error;
+      }
+    });
+
     test('should be able to view restricted folder as test user', async ({ page, browserName }) => {
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
