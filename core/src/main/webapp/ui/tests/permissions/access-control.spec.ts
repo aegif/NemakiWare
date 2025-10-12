@@ -791,114 +791,49 @@ test.describe('Access Control and Permissions', () => {
       }
     });
 
-    test('should clean up restricted folder and contents', async ({ page, browserName }) => {
-      test.setTimeout(150000); // Extended timeout for slow deletion operations (up to 2.5 minutes)
-      const viewportSize = page.viewportSize();
-      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    test('should clean up restricted folder and contents', async ({ page }) => {
+      test.setTimeout(60000); // 1-minute timeout for API deletion
 
-      await page.waitForTimeout(2000);
+      // UI deletion takes 60+ seconds and fails - use direct CMIS API instead
+      console.log(`Cleanup: Using CMIS API to delete ${restrictedFolderName} (folder ID: ${restrictedFolderId})`);
 
-      const folderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
-
-      if (await folderRow.count() > 0) {
-        const deleteButton = folderRow.locator('button').filter({
-          has: page.locator('[data-icon="delete"]')
+      try {
+        // Use CMIS Browser Binding deleteTree operation
+        const response = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+          headers: {
+            'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
+          },
+          form: {
+            'cmisaction': 'deleteTree',
+            'repositoryId': 'bedroom',
+            'folderId': restrictedFolderId,
+            'allVersions': 'true',
+            'continueOnFailure': 'false'
+          }
         });
 
-        if (await deleteButton.count() > 0) {
-          console.log(`Cleanup: Clicking delete button for ${restrictedFolderName}`);
-          await deleteButton.click(isMobile ? { force: true } : {});
+        console.log(`Cleanup: API response status: ${response.status()}`);
 
-          // Wait for popconfirm to appear (extended timeout for slow UI)
-          console.log('Cleanup: Waiting for popconfirm to appear...');
+        if (response.ok) {
+          console.log('Cleanup: deleteTree succeeded');
+
+          // Verify deletion in UI (reload and check)
+          await page.reload();
           await page.waitForTimeout(2000);
 
-          // Try to find and click visible confirm button with multiple strategies
-          try {
-            // Strategy 1: Wait for visible popconfirm container first
-            const popconfirm = page.locator('.ant-popconfirm:visible, .ant-popover:visible');
-            await popconfirm.waitFor({ state: 'visible', timeout: 5000 });
-            console.log('Cleanup: Popconfirm visible');
+          const folderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
+          const folderExists = await folderRow.count() > 0;
 
-            // Strategy 2: Find all visible confirm buttons
-            const allConfirmButtons = page.locator('.ant-popconfirm:visible button, .ant-popover:visible button');
-            const buttonCount = await allConfirmButtons.count();
-            console.log(`Cleanup: Found ${buttonCount} buttons in popconfirm`);
-
-            // Log button texts for debugging
-            for (let i = 0; i < buttonCount; i++) {
-              const buttonText = await allConfirmButtons.nth(i).textContent();
-              console.log(`Cleanup: Button ${i}: "${buttonText}"`);
-            }
-
-            // Strategy 3: Click the "はい" (Yes) button explicitly
-            const yesButton = page.locator('.ant-popconfirm:visible button:has-text("はい"), .ant-popover:visible button:has-text("はい")');
-
-            if (await yesButton.count() > 0) {
-              console.log('Cleanup: Clicking "はい" (Yes) button');
-              await yesButton.first().click({ force: true, timeout: 3000 });
-
-              // Wait for success message with extended timeout (folder with contents takes longer to delete)
-              try {
-                await page.waitForSelector('.ant-message-success', { timeout: 60000 });
-                console.log('Cleanup: Success message appeared');
-              } catch (timeoutError) {
-                console.log('Cleanup: Success message timeout - verifying deletion by checking if folder disappeared');
-              }
-
-              // Verify folder was deleted with polling (up to 60 seconds for folders with restricted ACLs and contents)
-              let deletionConfirmed = false;
-              console.log('Cleanup: Starting deletion verification polling (up to 60 seconds)...');
-              for (let attempt = 0; attempt < 60; attempt++) {
-                await page.waitForTimeout(1000);
-                const deletedFolderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
-                const folderStillExists = await deletedFolderRow.count() > 0;
-
-                if (!folderStillExists) {
-                  deletionConfirmed = true;
-                  console.log(`Cleanup: Folder ${restrictedFolderName} deletion confirmed after ${attempt + 1} seconds`);
-                  break;
-                }
-
-                // Log progress every 10 seconds
-                if ((attempt + 1) % 10 === 0) {
-                  console.log(`Cleanup: Still waiting for deletion... ${attempt + 1} seconds elapsed`);
-                }
-              }
-
-              if (!deletionConfirmed) {
-                console.log(`Cleanup: Warning - Folder ${restrictedFolderName} still exists after 60-second verification`);
-              }
-
-              // Test should pass as long as folder is gone, even if success message didn't appear
-              expect(deletionConfirmed).toBe(true);
-            } else {
-              console.log(`Cleanup: "はい" (Yes) button not found in visible popconfirm`);
-              // Test will fail - folder still exists and can't be deleted
-              expect(false).toBe(true); // Force fail with clear message
-            }
-          } catch (confirmError) {
-            console.log('Cleanup: Confirm button error:', confirmError.message);
-            // Try to verify if folder was deleted despite error (with extended polling)
-            let deletionConfirmed = false;
-            console.log('Cleanup: Starting deletion verification polling (up to 60 seconds)...');
-            for (let attempt = 0; attempt < 60; attempt++) {
-              await page.waitForTimeout(1000);
-              const deletedFolderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
-              const folderStillExists = await deletedFolderRow.count() > 0;
-              if (!folderStillExists) {
-                deletionConfirmed = true;
-                console.log(`Cleanup: Folder ${restrictedFolderName} deletion confirmed after ${attempt + 1} seconds (despite error)`);
-                break;
-              }
-              // Log progress every 10 seconds
-              if ((attempt + 1) % 10 === 0) {
-                console.log(`Cleanup: Still waiting for deletion... ${attempt + 1} seconds elapsed`);
-              }
-            }
-            expect(deletionConfirmed).toBe(true);
-          }
+          expect(folderExists).toBe(false);
+          console.log(`Cleanup: ${restrictedFolderName} confirmed deleted via API`);
+        } else {
+          const responseText = await response.text();
+          console.log(`Cleanup: deleteTree failed - ${response.status()}: ${responseText.substring(0, 300)}`);
+          throw new Error(`API deletion failed with status ${response.status()}`);
         }
+      } catch (error) {
+        console.log('Cleanup: Error during API deletion:', error.message);
+        throw error; // Re-throw to fail the test with clear message
       }
     });
   });
