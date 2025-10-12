@@ -704,11 +704,15 @@ test.describe('Access Control and Permissions', () => {
 
               if (await deleteButton.count() > 0) {
                 await deleteButton.first().click({ timeout: 3000 });
-                await page.waitForTimeout(300);
 
-                // Confirm deletion
+                // Wait for popconfirm to appear and become visible
+                await page.waitForTimeout(1000);
+
+                // Confirm deletion with visibility check
                 const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary');
-                if (await confirmButton.count() > 0) {
+                try {
+                  // Wait for confirm button to be visible before clicking
+                  await confirmButton.first().waitFor({ state: 'visible', timeout: 3000 });
                   await confirmButton.first().click({ timeout: 3000 });
 
                   // Wait for folder to disappear from table (verify deletion completed)
@@ -731,6 +735,9 @@ test.describe('Access Control and Permissions', () => {
                     console.log(`Cleanup: Warning - Folder ${folderName} still exists after deletion attempt`);
                     // Don't increment deletedCount, try next folder
                   }
+                } catch (confirmError) {
+                  console.log(`Cleanup: Confirm button error for ${folderName}:`, confirmError.message);
+                  // Skip this folder and try next one
                 }
               }
             }
