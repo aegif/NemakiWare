@@ -292,46 +292,73 @@ test.describe('Access Control and Permissions', () => {
               }
             }
 
-            // Wait for table refresh (extended for database write latency)
+            // Wait for database write to complete
             await page.waitForTimeout(3000);
 
-            // Verify test user was created with multiple attempts and page reload
+            // Verify test user was created by attempting login (more reliable than table check)
             let userCreated = false;
-            for (let attempt = 1; attempt <= 3; attempt++) {
-              const createdTestUser = page.locator(`tr:has-text("${testUsername}")`);
-              userCreated = await createdTestUser.count() > 0;
+            if (successMessageAppeared) {
+              console.log('Setup: Verifying user creation by attempting login...');
 
-              if (userCreated) {
-                console.log(`Setup: ${testUsername} found in table on attempt ${attempt}`);
-                break;
-              } else {
-                console.log(`Setup: ${testUsername} not found in table (attempt ${attempt}/3)`);
-                if (attempt < 3) {
-                  if (attempt === 1) {
-                    // First retry: Just wait longer for table update
-                    await page.waitForTimeout(3000);
-                  } else {
-                    // Second retry: Navigate back to user management to force full refresh
-                    console.log('Setup: Re-navigating to user management to force table refresh...');
-                    const adminMenuRetry = page.locator('.ant-menu-submenu:has-text("管理")');
-                    if (await adminMenuRetry.count() > 0) {
-                      await adminMenuRetry.click();
-                      await page.waitForTimeout(1000);
-                    }
-                    const userManagementRetry = page.locator('.ant-menu-item:has-text("ユーザー管理")');
-                    if (await userManagementRetry.count() > 0) {
-                      await userManagementRetry.click();
-                      await page.waitForTimeout(3000);
-                    }
+              // Logout from admin session
+              try {
+                const userMenuButton = page.locator('.ant-dropdown-trigger, button:has-text("admin")').first();
+                if (await userMenuButton.count() > 0) {
+                  await userMenuButton.click();
+                  await page.waitForTimeout(500);
+
+                  const logoutButton = page.locator('.ant-dropdown-menu-item:has-text("ログアウト"), a:has-text("ログアウト")');
+                  if (await logoutButton.count() > 0) {
+                    await logoutButton.first().click();
+                    await page.waitForTimeout(2000);
+                    console.log('Setup: Logged out from admin session');
                   }
                 }
+              } catch (logoutError) {
+                console.log('Setup: Logout error (navigating to login directly):', logoutError.message);
+                await page.goto('http://localhost:8080/core/ui/dist/');
+                await page.waitForTimeout(2000);
               }
+
+              // Attempt login with test user
+              try {
+                const testAuthHelper = new AuthHelper(page);
+                await testAuthHelper.login(testUsername, testUserPassword);
+
+                // Check if login succeeded (authenticated elements appear)
+                const authenticatedElement = page.locator('.ant-menu, .ant-layout-header, [data-testid="authenticated"]');
+                userCreated = await authenticatedElement.first().isVisible({ timeout: 10000 });
+
+                if (userCreated) {
+                  console.log(`Setup: ${testUsername} login SUCCESSFUL - user creation verified`);
+
+                  // Logout test user and restore admin session for tests
+                  const testUserMenuButton = page.locator('.ant-dropdown-trigger, button:has-text("' + testUsername + '")').first();
+                  if (await testUserMenuButton.count() > 0) {
+                    await testUserMenuButton.click();
+                    await page.waitForTimeout(500);
+
+                    const logoutButton = page.locator('.ant-dropdown-menu-item:has-text("ログアウト"), a:has-text("ログアウト")');
+                    if (await logoutButton.count() > 0) {
+                      await logoutButton.first().click();
+                      await page.waitForTimeout(1000);
+                    }
+                  }
+                } else {
+                  console.log(`Setup: ${testUsername} login FAILED - authentication elements not visible`);
+                }
+              } catch (loginError) {
+                console.log(`Setup: ${testUsername} login FAILED:`, loginError.message);
+                userCreated = false;
+              }
+            } else {
+              console.log('Setup: Success message not detected - skipping login verification');
             }
 
             console.log(`Setup: ${testUsername} creation ${userCreated ? 'SUCCESSFUL' : 'FAILED'}`);
 
             if (!userCreated && successMessageAppeared) {
-              console.log('Setup: Warning - Success message appeared but user not visible in table');
+              console.log('Setup: Warning - Success message appeared but login verification failed');
             }
           } else {
             console.log('Setup: Submit button not found!');
