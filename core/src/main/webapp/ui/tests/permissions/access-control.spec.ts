@@ -39,9 +39,6 @@ test.describe('Access Control and Permissions', () => {
         console.log('Setup: Found ユーザー管理 menu item, clicking...');
         await userManagementItem.click();
         await page.waitForTimeout(2000);
-      } else {
-        console.log('Setup: ユーザー管理 menu item not found');
-      }
 
         // With unique username approach, no need to check for existing user
         console.log(`Setup: Creating test user: ${testUsername}`);
@@ -112,6 +109,8 @@ test.describe('Access Control and Permissions', () => {
         } else {
           console.log('Setup: Create button not found - user creation UI may not be accessible');
         }
+      } else {
+        console.log('Setup: ユーザー管理 menu item not found');
       }
     } catch (error) {
       console.log(`Setup: ${testUsername} creation failed:`, error);
