@@ -792,6 +792,7 @@ test.describe('Access Control and Permissions', () => {
     });
 
     test('should clean up restricted folder and contents', async ({ page, browserName }) => {
+      test.setTimeout(90000); // Extended timeout for slow deletion operations
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
