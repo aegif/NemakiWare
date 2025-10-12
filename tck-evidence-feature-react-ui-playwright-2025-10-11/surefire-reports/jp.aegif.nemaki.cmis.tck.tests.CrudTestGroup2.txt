@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup2
--------------------------------------------------------------------------------
-Tests run: 9, Failures: 0, Errors: 0, Skipped: 2, Time elapsed: 240.958 sec - in jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup2

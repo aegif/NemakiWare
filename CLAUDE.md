@@ -5,6 +5,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 日本語で対話してください。
 ファイルの読み込みは100行毎などではなく、常に一気にまとめて読み込むようにしてください。
 
+---
+
+## 🎯 LATEST TCK EVIDENCE PACKAGE (2025-10-12)
+
+**IMPORTANT**: For the most current and accurate TCK test evidence, refer to:
+
+**📦 Evidence Package Location**: `tck-evidence-2025-10-12-zero-skip/`
+
+**Key Documents**:
+- `README.md` - Comprehensive evidence documentation
+- `REVIEW-RESPONSE.md` - Response to 2025-10-05 code review
+- `EVIDENCE-EVOLUTION.md` - Response to 2025-10-11 code review
+- `comprehensive-tck-run.log` - Complete test execution log (46m 27s)
+- `surefire-reports/` - 24 Surefire XML and TXT reports
+
+**Test Results Summary**:
+```
+Tests run: 33
+Failures: 0
+Errors: 0
+Skipped: 0
+Success Rate: 100%
+Build Status: SUCCESS
+Branch: feature/react-ui-playwright
+Commit: b51046391
+```
+
+**Archived Evidence**: Previous evidence packages with contradictions have been moved to `archived-evidence/` directory for historical reference only.
+
+---
 
 ## Recent Major Changes (2025-10-12 - TCK Complete Success with ZERO Skipped Tests) ✅
 
