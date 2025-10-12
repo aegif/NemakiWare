@@ -74,49 +74,75 @@ test.describe('Access Control and Permissions', () => {
             console.log(`Setup: Input ${i}: type=${type}, name=${name}, id=${id}, placeholder=${placeholder}`);
           }
 
-          // Fill username - try multiple strategies
-          const usernameInput = modal.locator('input[id*="username"], input[id*="userId"], input[name="username"], input[name="userId"], input[placeholder*="ユーザー"], input[placeholder*="username"]').first();
-          await usernameInput.waitFor({ state: 'visible', timeout: 3000 });
-          await usernameInput.fill(testUsername);
-          console.log(`Setup: Filled username: ${testUsername}`);
-
-          // Fill password - look for all password fields in modal
-          const passwordInputs = modal.locator('input[type="password"]');
-          const passwordCount = await passwordInputs.count();
-          console.log(`Setup: Found ${passwordCount} password fields`);
-
-          if (passwordCount >= 1) {
-            await passwordInputs.nth(0).fill(testUserPassword);
-            console.log('Setup: Filled password field 1');
+          // Fill user ID (primary identifier)
+          const userIdInput = modal.locator('input#id, input[placeholder*="ユーザーID"]');
+          if (await userIdInput.count() > 0) {
+            await userIdInput.first().fill(testUsername);
+            console.log(`Setup: Filled user ID: ${testUsername}`);
+          } else {
+            console.log('Setup: Warning - User ID field not found');
           }
 
-          if (passwordCount >= 2) {
-            await passwordInputs.nth(1).fill(testUserPassword);
-            console.log('Setup: Filled password field 2 (confirmation)');
+          // Fill display name (optional but good to have)
+          const nameInput = modal.locator('input#name, input[placeholder*="ユーザー名を入力"]');
+          if (await nameInput.count() > 0) {
+            await nameInput.first().fill(`${testUsername}_display`);
+            console.log('Setup: Filled display name');
           }
 
-          // Check for other required fields (email, name, etc.)
-          const emailInput = modal.locator('input[type="email"], input[id*="email"], input[name="email"]');
-          if (await emailInput.count() > 0) {
-            await emailInput.first().fill(`${testUsername}@example.com`);
-            console.log('Setup: Filled email field');
-          }
-
-          const firstNameInput = modal.locator('input[id*="firstName"], input[name="firstName"], input[placeholder*="名"]');
+          // Fill firstName (required)
+          const firstNameInput = modal.locator('input#firstName, input[placeholder*="名を入力"]');
           if (await firstNameInput.count() > 0) {
             await firstNameInput.first().fill('Test');
-            console.log('Setup: Filled firstName field');
+            console.log('Setup: Filled firstName');
+          } else {
+            console.log('Setup: Warning - firstName field not found');
           }
 
-          const lastNameInput = modal.locator('input[id*="lastName"], input[name="lastName"], input[placeholder*="姓"]');
+          // Fill lastName (required)
+          const lastNameInput = modal.locator('input#lastName, input[placeholder*="姓を入力"]');
           if (await lastNameInput.count() > 0) {
             await lastNameInput.first().fill('User');
-            console.log('Setup: Filled lastName field');
+            console.log('Setup: Filled lastName');
+          } else {
+            console.log('Setup: Warning - lastName field not found');
           }
 
-          // Submit
-          const submitButton = modal.locator('button[type="submit"], .ant-btn-primary').filter({ hasText: /作成|保存|OK|確認/ });
-          if (await submitButton.count() > 0) {
+          // Fill email (required)
+          const emailInput = modal.locator('input#email, input[type="email"], input[placeholder*="メールアドレス"]');
+          if (await emailInput.count() > 0) {
+            await emailInput.first().fill(`${testUsername}@example.com`);
+            console.log('Setup: Filled email');
+          } else {
+            console.log('Setup: Warning - email field not found');
+          }
+
+          // Fill password (required)
+          const passwordInput = modal.locator('input#password, input[type="password"]');
+          if (await passwordInput.count() > 0) {
+            await passwordInput.first().fill(testUserPassword);
+            console.log('Setup: Filled password');
+          } else {
+            console.log('Setup: Warning - password field not found');
+          }
+
+          // Submit - try multiple strategies
+          console.log('Setup: Looking for submit button...');
+          const allModalButtons = await modal.locator('button').allTextContents();
+          console.log('Setup: All modal buttons:', allModalButtons);
+
+          let submitButton = modal.locator('button').filter({ hasText: /作成|保存|OK|確認/ });
+          let submitCount = await submitButton.count();
+          console.log(`Setup: Submit button candidates with text filter: ${submitCount}`);
+
+          if (submitCount === 0) {
+            // Try without text filter
+            submitButton = modal.locator('button[type="submit"], button.ant-btn-primary');
+            submitCount = await submitButton.count();
+            console.log(`Setup: Submit button candidates without text filter: ${submitCount}`);
+          }
+
+          if (submitCount > 0) {
             console.log('Setup: Found submit button, clicking...');
             await submitButton.first().click();
 
