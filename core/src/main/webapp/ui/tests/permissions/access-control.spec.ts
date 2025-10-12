@@ -662,7 +662,12 @@ test.describe('Access Control and Permissions', () => {
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-      await page.waitForTimeout(2000);
+      // Extended wait for folder list to load (especially for test user session)
+      await page.waitForTimeout(3000);
+
+      // Wait for folder table to be visible
+      const folderTable = page.locator('.ant-table-tbody');
+      await folderTable.waitFor({ state: 'visible', timeout: 10000 });
 
       // Verify test user can see the restricted folder
       const folderLink = page.locator(`text=${restrictedFolderName}`);
@@ -822,19 +827,26 @@ test.describe('Access Control and Permissions', () => {
                 console.log('Cleanup: Success message timeout - verifying deletion by checking if folder disappeared');
               }
 
-              // Verify folder was deleted by checking it's no longer in the table
-              await page.waitForTimeout(2000);
-              const deletedFolderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
-              const folderStillExists = await deletedFolderRow.count() > 0;
+              // Verify folder was deleted with polling (up to 20 seconds for folders with contents)
+              let deletionConfirmed = false;
+              for (let attempt = 0; attempt < 20; attempt++) {
+                await page.waitForTimeout(1000);
+                const deletedFolderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
+                const folderStillExists = await deletedFolderRow.count() > 0;
 
-              if (folderStillExists) {
-                console.log(`Cleanup: Warning - Folder ${restrictedFolderName} still exists after deletion attempt`);
-              } else {
-                console.log(`Cleanup: Successfully deleted folder ${restrictedFolderName}`);
+                if (!folderStillExists) {
+                  deletionConfirmed = true;
+                  console.log(`Cleanup: Folder ${restrictedFolderName} deletion confirmed after ${attempt + 1} attempts`);
+                  break;
+                }
+              }
+
+              if (!deletionConfirmed) {
+                console.log(`Cleanup: Warning - Folder ${restrictedFolderName} still exists after 20-second verification`);
               }
 
               // Test should pass as long as folder is gone, even if success message didn't appear
-              expect(folderStillExists).toBe(false);
+              expect(deletionConfirmed).toBe(true);
             } else {
               console.log(`Cleanup: Confirm button not found in visible popconfirm`);
               // Test will fail - folder still exists and can't be deleted
@@ -842,11 +854,19 @@ test.describe('Access Control and Permissions', () => {
             }
           } catch (confirmError) {
             console.log('Cleanup: Confirm button error:', confirmError.message);
-            // Try to verify if folder was deleted despite error
-            await page.waitForTimeout(2000);
-            const deletedFolderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
-            const folderStillExists = await deletedFolderRow.count() > 0;
-            expect(folderStillExists).toBe(false);
+            // Try to verify if folder was deleted despite error (with polling)
+            let deletionConfirmed = false;
+            for (let attempt = 0; attempt < 20; attempt++) {
+              await page.waitForTimeout(1000);
+              const deletedFolderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
+              const folderStillExists = await deletedFolderRow.count() > 0;
+              if (!folderStillExists) {
+                deletionConfirmed = true;
+                console.log(`Cleanup: Folder ${restrictedFolderName} deletion confirmed after ${attempt + 1} attempts (despite error)`);
+                break;
+              }
+            }
+            expect(deletionConfirmed).toBe(true);
           }
         }
       }
