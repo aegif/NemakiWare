@@ -151,29 +151,39 @@ export class AuthHelper {
     await loginButton.click();
 
     // Wait for successful login by checking for authenticated elements
-    await this.page.waitForFunction(
-      () => {
-        // Check if login form is gone (password field not visible)
-        const passwordFields = document.querySelectorAll('input[type="password"]');
-        const passwordVisible = Array.from(passwordFields).some(field => field.offsetParent !== null);
-        if (passwordVisible) {
-          return false; // Still on login page
-        }
+    // Increased timeout for mobile browsers and non-admin users
+    try {
+      await this.page.waitForFunction(
+        () => {
+          // Check if login form is gone (password field not visible)
+          const passwordFields = document.querySelectorAll('input[type="password"]');
+          const passwordVisible = Array.from(passwordFields).some(field => field.offsetParent !== null);
+          if (passwordVisible) {
+            return false; // Still on login page
+          }
 
-        // Check for main application elements
-        const mainElements = [
-          '.ant-layout-sider', // Sidebar
-          '.ant-layout-content', // Main content
-          '.ant-table', // Document table
-        ];
+          // Check for main application elements
+          const mainElements = [
+            '.ant-layout-sider', // Sidebar
+            '.ant-layout-content', // Main content
+            '.ant-table', // Document table
+          ];
 
-        return mainElements.some(selector => {
-          const element = document.querySelector(selector);
-          return element && element.offsetParent !== null;
-        });
-      },
-      { timeout: 15000 }
-    );
+          return mainElements.some(selector => {
+            const element = document.querySelector(selector);
+            return element && element.offsetParent !== null;
+          });
+        },
+        { timeout: 20000 }  // Increased from 15000ms to 20000ms for better compatibility
+      );
+    } catch (error) {
+      // Debug: Log current page state if timeout occurs
+      console.log('AuthHelper: Login timeout - checking page state');
+      console.log('AuthHelper: Current URL:', this.page.url());
+      const bodyText = await this.page.locator('body').textContent();
+      console.log('AuthHelper: Body text (first 200 chars):', bodyText?.substring(0, 200));
+      throw error;
+    }
 
     // Additional verification: ensure we're not on login page anymore
     await expect(passwordField).not.toBeVisible({ timeout: 5000 });

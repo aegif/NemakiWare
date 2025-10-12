@@ -8,7 +8,11 @@ test.describe('Access Control and Permissions', () => {
   const restrictedFolderName = `restricted-folder-${Date.now()}`;
   const testDocName = `permission-test-doc-${Date.now()}.txt`;
 
-  // Setup: Create testuser if it doesn't exist
+  // Generate unique test user name to avoid conflicts with existing users
+  const testUsername = `testuser${Date.now()}`;
+  const testUserPassword = 'TestPass123!';
+
+  // Setup: Create test user
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -31,50 +35,74 @@ test.describe('Access Control and Permissions', () => {
         await userManagementItem.click();
         await page.waitForTimeout(2000);
 
-        // Check if testuser already exists
-        const existingTestUser = page.locator('tr:has-text("testuser")');
-        if (await existingTestUser.count() === 0) {
-          // Create testuser
-          const createButton = page.locator('button').filter({
-            hasText: /新規作成|ユーザー追加|追加/
-          });
+        // With unique username approach, no need to check for existing user
+        console.log(`Setup: Creating test user: ${testUsername}`);
 
-          if (await createButton.count() > 0) {
-            await createButton.first().click();
-            await page.waitForTimeout(1000);
+        // Create test user
+        const createButton = page.locator('button').filter({
+          hasText: /新規作成|ユーザー追加|追加/
+        });
 
-            const modal = page.locator('.ant-modal, .ant-drawer');
-            if (await modal.count() > 0) {
-              // Fill username
-              const usernameInput = page.locator('input[id*="username"], input[id*="userId"], input[name="username"], input[name="userId"]');
-              if (await usernameInput.count() > 0) {
-                await usernameInput.first().fill('testuser');
-              }
+        if (await createButton.count() > 0) {
+          console.log('Setup: Found create button, clicking...');
+          await createButton.first().click();
+          await page.waitForTimeout(1000);
 
-              // Fill password
-              const passwordInput = page.locator('input[type="password"]').first();
-              if (await passwordInput.count() > 0) {
-                await passwordInput.fill('password');
-              }
+          // Wait for modal/drawer to be visible
+          const modal = page.locator('.ant-modal:not(.ant-modal-hidden), .ant-drawer:not(.ant-drawer-hidden)');
+          await modal.waitFor({ state: 'visible', timeout: 5000 });
+          console.log('Setup: Modal opened');
 
-              // Confirm password
-              const confirmPasswordInput = page.locator('input[type="password"]').nth(1);
-              if (await confirmPasswordInput.count() > 0) {
-                await confirmPasswordInput.fill('password');
-              }
+          // Fill username
+          const usernameInput = page.locator('input[id*="username"], input[id*="userId"], input[name="username"], input[name="userId"], .ant-modal input, .ant-drawer input').first();
+          await usernameInput.waitFor({ state: 'visible', timeout: 3000 });
+          await usernameInput.fill(testUsername);
+          console.log(`Setup: Filled username: ${testUsername}`);
 
-              // Submit
-              const submitButton = page.locator('.ant-modal button[type="submit"], .ant-drawer button[type="submit"], button:has-text("作成"), button:has-text("保存")');
-              if (await submitButton.count() > 0) {
-                await submitButton.first().click();
-                await page.waitForTimeout(2000);
-              }
-            }
+          // Fill password
+          const passwordInputs = page.locator('input[type="password"]');
+          const passwordCount = await passwordInputs.count();
+          console.log(`Setup: Found ${passwordCount} password fields`);
+
+          if (passwordCount >= 1) {
+            await passwordInputs.nth(0).fill(testUserPassword);
+            console.log('Setup: Filled password field 1');
           }
+
+          if (passwordCount >= 2) {
+            await passwordInputs.nth(1).fill(testUserPassword);
+            console.log('Setup: Filled password field 2 (confirmation)');
+          }
+
+          // Submit
+          const submitButton = page.locator('.ant-modal button[type="submit"], .ant-drawer button[type="submit"], .ant-modal .ant-btn-primary, .ant-drawer .ant-btn-primary, button:has-text("作成"), button:has-text("保存"), button:has-text("OK")');
+          if (await submitButton.count() > 0) {
+            console.log('Setup: Found submit button, clicking...');
+            await submitButton.first().click();
+
+            // Wait for success message or modal to close
+            try {
+              await page.waitForSelector('.ant-message-success, .ant-notification-success', { timeout: 5000 });
+              console.log('Setup: Success message appeared');
+            } catch (e) {
+              console.log('Setup: No success message, checking if modal closed');
+            }
+
+            await page.waitForTimeout(3000);
+
+            // Verify test user was created
+            const createdTestUser = page.locator(`tr:has-text("${testUsername}")`);
+            const userCreated = await createdTestUser.count() > 0;
+            console.log(`Setup: ${testUsername} creation ${userCreated ? 'SUCCESSFUL' : 'FAILED'}`);
+          } else {
+            console.log('Setup: Submit button not found!');
+          }
+        } else {
+          console.log('Setup: Create button not found - user creation UI may not be accessible');
         }
       }
     } catch (error) {
-      console.log('Setup: testuser creation failed or user already exists:', error);
+      console.log(`Setup: ${testUsername} creation failed:`, error);
     } finally {
       await context.close();
     }
@@ -178,24 +206,24 @@ test.describe('Access Control and Permissions', () => {
           if (await aclModal.count() > 0) {
             await expect(aclModal).toBeVisible({ timeout: 5000 });
 
-            // Try to add testuser with limited permissions
+            // Try to add test user with limited permissions
             const addUserButton = page.locator('button:has-text("追加"), button:has-text("ユーザー追加")');
             if (await addUserButton.count() > 0) {
               await addUserButton.first().click(isMobile ? { force: true } : {});
               await page.waitForTimeout(500);
 
-              // Select testuser
+              // Select test user
               const userSelect = page.locator('.ant-select, input[placeholder*="ユーザー"]');
               if (await userSelect.count() > 0) {
                 await userSelect.first().click();
                 await page.waitForTimeout(500);
 
-                // Type testuser
-                await page.keyboard.type('testuser');
+                // Type test username
+                await page.keyboard.type(testUsername);
                 await page.waitForTimeout(500);
 
                 // Select from dropdown
-                const testuserOption = page.locator('.ant-select-item:has-text("testuser")');
+                const testuserOption = page.locator(`.ant-select-item:has-text("${testUsername}")`);
                 if (await testuserOption.count() > 0) {
                   await testuserOption.first().click();
                 }
@@ -281,8 +309,8 @@ test.describe('Access Control and Permissions', () => {
       testHelper = new TestHelper(page);
 
       await page.context().clearCookies();
-      // Login as testuser instead of admin
-      await authHelper.login('testuser', 'password'); // Adjust password as needed
+      // Login as test user instead of admin
+      await authHelper.login(testUsername, testUserPassword);
       await page.waitForTimeout(2000); // Wait for UI initialization after login
       await testHelper.waitForAntdLoad();
 
@@ -321,13 +349,13 @@ test.describe('Access Control and Permissions', () => {
       }
     });
 
-    test('should be able to view restricted folder as testuser', async ({ page, browserName }) => {
+    test('should be able to view restricted folder as test user', async ({ page, browserName }) => {
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
       await page.waitForTimeout(2000);
 
-      // Verify testuser can see the restricted folder
+      // Verify test user can see the restricted folder
       const folderLink = page.locator(`text=${restrictedFolderName}`);
 
       if (await folderLink.count() > 0) {
@@ -341,7 +369,7 @@ test.describe('Access Control and Permissions', () => {
         const document = page.locator(`text=${testDocName}`);
         await expect(document).toBeVisible({ timeout: 5000 });
       } else {
-        test.skip('Restricted folder not visible to testuser - permission issue');
+        test.skip('Restricted folder not visible to test user - permission issue');
       }
     });
 
