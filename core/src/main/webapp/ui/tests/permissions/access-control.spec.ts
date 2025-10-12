@@ -417,14 +417,32 @@ test.describe('Access Control and Permissions', () => {
 
       // Try to login as test user - skip tests if user wasn't created
       try {
-        console.log(`Test: Attempting login as ${testUsername}`);
+        console.log(`Test: Attempting login as ${testUsername} with password ${testUserPassword}`);
+        console.log('Test: Current URL before login:', page.url());
+
         await authHelper.login(testUsername, testUserPassword);
+        console.log('Test: Login method completed, waiting for UI initialization');
+
         await page.waitForTimeout(2000); // Wait for UI initialization after login
+        console.log('Test: After 2s wait, current URL:', page.url());
+
         await testHelper.waitForAntdLoad();
-        console.log('Test: Test user login successful');
+        console.log('Test: Test user login successful - Ant Design loaded');
       } catch (error) {
-        console.log(`Test: Test user login failed - test user may not have been created:`, error);
-        test.skip(true, `Test user ${testUsername} was not created or login failed. User management UI may not be available.`);
+        console.log(`Test: Test user login failed - error details:`, error);
+        console.log('Test: Current URL after error:', page.url());
+
+        // Take screenshot for debugging
+        const screenshot = await page.screenshot();
+        console.log('Test: Screenshot size:', screenshot.length, 'bytes');
+
+        // Check for error messages on page
+        const errorMessages = await page.locator('.ant-message-error, .ant-notification-error').allTextContents();
+        if (errorMessages.length > 0) {
+          console.log('Test: Error messages visible:', errorMessages);
+        }
+
+        test.skip(true, `Test user ${testUsername} login failed. This may indicate the user was not created successfully or lacks repository access.`);
       }
 
       // Navigate to documents

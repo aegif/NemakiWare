@@ -149,10 +149,23 @@ export class AuthHelper {
     }
 
     await loginButton.click();
+    console.log(`AuthHelper: Clicked login button for user: ${credentials.username}`);
+
+    // Wait a moment for the login request to process
+    await this.page.waitForTimeout(1000);
+    console.log('AuthHelper: Waiting for authentication...');
+
+    // Check for login error messages
+    const errorMessage = await this.page.locator('body').textContent();
+    if (errorMessage?.includes('ログインに失敗しました')) {
+      console.log('AuthHelper: Login failed message detected on page');
+      throw new Error('Login failed - incorrect credentials or user not found');
+    }
 
     // Wait for successful login by checking for authenticated elements
     // Increased timeout for mobile browsers and non-admin users
     try {
+      console.log('AuthHelper: Waiting for authenticated page elements...');
       await this.page.waitForFunction(
         () => {
           // Check if login form is gone (password field not visible)
