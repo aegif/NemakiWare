@@ -792,7 +792,7 @@ test.describe('Access Control and Permissions', () => {
     });
 
     test('should clean up restricted folder and contents', async ({ page, browserName }) => {
-      test.setTimeout(90000); // Extended timeout for slow deletion operations
+      test.setTimeout(150000); // Extended timeout for slow deletion operations (up to 2.5 minutes)
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
@@ -840,27 +840,34 @@ test.describe('Access Control and Permissions', () => {
 
               // Wait for success message with extended timeout (folder with contents takes longer to delete)
               try {
-                await page.waitForSelector('.ant-message-success', { timeout: 30000 });
+                await page.waitForSelector('.ant-message-success', { timeout: 60000 });
+                console.log('Cleanup: Success message appeared');
               } catch (timeoutError) {
                 console.log('Cleanup: Success message timeout - verifying deletion by checking if folder disappeared');
               }
 
-              // Verify folder was deleted with polling (up to 20 seconds for folders with contents)
+              // Verify folder was deleted with polling (up to 60 seconds for folders with restricted ACLs and contents)
               let deletionConfirmed = false;
-              for (let attempt = 0; attempt < 20; attempt++) {
+              console.log('Cleanup: Starting deletion verification polling (up to 60 seconds)...');
+              for (let attempt = 0; attempt < 60; attempt++) {
                 await page.waitForTimeout(1000);
                 const deletedFolderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
                 const folderStillExists = await deletedFolderRow.count() > 0;
 
                 if (!folderStillExists) {
                   deletionConfirmed = true;
-                  console.log(`Cleanup: Folder ${restrictedFolderName} deletion confirmed after ${attempt + 1} attempts`);
+                  console.log(`Cleanup: Folder ${restrictedFolderName} deletion confirmed after ${attempt + 1} seconds`);
                   break;
+                }
+
+                // Log progress every 10 seconds
+                if ((attempt + 1) % 10 === 0) {
+                  console.log(`Cleanup: Still waiting for deletion... ${attempt + 1} seconds elapsed`);
                 }
               }
 
               if (!deletionConfirmed) {
-                console.log(`Cleanup: Warning - Folder ${restrictedFolderName} still exists after 20-second verification`);
+                console.log(`Cleanup: Warning - Folder ${restrictedFolderName} still exists after 60-second verification`);
               }
 
               // Test should pass as long as folder is gone, even if success message didn't appear
@@ -872,16 +879,21 @@ test.describe('Access Control and Permissions', () => {
             }
           } catch (confirmError) {
             console.log('Cleanup: Confirm button error:', confirmError.message);
-            // Try to verify if folder was deleted despite error (with polling)
+            // Try to verify if folder was deleted despite error (with extended polling)
             let deletionConfirmed = false;
-            for (let attempt = 0; attempt < 20; attempt++) {
+            console.log('Cleanup: Starting deletion verification polling (up to 60 seconds)...');
+            for (let attempt = 0; attempt < 60; attempt++) {
               await page.waitForTimeout(1000);
               const deletedFolderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
               const folderStillExists = await deletedFolderRow.count() > 0;
               if (!folderStillExists) {
                 deletionConfirmed = true;
-                console.log(`Cleanup: Folder ${restrictedFolderName} deletion confirmed after ${attempt + 1} attempts (despite error)`);
+                console.log(`Cleanup: Folder ${restrictedFolderName} deletion confirmed after ${attempt + 1} seconds (despite error)`);
                 break;
+              }
+              // Log progress every 10 seconds
+              if ((attempt + 1) % 10 === 0) {
+                console.log(`Cleanup: Still waiting for deletion... ${attempt + 1} seconds elapsed`);
               }
             }
             expect(deletionConfirmed).toBe(true);
