@@ -146,12 +146,34 @@ export class AuthHelper {
     // Additional verification: ensure we're not on login page anymore
     await expect(passwordField).not.toBeVisible({ timeout: 5000 });
 
-    // CRITICAL FIX: Reload index.html to trigger React Router
-    // Router has a route for /index.html that redirects to /documents
-    await this.page.goto('/core/ui/dist/index.html');
+    // CRITICAL FIX: Wait for automatic redirect to documents page after successful login
+    // The React app automatically redirects authenticated users from / to /documents
+    try {
+      await this.page.waitForURL('**/documents', { timeout: 5000 });
+    } catch (e) {
+      // If redirect didn't happen automatically, navigate manually
+      await this.page.goto('/core/ui/dist/index.html', { waitUntil: 'networkidle' });
+      // Click documents menu item to navigate
+      const documentsMenuItem = this.page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
+      if (await documentsMenuItem.count() > 0) {
+        await documentsMenuItem.click();
+        await this.page.waitForTimeout(2000);
+      }
+    }
 
-    // Wait for React Router to process /index.html route and redirect to /documents
-    await this.page.waitForTimeout(3000);
+    // Wait for documents page to fully load with Ant Design components
+    await this.page.waitForFunction(
+      () => {
+        // Check for key elements that indicate successful navigation to documents
+        const hasLayout = document.querySelector('.ant-layout') !== null;
+        const hasSider = document.querySelector('.ant-layout-sider') !== null;
+        return hasLayout && hasSider;
+      },
+      { timeout: 10000 }
+    );
+
+    // Additional wait for page stabilization
+    await this.page.waitForTimeout(1000);
   }
 
   /**

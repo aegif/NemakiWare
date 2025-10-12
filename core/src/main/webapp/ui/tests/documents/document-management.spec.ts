@@ -14,16 +14,11 @@ test.describe('Document Management', () => {
     await page.context().clearCookies();
     await page.context().clearPermissions();
 
-    // Login before each test
+    // Login before each test - this navigates to /documents page automatically
     await authHelper.login();
-    await testHelper.waitForAntdLoad();
 
-    // Click the documents menu item to navigate to documents page
-    const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-    if (await documentsMenuItem.count() > 0) {
-      await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
-    }
+    // authHelper.login() now ensures we're on /documents page with Ant Design loaded
+    // No need for additional navigation or waitForAntdLoad()
   });
 
   test('should display document list', async ({ page }) => {
