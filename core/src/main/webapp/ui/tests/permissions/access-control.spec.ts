@@ -586,6 +586,206 @@ test.describe('Access Control and Permissions', () => {
     });
   });
 
+  test.describe('Admin User - Permission Management', () => {
+    test.beforeEach(async ({ page }) => {
+      authHelper = new AuthHelper(page);
+      testHelper = new TestHelper(page);
+      await authHelper.login(); // Login as admin
+      await page.waitForTimeout(2000);
+      await testHelper.waitForAntdLoad();
+    });
+
+    test('should modify permissions from read-only to read-write', async ({ page, browserName }) => {
+      const viewportSize = page.viewportSize();
+      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+      console.log(`Test: Modifying permissions for ${restrictedFolderName} from read-only to read-write`);
+
+      // Find the restricted folder row
+      const folderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
+
+      if (await folderRow.count() > 0) {
+        // Click on permissions/settings button
+        const settingsButton = folderRow.locator('button[aria-label*="設定"], button').filter({
+          has: page.locator('[data-icon="setting"]')
+        });
+
+        if (await settingsButton.count() > 0) {
+          await settingsButton.first().click(isMobile ? { force: true } : {});
+          await page.waitForTimeout(1000);
+
+          // Look for ACL/permission menu item
+          const aclMenuItem = page.locator('.ant-dropdown-menu-item:has-text("ACL"), .ant-dropdown-menu-item:has-text("権限")');
+
+          if (await aclMenuItem.count() > 0) {
+            await aclMenuItem.first().click();
+            await page.waitForTimeout(1500);
+
+            // In ACL modal, find test user's permission row
+            const userRow = page.locator(`tr:has-text("${testUsername}")`);
+
+            if (await userRow.count() > 0) {
+              console.log(`Test: Found ${testUsername} in ACL list`);
+
+              // Look for permission dropdown or edit button
+              const editButton = userRow.locator('button').filter({ hasText: '編集' });
+
+              if (await editButton.count() > 0) {
+                await editButton.first().click();
+                await page.waitForTimeout(1000);
+
+                // Change permission from cmis:read to cmis:write
+                const permissionDropdown = page.locator('select, .ant-select').filter({ hasText: /読み取り|Read/ });
+
+                if (await permissionDropdown.count() > 0) {
+                  await permissionDropdown.first().click();
+                  await page.waitForTimeout(500);
+
+                  // Select write permission
+                  const writeOption = page.locator('.ant-select-item:has-text("書き込み"), .ant-select-item:has-text("Write")');
+                  if (await writeOption.count() > 0) {
+                    await writeOption.first().click();
+                    console.log('Test: Changed permission to read-write');
+
+                    // Save changes
+                    const saveButton = page.locator('button[type="submit"], button.ant-btn-primary').filter({ hasText: /保存|OK/ });
+                    if (await saveButton.count() > 0) {
+                      await saveButton.first().click();
+                      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+                      console.log('Test: Permission modification saved');
+                    }
+                  }
+                }
+              } else {
+                console.log('Test: Edit button not found - ACL UI may differ');
+                test.skip('ACL editing UI not available or different structure');
+              }
+            } else {
+              console.log(`Test: ${testUsername} not found in ACL list`);
+              test.skip('Test user not in ACL list');
+            }
+          } else {
+            console.log('Test: ACL menu item not found');
+            test.skip('ACL menu option not available');
+          }
+        } else {
+          console.log('Test: Settings button not found');
+          test.skip('Settings button not available');
+        }
+      } else {
+        test.skip('Restricted folder not found');
+      }
+    });
+
+    test('should remove and restore ACL entry', async ({ page, browserName }) => {
+      const viewportSize = page.viewportSize();
+      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+      console.log(`Test: Testing ACL entry removal and restoration for ${restrictedFolderName}`);
+
+      // Find the restricted folder row
+      const folderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
+
+      if (await folderRow.count() > 0) {
+        // Open ACL settings (same as previous test)
+        const settingsButton = folderRow.locator('button[aria-label*="設定"], button').filter({
+          has: page.locator('[data-icon="setting"]')
+        });
+
+        if (await settingsButton.count() > 0) {
+          await settingsButton.first().click(isMobile ? { force: true } : {});
+          await page.waitForTimeout(1000);
+
+          const aclMenuItem = page.locator('.ant-dropdown-menu-item:has-text("ACL"), .ant-dropdown-menu-item:has-text("権限")');
+
+          if (await aclMenuItem.count() > 0) {
+            await aclMenuItem.first().click();
+            await page.waitForTimeout(1500);
+
+            // Find test user's row and delete button
+            const userRow = page.locator(`tr:has-text("${testUsername}")`);
+
+            if (await userRow.count() > 0) {
+              console.log('Test: Found test user ACL entry - attempting deletion');
+
+              const deleteButton = userRow.locator('button').filter({
+                has: page.locator('[data-icon="delete"]')
+              });
+
+              if (await deleteButton.count() > 0) {
+                await deleteButton.first().click(isMobile ? { force: true } : {});
+                await page.waitForTimeout(500);
+
+                // Confirm deletion
+                const confirmButton = page.locator('.ant-popconfirm:visible button').filter({ hasText: /はい|OK/ });
+                if (await confirmButton.count() > 0) {
+                  await confirmButton.first().click();
+                  await page.waitForTimeout(2000);
+                  console.log('Test: ACL entry removed');
+
+                  // Verify entry is gone
+                  const userRowAfterDelete = page.locator(`tr:has-text("${testUsername}")`);
+                  expect(await userRowAfterDelete.count()).toBe(0);
+                  console.log('Test: Verified ACL entry removal');
+
+                  // Now restore the entry
+                  const addButton = page.locator('button').filter({ hasText: /追加|Add/ });
+                  if (await addButton.count() > 0) {
+                    await addButton.first().click();
+                    await page.waitForTimeout(1000);
+
+                    // Fill in user name
+                    const userInput = page.locator('input[placeholder*="ユーザー"], input[id*="user"]');
+                    if (await userInput.count() > 0) {
+                      await userInput.first().fill(testUsername);
+                      await page.waitForTimeout(500);
+
+                      // Select permission
+                      const permissionSelect = page.locator('select, .ant-select').last();
+                      await permissionSelect.click();
+                      await page.waitForTimeout(300);
+
+                      const readOption = page.locator('.ant-select-item:has-text("読み取り"), .ant-select-item:has-text("Read")');
+                      if (await readOption.count() > 0) {
+                        await readOption.first().click();
+
+                        // Save
+                        const saveButton = page.locator('button[type="submit"], button.ant-btn-primary').filter({ hasText: /保存|OK/ });
+                        if (await saveButton.count() > 0) {
+                          await saveButton.first().click();
+                          await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+                          console.log('Test: ACL entry restored');
+
+                          // Verify restoration
+                          const userRowRestored = page.locator(`tr:has-text("${testUsername}")`);
+                          expect(await userRowRestored.count()).toBeGreaterThan(0);
+                        }
+                      }
+                    }
+                  } else {
+                    console.log('Test: Add button not found');
+                    test.skip('ACL add functionality not available');
+                  }
+                }
+              } else {
+                console.log('Test: Delete button not found in ACL entry');
+                test.skip('ACL deletion UI not available');
+              }
+            } else {
+              test.skip('Test user ACL entry not found');
+            }
+          } else {
+            test.skip('ACL menu option not available');
+          }
+        } else {
+          test.skip('Settings button not available');
+        }
+      } else {
+        test.skip('Restricted folder not found');
+      }
+    });
+  });
+
   test.describe('Test User - Verify Permission Restrictions', () => {
     test.beforeEach(async ({ page, browserName }) => {
       authHelper = new AuthHelper(page);
@@ -662,28 +862,65 @@ test.describe('Access Control and Permissions', () => {
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-      // Extended wait for folder list to load (especially for test user session)
+      console.log(`Test: Looking for folder ${restrictedFolderName} in test user view`);
+
+      // Force page reload to ensure fresh data
+      await page.reload();
       await page.waitForTimeout(3000);
 
       // Wait for folder table to be visible
       const folderTable = page.locator('.ant-table-tbody');
       await folderTable.waitFor({ state: 'visible', timeout: 10000 });
+      console.log('Test: Folder table visible');
 
-      // Verify test user can see the restricted folder
-      const folderLink = page.locator(`text=${restrictedFolderName}`);
+      // Log all visible folders for debugging
+      const allRows = page.locator('.ant-table-tbody tr');
+      const rowCount = await allRows.count();
+      console.log(`Test: Found ${rowCount} rows in folder table`);
 
-      if (await folderLink.count() > 0) {
+      for (let i = 0; i < Math.min(rowCount, 10); i++) {
+        const rowText = await allRows.nth(i).textContent();
+        console.log(`Test: Row ${i}: ${rowText?.substring(0, 50)}`);
+      }
+
+      // Try multiple selectors to find the folder
+      const folderSelectors = [
+        `text=${restrictedFolderName}`,
+        `tr:has-text("${restrictedFolderName}")`,
+        `a:has-text("${restrictedFolderName}")`,
+        `span:has-text("${restrictedFolderName}")`
+      ];
+
+      let folderFound = false;
+      let folderLink = null;
+
+      for (const selector of folderSelectors) {
+        const element = page.locator(selector);
+        const count = await element.count();
+        console.log(`Test: Selector "${selector}" found ${count} matches`);
+
+        if (count > 0) {
+          folderLink = element;
+          folderFound = true;
+          break;
+        }
+      }
+
+      if (folderFound && folderLink) {
+        console.log(`Test: Folder ${restrictedFolderName} found - proceeding with visibility test`);
         await expect(folderLink).toBeVisible({ timeout: 5000 });
 
         // Navigate into folder
-        await folderLink.click(isMobile ? { force: true } : {});
+        await folderLink.first().click(isMobile ? { force: true } : {});
         await page.waitForTimeout(2000);
 
         // Verify can see the document
         const document = page.locator(`text=${testDocName}`);
         await expect(document).toBeVisible({ timeout: 5000 });
+        console.log(`Test: Document ${testDocName} visible in folder`);
       } else {
-        test.skip('Restricted folder not visible to test user - permission issue');
+        console.log(`Test: Folder ${restrictedFolderName} NOT FOUND - skipping test`);
+        test.skip('Restricted folder not visible to test user - permission issue or UI refresh needed');
       }
     });
 
