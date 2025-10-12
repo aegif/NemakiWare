@@ -795,9 +795,31 @@ test.describe('Access Control and Permissions', () => {
       test.setTimeout(60000); // 1-minute timeout for API deletion
 
       // UI deletion takes 60+ seconds and fails - use direct CMIS API instead
-      console.log(`Cleanup: Using CMIS API to delete ${restrictedFolderName} (folder ID: ${restrictedFolderId})`);
+      console.log(`Cleanup: Finding folder ID for ${restrictedFolderName}`);
 
       try {
+        // First, find the folder ID using CMIS query
+        const queryResponse = await page.request.get(`http://localhost:8080/core/browser/bedroom?cmisselector=query&q=SELECT%20*%20FROM%20cmis:folder%20WHERE%20cmis:name%20=%20'${encodeURIComponent(restrictedFolderName)}'`, {
+          headers: {
+            'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
+          }
+        });
+
+        if (!queryResponse.ok) {
+          throw new Error(`Query failed with status ${queryResponse.status()}`);
+        }
+
+        const queryResult = await queryResponse.json();
+        console.log(`Cleanup: Query result:`, JSON.stringify(queryResult).substring(0, 200));
+
+        if (!queryResult.results || queryResult.results.length === 0) {
+          console.log(`Cleanup: Folder ${restrictedFolderName} not found - may have been deleted already`);
+          return; // Test passes - folder doesn't exist
+        }
+
+        const folderId = queryResult.results[0]['cmis:objectId'];
+        console.log(`Cleanup: Found folder ID: ${folderId}`);
+
         // Use CMIS Browser Binding deleteTree operation
         const response = await page.request.post('http://localhost:8080/core/browser/bedroom', {
           headers: {
@@ -806,7 +828,7 @@ test.describe('Access Control and Permissions', () => {
           form: {
             'cmisaction': 'deleteTree',
             'repositoryId': 'bedroom',
-            'folderId': restrictedFolderId,
+            'folderId': folderId,
             'allVersions': 'true',
             'continueOnFailure': 'false'
           }
