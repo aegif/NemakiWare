@@ -1891,14 +1891,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public UserItem create(String repositoryId, UserItem userItem) {
-		System.out.println("=== DAO DEBUG: Input userItem.objectType=" + userItem.getObjectType());
 		CouchUserItem cui = new CouchUserItem(userItem);
-		System.out.println("=== DAO DEBUG: After CouchUserItem constructor, cui.getObjectType()=" + cui.getObjectType());
 		connectorPool.getClient(repositoryId).create(cui);
-		System.out.println("=== DAO DEBUG: After CouchDB save, cui.getObjectType()=" + cui.getObjectType());
-		UserItem converted = cui.convert();
-		System.out.println("=== DAO DEBUG: After convert, converted.objectType=" + converted.getObjectType());
-		return converted;
+		return cui.convert();
 	}
 
 	@Override
