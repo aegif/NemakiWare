@@ -710,10 +710,27 @@ test.describe('Access Control and Permissions', () => {
                 const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary');
                 if (await confirmButton.count() > 0) {
                   await confirmButton.first().click({ timeout: 3000 });
-                  await page.waitForTimeout(1500); // Wait for deletion to complete
-                  deletedCount++;
-                  foundTestFolder = true;
-                  break; // Exit inner loop after successful deletion
+
+                  // Wait for folder to disappear from table (verify deletion completed)
+                  let deletionConfirmed = false;
+                  for (let attempt = 0; attempt < 5; attempt++) {
+                    await page.waitForTimeout(1000);
+                    const stillExists = page.locator('tr').filter({ hasText: folderName });
+                    if (await stillExists.count() === 0) {
+                      deletionConfirmed = true;
+                      break;
+                    }
+                  }
+
+                  if (deletionConfirmed) {
+                    console.log(`Cleanup: Folder ${folderName} deletion confirmed`);
+                    deletedCount++;
+                    foundTestFolder = true;
+                    break; // Exit inner loop after successful deletion
+                  } else {
+                    console.log(`Cleanup: Warning - Folder ${folderName} still exists after deletion attempt`);
+                    // Don't increment deletedCount, try next folder
+                  }
                 }
               }
             }
