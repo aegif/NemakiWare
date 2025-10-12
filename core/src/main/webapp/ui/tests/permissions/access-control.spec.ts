@@ -14,6 +14,7 @@ test.describe('Access Control and Permissions', () => {
 
   // Pre-cleanup: Delete old test folders from previous runs BEFORE tests start
   test.beforeAll(async ({ browser }) => {
+    test.setTimeout(90000); // Set 90-second timeout for this hook
     console.log('Pre-cleanup: Starting cleanup of old test folders before test execution');
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -131,7 +132,7 @@ test.describe('Access Control and Permissions', () => {
     } finally {
       await context.close();
     }
-  }, 90000); // 90 second timeout for pre-cleanup
+  });
 
   // Setup: Create test user
   test.beforeAll(async ({ browser }) => {
@@ -796,6 +797,7 @@ test.describe('Access Control and Permissions', () => {
 
   // Cleanup: Remove accumulated test folders to prevent performance degradation
   test.afterAll(async ({ browser }) => {
+    test.setTimeout(90000); // Set 90-second timeout for cleanup
     console.log('Cleanup: Starting test folder cleanup');
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -923,5 +925,5 @@ test.describe('Access Control and Permissions', () => {
     } finally {
       await context.close();
     }
-  }, { timeout: 90000 }); // Extended timeout for cleanup operations
+  });
 });
