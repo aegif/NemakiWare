@@ -831,12 +831,12 @@ test.describe('Access Control and Permissions', () => {
               console.log(`Cleanup: Button ${i}: "${buttonText}"`);
             }
 
-            // Strategy 3: Try primary button first, then any button with confirmation text
-            const confirmButton = page.locator('.ant-popconfirm:visible button.ant-btn-primary, .ant-popover:visible button.ant-btn-primary').first();
+            // Strategy 3: Click the "はい" (Yes) button explicitly
+            const yesButton = page.locator('.ant-popconfirm:visible button:has-text("はい"), .ant-popover:visible button:has-text("はい")');
 
-            if (await confirmButton.count() > 0) {
-              console.log('Cleanup: Clicking primary confirm button');
-              await confirmButton.click({ force: true, timeout: 3000 });
+            if (await yesButton.count() > 0) {
+              console.log('Cleanup: Clicking "はい" (Yes) button');
+              await yesButton.first().click({ force: true, timeout: 3000 });
 
               // Wait for success message with extended timeout (folder with contents takes longer to delete)
               try {
@@ -866,7 +866,7 @@ test.describe('Access Control and Permissions', () => {
               // Test should pass as long as folder is gone, even if success message didn't appear
               expect(deletionConfirmed).toBe(true);
             } else {
-              console.log(`Cleanup: Confirm button not found in visible popconfirm`);
+              console.log(`Cleanup: "はい" (Yes) button not found in visible popconfirm`);
               // Test will fail - folder still exists and can't be deleted
               expect(false).toBe(true); // Force fail with clear message
             }
