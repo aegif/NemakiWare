@@ -36,6 +36,94 @@ Commit: b51046391
 
 ---
 
+## Recent Major Changes (2025-10-12 - User Creation Form Field Discovery and Complete Fix) ✅
+
+### Test User Automated Creation - COMPLETE SUCCESS
+
+**MAJOR ACHIEVEMENT (2025-10-12 22:45)**: Resolved all test user creation issues through systematic form field discovery and correct field targeting.
+
+**Problem Evolution**:
+1. Initial: User creation button not found
+2. Discovered: Button text is '新規ユーザー' (not '新規作成')
+3. Form opens but submit fails: Button not found
+4. Root cause: Incorrect form field targeting
+
+**Form Field Structure Discovered** (via debug logging):
+```
+Input 0: id="id", placeholder="ユーザーIDを入力" (primary identifier)
+Input 1: id="name", placeholder="ユーザー名を入力" (display name)
+Input 2: id="firstName", placeholder="名を入力" (required)
+Input 3: id="lastName", placeholder="姓を入力" (required)
+Input 4: id="email", placeholder="メールアドレスを入力" (required)
+Input 5: id="password", placeholder="パスワードを入力" (required)
+```
+
+**Submit Button Discovery**:
+- Text: '作 成' (with space - not matched by /作成/)
+- Solution: Use `button[type="submit"]` selector instead of text filter
+
+**Solution Implemented** (`tests/permissions/access-control.spec.ts` lines 77-147):
+```typescript
+// Fill user ID (primary identifier)
+const userIdInput = modal.locator('input#id, input[placeholder*="ユーザーID"]');
+await userIdInput.first().fill(testUsername);
+
+// Fill display name
+const nameInput = modal.locator('input#name, input[placeholder*="ユーザー名を入力"]');
+await nameInput.first().fill(`${testUsername}_display`);
+
+// Fill firstName (required)
+const firstNameInput = modal.locator('input#firstName, input[placeholder*="名を入力"]');
+await firstNameInput.first().fill('Test');
+
+// Fill lastName (required)
+const lastNameInput = modal.locator('input#lastName, input[placeholder*="姓を入力"]');
+await lastNameInput.first().fill('User');
+
+// Fill email (required)
+const emailInput = modal.locator('input#email, input[type="email"]');
+await emailInput.first().fill(`${testUsername}@example.com`);
+
+// Fill password (required)
+const passwordInput = modal.locator('input#password, input[type="password"]');
+await passwordInput.first().fill(testUserPassword);
+
+// Submit with type selector (not text)
+const submitButton = modal.locator('button[type="submit"], button.ant-btn-primary');
+await submitButton.first().click();
+```
+
+**Test Results (COMPLETE SUCCESS)**:
+```
+Setup: testuser1760270113521 creation SUCCESSFUL ✅
+- All browsers: chromium, firefox, webkit
+- Success message appeared
+- Modal closed
+- User found in table on attempt 1
+- 100% success rate
+```
+
+**Commits**:
+1. `0a94b3bd0` - Unique username approach implementation
+2. `c92b550ce` - Code block structure fix
+3. `628a873be` - Button selector fix ('新規ユーザー')
+4. `80ba30ac5` - Enhanced debug logging for form inspection
+5. `d7582580d` - Correct form field targeting by ID
+
+**Value**:
+- ✅ Automated test user creation working across all browsers
+- ✅ Unique username eliminates conflicts (testuser${Date.now()})
+- ✅ Strong password: 'TestPass123!'
+- ✅ All required fields properly filled
+- ✅ Retry logic with page reload for verification
+- ✅ Detailed debug logging for troubleshooting
+
+**Remaining Work**:
+- ⚠️ Test user login authentication still timing out
+- ⚠️ Requires investigation of authentication flow differences
+
+---
+
 ## Recent Major Changes (2025-10-12 - AuthHelper Login Method Overload Fix) ✅
 
 ### AuthHelper Login Parameter Type Mismatch Resolution
