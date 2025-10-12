@@ -169,12 +169,12 @@ test.describe('Access Control and Permissions', () => {
               }
             }
 
-            // Extended wait for table refresh
-            await page.waitForTimeout(5000);
+            // Wait for table refresh (reduced from 5s to 2s)
+            await page.waitForTimeout(2000);
 
             // Verify test user was created with multiple attempts
             let userCreated = false;
-            for (let attempt = 1; attempt <= 3; attempt++) {
+            for (let attempt = 1; attempt <= 2; attempt++) {
               const createdTestUser = page.locator(`tr:has-text("${testUsername}")`);
               userCreated = await createdTestUser.count() > 0;
 
@@ -182,12 +182,10 @@ test.describe('Access Control and Permissions', () => {
                 console.log(`Setup: ${testUsername} found in table on attempt ${attempt}`);
                 break;
               } else {
-                console.log(`Setup: ${testUsername} not found in table (attempt ${attempt}/3)`);
-                if (attempt < 3) {
-                  await page.waitForTimeout(2000);
-                  // Try to refresh the page view
-                  await page.reload();
-                  await page.waitForTimeout(2000);
+                console.log(`Setup: ${testUsername} not found in table (attempt ${attempt}/2)`);
+                if (attempt < 2) {
+                  // Just wait a bit more instead of page reload (faster)
+                  await page.waitForTimeout(3000);
                 }
               }
             }
