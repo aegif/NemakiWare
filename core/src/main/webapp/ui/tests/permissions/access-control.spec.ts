@@ -391,6 +391,44 @@ test.describe('Access Control and Permissions', () => {
     }
   });
 
+  // Setup: Grant test user read access to root folder
+  test.beforeAll(async ({ browser }) => {
+    test.setTimeout(90000);
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    try {
+      console.log('Setup: Granting root folder access to test user via CMIS API');
+
+      const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
+
+      // Use CMIS Browser Binding to apply ACL to root folder
+      // Note: cmis:read alone is insufficient for getChildren operation
+      // Grant cmis:all for full read access including folder navigation
+      const response = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+        headers: {
+          'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
+        },
+        form: {
+          'cmisaction': 'applyACL',
+          'objectId': rootFolderId,
+          'addACEPrincipal[0]': testUsername,
+          'addACEPermission[0][0]': 'cmis:all'
+        }
+      });
+
+      if (response.ok()) {
+        console.log(`Setup: Root folder ACL applied successfully for ${testUsername}`);
+      } else {
+        console.log(`Setup: Root folder ACL application failed: ${response.status()} - ${await response.text()}`);
+      }
+    } catch (error) {
+      console.log('Setup: Root folder ACL error:', error);
+    } finally {
+      await context.close();
+    }
+  });
+
   test.describe('Admin User - Setup Permissions', () => {
     test.beforeEach(async ({ page, browserName }) => {
       authHelper = new AuthHelper(page);
@@ -868,6 +906,30 @@ test.describe('Access Control and Permissions', () => {
     test('should be able to view restricted folder as test user', async ({ page, browserName }) => {
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+      // Debug: Check CMIS API response for root folder children
+      console.log('Test: Checking CMIS API response for root folder children as test user');
+      const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
+      const apiResponse = await page.request.get(
+        `http://localhost:8080/core/atom/bedroom/children?id=${rootFolderId}`,
+        {
+          headers: {
+            'Authorization': `Basic ${Buffer.from(`${testUsername}:${testUserPassword}`).toString('base64')}`,
+            'Accept': 'application/atom+xml'
+          }
+        }
+      );
+      console.log('Test: CMIS API response status:', apiResponse.status());
+      if (apiResponse.ok()) {
+        const responseText = await apiResponse.text();
+        console.log('Test: CMIS API response (first 500 chars):', responseText.substring(0, 500));
+
+        // Count entries in XML response
+        const entryCount = (responseText.match(/<entry/g) || []).length;
+        console.log(`Test: CMIS API returned ${entryCount} entries`);
+      } else {
+        console.log('Test: CMIS API error:', await apiResponse.text());
+      }
 
       console.log(`Test: Looking for folder ${restrictedFolderName} in test user view`);
       console.log(`Test: Current URL: ${page.url()}`);
