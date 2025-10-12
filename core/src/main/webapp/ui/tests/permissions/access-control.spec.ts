@@ -61,35 +61,44 @@ test.describe('Access Control and Permissions', () => {
             if (await deleteButton.count() > 0) {
               await deleteButton.first().click({ timeout: 3000 });
 
-              // Wait for popconfirm to appear and become visible
-              await page.waitForTimeout(1000);
+              // Wait for popconfirm to appear
+              await page.waitForTimeout(1500);
 
-              // Confirm deletion with visibility check
-              const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary');
+              // Try to find and click visible confirm button with multiple strategies
               try {
-                // Wait for confirm button to be visible before clicking
-                await confirmButton.first().waitFor({ state: 'visible', timeout: 3000 });
-                await confirmButton.first().click({ timeout: 3000 });
+                // Strategy 1: Wait for visible popconfirm container first
+                const popconfirm = page.locator('.ant-popconfirm:visible, .ant-popover:visible');
+                await popconfirm.waitFor({ state: 'visible', timeout: 3000 });
 
-                // Wait for folder to disappear from table (verify deletion completed)
-                let deletionConfirmed = false;
-                for (let attempt = 0; attempt < 5; attempt++) {
-                  await page.waitForTimeout(1000);
-                  const stillExists = page.locator('tr').filter({ hasText: folderName });
-                  if (await stillExists.count() === 0) {
-                    deletionConfirmed = true;
-                    break;
+                // Strategy 2: Find confirm button within visible popconfirm
+                const confirmButton = popconfirm.locator('button.ant-btn-primary, button:has-text("OK"), button:has-text("確認")');
+
+                // Try clicking with force if button exists but not perfectly visible
+                if (await confirmButton.count() > 0) {
+                  await confirmButton.first().click({ force: true, timeout: 3000 });
+
+                  // Wait for folder to disappear from table (verify deletion completed)
+                  let deletionConfirmed = false;
+                  for (let attempt = 0; attempt < 5; attempt++) {
+                    await page.waitForTimeout(1000);
+                    const stillExists = page.locator('tr').filter({ hasText: folderName });
+                    if (await stillExists.count() === 0) {
+                      deletionConfirmed = true;
+                      break;
+                    }
                   }
-                }
 
-                if (deletionConfirmed) {
-                  console.log(`Pre-cleanup: Folder ${folderName} deletion confirmed`);
-                  deletedCount++;
-                  foundTestFolder = true;
-                  break; // Exit inner loop after successful deletion
+                  if (deletionConfirmed) {
+                    console.log(`Pre-cleanup: Folder ${folderName} deletion confirmed`);
+                    deletedCount++;
+                    foundTestFolder = true;
+                    break; // Exit inner loop after successful deletion
+                  } else {
+                    console.log(`Pre-cleanup: Warning - Folder ${folderName} still exists after deletion attempt`);
+                    // Don't increment deletedCount, try next folder
+                  }
                 } else {
-                  console.log(`Pre-cleanup: Warning - Folder ${folderName} still exists after deletion attempt`);
-                  // Don't increment deletedCount, try next folder
+                  console.log(`Pre-cleanup: Confirm button not found in visible popconfirm for ${folderName}`);
                 }
               } catch (confirmError) {
                 console.log(`Pre-cleanup: Confirm button error for ${folderName}:`, confirmError.message);
@@ -723,31 +732,51 @@ test.describe('Access Control and Permissions', () => {
 
         if (await deleteButton.count() > 0) {
           await deleteButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(500);
+          await page.waitForTimeout(1500);
 
-          const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary');
-          if (await confirmButton.count() > 0) {
-            await confirmButton.click();
+          // Try to find and click visible confirm button with multiple strategies
+          try {
+            // Strategy 1: Wait for visible popconfirm container first
+            const popconfirm = page.locator('.ant-popconfirm:visible, .ant-popover:visible');
+            await popconfirm.waitFor({ state: 'visible', timeout: 3000 });
 
-            // Wait for success message with extended timeout (folder with contents takes longer to delete)
-            try {
-              await page.waitForSelector('.ant-message-success', { timeout: 30000 });
-            } catch (timeoutError) {
-              console.log('Cleanup: Success message timeout - verifying deletion by checking if folder disappeared');
+            // Strategy 2: Find confirm button within visible popconfirm
+            const confirmButton = popconfirm.locator('button.ant-btn-primary, button:has-text("OK"), button:has-text("確認")');
+
+            if (await confirmButton.count() > 0) {
+              await confirmButton.first().click({ force: true, timeout: 3000 });
+
+              // Wait for success message with extended timeout (folder with contents takes longer to delete)
+              try {
+                await page.waitForSelector('.ant-message-success', { timeout: 30000 });
+              } catch (timeoutError) {
+                console.log('Cleanup: Success message timeout - verifying deletion by checking if folder disappeared');
+              }
+
+              // Verify folder was deleted by checking it's no longer in the table
+              await page.waitForTimeout(2000);
+              const deletedFolderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
+              const folderStillExists = await deletedFolderRow.count() > 0;
+
+              if (folderStillExists) {
+                console.log(`Cleanup: Warning - Folder ${restrictedFolderName} still exists after deletion attempt`);
+              } else {
+                console.log(`Cleanup: Successfully deleted folder ${restrictedFolderName}`);
+              }
+
+              // Test should pass as long as folder is gone, even if success message didn't appear
+              expect(folderStillExists).toBe(false);
+            } else {
+              console.log(`Cleanup: Confirm button not found in visible popconfirm`);
+              // Test will fail - folder still exists and can't be deleted
+              expect(false).toBe(true); // Force fail with clear message
             }
-
-            // Verify folder was deleted by checking it's no longer in the table
+          } catch (confirmError) {
+            console.log('Cleanup: Confirm button error:', confirmError.message);
+            // Try to verify if folder was deleted despite error
             await page.waitForTimeout(2000);
             const deletedFolderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
             const folderStillExists = await deletedFolderRow.count() > 0;
-
-            if (folderStillExists) {
-              console.log(`Cleanup: Warning - Folder ${restrictedFolderName} still exists after deletion attempt`);
-            } else {
-              console.log(`Cleanup: Successfully deleted folder ${restrictedFolderName}`);
-            }
-
-            // Test should pass as long as folder is gone, even if success message didn't appear
             expect(folderStillExists).toBe(false);
           }
         }
@@ -807,35 +836,44 @@ test.describe('Access Control and Permissions', () => {
               if (await deleteButton.count() > 0) {
                 await deleteButton.first().click({ timeout: 3000 });
 
-                // Wait for popconfirm to appear and become visible
-                await page.waitForTimeout(1000);
+                // Wait for popconfirm to appear
+                await page.waitForTimeout(1500);
 
-                // Confirm deletion with visibility check
-                const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary');
+                // Try to find and click visible confirm button with multiple strategies
                 try {
-                  // Wait for confirm button to be visible before clicking
-                  await confirmButton.first().waitFor({ state: 'visible', timeout: 3000 });
-                  await confirmButton.first().click({ timeout: 3000 });
+                  // Strategy 1: Wait for visible popconfirm container first
+                  const popconfirm = page.locator('.ant-popconfirm:visible, .ant-popover:visible');
+                  await popconfirm.waitFor({ state: 'visible', timeout: 3000 });
 
-                  // Wait for folder to disappear from table (verify deletion completed)
-                  let deletionConfirmed = false;
-                  for (let attempt = 0; attempt < 5; attempt++) {
-                    await page.waitForTimeout(1000);
-                    const stillExists = page.locator('tr').filter({ hasText: folderName });
-                    if (await stillExists.count() === 0) {
-                      deletionConfirmed = true;
-                      break;
+                  // Strategy 2: Find confirm button within visible popconfirm
+                  const confirmButton = popconfirm.locator('button.ant-btn-primary, button:has-text("OK"), button:has-text("確認")');
+
+                  // Try clicking with force if button exists but not perfectly visible
+                  if (await confirmButton.count() > 0) {
+                    await confirmButton.first().click({ force: true, timeout: 3000 });
+
+                    // Wait for folder to disappear from table (verify deletion completed)
+                    let deletionConfirmed = false;
+                    for (let attempt = 0; attempt < 5; attempt++) {
+                      await page.waitForTimeout(1000);
+                      const stillExists = page.locator('tr').filter({ hasText: folderName });
+                      if (await stillExists.count() === 0) {
+                        deletionConfirmed = true;
+                        break;
+                      }
                     }
-                  }
 
-                  if (deletionConfirmed) {
-                    console.log(`Cleanup: Folder ${folderName} deletion confirmed`);
-                    deletedCount++;
-                    foundTestFolder = true;
-                    break; // Exit inner loop after successful deletion
+                    if (deletionConfirmed) {
+                      console.log(`Cleanup: Folder ${folderName} deletion confirmed`);
+                      deletedCount++;
+                      foundTestFolder = true;
+                      break; // Exit inner loop after successful deletion
+                    } else {
+                      console.log(`Cleanup: Warning - Folder ${folderName} still exists after deletion attempt`);
+                      // Don't increment deletedCount, try next folder
+                    }
                   } else {
-                    console.log(`Cleanup: Warning - Folder ${folderName} still exists after deletion attempt`);
-                    // Don't increment deletedCount, try next folder
+                    console.log(`Cleanup: Confirm button not found in visible popconfirm for ${folderName}`);
                   }
                 } catch (confirmError) {
                   console.log(`Cleanup: Confirm button error for ${folderName}:`, confirmError.message);
