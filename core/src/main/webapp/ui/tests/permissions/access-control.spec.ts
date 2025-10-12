@@ -62,14 +62,26 @@ test.describe('Access Control and Permissions', () => {
           await modal.waitFor({ state: 'visible', timeout: 5000 });
           console.log('Setup: Modal opened');
 
-          // Fill username
-          const usernameInput = page.locator('input[id*="username"], input[id*="userId"], input[name="username"], input[name="userId"], .ant-modal input, .ant-drawer input').first();
+          // Debug: Check all form fields
+          const allInputs = await modal.locator('input').all();
+          console.log(`Setup: Found ${allInputs.length} input fields in modal`);
+          for (let i = 0; i < allInputs.length; i++) {
+            const input = allInputs[i];
+            const type = await input.getAttribute('type');
+            const name = await input.getAttribute('name');
+            const id = await input.getAttribute('id');
+            const placeholder = await input.getAttribute('placeholder');
+            console.log(`Setup: Input ${i}: type=${type}, name=${name}, id=${id}, placeholder=${placeholder}`);
+          }
+
+          // Fill username - try multiple strategies
+          const usernameInput = modal.locator('input[id*="username"], input[id*="userId"], input[name="username"], input[name="userId"], input[placeholder*="ユーザー"], input[placeholder*="username"]').first();
           await usernameInput.waitFor({ state: 'visible', timeout: 3000 });
           await usernameInput.fill(testUsername);
           console.log(`Setup: Filled username: ${testUsername}`);
 
-          // Fill password
-          const passwordInputs = page.locator('input[type="password"]');
+          // Fill password - look for all password fields in modal
+          const passwordInputs = modal.locator('input[type="password"]');
           const passwordCount = await passwordInputs.count();
           console.log(`Setup: Found ${passwordCount} password fields`);
 
@@ -83,26 +95,82 @@ test.describe('Access Control and Permissions', () => {
             console.log('Setup: Filled password field 2 (confirmation)');
           }
 
+          // Check for other required fields (email, name, etc.)
+          const emailInput = modal.locator('input[type="email"], input[id*="email"], input[name="email"]');
+          if (await emailInput.count() > 0) {
+            await emailInput.first().fill(`${testUsername}@example.com`);
+            console.log('Setup: Filled email field');
+          }
+
+          const firstNameInput = modal.locator('input[id*="firstName"], input[name="firstName"], input[placeholder*="名"]');
+          if (await firstNameInput.count() > 0) {
+            await firstNameInput.first().fill('Test');
+            console.log('Setup: Filled firstName field');
+          }
+
+          const lastNameInput = modal.locator('input[id*="lastName"], input[name="lastName"], input[placeholder*="姓"]');
+          if (await lastNameInput.count() > 0) {
+            await lastNameInput.first().fill('User');
+            console.log('Setup: Filled lastName field');
+          }
+
           // Submit
-          const submitButton = page.locator('.ant-modal button[type="submit"], .ant-drawer button[type="submit"], .ant-modal .ant-btn-primary, .ant-drawer .ant-btn-primary, button:has-text("作成"), button:has-text("保存"), button:has-text("OK")');
+          const submitButton = modal.locator('button[type="submit"], .ant-btn-primary').filter({ hasText: /作成|保存|OK|確認/ });
           if (await submitButton.count() > 0) {
             console.log('Setup: Found submit button, clicking...');
             await submitButton.first().click();
 
             // Wait for success message or modal to close
+            let successMessageAppeared = false;
             try {
               await page.waitForSelector('.ant-message-success, .ant-notification-success', { timeout: 5000 });
               console.log('Setup: Success message appeared');
+              successMessageAppeared = true;
             } catch (e) {
-              console.log('Setup: No success message, checking if modal closed');
+              console.log('Setup: No success message detected');
             }
 
-            await page.waitForTimeout(3000);
+            // Wait for modal to close
+            try {
+              await modal.waitFor({ state: 'hidden', timeout: 5000 });
+              console.log('Setup: Modal closed');
+            } catch (e) {
+              console.log('Setup: Modal did not close - may indicate form validation error');
+              // Check for error messages
+              const errorMessages = await modal.locator('.ant-form-item-explain-error, .ant-message-error').allTextContents();
+              if (errorMessages.length > 0) {
+                console.log('Setup: Form validation errors:', errorMessages);
+              }
+            }
 
-            // Verify test user was created
-            const createdTestUser = page.locator(`tr:has-text("${testUsername}")`);
-            const userCreated = await createdTestUser.count() > 0;
+            // Extended wait for table refresh
+            await page.waitForTimeout(5000);
+
+            // Verify test user was created with multiple attempts
+            let userCreated = false;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              const createdTestUser = page.locator(`tr:has-text("${testUsername}")`);
+              userCreated = await createdTestUser.count() > 0;
+
+              if (userCreated) {
+                console.log(`Setup: ${testUsername} found in table on attempt ${attempt}`);
+                break;
+              } else {
+                console.log(`Setup: ${testUsername} not found in table (attempt ${attempt}/3)`);
+                if (attempt < 3) {
+                  await page.waitForTimeout(2000);
+                  // Try to refresh the page view
+                  await page.reload();
+                  await page.waitForTimeout(2000);
+                }
+              }
+            }
+
             console.log(`Setup: ${testUsername} creation ${userCreated ? 'SUCCESSFUL' : 'FAILED'}`);
+
+            if (!userCreated && successMessageAppeared) {
+              console.log('Setup: Warning - Success message appeared but user not visible in table');
+            }
           } else {
             console.log('Setup: Submit button not found!');
           }
