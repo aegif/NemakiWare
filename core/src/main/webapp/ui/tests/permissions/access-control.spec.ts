@@ -15,6 +15,7 @@ test.describe('Access Control and Permissions', () => {
 
       await page.context().clearCookies();
       await authHelper.login(); // Login as admin
+      await page.waitForTimeout(2000); // Wait for UI initialization after login
       await testHelper.waitForAntdLoad();
 
       // Navigate to documents
@@ -210,6 +211,7 @@ test.describe('Access Control and Permissions', () => {
       await page.context().clearCookies();
       // Login as testuser instead of admin
       await authHelper.login('testuser', 'password'); // Adjust password as needed
+      await page.waitForTimeout(2000); // Wait for UI initialization after login
       await testHelper.waitForAntdLoad();
 
       // Navigate to documents

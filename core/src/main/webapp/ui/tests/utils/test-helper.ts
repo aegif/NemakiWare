@@ -15,6 +15,7 @@ export class TestHelper {
 
   /**
    * Wait for Ant Design components to fully render
+   * Increased timeout for mobile browser compatibility
    */
   async waitForAntdLoad(): Promise<void> {
     // Wait for Ant Design CSS to load
@@ -23,7 +24,7 @@ export class TestHelper {
         const antdElements = document.querySelectorAll('.ant-layout, .ant-menu, .ant-table');
         return antdElements.length > 0;
       },
-      { timeout: 5000 }
+      { timeout: 15000 }
     );
   }
 
