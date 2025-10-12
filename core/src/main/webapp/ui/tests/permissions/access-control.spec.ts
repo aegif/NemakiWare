@@ -33,6 +33,7 @@ test.describe('Access Control and Permissions', () => {
       // Delete up to 10 old test folders to reduce UI clutter
       let deletedCount = 0;
       const maxDeletions = 10;
+      const failedFolders = new Set<string>(); // Track folders that failed to delete
 
       while (deletedCount < maxDeletions) {
         // Re-query folder rows on each iteration to avoid stale elements
@@ -44,7 +45,7 @@ test.describe('Access Control and Permissions', () => {
           break;
         }
 
-        // Find first test folder on current page
+        // Find first test folder on current page (skip previously failed ones)
         let foundTestFolder = false;
         for (let i = 0; i < folderCount; i++) {
           const row = folderRows.nth(i);
@@ -52,6 +53,11 @@ test.describe('Access Control and Permissions', () => {
           const folderName = await folderNameButton.textContent();
 
           if (folderName && (folderName.startsWith('restricted-folder-') || folderName.startsWith('test-folder-'))) {
+            // Skip folders that already failed to delete
+            if (failedFolders.has(folderName)) {
+              console.log(`Pre-cleanup: Skipping previously failed folder: ${folderName}`);
+              continue;
+            }
             console.log(`Pre-cleanup: Deleting folder: ${folderName}`);
 
             const deleteButton = row.locator('button').filter({
@@ -96,13 +102,16 @@ test.describe('Access Control and Permissions', () => {
                     break; // Exit inner loop after successful deletion
                   } else {
                     console.log(`Pre-cleanup: Warning - Folder ${folderName} still exists after deletion attempt`);
-                    // Don't increment deletedCount, try next folder
+                    failedFolders.add(folderName); // Mark as failed to skip in future iterations
+                    // Don't increment deletedCount, try next folder (continue in loop)
                   }
                 } else {
                   console.log(`Pre-cleanup: Confirm button not found in visible popconfirm for ${folderName}`);
+                  failedFolders.add(folderName); // Mark as failed
                 }
               } catch (confirmError) {
                 console.log(`Pre-cleanup: Confirm button error for ${folderName}:`, confirmError.message);
+                failedFolders.add(folderName); // Mark as failed to skip in future iterations
                 // Skip this folder and try next one
               }
             }
@@ -806,6 +815,7 @@ test.describe('Access Control and Permissions', () => {
 
       let deletedCount = 0;
       const maxDeletions = 10; // Reduced limit to avoid timeout
+      const failedFolders = new Set<string>(); // Track folders that failed to delete
 
       // Delete test folders in batches - re-query after each deletion to avoid stale elements
       for (let batch = 0; batch < maxDeletions; batch++) {
@@ -820,7 +830,7 @@ test.describe('Access Control and Permissions', () => {
             console.log(`Cleanup: Found ${folderCount} folders on current page`);
           }
 
-          // Find first test folder on current page
+          // Find first test folder on current page (skip previously failed ones)
           let foundTestFolder = false;
           for (let i = 0; i < folderCount; i++) {
             const row = folderRows.nth(i);
@@ -828,6 +838,11 @@ test.describe('Access Control and Permissions', () => {
             const folderName = await folderNameButton.textContent();
 
             if (folderName && (folderName.startsWith('restricted-folder-') || folderName.startsWith('test-folder-'))) {
+              // Skip folders that already failed to delete
+              if (failedFolders.has(folderName)) {
+                console.log(`Cleanup: Skipping previously failed folder: ${folderName}`);
+                continue;
+              }
               console.log(`Cleanup: Deleting folder: ${folderName}`);
 
               const deleteButton = row.locator('button').filter({
@@ -872,13 +887,16 @@ test.describe('Access Control and Permissions', () => {
                       break; // Exit inner loop after successful deletion
                     } else {
                       console.log(`Cleanup: Warning - Folder ${folderName} still exists after deletion attempt`);
+                      failedFolders.add(folderName); // Mark as failed to skip in future iterations
                       // Don't increment deletedCount, try next folder
                     }
                   } else {
                     console.log(`Cleanup: Confirm button not found in visible popconfirm for ${folderName}`);
+                    failedFolders.add(folderName); // Mark as failed
                   }
                 } catch (confirmError) {
                   console.log(`Cleanup: Confirm button error for ${folderName}:`, confirmError.message);
+                  failedFolders.add(folderName); // Mark as failed to skip in future iterations
                   // Skip this folder and try next one
                 }
               }
