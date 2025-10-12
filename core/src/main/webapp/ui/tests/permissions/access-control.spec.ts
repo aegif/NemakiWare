@@ -806,20 +806,37 @@ test.describe('Access Control and Permissions', () => {
         });
 
         if (await deleteButton.count() > 0) {
+          console.log(`Cleanup: Clicking delete button for ${restrictedFolderName}`);
           await deleteButton.click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(1500);
+
+          // Wait for popconfirm to appear (extended timeout for slow UI)
+          console.log('Cleanup: Waiting for popconfirm to appear...');
+          await page.waitForTimeout(2000);
 
           // Try to find and click visible confirm button with multiple strategies
           try {
             // Strategy 1: Wait for visible popconfirm container first
             const popconfirm = page.locator('.ant-popconfirm:visible, .ant-popover:visible');
-            await popconfirm.waitFor({ state: 'visible', timeout: 3000 });
+            await popconfirm.waitFor({ state: 'visible', timeout: 5000 });
+            console.log('Cleanup: Popconfirm visible');
 
-            // Strategy 2: Find confirm button within visible popconfirm
-            const confirmButton = popconfirm.locator('button.ant-btn-primary, button:has-text("OK"), button:has-text("確認")');
+            // Strategy 2: Find all visible confirm buttons
+            const allConfirmButtons = page.locator('.ant-popconfirm:visible button, .ant-popover:visible button');
+            const buttonCount = await allConfirmButtons.count();
+            console.log(`Cleanup: Found ${buttonCount} buttons in popconfirm`);
+
+            // Log button texts for debugging
+            for (let i = 0; i < buttonCount; i++) {
+              const buttonText = await allConfirmButtons.nth(i).textContent();
+              console.log(`Cleanup: Button ${i}: "${buttonText}"`);
+            }
+
+            // Strategy 3: Try primary button first, then any button with confirmation text
+            const confirmButton = page.locator('.ant-popconfirm:visible button.ant-btn-primary, .ant-popover:visible button.ant-btn-primary').first();
 
             if (await confirmButton.count() > 0) {
-              await confirmButton.first().click({ force: true, timeout: 3000 });
+              console.log('Cleanup: Clicking primary confirm button');
+              await confirmButton.click({ force: true, timeout: 3000 });
 
               // Wait for success message with extended timeout (folder with contents takes longer to delete)
               try {
