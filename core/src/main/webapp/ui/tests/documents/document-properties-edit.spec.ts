@@ -8,7 +8,7 @@ test.describe('Document Properties Edit and Persistence', () => {
   const testDocName = `test-props-doc-${Date.now()}.txt`;
   let testDocId: string;
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
 
@@ -22,6 +22,33 @@ test.describe('Document Properties Edit and Persistence', () => {
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
       await page.waitForTimeout(2000);
+    }
+
+    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
+    const viewportSize = page.viewportSize();
+    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    if (isMobileChrome) {
+      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
+
+      if (await menuToggle.count() > 0) {
+        try {
+          await menuToggle.first().click({ timeout: 3000 });
+          await page.waitForTimeout(500);
+        } catch (error) {
+          // Continue even if sidebar close fails
+        }
+      } else {
+        const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
+        if (await alternativeToggle.count() > 0) {
+          try {
+            await alternativeToggle.click({ timeout: 3000 });
+            await page.waitForTimeout(500);
+          } catch (error) {
+            // Continue even if alternative selector fails
+          }
+        }
+      }
     }
   });
 

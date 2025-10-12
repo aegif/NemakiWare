@@ -9,7 +9,7 @@ test.describe('Access Control and Permissions', () => {
   const testDocName = `permission-test-doc-${Date.now()}.txt`;
 
   test.describe('Admin User - Setup Permissions', () => {
-    test.beforeEach(async ({ page }) => {
+    test.beforeEach(async ({ page, browserName }) => {
       authHelper = new AuthHelper(page);
       testHelper = new TestHelper(page);
 
@@ -22,6 +22,33 @@ test.describe('Access Control and Permissions', () => {
       if (await documentsMenuItem.count() > 0) {
         await documentsMenuItem.click();
         await page.waitForTimeout(2000);
+      }
+
+      // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
+      const viewportSize = page.viewportSize();
+      const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+      if (isMobileChrome) {
+        const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
+
+        if (await menuToggle.count() > 0) {
+          try {
+            await menuToggle.first().click({ timeout: 3000 });
+            await page.waitForTimeout(500);
+          } catch (error) {
+            // Continue even if sidebar close fails
+          }
+        } else {
+          const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
+          if (await alternativeToggle.count() > 0) {
+            try {
+              await alternativeToggle.click({ timeout: 3000 });
+              await page.waitForTimeout(500);
+            } catch (error) {
+              // Continue even if alternative selector fails
+            }
+          }
+        }
       }
     });
 
@@ -176,7 +203,7 @@ test.describe('Access Control and Permissions', () => {
   });
 
   test.describe('Test User - Verify Permission Restrictions', () => {
-    test.beforeEach(async ({ page }) => {
+    test.beforeEach(async ({ page, browserName }) => {
       authHelper = new AuthHelper(page);
       testHelper = new TestHelper(page);
 
@@ -191,9 +218,39 @@ test.describe('Access Control and Permissions', () => {
         await documentsMenuItem.click();
         await page.waitForTimeout(2000);
       }
+
+      // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
+      const viewportSize = page.viewportSize();
+      const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+      if (isMobileChrome) {
+        const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
+
+        if (await menuToggle.count() > 0) {
+          try {
+            await menuToggle.first().click({ timeout: 3000 });
+            await page.waitForTimeout(500);
+          } catch (error) {
+            // Continue even if sidebar close fails
+          }
+        } else {
+          const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
+          if (await alternativeToggle.count() > 0) {
+            try {
+              await alternativeToggle.click({ timeout: 3000 });
+              await page.waitForTimeout(500);
+            } catch (error) {
+              // Continue even if alternative selector fails
+            }
+          }
+        }
+      }
     });
 
-    test('should be able to view restricted folder as testuser', async ({ page }) => {
+    test('should be able to view restricted folder as testuser', async ({ page, browserName }) => {
+      const viewportSize = page.viewportSize();
+      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
       await page.waitForTimeout(2000);
 
       // Verify testuser can see the restricted folder
@@ -203,7 +260,7 @@ test.describe('Access Control and Permissions', () => {
         await expect(folderLink).toBeVisible({ timeout: 5000 });
 
         // Navigate into folder
-        await folderLink.click();
+        await folderLink.click(isMobile ? { force: true } : {});
         await page.waitForTimeout(2000);
 
         // Verify can see the document

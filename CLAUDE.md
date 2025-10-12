@@ -100,6 +100,61 @@ Tests: 4 total
 
 ---
 
+## Recent Major Changes (2025-10-12 - Mobile Browser Support Extension) ✅
+
+### Mobile Browser Support Added to New Test Suites
+
+**IMPROVEMENT (2025-10-12 20:30)**: Extended mobile browser support to newly created comprehensive test suites (user management, group management, document properties, access control).
+
+**Changes Applied**:
+- ✅ Added `browserName` parameter to all test.beforeEach hooks
+- ✅ Implemented mobile sidebar close logic in all new test suites
+- ✅ Added mobile detection and force click strategy to all interactive tests
+- ✅ Extended mobile/desktop split pattern to new test files
+
+**Files Modified**:
+```
+tests/admin/user-management-crud.spec.ts
+tests/admin/group-management-crud.spec.ts
+tests/documents/document-properties-edit.spec.ts
+tests/permissions/access-control.spec.ts
+```
+
+**Mobile Test Results (Mobile Chrome)**:
+
+| Test Suite | Passed | Total | Success Rate |
+|------------|--------|-------|--------------|
+| user-management-crud | 1/4 | 4 | 25% |
+| document-properties-edit | 2/4 | 4 | 50% |
+| access-control | 3/7 | 7 | 43% |
+| **Total** | **6/15** | **15** | **40%** |
+
+**Key Mobile Successes**:
+- ✅ User information editing works on mobile (15.3s)
+- ✅ Document upload/cleanup works on mobile (10.4s, 8.6s)
+- ✅ Folder creation works on mobile (10.2s)
+- ✅ ACL setup works on mobile (9.9s)
+- ✅ Cleanup operations work on mobile (10.5s)
+
+**Mobile-Specific Issues Identified**:
+1. **Sidebar Overlay**: Some folder navigation still blocked despite sidebar close logic
+2. **AuthHelper Login**: Test user login parameters causing undefined errors
+3. **Success Message Timing**: Some operations succeed but success message not displayed in time
+
+**Technical Implementation**:
+- Mobile detection: `browserName === 'chromium' && viewportSize.width <= 414`
+- Sidebar close with fallback selectors
+- Force click: `element.click(isMobile ? { force: true } : {})`
+- Extended timeouts for mobile operations
+
+**Value**:
+- New test suites now have baseline mobile browser support
+- 6 additional tests passing on Mobile Chrome (40% of new tests)
+- Mobile support pattern consistent across all test files
+- Foundation for future mobile-specific optimizations
+
+---
+
 ## Recent Major Changes (2025-10-12 - Playwright Mobile Browser Support) ✅
 
 ### Playwright Mobile Browser Complete Support - 98% Test Success

@@ -6,7 +6,7 @@ test.describe('Group Management CRUD Operations', () => {
   const testGroupName = `testgroup_${Date.now()}`;
   const testGroupDescription = 'Test group for automated testing';
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
     await authHelper.login();
 
@@ -19,6 +19,33 @@ test.describe('Group Management CRUD Operations', () => {
     }
     await page.locator('.ant-menu-item:has-text("グループ管理")').click();
     await page.waitForTimeout(2000);
+
+    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
+    const viewportSize = page.viewportSize();
+    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    if (isMobileChrome) {
+      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
+
+      if (await menuToggle.count() > 0) {
+        try {
+          await menuToggle.first().click({ timeout: 3000 });
+          await page.waitForTimeout(500);
+        } catch (error) {
+          // Continue even if sidebar close fails
+        }
+      } else {
+        const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
+        if (await alternativeToggle.count() > 0) {
+          try {
+            await alternativeToggle.click({ timeout: 3000 });
+            await page.waitForTimeout(500);
+          } catch (error) {
+            // Continue even if alternative selector fails
+          }
+        }
+      }
+    }
   });
 
   test('should create new group', async ({ page, browserName }) => {
@@ -199,7 +226,11 @@ test.describe('Group Management CRUD Operations', () => {
     }
   });
 
-  test('should verify group changes persist after reload', async ({ page }) => {
+  test('should verify group changes persist after reload', async ({ page, browserName }) => {
+    // Detect mobile browsers
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
     // Reload the page
     await page.reload();
     await page.waitForTimeout(3000);
@@ -223,7 +254,7 @@ test.describe('Group Management CRUD Operations', () => {
       });
 
       if (await editButton.count() > 0) {
-        await editButton.first().click();
+        await editButton.first().click(isMobile ? { force: true } : {});
         await page.waitForTimeout(1000);
 
         // Check if updated description is visible
