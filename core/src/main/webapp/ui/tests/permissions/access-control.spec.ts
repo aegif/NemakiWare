@@ -20,6 +20,9 @@ test.describe('Access Control and Permissions', () => {
     const page = await context.newPage();
     const cleanupAuthHelper = new AuthHelper(page);
 
+    const cleanupStartTime = Date.now();
+    const maxCleanupTime = 60000; // 60 seconds max for cleanup
+
     try {
       await cleanupAuthHelper.login();
       await page.waitForTimeout(2000);
@@ -31,12 +34,12 @@ test.describe('Access Control and Permissions', () => {
         await page.waitForTimeout(2000);
       }
 
-      // Delete up to 10 old test folders to reduce UI clutter
+      // Delete up to 3 old test folders to reduce UI clutter (reduced from 10 for speed)
       let deletedCount = 0;
-      const maxDeletions = 10;
+      const maxDeletions = 3;
       const failedFolders = new Set<string>(); // Track folders that failed to delete
 
-      while (deletedCount < maxDeletions) {
+      while (deletedCount < maxDeletions && (Date.now() - cleanupStartTime) < maxCleanupTime) {
         // Re-query folder rows on each iteration to avoid stale elements
         const folderRows = page.locator('.ant-table-tbody tr');
         const folderCount = await folderRows.count();
@@ -126,7 +129,12 @@ test.describe('Access Control and Permissions', () => {
         }
       }
 
-      console.log(`Pre-cleanup: Successfully deleted ${deletedCount} old test folders`);
+      const cleanupElapsed = Date.now() - cleanupStartTime;
+      if (cleanupElapsed >= maxCleanupTime) {
+        console.log(`Pre-cleanup: Timeout reached (${cleanupElapsed}ms) - stopping cleanup to allow tests to proceed`);
+      }
+
+      console.log(`Pre-cleanup: Successfully deleted ${deletedCount} old test folders in ${cleanupElapsed}ms`);
     } catch (error) {
       console.log('Pre-cleanup: Error during cleanup:', error);
     } finally {
