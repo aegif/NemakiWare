@@ -136,6 +136,7 @@ test.describe('Access Control and Permissions', () => {
 
   // Setup: Create test user
   test.beforeAll(async ({ browser }) => {
+    test.setTimeout(90000); // Set 90-second timeout for user creation
     const context = await browser.newContext();
     const page = await context.newPage();
     const setupAuthHelper = new AuthHelper(page);
@@ -291,12 +292,12 @@ test.describe('Access Control and Permissions', () => {
               }
             }
 
-            // Wait for table refresh (reduced from 5s to 2s)
-            await page.waitForTimeout(2000);
+            // Wait for table refresh (extended for database write latency)
+            await page.waitForTimeout(3000);
 
-            // Verify test user was created with multiple attempts
+            // Verify test user was created with multiple attempts and page reload
             let userCreated = false;
-            for (let attempt = 1; attempt <= 2; attempt++) {
+            for (let attempt = 1; attempt <= 3; attempt++) {
               const createdTestUser = page.locator(`tr:has-text("${testUsername}")`);
               userCreated = await createdTestUser.count() > 0;
 
@@ -304,10 +305,25 @@ test.describe('Access Control and Permissions', () => {
                 console.log(`Setup: ${testUsername} found in table on attempt ${attempt}`);
                 break;
               } else {
-                console.log(`Setup: ${testUsername} not found in table (attempt ${attempt}/2)`);
-                if (attempt < 2) {
-                  // Just wait a bit more instead of page reload (faster)
-                  await page.waitForTimeout(3000);
+                console.log(`Setup: ${testUsername} not found in table (attempt ${attempt}/3)`);
+                if (attempt < 3) {
+                  if (attempt === 1) {
+                    // First retry: Just wait longer for table update
+                    await page.waitForTimeout(3000);
+                  } else {
+                    // Second retry: Navigate back to user management to force full refresh
+                    console.log('Setup: Re-navigating to user management to force table refresh...');
+                    const adminMenuRetry = page.locator('.ant-menu-submenu:has-text("管理")');
+                    if (await adminMenuRetry.count() > 0) {
+                      await adminMenuRetry.click();
+                      await page.waitForTimeout(1000);
+                    }
+                    const userManagementRetry = page.locator('.ant-menu-item:has-text("ユーザー管理")');
+                    if (await userManagementRetry.count() > 0) {
+                      await userManagementRetry.click();
+                      await page.waitForTimeout(3000);
+                    }
+                  }
                 }
               }
             }
