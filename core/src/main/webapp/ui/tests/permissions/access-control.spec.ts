@@ -78,8 +78,9 @@ test.describe('Access Control and Permissions', () => {
                   await confirmButton.first().click({ force: true, timeout: 3000 });
 
                   // Wait for folder to disappear from table (verify deletion completed)
+                  // Extended to 10 attempts (10 seconds) for folders with contents
                   let deletionConfirmed = false;
-                  for (let attempt = 0; attempt < 5; attempt++) {
+                  for (let attempt = 0; attempt < 10; attempt++) {
                     await page.waitForTimeout(1000);
                     const stillExists = page.locator('tr').filter({ hasText: folderName });
                     if (await stillExists.count() === 0) {
@@ -853,8 +854,9 @@ test.describe('Access Control and Permissions', () => {
                     await confirmButton.first().click({ force: true, timeout: 3000 });
 
                     // Wait for folder to disappear from table (verify deletion completed)
+                    // Extended to 10 attempts (10 seconds) for folders with contents
                     let deletionConfirmed = false;
-                    for (let attempt = 0; attempt < 5; attempt++) {
+                    for (let attempt = 0; attempt < 10; attempt++) {
                       await page.waitForTimeout(1000);
                       const stillExists = page.locator('tr').filter({ hasText: folderName });
                       if (await stillExists.count() === 0) {
