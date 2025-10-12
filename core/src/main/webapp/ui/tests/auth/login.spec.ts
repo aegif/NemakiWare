@@ -39,7 +39,7 @@ test.describe('NemakiWare Authentication', () => {
     expect(jsErrors).toHaveLength(0);
   });
 
-  test('should successfully login with valid credentials', async ({ page }) => {
+  test('should successfully login with valid credentials', async ({ page, browserName }) => {
     const authHelper = new AuthHelper(page);
     const testHelper = new TestHelper(page);
 
@@ -57,6 +57,22 @@ test.describe('NemakiWare Authentication', () => {
     // Verify main application layout is present
     await expect(page.locator('.ant-layout-sider')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('.ant-layout-content')).toBeVisible({ timeout: 10000 });
+
+    // MOBILE FIX: Close sidebar on mobile to access header elements
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    if (isMobile) {
+      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
+      if (await menuToggle.count() > 0) {
+        try {
+          await menuToggle.first().click({ timeout: 3000 });
+          await page.waitForTimeout(500);
+        } catch (error) {
+          // Continue even if sidebar close fails
+        }
+      }
+    }
 
     // Verify user is shown in header (admin)
     const userDisplay = page.locator('.ant-layout-header').locator('text=admin');
@@ -127,7 +143,7 @@ test.describe('NemakiWare Authentication', () => {
     // We don't strictly require validation errors, but form should not submit
   });
 
-  test('should logout successfully', async ({ page }) => {
+  test('should logout successfully', async ({ page, browserName }) => {
     const authHelper = new AuthHelper(page);
 
     // First login
@@ -135,6 +151,22 @@ test.describe('NemakiWare Authentication', () => {
 
     // Verify logged in
     expect(await authHelper.isLoggedIn()).toBe(true);
+
+    // MOBILE FIX: Close sidebar before logout to access header menu
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    if (isMobile) {
+      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
+      if (await menuToggle.count() > 0) {
+        try {
+          await menuToggle.first().click({ timeout: 3000 });
+          await page.waitForTimeout(500);
+        } catch (error) {
+          // Continue even if sidebar close fails
+        }
+      }
+    }
 
     // Perform logout
     await authHelper.logout();
@@ -144,7 +176,7 @@ test.describe('NemakiWare Authentication', () => {
     expect(await authHelper.isLoggedIn()).toBe(false);
   });
 
-  test('should maintain session on page refresh', async ({ page }) => {
+  test('should maintain session on page refresh', async ({ page, browserName }) => {
     const authHelper = new AuthHelper(page);
 
     // Login
