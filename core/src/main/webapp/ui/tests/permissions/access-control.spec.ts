@@ -888,9 +888,9 @@ test.describe('Access Control and Permissions', () => {
         const folderId = queryResult.results[0].properties?.['cmis:objectId']?.value;
         console.log(`Test: Found folder ID: ${folderId}`);
 
-        // Get ACL for the folder
-        const aclResponse = await page.request.get(
-          `http://localhost:8080/core/browser/bedroom?cmisselector=acl&objectId=${folderId}`,
+        // Get folder object with includeACL parameter (Browser Binding uses object selector with ACL included)
+        const objectResponse = await page.request.get(
+          `http://localhost:8080/core/browser/bedroom?cmisselector=object&objectId=${folderId}&includeACL=true`,
           {
             headers: {
               'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
@@ -898,20 +898,20 @@ test.describe('Access Control and Permissions', () => {
           }
         );
 
-        console.log('Test: ACL response status:', aclResponse.status());
-        expect(aclResponse.ok()).toBe(true);
-        const aclResult = await aclResponse.json();
-        console.log('Test: ACL result:', JSON.stringify(aclResult, null, 2));
+        console.log('Test: Object response status:', objectResponse.status());
+        expect(objectResponse.ok()).toBe(true);
+        const objectResult = await objectResponse.json();
+        console.log('Test: Object result (ACL portion):', JSON.stringify(objectResult.acl, null, 2));
 
         // Verify test user has read permission
-        const hasTestUserAcl = aclResult.aces?.some((ace: any) =>
+        const hasTestUserAcl = objectResult.acl?.aces?.some((ace: any) =>
           ace.principal?.principalId === testUsername
         );
 
         console.log(`Test: Test user (${testUsername}) has ACL entry: ${hasTestUserAcl}`);
 
         if (hasTestUserAcl) {
-          const testUserAce = aclResult.aces.find((ace: any) =>
+          const testUserAce = objectResult.acl.aces.find((ace: any) =>
             ace.principal?.principalId === testUsername
           );
           console.log('Test: Test user ACL entry:', JSON.stringify(testUserAce, null, 2));
@@ -923,6 +923,7 @@ test.describe('Access Control and Permissions', () => {
           expect(hasReadPermission).toBe(true);
         } else {
           console.log('Test: WARNING - Test user ACL entry not found!');
+          console.log('Test: All ACEs:', JSON.stringify(objectResult.acl?.aces, null, 2));
         }
 
         // Now try to access the folder as test user via CMIS API
