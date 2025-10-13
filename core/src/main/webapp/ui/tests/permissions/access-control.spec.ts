@@ -14,7 +14,7 @@ test.describe('Access Control and Permissions', () => {
 
   // Pre-cleanup: Delete old test folders from previous runs BEFORE tests start
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(90000); // Set 90-second timeout for this hook
+    test.setTimeout(180000); // Set 180-second timeout for this hook (extended for cleanup)
 
     // Allow skipping pre-cleanup via environment variable for faster test execution
     if (process.env.SKIP_CLEANUP === 'true') {
@@ -151,7 +151,7 @@ test.describe('Access Control and Permissions', () => {
 
   // Setup: Create test user
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(90000); // Set 90-second timeout for user creation
+    test.setTimeout(180000); // Set 180-second timeout for user creation (extended)
     const context = await browser.newContext();
     const page = await context.newPage();
     const setupAuthHelper = new AuthHelper(page);
@@ -315,27 +315,52 @@ test.describe('Access Control and Permissions', () => {
             if (successMessageAppeared) {
               console.log('Setup: Verifying user creation in user table...');
 
-              // Reload page to refresh user list
-              await page.reload();
-              await page.waitForTimeout(2000);
+              // Refresh user list via UI navigation instead of page.reload() to avoid breaking React Router
+              // Navigate away to Documents
+              const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+              if (await documentsMenu.count() > 0) {
+                await documentsMenu.click();
+                await page.waitForTimeout(1000);
+                console.log('Setup: Navigated away to Documents');
+              }
 
-              // Check if test user appears in table (retry up to 3 times for DB sync)
-              for (let attempt = 1; attempt <= 3; attempt++) {
-                const userTableRow = page.locator(`tr:has-text("${testUsername}")`);
-                const userRowCount = await userTableRow.count();
+              // Navigate back to User Management to refresh the list
+              const adminMenuRefresh = page.locator('.ant-menu-submenu:has-text("管理")');
+              if (await adminMenuRefresh.count() > 0) {
+                await adminMenuRefresh.click();
+                await page.waitForTimeout(500);
+              }
 
-                if (userRowCount > 0) {
-                  console.log(`Setup: ${testUsername} found in user table on attempt ${attempt}`);
-                  userCreated = true;
-                  break;
-                } else {
-                  console.log(`Setup: ${testUsername} not found in table, attempt ${attempt}/3`);
-                  if (attempt < 3) {
-                    await page.waitForTimeout(2000);
-                    await page.reload();
-                    await page.waitForTimeout(1000);
-                  }
+              const userManagementRefresh = page.locator('.ant-menu-item:has-text("ユーザー管理")');
+              if (await userManagementRefresh.count() > 0) {
+                await userManagementRefresh.click();
+                await page.waitForTimeout(2000);
+                console.log('Setup: Navigated back to User Management');
+              }
+
+              // Check if test user appears in table
+              // New users are added to the end of the list, so check the last page first
+              const paginationExists = await page.locator('.ant-pagination').count();
+
+              if (paginationExists > 0) {
+                // Navigate to the last page where new user should appear
+                console.log('Setup: Navigating to last page to find new user...');
+                const lastPageButton = page.locator('.ant-pagination-item').last();
+                if (await lastPageButton.count() > 0) {
+                  await lastPageButton.click();
+                  await page.waitForTimeout(2000);
                 }
+              }
+
+              // Check if test user appears in table
+              const userTableRow = page.locator(`tr:has-text("${testUsername}")`);
+              const userRowCount = await userTableRow.count();
+
+              if (userRowCount > 0) {
+                console.log(`Setup: ${testUsername} found in user table`);
+                userCreated = true;
+              } else {
+                console.log(`Setup: ${testUsername} not found in table after navigation to last page`);
               }
             } else {
               console.log('Setup: Success message not detected - skipping user verification');
@@ -364,7 +389,7 @@ test.describe('Access Control and Permissions', () => {
 
   // Setup: Grant test user read access to root folder
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(90000);
+    test.setTimeout(180000); // Set 180-second timeout for ACL setup (extended)
     const context = await browser.newContext();
     const page = await context.newPage();
 
@@ -1177,7 +1202,7 @@ test.describe('Access Control and Permissions', () => {
 
   // Cleanup: Remove accumulated test folders to prevent performance degradation
   test.afterAll(async ({ browser }) => {
-    test.setTimeout(90000); // Set 90-second timeout for cleanup
+    test.setTimeout(300000); // Set 300-second timeout for cleanup (extended for large number of test folders)
 
     // Allow skipping cleanup via environment variable for faster test execution
     if (process.env.SKIP_CLEANUP === 'true') {
