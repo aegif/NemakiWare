@@ -872,15 +872,19 @@ public class CloudantClientWrapper {
 
 	/**
 	 * Bridge method to replace Ektorp's ViewQuery - query view without specific class
+	 * WITH EXPLICIT UPDATE CONTROL for cache bypass
 	 */
-	public ViewResult queryView(String designDoc, String viewName, String key) {
+	public ViewResult queryView(String designDoc, String viewName, String key, boolean forceUpdate) {
 		try {
-			// Try using GET method instead of POST for better CouchDB compatibility
+			// CRITICAL FIX (2025-10-13): CouchDB view update parameter
+			// update=true forces view index update BEFORE query (stale=false)
+			// update=false allows stale results (stale=ok)
 			PostViewOptions.Builder builder = new PostViewOptions.Builder()
 				.db(databaseName)
 				.ddoc(designDoc.replace("_design/", ""))
-				.view(viewName);
-				// Remove includeDocs for now to test basic functionality
+				.view(viewName)
+				.includeDocs(true) // CRITICAL: Must get actual docs, not cached emit values
+				.update(forceUpdate ? "true" : "false"); // Force view index update when forceUpdate=true
 			
 			// First try without key to test basic view access
 			ViewResult result = client.postView(builder.build()).execute().getResult();
@@ -930,10 +934,18 @@ public class CloudantClientWrapper {
 	}
 
 	/**
+	 * Bridge method to replace Ektorp's ViewQuery - query view without specific class (backward compatible)
+	 * Uses lazy update (does not force view index update)
+	 */
+	public ViewResult queryView(String designDoc, String viewName, String key) {
+		return queryView(designDoc, viewName, key, false); // Default: lazy update for backward compatibility
+	}
+
+	/**
 	 * Bridge method to replace Ektorp's ViewQuery - query view without key or class
 	 */
 	public ViewResult queryView(String designDoc, String viewName) {
-		return queryView(designDoc, viewName, (String) null);
+		return queryView(designDoc, viewName, null, false); // Default: lazy update
 	}
 
 	/**
@@ -1106,15 +1118,15 @@ public class CloudantClientWrapper {
 	public void update(Object document) {
 		try {
 			ObjectMapper mapper = getObjectMapper();
-			
+
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
-			
+
 			String id = (String) documentMap.get("_id");
 			if (id == null) {
 				throw new IllegalArgumentException("Document must have '_id' field for update");
 			}
-			
+
 			// Ektorp-style behavior: ALWAYS trust the object's revision state
 			// If the object has a revision, use it; if not, it's a serious error
 			String currentRev = (String) documentMap.get("_rev");
@@ -1122,7 +1134,7 @@ public class CloudantClientWrapper {
 				throw new IllegalArgumentException("Document " + id + " has no revision - cannot perform safe update. " +
 					"In Ektorp-style operation, objects must maintain their revision state.");
 			}
-			
+
 			log.debug("Ektorp-style update: using object revision " + currentRev + " for document " + id);
 			
 			// Convert CMIS array structures to Cloudant Document model compatible maps
@@ -1144,6 +1156,7 @@ public class CloudantClientWrapper {
 			PutDocumentOptions options = new PutDocumentOptions.Builder()
 				.db(databaseName)
 				.docId(id)
+			.rev(currentRev) // CRITICAL FIX (2025-10-13): Must explicitly set revision for CouchDB conflict detection
 				.document(doc)
 				.build();
 
@@ -1158,10 +1171,17 @@ public class CloudantClientWrapper {
 			}
 			
 		} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
-			// Provide helpful error message for revision conflicts in Ektorp-style operations
-			log.warn("Revision conflict in Ektorp-style update - object revision was stale or concurrent modification occurred. This is normal during initial startup: " + e.getMessage());
+			// CRITICAL FIX (2025-10-13): RE-THROW ConflictException instead of swallowing it
+			// Revision conflicts indicate the document was modified concurrently and the update FAILED
+			// Callers using ThreadLockService rely on exceptions to detect failures and retry
+			// The comment "This is normal during initial startup" was misleading for locked operations
+			log.error("Revision conflict in Ektorp-style update - document was modified concurrently: " + e.getMessage());
+			throw new RuntimeException("CouchDB revision conflict - update failed: " + e.getMessage(), e);
 		} catch (Exception e) {
-			log.warn("Error in Ektorp-style document update. This is normal during initial startup: " + e.getMessage());
+			// CRITICAL FIX (2025-10-13): RE-THROW all exceptions for locked operations
+			// Silent failures break the contract of update() method
+			log.error("Error in Ektorp-style document update: " + e.getMessage(), e);
+			throw new RuntimeException("CouchDB update failed: " + e.getMessage(), e);
 		}
 	}
 
