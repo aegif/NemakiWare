@@ -28,6 +28,7 @@ interface TypeManagementProps {
   repositoryId: string;
 }
 
+import { useAuth } from '../../contexts/AuthContext';
 export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) => {
   const [types, setTypes] = useState<TypeDefinition[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,7 +36,8 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   const [editingType, setEditingType] = useState<TypeDefinition | null>(null);
   const [form] = Form.useForm();
 
-  const cmisService = new CMISService();
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
 
   useEffect(() => {
     loadTypes();

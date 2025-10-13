@@ -24,12 +24,14 @@ interface ArchiveManagementProps {
   repositoryId: string;
 }
 
+import { useAuth } from '../../contexts/AuthContext';
 export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repositoryId }) => {
   const [archives, setArchives] = useState<CMISObject[]>([]);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const cmisService = new CMISService();
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
 
   useEffect(() => {
     loadArchives();

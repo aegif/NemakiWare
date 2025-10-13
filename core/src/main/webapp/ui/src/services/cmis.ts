@@ -235,9 +235,19 @@ export class CMISService {
 
     console.error('CMIS HTTP Error:', error);
 
-    // Handle authentication errors
+    // Handle authentication and permission errors - all should redirect to login
     if (status === 401) {
-      console.warn('Authentication error detected - token may be expired');
+      console.warn('401 Unauthorized - token may be expired');
+      if (this.onAuthError) {
+        this.onAuthError(error);
+      }
+    } else if (status === 403) {
+      console.warn('403 Forbidden - insufficient permissions');
+      if (this.onAuthError) {
+        this.onAuthError(error);
+      }
+    } else if (status === 404) {
+      console.warn('404 Not Found - resource may have been deleted or URL is invalid');
       if (this.onAuthError) {
         this.onAuthError(error);
       }

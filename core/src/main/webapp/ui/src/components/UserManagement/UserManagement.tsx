@@ -24,6 +24,7 @@ interface UserManagementProps {
   repositoryId: string;
 }
 
+import { useAuth } from '../../contexts/AuthContext';
 export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
@@ -32,7 +33,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
   const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
 
-  const cmisService = new CMISService();
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
 
   useEffect(() => {
     loadUsers();

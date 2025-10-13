@@ -1179,9 +1179,19 @@ test.describe('Access Control and Permissions', () => {
         if (response.ok) {
           console.log('Cleanup: deleteTree succeeded');
 
-          // Verify deletion in UI (reload and check)
-          await page.reload();
-          await page.waitForTimeout(2000);
+          // Verify deletion in UI (refresh via navigation instead of reload)
+          // Navigate away and back to refresh the document list
+          const userMgmtItem = page.locator('.ant-menu-item:has-text("ユーザー管理")');
+          if (await userMgmtItem.count() > 0) {
+            await userMgmtItem.click();
+            await page.waitForTimeout(500);
+          }
+
+          const documentsMenuItem = page.locator('.ant-menu-item:has-text("ドキュメント")');
+          if (await documentsMenuItem.count() > 0) {
+            await documentsMenuItem.click();
+            await page.waitForTimeout(2000);
+          }
 
           const folderRow = page.locator('tr').filter({ hasText: restrictedFolderName });
           const folderExists = await folderRow.count() > 0;

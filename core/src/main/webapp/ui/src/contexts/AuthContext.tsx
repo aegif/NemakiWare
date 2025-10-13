@@ -83,10 +83,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const handleAuthError = useCallback((error: any) => {
     console.warn('Authentication error detected:', error);
-    
-    // Check if this is a 401 Unauthorized error
-    if (error?.status === 401 || error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
-      console.log('401 error detected - redirecting to login');
+
+    // Check if this is a 401 Unauthorized, 403 Forbidden, or 404 Not Found error
+    // All these errors should redirect to login page for better UX
+    const status = error?.status;
+    const message = error?.message || '';
+
+    if (status === 401 || message.includes('401') || message.includes('Unauthorized')) {
+      console.log('401 Unauthorized error detected - redirecting to login');
+      logout();
+    } else if (status === 403 || message.includes('403') || message.includes('Forbidden')) {
+      console.log('403 Forbidden error detected - redirecting to login');
+      logout();
+    } else if (status === 404 || message.includes('404') || message.includes('Not Found')) {
+      console.log('404 Not Found error detected - redirecting to login');
       logout();
     }
   }, [logout]);

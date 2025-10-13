@@ -27,6 +27,7 @@ interface GroupManagementProps {
   repositoryId: string;
 }
 
+import { useAuth } from '../../contexts/AuthContext';
 export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }) => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -36,7 +37,8 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
   const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
 
-  const cmisService = new CMISService();
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
 
   useEffect(() => {
     loadGroups();

@@ -161,11 +161,21 @@ test.describe('Document Properties Edit and Persistence', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    // Reload page
-    await page.reload();
-    await page.waitForTimeout(3000);
+    // Refresh via UI navigation instead of page.reload() to avoid breaking React Router
+    // Navigate away to User Management
+    const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
+    if (await adminMenu.count() > 0) {
+      await adminMenu.click();
+      await page.waitForTimeout(1000);
+    }
 
-    // Re-navigate to documents
+    const userManagementItem = page.locator('.ant-menu-item:has-text("ユーザー管理")');
+    if (await userManagementItem.count() > 0) {
+      await userManagementItem.click();
+      await page.waitForTimeout(1000);
+    }
+
+    // Navigate back to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();

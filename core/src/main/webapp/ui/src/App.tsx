@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import { Layout } from './components/Layout/Layout';
 import { DocumentList } from './components/DocumentList/DocumentList';
@@ -35,7 +35,7 @@ function AppContent() {
   }
 
   return (
-    <Router basename="/core/ui/dist">
+    <Router>
       <Layout repositoryId={authToken.repositoryId}>
         <Routes>
           <Route path="/" element={<Navigate to="/documents" replace />} />

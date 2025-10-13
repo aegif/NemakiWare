@@ -124,9 +124,9 @@ test.describe('User Management CRUD Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    // Find testuser (created in previous test)
+    // Find testuser (created in previous test) using exact username
     await page.waitForTimeout(2000);
-    const testUserRow = page.locator('tr').filter({ hasText: 'testuser' });
+    const testUserRow = page.locator('tr').filter({ hasText: testUsername });
 
     if (await testUserRow.count() > 0) {
       // Click edit button
@@ -176,11 +176,15 @@ test.describe('User Management CRUD Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    // Reload the page
-    await page.reload();
-    await page.waitForTimeout(3000);
+    // Refresh via UI navigation instead of page.reload() to avoid breaking React Router
+    // Navigate away to Documents
+    const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+    if (await documentsMenu.count() > 0) {
+      await documentsMenu.click();
+      await page.waitForTimeout(1000);
+    }
 
-    // Re-navigate to user management
+    // Navigate back to user management
     const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
@@ -189,8 +193,8 @@ test.describe('User Management CRUD Operations', () => {
     await page.locator('.ant-menu-item:has-text("ユーザー管理")').click();
     await page.waitForTimeout(2000);
 
-    // Find testuser
-    const testUserRow = page.locator('tr').filter({ hasText: 'testuser' });
+    // Find testuser using exact username
+    const testUserRow = page.locator('tr').filter({ hasText: testUsername });
 
     if (await testUserRow.count() > 0) {
       // Click to view details

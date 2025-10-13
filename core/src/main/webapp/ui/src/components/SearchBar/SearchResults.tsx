@@ -26,6 +26,7 @@ interface SearchResultsProps {
   repositoryId: string;
 }
 
+import { useAuth } from '../../contexts/AuthContext';
 export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
@@ -34,7 +35,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
   const [form] = Form.useForm();
   const navigate = useNavigate();
 
-  const cmisService = new CMISService();
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
 
   useEffect(() => {
     loadTypes();

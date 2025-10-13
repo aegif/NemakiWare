@@ -14,8 +14,10 @@ interface PreviewComponentProps {
   object: CMISObject;
 }
 
+import { useAuth } from '../../contexts/AuthContext';
 export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId, object }) => {
-  const cmisService = new CMISService();
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
 
   if (!object.contentStreamMimeType) {
     return <Alert message="プレビューできません" description="ファイルにコンテンツがありません" type="info" />;

@@ -231,11 +231,15 @@ test.describe('Group Management CRUD Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    // Reload the page
-    await page.reload();
-    await page.waitForTimeout(3000);
+    // Refresh via UI navigation instead of page.reload() to avoid breaking React Router
+    // Navigate away to Documents
+    const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+    if (await documentsMenu.count() > 0) {
+      await documentsMenu.click();
+      await page.waitForTimeout(1000);
+    }
 
-    // Re-navigate to group management
+    // Navigate back to group management
     const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
