@@ -1,14 +1,30 @@
 import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Login } from '../Login/Login';
+import { Spin } from 'antd';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
 
+  // Show loading spinner while checking authentication state
+  if (isLoading) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh'
+      }}>
+        <Spin size="large" tip="認証状態を確認中..." />
+      </div>
+    );
+  }
+
+  // After loading complete, check authentication
   if (!isAuthenticated) {
     return (
       <Login onLogin={(auth: any) => {

@@ -3,6 +3,7 @@ import { AuthService, AuthToken } from '../services/auth';
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  isLoading: boolean;
   authToken: AuthToken | null;
   login: (username: string, password: string, repositoryId: string) => Promise<void>;
   logout: () => void;
@@ -13,6 +14,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [authToken, setAuthToken] = useState<AuthToken | null>(null);
 
   // Initialize authentication state from localStorage
@@ -20,7 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const checkAuthState = () => {
       const authService = AuthService.getInstance();
       const currentAuth = authService.getCurrentAuth();
-      
+
       if (currentAuth) {
         console.log('AuthContext: Found auth data:', currentAuth);
         setAuthToken(currentAuth);
@@ -30,6 +32,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthToken(null);
         setIsAuthenticated(false);
       }
+
+      // Mark initialization as complete
+      setIsLoading(false);
     };
 
     // Initial check
@@ -103,6 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = {
     isAuthenticated,
+    isLoading,
     authToken,
     login,
     logout,

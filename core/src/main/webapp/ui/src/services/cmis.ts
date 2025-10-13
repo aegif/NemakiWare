@@ -205,23 +205,35 @@ export class CMISService {
   private getAuthHeaders() {
     try {
       const authData = localStorage.getItem('nemakiware_auth');
+      console.log('[AUTH DEBUG] getAuthHeaders called, localStorage data:', authData ? 'EXISTS' : 'NULL');
+
       if (authData) {
         const auth = JSON.parse(authData);
+        console.log('[AUTH DEBUG] Parsed auth:', {
+          hasUsername: !!auth.username,
+          hasToken: !!auth.token,
+          tokenLength: auth.token?.length || 0
+        });
+
         if (auth.username && auth.token) {
-          console.log('CMISService getAuthHeaders: Using token-based authentication with Basic auth header and nemaki_auth_token');
+          console.log('[AUTH DEBUG] Using token-based authentication for user:', auth.username);
           // Use Basic auth with username to provide username context
           const credentials = btoa(`${auth.username}:dummy`);
-          return { 
+          return {
             'Authorization': `Basic ${credentials}`,
-            'nemaki_auth_token': auth.token 
+            'nemaki_auth_token': auth.token
           };
+        } else {
+          console.warn('[AUTH DEBUG] Auth data incomplete:', { username: auth.username, hasToken: !!auth.token });
         }
+      } else {
+        console.warn('[AUTH DEBUG] No auth data in localStorage');
       }
     } catch (e) {
-      console.error('CMISService: Failed to get auth from localStorage:', e);
+      console.error('[AUTH DEBUG] Failed to get auth from localStorage:', e);
     }
-    
-    console.warn('CMISService: No authentication available');
+
+    console.warn('[AUTH DEBUG] No authentication available - returning empty headers');
     return {};
   }
 
@@ -233,13 +245,19 @@ export class CMISService {
       message: `HTTP ${status}: ${statusText}`
     };
 
-    console.error('CMIS HTTP Error:', error);
+    console.error('[AUTH DEBUG] CMIS HTTP Error:', error);
 
     // Handle authentication and permission errors - all should redirect to login
     if (status === 401) {
-      console.warn('401 Unauthorized - token may be expired');
+      console.error('[AUTH DEBUG] 401 Unauthorized detected!');
+      console.error('[AUTH DEBUG] URL that failed:', url);
+      console.error('[AUTH DEBUG] Current localStorage auth:', localStorage.getItem('nemakiware_auth') ? 'EXISTS' : 'NULL');
+      console.warn('401 Unauthorized - token may be expired or invalid');
       if (this.onAuthError) {
+        console.log('[AUTH DEBUG] Calling onAuthError handler - will redirect to login');
         this.onAuthError(error);
+      } else {
+        console.warn('[AUTH DEBUG] No onAuthError handler set!');
       }
     } else if (status === 403) {
       console.warn('403 Forbidden - insufficient permissions');
