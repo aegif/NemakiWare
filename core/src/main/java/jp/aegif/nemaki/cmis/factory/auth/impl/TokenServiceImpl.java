@@ -65,10 +65,24 @@ public class TokenServiceImpl implements TokenService{
 			}
 			
 			String token = UUID.randomUUID().toString();
-			
-			long expiration = System.currentTimeMillis() + Long.valueOf(propertyManager.readValue(PropertyKey.AUTH_TOKEN_EXPIRATION));
+
+			String expirationConfig = propertyManager.readValue(PropertyKey.AUTH_TOKEN_EXPIRATION);
+			long expirationMillis = Long.valueOf(expirationConfig);
+			long currentTime = System.currentTimeMillis();
+			long expiration = currentTime + expirationMillis;
+
+			// TOKEN DEBUG: Log token creation details
+			log.info("=== TOKEN CREATION DEBUG ===");
+			log.info("User: " + userName + ", Repository: " + repositoryId + ", App: " + app);
+			log.info("Config value (auth.token.expiration): " + expirationConfig + " ms");
+			log.info("Current time: " + currentTime + " (" + new java.util.Date(currentTime) + ")");
+			log.info("Expiration time: " + expiration + " (" + new java.util.Date(expiration) + ")");
+			log.info("Token will expire in: " + (expirationMillis / 1000) + " seconds (" + (expirationMillis / 60000) + " minutes)");
+			log.info("Token: " + token);
+			log.info("===========================");
+
 			repoMap.put(userName, new Token(userName, token, expiration));
-			
+
 			return repoMap.get(userName);
 		}
 	}

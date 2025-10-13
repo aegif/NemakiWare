@@ -177,14 +177,31 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private boolean authenticateUserByToken(String app, String repositoryId, String userName, String token) {
 		Token registeredToken = tokenService.getToken(app, repositoryId, userName);
 		if (registeredToken == null) {
+			log.warn("[TOKEN VALIDATION] No token found for user: " + userName + ", repository: " + repositoryId + ", app: " + app);
 			return false;
 		} else {
 			long expiration = registeredToken.getExpiration();
-			if (System.currentTimeMillis() > expiration) {
+			long currentTime = System.currentTimeMillis();
+
+			// TOKEN DEBUG: Log token validation details
+			log.info("=== TOKEN VALIDATION DEBUG ===");
+			log.info("User: " + userName + ", Repository: " + repositoryId + ", App: " + app);
+			log.info("Current time: " + currentTime + " (" + new java.util.Date(currentTime) + ")");
+			log.info("Expiration time: " + expiration + " (" + new java.util.Date(expiration) + ")");
+			log.info("Time until expiration: " + ((expiration - currentTime) / 1000) + " seconds");
+			log.info("Token provided: " + (token != null ? token.substring(0, Math.min(8, token.length())) + "..." : "null"));
+			log.info("Token registered: " + (registeredToken.getToken() != null ? registeredToken.getToken().substring(0, Math.min(8, registeredToken.getToken().length())) + "..." : "null"));
+
+			if (currentTime > expiration) {
+				log.warn("[TOKEN VALIDATION] Token EXPIRED for user: " + userName + " (expired " + ((currentTime - expiration) / 1000) + " seconds ago)");
+				log.info("===========================");
 				return false;
 			} else {
 				String _registeredToken = registeredToken.getToken();
-				return StringUtils.isNotEmpty(_registeredToken) && _registeredToken.equals(token);
+				boolean isValid = StringUtils.isNotEmpty(_registeredToken) && _registeredToken.equals(token);
+				log.info("[TOKEN VALIDATION] Token valid: " + isValid);
+				log.info("===========================");
+				return isValid;
 			}
 		}
 	}
