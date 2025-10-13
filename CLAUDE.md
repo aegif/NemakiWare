@@ -84,6 +84,21 @@ if (log.isDebugEnabled()) {
 
 **Files Modified**:
 - `core/src/main/java/jp/aegif/nemaki/init/DatabasePreInitializer.java` (Lines 69-71, 234-237, 538-607)
+- `core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/QueryTestGroup.java` (Static init, constructor, queryLikeTest debug code removed)
+- `core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/CrudTestGroup.java` (createAndDeleteFolderTest debug code removed)
+- `core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/ConnectionTestGroup.java` (All System.out/err.println replaced with assertions)
+
+**Test Verification Results**:
+```
+CrudTestGroup1: 10/10 PASS (668 sec / 11m 12s)
+Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+**Additional Cleanup**:
+- **QueryTestGroup.java**: Removed static initialization and constructor debug logging, cleaned up queryLikeTest method
+- **CrudTestGroup.java**: Removed debug logging from createAndDeleteFolderTest method
+- **ConnectionTestGroup.java**: Replaced 24 System.out/err.println statements with proper assertions, maintaining test functionality
 
 ---
 

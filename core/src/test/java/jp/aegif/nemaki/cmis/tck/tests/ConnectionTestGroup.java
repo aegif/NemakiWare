@@ -20,8 +20,6 @@ public class ConnectionTestGroup extends TckSuite {
 
     @Test
     public void basicConnectionTest() throws Exception {
-        System.out.println("=== BASIC CONNECTION TEST START ===");
-        
         try {
             Map<String, String> parameters = new HashMap<>();
             parameters.put(SessionParameter.BINDING_TYPE, BindingType.BROWSER.value());
@@ -29,31 +27,22 @@ public class ConnectionTestGroup extends TckSuite {
             parameters.put(SessionParameter.USER, "admin");
             parameters.put(SessionParameter.PASSWORD, "admin");
             parameters.put(SessionParameter.REPOSITORY_ID, "bedroom");
-            
+
             // Add timeout parameters
             parameters.put(SessionParameter.CONNECT_TIMEOUT, "30000");
             parameters.put(SessionParameter.READ_TIMEOUT, "120000");
-            
-            System.out.println("Creating session factory...");
+
             SessionFactory factory = SessionFactoryImpl.newInstance();
-            
-            System.out.println("Getting repositories...");
             var repositories = factory.getRepositories(parameters);
-            System.out.println("Found repositories: " + repositories.size());
-            
-            System.out.println("Creating session...");
             Session session = factory.createSession(parameters);
-            System.out.println("Session created: " + session.getRepositoryInfo().getName());
-            
-            System.out.println("Getting root folder...");
             var rootFolder = session.getRootFolder();
-            System.out.println("Root folder: " + rootFolder.getName() + " (ID: " + rootFolder.getId() + ")");
-            
-            System.out.println("=== BASIC CONNECTION TEST SUCCESS ===");
-            
+
+            // Verify basic connectivity
+            assert repositories.size() > 0 : "No repositories found";
+            assert session.getRepositoryInfo().getName() != null : "Repository name is null";
+            assert rootFolder.getName() != null : "Root folder name is null";
+
         } catch (Exception e) {
-            System.err.println("=== BASIC CONNECTION TEST FAILED ===");
-            System.err.println("Error: " + e.getMessage());
             e.printStackTrace();
             throw e;
         }
@@ -61,38 +50,30 @@ public class ConnectionTestGroup extends TckSuite {
     
     @Test
     public void repositoryInfoOnlyTest() throws Exception {
-        System.out.println("=== REPOSITORY INFO ONLY TEST START ===");
-        
         try {
             Map<String, String> parameters = new HashMap<>();
             parameters.put(SessionParameter.BINDING_TYPE, BindingType.BROWSER.value());
             parameters.put(SessionParameter.BROWSER_URL, "http://localhost:8080/core/browser/bedroom");
             parameters.put(SessionParameter.USER, "admin");
             parameters.put(SessionParameter.PASSWORD, "admin");
-            
+
             // Add timeout parameters
             parameters.put(SessionParameter.CONNECT_TIMEOUT, "30000");
             parameters.put(SessionParameter.READ_TIMEOUT, "60000");
-            
-            System.out.println("Creating session factory...");
+
             SessionFactory factory = SessionFactoryImpl.newInstance();
-            
-            System.out.println("Getting repositories (this should be quick)...");
             var repositories = factory.getRepositories(parameters);
-            System.out.println("Found repositories: " + repositories.size());
-            
-            if (!repositories.isEmpty()) {
-                var repo = repositories.get(0);
-                System.out.println("Repository: " + repo.getName() + " (ID: " + repo.getId() + ")");
-                System.out.println("Vendor: " + repo.getVendorName());
-                System.out.println("Product: " + repo.getProductName() + " " + repo.getProductVersion());
-            }
-            
-            System.out.println("=== REPOSITORY INFO ONLY TEST SUCCESS ===");
-            
+
+            // Verify repository information is accessible
+            assert !repositories.isEmpty() : "No repositories found";
+
+            var repo = repositories.get(0);
+            assert repo.getName() != null : "Repository name is null";
+            assert repo.getId() != null : "Repository ID is null";
+            assert repo.getVendorName() != null : "Vendor name is null";
+            assert repo.getProductName() != null : "Product name is null";
+
         } catch (Exception e) {
-            System.err.println("=== REPOSITORY INFO ONLY TEST FAILED ===");
-            System.err.println("Error: " + e.getMessage());
             e.printStackTrace();
             throw e;
         }
