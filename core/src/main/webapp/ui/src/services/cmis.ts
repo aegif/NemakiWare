@@ -1116,11 +1116,12 @@ export class CMISService {
               const rawUsers = response.users || [];
               
               // Transform user data to match UI expectations
+              // Preserve firstName and lastName as separate fields for table display
               const transformedUsers = rawUsers.map((user: any) => ({
                 id: user.userId || user.id,
-                name: user.firstName && user.lastName ? 
-                  `${user.firstName} ${user.lastName}` : 
-                  (user.userName || user.userId || user.id),
+                name: user.userName || user.userId || user.id,
+                firstName: user.firstName,
+                lastName: user.lastName,
                 email: user.email,
                 groups: user.groups || []
               }));
@@ -1185,12 +1186,12 @@ export class CMISService {
       xhr.open('POST', `${this.restBaseUrl}/${repositoryId}/user/create/${user.id}`, true);
       xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
@@ -1205,17 +1206,21 @@ export class CMISService {
           }
         }
       };
-      
+
       xhr.onerror = () => reject(new Error('Network error'));
-      
+
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
       formData.append('name', user.name || '');  // FORM_USERNAME = "name"
       formData.append('firstName', user.firstName || '');  // FORM_FIRSTNAME = "firstName"
       formData.append('lastName', user.lastName || '');  // FORM_LASTNAME = "lastName"
-      formData.append('email', user.email || '');  // FORM_EMAIL = "email"  
+      formData.append('email', user.email || '');  // FORM_EMAIL = "email"
       formData.append('password', user.password || '');  // FORM_PASSWORD = "password"
-      
+      // Add groups parameter - serialize as JSON
+      if (user.groups && user.groups.length > 0) {
+        formData.append('groups', JSON.stringify(user.groups));
+      }
+
       xhr.send(formData.toString());
     });
   }
@@ -1226,12 +1231,12 @@ export class CMISService {
       xhr.open('PUT', `${this.restBaseUrl}/${repositoryId}/user/update/${userId}`, true);
       xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
@@ -1246,16 +1251,20 @@ export class CMISService {
           }
         }
       };
-      
+
       xhr.onerror = () => reject(new Error('Network error'));
-      
+
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
       formData.append('name', user.name || '');  // FORM_USERNAME = "name"
       formData.append('firstName', user.firstName || '');  // FORM_FIRSTNAME = "firstName"
       formData.append('lastName', user.lastName || '');  // FORM_LASTNAME = "lastName"
       formData.append('email', user.email || '');  // FORM_EMAIL = "email"
-      
+      // Add groups parameter - serialize as JSON
+      if (user.groups !== undefined) {
+        formData.append('groups', JSON.stringify(user.groups));
+      }
+
       xhr.send(formData.toString());
     });
   }

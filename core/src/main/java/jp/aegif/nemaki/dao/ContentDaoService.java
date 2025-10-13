@@ -415,6 +415,17 @@ public interface ContentDaoService {
 
 	GroupItem getGroupItem(String repositoryId, String objectId);
 	GroupItem getGroupItemById(String repositoryId, String userId);
+
+	/**
+	 * Get group item by group ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations (e.g., retry logic with optimistic locking)
+	 *
+	 * @param repositoryId
+	 * @param groupId
+	 * @return fresh group item from database, if nothing found, return null
+	 */
+	GroupItem getGroupItemByIdFresh(String repositoryId, String groupId);
+
 	List<GroupItem> getGroupItems(String repositoryId);
 	List<String> getJoinedGroupByUserId(String repositoryId, String userId);
 

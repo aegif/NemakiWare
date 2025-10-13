@@ -1,24 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Table, 
-  Button, 
-  Space, 
-  Modal, 
-  Form, 
-  Input, 
-  message, 
+import {
+  Table,
+  Button,
+  Space,
+  Modal,
+  Form,
+  Input,
+  message,
   Popconfirm,
   Card,
-  Tag
+  Tag,
+  Select
 } from 'antd';
-import { 
-  UserOutlined, 
-  PlusOutlined, 
-  EditOutlined, 
-  DeleteOutlined 
+import {
+  UserOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined
 } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
-import { User } from '../../types/cmis';
+import { User, Group } from '../../types/cmis';
 
 interface UserManagementProps {
   repositoryId: string;
@@ -26,6 +27,7 @@ interface UserManagementProps {
 
 export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) => {
   const [users, setUsers] = useState<User[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -36,6 +38,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
 
   useEffect(() => {
     loadUsers();
+    loadGroups();
   }, [repositoryId]);
 
   const loadUsers = async () => {
@@ -45,10 +48,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       setUsers(userList);
     } catch (error: any) {
       console.error('UserManagement: loadUsers error:', error);
-      
+
       // エラーの詳細情報を構築
       let errorMessage = 'ユーザーの読み込みに失敗しました';
-      
+
       if (error.status === 500) {
         // サーバー側でHTTP 500が返された場合（根本的な問題）
         errorMessage = 'サーバー側でエラーが発生しています';
@@ -68,10 +71,21 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
+
       message.error(errorMessage);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadGroups = async () => {
+    try {
+      const groupList = await cmisService.getGroups(repositoryId);
+      setGroups(groupList);
+    } catch (error: any) {
+      console.error('UserManagement: loadGroups error:', error);
+      // グループ読み込み失敗はユーザー管理では警告レベル
+      console.warn('グループの読み込みに失敗しました。グループ選択が制限される可能性があります。');
     }
   };
 
@@ -150,13 +164,15 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
     form.resetFields();
   };
 
-  // Filter users based on search text
+  // Filter users based on search text (includes firstName and lastName)
   const filteredUsers = users.filter(user => {
     if (!searchText) return true;
     const searchLower = searchText.toLowerCase();
     return (
       user.id.toLowerCase().includes(searchLower) ||
       user.name?.toLowerCase().includes(searchLower) ||
+      user.firstName?.toLowerCase().includes(searchLower) ||
+      user.lastName?.toLowerCase().includes(searchLower) ||
       user.email?.toLowerCase().includes(searchLower)
     );
   });
@@ -171,23 +187,51 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       title: 'ユーザー名',
       dataIndex: 'name',
       key: 'name',
+      render: (name: string, record: User) => {
+        // nameがnullまたは空の場合、firstName + lastNameを表示
+        if (!name || name.trim() === '') {
+          const fullName = [record.firstName, record.lastName]
+            .filter(n => n && n.trim() !== '')
+            .join(' ');
+          return fullName || '-';
+        }
+        return name;
+      },
+    },
+    {
+      title: '名',
+      dataIndex: 'firstName',
+      key: 'firstName',
+      render: (firstName: string) => firstName && firstName.trim() !== '' ? firstName : '-',
+    },
+    {
+      title: '姓',
+      dataIndex: 'lastName',
+      key: 'lastName',
+      render: (lastName: string) => lastName && lastName.trim() !== '' ? lastName : '-',
     },
     {
       title: 'メールアドレス',
       dataIndex: 'email',
       key: 'email',
+      render: (email: string) => email && email.trim() !== '' ? email : '-',
     },
     {
       title: '所属グループ',
       dataIndex: 'groups',
       key: 'groups',
-      render: (groups: string[]) => (
-        <Space wrap>
-          {groups?.map(group => (
-            <Tag key={group} color="blue">{group}</Tag>
-          ))}
-        </Space>
-      ),
+      render: (groups: string[]) => {
+        if (!groups || groups.length === 0) {
+          return '-';
+        }
+        return (
+          <Space wrap>
+            {groups.map(group => (
+              <Tag key={group} color="blue">{group}</Tag>
+            ))}
+          </Space>
+        );
+      },
     },
     {
       title: 'アクション',
@@ -237,7 +281,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       </div>
 
       <Input.Search
-        placeholder="ユーザーを検索 (ID、名前、メールアドレス)"
+        placeholder="ユーザーを検索 (ID、名前、名、姓、メールアドレス)"
         allowClear
         value={searchText}
         onChange={(e) => setSearchText(e.target.value)}
@@ -324,6 +368,20 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
               <Input.Password placeholder="パスワードを入力" />
             </Form.Item>
           )}
+
+          <Form.Item
+            name="groups"
+            label="所属グループ"
+          >
+            <Select
+              mode="multiple"
+              placeholder="グループを選択"
+              options={groups.map(group => ({
+                label: group.name || group.id,
+                value: group.id
+              }))}
+            />
+          </Form.Item>
 
           <Form.Item>
             <Space>

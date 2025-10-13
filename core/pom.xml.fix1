@@ -983,10 +983,6 @@
 										<include name="chemistry-opencmis-commons-impl-1.1.0-nemakiware.jar"/>
 										<include name="chemistry-opencmis-commons-api-1.1.0-nemakiware.jar"/>
 										<include name="chemistry-opencmis-server-support-1.1.0-nemakiware.jar"/>
-										<include name="chemistry-opencmis-client-impl-1.1.0-nemakiware.jar"/>
-										<include name="chemistry-opencmis-client-api-1.1.0-nemakiware.jar"/>
-										<include name="chemistry-opencmis-client-bindings-1.1.0-nemakiware.jar"/>
-										<include name="chemistry-opencmis-test-tck-1.1.0-nemakiware.jar"/>
 									</fileset>
 								</copy>
 								<echo message="Copied Jakarta EE 10 compatible OpenCMIS 1.1.0-nemakiware JARs from fixed MultipartParser locations"/>
@@ -1037,10 +1033,6 @@
 												<include name="chemistry-opencmis-commons-impl-1.1.0-nemakiware.jar"/>
 												<include name="chemistry-opencmis-commons-api-1.1.0-nemakiware.jar"/>
 												<include name="chemistry-opencmis-server-support-1.1.0-nemakiware.jar"/>
-												<include name="chemistry-opencmis-client-impl-1.1.0-nemakiware.jar"/>
-												<include name="chemistry-opencmis-client-api-1.1.0-nemakiware.jar"/>
-												<include name="chemistry-opencmis-client-bindings-1.1.0-nemakiware.jar"/>
-												<include name="chemistry-opencmis-test-tck-1.1.0-nemakiware.jar"/>
 											</fileset>
 										</copy>
 										<echo message="Development: Copied Jakarta EE 10 compatible OpenCMIS 1.1.0-nemakiware JARs from fixed MultipartParser locations"/>

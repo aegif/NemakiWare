@@ -1595,30 +1595,98 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public GroupItem getGroupItemById(String repositoryId, String groupId) {
+		return getGroupItemByIdInternal(repositoryId, groupId, false);
+	}
+
+	@Override
+	public GroupItem getGroupItemByIdFresh(String repositoryId, String groupId) {
+		// CRITICAL FIX: Force CouchDB view index update to get absolutely fresh data
+		// This bypasses view caching and lazy indexing to prevent stale revision issues
+		return getGroupItemByIdInternal(repositoryId, groupId, true);
+	}
+
+	/**
+	 * Internal method to get group item by ID with optional forceUpdate parameter
+	 * @param forceUpdate If true, forces CouchDB view index to update before querying (bypasses cache)
+	 */
+	private GroupItem getGroupItemByIdInternal(String repositoryId, String groupId, boolean forceUpdate) {
 		try {
-			// Use ViewQuery to get group item by ID
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			queryParams.put("key", groupId);
-			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams);
-			
-			if (result.getRows() != null && !result.getRows().isEmpty()) {
-				ViewResultRow row = result.getRows().get(0);
-				if (row.getDoc() != null) {
-					try {
-						ObjectMapper mapper = createConfiguredObjectMapper();
-						CouchGroupItem cgi = mapper.convertValue(row.getDoc(), CouchGroupItem.class);
-						if (cgi != null) {
-							return cgi.convert();
-						}
-					} catch (Exception e) {
-						log.warn("Failed to convert group item document: " + e.getMessage());
+			if (forceUpdate) {
+				log.info("=== getGroupItemById FRESH (force view update) for groupId: " + groupId + " ===");
+			} else {
+				log.info("=== getGroupItemById for groupId: " + groupId + " in repository: " + repositoryId + " ===");
+			}
+
+			// Use CloudantClientWrapper from connectorPool
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			ViewResult result = client.queryView("_repo", "groupItemsById", groupId, forceUpdate);
+
+			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
+				log.info("Found " + result.getRows().size() + " matching group documents");
+
+				ViewResultRow firstRow = result.getRows().get(0);
+				// CRITICAL FIX (2025-10-13): CouchDB includeDocs returns STALE documents from view index
+				// Even with update=true, the documents are from the view snapshot, not current DB state
+				// Solution: Get document ID from view, then fetch DIRECTLY from database
+				String documentId = firstRow.getId();
+
+				log.error("!!! CRITICAL: Fetching FRESH document directly from DB, ID=" + documentId);
+
+				// Fetch the absolute latest revision directly from CouchDB (NOT from view result)
+				com.ibm.cloud.cloudant.v1.model.Document freshDoc = client.get(documentId);
+
+				if (freshDoc == null) {
+					log.error("!!! CRITICAL: Direct DB fetch returned NULL for ID=" + documentId);
+					return null;
+				}
+
+				log.error("!!! CRITICAL: Fresh document fetched: ID=" + freshDoc.getId() + ", Rev=" + freshDoc.getRev());
+
+				// Convert Cloudant Document to Map for processing
+				Map<String, Object> docMap = new HashMap<>();
+				docMap.put("_id", freshDoc.getId());
+				docMap.put("_rev", freshDoc.getRev());
+				if (freshDoc.getProperties() != null) {
+					docMap.putAll(freshDoc.getProperties());
+				}
+
+				log.info("Raw document class: " + docMap.getClass().getName());
+
+				if (docMap != null) {
+					log.info("Document contains groupId: " + docMap.get("groupId") + ", _id: " + docMap.get("_id") + ", _rev: " + docMap.get("_rev"));
+
+					// SECURITY FIX: Validate that returned group actually matches requested groupId
+					String returnedGroupId = (String) docMap.get("groupId");
+					if (!groupId.equals(returnedGroupId)) {
+						log.warn("SECURITY WARNING: Requested groupId '" + groupId + "' but got groupId '" + returnedGroupId + "' - returning null");
+						return null;
+					}
+
+					// Use the Map-based constructor we created
+					CouchGroupItem cgi = new CouchGroupItem(docMap);
+
+					log.info("CouchGroupItem created - groupId: " + cgi.getGroupId() +
+						", id: " + cgi.getId() + ", revision: " + cgi.getRevision() + ", type: " + cgi.getType());
+
+					// Validate required fields
+					if (cgi.getGroupId() != null && cgi.getId() != null && cgi.getRevision() != null && cgi.getType() != null) {
+						GroupItem result_groupItem = cgi.convert();
+						log.info("GroupItem converted - id: " + result_groupItem.getId() + ", revision: " + result_groupItem.getRevision());
+						return result_groupItem;
+					} else {
+						log.error("Missing required fields - groupId: " + cgi.getGroupId() +
+							", id: " + cgi.getId() + ", revision: " + cgi.getRevision() + ", type: " + cgi.getType());
+						return null;
 					}
 				}
+			} else {
+				log.warn("No group found with groupId: " + groupId + " in repository: " + repositoryId);
 			}
-			
+
 			return null;
+
 		} catch (Exception e) {
-			log.error("Error getting group item by ID: " + groupId + ", error: " + e.getMessage());
+			log.error("Error in getGroupItemByIdInternal for groupId '" + groupId + "' in repository '" + repositoryId + "'", e);
 			return null;
 		}
 	}
@@ -2103,20 +2171,24 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public GroupItem update(String repositoryId, GroupItem groupItem) {
+		log.error("!!! UPDATE ENTRY: GroupItem ID=" + groupItem.getId() + ", Rev=" + groupItem.getRevision());
+
 		CouchGroupItem update = new CouchGroupItem(groupItem);
-		
+
+		log.error("!!! AFTER CouchGroupItem CONVERSION: ID=" + update.getId() + ", Rev=" + update.getRevision());
+
 		// Ektorp-style: Object must maintain its own revision state
 		// CloudantClientWrapper expects objects to have valid revisions
 		if (update.getRevision() == null || update.getRevision().isEmpty()) {
 			throw new IllegalArgumentException("GroupItem " + groupItem.getId() + " has no revision - " +
 				"objects must maintain revision state per Ektorp patterns");
 		}
-		
+
 		log.debug("Ektorp-style update: using object revision " + update.getRevision() + " for group " + groupItem.getId());
-		
+
 		// CloudantClientWrapper will handle the actual revision management
 		connectorPool.getClient(repositoryId).update(update);
-		
+
 		// Return updated object with new revision maintained by CloudantClientWrapper
 		GroupItem result = update.convert();
 		log.debug("Update completed, new revision: " + result.getRevision());

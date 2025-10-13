@@ -769,6 +769,27 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public GroupItem getGroupItemByIdFresh(String repositoryId, String groupId) {
+		log.info("CACHE BYPASS: Getting fresh group item from database for groupId=" + groupId);
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		try {
+			// CRITICAL FIX: Call Fresh method on non-cached layer (not regular method!)
+			GroupItem freshGroup = nonCachedContentDaoService.getGroupItemByIdFresh(repositoryId, groupId);
+			if (freshGroup != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh group for " + groupId +
+					", revision=" + freshGroup.getRevision());
+			}
+			return freshGroup;
+		} catch (Exception e) {
+			log.error("Error in getGroupItemByIdFresh", e);
+			return null;
+		}
+	}
+
+	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return nonCachedContentDaoService.getGroupItems(repositoryId);
 	}

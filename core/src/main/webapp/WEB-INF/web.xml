@@ -304,6 +304,19 @@
   <load-on-startup>1</load-on-startup>
  </servlet>
 
+ <!-- React SPA Fallback Servlet - handles client-side routing -->
+ <servlet>
+  <servlet-name>react-spa-fallback</servlet-name>
+  <servlet-class>jp.aegif.nemaki.ui.ReactSpaFallbackServlet</servlet-class>
+  <load-on-startup>12</load-on-startup>
+ </servlet>
+
+<!-- Map React SPA fallback servlet to handle client-side routing -->
+<servlet-mapping>
+ <servlet-name>react-spa-fallback</servlet-name>
+ <url-pattern>/ui/dist/*</url-pattern>
+</servlet-mapping>
+
  <!-- Map default servlet to handle static resources -->
  <servlet-mapping>
   <servlet-name>default</servlet-name>

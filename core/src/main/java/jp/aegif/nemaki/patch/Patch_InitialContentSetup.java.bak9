@@ -280,8 +280,8 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
         try {
             // Register CMIS Specification Resources document
             final String cmisResourcesName = "CMIS 1.1 Specification Resources.txt";
-            log.info("=== CHECKING CMIS SPECIFICATION RESOURCES DOCUMENT ===");
-            log.info("Repository: " + repositoryId + ", Parent Folder: " + parentFolderId);
+            log.error("=== CHECKING CMIS SPECIFICATION RESOURCES DOCUMENT ===");
+            log.error("Repository: " + repositoryId + ", Parent Folder: " + parentFolderId);
 
             Document existingCmisDoc = findExistingDocumentByName(repositoryId, parentFolderId, cmisResourcesName);
             if (existingCmisDoc == null) {
@@ -313,7 +313,7 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
 
             // Register Welcome document
             final String welcomeName = "Welcome to NemakiWare.txt";
-            log.info("=== CHECKING WELCOME DOCUMENT ===");
+            log.error("=== CHECKING WELCOME DOCUMENT ===");
             Document existingWelcome = findExistingDocumentByName(repositoryId, parentFolderId, welcomeName);
             if (existingWelcome == null) {
                 log.info("Welcome document NOT FOUND - creating new document");
@@ -342,7 +342,7 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
             } else {
                 log.info("Welcome document ALREADY EXISTS (ID: " + existingWelcome.getId() + ") - skipping");
             }
-            log.info("=== INITIAL DOCUMENTS REGISTRATION COMPLETE ===");
+            log.error("=== INITIAL DOCUMENTS REGISTRATION COMPLETE ===");
 
         } catch (Exception e) {
             log.error("Error registering initial documents in Technical Documents folder", e);

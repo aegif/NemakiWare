@@ -184,23 +184,29 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       title: 'グループ名',
       dataIndex: 'name',
       key: 'name',
+      render: (name: string) => name && name.trim() !== '' ? name : '-',
     },
     {
       title: 'メンバー',
       dataIndex: 'members',
       key: 'members',
-      render: (members: string[]) => (
-        <Space wrap>
-          {members?.slice(0, 3).map(member => (
-            <Tag key={member} icon={<UserOutlined />} color="green">
-              {member}
-            </Tag>
-          ))}
-          {members?.length > 3 && (
-            <Tag color="default">+{members.length - 3} more</Tag>
-          )}
-        </Space>
-      ),
+      render: (members: string[]) => {
+        if (!members || members.length === 0) {
+          return '-';
+        }
+        return (
+          <Space wrap>
+            {members.slice(0, 3).map(member => (
+              <Tag key={member} icon={<UserOutlined />} color="green">
+                {member}
+              </Tag>
+            ))}
+            {members.length > 3 && (
+              <Tag color="default">+{members.length - 3} more</Tag>
+            )}
+          </Space>
+        );
+      },
     },
     {
       title: 'アクション',
@@ -308,10 +314,20 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
             <Select
               mode="multiple"
               placeholder="メンバーを選択"
-              options={users.map(user => ({
-                label: `${user.name} (${user.id})`,
-                value: user.id
-              }))}
+              options={users.map(user => {
+                // nameがnullまたは空の場合、firstName + lastNameを使用
+                let displayName = user.name;
+                if (!displayName || displayName.trim() === '') {
+                  const fullName = [user.firstName, user.lastName]
+                    .filter(n => n && n.trim() !== '')
+                    .join(' ');
+                  displayName = fullName || user.id;
+                }
+                return {
+                  label: `${displayName} (${user.id})`,
+                  value: user.id
+                };
+              })}
             />
           </Form.Item>
 

@@ -46,7 +46,10 @@ export interface ACL {
 export interface User {
   id: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
   email?: string;
+  password?: string;
   groups: string[];
 }
 

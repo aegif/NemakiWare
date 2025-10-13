@@ -464,6 +464,11 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public GroupItem getGroupItemByIdFresh(String repositoryId, String groupId) {
+		return contentDaoService.getGroupItemByIdFresh(repositoryId, groupId);
+	}
+
+	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return contentDaoService.getGroupItems(repositoryId);
 	}
@@ -2239,6 +2244,13 @@ public class ContentServiceImpl implements ContentService {
 				log.error("Attempting getAllVersions for versionSeriesId: {}", versionSeriesId);
 				versionList = getAllVersions(callContext, repositoryId, versionSeriesId);
 				log.error("getAllVersions succeeded, found {} versions", versionList.size());
+
+				// TCK FIX (2025-10-14): If getAllVersions returns 0, add the current document
+				// This happens when a document has no versions in the version series
+				if (versionList.isEmpty()) {
+					log.error("getAllVersions returned 0 versions - adding current document to deletion list");
+					versionList.add(document);
+				}
 			} catch (Exception e) {
 				log.error("CRITICAL: getAllVersions failed for versionSeriesId {}: {}", versionSeriesId, e.getMessage(), e);
 				// Fall back to single version deletion
@@ -2248,7 +2260,7 @@ public class ContentServiceImpl implements ContentService {
 		} else {
 			versionList.add(document);
 		}
-		
+
 		log.error("Final versionList size: {} for document: {}", versionList.size(), objectId);
 
 		// Delete
