@@ -93,12 +93,28 @@ if (log.isDebugEnabled()) {
 CrudTestGroup1: 10/10 PASS (668 sec / 11m 12s)
 Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
+
+CrudTestGroup2: 9/9 PASS (281 sec / 4m 41s)
+Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+Total time: 04:44 min
 ```
 
 **Additional Cleanup**:
 - **QueryTestGroup.java**: Removed static initialization and constructor debug logging, cleaned up queryLikeTest method
 - **CrudTestGroup.java**: Removed debug logging from createAndDeleteFolderTest method
 - **ConnectionTestGroup.java**: Replaced 24 System.out/err.println statements with proper assertions, maintaining test functionality
+- **TypesTestGroup.java**: Removed unused JUnitProgressMonitor class (dead code shadowed by TestGroupBase implementation)
+
+**Workaround Class Deprecation**:
+Following classes marked as @Ignore with deprecation comments (created as workarounds for hang issues, now resolved):
+- **TypesTestGroupFixed.java**: Alternative implementation bypassing JUnitRunner (lines 1-155)
+- **TypesTestGroupFixed2.java**: Alternative implementation with @Before setup (lines 1-120)
+- **DirectTckTestRunner.java**: Direct TCK test runner bypassing JUnitRunner framework (11 test methods)
+- **DirectTckTestRunnerDetailed.java**: Detailed version with comprehensive logging
+- **DirectTckTestRunnerValidation.java**: Validation tool for DirectTckTestRunner
+
+All workaround classes preserved for reference with clear deprecation notices: "DEPRECATED: Use standard test groups - hang issue resolved by TestGroupBase static initialization fix"
 
 ---
 

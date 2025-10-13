@@ -2,6 +2,7 @@ package jp.aegif.nemaki.cmis.tck.tests;
 
 import org.junit.Test;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
@@ -15,9 +16,14 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
+ * DEPRECATED: This class was created as a diagnostic tool for JUnitRunner hang issues.
+ * The hang issue has been resolved by static initialization fix in TestGroupBase.
+ * Use standard test groups instead - this class is kept for reference only.
+ *
  * Detailed version of DirectTckTestRunner with comprehensive logging
  * to verify what is actually being tested
  */
+@Ignore("DEPRECATED: Use standard test groups - hang issue resolved by TestGroupBase static initialization fix")
 public class DirectTckTestRunnerDetailed {
 
     private Session createSession() throws Exception {
