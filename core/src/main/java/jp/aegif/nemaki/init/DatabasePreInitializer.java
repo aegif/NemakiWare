@@ -206,16 +206,55 @@ public class DatabasePreInitializer {
                     java.net.URL designUrl = new java.net.URL(couchdbUrl + "/" + dbName + "/_design/_repo");
                     java.net.HttpURLConnection designConn = (java.net.HttpURLConnection) designUrl.openConnection();
                     designConn.setRequestProperty("Authorization", "Basic " + encodedAuth);
-                    designConn.setRequestMethod("HEAD");
-                    
+                    designConn.setRequestMethod("GET");  // Changed from HEAD to GET to read content
+
                     int designResponseCode = designConn.getResponseCode();
-                    designConn.disconnect();
-                    
+
                     if (designResponseCode != 200) {
+                        designConn.disconnect();
                         if (log.isDebugEnabled()) {
                             log.debug("CHECKING: Database " + dbName + " missing design documents, initialization needed");
                         }
                         log.info("CHECKING: Database " + dbName + " missing design documents, full initialization needed");
+                        return false;
+                    }
+
+                    // CRITICAL FIX: Verify design document has all required views (43 for bedroom/canopy)
+                    // Patch_StandardCmisViews only creates 5 views, which is incomplete!
+                    java.io.BufferedReader designReader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(designConn.getInputStream()));
+                    String designResponseStr = designReader.lines().reduce("", (a, b) -> a + b);
+                    designReader.close();
+                    designConn.disconnect();
+
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    com.fasterxml.jackson.databind.JsonNode designDoc = mapper.readTree(designResponseStr);
+
+                    if (designDoc.has("views")) {
+                        int viewCount = designDoc.get("views").size();
+                        // bedroom and canopy require 43 views from dump file
+                        // Patch_StandardCmisViews only creates 5 views (incomplete)
+                        int requiredViews = ("bedroom".equals(dbName) || "canopy".equals(dbName)) ? 43 : 0;
+
+                        if (viewCount < requiredViews) {
+                            if (log.isDebugEnabled()) {
+                                log.debug("CHECKING: Database " + dbName + " has incomplete views (" +
+                                    viewCount + "/" + requiredViews + "), initialization needed");
+                            }
+                            log.info("CHECKING: Database " + dbName + " has incomplete views (" +
+                                viewCount + "/" + requiredViews + "), full initialization needed");
+                            return false;
+                        }
+
+                        if (log.isDebugEnabled()) {
+                            log.debug("CHECKING: Database " + dbName + " has complete views (" + viewCount + ")");
+                        }
+                        log.info("CHECKING: Database " + dbName + " has complete views (" + viewCount + ")");
+                    } else {
+                        if (log.isDebugEnabled()) {
+                            log.debug("CHECKING: Database " + dbName + " design document has no views, initialization needed");
+                        }
+                        log.info("CHECKING: Database " + dbName + " design document has no views, full initialization needed");
                         return false;
                     }
                 } else {
