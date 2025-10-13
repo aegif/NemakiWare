@@ -67,10 +67,7 @@ public class DatabasePreInitializer {
     }
     
     public DatabasePreInitializer() {
-        if (log.isDebugEnabled()) {
-            log.debug("DatabasePreInitializer constructor called");
-        }
-        log.info("DatabasePreInitializer constructor called");
+        // Constructor - initialization handled by Spring init-method
     }
     
     /**
@@ -232,9 +229,9 @@ public class DatabasePreInitializer {
 
                     if (designDoc.has("views")) {
                         int viewCount = designDoc.get("views").size();
-                        // bedroom and canopy require 43 views from dump file
+                        // bedroom and canopy require 38 views from dump file
                         // Patch_StandardCmisViews only creates 5 views (incomplete)
-                        int requiredViews = ("bedroom".equals(dbName) || "canopy".equals(dbName)) ? 43 : 0;
+                        int requiredViews = ("bedroom".equals(dbName) || "canopy".equals(dbName)) ? 38 : 0;
 
                         if (viewCount < requiredViews) {
                             if (log.isDebugEnabled()) {
@@ -537,11 +534,12 @@ public class DatabasePreInitializer {
             for (int i = 0; i < repositories.length; i++) {
                 String repositoryId = repositories[i];
                 String rootFolderId = rootFolderIds[i];
-                
-                System.out.println("=== SYSTEM FOLDER CHECK: Validating repository: " + repositoryId + " ===");
-                
+
+                if (log.isDebugEnabled()) {
+                    log.debug("Validating .system folder for repository: " + repositoryId);
+                }
+
                 // Count .system folders using direct document queries to detect duplicates
-                System.out.println("=== SYSTEM FOLDER CHECK: Counting .system folders by querying all documents ===");
                 
                 java.net.URL allDocsUrl = new java.net.URL(couchdbUrl + "/" + repositoryId + "/_all_docs?include_docs=true");
                 java.net.HttpURLConnection allDocsConn = (java.net.HttpURLConnection) allDocsUrl.openConnection();
@@ -567,36 +565,45 @@ public class DatabasePreInitializer {
                                     doc.has("parentId") && rootFolderId.equals(doc.get("parentId").asText()) &&
                                     doc.has("type") && "cmis:folder".equals(doc.get("type").asText())) {
                                     systemFolderCount++;
-                                    System.out.println("=== SYSTEM FOLDER CHECK: Found .system folder: " + doc.get("_id").asText() + " ===");
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Found .system folder: " + doc.get("_id").asText());
+                                    }
                                 }
                             }
                         }
                     }
-                    
-                    System.out.println("=== SYSTEM FOLDER CHECK: Total .system folders found: " + systemFolderCount + " ===");
-                    
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("Total .system folders found: " + systemFolderCount);
+                    }
+
                     if (systemFolderCount > 1) {
-                        System.out.println("=== SYSTEM FOLDER CHECK: Found " + systemFolderCount + " .system folders - duplicates detected! ===");
+                        log.warn("Found " + systemFolderCount + " .system folders - duplicates detected!");
                         allDocsConn.disconnect();
                         return false;
                     } else if (systemFolderCount == 0) {
-                        System.out.println("=== SYSTEM FOLDER CHECK: No .system folders found - initialization needed ===");
+                        log.info("No .system folders found - initialization needed");
                         allDocsConn.disconnect();
                         return false;
                     } else {
-                        System.out.println("=== SYSTEM FOLDER CHECK: Found exactly 1 .system folder - correct! ===");
+                        if (log.isDebugEnabled()) {
+                            log.debug("Found exactly 1 .system folder - correct!");
+                        }
                     }
                 }
                 allDocsConn.disconnect();
-                
-                System.out.println("=== SYSTEM FOLDER CHECK: Repository " + repositoryId + " .system folder validation passed ===");
+
+                if (log.isDebugEnabled()) {
+                    log.debug("Repository " + repositoryId + " .system folder validation passed");
+                }
             }
-            
-            System.out.println("=== SYSTEM FOLDER CHECK: All .system folder configurations valid ===");
+
+            if (log.isDebugEnabled()) {
+                log.debug("All .system folder configurations valid");
+            }
             return true;
             
         } catch (Exception e) {
-            System.out.println("=== SYSTEM FOLDER CHECK: Error validating .system folder configuration: " + e.getMessage() + " ===");
             log.warn("Error validating .system folder configuration", e);
             return false; // Trigger full initialization if validation fails
         }

@@ -36,6 +36,57 @@ Commit: b51046391
 
 ---
 
+## Recent Major Changes (2025-10-14 - DatabasePreInitializer Code Quality Improvements) ✅
+
+### Production Readiness - Code Cleanup and Validation Correction
+
+**CODE QUALITY IMPROVEMENTS (2025-10-14)**: DatabasePreInitializer.javaのコード品質改善を実施。本番環境向けのログレベル正規化と、view count validationの正確性向上。
+
+**改善内容**:
+
+1. **View Count Validation Correction** (Line 234-237):
+   - **修正前**: 43 views required (不正確)
+   - **修正後**: 38 views required (dump fileの実際の内容に合わせて修正)
+   - **理由**: bedroom_init.dump と canopy_init.dump には実際に38個のviewが含まれている
+   - **影響**: データベース初期化の正確な検証により、不要な初期化処理を防止
+
+2. **Debug Log Code Cleanup**:
+   - **Constructor Simplification** (Lines 69-71): 冗長なデバッグログを削除
+   - **System.out.println Elimination** (Lines 538-607): 全てのSystem.out.printlnを適切なログレベルに置換
+   - **Log Level Normalization**:
+     - `log.debug()` with `isDebugEnabled()` guards: 詳細な診断情報
+     - `log.info()`: 通常の処理状況
+     - `log.warn()`: 警告・エラー情報
+
+**Technical Implementation**:
+
+```java
+// View count validation correction (Line 234)
+// bedroom and canopy require 38 views from dump file
+// Patch_StandardCmisViews only creates 5 views (incomplete)
+int requiredViews = ("bedroom".equals(dbName) || "canopy".equals(dbName)) ? 38 : 0;
+
+// Debug logging example (Lines 538-541)
+if (log.isDebugEnabled()) {
+    log.debug("Validating .system folder for repository: " + repositoryId);
+}
+
+// System.out.println removed (Line 607)
+// BEFORE: System.out.println("=== SYSTEM FOLDER CHECK: Error...");
+// AFTER: log.warn("Error validating .system folder configuration", e);
+```
+
+**Production Benefits**:
+- ✅ Accurate database validation prevents unnecessary initialization
+- ✅ Clean log output facilitates production monitoring
+- ✅ Proper log levels enable effective debugging
+- ✅ Reduced log noise improves issue detection
+
+**Files Modified**:
+- `core/src/main/java/jp/aegif/nemaki/init/DatabasePreInitializer.java` (Lines 69-71, 234-237, 538-607)
+
+---
+
 ## Recent Major Changes (2025-10-13 - Root Folder Permission Fix for All Authenticated Users) ✅
 
 ### Root Folder GROUP_EVERYONE Permission - PRODUCT FIX COMPLETE
