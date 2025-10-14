@@ -17,7 +17,6 @@ public abstract class AbstractNemakiPatch {
 
 
 	public void apply(){
-		System.err.println("!!! AbstractNemakiPatch.apply() called for patch: " + (getName() != null ? getName() : "UNKNOWN") + " !!!");
 		log.error("=== AbstractNemakiPatch.apply() called for patch: " + getName() + " ===");
 		applySystemPatch();
 

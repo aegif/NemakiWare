@@ -1363,8 +1363,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 		// NemakiWare often sets change token to null, which becomes "null" string in properties
 		String contentChangeToken = content.getChangeToken();
 		String requestChangeToken = (changeToken != null) ? changeToken.getValue() : null;
-		System.err.println("Content ID: " + content.getId());
-		System.err.println("Content type: " + content.getObjectType());
+
+		if (log.isDebugEnabled()) {
+			log.debug("Update conflict check - Content ID: " + content.getId());
+			log.debug("Update conflict check - Content type: " + content.getObjectType());
+		}
 
 		// If both are null or "null", allow the update (no conflict)
 		if (isNullOrNullString(contentChangeToken) && isNullOrNullString(requestChangeToken)) {
