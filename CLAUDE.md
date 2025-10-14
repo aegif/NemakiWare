@@ -116,6 +116,74 @@ Following classes marked as @Ignore with deprecation comments (created as workar
 
 All workaround classes preserved for reference with clear deprecation notices: "DEPRECATED: Use standard test groups - hang issue resolved by TestGroupBase static initialization fix"
 
+### Production Code Debug Statement Cleanup (Continued - 2025-10-14)
+
+**PRODUCTION READINESS**: 本番コードからSystem.out/err.printlnを段階的に削除し、適切なロギングフレームワークに置換。
+
+**Phase 1 Completion - Critical Production Files (4 files, 13 statements)**:
+
+**改善内容**:
+
+1. **NemakiBrowserBindingServlet.java** (Line 279):
+   - Multipart request detection debug statement
+   - Replaced: `System.out.println("*** MULTIPART DEBUG: ...")`
+   - With: `if (log.isDebugEnabled()) { log.debug("Multipart request detected...") }`
+
+2. **CompileServiceImpl.java** (Lines 411, 415, 419):
+   - TCK query alias debug statements (3 locations)
+   - Property filtering and alias matching diagnostics
+   - All replaced with `log.debug()` with `isDebugEnabled()` guards
+
+3. **DiscoveryServiceImpl.java** (Lines 62-87):
+   - Query operation debug statements (3 locations)
+   - **Additional fix**: Typo correction `searchAllVersionsAllVersions` → `searchAllVersions` (Line 83)
+   - TCK alias debug logging standardized
+
+4. **SolrQueryProcessor.java** (Lines 375, 451-489):
+   - Query sort debug statement (1 location)
+   - Permission filtering debug statements (2 locations)
+   - TCK alias debug statements (3 locations)
+   - Total: 6 statements replaced with `logger.debug()`
+
+**Logging Pattern Applied**:
+```java
+// Standard pattern for all production code debug logging
+if (log.isDebugEnabled()) {
+    log.debug("Descriptive message without excessive punctuation");
+}
+```
+
+**Compilation Verification**:
+```bash
+mvn clean compile -q
+# Result: [INFO] BUILD SUCCESS - No errors
+```
+
+**Production Benefits**:
+- ✅ Eliminated 13 System.out/err.println statements from critical production code
+- ✅ Consistent logging pattern across CMIS service layer
+- ✅ Performance guards prevent unnecessary string concatenation
+- ✅ Clean console output facilitates issue detection
+- ✅ Fixed typo in DiscoveryServiceImpl parameter name
+
+**Files Modified**:
+- `core/src/main/java/jp/aegif/nemaki/cmis/servlet/NemakiBrowserBindingServlet.java` (Line 279)
+- `core/src/main/java/jp/aegif/nemaki/cmis/aspect/impl/CompileServiceImpl.java` (Lines 411, 415, 419)
+- `core/src/main/java/jp/aegif/nemaki/cmis/service/impl/DiscoveryServiceImpl.java` (Lines 62-87)
+- `core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrQueryProcessor.java` (Lines 375, 451-489)
+
+**Remaining Work (Phase 2)**:
+13 additional production files identified with System.out/err.println statements (90+ occurrences total):
+- TypeManagerImpl.java (69 occurrences) - largest file
+- NemakiPropertyDefinition.java (17)
+- RepositoryServiceImpl.java (16)
+- ContentDaoServiceImpl.java (14)
+- ObjectServiceImpl.java (12)
+- TypeServiceImpl.java (10)
+- Others (6-4 occurrences each)
+
+**Strategy**: Prioritized smaller critical files first before tackling TypeManagerImpl.java with 69 occurrences.
+
 ---
 
 ## Recent Major Changes (2025-10-13 - Root Folder Permission Fix for All Authenticated Users) ✅
