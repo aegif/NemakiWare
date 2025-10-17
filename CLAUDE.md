@@ -3833,16 +3833,47 @@ mvn -version   # Must show Java 17
 **Default Credentials**: `admin:admin`
 **CouchDB**: `admin:password` (CouchDB 3.x requires authentication)
 
-## Clean Build and Comprehensive Testing Procedures (UPDATED STANDARD - 2025-08-20)
+## Clean Build and Comprehensive Testing Procedures (UPDATED STANDARD - 2025-10-18)
+
+### Prerequisites
+
+**Required Environment**:
+- **Java 17**: Set JAVA_HOME to your Java 17 installation
+- **Maven 3.6+**: Ensure `mvn` is in PATH
+- **Docker & Docker Compose**: Latest stable version
+- **Node.js 18+** (for UI development): Optional
+
+**Environment Setup**:
+```bash
+# Verify Java version (must be 17.x)
+java -version
+
+# If using a different Java version, set JAVA_HOME temporarily:
+export JAVA_HOME=/path/to/your/java-17-installation
+export PATH=$JAVA_HOME/bin:$PATH
+
+# Example paths (adjust to your environment):
+# macOS (JetBrains Runtime): /Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+# macOS (Homebrew): /usr/local/opt/openjdk@17
+# Linux: /usr/lib/jvm/java-17-openjdk
+# Windows: C:\Program Files\Java\jdk-17
+```
 
 ### 1. Reliable Docker Deployment (RECOMMENDED)
 
 **CRITICAL**: Docker問題根絶のため、確実なデプロイスクリプトを使用してください。
 
 ```bash
-# 確実なデプロイ（推奨方法）
-cd /Users/ishiiakinori/NemakiWare
-./reliable-docker-deploy.sh
+# Navigate to project root directory
+cd path/to/NemakiWare
+
+# Check if reliable-docker-deploy.sh exists
+if [ -f ./reliable-docker-deploy.sh ]; then
+    ./reliable-docker-deploy.sh
+else
+    echo "Warning: reliable-docker-deploy.sh not found. Using manual deployment."
+    # Proceed to manual deployment steps below
+fi
 ```
 
 **このスクリプトの利点**:
@@ -3852,22 +3883,25 @@ cd /Users/ishiiakinori/NemakiWare
 - ✅ 自動デプロイ検証（デバッグコード確認）
 - ✅ エラーハンドリングと詳細ログ
 
-### 2. 手動デプロイ（上級者向け）
+### 2. 手動デプロイ（Manual Deployment - Universal Method）
 
-**WARNING**: 手動実行はキャッシュ問題を引き起こす可能性があります。上記のスクリプトを推奨します。
+**Use this method if**: reliable-docker-deploy.sh is not available or you need fine-grained control.
 
 ```bash
-# Step 1: Java 17環境設定
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
-export PATH=$JAVA_HOME/bin:$PATH
+# Step 0: Navigate to project root
+cd path/to/NemakiWare
+
+# Step 1: Java 17環境設定 (if not already set)
+# Verify Java version first
+java -version  # Must show version 17.x
 
 # Step 2: 完全クリーンアップ
-cd /Users/ishiiakinori/NemakiWare/docker
+cd docker
 docker compose -f docker-compose-simple.yml down --remove-orphans
 docker system prune -f
 
-# Step 3: 確実なWARビルド
-cd /Users/ishiiakinori/NemakiWare
+# Step 3: 確実なWARビルド (from project root)
+cd ..
 mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 cp core/target/core.war docker/core/core.war
 
@@ -3875,19 +3909,43 @@ cp core/target/core.war docker/core/core.war
 cd docker
 docker compose -f docker-compose-simple.yml up -d --build --force-recreate
 
-# Step 5: デプロイ検証（重要）
+# Step 5: デプロイ検証（Wait for startup）
+echo "Waiting for containers to start (90 seconds)..."
 sleep 90
-docker exec docker-core-1 grep -a "CRITICAL STACK TRACE" \
-  /usr/local/tomcat/webapps/core/WEB-INF/classes/jp/aegif/nemaki/cmis/servlet/NemakiBrowserBindingServlet.class \
-  && echo "✅ DEBUG CODE DEPLOYED" || echo "❌ DEPLOYMENT FAILED"
+
+# Step 6: Health check
+docker ps  # All containers should show "healthy" or "Up" status
+curl -s -o /dev/null -w "%{http_code}" -u admin:admin http://localhost:8080/core/atom/bedroom
+# Expected: 200
 ```
 
-### 2. Comprehensive Test Execution
+**Troubleshooting Deployment**:
+```bash
+# If containers don't start:
+docker compose -f docker-compose-simple.yml logs --tail=50
+
+# If core container is unhealthy:
+docker logs $(docker ps -q -f name=core) --tail=100
+
+# Check if WAR file was built correctly:
+ls -lh docker/core/core.war
+# Should show ~300MB file
+```
+
+### 3. Comprehensive Test Execution
 
 ```bash
 # Navigate to project root and run comprehensive tests
-cd /Users/ishiiakinori/NemakiWare
-./qa-test.sh
+cd path/to/NemakiWare
+
+# Check if qa-test.sh exists
+if [ -f ./qa-test.sh ]; then
+    ./qa-test.sh
+else
+    echo "Warning: qa-test.sh not found."
+    echo "Running basic health checks instead..."
+    curl -u admin:admin http://localhost:8080/core/atom/bedroom
+fi
 ```
 
 **Expected Test Results (23 Tests Total)**:
@@ -3907,33 +3965,48 @@ cd /Users/ishiiakinori/NemakiWare
 🎉 全テスト合格！NemakiWareは正常に動作しています。
 ```
 
-### 3. Development Health Check Commands
+### 4. Development Health Check Commands
 
 ```bash
-# Quick verification commands
-docker ps  # All containers should be running
-curl -u admin:admin http://localhost:8080/core/atom/bedroom  # Should return HTTP 200
-curl -u admin:admin http://localhost:8080/core/rest/all/repositories  # Should return repository list
+# Quick verification commands (run from any directory)
+docker ps  # All containers should be running (3 containers: core, couchdb, solr)
+
+# Health checks
+curl -u admin:admin http://localhost:8080/core/atom/bedroom
+# Expected: HTTP 200 with XML response
+
+curl -u admin:admin http://localhost:8080/core/rest/all/repositories
+# Expected: JSON array with repository list
+
+# CouchDB check
+curl -u admin:password http://localhost:5984/_all_dbs
+# Expected: ["bedroom","bedroom_closet","canopy","canopy_closet","nemaki_conf"]
+
+# Solr check
+curl http://localhost:8983/solr/admin/cores?action=STATUS
+# Expected: HTTP 200 with core status
 ```
 
-### 4. UI Development Integration Workflow
+### 5. UI Development Integration Workflow
 
 **Complete UI + Core Development Cycle**:
 ```bash
 # 1. UI Development Phase
-cd /Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui
+cd path/to/NemakiWare/core/src/main/webapp/ui
+npm install  # First time only
 npm run dev  # Development server on port 5173 with hot reload
 
 # 2. UI Build for Integration
 npm run build  # Creates production build in dist/
 
-# 3. Core Rebuild with UI Assets
-cd /Users/ishiiakinori/NemakiWare
+# 3. Core Rebuild with UI Assets (from project root)
+cd path/to/NemakiWare
 mvn clean package -f core/pom.xml -Pdevelopment
 
 # 4. Docker Redeployment (確実な方法)
 cp core/target/core.war docker/core/core.war
-cd docker && docker compose -f docker-compose-simple.yml down
+cd docker
+docker compose -f docker-compose-simple.yml down
 docker compose -f docker-compose-simple.yml up -d --build --force-recreate
 
 # 5. Verify Integration
@@ -3947,72 +4020,77 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/
 - Changes reflect immediately without Core rebuild
 - Run `npm run type-check` before building for production
 
-### 5. Troubleshooting Failed Tests
+### 6. Troubleshooting Failed Tests
 
 If tests fail, check in this order:
 
 ```bash
 # 1. Check container status
 docker ps
-docker logs docker-core-1 --tail 20
+
+# Get core container name dynamically
+CORE_CONTAINER=$(docker ps --filter "name=core" --format "{{.Names}}" | head -1)
+docker logs $CORE_CONTAINER --tail 20
 
 # 2. Verify CouchDB connectivity
 curl -u admin:password http://localhost:5984/_all_dbs
 # Expected: ["bedroom","bedroom_closet","canopy","canopy_closet","nemaki_conf"]
 
 # 3. Restart core container if needed
-docker compose -f docker/docker-compose-simple.yml restart core
+cd path/to/NemakiWare/docker
+docker compose -f docker-compose-simple.yml restart core
 sleep 30
 
-# 4. Re-run tests
+# 4. Re-run tests (from project root)
+cd ..
 ./qa-test.sh
 ```
 
-**IMPORTANT**: All legacy test scripts (*.sh files in docker/ directory) have been removed. Use only the procedures documented above.
-
-### Docker Deployment
-
-```bash
-# Build and deploy core
-mvn clean package -f core/pom.xml -Pdevelopment
-cp core/target/core.war docker/core/core.war
-
-# Start environment
-cd docker
-docker compose -f docker-compose-simple.yml up -d
-
-# Verify deployment
-curl -u admin:admin http://localhost:8080/core/atom/bedroom
-```
+**Common Issues**:
+- **Port conflicts**: Ensure ports 8080, 5984, 8983 are not in use
+- **Java version mismatch**: Verify `java -version` shows 17.x
+- **Memory issues**: Ensure Docker has at least 4GB RAM allocated
+- **Network issues**: Check firewall allows Docker network communication
 
 ### Source Code Modification Workflow
 
-**推奨**: ソースコード修正時は確実なデプロイスクリプトを使用
+**Quick Rebuild Workflow** (for Java source changes):
 
 ```bash
 # 1. Modify Java source in core/src/main/java/
-# 2. 確実なデプロイ実行
-./reliable-docker-deploy.sh
+# 2. Rebuild and redeploy (from project root)
+cd path/to/NemakiWare
 
-# 3. 変更確認
-curl -u admin:admin http://localhost:8080/core/atom/bedroom
-```
-
-**手動実行（非推奨）**:
-```bash
-# 1. Modify Java source in core/src/main/java/
-# 2. 完全リビルド
 mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 cp core/target/core.war docker/core/core.war
 
-# 3. 完全なコンテナ再作成
+cd docker
+docker compose -f docker-compose-simple.yml restart core
+
+# 3. Wait for restart and verify
+sleep 60
+curl -u admin:admin http://localhost:8080/core/atom/bedroom
+# Expected: HTTP 200
+```
+
+**Full Rebuild Workflow** (recommended for major changes):
+
+```bash
+# 1. Modify source files
+# 2. Complete rebuild (from project root)
+cd path/to/NemakiWare
+
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests
+cp core/target/core.war docker/core/core.war
+
 cd docker
 docker compose -f docker-compose-simple.yml down
 docker compose -f docker-compose-simple.yml up -d --build --force-recreate
 
-# 4. デプロイ検証
+# 3. Verify deployment
 sleep 90
 curl -u admin:admin http://localhost:8080/core/atom/bedroom
+# Expected: HTTP 200
 ```
 
 ## CMIS API Reference
