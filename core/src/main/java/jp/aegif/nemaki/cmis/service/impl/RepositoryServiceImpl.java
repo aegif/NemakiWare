@@ -243,13 +243,17 @@ public class RepositoryServiceImpl implements RepositoryService,
 			TypeDefinition typeDefinition = getSharedTypeDefinition(repositoryId, typeId);
 
 			// TCK DEBUG: Check what we're returning
-			System.err.println("TCK DEBUG RepositoryServiceImpl.getTypeDefinition: Returning type " + typeId +
-				" with " + (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null ?
-				typeDefinition.getPropertyDefinitions().size() : 0) + " properties");
+			if (log.isDebugEnabled()) {
+				log.debug("RepositoryServiceImpl.getTypeDefinition: Returning type " + typeId +
+					" with " + (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null ?
+					typeDefinition.getPropertyDefinitions().size() : 0) + " properties");
+			}
 			if (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null &&
 				typeDefinition.getPropertyDefinitions().size() > 0) {
-				System.err.println("TCK DEBUG: First property: " +
-					typeDefinition.getPropertyDefinitions().values().iterator().next().getId());
+				if (log.isDebugEnabled()) {
+					log.debug("First property: " +
+						typeDefinition.getPropertyDefinitions().values().iterator().next().getId());
+				}
 			}
 
 			exceptionService.objectNotFound(DomainType.OBJECT_TYPE, typeDefinition, typeId);
@@ -338,12 +342,14 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 				if (!systemIds.contains(key)) {
 					// CRITICAL DEBUG: Log all property information
-					System.err.println("  propDef.getId(): " + propDef.getId());
-					System.err.println("  propDef.getLocalName(): " + propDef.getLocalName());
-					System.err.println("  propDef.getDisplayName(): " + propDef.getDisplayName());
-					System.err.println("  propDef.getQueryName(): " + propDef.getQueryName());
-					System.err.println("  propDef.getPropertyType(): " + propDef.getPropertyType());
-					System.err.println("  propDef.getClass(): " + propDef.getClass().getName());
+					if (log.isDebugEnabled()) {
+						log.debug("  propDef.getId(): " + propDef.getId());
+						log.debug("  propDef.getLocalName(): " + propDef.getLocalName());
+						log.debug("  propDef.getDisplayName(): " + propDef.getDisplayName());
+						log.debug("  propDef.getQueryName(): " + propDef.getQueryName());
+						log.debug("  propDef.getPropertyType(): " + propDef.getPropertyType());
+						log.debug("  propDef.getClass(): " + propDef.getClass().getName());
+					}
 
 					log.error("TCK DEBUG: Creating custom property: " + key);
 					//Check PropertyDefinition
@@ -419,9 +425,11 @@ public class RepositoryServiceImpl implements RepositoryService,
 					ntd.setProperties(l);
 
 					// DEBUG: Verify what we're storing
-					System.err.println("  Created Detail ID: " + created.getId());
-					System.err.println("  Created Detail LocalName: " + created.getLocalName());
-					System.err.println("  Storing in Type.properties: " + created.getId());
+					if (log.isDebugEnabled()) {
+						log.debug("  Created Detail ID: " + created.getId());
+						log.debug("  Created Detail LocalName: " + created.getLocalName());
+						log.debug("  Storing in Type.properties: " + created.getId());
+					}
 					log.info("DEBUG: Stored detail ID '" + created.getId() + "' for property '" + originalPropertyId + "'");
 					log.info("DEBUG: Type definition properties list now contains: " + ntd.getProperties());
 				}
@@ -597,11 +605,13 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 				// CRITICAL DEBUG: Log incoming property definitions from TCK
 				if (key != null && key.startsWith("tck:")) {
-					System.err.println("  Key (from map): " + key);
-					System.err.println("  PropDef.getId(): " + propDef.getId());
-					System.err.println("  PropDef.getLocalName(): " + propDef.getLocalName());
-					System.err.println("  PropDef.getQueryName(): " + propDef.getQueryName());
-					System.err.println("  PropDef.getPropertyType(): " + propDef.getPropertyType());
+					if (log.isDebugEnabled()) {
+						log.debug("  Key (from map): " + key);
+						log.debug("  PropDef.getId(): " + propDef.getId());
+						log.debug("  PropDef.getLocalName(): " + propDef.getLocalName());
+						log.debug("  PropDef.getQueryName(): " + propDef.getQueryName());
+						log.debug("  PropDef.getPropertyType(): " + propDef.getPropertyType());
+					}
 				}
 
 				if (systemIds.contains(key))

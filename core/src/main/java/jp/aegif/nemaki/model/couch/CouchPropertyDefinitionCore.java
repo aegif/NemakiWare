@@ -32,9 +32,14 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class CouchPropertyDefinitionCore extends CouchNodeBase{
 
 	private static final long serialVersionUID = -213127366706433797L;
+	private static final Logger log = LoggerFactory.getLogger(CouchPropertyDefinitionCore.class);
+
 
 	@JsonProperty("propertyId")
 	private String propertyId;
@@ -66,12 +71,16 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 			setQueryName((String) properties.get("queryName"));
 
 			// TCK DEBUG: Verify propertyId was set
-			System.err.println("TCK DEBUG: After setPropertyId(), this.propertyId = " + this.propertyId);
+			if (log.isDebugEnabled()) {
+				log.debug("After setPropertyId(), this.propertyId = " + this.propertyId);
+			}
 
 			// PropertyType列挙型の処理 - CRITICAL: super() doesn't preserve this!
 			if (properties.containsKey("propertyType")) {
 				Object propTypeObj = properties.get("propertyType");
-				System.err.println("TCK PROPERTY TYPE DEBUG: Raw propertyType value: " + propTypeObj + " (class: " + (propTypeObj != null ? propTypeObj.getClass() : "null") + ")");
+				if (log.isDebugEnabled()) {
+					log.debug("TCK PROPERTY TYPE DEBUG: Raw propertyType value: " + propTypeObj + " (class: " + (propTypeObj != null ? propTypeObj.getClass() : "null") + ")");
+				}
 
 				if (propTypeObj instanceof PropertyType) {
 					// Already a PropertyType enum
@@ -84,7 +93,7 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 							setPropertyType(pt);
 						} catch (Exception e) {
 							// TCK FIX: Default to STRING if conversion fails
-							System.err.println("TCK PROPERTY TYPE ERROR: Failed to convert '" + propTypeStr + "' to PropertyType: " + e.getMessage() + ". Defaulting to STRING");
+							log.warn("TCK PROPERTY TYPE ERROR: Failed to convert ' " + propTypeStr + " ' to PropertyType: " + e.getMessage() + ". Defaulting to STRING");
 							setPropertyType(PropertyType.STRING);
 						}
 					}
@@ -103,7 +112,9 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 							setCardinality(Cardinality.fromValue(cardinalityStr.toLowerCase()));
 						} catch (Exception e) {
 							// 無効な値の場合は無視
-							System.err.println("TCK DEBUG: Failed to convert cardinality '" + cardinalityStr + "': " + e.getMessage());
+							if (log.isDebugEnabled()) {
+								log.debug("Failed to convert cardinality '" + cardinalityStr + "': " + e.getMessage());
+							}
 						}
 					}
 				}
@@ -162,12 +173,15 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 		p.setPropertyId(getPropertyId());
 		p.setQueryName(getQueryName());
 		PropertyType pt = getPropertyType();
-		System.err.println("TCK CONVERT DEBUG: CouchPropertyDefinitionCore.convert() - propertyId=" + getPropertyId() +
-			", propertyType=" + pt);
+		if (log.isDebugEnabled()) {
+			log.debug("CouchPropertyDefinitionCore.convert() - propertyId=" + getPropertyId() + ", propertyType=" + pt);
+		}
 		p.setPropertyType(pt);
 		p.setCardinality(getCardinality());
 
-		System.err.println("TCK CONVERT DEBUG: After setting, NemakiPropertyDefinitionCore has propertyType=" + p.getPropertyType());
+		if (log.isDebugEnabled()) {
+			log.debug("After setting, NemakiPropertyDefinitionCore has propertyType=" + p.getPropertyType());
+		}
 
 		return p;
 	}

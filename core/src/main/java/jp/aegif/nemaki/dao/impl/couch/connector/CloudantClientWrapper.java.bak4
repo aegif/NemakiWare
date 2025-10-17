@@ -1202,16 +1202,14 @@ public class CloudantClientWrapper {
 							}
 						}
 
-
-					// Debug logging to trace the propertyId value
-					if (log.isDebugEnabled()) {
-						log.debug("CloudantClientWrapper.get() - CouchPropertyDefinitionCore - Map contains propertyId: " + completeMap.get("propertyId"));
-					}
+						// Debug logging to trace the propertyId value
+						System.err.println("TCK DEBUG: CloudantClientWrapper.get() - CouchPropertyDefinitionCore - Map contains propertyId: " + completeMap.get("propertyId"));
 
 						try {
 							T result = mapper.convertValue(completeMap, clazz);
+							return result;
 						} catch (Exception deserEx) {
-						log.warn("Error deserializing CouchPropertyDefinitionCore: " + deserEx.getMessage());
+							System.err.println("TCK DEBUG: Error deserializing CouchPropertyDefinitionCore: " + deserEx.getMessage());
 							throw deserEx;
 						}
 					} else {
