@@ -236,12 +236,14 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 **Check design document views**:
 ```bash
-curl -u admin:password http://localhost:5984/bedroom/_design/_repo
+curl -u admin:password http://localhost:5984/bedroom/_design/_repo | jq '.views | keys | length'
 ```
 
-**Expected**: JSON with `views` object containing: `contentsById`, `documents`, `folders`, `items`, `policies`, etc.
+**Expected (healthy database)**: 38 views as defined in setup/couchdb/initial_import/bedroom_init.dump
 
-**Known Issue**: If only 5 views present (missing `userItemsById`, `groupItemsById`, `children`, `changesByToken`, `patch`), this is the database initialization problem.
+**Actual (incomplete initialization)**: Only 5 views if database initialization failed
+
+**Known Issue**: If only 5 views present (contentsById, documents, folders, items, policies), the database initialization is incomplete. The official design document should contain 38 views including userItemsById, groupItemsById, children, changesByToken, patch, and 33 others.
 
 ### Test 4: QA Test Suite (May show partial failures)
 
@@ -389,16 +391,27 @@ mvn clean compile -f core/pom.xml
 <!doctype html><html lang="en"><head><title>HTTP Status 401 – Unauthorized</title>
 ```
 
-**Root Cause**: CouchDB design document `_repo` missing critical views
+**Root Cause**: CouchDB design document `_repo` incomplete initialization - missing 33 out of 38 required views
 
 **Diagnosis**:
 ```bash
+# Check number of views
+curl -u admin:password http://localhost:5984/bedroom/_design/_repo | jq '.views | keys | length'
+
+# List actual views
 curl -u admin:password http://localhost:5984/bedroom/_design/_repo | jq '.views | keys'
 ```
 
-**Expected (healthy)**: 10+ views including `userItemsById`, `groupItemsById`, `children`, `changesByToken`, `patch`
+**Expected (healthy)**: 38 views as defined in official dump file (setup/couchdb/initial_import/bedroom_init.dump)
 
-**Actual (broken)**: Only 5 views: `contentsById`, `documents`, `folders`, `items`, `policies`
+**Actual (incomplete initialization)**: Only 5 views if database initialization failed:
+- contentsById
+- documents
+- folders
+- items
+- policies
+
+**Missing 33 views** including: userItemsById, groupItemsById, children, changesByToken, patch, attachments, relationships, versionSeries, typeDefinitions, and 24 others
 
 **Workaround**:
 ```bash
