@@ -35,7 +35,12 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.lucene.document.DateTools.Resolution;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class NemakiPropertyDefinition extends NodeBase {
+	private static final Logger log = LoggerFactory.getLogger(NemakiPropertyDefinition.class);
+
 	private String detailNodeId;
 
 	// Attributes common
@@ -109,14 +114,16 @@ public class NemakiPropertyDefinition extends NodeBase {
 		String intendedPropertyId = determineCorrectPropertyId(detail, core);
 
 		// CRITICAL DEBUG: Log what we're about to set as propertyId
-		System.err.println("  core.propertyId=" + core.getPropertyId());
-		System.err.println("  detail.localName=" + detail.getLocalName());
-		System.err.println("  detail.displayName=" + detail.getDisplayName());
+		if (log.isDebugEnabled()) {
+			log.debug("Property ID determination - core.propertyId=" + core.getPropertyId() +
+				", detail.localName=" + detail.getLocalName() +
+				", detail.displayName=" + detail.getDisplayName());
+		}
 		// CRITICAL: Detect contamination
 		if (core.getPropertyId() != null && core.getPropertyId().startsWith("cmis:") &&
 			detail.getLocalName() != null && detail.getLocalName().startsWith("tck:")) {
-			System.err.println("  Core has CMIS ID: " + core.getPropertyId());
-			System.err.println("  But Detail has TCK localName: " + detail.getLocalName());
+			log.warn("Property contamination detected - Core has CMIS ID: " + core.getPropertyId() +
+				" but Detail has TCK localName: " + detail.getLocalName());
 			// Force use of localName when contamination is detected
 			intendedPropertyId = detail.getLocalName();
 		}
@@ -140,11 +147,13 @@ public class NemakiPropertyDefinition extends NodeBase {
 		
 		setDescription(detail.getDescription());
 		PropertyType coreType = core.getPropertyType();
-		System.err.println("TCK PROPERTY DEBUG: NemakiPropertyDefinition constructor - propertyId=" + core.getPropertyId() + ", coreType=" + coreType);
+		if (log.isDebugEnabled()) {
+			log.debug("TCK PROPERTY: Constructor - propertyId=" + core.getPropertyId() + ", coreType=" + coreType);
+		}
 		if (coreType == null) {
-			System.err.println("TCK CRITICAL: PropertyType is NULL for propertyId=" + core.getPropertyId());
-			System.err.println("TCK CRITICAL: Core object class=" + core.getClass().getName());
-			System.err.println("TCK CRITICAL: Detail.localName=" + detail.getLocalName());
+			log.warn("TCK CRITICAL: PropertyType is NULL for propertyId=" + core.getPropertyId() +
+				", Core object class=" + core.getClass().getName() +
+				", Detail.localName=" + detail.getLocalName());
 		}
 		setPropertyType(coreType);
 		// TCK FIX: Ensure cardinality is never null - default to SINGLE if missing
@@ -232,8 +241,10 @@ public class NemakiPropertyDefinition extends NodeBase {
 			if (localName.contains(":")) {
 				// Log for debugging TCK issues
 				if (core != null && !localName.equals(core.getPropertyId())) {
-					System.err.println("TCK PROPERTY ID FIX: Using detail.localName=" + localName +
-						" instead of core.propertyId=" + core.getPropertyId());
+					if (log.isDebugEnabled()) {
+						log.debug("TCK PROPERTY ID FIX: Using detail.localName=" + localName +
+							" instead of core.propertyId=" + core.getPropertyId());
+					}
 				}
 				return localName;
 			}
@@ -280,12 +291,14 @@ public class NemakiPropertyDefinition extends NodeBase {
 	public NemakiPropertyDefinition(PropertyDefinition<?> propertyDefinition) {
 
 		// CRITICAL DEBUG: Log PropertyDefinition values
-		System.err.println("=== NemakiPropertyDefinition Constructor (from PropertyDefinition) ===");
-		System.err.println("  Input PropertyDefinition.getId(): " + propertyDefinition.getId());
-		System.err.println("  Input PropertyDefinition.getLocalName(): " + propertyDefinition.getLocalName());
-		System.err.println("  Input PropertyDefinition.getQueryName(): " + propertyDefinition.getQueryName());
-		System.err.println("  Input PropertyDefinition.getDisplayName(): " + propertyDefinition.getDisplayName());
-		System.err.println("  Input PropertyDefinition.getPropertyType(): " + propertyDefinition.getPropertyType());
+		if (log.isDebugEnabled()) {
+			log.debug("NemakiPropertyDefinition Constructor (from PropertyDefinition) - " +
+				"getId(): " + propertyDefinition.getId() +
+				", getLocalName(): " + propertyDefinition.getLocalName() +
+				", getQueryName(): " + propertyDefinition.getQueryName() +
+				", getDisplayName(): " + propertyDefinition.getDisplayName() +
+				", getPropertyType(): " + propertyDefinition.getPropertyType());
+		}
 
 		// CRITICAL FIX: Apply contamination prevention to this constructor too
 		String originalPropertyId = propertyDefinition.getId();
@@ -417,7 +430,10 @@ public class NemakiPropertyDefinition extends NodeBase {
 	}
 
 	public PropertyType getPropertyType() {
-		System.err.println("TCK PROPERTY GET: NemakiPropertyDefinition.getPropertyType() called for propertyId=" + getPropertyId() + ", returning PropertyType=" + propertyType);
+		if (log.isDebugEnabled()) {
+			log.debug("TCK PROPERTY GET: getPropertyType() called for propertyId=" + getPropertyId() +
+				", returning PropertyType=" + propertyType);
+		}
 		return propertyType;
 	}
 
