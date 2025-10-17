@@ -1085,7 +1085,9 @@ public class TypeManagerImpl implements TypeManager {
 	}
 	
 	private void addBasePropertyDefinitions(String repositoryId, AbstractTypeDefinition type, boolean isInherited) {
-		System.out.println("=== SYSTEM DEBUG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
+		if (log.isDebugEnabled()) {
+			log.debug("=== SYSTEM DEBUG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
+		}
 		log.error("=== ERROR LOG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
 		
 		String typeId = type.getId();
@@ -1098,7 +1100,9 @@ public class TypeManagerImpl implements TypeManager {
 			}
 		} catch (Exception e) {
 			log.error("*** FLOW DEBUG: Exception in initial setup: " + e.getMessage() + " ***", e);
-			System.err.println("*** FLOW DEBUG: Exception in initial setup: " + e.getMessage() + " ***");
+			if (log.isDebugEnabled()) {
+				log.debug("*** FLOW DEBUG: Exception in initial setup: " + e.getMessage() + " ***");
+			}
 			throw e;
 		}
 		
@@ -1643,7 +1647,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			if (types.get(typeId) == null) {
 				// DEBUG: Log what we're caching
 				AbstractTypeDefinition typeDef = (AbstractTypeDefinition) container.getTypeDefinition();
-				System.err.println("Type has " + typeDef.getPropertyDefinitions().size() + " properties");
+				if (log.isDebugEnabled()) {
+				log.debug("Type has " + typeDef.getPropertyDefinitions().size() + " properties");
+			}
 				for (String propId : typeDef.getPropertyDefinitions().keySet()) {
 					if (!propId.startsWith("cmis:")) {
 					}
@@ -1657,8 +1663,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 				// If new definition has more properties, it likely has custom properties that were added later
 				if (newDef.getPropertyDefinitions().size() > existingDef.getPropertyDefinitions().size()) {
-					System.err.println("Old type had " + existingDef.getPropertyDefinitions().size() + " properties");
-					System.err.println("New type has " + newDef.getPropertyDefinitions().size() + " properties");
+					if (log.isDebugEnabled()) {
+				log.debug("Old type had " + existingDef.getPropertyDefinitions().size() + " properties");
+			}
+					if (log.isDebugEnabled()) {
+				log.debug("New type has " + newDef.getPropertyDefinitions().size() + " properties");
+			}
 					for (String propId : newDef.getPropertyDefinitions().keySet()) {
 						if (!propId.startsWith("cmis:") && !existingDef.getPropertyDefinitions().containsKey(propId)) {
 						}
@@ -1764,7 +1774,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		String targetParentId = (parentId != null) ? parentId : baseId;
 
 		// DEBUG: Log parent type lookup
-		System.err.println("=== PARENT TYPE LOOKUP DEBUG for child " + nemakiType.getTypeId() + " ===");
+		if (log.isDebugEnabled()) {
+				log.debug("=== PARENT TYPE LOOKUP DEBUG for child " + nemakiType.getTypeId() + " ===");
+			}
 		// Get parent type from cache (no rebuild to avoid infinite recursion)
 		DocumentTypeDefinitionImpl parentType = null;
 		TypeDefinitionContainer parentContainer = types.get(targetParentId);
@@ -1775,7 +1787,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		parentType = (DocumentTypeDefinitionImpl) parentContainer.getTypeDefinition();
 
 		// DEBUG: Log parent type properties
-		System.err.println("Parent type " + targetParentId + " has " + parentType.getPropertyDefinitions().size() + " properties");
+		if (log.isDebugEnabled()) {
+				log.debug("Parent type " + targetParentId + " has " + parentType.getPropertyDefinitions().size() + " properties");
+			}
 		for (String propId : parentType.getPropertyDefinitions().keySet()) {
 			if (!propId.startsWith("cmis:")) {
 			}
@@ -2151,8 +2165,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		Map<String, PropertyDefinition<?>> parentProperties = new HashMap<>();
 		if (parentType != null && parentType.getPropertyDefinitions() != null) {
 			// DEBUG: Log parent type properties before copying
-			System.err.println("=== INHERITANCE DEBUG: Copying properties from parent type " + parentType.getId() + " to child type " + nemakiType.getTypeId() + " ===");
-			System.err.println("Parent type has " + parentType.getPropertyDefinitions().size() + " properties");
+			if (log.isDebugEnabled()) {
+			log.debug("=== INHERITANCE DEBUG: Copying properties from parent type " + parentType.getId() + " to child type " + nemakiType.getTypeId() + " ===");
+		}
+			if (log.isDebugEnabled()) {
+				log.debug("Parent type has " + parentType.getPropertyDefinitions().size() + " properties");
+			}
 			for (String propId : parentType.getPropertyDefinitions().keySet()) {
 				if (!propId.startsWith("cmis:")) {
 				}
@@ -2218,13 +2236,17 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			}
 
 			// DEBUG: Log what was actually copied
-			System.err.println("Copied " + parentProperties.size() + " properties from parent");
+			if (log.isDebugEnabled()) {
+				log.debug("Copied " + parentProperties.size() + " properties from parent");
+			}
 			for (String propId : parentProperties.keySet()) {
 				if (!propId.startsWith("cmis:")) {
 				}
 			}
 		} else {
-			System.err.println("=== INHERITANCE DEBUG: No parent type or no parent properties to copy for type " + nemakiType.getTypeId() + " ===");
+			if (log.isDebugEnabled()) {
+			log.debug("=== INHERITANCE DEBUG: No parent type or no parent properties to copy for type " + nemakiType.getTypeId() + " ===");
+		}
 		}
 		type.setPropertyDefinitions(parentProperties);
 
@@ -2235,10 +2257,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				.getPropertyDefinitions();
 
 		// DEBUG: Log what custom properties this type has
-		System.err.println("=== CUSTOM PROPERTIES DEBUG for type " + nemakiType.getTypeId() + " ===");
-		System.err.println("NemakiType has " +
+		if (log.isDebugEnabled()) {
+				log.debug("=== CUSTOM PROPERTIES DEBUG for type " + nemakiType.getTypeId() + " ===");
+			}
+		if (log.isDebugEnabled()) {
+			log.debug("NemakiType has " +
 			(nemakiType.getProperties() != null ? nemakiType.getProperties().size() : 0) +
 			" property detail IDs");
+		}
 		if (nemakiType.getProperties() != null) {
 			for (String propDetailId : nemakiType.getProperties()) {
 			}
@@ -2273,11 +2299,21 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				NemakiPropertyDefinitionCore clonedCore = originalCore.deepClone();
 
 				// CRITICAL DEBUG: Verify deep clone actually worked
-				System.err.println("  originalCore.propertyId=" + originalCore.getPropertyId());
-				System.err.println("  clonedCore.propertyId=" + clonedCore.getPropertyId());
-				System.err.println("  detail.localName=" + detail.getLocalName());
-				System.err.println("  originalCore object identity=" + System.identityHashCode(originalCore));
-				System.err.println("  clonedCore object identity=" + System.identityHashCode(clonedCore));
+				if (log.isDebugEnabled()) {
+					log.debug("  originalCore.propertyId=" + originalCore.getPropertyId());
+				}
+				if (log.isDebugEnabled()) {
+					log.debug("  clonedCore.propertyId=" + clonedCore.getPropertyId());
+				}
+				if (log.isDebugEnabled()) {
+					log.debug("  detail.localName=" + detail.getLocalName());
+				}
+				if (log.isDebugEnabled()) {
+					log.debug("  originalCore object identity=" + System.identityHashCode(originalCore));
+				}
+				if (log.isDebugEnabled()) {
+					log.debug("  clonedCore object identity=" + System.identityHashCode(clonedCore));
+				}
 
 				// Create NemakiPropertyDefinition using cloned core and detail
 				NemakiPropertyDefinition p = new NemakiPropertyDefinition(clonedCore, detail);
@@ -2293,8 +2329,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				PropertyDefinition<?> property = null;
 
 				// CRITICAL DEBUG: Log cache lookup attempt
-				System.err.println("TCK CACHE DEBUG: Looking up property " + p.getPropertyId() +
+				if (log.isDebugEnabled()) {
+					log.debug("TCK CACHE DEBUG: Looking up property " + p.getPropertyId() +
 					" (is custom: " + !p.getPropertyId().startsWith("cmis:") + ")");
+				}
 
 				// CRITICAL FIX: Do NOT use cache for properties - it causes contamination
 				// The cache can contain properties with wrong IDs due to reuse of PropertyDefinitionCore objects
@@ -2307,27 +2345,33 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				if (p.getPropertyId() != null && p.getPropertyId().startsWith("cmis:")) {
 					// Check if this CMIS property is already in the properties map (from parent)
 					if (properties.containsKey(p.getPropertyId())) {
-						System.err.println("TCK DEBUG: Skipping CMIS property " + p.getPropertyId() +
+						if (log.isDebugEnabled()) {
+							log.debug("TCK DEBUG: Skipping CMIS property " + p.getPropertyId() +
 							" as it's already inherited from parent");
+						}
 						continue; // Skip to next property
 					}
-					System.err.println("TCK WARNING: CMIS property " + p.getPropertyId() +
+					log.warn("TCK WARNING: CMIS property " + p.getPropertyId() +
 						" not found in parent - this shouldn't happen");
 				} else {
-					System.err.println("TCK CACHE DEBUG: Processing custom property " +
+					if (log.isDebugEnabled()) {
+						log.debug("TCK CACHE DEBUG: Processing custom property " +
 						p.getPropertyId() + " for type");
+					}
 				}
 				
 				// Only create new instance if absolutely necessary (should rarely happen)
 				if (property == null) {
 					// TCK DEBUG: Log the property type we're about to pass to createPropDef
 					PropertyType propType = p.getPropertyType();
-					System.err.println("TCK TYPE MANAGER DEBUG: Creating property " + p.getPropertyId() +
+					if (log.isDebugEnabled()) {
+						log.debug("TCK TYPE MANAGER DEBUG: Creating property " + p.getPropertyId() +
 						" with PropertyType=" + propType + " (from NemakiPropertyDefinition)");
+					}
 
 					if (propType == null) {
-						System.err.println("TCK TYPE MANAGER CRITICAL: PropertyType is NULL for " + p.getPropertyId());
-						System.err.println("TCK TYPE MANAGER CRITICAL: p.class=" + p.getClass().getName());
+						log.warn("TCK TYPE MANAGER CRITICAL: PropertyType is NULL for " + p.getPropertyId());
+						log.warn("TCK TYPE MANAGER CRITICAL: p.class=" + p.getClass().getName());
 						// Try to get type from core directly
 						if (originalCore != null) {
 							PropertyType coreType = originalCore.getPropertyType();
@@ -2338,8 +2382,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					}
 
 					// CRITICAL NAMESPACE DEBUG: Log what we're passing to DataUtil
-					System.err.println("TCK NAMESPACE DEBUG: Creating property " + p.getPropertyId() +
+					if (log.isDebugEnabled()) {
+						log.debug("TCK NAMESPACE DEBUG: Creating property " + p.getPropertyId() +
 						" with null namespace (forcing DataUtil logic)");
+					}
 
 					property = DataUtil.createPropDef(
 						p.getPropertyId(), p.getLocalName(),
@@ -2372,10 +2418,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				if (property != null) {
 					// CRITICAL DEBUG: Check for PropertyID contamination
 					if (!property.getId().equals(p.getPropertyId())) {
-						System.err.println("TCK CONTAMINATION DETECTED: Expected propertyId=" + p.getPropertyId() +
+						if (log.isDebugEnabled()) {
+							log.debug("TCK CONTAMINATION DETECTED: Expected propertyId=" + p.getPropertyId() +
 							" but property.getId()=" + property.getId());
+						}
 					} else {
-						System.err.println("TCK PROPERTY OK: propertyId=" + p.getPropertyId() + " matches");
+						if (log.isDebugEnabled()) {
+							log.debug("TCK PROPERTY OK: propertyId=" + p.getPropertyId() + " matches");
+						}
 					}
 
 					// Use the clean property ID from the builder as the key
@@ -2402,8 +2452,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		}
 
 		// DEBUG: Log final type properties
-		System.err.println("=== FINAL TYPE PROPERTIES for " + type.getId() + " ===");
-		System.err.println("Type has " + type.getPropertyDefinitions().size() + " properties total");
+		if (log.isDebugEnabled()) {
+				log.debug("=== FINAL TYPE PROPERTIES for " + type.getId() + " ===");
+			}
+		if (log.isDebugEnabled()) {
+				log.debug("Type has " + type.getPropertyDefinitions().size() + " properties total");
+			}
 		for (String propId : type.getPropertyDefinitions().keySet()) {
 			if (!propId.startsWith("cmis:")) {
 			}
@@ -2572,8 +2626,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			
 			// Handle custom namespace properties
 			if (isCustomProperty) {
-				System.err.println("  PropertyId: " + propertyId + " -> " + (storedInPropertyIdMap != null ? storedInPropertyIdMap.getId() : "NULL"));
-				System.err.println("  QueryName: " + queryName + " -> " + (storedInQueryNameMap != null ? storedInQueryNameMap.getId() : "NULL"));
+				if (log.isDebugEnabled()) {
+					log.debug("  PropertyId: " + propertyId + " -> " + (storedInPropertyIdMap != null ? storedInPropertyIdMap.getId() : "NULL"));
+				}
+				if (log.isDebugEnabled()) {
+					log.debug("  QueryName: " + queryName + " -> " + (storedInQueryNameMap != null ? storedInQueryNameMap.getId() : "NULL"));
+				}
 			}
 			
 			if (log.isDebugEnabled()) {
@@ -2788,28 +2846,50 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public TypeDefinition getTypeDefinition(String repositoryId, String typeId) {
 		// CRITICAL DEBUG: Entry point logging
-		System.err.println("*** THIS INSTANCE: " + this.hashCode() + " ***");
+		if (log.isDebugEnabled()) {
+				log.debug("*** THIS INSTANCE: " + this.hashCode() + " ***");
+			}
 		log.debug("OBJECT_IDENTITY: getTypeDefinition called for " + typeId); // (important-comment)
 		log.warn("INHERITANCE DEBUG: getTypeDefinition method called for repositoryId=" + repositoryId + ", typeId=" + typeId);
-		System.err.println("*** ClassLoader: " + this.getClass().getClassLoader() + " ***");
-		System.err.println("*** ClassLoader Identity: " + System.identityHashCode(this.getClass().getClassLoader()) + " ***");
-		System.err.println("*** TYPES MAP: " + (TYPES != null ? "EXISTS" : "NULL") + " ***");
+		if (log.isDebugEnabled()) {
+				log.debug("*** ClassLoader: " + this.getClass().getClassLoader() + " ***");
+			}
+		if (log.isDebugEnabled()) {
+				log.debug("*** ClassLoader Identity: " + System.identityHashCode(this.getClass().getClassLoader()) + " ***");
+			}
+		if (log.isDebugEnabled()) {
+				log.debug("*** TYPES MAP: " + (TYPES != null ? "EXISTS" : "NULL") + " ***");
+			}
 		if (TYPES != null) {
-			System.err.println("*** TYPES KEYS: " + TYPES.keySet() + " ***");
-			System.err.println("*** TYPES map object identity: " + System.identityHashCode(TYPES) + " ***");
+			if (log.isDebugEnabled()) {
+				log.debug("*** TYPES KEYS: " + TYPES.keySet() + " ***");
+			}
+			if (log.isDebugEnabled()) {
+				log.debug("*** TYPES map object identity: " + System.identityHashCode(TYPES) + " ***");
+			}
 		}
 		ensureInitialized();
 		
 		// DEBUG: Check TYPES state after ensureInitialized
-		System.err.println("*** TYPES: " + (TYPES != null ? "NOT NULL" : "NULL") + " ***");
+		if (log.isDebugEnabled()) {
+				log.debug("*** TYPES: " + (TYPES != null ? "NOT NULL" : "NULL") + " ***");
+			}
 		if (TYPES != null) {
-			System.err.println("*** TYPES.keySet(): " + TYPES.keySet() + " ***");
-			System.err.println("*** TYPES.size(): " + TYPES.size() + " ***");
+			if (log.isDebugEnabled()) {
+				log.debug("*** TYPES.keySet(): " + TYPES.keySet() + " ***");
+			}
+			if (log.isDebugEnabled()) {
+				log.debug("*** TYPES.size(): " + TYPES.size() + " ***");
+			}
 			if (TYPES.containsKey(repositoryId)) {
 				Map<String, TypeDefinitionContainer> repoTypes = TYPES.get(repositoryId);
-				System.err.println("*** Repository " + repositoryId + " types: " + (repoTypes != null ? repoTypes.size() : "NULL") + " ***");
+				if (log.isDebugEnabled()) {
+				log.debug("*** Repository " + repositoryId + " types: " + (repoTypes != null ? repoTypes.size() : "NULL") + " ***");
+			}
 				if (repoTypes != null && repoTypes.size() > 0) {
-					System.err.println("*** First few types: " + repoTypes.keySet().stream().limit(3).collect(java.util.stream.Collectors.toList()) + " ***");
+					if (log.isDebugEnabled()) {
+				log.debug("*** First few types: " + repoTypes.keySet().stream().limit(3).collect(java.util.stream.Collectors.toList()) + " ***");
+			}
 				}
 			} else {
 			}
@@ -2822,7 +2902,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			log.debug("getTypeDefinition ENTRY: repositoryId=" + repositoryId + ", typeId=" + typeId);
 		}
 		if (TYPES != null) {
-			System.err.println("*** TYPES KEYS AFTER INIT: " + TYPES.keySet() + " ***");
+			if (log.isDebugEnabled()) {
+				log.debug("*** TYPES KEYS AFTER INIT: " + TYPES.keySet() + " ***");
+			}
 		}
 		
 		Map<String, TypeDefinitionContainer> types = TYPES != null ? TYPES.get(repositoryId) : null;
@@ -2890,19 +2972,31 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		// CRITICAL DEBUG: Log actual PropertyDefinition inherited flags being returned to TCK
 		if ("nemaki:user".equals(typeId)) {
-			System.err.println("*** NEMAKI:USER DEBUG: typeDefinition is " + (typeDefinition != null ? "NOT NULL" : "NULL") + " ***");
+			if (log.isDebugEnabled()) {
+				log.debug("*** NEMAKI:USER DEBUG: typeDefinition is " + (typeDefinition != null ? "NOT NULL" : "NULL") + " ***");
+			}
 			
 			if (typeDefinition != null) {
-				System.err.println("*** NEMAKI:USER DEBUG: typeDefinition class: " + typeDefinition.getClass().getName() + " ***");
-				System.err.println("*** NEMAKI:USER DEBUG: PropertyDefinitions is " + (typeDefinition.getPropertyDefinitions() != null ? "NOT NULL" : "NULL") + " ***");
+				if (log.isDebugEnabled()) {
+				log.debug("*** NEMAKI:USER DEBUG: typeDefinition class: " + typeDefinition.getClass().getName() + " ***");
+			}
+				if (log.isDebugEnabled()) {
+				log.debug("*** NEMAKI:USER DEBUG: PropertyDefinitions is " + (typeDefinition.getPropertyDefinitions() != null ? "NOT NULL" : "NULL") + " ***");
+			}
 				
 				if (typeDefinition.getPropertyDefinitions() != null) {
-					System.err.println("*** NEMAKI:USER DEBUG: PropertyDefinitions count: " + typeDefinition.getPropertyDefinitions().size() + " ***");
-					System.err.println("*** NEMAKI:USER DEBUG: PropertyDefinition keys: " + typeDefinition.getPropertyDefinitions().keySet() + " ***");
+					if (log.isDebugEnabled()) {
+				log.debug("*** NEMAKI:USER DEBUG: PropertyDefinitions count: " + typeDefinition.getPropertyDefinitions().size() + " ***");
+			}
+					if (log.isDebugEnabled()) {
+				log.debug("*** NEMAKI:USER DEBUG: PropertyDefinition keys: " + typeDefinition.getPropertyDefinitions().keySet() + " ***");
+			}
 					
 					for (PropertyDefinition<?> prop : typeDefinition.getPropertyDefinitions().values()) {
 						if (prop != null) {
-							System.err.println("*** NEMAKI:USER DEBUG: Property " + prop.getId() + " inherited=" + prop.isInherited() + " ***");
+							if (log.isDebugEnabled()) {
+				log.debug("*** NEMAKI:USER DEBUG: Property " + prop.getId() + " inherited=" + prop.isInherited() + " ***");
+			}
 							if (prop.getId().equals("cmis:objectId") || prop.getId().equals("cmis:baseTypeId")) {
 								log.error("NEMAKI:USER CRITICAL: PropertyDefinition " + prop.getId() + " inherited=" + prop.isInherited() + " for type " + typeId);
 							}
@@ -3087,7 +3181,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			if (log.isDebugEnabled()) {
 				log.debug("No type cache found for repository: " + repositoryId + " - triggering dynamic initialization");
 			}
-			System.err.println("*** THIS SHOULD NOT HAPPEN if generate() already ran! ***");
+			if (log.isDebugEnabled()) {
+				log.debug("*** THIS SHOULD NOT HAPPEN if generate() already ran! ***");
+			}
 			
 			synchronized (initLock) {
 				// Double-check after acquiring lock
@@ -3111,7 +3207,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 						log.info("*** DYNAMIC INIT: Successfully generated base types for repository: " + repositoryId + " ***");
 					} catch (Exception e) {
 						log.error("*** DYNAMIC INIT ERROR: Failed to generate base types for repository: " + repositoryId + " - error: " + e.getMessage() + " ***");
-						System.err.println("*** DYNAMIC INIT ERROR: Failed to generate base types for: " + repositoryId + " - " + e.getMessage());
+						log.warn("*** DYNAMIC INIT ERROR: Failed to generate base types for: " + repositoryId + " - " + e.getMessage());
 						e.printStackTrace(System.err);
 					}
 					
@@ -3121,7 +3217,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					// Verify the fix worked
 					if (types != null) {
 						log.info("*** DYNAMIC INIT VERIFICATION: Repository " + repositoryId + " now has " + types.size() + " types in cache ***");
-						System.err.println("*** DYNAMIC INIT VERIFICATION: " + repositoryId + " now has " + types.size() + " types ***");
+						if (log.isDebugEnabled()) {
+				log.debug("*** DYNAMIC INIT VERIFICATION: " + repositoryId + " now has " + types.size() + " types ***");
+			}
 						log.info("*** DYNAMIC INIT VERIFICATION: Type IDs: " + types.keySet() + " ***");
 					} else {
 					}
@@ -3386,7 +3484,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		// Return existing shared instance or create new one
 		TypeDefinition result = repoCache.computeIfAbsent(cacheKey, k -> {
-			System.out.println("OBJECT_IDENTITY: Creating shared TypeDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(originalDefinition) + ")"); // (important-comment)
+			if (log.isDebugEnabled()) {
+			log.debug("OBJECT_IDENTITY: Creating shared TypeDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(originalDefinition) + ")");
+		} // (important-comment)
 			
 			// Apply PropertyDefinition sharing first, then use as shared TypeDefinition
 			TypeDefinition consistentTypeDefinition = ensureConsistentPropertyDefinitions(repositoryId, originalDefinition);
@@ -3395,7 +3495,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		});
 		
 		if (result == repoCache.get(cacheKey)) {
-			System.out.println("OBJECT_IDENTITY: Returning cached TypeDefinition for " + cacheKey + " (hash: " + System.identityHashCode(result) + ")"); // (important-comment)
+			if (log.isDebugEnabled()) {
+			log.debug("OBJECT_IDENTITY: Returning cached TypeDefinition for " + cacheKey + " (hash: " + System.identityHashCode(result) + ")");
+		} // (important-comment)
 		}
 		
 		return result;
@@ -3459,12 +3561,16 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// Return existing shared instance or create new one
 		PropertyDefinition<?> finalDefinition = definitionToCache;
 		PropertyDefinition<?> result = repoCache.computeIfAbsent(cacheKey, k -> {
-			System.out.println("OBJECT_IDENTITY: Creating shared PropertyDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(finalDefinition) + ")"); // (important-comment)
+			if (log.isDebugEnabled()) {
+			log.debug("OBJECT_IDENTITY: Creating shared PropertyDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(finalDefinition) + ")");
+		} // (important-comment)
 			return finalDefinition;
 		});
 		
 		if (result == repoCache.get(cacheKey)) {
-			System.out.println("OBJECT_IDENTITY: Returning cached PropertyDefinition for " + cacheKey + " (hash: " + System.identityHashCode(result) + ")"); // (important-comment)
+			if (log.isDebugEnabled()) {
+			log.debug("OBJECT_IDENTITY: Returning cached PropertyDefinition for " + cacheKey + " (hash: " + System.identityHashCode(result) + ")");
+		} // (important-comment)
 		}
 
 		return result;
@@ -3715,7 +3821,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			return;
 		}
 
-		System.out.println("\n=== addTypeDefinition called for type: " + typeDefinition.getId() + " ===");
+		if (log.isDebugEnabled()) {
+			log.debug("\n=== addTypeDefinition called for type: " + typeDefinition.getId() + " ===");
+		}
 		log.info("=== addTypeDefinition called for type: " + typeDefinition.getId() + " ===");
 
 		synchronized (initLock) {
@@ -3731,30 +3839,42 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			}
 
 			// Check current cache state
-			System.out.println("Current cache contains " + types.size() + " types");
+			if (log.isDebugEnabled()) {
+			log.debug("Current cache contains " + types.size() + " types");
+		}
 			log.info("Current cache contains " + types.size() + " types");
 			if (typeDefinition.getParentTypeId() != null) {
-				System.out.println("Type " + typeDefinition.getId() + " has parent: " + typeDefinition.getParentTypeId());
+				if (log.isDebugEnabled()) {
+					log.debug("Type " + typeDefinition.getId() + " has parent: " + typeDefinition.getParentTypeId());
+				}
 				log.info("Type " + typeDefinition.getId() + " has parent: " + typeDefinition.getParentTypeId());
 				TypeDefinitionContainer parentInCache = types.get(typeDefinition.getParentTypeId());
 				if (parentInCache != null) {
 					TypeDefinition parentDef = parentInCache.getTypeDefinition();
-					System.out.println("Parent type " + typeDefinition.getParentTypeId() + " found in cache with " +
+					if (log.isDebugEnabled()) {
+						log.debug("Parent type " + typeDefinition.getParentTypeId() + " found in cache with " +
 						parentDef.getPropertyDefinitions().size() + " properties");
+					}
 					log.info("Parent type " + typeDefinition.getParentTypeId() + " found in cache with " +
 						parentDef.getPropertyDefinitions().size() + " properties");
 					// Log parent's custom properties
 					int customCount = 0;
 					for (String propId : parentDef.getPropertyDefinitions().keySet()) {
 						if (!propId.startsWith("cmis:")) {
-							System.out.println("  Parent custom property in cache: " + propId);
+							if (log.isDebugEnabled()) {
+								log.debug("  Parent custom property in cache: " + propId);
+							}
 							log.info("  Parent custom property in cache: " + propId);
 							customCount++;
 						}
 					}
-					System.out.println("Parent has " + customCount + " custom properties in cache");
+					if (log.isDebugEnabled()) {
+			log.debug("Parent has " + customCount + " custom properties in cache");
+		}
 				} else {
-					System.out.println("Parent type " + typeDefinition.getParentTypeId() + " NOT in cache yet");
+					if (log.isDebugEnabled()) {
+			log.debug("Parent type " + typeDefinition.getParentTypeId() + " NOT in cache yet");
+		}
 					log.info("Parent type " + typeDefinition.getParentTypeId() + " NOT in cache yet");
 				}
 			}
@@ -3778,8 +3898,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				// Add the new type
 				addTypeInternal(types, builtType);
 
-				System.out.println("Added/Updated type in cache: " + typeDefinition.getId() +
+				if (log.isDebugEnabled()) {
+					log.debug("Added/Updated type in cache: " + typeDefinition.getId() +
 						 " with " + builtType.getPropertyDefinitions().size() + " properties");
+				}
 				log.info("Added/Updated type in cache: " + typeDefinition.getId() +
 						 " with " + builtType.getPropertyDefinitions().size() + " properties");
 
@@ -3787,7 +3909,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				for (String propId : builtType.getPropertyDefinitions().keySet()) {
 					PropertyDefinition<?> prop = builtType.getPropertyDefinitions().get(propId);
 					if (!propId.startsWith("cmis:")) {
-						System.out.println("  Type has custom property: " + propId + " (inherited=" + prop.isInherited() + ")");
+						if (log.isDebugEnabled()) {
+			log.debug("  Type has custom property: " + propId + " (inherited=" + prop.isInherited() + ")");
+		}
 						log.info("  Type has custom property: " + propId + " (inherited=" + prop.isInherited() + ")");
 					}
 				}
@@ -3797,13 +3921,17 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					TypeDefinitionContainer parentAfterAdd = types.get(typeDefinition.getParentTypeId());
 					if (parentAfterAdd != null) {
 						TypeDefinition parentDef = parentAfterAdd.getTypeDefinition();
-						System.out.println("After adding child, parent " + typeDefinition.getParentTypeId() +
+						if (log.isDebugEnabled()) {
+							log.debug("After adding child, parent " + typeDefinition.getParentTypeId() +
 							" still has " + parentDef.getPropertyDefinitions().size() + " properties");
+						}
 						log.info("After adding child, parent " + typeDefinition.getParentTypeId() +
 							" still has " + parentDef.getPropertyDefinitions().size() + " properties");
 						for (String propId : parentDef.getPropertyDefinitions().keySet()) {
 							if (!propId.startsWith("cmis:")) {
-								System.out.println("  Parent still has custom property: " + propId);
+								if (log.isDebugEnabled()) {
+									log.debug("  Parent still has custom property: " + propId);
+								}
 								log.info("  Parent still has custom property: " + propId);
 							}
 						}
@@ -4001,7 +4129,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		
 		// CRITICAL FIX: Null check for types map
 		if (types == null) {
-			System.err.println("*** ERROR: addTypeInternal called with null types map for type: " + type.getId() + " ***");
+			if (log.isDebugEnabled()) {
+				log.debug("*** ERROR: addTypeInternal called with null types map for type: " + type.getId() + " ***");
+			}
 			log.error("*** ERROR: addTypeInternal called with null types map for type: " + type.getId() + " ***");
 			return;
 		}
