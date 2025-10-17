@@ -372,7 +372,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// RANKING FIX: Add sort by modification date descending to prioritize recent documents
 		// This ensures that newly created documents appear at the top of search results
 		solrQuery.setSort("modified", SolrQuery.ORDER.desc);
-		System.out.println("=== QUERY DEBUG: Added sort by modified desc to prioritize recent documents");
+		if (logger.isDebugEnabled()) {
+			logger.debug("Query: Added sort by modified desc to prioritize recent documents");
+		}
 		
 		logger.info(solrQuery.toString());
 		logger.info("[QUERY DEBUG] statement: " + statement);
@@ -446,35 +448,45 @@ public class SolrQueryProcessor implements QueryProcessor {
 			List<Lock> locks = threadLockService.readLocks(repositoryId, contents);
 			try{
 				threadLockService.bulkLock(locks);
-				
+
 				// Debug logging for permission filtering
-				System.out.println("DEBUG SolrQueryProcessor: Before permission filtering - includeAllowableActions=" + includeAllowableActions + ", contents.size=" + contents.size() + ", user=" + callContext.getUsername());
-				
+				if (logger.isDebugEnabled()) {
+					logger.debug("Before permission filtering - includeAllowableActions=" + includeAllowableActions + ", contents.size=" + contents.size() + ", user=" + callContext.getUsername());
+				}
+
 				// Filter out by permissions
 				List<Content> permitted = permissionService.getFiltered(
 						callContext, repositoryId, contents);
-				
+
 				// Debug logging after permission filtering
-				System.out.println("DEBUG SolrQueryProcessor: After permission filtering - permitted.size=" + permitted.size() + ", filtered out=" + (contents.size() - permitted.size()));
+				if (logger.isDebugEnabled()) {
+					logger.debug("After permission filtering - permitted.size=" + permitted.size() + ", filtered out=" + (contents.size() - permitted.size()));
+				}
 
 				// Filter return value with SELECT clause
 				// TCK CRITICAL FIX: Query alias support - get full alias map instead of just values
 				Map<String, String> requestedWithAliasKey = queryObject
 						.getRequestedPropertiesByAlias();
-				System.out.println("========== TCK ALIAS DEBUG [SolrQueryProcessor]: requestedWithAliasKey=" + requestedWithAliasKey);
+				if (logger.isDebugEnabled()) {
+					logger.debug("TCK Alias: requestedWithAliasKey=" + requestedWithAliasKey);
+				}
 				String filter = null;
 				if (!requestedWithAliasKey.keySet().contains("*")) {
 					// Create filter(queryNames) from query aliases
 					filter = StringUtils.join(requestedWithAliasKey.values(), ",");
 				}
-				System.out.println("========== TCK ALIAS DEBUG [SolrQueryProcessor]: filter=" + filter);
+				if (logger.isDebugEnabled()) {
+					logger.debug("TCK Alias: filter=" + filter);
+				}
 
 
 				// Build ObjectList
 				String orderBy = orderBy(queryObject);
 				// TCK CRITICAL FIX: Pass propertyAliases map to enable query alias support
 				// Build ObjectList with original includeAllowableActions parameter for final response
-				System.out.println("========== TCK ALIAS DEBUG [SolrQueryProcessor]: Calling compileObjectDataListForSearchResult with propertyAliases");
+				if (logger.isDebugEnabled()) {
+					logger.debug("TCK Alias: Calling compileObjectDataListForSearchResult with propertyAliases");
+				}
 				ObjectList result = compileService.compileObjectDataListForSearchResult(
 						callContext, repositoryId, permitted, filter, requestedWithAliasKey,
 						includeAllowableActions, includeRelationships, renditionFilter, false,

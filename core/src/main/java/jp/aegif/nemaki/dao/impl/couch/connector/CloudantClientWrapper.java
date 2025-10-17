@@ -1093,12 +1093,14 @@ public class CloudantClientWrapper {
 					.build();
 				com.ibm.cloud.cloudant.v1.model.Document savedDoc = client.getDocument(getOpts).execute().getResult();
 				Map<String, Object> props = savedDoc.getProperties();
-				System.err.println("*** CLOUDANT VERIFY RELATIONSHIP SAVED: id=" + savedDoc.getId() +
-					" type=" + props.get("type") +
-					" sourceId=" + props.get("sourceId") +
-					" targetId=" + props.get("targetId") + " ***");
+				if (log.isDebugEnabled()) {
+					log.debug("Cloudant verify relationship saved: id=" + savedDoc.getId() +
+						" type=" + props.get("type") +
+						" sourceId=" + props.get("sourceId") +
+						" targetId=" + props.get("targetId"));
+				}
 			} catch (Exception verifyEx) {
-				System.err.println("*** CLOUDANT VERIFY ERROR: " + verifyEx.getMessage() + " ***");
+				log.warn("Cloudant verify error: " + verifyEx.getMessage());
 			}
 		}
 			log.debug("Created document with ID: " + result.getId());
@@ -1233,14 +1235,16 @@ public class CloudantClientWrapper {
 							}
 						}
 
-						// Debug logging to trace the propertyId value
-						System.err.println("TCK DEBUG: CloudantClientWrapper.get() - CouchPropertyDefinitionCore - Map contains propertyId: " + completeMap.get("propertyId"));
+
+					// Debug logging to trace the propertyId value
+					if (log.isDebugEnabled()) {
+						log.debug("CloudantClientWrapper.get() - CouchPropertyDefinitionCore - Map contains propertyId: " + completeMap.get("propertyId"));
+					}
 
 						try {
 							T result = mapper.convertValue(completeMap, clazz);
-							return result;
 						} catch (Exception deserEx) {
-							System.err.println("TCK DEBUG: Error deserializing CouchPropertyDefinitionCore: " + deserEx.getMessage());
+						log.warn("Error deserializing CouchPropertyDefinitionCore: " + deserEx.getMessage());
 							throw deserEx;
 						}
 					} else {

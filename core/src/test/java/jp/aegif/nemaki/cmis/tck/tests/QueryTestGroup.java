@@ -14,14 +14,7 @@ import jp.aegif.nemaki.cmis.tck.TckSuite;
 // @Ignore("TCK tests temporarily disabled due to server connectivity issues - requires running CMIS server on localhost:8080") - ENABLED for investigation
 public class QueryTestGroup extends TckSuite{
 
-	static {
-		System.err.println("[QueryTestGroup] STATIC INIT - Class loaded, Thread: " + Thread.currentThread().getName());
-	}
-
-	public QueryTestGroup() {
-		super();
-		System.err.println("[QueryTestGroup] CONSTRUCTOR - Instance created, Thread: " + Thread.currentThread().getName());
-	}
+	// Static initialization and constructor - no debug logging needed
 
 	@Test
 	public void querySmokeTest() throws Exception{
@@ -43,12 +36,8 @@ public class QueryTestGroup extends TckSuite{
 	
 	@Test
 	public void queryLikeTest() throws Exception{
-		System.err.println("[QueryTestGroup.queryLikeTest] START - Thread: " + Thread.currentThread().getName());
-		System.err.println("[QueryTestGroup.queryLikeTest] Creating QueryLikeTest instance...");
 		QueryLikeTest test = new QueryLikeTest();
-		System.err.println("[QueryTestGroup.queryLikeTest] QueryLikeTest instance created, calling run()...");
 		run(test);
-		System.err.println("[QueryTestGroup.queryLikeTest] run() completed");
 	}
 	
 	@Test

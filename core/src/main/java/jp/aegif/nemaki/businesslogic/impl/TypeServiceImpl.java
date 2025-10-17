@@ -125,14 +125,16 @@ public class TypeServiceImpl implements TypeService{
 		}
 
 		if (typeManager != null) {
-			System.out.println("DEBUG: TypeManager is not null, adding new type to cache");
-			// Debug: Check what properties the created type has
-			System.out.println("DEBUG: Created NemakiTypeDefinition has " +
-				(created.getProperties() != null ? created.getProperties().size() : 0) +
-				" property detail IDs");
-			if (created.getProperties() != null) {
-				for (String propId : created.getProperties()) {
-					System.out.println("  Created type property detail ID: " + propId);
+			if (log.isDebugEnabled()) {
+				log.debug("TypeManager is not null, adding new type to cache");
+				// Debug: Check what properties the created type has
+				log.debug("Created NemakiTypeDefinition has " +
+					(created.getProperties() != null ? created.getProperties().size() : 0) +
+					" property detail IDs");
+				if (created.getProperties() != null) {
+					for (String propId : created.getProperties()) {
+						log.debug("  Created type property detail ID: " + propId);
+					}
 				}
 			}
 
@@ -142,23 +144,27 @@ public class TypeServiceImpl implements TypeService{
 			org.apache.chemistry.opencmis.commons.definitions.TypeDefinition typeDef =
 				typeManager.buildTypeDefinitionFromDB(repositoryId, created);
 			if (typeDef != null) {
-				System.out.println("DEBUG: Built TypeDefinition has " +
-					typeDef.getPropertyDefinitions().size() + " properties");
-				int customCount = 0;
-				for (String propId : typeDef.getPropertyDefinitions().keySet()) {
-					if (!propId.startsWith("cmis:")) {
-						System.out.println("  Built type custom property: " + propId);
-						customCount++;
+				if (log.isDebugEnabled()) {
+					log.debug("Built TypeDefinition has " +
+						typeDef.getPropertyDefinitions().size() + " properties");
+					int customCount = 0;
+					for (String propId : typeDef.getPropertyDefinitions().keySet()) {
+						if (!propId.startsWith("cmis:")) {
+							log.debug("  Built type custom property: " + propId);
+							customCount++;
+						}
 					}
+					log.debug("Built type has " + customCount + " custom properties");
+					log.debug("Calling typeManager.addTypeDefinition for " + created.getId());
 				}
-				System.out.println("DEBUG: Built type has " + customCount + " custom properties");
-				System.out.println("DEBUG: Calling typeManager.addTypeDefinition for " + created.getId());
 				typeManager.addTypeDefinition(repositoryId, typeDef, false);
 			} else {
-				System.out.println("DEBUG: typeDef is null, not calling addTypeDefinition");
+				if (log.isDebugEnabled()) {
+					log.debug("typeDef is null, not calling addTypeDefinition");
+				}
 			}
 		} else {
-			System.out.println("WARNING: TypeManager is NULL, cannot update cache!");
+			log.warn("TypeManager is NULL, cannot update cache");
 		}
 
 		log.info("=== TYPE CREATION DEBUG: Completed type creation for: " + typeDefinition.getId() + " ===");
@@ -266,8 +272,10 @@ public class TypeServiceImpl implements TypeService{
 			isCustomProperty = !namespace.equals("cmis");
 		}
 
-		// CRITICAL DEBUG: Log to stderr for immediate visibility
-		System.err.println("TCK CREATE PROPERTY DEBUG: propertyType=" + propertyDefinition.getPropertyType());
+		// CRITICAL DEBUG: Log property type for TCK diagnostics
+		if (log.isDebugEnabled()) {
+			log.debug("TCK: Create property propertyType=" + propertyDefinition.getPropertyType());
+		}
 
 		log.debug("CUSTOM PROPERTY DETECTION: " + isCustomProperty);
 		log.debug("Property ID contains namespace: " + (originalPropertyId != null && originalPropertyId.contains(":")));

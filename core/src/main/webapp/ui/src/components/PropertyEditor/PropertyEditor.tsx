@@ -13,12 +13,15 @@ interface PropertyEditorProps {
 
 export const PropertyEditor: React.FC<PropertyEditorProps> = ({
   object,
-  propertyDefinitions,
+  propertyDefinitions = {},
   onSave,
   readOnly = false
 }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = React.useState(false);
+
+  // Handle null/undefined propertyDefinitions
+  const safePropDefs = propertyDefinitions || {};
 
   const handleSubmit = async (values: Record<string, any>) => {
     setLoading(true);
@@ -26,7 +29,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
       const processedValues: Record<string, any> = {};
       
       Object.entries(values).forEach(([key, value]) => {
-        const propDef = propertyDefinitions[key];
+        const propDef = safePropDefs[key];
         if (propDef) {
           if (propDef.propertyType === 'datetime' && value) {
             processedValues[key] = dayjs(value).toISOString();
@@ -121,8 +124,8 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
 
   const getInitialValues = () => {
     const initialValues: Record<string, any> = {};
-    
-    Object.entries(propertyDefinitions).forEach(([propId, propDef]: [string, PropertyDefinition]) => {
+
+    Object.entries(safePropDefs).forEach(([propId, propDef]: [string, PropertyDefinition]) => {
       const value = object.properties[propId];
       if (value !== undefined && value !== null) {
         if (propDef.propertyType === 'datetime' && value) {
@@ -149,7 +152,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
       initialValues={getInitialValues()}
       onFinish={handleSubmit}
     >
-      {Object.entries(propertyDefinitions)
+      {Object.entries(safePropDefs)
         .filter(([_, propDef]) => propDef.updatable || readOnly)
         .map(([propId, propDef]) => (
         <Form.Item

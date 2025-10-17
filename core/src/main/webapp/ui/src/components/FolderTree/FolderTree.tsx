@@ -18,6 +18,7 @@ interface TreeNode {
   children?: TreeNode[];
 }
 
+import { useAuth } from '../../contexts/AuthContext';
 export const FolderTree: React.FC<FolderTreeProps> = ({
   repositoryId,
   onSelect,
@@ -28,7 +29,8 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
 
-  const cmisService = new CMISService();
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
 
   useEffect(() => {
     loadRootFolder();

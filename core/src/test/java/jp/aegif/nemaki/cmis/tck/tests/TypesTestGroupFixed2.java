@@ -14,13 +14,19 @@ import org.apache.chemistry.opencmis.tck.CmisTestResultStatus;
 import org.junit.Test;
 import org.junit.Before;
 import org.junit.Assert;
+import org.junit.Ignore;
 
 import java.util.HashMap;
 import java.util.Map;
 
 /**
+ * DEPRECATED: This class was created as a workaround for JUnitRunner hang issues.
+ * The hang issue has been resolved by static initialization fix in TestGroupBase.
+ * Use TypesTestGroup.java instead - this class is kept for reference only.
+ *
  * Alternative fixed TypesTestGroup that properly initializes TCK test context
  */
+@Ignore("DEPRECATED: Use TypesTestGroup.java - hang issue resolved by TestGroupBase static initialization fix")
 public class TypesTestGroupFixed2 {
 
     private Session session;

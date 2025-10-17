@@ -29,6 +29,7 @@ interface PermissionManagementProps {
   repositoryId: string;
 }
 
+import { useAuth } from '../../contexts/AuthContext';
 export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repositoryId }) => {
   const { objectId } = useParams<{ objectId: string }>();
   const navigate = useNavigate();
@@ -40,7 +41,8 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
   const [modalVisible, setModalVisible] = useState(false);
   const [form] = Form.useForm();
 
-  const cmisService = new CMISService();
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
 
   const availablePermissions = [
     'cmis:read',

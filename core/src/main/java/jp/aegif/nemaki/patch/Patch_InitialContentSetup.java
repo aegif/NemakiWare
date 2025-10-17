@@ -129,6 +129,10 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
                 registerCMISSpecificationPDF(contentService, callContext, repositoryId, technicalDocsFolderId);
             }
 
+            // PRODUCT FIX: Ensure root folder has GROUP_EVERYONE read permission
+            // This is a critical requirement: root folder must be readable by all authenticated users
+            ensureRootFolderDefaultAcl(contentService, callContext, repositoryId, rootFolderId);
+
             // TCK CRITICAL FIX: Index root folder in Solr for query tests
             indexRootFolderInSolr(contentService, repositoryId, rootFolderId);
 
@@ -449,6 +453,75 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
 
         } catch (Exception e) {
             log.error("Failed to create document: " + documentName, e);
+        }
+    }
+
+    /**
+     * PRODUCT FIX: Ensure root folder has GROUP_EVERYONE read permission
+     *
+     * Root folder must be readable by all authenticated users to allow folder navigation.
+     * This method adds GROUP_EVERYONE:read permission if it doesn't already exist.
+     *
+     * @param contentService ContentService instance
+     * @param callContext System call context
+     * @param repositoryId Repository ID
+     * @param rootFolderId Root folder ID
+     */
+    private void ensureRootFolderDefaultAcl(ContentService contentService, SystemCallContext callContext,
+                                           String repositoryId, String rootFolderId) {
+        try {
+            log.error("=== PRODUCT FIX: Ensuring root folder has GROUP_EVERYONE read permission ===");
+
+            // Get root folder
+            Content rootContent = contentService.getContent(repositoryId, rootFolderId);
+            if (rootContent == null) {
+                log.error("Root folder not found for ACL setup: " + rootFolderId);
+                return;
+            }
+
+            // Get current ACL
+            jp.aegif.nemaki.model.Acl currentAcl = rootContent.getAcl();
+            if (currentAcl == null) {
+                log.error("Root folder has no ACL, creating new ACL");
+                currentAcl = new jp.aegif.nemaki.model.Acl();
+                rootContent.setAcl(currentAcl);
+            }
+
+            // Check if GROUP_EVERYONE ACE already exists
+            boolean hasGroupEveryoneRead = false;
+            for (jp.aegif.nemaki.model.Ace ace : currentAcl.getLocalAces()) {
+                if ("GROUP_EVERYONE".equals(ace.getPrincipalId())) {
+                    hasGroupEveryoneRead = true;
+                    log.error("Root folder already has GROUP_EVERYONE ACE with permissions: " + ace.getPermissions());
+                    break;
+                }
+            }
+
+            if (!hasGroupEveryoneRead) {
+                log.error("Adding GROUP_EVERYONE:read permission to root folder");
+
+                // Create new ACE for GROUP_EVERYONE with read permission
+                jp.aegif.nemaki.model.Ace groupEveryoneAce = new jp.aegif.nemaki.model.Ace();
+                groupEveryoneAce.setPrincipalId("GROUP_EVERYONE");
+                groupEveryoneAce.setPermissions(java.util.Arrays.asList("cmis:read"));
+                groupEveryoneAce.setDirect(true);
+
+                // Add to local ACEs
+                currentAcl.getLocalAces().add(groupEveryoneAce);
+
+                // Update root folder with new ACL
+                contentService.update(callContext, repositoryId, rootContent);
+
+                log.error("✅ Root folder ACL updated successfully - GROUP_EVERYONE can now read root folder");
+            } else {
+                log.error("✅ Root folder already has GROUP_EVERYONE read permission - no update needed");
+            }
+
+        } catch (Exception e) {
+            log.error("Failed to ensure root folder default ACL (non-critical): " + e.getMessage());
+            if (log.isDebugEnabled()) {
+                log.debug("Root folder ACL setup error details", e);
+            }
         }
     }
 

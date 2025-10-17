@@ -276,7 +276,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
         // Debug logging for multipart parameters
         if (contentType != null && contentType.startsWith("multipart/form-data")) {
-            System.out.println("*** MULTIPART DEBUG: Multipart request detected - will be handled by OpenCMIS MultipartParser with Parts API ***");
+            if (log.isDebugEnabled()) {
+                log.debug("Multipart request detected - will be handled by OpenCMIS MultipartParser with Parts API");
+            }
         }
         
         // CRITICAL FIX: Handle multipart form-data parameter parsing for legacy compatibility

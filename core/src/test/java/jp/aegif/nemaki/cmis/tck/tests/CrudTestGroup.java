@@ -33,12 +33,8 @@ public class CrudTestGroup extends TestGroupBase{
 	
 	@Test
 	public void createAndDeleteFolderTest() throws Exception{
-		System.out.println("[CrudTestGroup] createAndDeleteFolderTest START");
 		CreateAndDeleteFolderTest test = new CreateAndDeleteFolderTest();
-		System.out.println("[CrudTestGroup] Created test instance: " + test.getClass().getName());
-		System.out.println("[CrudTestGroup] Calling run(test)...");
 		run(test);
-		System.out.println("[CrudTestGroup] createAndDeleteFolderTest END");
 	}
 	
 	@Test

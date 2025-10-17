@@ -28,6 +28,7 @@ import { CMISObject, VersionHistory, TypeDefinition, Relationship } from '../../
 import { PropertyEditor } from '../PropertyEditor/PropertyEditor';
 import { PreviewComponent } from '../PreviewComponent/PreviewComponent';
 import { canPreview } from '../../utils/previewUtils';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface DocumentViewerProps {
   repositoryId: string;
@@ -36,6 +37,7 @@ interface DocumentViewerProps {
 export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) => {
   const { objectId } = useParams<{ objectId: string }>();
   const navigate = useNavigate();
+  const { handleAuthError } = useAuth();
   const [object, setObject] = useState<CMISObject | null>(null);
   const [typeDefinition, setTypeDefinition] = useState<TypeDefinition | null>(null);
   const [versionHistory, setVersionHistory] = useState<VersionHistory | null>(null);
@@ -44,7 +46,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
   const [form] = Form.useForm();
 
-  const cmisService = new CMISService();
+  // CRITICAL FIX: Pass handleAuthError to CMISService to handle 401/403/404 errors
+  const cmisService = new CMISService(handleAuthError);
 
   useEffect(() => {
     if (objectId) {

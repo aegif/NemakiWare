@@ -2,6 +2,7 @@ package jp.aegif.nemaki.cmis.tck.tests;
 
 import org.junit.Test;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
@@ -15,8 +16,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
+ * DEPRECATED: This class was created as a validation tool for DirectTckTestRunner.
+ * The hang issue has been resolved by static initialization fix in TestGroupBase.
+ * Use standard test groups instead - this class is kept for reference only.
+ *
  * Validation test to verify DirectTckTestRunner actually runs tests properly
  */
+@Ignore("DEPRECATED: Use standard test groups - hang issue resolved by TestGroupBase static initialization fix")
 public class DirectTckTestRunnerValidation {
 
     private Session createSession() throws Exception {

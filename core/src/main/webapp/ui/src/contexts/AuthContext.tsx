@@ -3,6 +3,7 @@ import { AuthService, AuthToken } from '../services/auth';
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  isLoading: boolean;
   authToken: AuthToken | null;
   login: (username: string, password: string, repositoryId: string) => Promise<void>;
   logout: () => void;
@@ -13,6 +14,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [authToken, setAuthToken] = useState<AuthToken | null>(null);
 
   // Initialize authentication state from localStorage
@@ -20,7 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const checkAuthState = () => {
       const authService = AuthService.getInstance();
       const currentAuth = authService.getCurrentAuth();
-      
+
       if (currentAuth) {
         console.log('AuthContext: Found auth data:', currentAuth);
         setAuthToken(currentAuth);
@@ -30,6 +32,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthToken(null);
         setIsAuthenticated(false);
       }
+
+      // Mark initialization as complete
+      setIsLoading(false);
     };
 
     // Initial check
@@ -83,16 +88,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const handleAuthError = useCallback((error: any) => {
     console.warn('Authentication error detected:', error);
-    
-    // Check if this is a 401 Unauthorized error
-    if (error?.status === 401 || error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
-      console.log('401 error detected - redirecting to login');
+
+    // Check if this is a 401 Unauthorized, 403 Forbidden, or 404 Not Found error
+    // All these errors should redirect to login page for better UX
+    const status = error?.status;
+    const message = error?.message || '';
+
+    if (status === 401 || message.includes('401') || message.includes('Unauthorized')) {
+      console.log('401 Unauthorized error detected - redirecting to login');
+      logout();
+    } else if (status === 403 || message.includes('403') || message.includes('Forbidden')) {
+      console.log('403 Forbidden error detected - redirecting to login');
+      logout();
+    } else if (status === 404 || message.includes('404') || message.includes('Not Found')) {
+      console.log('404 Not Found error detected - redirecting to login');
       logout();
     }
   }, [logout]);
 
   const value = {
     isAuthenticated,
+    isLoading,
     authToken,
     login,
     logout,

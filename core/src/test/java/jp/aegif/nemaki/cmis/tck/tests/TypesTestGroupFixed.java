@@ -13,14 +13,20 @@ import org.apache.chemistry.opencmis.tck.tests.types.CreateAndDeleteTypeTest;
 import org.apache.chemistry.opencmis.tck.tests.types.SecondaryTypesTest;
 import org.junit.Test;
 import org.junit.Assert;
+import org.junit.Ignore;
 
 import java.util.HashMap;
 import java.util.Map;
 
 /**
+ * DEPRECATED: This class was created as a workaround for JUnitRunner hang issues.
+ * The hang issue has been resolved by static initialization fix in TestGroupBase.
+ * Use TypesTestGroup.java instead - this class is kept for reference only.
+ *
  * Fixed TypesTestGroup that bypasses JUnitRunner hang issue
  * Based on DirectTckTestRunner approach but structured as traditional test class
  */
+@Ignore("DEPRECATED: Use TypesTestGroup.java - hang issue resolved by TestGroupBase static initialization fix")
 public class TypesTestGroupFixed {
 
     /**

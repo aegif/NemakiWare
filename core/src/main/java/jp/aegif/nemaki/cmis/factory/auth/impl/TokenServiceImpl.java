@@ -51,7 +51,7 @@ public class TokenServiceImpl implements TokenService{
 			}
 		}
 		
-		private synchronized Token set(String app, String repositoryId, String userName){
+		private Token set(String app, String repositoryId, String userName){
 			Map<String, Map<String, Token>> appMap = map.get(app);
 			if(appMap == null){
 				map.put(app, new HashMap<String, Map<String, Token>>());
@@ -63,40 +63,23 @@ public class TokenServiceImpl implements TokenService{
 				appMap.put(repositoryId, new HashMap<String, Token>());
 				repoMap = appMap.get(repositoryId);
 			}
-
-			// CRITICAL FIX: Check if user already has a valid token
-			Token existingToken = repoMap.get(userName);
-			long currentTime = System.currentTimeMillis();
-			if(existingToken != null && existingToken.getExpiration() > currentTime){
-				// Token is still valid - reuse it instead of creating a new one
-				if(log.isDebugEnabled()){
-					log.debug("=== TOKEN REUSE (existing token still valid) ===");
-					log.debug("User: " + userName + ", Repository: " + repositoryId + ", App: " + app);
-					log.debug("Existing token expiration: " + existingToken.getExpiration() + " (" + new java.util.Date(existingToken.getExpiration()) + ")");
-					log.debug("Time until expiration: " + ((existingToken.getExpiration() - currentTime) / 1000) + " seconds");
-					log.debug("Reusing existing token: " + existingToken.getToken());
-					log.debug("===========================");
-				}
-				return existingToken;
-			}
-
+			
 			String token = UUID.randomUUID().toString();
 
 			String expirationConfig = propertyManager.readValue(PropertyKey.AUTH_TOKEN_EXPIRATION);
 			long expirationMillis = Long.valueOf(expirationConfig);
+			long currentTime = System.currentTimeMillis();
 			long expiration = currentTime + expirationMillis;
 
-			// TOKEN DEBUG: Log token creation details (DEBUG level for production)
-			if(log.isDebugEnabled()){
-				log.debug("=== TOKEN CREATION DEBUG ===");
-				log.debug("User: " + userName + ", Repository: " + repositoryId + ", App: " + app);
-				log.debug("Config value (auth.token.expiration): " + expirationConfig + " ms");
-				log.debug("Current time: " + currentTime + " (" + new java.util.Date(currentTime) + ")");
-				log.debug("Expiration time: " + expiration + " (" + new java.util.Date(expiration) + ")");
-				log.debug("Token will expire in: " + (expirationMillis / 1000) + " seconds (" + (expirationMillis / 60000) + " minutes)");
-				log.debug("Token: " + token);
-				log.debug("===========================");
-			}
+			// TOKEN DEBUG: Log token creation details
+			log.info("=== TOKEN CREATION DEBUG ===");
+			log.info("User: " + userName + ", Repository: " + repositoryId + ", App: " + app);
+			log.info("Config value (auth.token.expiration): " + expirationConfig + " ms");
+			log.info("Current time: " + currentTime + " (" + new java.util.Date(currentTime) + ")");
+			log.info("Expiration time: " + expiration + " (" + new java.util.Date(expiration) + ")");
+			log.info("Token will expire in: " + (expirationMillis / 1000) + " seconds (" + (expirationMillis / 60000) + " minutes)");
+			log.info("Token: " + token);
+			log.info("===========================");
 
 			repoMap.put(userName, new Token(userName, token, expiration));
 

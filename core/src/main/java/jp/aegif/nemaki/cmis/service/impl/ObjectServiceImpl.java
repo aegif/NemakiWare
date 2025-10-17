@@ -305,12 +305,16 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 
 		// CRITICAL TCK DEBUG: Verify InputStream contains data after getAttachment()
-		System.err.println("InputStream class: " + is.getClass().getName());
-		System.err.println("InputStream.markSupported(): " + is.markSupported());
+		if (log.isDebugEnabled()) {
+			log.debug("InputStream class: " + is.getClass().getName());
+			log.debug("InputStream.markSupported(): " + is.markSupported());
+		}
 
 		try {
 			int available = is.available();
-			System.err.println("InputStream.available(): " + available);
+			if (log.isDebugEnabled()) {
+				log.debug("InputStream.available(): " + available);
+			}
 
 			// Try to read first few bytes to verify stream contains data
 			if (is.markSupported()) {
@@ -324,15 +328,18 @@ public class ObjectServiceImpl implements ObjectService {
 			} else {
 			}
 		} catch (Exception debugEx) {
-			System.err.println("DEBUG exception during InputStream verification: " + debugEx.getMessage());
-			debugEx.printStackTrace();
+			if (log.isDebugEnabled()) {
+				log.debug("Exception during InputStream verification: " + debugEx.getMessage());
+			}
 		}
 		// CRITICAL TCK FIX: Always use actual size from CouchDB _attachments metadata
 		// This ensures we get the correct size even after appendContent operations
 		// which may update binary content without updating AttachmentNode.length field
 		BigInteger length;
 
-		System.err.println("*** GET CONTENT STREAM: Getting actual content size from CouchDB attachment metadata for: " + document.getAttachmentNodeId());
+		if (log.isDebugEnabled()) {
+			log.debug("Getting actual content size from CouchDB attachment metadata for: " + document.getAttachmentNodeId());
+		}
 
 		Long actualSizeFromDB = contentService.getAttachmentActualSize(repositoryId, document.getAttachmentNodeId());
 		if (actualSizeFromDB != null && actualSizeFromDB > 0) {
@@ -344,7 +351,9 @@ public class ObjectServiceImpl implements ObjectService {
 				length = BigInteger.valueOf(attachmentLength);
 			} else {
 				length = BigInteger.valueOf(-1);
-				System.err.println("*** GET CONTENT STREAM: Using CMIS standard -1 (unknown size) for: " + name);
+				if (log.isDebugEnabled()) {
+					log.debug("Using CMIS standard -1 (unknown size) for: " + name);
+				}
 			}
 		}
 	if (log.isDebugEnabled()) {
@@ -649,15 +658,18 @@ public class ObjectServiceImpl implements ObjectService {
 		
 		Document document = contentService.createDocument(callContext, repositoryId, properties, parentFolder,
 				contentStream, versioningState, policies, addAces, removeAces);
-		System.err.println("Returned document.getId(): " + document.getId());
-		System.err.println("Returned document.getAttachmentNodeId(): " + document.getAttachmentNodeId());
-		
-		if (document.getAttachmentNodeId() == null) {
-			System.err.println("⚠️  This will cause getContentStream() to return null and trigger the SecondaryTypesTest failure!");
-		} else {
-			System.err.println("✅ SUCCESS: ObjectServiceImpl received document with valid attachmentNodeId: " + document.getAttachmentNodeId());
+
+		if (log.isDebugEnabled()) {
+			log.debug("Returned document.getId(): " + document.getId());
+			log.debug("Returned document.getAttachmentNodeId(): " + document.getAttachmentNodeId());
+
+			if (document.getAttachmentNodeId() == null) {
+				log.debug("Warning: Document created without attachmentNodeId - getContentStream() will return null");
+			} else {
+				log.debug("SUCCESS: ObjectServiceImpl received document with valid attachmentNodeId: " + document.getAttachmentNodeId());
+			}
 		}
-		
+
 		return document.getId();
 	}
 
@@ -1007,8 +1019,10 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		String oldChangeToken = (changeToken != null) ? changeToken.getValue() : null;
-		System.err.println("*** UPDATE PROPERTIES: Object " + objectId.getValue() + " OLD change token: '" + oldChangeToken + "' ***");
+		if (log.isDebugEnabled()) {
+			String oldChangeToken = (changeToken != null) ? changeToken.getValue() : null;
+			log.debug("UPDATE PROPERTIES: Object " + objectId.getValue() + " OLD change token: '" + oldChangeToken + "'");
+		}
 
 		Content updatedContent = contentService.updateProperties(callContext, repositoryId, properties, content);
 
@@ -1017,7 +1031,9 @@ public class ObjectServiceImpl implements ObjectService {
 		if (changeToken != null && updatedContent != null) {
 			String newChangeToken = updatedContent.getChangeToken();
 			changeToken.setValue(newChangeToken);
-			System.err.println("*** UPDATE PROPERTIES: Object " + objectId.getValue() + " NEW change token: '" + newChangeToken + "' ***");
+			if (log.isDebugEnabled()) {
+				log.debug("UPDATE PROPERTIES: Object " + objectId.getValue() + " NEW change token: '" + newChangeToken + "'");
+			}
 		} else {
 		}
 

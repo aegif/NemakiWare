@@ -22,9 +22,41 @@ export class AuthHelper {
   };
 
   /**
-   * Perform login with specified credentials
+   * Perform login with specified credentials (method overload - individual parameters)
    */
-  async login(credentials: LoginCredentials = AuthHelper.DEFAULT_CREDENTIALS): Promise<void> {
+  async login(username: string, password: string, repository?: string): Promise<void>;
+
+  /**
+   * Perform login with specified credentials (method overload - credentials object)
+   */
+  async login(credentials?: LoginCredentials): Promise<void>;
+
+  /**
+   * Perform login with specified credentials (implementation)
+   * Supports both calling patterns:
+   * - login('username', 'password', 'repository')
+   * - login({ username: 'user', password: 'pass', repository: 'repo' })
+   * - login() - uses default admin credentials
+   */
+  async login(usernameOrCredentials?: string | LoginCredentials, password?: string, repository?: string): Promise<void> {
+    // Parse parameters to determine credentials
+    let credentials: LoginCredentials;
+
+    if (typeof usernameOrCredentials === 'string') {
+      // Called with individual parameters: login('username', 'password', 'repository')
+      credentials = {
+        username: usernameOrCredentials,
+        password: password!,
+        repository: repository || 'bedroom',
+      };
+    } else if (usernameOrCredentials === undefined) {
+      // Called with no parameters: login() - use defaults
+      credentials = AuthHelper.DEFAULT_CREDENTIALS;
+    } else {
+      // Called with credentials object: login({ username, password, repository })
+      credentials = usernameOrCredentials;
+    }
+
     // Navigate to login page
     await this.page.goto('/core/ui/dist/index.html');
 
@@ -117,31 +149,54 @@ export class AuthHelper {
     }
 
     await loginButton.click();
+    console.log(`AuthHelper: Clicked login button for user: ${credentials.username}`);
+
+    // Wait a moment for the login request to process
+    await this.page.waitForTimeout(1000);
+    console.log('AuthHelper: Waiting for authentication...');
+
+    // Check for login error messages
+    const errorMessage = await this.page.locator('body').textContent();
+    if (errorMessage?.includes('ログインに失敗しました')) {
+      console.log('AuthHelper: Login failed message detected on page');
+      throw new Error('Login failed - incorrect credentials or user not found');
+    }
 
     // Wait for successful login by checking for authenticated elements
-    await this.page.waitForFunction(
-      () => {
-        // Check if login form is gone (password field not visible)
-        const passwordFields = document.querySelectorAll('input[type="password"]');
-        const passwordVisible = Array.from(passwordFields).some(field => field.offsetParent !== null);
-        if (passwordVisible) {
-          return false; // Still on login page
-        }
+    // Increased timeout for mobile browsers and non-admin users
+    try {
+      console.log('AuthHelper: Waiting for authenticated page elements...');
+      await this.page.waitForFunction(
+        () => {
+          // Check if login form is gone (password field not visible)
+          const passwordFields = document.querySelectorAll('input[type="password"]');
+          const passwordVisible = Array.from(passwordFields).some(field => field.offsetParent !== null);
+          if (passwordVisible) {
+            return false; // Still on login page
+          }
 
-        // Check for main application elements
-        const mainElements = [
-          '.ant-layout-sider', // Sidebar
-          '.ant-layout-content', // Main content
-          '.ant-table', // Document table
-        ];
+          // Check for main application elements
+          const mainElements = [
+            '.ant-layout-sider', // Sidebar
+            '.ant-layout-content', // Main content
+            '.ant-table', // Document table
+          ];
 
-        return mainElements.some(selector => {
-          const element = document.querySelector(selector);
-          return element && element.offsetParent !== null;
-        });
-      },
-      { timeout: 15000 }
-    );
+          return mainElements.some(selector => {
+            const element = document.querySelector(selector);
+            return element && element.offsetParent !== null;
+          });
+        },
+        { timeout: 20000 }  // Increased from 15000ms to 20000ms for better compatibility
+      );
+    } catch (error) {
+      // Debug: Log current page state if timeout occurs
+      console.log('AuthHelper: Login timeout - checking page state');
+      console.log('AuthHelper: Current URL:', this.page.url());
+      const bodyText = await this.page.locator('body').textContent();
+      console.log('AuthHelper: Body text (first 200 chars):', bodyText?.substring(0, 200));
+      throw error;
+    }
 
     // Additional verification: ensure we're not on login page anymore
     await expect(passwordField).not.toBeVisible({ timeout: 5000 });

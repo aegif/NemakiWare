@@ -449,11 +449,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					return null; // Return null instead of processing contaminated data
 				}
 				
-				System.err.println("TCK DEBUG: About to call convert() on CouchPropertyDefinitionCore with propertyId=" +
-					cpdc.getPropertyId() + ", propertyType=" + cpdc.getPropertyType());
+				if (log.isDebugEnabled()) {
+					log.debug("TCK: About to call convert() on CouchPropertyDefinitionCore with propertyId=" +
+						cpdc.getPropertyId() + ", propertyType=" + cpdc.getPropertyType());
+				}
 				NemakiPropertyDefinitionCore result = cpdc.convert();
-				System.err.println("TCK DEBUG: After convert(), NemakiPropertyDefinitionCore has propertyId=" +
-					result.getPropertyId() + ", propertyType=" + result.getPropertyType());
+				if (log.isDebugEnabled()) {
+					log.debug("TCK: After convert(), NemakiPropertyDefinitionCore has propertyId=" +
+						result.getPropertyId() + ", propertyType=" + result.getPropertyType());
+				}
 				return result;
 			}
 			
@@ -1340,19 +1344,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// Query relationshipsBySource view with sourceId
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			List<CouchRelationship> couchRels = client.queryView("_repo", "relationshipsBySource", sourceId, CouchRelationship.class);
-			System.err.println("*** GET RELATIONSHIPS BY SOURCE: Found " + couchRels.size() + " relationships ***");
+			if (log.isDebugEnabled()) {
+			log.debug("GET RELATIONSHIPS BY SOURCE: Found " + couchRels.size() + " relationships");
+		}
 
 			List<Relationship> relationships = new ArrayList<Relationship>();
 			for (CouchRelationship couchRel : couchRels) {
 				Relationship rel = couchRel.convert();
-				System.err.println("*** GET RELATIONSHIPS BY SOURCE: Relationship " + rel.getId() + " source=" + rel.getSourceId() + " target=" + rel.getTargetId() + " ***");
+				if (log.isDebugEnabled()) {
+					log.debug("GET RELATIONSHIPS BY SOURCE: Relationship " + rel.getId() + " source=" + rel.getSourceId() + " target=" + rel.getTargetId());
+				}
 				relationships.add(rel);
 			}
 
 			return relationships;
 		} catch (Exception e) {
 			log.error("Error getting relationships by source: " + sourceId + " in repository: " + repositoryId, e);
-			System.err.println("*** GET RELATIONSHIPS BY SOURCE ERROR: " + e.getMessage() + " ***");
+			log.warn("GET RELATIONSHIPS BY SOURCE ERROR: " + e.getMessage());
 			return new ArrayList<Relationship>();
 		}
 	}
@@ -1363,19 +1371,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// Query relationshipsByTarget view with targetId
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			List<CouchRelationship> couchRels = client.queryView("_repo", "relationshipsByTarget", targetId, CouchRelationship.class);
-			System.err.println("*** GET RELATIONSHIPS BY TARGET: Found " + couchRels.size() + " relationships ***");
+			if (log.isDebugEnabled()) {
+			log.debug("GET RELATIONSHIPS BY TARGET: Found " + couchRels.size() + " relationships");
+		}
 
 			List<Relationship> relationships = new ArrayList<Relationship>();
 			for (CouchRelationship couchRel : couchRels) {
 				Relationship rel = couchRel.convert();
-				System.err.println("*** GET RELATIONSHIPS BY TARGET: Relationship " + rel.getId() + " source=" + rel.getSourceId() + " target=" + rel.getTargetId() + " ***");
+				if (log.isDebugEnabled()) {
+					log.debug("GET RELATIONSHIPS BY TARGET: Relationship " + rel.getId() + " source=" + rel.getSourceId() + " target=" + rel.getTargetId());
+				}
 				relationships.add(rel);
 			}
 
 			return relationships;
 		} catch (Exception e) {
 			log.error("Error getting relationships by target: " + targetId + " in repository: " + repositoryId, e);
-			System.err.println("*** GET RELATIONSHIPS BY TARGET ERROR: " + e.getMessage() + " ***");
+			log.warn("GET RELATIONSHIPS BY TARGET ERROR: " + e.getMessage());
 			return new ArrayList<Relationship>();
 		}
 	}
@@ -1951,12 +1963,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Relationship create(String repositoryId, Relationship relationship) {
-		System.err.println("*** DAO CREATE RELATIONSHIP: id=" + relationship.getId() + " source=" + relationship.getSourceId() + " target=" + relationship.getTargetId() + " type=" + relationship.getType() + " ***");
+		if (log.isDebugEnabled()) {
+		log.debug("DAO CREATE RELATIONSHIP: id=" + relationship.getId() + " source=" + relationship.getSourceId() + " target=" + relationship.getTargetId() + " type=" + relationship.getType());
+	}
 		CouchRelationship cr = new CouchRelationship(relationship);
-		System.err.println("*** DAO CREATE RELATIONSHIP: CouchRelationship id=" + cr.getId() + " source=" + cr.getSourceId() + " target=" + cr.getTargetId() + " type=" + cr.getType() + " ***");
+		if (log.isDebugEnabled()) {
+		log.debug("DAO CREATE RELATIONSHIP: CouchRelationship id=" + cr.getId() + " source=" + cr.getSourceId() + " target=" + cr.getTargetId() + " type=" + cr.getType());
+	}
 		connectorPool.getClient(repositoryId).create(cr);
 		Relationship result = cr.convert();
-		System.err.println("*** DAO CREATE RELATIONSHIP: Converted result id=" + result.getId() + " source=" + result.getSourceId() + " target=" + result.getTargetId() + " ***");
+		if (log.isDebugEnabled()) {
+		log.debug("DAO CREATE RELATIONSHIP: Converted result id=" + result.getId() + " source=" + result.getSourceId() + " target=" + result.getTargetId());
+	}
 		return result;
 	}
 
@@ -2909,8 +2927,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					String attachmentName = "content"; // Standard attachment name for content
 					String contentType = contentStream.getMimeType() != null ?
 						contentStream.getMimeType() : "application/octet-stream";
-					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Attachment ID: " + attachment.getId() + " ***");
-					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Content length from metadata: " + contentStream.getLength() + " ***");
+					if (log.isDebugEnabled()) {
+					log.debug("UPDATE ATTACHMENT STAGE 2: Attachment ID: " + attachment.getId());
+				}
+					if (log.isDebugEnabled()) {
+					log.debug("UPDATE ATTACHMENT STAGE 2: Content length from metadata: " + contentStream.getLength());
+				}
 
 					// DEBUG: Read the InputStream and count actual bytes
 					InputStream originalStream = contentStream.getStream();
@@ -2923,7 +2945,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						totalBytesRead += bytesRead;
 					}
 					byte[] allBytes = baos.toByteArray();
-					System.err.println("*** UPDATE ATTACHMENT STAGE 2: Content preview: " + new String(allBytes, 0, Math.min(100, allBytes.length)) + " ***");
+					if (log.isDebugEnabled()) {
+					log.debug("UPDATE ATTACHMENT STAGE 2: Content preview: " + new String(allBytes, 0, Math.min(100, allBytes.length)));
+				}
 
 					// Create new InputStream from the bytes we read
 					java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(allBytes);

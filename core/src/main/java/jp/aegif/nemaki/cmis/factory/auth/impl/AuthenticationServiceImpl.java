@@ -183,26 +183,24 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			long expiration = registeredToken.getExpiration();
 			long currentTime = System.currentTimeMillis();
 
-			// TOKEN DEBUG: Log token validation details (ERROR level for visibility)
-			if(log.isDebugEnabled()){
-				log.debug("=== TOKEN VALIDATION DEBUG ===");
-				log.debug("User: " + userName + ", Repository: " + repositoryId + ", App: " + app);
-				log.debug("Current time: " + currentTime + " (" + new java.util.Date(currentTime) + ")");
-				log.debug("Expiration time: " + expiration + " (" + new java.util.Date(expiration) + ")");
-				log.debug("Time until expiration: " + ((expiration - currentTime) / 1000) + " seconds");
-				log.debug("Token provided: " + (token != null ? token.substring(0, Math.min(8, token.length())) + "..." : "null"));
-				log.debug("Token registered: " + (registeredToken.getToken() != null ? registeredToken.getToken().substring(0, Math.min(8, registeredToken.getToken().length())) + "..." : "null"));
-			}
+			// TOKEN DEBUG: Log token validation details
+			log.info("=== TOKEN VALIDATION DEBUG ===");
+			log.info("User: " + userName + ", Repository: " + repositoryId + ", App: " + app);
+			log.info("Current time: " + currentTime + " (" + new java.util.Date(currentTime) + ")");
+			log.info("Expiration time: " + expiration + " (" + new java.util.Date(expiration) + ")");
+			log.info("Time until expiration: " + ((expiration - currentTime) / 1000) + " seconds");
+			log.info("Token provided: " + (token != null ? token.substring(0, Math.min(8, token.length())) + "..." : "null"));
+			log.info("Token registered: " + (registeredToken.getToken() != null ? registeredToken.getToken().substring(0, Math.min(8, registeredToken.getToken().length())) + "..." : "null"));
 
 			if (currentTime > expiration) {
 				log.warn("[TOKEN VALIDATION] Token EXPIRED for user: " + userName + " (expired " + ((currentTime - expiration) / 1000) + " seconds ago)");
+				log.info("===========================");
 				return false;
 			} else {
 				String _registeredToken = registeredToken.getToken();
 				boolean isValid = StringUtils.isNotEmpty(_registeredToken) && _registeredToken.equals(token);
-				if(!isValid && log.isDebugEnabled()){
-					log.debug("[TOKEN VALIDATION] Token validation failed for user: " + userName);
-				}
+				log.info("[TOKEN VALIDATION] Token valid: " + isValid);
+				log.info("===========================");
 				return isValid;
 			}
 		}
