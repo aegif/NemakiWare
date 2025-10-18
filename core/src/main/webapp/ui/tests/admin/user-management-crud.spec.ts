@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
+import { randomUUID } from 'crypto';
 
 test.describe('User Management CRUD Operations', () => {
   let authHelper: AuthHelper;
-  const testUsername = `testuser_${Date.now()}`;
+  const testUsername = `testuser_${randomUUID().substring(0, 8)}`;
   const testUserEmail = `${testUsername}@test.local`;
 
   test.beforeEach(async ({ page, browserName }) => {

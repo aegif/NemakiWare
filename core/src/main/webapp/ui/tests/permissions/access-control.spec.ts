@@ -1,15 +1,16 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
+import { randomUUID } from 'crypto';
 
 test.describe('Access Control and Permissions', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
-  const restrictedFolderName = `restricted-folder-${Date.now()}`;
-  const testDocName = `permission-test-doc-${Date.now()}.txt`;
+  const restrictedFolderName = `restricted-folder-${randomUUID().substring(0, 8)}`;
+  const testDocName = `permission-test-doc-${randomUUID().substring(0, 8)}.txt`;
 
   // Generate unique test user name to avoid conflicts with existing users
-  const testUsername = `testuser${Date.now()}`;
+  const testUsername = `testuser${randomUUID().substring(0, 8)}`;
   const testUserPassword = 'TestPass123!';
 
   // Pre-cleanup: Delete old test folders from previous runs BEFORE tests start

@@ -4034,6 +4034,164 @@ mvn -version   # Must show Java 17
 **Default Credentials**: `admin:admin`
 **CouchDB**: `admin:password` (CouchDB 3.x requires authentication)
 
+## Test Execution Architecture (CRITICAL - 2025-10-18)
+
+### Host-Based Testing Design
+
+**CRITICAL UNDERSTANDING**: All tests run on the **host machine**, NOT inside Docker containers.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ HOST MACHINE (macOS / Linux / Windows)                      │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ Test Execution Layer (runs on host)                   │ │
+│  │                                                        │ │
+│  │ • qa-test.sh (Bash script)                            │ │
+│  │ • Maven TCK tests (requires Java 17)                  │ │
+│  │ • Playwright E2E tests (requires Node.js 18+)         │ │
+│  │                                                        │ │
+│  │ Prerequisites:                                         │ │
+│  │ - Java 17.x (MANDATORY for Maven/TCK)                │ │
+│  │ - Node.js 18+ (MANDATORY for Playwright)             │ │
+│  │ - Playwright browsers: npx playwright install        │ │
+│  │ - Docker & Docker Compose                            │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                       ↓ HTTP requests                        │
+│                  localhost:8080 (core)                       │
+│                  localhost:5984 (couchdb)                    │
+│                  localhost:8983 (solr)                       │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ Docker Containers (target application)                │ │
+│  │                                                        │ │
+│  │ • docker-core-1 (Tomcat 10.1 + NemakiWare)           │ │
+│  │ • docker-couchdb-1 (CouchDB 3.x)                     │ │
+│  │ • docker-solr-1 (Solr 9.8)                           │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Why Not Container-Based Testing?
+
+**Design Decision**: Host-based testing provides:
+- ✅ Realistic production-like environment (external HTTP access)
+- ✅ Easy debugging with host tools (IDEs, browsers, curl)
+- ✅ Consistent test execution across development machines
+- ✅ No need to bundle test tools in production container images
+
+**Common Mistake**:
+```bash
+# ❌ WRONG - Container lacks test tools
+docker exec docker-core-1 ./qa-test.sh
+
+# ✅ CORRECT - Run on host, test via HTTP
+cd /path/to/NemakiWare
+docker compose -f docker/docker-compose-simple.yml up -d
+./qa-test.sh  # Runs on host, tests containers via HTTP
+```
+
+### Host Machine Prerequisites Checklist
+
+**Before Running Any Tests**, verify on host machine:
+
+```bash
+# 1. Java 17 (MANDATORY for Maven builds and TCK tests)
+java -version
+# Expected: openjdk version "17.0.x"
+
+# 2. Maven (MANDATORY for builds and TCK tests)
+mvn -version
+# Expected: Apache Maven 3.6.x or later, using Java 17
+
+# 3. Node.js (MANDATORY for Playwright tests)
+node -v
+# Expected: v18.x or later
+
+# 4. Playwright browsers (MANDATORY for Playwright tests)
+npx playwright --version
+# If not installed: npx playwright install
+
+# 5. Docker containers running
+docker ps
+# Expected: 3 containers (docker-core-1, docker-couchdb-1, docker-solr-1)
+
+# 6. Core application accessible
+curl -u admin:admin http://localhost:8080/core/atom/bedroom
+# Expected: HTTP 200 with XML response
+```
+
+### Test Suite Execution Expectations
+
+**QA Integration Tests** (`./qa-test.sh`):
+- **Executor**: Bash script on host
+- **Prerequisites**: Docker containers running, curl available
+- **Target**: HTTP endpoints (localhost:8080, localhost:5984, localhost:8983)
+- **Expected**: 56/56 tests PASS
+
+**TCK Compliance Tests** (`mvn test -Dtest=...`):
+- **Executor**: Maven on host (Java 17 required)
+- **Prerequisites**: Java 17, Maven 3.6+, Docker containers running
+- **Target**: CMIS endpoints via OpenCMIS client library
+- **Expected**: Varies by test group (see TCK section for details)
+
+**Playwright E2E Tests** (`npx playwright test`):
+- **Executor**: Playwright on host (Node.js 18+ required)
+- **Prerequisites**: Node.js 18+, Playwright browsers installed
+- **Browser Profiles**: 6 profiles (Chromium, Firefox, WebKit, Mobile Chrome, Mobile Safari, Tablet)
+- **Test Count**: 81 specs × 6 browsers = 486 total executions
+- **Target**: React UI at http://localhost:8080/core/ui/
+- **Expected**: Varies by test suite (see Playwright section for details)
+
+### Troubleshooting Test Failures
+
+**Error: "JAVA_HOME environment variable is not defined correctly"**
+```bash
+# Solution: Set JAVA_HOME to Java 17 installation
+export JAVA_HOME=/path/to/java-17
+export PATH=$JAVA_HOME/bin:$PATH
+java -version  # Verify Java 17
+```
+
+**Error: "Executable doesn't exist at .../chromium_headless_shell"**
+```bash
+# Solution: Install Playwright browsers on host
+npx playwright install
+```
+
+**Error: "Connection refused" or "ECONNREFUSED"**
+```bash
+# Solution: Ensure Docker containers are running
+docker compose -f docker/docker-compose-simple.yml up -d
+docker ps  # Verify 3 containers running
+sleep 30   # Wait for startup
+```
+
+**Error: "Tests passed: 0/56"**
+```bash
+# Solution: Docker containers not healthy yet
+docker ps  # Check "STATUS" column for "(healthy)"
+sleep 60   # Wait longer for initialization
+./qa-test.sh  # Retry
+```
+
+### Performance Expectations
+
+**Clean Build + Full Deployment**: ~5-10 minutes
+- Maven clean package: 3-5 minutes
+- Docker rebuild: 2-3 minutes
+- Container startup: 90 seconds
+
+**QA Integration Tests**: ~2-3 minutes (56 tests)
+
+**TCK Tests** (varies by group):
+- Fast groups (BasicsTestGroup): 20-40 seconds
+- Medium groups (TypesTestGroup, VersioningTestGroup): 1-2 minutes
+- Slow groups (QueryTestGroup, CrudTestGroup): 5-30 minutes
+
+**Playwright Tests** (486 total executions):
+- With all 6 browsers in parallel: 10-20 minutes
+- Single browser project: 2-5 minutes
+
 ## Clean Build and Comprehensive Testing Procedures (UPDATED STANDARD - 2025-10-18)
 
 ### Prerequisites

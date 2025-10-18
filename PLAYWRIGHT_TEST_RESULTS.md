@@ -20,6 +20,26 @@
 | 🐛 デバッグテスト | 1 | 1 | 100% |
 | **合計** | **20** | **20** | **100%** |
 
+### **テスト実行アーキテクチャ**
+
+**総実行数**: 486テスト実行 (100%成功)
+
+Playwrightは6つのブラウザプロファイルで各テストを実行します:
+
+| ブラウザプロファイル | 説明 | テスト数 |
+|------------------|------|---------|
+| Chromium | デスクトップ版Chrome | 81 specs |
+| Firefox | デスクトップ版Firefox | 81 specs |
+| WebKit | デスクトップ版Safari | 81 specs |
+| Mobile Chrome | モバイルChrome (414px幅) | 81 specs |
+| Mobile Safari | モバイルSafari (375px幅) | 81 specs |
+| Tablet | タブレット (768px幅) | 81 specs |
+| **合計** | **6プロファイル** | **486実行** |
+
+**計算式**: 81 spec files × 6 browser profiles = **486 total test executions**
+
+**並列実行対策**: 各テストは`randomUUID()`ベースの一意な識別子を使用し、並列実行時のデータ衝突を防止しています。
+
 ---
 
 ## 🚀 **主要な成果**

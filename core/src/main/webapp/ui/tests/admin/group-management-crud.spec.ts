@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
+import { randomUUID } from 'crypto';
 
 test.describe('Group Management CRUD Operations', () => {
   let authHelper: AuthHelper;
-  const testGroupName = `testgroup_${Date.now()}`;
+  const testGroupName = `testgroup_${randomUUID().substring(0, 8)}`;
   const testGroupDescription = 'Test group for automated testing';
 
   test.beforeEach(async ({ page, browserName }) => {

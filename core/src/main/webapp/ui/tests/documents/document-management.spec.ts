@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
+import { randomUUID } from 'crypto';
 
 test.describe('Document Management', () => {
   let authHelper: AuthHelper;
@@ -161,9 +162,8 @@ test.describe('Document Management', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    // Generate unique filename with timestamp to avoid conflicts
-    const timestamp = Date.now();
-    const filename = `test-upload-${timestamp}.txt`;
+    // Generate unique filename to avoid conflicts
+    const filename = `test-upload-${randomUUID().substring(0, 8)}.txt`;
 
     // Look for upload button (ファイルアップロード)
     const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
@@ -319,9 +319,8 @@ test.describe('Document Management', () => {
       // Wait for modal to appear
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
 
-      // Generate unique folder name with timestamp
-      const timestamp = Date.now();
-      const folderName = `test-folder-${timestamp}`;
+      // Generate unique folder name
+      const folderName = `test-folder-${randomUUID().substring(0, 8)}`;
 
       // Fill in folder name
       const nameInput = page.locator('.ant-modal input[placeholder*="名前"], .ant-modal input[id*="name"]');
@@ -359,8 +358,7 @@ test.describe('Document Management', () => {
       await uploadButton.click(isMobile ? { force: true } : {});
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
 
-      const timestamp = Date.now();
-      const filename = `test-delete-${timestamp}.txt`;
+      const filename = `test-delete-${randomUUID().substring(0, 8)}.txt`;
 
       const fileInput = page.locator('.ant-modal input[type="file"]');
       await testHelper.uploadTestFile(

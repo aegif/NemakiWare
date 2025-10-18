@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
+import { randomUUID } from 'crypto';
 
 test.describe('Document Properties Edit and Persistence', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
-  const testDocName = `test-props-doc-${Date.now()}.txt`;
+  const testDocName = `test-props-doc-${randomUUID().substring(0, 8)}.txt`;
   let testDocId: string;
 
   test.beforeEach(async ({ page, browserName }) => {
