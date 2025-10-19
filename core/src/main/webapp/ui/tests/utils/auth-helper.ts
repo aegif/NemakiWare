@@ -261,7 +261,25 @@ export class AuthHelper {
     }
 
     if (userMenuTrigger) {
-      await userMenuTrigger.click();
+      // Close any open modals before attempting logout
+      const openModals = this.page.locator('.ant-modal:visible');
+      if (await openModals.count() > 0) {
+        // Try to close modal by clicking close button
+        const closeButtons = this.page.locator('.ant-modal-close, .ant-modal-footer button:has-text("キャンセル"), .ant-modal-footer button:has-text("閉じる")');
+        if (await closeButtons.count() > 0) {
+          await closeButtons.first().click({ force: true }).catch(() => {});
+          await this.page.waitForTimeout(500);
+        }
+
+        // If modal still open, press Escape
+        if (await openModals.count() > 0) {
+          await this.page.keyboard.press('Escape');
+          await this.page.waitForTimeout(500);
+        }
+      }
+
+      // Use force click to bypass any remaining overlay issues
+      await userMenuTrigger.click({ force: true });
 
       // Wait for dropdown menu to appear
       await this.page.waitForSelector('.ant-dropdown:not(.ant-dropdown-hidden)', { timeout: 3000 });
@@ -270,7 +288,7 @@ export class AuthHelper {
       const logoutMenuItem = this.page.locator('.ant-dropdown .ant-dropdown-menu-item').filter({ hasText: 'ログアウト' });
 
       console.log('AuthHelper: Clicking logout menu item');
-      await logoutMenuItem.click();
+      await logoutMenuItem.click({ force: true });
 
       // Wait for navigation to complete (window.location.href causes a hard navigation)
       // Wait for URL to change to the login page
