@@ -269,7 +269,7 @@ test.describe('Error Handling', () => {
       const submitButton = page.locator('button[type="submit"], button').filter({ hasText: /作成|OK|Create/ }).first();
 
       if (await submitButton.count() > 0) {
-        await submitButton.click();
+        await submitButton.click(isMobile ? { force: true } : {});
         await page.waitForTimeout(1000);
 
         // Should see validation error
@@ -301,7 +301,7 @@ test.describe('Error Handling', () => {
           await folderNameInput.fill('/\\:*?"<>|');
           await page.waitForTimeout(500);
 
-          await submitButton.click();
+          await submitButton.click(isMobile ? { force: true } : {});
           await page.waitForTimeout(1000);
 
           // Should see validation error for invalid characters
@@ -352,7 +352,7 @@ test.describe('Error Handling', () => {
             const submitUserButton = page.locator('button[type="submit"], button').filter({ hasText: /作成|OK/ }).first();
 
             if (await submitUserButton.count() > 0) {
-              await submitUserButton.click();
+              await submitUserButton.click(isMobile ? { force: true } : {});
               await page.waitForTimeout(1000);
 
               // Should see validation errors on required fields

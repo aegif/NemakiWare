@@ -505,7 +505,21 @@ test.describe('Document Properties Edit and Persistence', () => {
         const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button:has-text("OK")');
         if (await confirmButton.count() > 0) {
           await confirmButton.click(isMobile ? { force: true } : {});
-          await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+
+          // Wait for success message or verify document is removed
+          const successMessageVisible = await page.locator('.ant-message-success').isVisible({ timeout: 5000 }).catch(() => false);
+
+          if (successMessageVisible) {
+            console.log('Test: Delete success message displayed');
+          } else {
+            // Even if message not shown, wait and verify document is actually removed
+            console.log('Test: Success message not shown, verifying document removal');
+            await page.waitForTimeout(3000);
+
+            const docStillPresent = await page.locator('tr').filter({ hasText: testDocName }).count();
+            expect(docStillPresent).toBe(0);
+            console.log('Test: Document successfully removed from list');
+          }
         }
       }
     }

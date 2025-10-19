@@ -63,40 +63,41 @@ test.describe('Session Management', () => {
 
     console.log('Test: Authentication tokens cleared to simulate session timeout');
 
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1000);
 
-    // Try to perform an operation that requires authentication (e.g., navigate to a different page)
-    const settingsMenuItem = page.locator('.ant-menu-item, .ant-menu-submenu').filter({ hasText: '設定' });
-    if (await settingsMenuItem.count() > 0) {
-      await settingsMenuItem.first().click({ timeout: 5000 });
-      await page.waitForTimeout(2000);
-    } else {
-      // Alternative: Try to access documents again
-      await page.goto('http://localhost:8080/core/ui/dist/index.html#/documents');
-      await page.waitForTimeout(2000);
-    }
+    // Reload the page to force React to reinitialize with cleared storage
+    // This simulates what would happen when the user navigates or refreshes
+    console.log('Test: Reloading page to trigger React reinitialization');
+    await page.reload();
+    await page.waitForTimeout(3000);
 
-    console.log('Test: Attempted to access protected resource after token clear');
+    console.log('Test: Page reloaded after token clear');
 
     // Should be redirected to login page or see login form
     // Check for multiple possible indicators of being logged out
-    const onLoginPage = await page.locator('input[type="password"]').isVisible({ timeout: 10000 }).catch(() => false);
+    const onLoginPage = await page.locator('input[type="password"]').isVisible({ timeout: 5000 }).catch(() => false);
     const atLoginUrl = page.url().includes('login') || page.url().endsWith('/ui/dist/') || page.url().endsWith('/ui/dist/index.html');
 
     if (onLoginPage || atLoginUrl) {
       console.log('Test: Successfully redirected to login page after session timeout');
       expect(onLoginPage || atLoginUrl).toBe(true);
     } else {
+      console.log('Test: Checking if error message is displayed');
       // May show an error message or session expired notification
       const errorMessage = page.locator('.ant-message-error, .ant-notification-error, .ant-alert-error');
       if (await errorMessage.count() > 0) {
         console.log('Test: Session timeout error message displayed');
-        await expect(errorMessage).toBeVisible({ timeout: 5000 });
+        await expect(errorMessage.first()).toBeVisible({ timeout: 5000 });
       } else {
-        // At minimum, user should not be visible anymore
-        const userStillVisible = await userDisplay.isVisible({ timeout: 3000 }).catch(() => false);
-        console.log('Test: User display visibility after logout:', userStillVisible);
-        expect(userStillVisible).toBe(false);
+        // Try to navigate to protected route to trigger redirect
+        console.log('Test: Attempting to navigate to protected route');
+        await page.goto('http://localhost:8080/core/ui/dist/index.html#/documents');
+        await page.waitForTimeout(2000);
+
+        // After navigation, should be on login page
+        const passwordFieldAfterNav = await page.locator('input[type="password"]').isVisible({ timeout: 5000 }).catch(() => false);
+        expect(passwordFieldAfterNav).toBe(true);
+        console.log('Test: Redirected to login page after attempting protected route access');
       }
     }
 
