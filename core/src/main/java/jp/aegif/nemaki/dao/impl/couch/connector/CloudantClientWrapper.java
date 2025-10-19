@@ -1243,6 +1243,7 @@ public class CloudantClientWrapper {
 
 						try {
 							T result = mapper.convertValue(completeMap, clazz);
+							return result;
 						} catch (Exception deserEx) {
 						log.warn("Error deserializing CouchPropertyDefinitionCore: " + deserEx.getMessage());
 							throw deserEx;
