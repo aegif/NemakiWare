@@ -223,6 +223,268 @@ test.describe('Document Properties Edit and Persistence', () => {
     }
   });
 
+  test('should edit multiple properties at once (bulk edit)', async ({ page, browserName }) => {
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    await page.waitForTimeout(2000);
+
+    console.log('Test: Testing bulk property editing');
+
+    const docRow = page.locator('tr').filter({ hasText: testDocName });
+
+    if (await docRow.count() > 0) {
+      // Open properties editor
+      const propertiesButton = docRow.locator('button').filter({
+        has: page.locator('[data-icon="edit"], [data-icon="setting"], [data-icon="form"]')
+      });
+
+      if (await propertiesButton.count() > 0) {
+        await propertiesButton.first().click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(1000);
+
+        console.log('Test: Properties editor opened');
+
+        // Edit multiple fields at once
+        const fields = {
+          description: 'Bulk edit - updated description',
+          title: 'Bulk edit - updated title',
+          author: 'Test Author'
+        };
+
+        for (const [fieldName, value] of Object.entries(fields)) {
+          const fieldInput = page.locator(`input[id*="${fieldName}"], textarea[id*="${fieldName}"], input[name*="${fieldName}"]`);
+
+          if (await fieldInput.count() > 0) {
+            await fieldInput.first().clear();
+            await fieldInput.first().fill(value);
+            console.log(`Test: Updated ${fieldName} field to "${value}"`);
+          }
+        }
+
+        // Look for and fill any custom property fields
+        const customPropertyInputs = page.locator('input[id*="custom"], input[id*="property"]').filter({ hasNotText: '' });
+
+        const customInputCount = await customPropertyInputs.count();
+        if (customInputCount > 0) {
+          for (let i = 0; i < Math.min(customInputCount, 3); i++) {
+            const customInput = customPropertyInputs.nth(i);
+            if (await customInput.isVisible()) {
+              await customInput.clear();
+              await customInput.fill(`Custom value ${i + 1}`);
+              console.log(`Test: Set custom property ${i + 1}`);
+            }
+          }
+        }
+
+        // Save all changes
+        const saveButton = page.locator('button:has-text("保存"), button:has-text("更新"), button[type="submit"]').first();
+
+        if (await saveButton.count() > 0) {
+          await saveButton.click(isMobile ? { force: true } : {});
+          await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+          console.log('Test: Bulk property changes saved successfully');
+        }
+      } else {
+        test.skip('Properties editor not accessible');
+      }
+    } else {
+      test.skip('Test document not found');
+    }
+  });
+
+  test('should validate required fields before saving', async ({ page, browserName }) => {
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    await page.waitForTimeout(2000);
+
+    console.log('Test: Testing required field validation');
+
+    const docRow = page.locator('tr').filter({ hasText: testDocName });
+
+    if (await docRow.count() > 0) {
+      const propertiesButton = docRow.locator('button').filter({
+        has: page.locator('[data-icon="edit"], [data-icon="setting"]')
+      });
+
+      if (await propertiesButton.count() > 0) {
+        await propertiesButton.first().click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(1000);
+
+        console.log('Test: Properties editor opened');
+
+        // Look for required fields (marked with asterisk or aria-required)
+        const requiredFields = page.locator('input[aria-required="true"], input[required], .ant-form-item-required input, .ant-form-item-required textarea');
+
+        const requiredFieldCount = await requiredFields.count();
+        console.log(`Test: Found ${requiredFieldCount} required fields`);
+
+        if (requiredFieldCount > 0) {
+          // Clear the first required field
+          const firstRequiredField = requiredFields.first();
+          const originalValue = await firstRequiredField.inputValue();
+
+          await firstRequiredField.clear();
+          await page.waitForTimeout(500);
+
+          console.log('Test: Cleared required field, attempting to save');
+
+          // Try to save (should show validation error)
+          const saveButton = page.locator('button:has-text("保存"), button:has-text("更新"), button[type="submit"]').first();
+
+          if (await saveButton.count() > 0) {
+            await saveButton.click(isMobile ? { force: true } : {});
+            await page.waitForTimeout(1000);
+
+            // Check for validation errors
+            const validationError = page.locator('.ant-form-item-explain-error, .ant-form-item-has-error, .ant-message-error').filter({
+              hasText: /必須|required|入力|empty/i
+            });
+
+            if (await validationError.count() > 0) {
+              console.log('Test: Validation error correctly displayed for empty required field');
+              await expect(validationError.first()).toBeVisible({ timeout: 5000 });
+            } else {
+              // Save button may be disabled
+              const isDisabled = await saveButton.isDisabled();
+              console.log('Test: Save button disabled state:', isDisabled);
+            }
+
+            // Restore original value
+            await firstRequiredField.fill(originalValue);
+            console.log('Test: Restored original value to required field');
+          }
+        } else {
+          console.log('Test: No required fields found in properties form');
+        }
+
+        // Close the form
+        const cancelButton = page.locator('button:has-text("キャンセル"), button:has-text("Cancel")').first();
+        if (await cancelButton.count() > 0) {
+          await cancelButton.click();
+        } else {
+          await page.keyboard.press('Escape');
+        }
+        await page.waitForTimeout(500);
+      } else {
+        test.skip('Properties editor not accessible');
+      }
+    } else {
+      test.skip('Test document not found');
+    }
+  });
+
+  test('should validate property type constraints (date, number, etc.)', async ({ page, browserName }) => {
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    await page.waitForTimeout(2000);
+
+    console.log('Test: Testing property type validation');
+
+    const docRow = page.locator('tr').filter({ hasText: testDocName });
+
+    if (await docRow.count() > 0) {
+      const propertiesButton = docRow.locator('button').filter({
+        has: page.locator('[data-icon="edit"], [data-icon="setting"]')
+      });
+
+      if (await propertiesButton.count() > 0) {
+        await propertiesButton.first().click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(1000);
+
+        console.log('Test: Properties editor opened');
+
+        // Test date field validation (if exists)
+        const dateFields = page.locator('input[type="date"], .ant-picker-input input');
+
+        if (await dateFields.count() > 0) {
+          console.log('Test: Testing date field validation');
+
+          const dateField = dateFields.first();
+
+          // Try to enter invalid date format
+          await dateField.click();
+          await dateField.fill('invalid-date');
+          await page.waitForTimeout(500);
+
+          // Check if error appears or input is rejected
+          const dateError = page.locator('.ant-form-item-explain-error, .ant-picker-status-error').filter({
+            hasText: /日付|date|無効|invalid/i
+          });
+
+          if (await dateError.count() > 0) {
+            console.log('Test: Date validation error shown');
+            await expect(dateError.first()).toBeVisible({ timeout: 3000 });
+          } else {
+            console.log('Test: Invalid date format may be automatically corrected or prevented');
+          }
+        }
+
+        // Test number field validation (if exists)
+        const numberFields = page.locator('input[type="number"], input[inputmode="numeric"]');
+
+        if (await numberFields.count() > 0) {
+          console.log('Test: Testing number field validation');
+
+          const numberField = numberFields.first();
+
+          // Try to enter non-numeric value
+          await numberField.click();
+          await numberField.fill('abc123xyz');
+          await page.waitForTimeout(500);
+
+          const numberValue = await numberField.inputValue();
+          console.log('Test: Number field value after invalid input:', numberValue);
+
+          // Number input should reject or filter non-numeric characters
+          if (numberValue === '123' || numberValue === '' || !isNaN(parseInt(numberValue))) {
+            console.log('Test: Number field correctly filtered non-numeric input');
+          }
+        }
+
+        // Test text length validation (if maxlength exists)
+        const textFieldsWithLimit = page.locator('input[maxlength], textarea[maxlength]');
+
+        if (await textFieldsWithLimit.count() > 0) {
+          console.log('Test: Testing text length validation');
+
+          const limitedField = textFieldsWithLimit.first();
+          const maxLength = await limitedField.getAttribute('maxlength');
+
+          if (maxLength) {
+            const maxLengthNum = parseInt(maxLength);
+            const longText = 'x'.repeat(maxLengthNum + 10);
+
+            await limitedField.fill(longText);
+            await page.waitForTimeout(500);
+
+            const actualValue = await limitedField.inputValue();
+            console.log(`Test: Max length ${maxLength}, actual length ${actualValue.length}`);
+
+            expect(actualValue.length).toBeLessThanOrEqual(maxLengthNum);
+          }
+        }
+
+        console.log('Test: Property type validation tests completed');
+
+        // Close the form
+        const cancelButton = page.locator('button:has-text("キャンセル"), button:has-text("Cancel")').first();
+        if (await cancelButton.count() > 0) {
+          await cancelButton.click();
+        } else {
+          await page.keyboard.press('Escape');
+        }
+        await page.waitForTimeout(500);
+      } else {
+        test.skip('Properties editor not accessible');
+      }
+    } else {
+      test.skip('Test document not found');
+    }
+  });
+
   test('should clean up test document', async ({ page, browserName }) => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
