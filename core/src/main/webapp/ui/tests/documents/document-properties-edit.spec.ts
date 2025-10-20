@@ -13,9 +13,52 @@ test.describe('Document Properties Edit and Persistence', () => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
 
+    // ENHANCED TEST ISOLATION: Complete state cleanup
     await page.context().clearCookies();
     await page.context().clearPermissions();
-    await authHelper.login();
+
+    // Navigate to page first before clearing storage
+    await page.goto('/core/ui/dist/index.html');
+
+    // Clear all storage to prevent state leakage between tests
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+    });
+
+    // Wait a moment for page to stabilize after storage clear
+    await page.waitForTimeout(500);
+
+    // Fill in login form (page already navigated, don't let login() navigate again)
+    const usernameField = page.locator('input[placeholder="ユーザー名"]').first();
+    const passwordField = page.locator('input[type="password"]').first();
+    const loginButton = page.locator('button:has-text("ログイン")').first();
+
+    await usernameField.fill('admin');
+    await passwordField.fill('admin');
+    await loginButton.click();
+
+    // Wait for authentication to complete (password field should disappear)
+    await page.waitForFunction(
+      () => {
+        const passwordFields = document.querySelectorAll('input[type="password"]');
+        const passwordVisible = Array.from(passwordFields).some(field => field.offsetParent !== null);
+        if (passwordVisible) {
+          return false; // Still on login page
+        }
+        // Check for main application elements
+        const mainElements = [
+          '.ant-layout-sider', // Sidebar
+          '.ant-layout-content', // Main content
+        ];
+        return mainElements.some(selector => {
+          const element = document.querySelector(selector);
+          return element && element.offsetParent !== null;
+        });
+      },
+      { timeout: 15000 }
+    );
+
     await testHelper.waitForAntdLoad();
 
     // Navigate to documents
