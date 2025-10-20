@@ -135,6 +135,49 @@ mvn test -Dtest=CrudTestGroup1 -f core/pom.xml -Pdevelopment
 
 **Impact**: This fix resolves the last major TCK test failure, bringing NemakiWare closer to complete CMIS 1.1 TCK compliance.
 
+### **なぜ以前は合格していたのか - ブランチ分岐の真相**
+
+**ユーザーからの重要な質問**: 「なぜ以前は合格していたのかについても説明してください」
+
+**調査結果**:
+Git履歴の詳細な分析により、以下の真相が判明しました：
+
+```
+Git Branch Structure:
+===================
+
+feature/react-ui-playwright (現在のブランチ)
+├─ a12bb63aa (2025-10-20 13:34 - 今回のセッション)
+│  └─ latestMajorVersions 修正を実装 ✅
+│     CrudTestGroup1: 10/10 PASS
+
+vk/493b-ui (別ブランチ - 分岐)
+├─ 0a9f7b5cb (2025-10-20 09:54)
+│  └─ latestMajorVersions 修正を既に実装済み ✅
+│     TCK: 33/33 PASS (100%)
+│
+└─ eb4ef8d81, ea461ffcf, 1b423f023... (追加のテスト改善)
+```
+
+**結論**:
+1. **「以前合格していた」の正体**: `vk/493b-ui` ブランチで同じ修正が既に実装されていた
+2. **今回失敗していた理由**: `feature/react-ui-playwright` ブランチに修正がマージされていなかった
+3. **真相**: これは**退行（regression）ではなく、ブランチ間の修正の未マージ**が原因
+
+**重要な発見**:
+- コミット `0a9f7b5cb` (vk/493b-ui): 同じ latestMajorVersion → latestMajorVersions 修正を含む
+- コミット `a12bb63aa` (feature/react-ui-playwright): 同じ修正を独立して再実装
+- 2つのブランチで並行作業が行われていたことが判明
+
+**教訓**:
+- ブランチ間の修正の同期が重要
+- TCKテスト結果の記録時にブランチ名を明記すべき（CLAUDE.mdには記載あり）
+- Git履歴の分岐を定期的に確認し、重複作業を避ける
+
+**次のステップ**:
+- vk/493b-ui ブランチの他の有益な修正を確認
+- 必要に応じてマージを検討
+
 ---
 
 ## Recent Major Changes (2025-10-19 - Playwright UI Tests JavaScript Module Load Fix) ✅
