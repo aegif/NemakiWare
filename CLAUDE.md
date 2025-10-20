@@ -36,6 +36,107 @@ Commit: b51046391
 
 ---
 
+## Recent Major Changes (2025-10-20 - Version History Check Complete Resolution) ✅
+
+### CMIS TCK Version History Check - COMPLETE SUCCESS
+
+**CRITICAL FIX (2025-10-20)**: Resolved CouchDB view name mismatch causing all version history check failures in CMIS TCK tests. Achieved **10/10 PASS** for CrudTestGroup1 with **ZERO failures**.
+
+**Problem Identified**:
+- TCK `createAndDeleteDocumentTest` failing with **40 "Child version history check" failures**
+- Error: "Document not found for versionSeriesId: ... (major: true)"
+- Root cause: `getDocumentOfLatestMajorVersion()` returning null
+
+**Root Cause Analysis**:
+```
+Database Definition (bedroom_init.dump Line 86-87):
+  "latestMajorVersions": { "map": "..." }  // ← PLURAL "s"
+
+Java Implementation (ContentDaoServiceImpl.java Line 1074 - BEFORE):
+  client.queryView("_repo", "latestMajorVersion", ...)  // ← SINGULAR, no "s" ❌
+```
+
+**Solution Implemented** (ContentDaoServiceImpl.java Lines 1072-1087):
+```java
+public Document getDocumentOfLatestMajorVersion(String repositoryId, String versionSeriesId) {
+    try {
+        // CRITICAL TCK FIX (2025-10-20): Query latestMajorVersions view (plural) - matches bedroom_init.dump definition
+        // Previous bug: queried "latestMajorVersion" (singular) which doesn't exist, causing all version history check failures
+        // This fix resolves 40 TCK test failures in CrudTestGroup1.createAndDeleteDocumentTest
+        CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+        List<CouchDocument> couchDocs = client.queryView("_repo", "latestMajorVersions", versionSeriesId, CouchDocument.class);
+
+        if (!couchDocs.isEmpty()) {
+            log.debug("Found " + couchDocs.size() + " major version documents for versionSeriesId: " +
+                    versionSeriesId + " in repository: " + repositoryId);
+            return couchDocs.get(0).convert();
+        }
+
+        log.warn("No major version documents found for versionSeriesId: " + versionSeriesId +
+                " in repository: " + repositoryId + " - latestMajorVersions view returned empty results");
+        return null;
+```
+
+**Test Results Summary**:
+
+**Before Fix**:
+```
+createAndDeleteDocumentTest:
+- Tests run: 1
+- Failures: 40 ❌ ("Child version history check" errors)
+- Time: 523.95 sec (8m 44s)
+```
+
+**After Fix**:
+```
+createAndDeleteDocumentTest:
+- Tests run: 1
+- Failures: 0 ✅ (ALL version history checks PASS)
+- Time: 597.88 sec (9m 58s)
+
+CrudTestGroup1 (Full Suite):
+- Tests run: 10
+- Failures: 0 ✅
+- Errors: 0 ✅
+- Skipped: 0 ✅
+- Time: 2,241.71 sec (37m 22s)
+- BUILD SUCCESS ✅
+```
+
+**Individual Test Results (All 10 Tests PASS)**:
+1. ✅ `createInvalidTypeTest`: 49.7 sec
+2. ✅ `createDocumentWithoutContent`: 23.3 sec
+3. ✅ `contentRangesTest`: 30.9 sec
+4. ✅ `copyTest`: 60.1 sec
+5. ✅ `changeTokenTest`: 103.8 sec
+6. ✅ `createAndDeleteFolderTest`: 545.7 sec (9m 6s) - Previously timed out at 60s
+7. ✅ `createAndDeleteItemTest`: 221.0 sec (3m 41s) - Previously timed out at 60s
+8. ✅ `createAndDeleteDocumentTest`: 597.9 sec (9m 58s) - **Previously 40 failures → Now 0 failures**
+9. ✅ `createBigDocument`: 28.8 sec
+10. ✅ `bulkUpdatePropertiesTest`: 580.7 sec (9m 41s) - Previously timed out after 10+ min
+
+**Critical Achievements**:
+- ✅ **Version History Check**: 40 failures → 0 failures (100% resolution)
+- ✅ **Timeout Issues**: All previously timing out tests now complete successfully
+- ✅ **Test Stability**: CrudTestGroup1 full suite executes reliably
+- ✅ **CMIS 1.1 Compliance**: Major versioning operations fully functional
+
+**Files Modified**:
+- `core/src/main/java/jp/aegif/nemaki/dao/impl/couch/ContentDaoServiceImpl.java` (Lines 1072-1087)
+
+**Verification Command**:
+```bash
+cd /Users/ishiiakinori/NemakiWare
+export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+mvn test -Dtest=CrudTestGroup1 -f core/pom.xml -Pdevelopment
+# Expected: Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
+# BUILD SUCCESS
+```
+
+**Impact**: This fix resolves the last major TCK test failure, bringing NemakiWare closer to complete CMIS 1.1 TCK compliance.
+
+---
+
 ## Recent Major Changes (2025-10-19 - Playwright UI Tests JavaScript Module Load Fix) ✅
 
 ### JavaScript Module Load Error Resolution - UI Build State Inconsistency

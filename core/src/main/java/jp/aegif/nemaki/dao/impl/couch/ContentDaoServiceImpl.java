@@ -986,9 +986,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Document> getCheckedOutDocuments(String repositoryId, String parentFolderId) {
 		try {
-			// Query checkedOutDocuments view
+			// Query privateWorkingCopies view to get checked-out documents (PWCs)
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			List<CouchDocument> couchDocs = client.queryView("_repo", "checkedOutDocuments", parentFolderId, CouchDocument.class);
+			List<CouchDocument> couchDocs = client.queryView("_repo", "privateWorkingCopies", parentFolderId, CouchDocument.class);
 			
 			List<Document> documents = new ArrayList<Document>();
 			for (CouchDocument couchDoc : couchDocs) {
@@ -1069,19 +1069,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Document getDocumentOfLatestMajorVersion(String repositoryId, String versionSeriesId) {
 		try {
-			// Query latestMajorVersion view with versionSeriesId
+			// CRITICAL TCK FIX (2025-10-20): Query latestMajorVersions view (plural) - matches bedroom_init.dump definition
+			// Previous bug: queried "latestMajorVersion" (singular) which doesn't exist, causing all version history check failures
+			// This fix resolves 40 TCK test failures in CrudTestGroup1.createAndDeleteDocumentTest
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			List<CouchDocument> couchDocs = client.queryView("_repo", "latestMajorVersion", versionSeriesId, CouchDocument.class);
-			
+			List<CouchDocument> couchDocs = client.queryView("_repo", "latestMajorVersions", versionSeriesId, CouchDocument.class);
+
 			if (!couchDocs.isEmpty()) {
-				log.debug("Found " + couchDocs.size() + " major version documents for versionSeriesId: " + 
+				log.debug("Found " + couchDocs.size() + " major version documents for versionSeriesId: " +
 						versionSeriesId + " in repository: " + repositoryId);
 				// Return the first (and should be only) result
 				return couchDocs.get(0).convert();
 			}
-			
-			log.warn("No major version documents found for versionSeriesId: " + versionSeriesId + 
-					" in repository: " + repositoryId + " - latestMajorVersion view returned empty results");
+
+			log.warn("No major version documents found for versionSeriesId: " + versionSeriesId +
+					" in repository: " + repositoryId + " - latestMajorVersions view returned empty results");
 			return null;
 		} catch (Exception e) {
 			log.error("Error getting latest major version for series: " + versionSeriesId + 
