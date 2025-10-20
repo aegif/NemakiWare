@@ -130,7 +130,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       message.success('ファイルをアップロードしました');
       setUploadModalVisible(false);
       form.resetFields();
-      loadObjects();
+      // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
+      await loadObjects();
     } catch (error) {
       console.error('UPLOAD DEBUG: Upload error:', error);
       message.error('ファイルのアップロードに失敗しました');
@@ -143,7 +144,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       message.success('フォルダを作成しました');
       setFolderModalVisible(false);
       form.resetFields();
-      loadObjects();
+      // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
+      await loadObjects();
     } catch (error) {
       message.error('フォルダの作成に失敗しました');
     }
@@ -151,11 +153,18 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   const handleDelete = async (objectId: string) => {
     try {
+      // Set loading state before starting deletion
+      setLoading(true);
+
       await cmisService.deleteObject(repositoryId, objectId);
+
+      // Reload objects from server after successful deletion
+      await loadObjects();
+
       message.success('削除しました');
-      loadObjects();
     } catch (error) {
       message.error('削除に失敗しました');
+      setLoading(false);
     }
   };
 

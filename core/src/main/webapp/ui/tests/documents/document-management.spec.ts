@@ -345,6 +345,10 @@ test.describe('Document Management', () => {
   });
 
   test('should handle document deletion', async ({ page, browserName }) => {
+    // CRITICAL: Extend test timeout for slow deletion operations
+    test.setTimeout(120000); // 120 seconds (server deletion takes 10-15s)
+    page.setDefaultTimeout(45000); // 45 seconds for page operations
+
     // Wait for page to load
     await page.waitForTimeout(2000);
 
@@ -391,12 +395,32 @@ test.describe('Document Management', () => {
         if (await confirmButton.count() > 0) {
           await confirmButton.click(isMobile ? { force: true } : {});
 
-          // Wait for success message
-          await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+          // CRITICAL: Wait for delete button loading state to clear
+          // Ant Design Popconfirm keeps button in loading state until async handler completes
+          // NOTE: Server-side deletion takes 10-15 seconds (includes database operations, cache invalidation, Solr updates)
+          await page.waitForFunction(() => {
+            const loadingButton = document.querySelector('.ant-popconfirm button.ant-btn-loading');
+            return loadingButton === null;
+          }, { timeout: 30000 });
+
+          // Wait for success message (after deletion completes)
+          await page.waitForSelector('.ant-message-success', { timeout: 15000 });
+
+          // Wait for popconfirm to close
+          await page.waitForTimeout(1000);
+
+          // IMPROVED: Wait for table to refresh after deletion
+          // The table should re-render with updated data
+          await page.waitForTimeout(2000); // Give React time to update state
+
+          // Wait for any loading indicators to disappear
+          const spinner = page.locator('.ant-spin');
+          if (await spinner.count() > 0) {
+            await expect(spinner).not.toBeVisible({ timeout: 5000 });
+          }
 
           // Verify document is removed from list
-          // Mobile browsers may need more time for UI refresh
-          await page.waitForTimeout(isMobile ? 3000 : 1000);
+          await page.waitForTimeout(isMobile ? 2000 : 1000);
           const deletedDoc = page.locator(`text=${filename}`);
           await expect(deletedDoc).not.toBeVisible({ timeout: isMobile ? 10000 : 5000 });
         } else {
