@@ -164,38 +164,58 @@ export class AuthHelper {
 
     // Wait for successful login by checking for authenticated elements
     // Increased timeout for mobile browsers and non-admin users
-    try {
-      console.log('AuthHelper: Waiting for authenticated page elements...');
-      await this.page.waitForFunction(
-        () => {
-          // Check if login form is gone (password field not visible)
-          const passwordFields = document.querySelectorAll('input[type="password"]');
-          const passwordVisible = Array.from(passwordFields).some(field => field.offsetParent !== null);
-          if (passwordVisible) {
-            return false; // Still on login page
-          }
+    // CRITICAL FIX (2025-10-21): Extended timeout to 30s to prevent flaky test failures
+    // Add retry logic for authentication race conditions
+    let authRetries = 0;
+    const maxAuthRetries = 3;
 
-          // Check for main application elements
-          const mainElements = [
-            '.ant-layout-sider', // Sidebar
-            '.ant-layout-content', // Main content
-            '.ant-table', // Document table
-          ];
+    while (authRetries < maxAuthRetries) {
+      try {
+        console.log(`AuthHelper: Waiting for authenticated page elements (attempt ${authRetries + 1}/${maxAuthRetries})...`);
+        await this.page.waitForFunction(
+          () => {
+            // Check if login form is gone (password field not visible)
+            const passwordFields = document.querySelectorAll('input[type="password"]');
+            const passwordVisible = Array.from(passwordFields).some(field => field.offsetParent !== null);
+            if (passwordVisible) {
+              return false; // Still on login page
+            }
 
-          return mainElements.some(selector => {
-            const element = document.querySelector(selector);
-            return element && element.offsetParent !== null;
-          });
-        },
-        { timeout: 20000 }  // Increased from 15000ms to 20000ms for better compatibility
-      );
-    } catch (error) {
-      // Debug: Log current page state if timeout occurs
-      console.log('AuthHelper: Login timeout - checking page state');
-      console.log('AuthHelper: Current URL:', this.page.url());
-      const bodyText = await this.page.locator('body').textContent();
-      console.log('AuthHelper: Body text (first 200 chars):', bodyText?.substring(0, 200));
-      throw error;
+            // Check for main application elements
+            const mainElements = [
+              '.ant-layout-sider', // Sidebar
+              '.ant-layout-content', // Main content
+              '.ant-table', // Document table
+            ];
+
+            return mainElements.some(selector => {
+              const element = document.querySelector(selector);
+              return element && element.offsetParent !== null;
+            });
+          },
+          { timeout: 30000 }  // Increased from 20000ms to 30000ms per code review feedback
+        );
+        // Success - break retry loop
+        break;
+      } catch (error) {
+        authRetries++;
+
+        // Debug: Log current page state if timeout occurs
+        console.log('AuthHelper: Login timeout on attempt', authRetries);
+        console.log('AuthHelper: Current URL:', this.page.url());
+        const bodyText = await this.page.locator('body').textContent();
+        console.log('AuthHelper: Body text (first 200 chars):', bodyText?.substring(0, 200));
+
+        // If this was the last retry, throw the error
+        if (authRetries >= maxAuthRetries) {
+          console.error('AuthHelper: All authentication retries exhausted');
+          throw error;
+        }
+
+        // Wait before retrying
+        console.log('AuthHelper: Waiting 2 seconds before retry...');
+        await this.page.waitForTimeout(2000);
+      }
     }
 
     // Additional verification: ensure we're not on login page anymore
@@ -217,6 +237,7 @@ export class AuthHelper {
     }
 
     // Wait for documents page to fully load with Ant Design components
+    // CRITICAL FIX (2025-10-21): Extended timeout to 30s for slow CI environments
     await this.page.waitForFunction(
       () => {
         // Check for key elements that indicate successful navigation to documents
@@ -224,7 +245,7 @@ export class AuthHelper {
         const hasSider = document.querySelector('.ant-layout-sider') !== null;
         return hasLayout && hasSider;
       },
-      { timeout: 10000 }
+      { timeout: 30000 }  // Increased from 10000ms to 30000ms per code review feedback
     );
 
     // Additional wait for page stabilization

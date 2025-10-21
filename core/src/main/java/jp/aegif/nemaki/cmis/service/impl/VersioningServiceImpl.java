@@ -240,11 +240,13 @@ public class VersioningServiceImpl implements VersioningService {
 		}
 		
 		// CRITICAL FIX: Check for null document before accessing its properties
+		// CRITICAL FIX (2025-10-21 Code Review): Removed unreachable return statement
+		// exceptionService.objectNotFound() throws CmisObjectNotFoundException
 		if (document == null) {
-			log.error("Document not found for versionSeriesId: " + versionSeriesId + 
-					" in repository: " + repositoryId + " (major: " + _major + ")");
+			log.error("Document not found for versionSeriesId: {} in repository: {} (major: {})",
+					versionSeriesId, repositoryId, _major);
 			exceptionService.objectNotFound(DomainType.OBJECT, null, versionSeriesId);
-			return null; // This line should not be reached due to exception above
+			// Method execution ends here due to exception thrown above
 		}
 		
 		Lock lock = threadLockService.getReadLock(repositoryId, document.getId());
@@ -285,10 +287,13 @@ public class VersioningServiceImpl implements VersioningService {
 			Document d = contentService.getDocument(repositoryId, objectId);
 
 			// CRITICAL FIX (2025-10-21): Check for null document before accessing properties
+			// CRITICAL FIX (2025-10-21 Code Review): Removed unreachable return statement
+			// exceptionService.objectNotFound() throws CmisObjectNotFoundException,
+			// so execution never proceeds beyond this point
 			if (d == null) {
-				log.error("Document not found for objectId: " + objectId + " in repository: " + repositoryId);
+				log.error("Document not found for objectId: {} in repository: {}", objectId, repositoryId);
 				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
-				return null; // This line should not be reached due to exception above
+				// Method execution ends here due to exception thrown above
 			}
 
 			versionSeriesId = d.getVersionSeriesId();

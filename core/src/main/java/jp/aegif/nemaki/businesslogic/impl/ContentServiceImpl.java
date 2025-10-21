@@ -1367,7 +1367,12 @@ public class ContentServiceImpl implements ContentService {
 			// CRITICAL FIX (2025-10-21): Refresh document from database before update
 			// to avoid CouchDB revision conflicts. The 'former' document may have been
 			// retrieved earlier and could have a stale _rev value.
+			// CRITICAL FIX (2025-10-21 Code Review): Added null safety check
 			Document refreshedFormer = contentDaoService.getDocument(repositoryId, former.getId());
+			if (refreshedFormer == null) {
+				log.error("Cannot refresh former version document: {} in repository: {}", former.getId(), repositoryId);
+				throw new CmisObjectNotFoundException("Former version document not found: " + former.getId());
+			}
 			refreshedFormer.setLatestVersion(false);
 			refreshedFormer.setLatestMajorVersion(false);
 			contentDaoService.update(repositoryId, refreshedFormer);
@@ -1380,7 +1385,12 @@ public class ContentServiceImpl implements ContentService {
 			d.setPrivateWorkingCopy(false);
 			// CRITICAL FIX (2025-10-21): Refresh document from database before update
 			// to avoid CouchDB revision conflicts
+			// CRITICAL FIX (2025-10-21 Code Review): Added null safety check
 			Document refreshedFormerMinor = contentDaoService.getDocument(repositoryId, former.getId());
+			if (refreshedFormerMinor == null) {
+				log.error("Cannot refresh former version document: {} in repository: {}", former.getId(), repositoryId);
+				throw new CmisObjectNotFoundException("Former version document not found: " + former.getId());
+			}
 			refreshedFormerMinor.setLatestVersion(false);
 			contentDaoService.update(repositoryId, refreshedFormerMinor);
 			break;
