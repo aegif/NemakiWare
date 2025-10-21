@@ -95,36 +95,7 @@ export class CMISService {
     return undefined;
   }
 
-  private getSafeBooleanProperty(props: Record<string, any>, key: string): boolean | undefined {
-    const property = props[key];
-
-    if (property && typeof property === 'object' && property.value !== undefined) {
-      const value = property.value;
-      if (typeof value === 'boolean') {
-        return value;
-      } else if (typeof value === 'string') {
-        return value.toLowerCase() === 'true';
-      } else if (Array.isArray(value) && value.length > 0) {
-        const first = value[0];
-        if (typeof first === 'boolean') {
-          return first;
-        }
-        if (typeof first === 'string') {
-          return first.toLowerCase() === 'true';
-        }
-      }
-    }
-
-    if (typeof property === 'boolean') {
-      return property;
-    }
-
-    if (typeof property === 'string') {
-      return property.toLowerCase() === 'true';
-    }
-
-    return undefined;
-  }
+  // REMOVED: getSafeBooleanProperty - unused helper method (2025-10-22)
 
   private extractAllowableActions(allowableActionsData: any): string[] {
     if (!allowableActionsData) {
