@@ -36,10 +36,10 @@ Commit: b51046391
 
 ---
 
-## 📊 CURRENT TCK STATUS SUMMARY (2025-10-21 - Complete Verification Session)
+## 📊 CURRENT TCK STATUS SUMMARY (2025-10-21 - Complete Resolution - All Tests PASS)
 
-**Overall TCK Compliance**: **33/38 Tests PASS (87%)** ⬆️ Improved from 84%
-**Executable Tests**: **33/35 PASS (94.3%)** excluding FilingTestGroup
+**Overall TCK Compliance**: **35/38 Tests PASS (92%)** ⬆️ Improved from 87%
+**Executable Tests**: **35/35 PASS (100%)** ✅ **ALL PASSING** excluding FilingTestGroup
 **Total Test Execution Time**: ~42 minutes (clean database state)
 
 ### Test Group Status
@@ -54,20 +54,23 @@ Commit: b51046391
 | **CrudTestGroup1** | **10/10** | **✅ PASS** | **100%** | **Content stream update fix applied** |
 | **CrudTestGroup2** | **9/9** | **✅ PASS** | **100%** | **Attachment _rev issue resolved** |
 | InheritedFlagTest | 1/1 | ✅ PASS | 100% | Property inheritance flags |
-| **QueryTestGroup** | **4/6** | **✅ IMPROVED** | **67%** | **queryRootFolderTest now PASS** ⬆️ |
+| **QueryTestGroup** | **6/6** | **✅ COMPLETE** | **100%** | **ALL queryLikeTest/queryInFolderTest issues resolved** ✅ |
 | FilingTestGroup | 0/0 | ⊘ SKIP | N/A | Intentionally disabled |
 
-### QueryTestGroup Detailed Status
+### QueryTestGroup Detailed Status - COMPLETE RESOLUTION
 
-**Passing Tests (4/6):**
+**All Tests Passing (6/6) - 100% Success**:
 - ✅ **queryRootFolderTest**: PASS (3.0 sec) - **FIXED with parseDateTime() improvements**
 - ✅ **querySmokeTest**: PASS (81.0 sec)
 - ✅ **queryForObject**: PASS (31.3 sec)
 - ✅ **contentChangesSmokeTest**: PASS (2.2 sec)
+- ✅ **queryLikeTest**: PASS (164.88 sec = 2m 45s) - **RESOLVED: Database bloat was the cause**
+- ✅ **queryInFolderTest**: PASS (248.28 sec = 4m 8s) - **RESOLVED: Database bloat was the cause**
 
-**Known Timeout Issues (2/6):**
-- ⏱️ **queryLikeTest**: Timeout (52 objects creation) - OpenCMIS TCK client limitation
-- ⏱️ **queryInFolderTest**: Timeout (60 objects creation) - OpenCMIS TCK client limitation
+**Full QueryTestGroup Execution**: PASS (446.37 sec = 7m 28s, all 6 tests together)
+
+**Critical Finding (2025-10-21)**:
+Previous timeout issues with queryLikeTest and queryInFolderTest were **NOT NemakiWare code issues**, but caused by **database bloat** (744 documents vs. clean state of 116 documents). With clean database state, all tests pass reliably within expected timeframes
 
 ### QA Integration Tests
 
@@ -330,7 +333,7 @@ curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmissele
 
 1. **Root Folder Timestamp Persistence**: Direct CouchDB update is a workaround. The root cause of why ISO 8601 timestamps in dump file are not preserved during initialization requires further investigation (low priority).
 
-2. **queryLikeTest and queryInFolderTest**: These tests still timeout due to OpenCMIS client limitations with large-scale object creation (52 and 60 objects). This is unrelated to the timestamp fixes.
+2. ~~**queryLikeTest and queryInFolderTest**: These tests still timeout due to OpenCMIS client limitations with large-scale object creation (52 and 60 objects). This is unrelated to the timestamp fixes.~~ **RESOLVED (2025-10-21)**: Database bloat was the root cause, not OpenCMIS limitations. Tests now pass reliably with clean database state.
 
 ---
 
@@ -2349,42 +2352,32 @@ OpenCMIS TCK JUnitRunner has issues with:
 - ❌ **2 Tests Timeout** - queryLikeTest, queryInFolderTest (large-scale object creation)
 - ⊘ **1 Test Skipped** - FilingTestGroup (intentional)
 
-**queryLikeTest/queryInFolderTest Timeout - INVESTIGATION COMPLETED (2025-10-11 05:00-09:00)**:
+**queryLikeTest/queryInFolderTest Timeout - ~~INVESTIGATION COMPLETED (2025-10-11 05:00-09:00)~~ CORRECTED (2025-10-21)**:
 
-**Root Cause Identified** (via Surefire output.txt and Docker log analysis):
-- **Server-Side**: ✅ Normal operation (getObjectByPath 4x + numerous getObject calls processed)
-- **Client-Side**: ❌ OpenCMIS TCK client hangs after session creation
-- **Hang Location**: QueryLikeTest.run() → after createTestFolder() completes → object creation loop (a-z, 52 objects)
-- **Evidence**: Surefire output shows "[AbstractSessionTest] Session created successfully" then no further output
+**~~Root Cause Identified~~ INCORRECT ANALYSIS (2025-10-11)** ~~(via Surefire output.txt and Docker log analysis)~~:
+- ~~**Server-Side**: ✅ Normal operation (getObjectByPath 4x + numerous getObject calls processed)~~
+- ~~**Client-Side**: ❌ OpenCMIS TCK client hangs after session creation~~
+- ~~**Conclusion**: **NemakiWare CMIS server implementation is correct**. Timeout is caused by OpenCMIS TCK client framework limitation with large-scale object creation (50+ objects), not server issues.~~
 
-**Technical Details**:
-- queryLikeTest: Creates 52 objects (26 documents + 26 folders, a-z loop) - **FIXED in TCK source, cannot be reduced**
-- queryInFolderTest: Creates 60 objects (nested folder structure) - **FIXED in TCK source**
-- OpenCMIS AtomPub binding + SELECT_ALL_NO_CACHE_OC operation context
-- Hypothesis: Thread pool/connection pool exhaustion in OpenCMIS client library
+**⚠️ CRITICAL CORRECTION (2025-10-21)**:
 
-**Investigation Methods Used**:
-1. ✅ Surefire output.txt analysis (revealed exact hang point)
-2. ✅ Docker log monitoring (confirmed server processing requests)
-3. ✅ OpenCMIS TCK source code review (QueryLikeTest, AbstractSessionTest, AbstractQueryTest)
-4. ✅ Debug logging in QueryTestGroup.java (static init, constructor, test method)
-5. ✅ Comparison with successful tests (querySmokeTest has no object creation)
-6. ❌ Thread dump (jstack failed - process unresponsive)
+The above analysis was **INCORRECT**. User feedback correctly identified that these tests had worked before, indicating a NemakiWare regression, not an OpenCMIS client issue.
 
-**Attempted Solutions (All Failed)**:
-1. ❌ Extended readtimeout to 600000ms (10 minutes)
-2. ❌ Reduced TCK parameter documentcount/foldercount (doesn't affect fixed a-z loop)
-3. ❌ Running multiple tests together (querySmokeTest+queryLikeTest)
-4. ❌ Docker environment reset (6GB cache cleared)
+**ACTUAL ROOT CAUSE (2025-10-21)**:
+- **Database Bloat**: Tests were timing out because database had 744 documents (from accumulated test data) instead of clean state (116 documents)
+- **Clean Database Solution**: After deleting and reinitializing database, both tests pass reliably
+- **Test Results with Clean Database**:
+  - ✅ queryLikeTest: PASS (164.88 sec = 2m 45s)
+  - ✅ queryInFolderTest: PASS (248.28 sec = 4m 8s)
+  - ✅ Full QueryTestGroup (6 tests): PASS (446.37 sec = 7m 28s)
 
-**Conclusion**:
-**NemakiWare CMIS server implementation is correct**. Timeout is caused by OpenCMIS TCK client framework limitation with large-scale object creation (50+ objects), not server issues.
+**Lesson Learned**:
+Always verify with clean database state before attributing failures to external dependencies. Database cleanup is critical for reproducible TCK test execution.
 
-**Recommended Next Steps**:
-1. ✅ **ACCEPT**: 92% TCK pass rate (34/37) as sufficient for CMIS 1.1 compliance certification
-2. ✅ **DOCUMENT**: queryLikeTest/queryInFolderTest as known OpenCMIS TCK client limitations (detailed investigation in "Current Active Issues" section)
-3. ⚠️ **ALTERNATIVE** (if 100% required): Modify OpenCMIS TCK source to reduce object count (a-z → a-j = 20 objects) for validation
-4. ⚠️ **MONITOR**: Future OpenCMIS TCK releases for client library improvements
+**Resolution**:
+- ✅ **QueryTestGroup: 6/6 PASS (100%)** with clean database
+- ✅ **TCK Compliance: 35/38 PASS (92%)** - All executable tests passing
+- ✅ **No OpenCMIS client modifications needed**
 
 ---
 
@@ -4204,11 +4197,11 @@ public NemakiTypeDefinition updateTypeDefinition(String repositoryId, NemakiType
 3. **Flexible Data Handling**: Date parsing supports multiple CouchDB storage formats
 4. **Clean Logging**: Debug information uses appropriate log levels for production deployments
 
-## Current Active Issues (2025-10-11)
+## ~~Current Active Issues (2025-10-11)~~ RESOLVED (2025-10-21)
 
-### QueryLikeTest and QueryInFolderTest Timeout Investigation - DEEP DIVE COMPLETED
+### QueryLikeTest and QueryInFolderTest Timeout Investigation - ~~DEEP DIVE COMPLETED~~ INCORRECT ANALYSIS
 
-**STATUS**: Root cause identified - OpenCMIS TCK client-side limitation with large-scale object creation
+**~~STATUS~~** **CORRECTED (2025-10-21)**: ~~Root cause identified - OpenCMIS TCK client-side limitation with large-scale object creation~~ **Actual cause: Database bloat (744 vs 116 documents). Tests now pass 100% with clean database.**
 
 **Investigation Summary (2025-10-11 05:00-09:00 JST)**:
 After extensive investigation (4+ hours), isolated the exact hang location and root cause:
@@ -4293,14 +4286,26 @@ public void queryLikeTest() throws Exception{
 - `/core/src/test/java/jp/aegif/nemaki/cmis/tck/TestGroupBase.java` (Test base class)
 - `/core/src/test/java/jp/aegif/nemaki/cmis/tck/TckSuite.java` (Test suite)
 
-**Conclusion:**
-NemakiWare CMIS server achieves **92% TCK compliance (34/37 tests PASS)**. The 2 remaining timeout tests (queryLikeTest, queryInFolderTest) are attributed to OpenCMIS TCK client framework limitations with large-scale object creation, not server implementation issues.
+**~~Conclusion~~** **INCORRECT (2025-10-11, CORRECTED 2025-10-21)**:
+~~NemakiWare CMIS server achieves **92% TCK compliance (34/37 tests PASS)**. The 2 remaining timeout tests (queryLikeTest, queryInFolderTest) are attributed to OpenCMIS TCK client framework limitations with large-scale object creation, not server implementation issues.~~
 
-**Recommended Next Steps:**
-1. Accept 92% TCK pass rate as sufficient for CMIS 1.1 compliance certification
-2. Document queryLikeTest/queryInFolderTest as known OpenCMIS TCK client limitations
-3. Consider alternative: Reduce object count in QueryLikeTest (modify TCK source) for validation
-4. Monitor future OpenCMIS TCK releases for client library improvements
+**ACTUAL CONCLUSION (2025-10-21)**:
+- **NemakiWare CMIS server achieves 92% TCK compliance (35/38 tests PASS, 100% of executable tests)**
+- **queryLikeTest and queryInFolderTest now PASS with clean database**
+- **Root cause was database bloat, NOT OpenCMIS client issues**
+- **All 6 QueryTestGroup tests now passing (6/6 = 100%)**
+
+**~~Recommended Next Steps~~** **NO LONGER NEEDED (2025-10-21)**:
+1. ~~Accept 92% TCK pass rate as sufficient for CMIS 1.1 compliance certification~~
+2. ~~Document queryLikeTest/queryInFolderTest as known OpenCMIS TCK client limitations~~
+3. ~~Consider alternative: Reduce object count in QueryLikeTest (modify TCK source) for validation~~
+4. ~~Monitor future OpenCMIS TCK releases for client library improvements~~
+
+**ACTUAL NEXT STEPS (2025-10-21)**:
+1. ✅ **COMPLETED**: Database cleanup before TCK execution
+2. ✅ **COMPLETED**: QueryTestGroup 6/6 PASS verification
+3. ✅ **COMPLETED**: TCK compliance 35/38 PASS (92%, 100% executable)
+4. ⏭️ **READY**: Proceed with code review and pull request
 
 ---
 
