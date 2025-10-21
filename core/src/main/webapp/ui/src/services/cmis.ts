@@ -919,10 +919,19 @@ export class CMISService {
                 });
               }
 
+              // Use first version as latestVersion (versions are typically ordered newest-first)
+              const latestVersion = versions[0] || {
+                id: '',
+                name: '',
+                objectType: 'cmis:document',
+                baseType: 'cmis:document',
+                properties: {},
+                allowableActions: []
+              };
+
               const versionHistory: VersionHistory = {
                 versions: versions,
-                hasMoreItems: false,
-                numItems: versions.length
+                latestVersion: latestVersion
               };
               
               resolve(versionHistory);
