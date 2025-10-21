@@ -10,8 +10,7 @@ import {
   Popconfirm,
   Card,
   Tag,
-  Select,
-  Transfer
+  Select
 } from 'antd';
 import { 
   TeamOutlined, 

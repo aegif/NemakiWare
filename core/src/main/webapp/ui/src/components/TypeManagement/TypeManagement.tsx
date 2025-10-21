@@ -11,15 +11,13 @@ import {
   Card,
   Select,
   Switch,
-  InputNumber,
   Tabs
 } from 'antd';
-import { 
-  FileOutlined, 
-  PlusOutlined, 
-  EditOutlined, 
-  DeleteOutlined,
-  SettingOutlined
+import {
+  FileOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined
 } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
 import { TypeDefinition, PropertyDefinition } from '../../types/cmis';

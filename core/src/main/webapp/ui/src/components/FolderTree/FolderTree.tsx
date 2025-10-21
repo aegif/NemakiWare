@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Tree, Spin, message } from 'antd';
-import { FolderOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { FolderOutlined } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
-import { CMISObject } from '../../types/cmis';
 
 interface FolderTreeProps {
   repositoryId: string;
@@ -100,7 +99,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
     });
   };
 
-  const handleSelect = async (selectedKeys: React.Key[], info: any) => {
+  const handleSelect = async (selectedKeys: React.Key[]) => {
     if (selectedKeys.length > 0) {
       const folderId = selectedKeys[0] as string;
       setSelectedKeys([folderId]);

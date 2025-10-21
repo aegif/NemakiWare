@@ -8,7 +8,6 @@ import {
   SettingOutlined,
   LogoutOutlined,
   FolderOutlined,
-  SecurityScanOutlined,
   InboxOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined
