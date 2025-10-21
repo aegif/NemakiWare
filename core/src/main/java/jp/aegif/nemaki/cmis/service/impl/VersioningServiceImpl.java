@@ -243,8 +243,8 @@ public class VersioningServiceImpl implements VersioningService {
 		// CRITICAL FIX (2025-10-21 Code Review): Removed unreachable return statement
 		// exceptionService.objectNotFound() throws CmisObjectNotFoundException
 		if (document == null) {
-			log.error("Document not found for versionSeriesId: {} in repository: {} (major: {})",
-					versionSeriesId, repositoryId, _major);
+			log.error("Document not found for versionSeriesId: " + versionSeriesId +
+					" in repository: " + repositoryId + " (major: " + _major + ")");
 			exceptionService.objectNotFound(DomainType.OBJECT, null, versionSeriesId);
 			// Method execution ends here due to exception thrown above
 		}
@@ -291,7 +291,7 @@ public class VersioningServiceImpl implements VersioningService {
 			// exceptionService.objectNotFound() throws CmisObjectNotFoundException,
 			// so execution never proceeds beyond this point
 			if (d == null) {
-				log.error("Document not found for objectId: {} in repository: {}", objectId, repositoryId);
+				log.error("Document not found for objectId: " + objectId + " in repository: " + repositoryId);
 				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
 				// Method execution ends here due to exception thrown above
 			}

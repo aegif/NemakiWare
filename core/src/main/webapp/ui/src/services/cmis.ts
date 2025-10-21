@@ -1497,10 +1497,46 @@ export class CMISService {
   }
 
   async getTypes(repositoryId: string): Promise<TypeDefinition[]> {
+    // CRITICAL FIX (2025-10-21): Fetch both base types AND child types
+    // Previous implementation only returned base types (6), missing custom types (nemaki:*)
+    // This caused Type Management UI to show 6 rows instead of 10
+
+    try {
+      // Step 1: Fetch base types
+      const baseTypes = await this.fetchTypeChildren(repositoryId, null);
+      console.log('CMIS DEBUG: getTypes - base types count:', baseTypes.length);
+
+      // Step 2: Fetch child types for each base type
+      const childTypePromises = baseTypes.map(baseType =>
+        this.fetchTypeChildren(repositoryId, baseType.id)
+      );
+
+      const childTypeArrays = await Promise.all(childTypePromises);
+      const childTypes = childTypeArrays.flat();
+      console.log('CMIS DEBUG: getTypes - child types count:', childTypes.length);
+
+      // Step 3: Combine base types and child types
+      const allTypes = [...baseTypes, ...childTypes];
+      console.log('CMIS DEBUG: getTypes - total types count:', allTypes.length);
+      console.log('CMIS DEBUG: getTypes - all type IDs:', allTypes.map(t => t.id));
+
+      return allTypes;
+    } catch (error) {
+      console.error('CMIS DEBUG: getTypes error:', error);
+      throw error;
+    }
+  }
+
+  private async fetchTypeChildren(repositoryId: string, typeId: string | null): Promise<TypeDefinition[]> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      // Use Browser Binding for type definitions (returns clean JSON)
-      xhr.open('GET', `/core/browser/${repositoryId}?cmisselector=typeChildren`, true);
+
+      // Build URL with optional typeId parameter
+      const url = typeId
+        ? `/core/browser/${repositoryId}?cmisselector=typeChildren&typeId=${encodeURIComponent(typeId)}`
+        : `/core/browser/${repositoryId}?cmisselector=typeChildren`;
+
+      xhr.open('GET', url, true);
       xhr.setRequestHeader('Accept', 'application/json');
 
       const headers = this.getAuthHeaders();
@@ -1512,15 +1548,11 @@ export class CMISService {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
             try {
-              console.log('CMIS DEBUG: getTypes response:', xhr.responseText.substring(0, 500));
-
-              // Parse Browser Binding JSON response for type definitions
               const jsonResponse = JSON.parse(xhr.responseText);
-              console.log('CMIS DEBUG: getTypes JSON response:', jsonResponse);
 
               if (!jsonResponse.types || !Array.isArray(jsonResponse.types)) {
-                console.error('CMIS DEBUG: Invalid response format - no types array');
-                reject(new Error('Invalid response format'));
+                // Empty child types array is OK (not all base types have children)
+                resolve([]);
                 return;
               }
 
@@ -1529,31 +1561,27 @@ export class CMISService {
                 const isStandardType = type.id.startsWith('cmis:');
                 const deletable = !isStandardType && (type.typeMutability?.delete !== false);
 
-                const typeDefinition: TypeDefinition = {
+                return {
                   id: type.id || 'unknown',
                   displayName: type.displayName || type.id || 'Unknown Type',
                   description: type.description || (type.displayName || type.id) + ' type definition',
                   baseTypeId: type.baseId || type.id,
+                  parentTypeId: type.parentTypeId || type.parentId,
                   creatable: type.creatable !== false,
                   fileable: type.fileable !== false,
                   queryable: type.queryable !== false,
                   deletable: deletable,
                   propertyDefinitions: {}
                 };
-
-                console.log(`CMIS DEBUG: Added type: ${type.id} (deletable: ${deletable})`);
-                return typeDefinition;
               });
 
-              console.log('CMIS DEBUG: getTypes parsed types count:', types.length);
-              console.log('CMIS DEBUG: getTypes parsed types:', types);
               resolve(types);
             } catch (e) {
-              console.error('CMIS DEBUG: getTypes parse error:', e);
+              console.error('CMIS DEBUG: fetchTypeChildren parse error:', e);
               reject(new Error('Failed to parse type definitions JSON'));
             }
           } else {
-            console.error('CMIS DEBUG: getTypes HTTP error:', xhr.status, xhr.statusText);
+            console.error('CMIS DEBUG: fetchTypeChildren HTTP error:', xhr.status, xhr.statusText);
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             reject(error);
           }
@@ -1561,7 +1589,7 @@ export class CMISService {
       };
 
       xhr.onerror = () => {
-        console.error('CMIS DEBUG: getTypes network error');
+        console.error('CMIS DEBUG: fetchTypeChildren network error');
         reject(new Error('Network error'));
       };
 

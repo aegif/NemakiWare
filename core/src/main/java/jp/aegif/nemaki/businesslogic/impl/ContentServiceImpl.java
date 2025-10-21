@@ -79,6 +79,7 @@ import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExistsException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 // CmisException import removed due to Jakarta EE compatibility issues
