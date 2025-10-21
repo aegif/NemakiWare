@@ -175,7 +175,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       title: 'アクション',
       key: 'actions',
       width: 100,
-      render: (_, record: Permission) => (
+      render: (_: any, record: Permission) => (
         record.direct && (
           <Popconfirm
             title="この権限を削除しますか？"

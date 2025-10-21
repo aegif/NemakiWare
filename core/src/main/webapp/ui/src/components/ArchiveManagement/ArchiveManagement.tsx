@@ -105,7 +105,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       title: 'アクション',
       key: 'actions',
       width: 150,
-      render: (_, record: CMISObject) => (
+      render: (_: any, record: CMISObject) => (
         <Space>
           <Tooltip title="詳細表示">
             <Button 

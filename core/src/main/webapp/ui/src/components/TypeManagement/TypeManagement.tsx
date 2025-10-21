@@ -132,7 +132,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       title: 'アクション',
       key: 'actions',
       width: 200,
-      render: (_, record: TypeDefinition) => (
+      render: (_: any, record: TypeDefinition) => (
         <Space>
           <Button
             icon={<EditOutlined />}

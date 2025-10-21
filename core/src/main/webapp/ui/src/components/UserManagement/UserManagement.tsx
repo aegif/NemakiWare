@@ -239,7 +239,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       title: 'アクション',
       key: 'actions',
       width: 150,
-      render: (_, record: User) => (
+      render: (_: any, record: User) => (
         <Space>
           <Button 
             icon={<EditOutlined />} 

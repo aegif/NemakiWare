@@ -176,7 +176,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       title: 'アクション',
       key: 'actions',
       width: 120,
-      render: (_, record: CMISObject) => (
+      render: (_: any, record: CMISObject) => (
         <Space>
           <Tooltip title="詳細表示">
             <Button 

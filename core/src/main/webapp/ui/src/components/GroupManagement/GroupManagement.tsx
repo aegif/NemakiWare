@@ -213,7 +213,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       title: 'アクション',
       key: 'actions',
       width: 150,
-      render: (_, record: Group) => (
+      render: (_: any, record: Group) => (
         <Space>
           <Button 
             icon={<EditOutlined />} 

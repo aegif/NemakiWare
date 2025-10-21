@@ -1159,7 +1159,7 @@ export class CMISService {
               console.log('CMIS DEBUG: getUsers transformed data:', transformedUsers);
               
               // 詳細ログ出力
-              transformedUsers.forEach((user, index) => {
+              transformedUsers.forEach((user: any, index: number) => {
                 console.log(`User ${index + 1}:`, {
                   id: user.id,
                   name: user.name,
