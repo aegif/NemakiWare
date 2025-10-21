@@ -1714,8 +1714,7 @@ export class CMISService {
               for (let i = 0; i < entries.length; i++) {
                 const entry = entries[i];
                 const id = entry.querySelector('id')?.textContent || '';
-                const title = entry.querySelector('title')?.textContent || '';
-                
+
                 relationships.push({
                   id: id.split('/').pop() || id,
                   sourceId: '', // Would need to parse from CMIS properties
