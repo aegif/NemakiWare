@@ -2899,14 +2899,25 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			
 			// Update the AttachmentNode document first
 			CouchAttachmentNode can = new CouchAttachmentNode(attachment);
-			
+
+			// CRITICAL FIX (2025-10-21): Get current revision from CouchDB before update
+			// Root cause: AttachmentNode from getAttachment() loses _rev during convert()
+			// CouchDB requires _rev for safe update (optimistic locking)
+			com.ibm.cloud.cloudant.v1.model.Document currentDoc = client.get(attachment.getId());
+			if (currentDoc != null && currentDoc.getRev() != null) {
+				can.setRevision(currentDoc.getRev());
+				log.debug("Set current revision for attachment update: " + currentDoc.getRev());
+			} else {
+				log.warn("Could not retrieve current revision for attachment: " + attachment.getId());
+			}
+
 			// Set content stream properties if available
 			if (contentStream != null) {
 				can.setMimeType(contentStream.getMimeType());
 				can.setLength(contentStream.getLength());
 				can.setName(contentStream.getFileName());
 			}
-			
+
 			// STAGE 1: Update the document metadata and get the new revision
 			client.update(can);
 			// Get the updated document to obtain the new revision
