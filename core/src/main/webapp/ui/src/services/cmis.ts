@@ -1719,7 +1719,8 @@ export class CMISService {
                   id: id.split('/').pop() || id,
                   sourceId: '', // Would need to parse from CMIS properties
                   targetId: '', // Would need to parse from CMIS properties
-                  type: 'cmis:relationship'
+                  relationshipType: 'cmis:relationship',
+                  properties: {}
                 });
               }
               
