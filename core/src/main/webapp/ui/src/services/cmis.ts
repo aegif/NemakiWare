@@ -900,19 +900,25 @@ export class CMISService {
               const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
               const entries = xmlDoc.getElementsByTagName('entry');
               
-              const versions = [];
+              const versions: CMISObject[] = [];
               for (let i = 0; i < entries.length; i++) {
                 const entry = entries[i];
                 const id = entry.querySelector('id')?.textContent || '';
                 const title = entry.querySelector('title')?.textContent || '';
-                
+
+                // Create full CMISObject to satisfy TypeScript interface requirements
                 versions.push({
                   id: id.split('/').pop() || id,
                   name: title,
-                  versionLabel: title // Simplified version parsing
+                  objectType: 'cmis:document',
+                  baseType: 'cmis:document',
+                  properties: {
+                    'cmis:versionLabel': title
+                  },
+                  allowableActions: []
                 });
               }
-              
+
               const versionHistory: VersionHistory = {
                 versions: versions,
                 hasMoreItems: false,
