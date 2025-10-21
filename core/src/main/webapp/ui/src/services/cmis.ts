@@ -1390,11 +1390,12 @@ export class CMISService {
       
       xhr.onerror = () => reject(new Error('Network error'));
       
-      // Convert to form data - match server-side FORM_ constants  
+      // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
       formData.append('name', group.name || '');  // FORM_GROUPNAME = "name"
-      formData.append('users', JSON.stringify(group.users || []));  // FORM_MEMBER_USERS = "users"
-      formData.append('groups', JSON.stringify(group.groups || []));  // FORM_MEMBER_GROUPS = "groups"
+      // TypeScript workaround: Server API expects users/groups properties not in Group interface
+      formData.append('users', JSON.stringify((group as any).users || []));  // FORM_MEMBER_USERS = "users"
+      formData.append('groups', JSON.stringify((group as any).groups || []));  // FORM_MEMBER_GROUPS = "groups"
       
       xhr.send(formData.toString());
     });
@@ -1432,8 +1433,9 @@ export class CMISService {
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
       formData.append('name', group.name || '');  // FORM_GROUPNAME = "name"
-      formData.append('users', JSON.stringify(group.users || []));  // FORM_MEMBER_USERS = "users"
-      formData.append('groups', JSON.stringify(group.groups || []));  // FORM_MEMBER_GROUPS = "groups"
+      // TypeScript workaround: Server API expects users/groups properties not in Group interface
+      formData.append('users', JSON.stringify((group as any).users || []));  // FORM_MEMBER_USERS = "users"
+      formData.append('groups', JSON.stringify((group as any).groups || []));  // FORM_MEMBER_GROUPS = "groups"
       
       xhr.send(formData.toString());
     });
