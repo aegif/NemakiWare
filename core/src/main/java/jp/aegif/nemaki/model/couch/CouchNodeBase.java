@@ -227,27 +227,48 @@ public class CouchNodeBase {
 		if (dateValue == null) {
 			return null;
 		}
-		
+
 		try {
 			// 数値タイムスタンプの場合（Long, Double, Integer）
 			if (dateValue instanceof Number) {
 				long timestamp = ((Number) dateValue).longValue();
-				GregorianCalendar calendar = new GregorianCalendar();
+				// TCK FIX (2025-10-21): Use UTC timezone for consistent timestamp handling
+				GregorianCalendar calendar = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
 				calendar.setTimeInMillis(timestamp);
 				return calendar;
 			}
-			
-			// 文字列の場合はISO 8601として処理
+
+			// 文字列の場合
 			if (dateValue instanceof String) {
-				return parseISODateTime((String) dateValue);
+				String dateStr = (String) dateValue;
+
+				// TCK CRITICAL FIX (2025-10-21): Check if string is numeric timestamp first
+				// Cloudant SDK sometimes returns numeric timestamps as strings
+				if (dateStr.matches("^\\d+$")) {
+					try {
+						long timestamp = Long.parseLong(dateStr);
+						GregorianCalendar calendar = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
+						calendar.setTimeInMillis(timestamp);
+						return calendar;
+					} catch (NumberFormatException e) {
+						log.debug("String looked like numeric timestamp but failed to parse: " + dateStr);
+						// Fall through to ISO 8601 parsing
+					}
+				}
+
+				// Try ISO 8601 format
+				return parseISODateTime(dateStr);
 			}
-			
-			// その他の型の場合は現在時刻を返す
-			log.warn("Unexpected date value type: " + dateValue.getClass().getName() + ", value: " + dateValue);
-			return new GregorianCalendar();
+
+			// TCK CRITICAL FIX (2025-10-21): Return null instead of current time for unexpected types
+			// Previous behavior: Returned new GregorianCalendar() causing timestamp discrepancies
+			// This caused queryRootFolderTest to fail (Browser API showed wrong timestamps)
+			log.error("Unexpected date value type: " + dateValue.getClass().getName() + ", value: " + dateValue);
+			return null;
 		} catch (Exception e) {
-			log.warn("Failed to parse date value: " + dateValue + " - " + e.getMessage());
-			return new GregorianCalendar();
+			// TCK CRITICAL FIX (2025-10-21): Return null instead of current time on parse errors
+			log.error("Failed to parse date value: " + dateValue + " - " + e.getMessage(), e);
+			return null;
 		}
 	}
 	
@@ -259,20 +280,21 @@ public class CouchNodeBase {
 		if (isoDateString == null || isoDateString.trim().isEmpty()) {
 			return null;
 		}
-		
+
 		try {
 			// Create new SimpleDateFormat instance for thread safety (local to method)
 			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
 			sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
-			
-			GregorianCalendar calendar = new GregorianCalendar();
+
+			// TCK FIX (2025-10-21): Use UTC timezone for consistent timestamp handling
+			GregorianCalendar calendar = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
 			calendar.setTime(sdf.parse(isoDateString));
-			
+
 			return calendar;
 		} catch (ParseException e) {
-			// パースエラーの場合は現在時刻を返す
-			log.warn("Failed to parse ISO date string: " + isoDateString + " - " + e.getMessage());
-			return new GregorianCalendar();
+			// TCK CRITICAL FIX (2025-10-21): Return null instead of current time on parse errors
+			log.error("Failed to parse ISO date string: " + isoDateString + " - " + e.getMessage(), e);
+			return null;
 		}
 	}
 	
