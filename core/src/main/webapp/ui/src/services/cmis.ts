@@ -300,8 +300,8 @@ export class CMISService {
 
   async getRootFolder(repositoryId: string): Promise<CMISObject> {
     console.log('CMIS DEBUG: getRootFolder called with repositoryId:', repositoryId);
-    
-    return new Promise((resolve, reject) => {
+
+    return new Promise((resolve, _reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', `${this.baseUrl}/${repositoryId}/root`, true);
       xhr.setRequestHeader('Accept', 'application/json');
