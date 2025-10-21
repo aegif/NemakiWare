@@ -388,11 +388,8 @@ export class CMISService {
       const xhr = new XMLHttpRequest();
       
       // Use AtomPub for all folder children queries due to Browser Binding issues with empty results
-      let url: string;
-      let useAtomPub = true;
-
       // Always use AtomPub for children queries - more reliable than Browser Binding
-      url = `/core/atom/${repositoryId}/children?id=${folderId}`;
+      const url = `/core/atom/${repositoryId}/children?id=${folderId}`;
       
       xhr.open('GET', url, true);
 
