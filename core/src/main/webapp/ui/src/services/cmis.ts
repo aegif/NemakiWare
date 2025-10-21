@@ -198,7 +198,8 @@ export class CMISService {
       creatable: rawType?.creatable !== false,
       fileable: rawType?.fileable !== false,
       queryable: rawType?.queryable !== false,
-      deletable: rawType?.typeMutability?.delete !== false && rawType?.deletable !== false
+      deletable: rawType?.typeMutability?.delete !== false && rawType?.deletable !== false,
+      propertyDefinitions: rawType?.propertyDefinitions || {}
     };
   }
 
