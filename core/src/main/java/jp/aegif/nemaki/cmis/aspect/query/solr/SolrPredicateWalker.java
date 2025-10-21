@@ -713,7 +713,7 @@ public class SolrPredicateWalker{
 	private static String translatePattern(String wildcardString) {
 		int index = 0;
 		int start = 0;
-		StringBuffer res = new StringBuffer();
+		StringBuilder res = new StringBuilder();
 
 		while (index >= 0) {
 			index = wildcardString.indexOf('%', start);
@@ -732,7 +732,7 @@ public class SolrPredicateWalker{
 
 		index = 0;
 		start = 0;
-		res = new StringBuffer();
+		res = new StringBuilder();
 
 		while (index >= 0) {
 			index = wildcardString.indexOf('_', start);
