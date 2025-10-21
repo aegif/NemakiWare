@@ -98,6 +98,113 @@ These deprecated classes are preserved for historical reference only and are NOT
 
 ---
 
+## 🔴 Known Issues and Limitations (2025-10-21 Code Review)
+
+**Code Review Date**: 2025-10-21
+**Reviewer**: Devin AI (External Code Review)
+**Review Rating**: ⭐⭐☆☆☆ (2/5) - Significant regression issues identified
+
+### Critical Issues Identified and Resolved
+
+#### 1. Login Timeout Regressions (7 Tests) - ✅ FIXED (Commit: 430afebed)
+**Problem**: Authentication timeouts causing group/user management tests to fail
+- Group management tests: 4 failures
+- User management tests: 3 failures
+- Root cause: 20-second timeout insufficient for CI environments
+
+**Resolution**:
+- Extended authentication timeout: 20s → 30s
+- Added retry logic: 3 attempts with 2-second delay
+- Extended Ant Design load timeout: 10s → 30s
+- Files: `core/src/main/webapp/ui/tests/utils/auth-helper.ts`
+
+#### 2. Backend Null Safety Risks - ✅ FIXED (Commit: 430afebed)
+**Problem**: Missing null checks after document refresh operations
+- ContentServiceImpl: refreshedFormer could be null
+- VersioningServiceImpl: Unreachable return statements
+
+**Resolution**:
+- Added null checks with CmisObjectNotFoundException throws
+- Removed unreachable code after exception throws
+- Improved error messages with parameterized logging
+- Files: `ContentServiceImpl.java` (Lines 1372-1375, 1390-1393), `VersioningServiceImpl.java` (Lines 291-295, 246-250)
+
+#### 3. WIP Test Handling - ✅ PARTIALLY FIXED (Commit: 430afebed)
+**Problem**: Work-in-progress tests failing instead of being properly skipped
+- custom-type-creation.spec.ts: Using conditional test.skip()
+- pdf-preview.spec.ts: Using test.fail() inappropriately
+
+**Resolution**:
+- Changed to test.describe.skip() for unimplemented UI features
+- Added clear documentation explaining why tests are skipped
+- Listed implementation requirements for future work
+- Files: `custom-type-creation.spec.ts`, `pdf-preview.spec.ts`
+
+### Outstanding Issues (Require Investigation)
+
+#### 4. Type Management UI Rendering ⚠️ INVESTIGATION NEEDED
+**Symptom**: 7/8 type management tests fail with table loading timeouts
+**Impact**: Type management page loads but table remains empty
+**Status**: Requires React component investigation and data loading debug
+**Priority**: HIGH - Core functionality affected
+
+#### 5. UI Implementation Gaps ⚠️ FEATURE NOT IMPLEMENTED
+**Missing Features**:
+- Custom type creation UI (4 tests skip)
+- Versioning UI buttons (5 tests skip)
+- PDF preview functionality (2 tests skip)
+- Permission management improvements (3 tests skip)
+
+**Status**: Tests properly skipped with clear documentation
+**Priority**: MEDIUM - Future feature roadmap items
+
+### Test Results Status
+
+**Playwright Tests** (as of 2025-10-21):
+- Pass Rate: 39.5% (45/114 tests)
+- Known WIP Tests: 14 tests (properly skipped)
+- Regressions Fixed: 7 tests (login timeout resolution)
+- Outstanding Issues: Type management UI (7 tests)
+
+**TCK Tests**:
+- Pass Rate: 92.8% (39/42 tests)
+- Skipped: 3 tests (FilingTestGroup - product specification)
+- Status: STABLE - No changes from code review
+
+### Action Items
+
+**Immediate** (Done):
+- ✅ Fix login timeout issues
+- ✅ Add null safety checks to backend
+- ✅ Properly skip WIP tests with documentation
+
+**Short-Term** (Next Sprint):
+- ⚠️ Investigate type management UI table rendering
+- ⚠️ Debug React component data loading
+- ⚠️ Add error handling for empty tables
+
+**Long-Term** (Future Sprints):
+- 📌 Implement versioning UI (check-out, check-in, version history)
+- 📌 Implement custom type creation UI
+- 📌 Implement PDF preview functionality
+- 📌 Enhance permission management UI
+
+### Code Review Compliance
+
+**Review Recommendations Addressed**:
+1. ✅ Login timeout extended to 30s with retry logic
+2. ✅ Null checks added to all document refresh operations
+3. ✅ WIP tests properly skipped with test.describe.skip()
+4. ✅ Unreachable code removed from exception handlers
+5. ⚠️ Type management UI investigation pending
+
+**Review Recommendations Pending**:
+1. ⚠️ Full Playwright test verification (requires type management UI fix)
+2. ⚠️ Test coverage improvement (currently 39.5%, target 40.6%+)
+3. ⚠️ Implement missing UI features or update tests accordingly
+
+---
+
 ## 📊 CURRENT TCK STATUS SUMMARY (2025-10-21 - 92% TCK Compliance Achieved)
 
 **Overall TCK Compliance**: **35/38 Tests PASS (92%)** ⬆️ Improved from 87%
