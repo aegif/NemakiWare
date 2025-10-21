@@ -76,8 +76,8 @@ test.describe('User Management', () => {
     // Wait for page to load
     await page.waitForTimeout(2000);
 
-    // Look for search input
-    const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], .ant-input-search');
+    // Look for search input (FIX: Use .ant-input-search input to target actual input element)
+    const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], .ant-input-search input');
 
     if (await searchInput.count() > 0) {
       // Perform search
