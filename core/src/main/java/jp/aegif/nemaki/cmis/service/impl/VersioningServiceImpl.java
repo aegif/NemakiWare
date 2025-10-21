@@ -283,6 +283,14 @@ public class VersioningServiceImpl implements VersioningService {
 			exceptionService
 					.invalidArgumentRequiredString("objectId", objectId);
 			Document d = contentService.getDocument(repositoryId, objectId);
+
+			// CRITICAL FIX (2025-10-21): Check for null document before accessing properties
+			if (d == null) {
+				log.error("Document not found for objectId: " + objectId + " in repository: " + repositoryId);
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+				return null; // This line should not be reached due to exception above
+			}
+
 			versionSeriesId = d.getVersionSeriesId();
 		}
 		

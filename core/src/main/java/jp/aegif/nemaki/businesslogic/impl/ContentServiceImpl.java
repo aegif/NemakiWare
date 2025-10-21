@@ -1364,9 +1364,13 @@ public class ContentServiceImpl implements ContentService {
 			d.setLatestMajorVersion(true);
 			d.setVersionLabel(increasedVersionLabel(former, versioningState));
 			d.setPrivateWorkingCopy(false);
-			former.setLatestVersion(false);
-			former.setLatestMajorVersion(false);
-			contentDaoService.update(repositoryId, former);
+			// CRITICAL FIX (2025-10-21): Refresh document from database before update
+			// to avoid CouchDB revision conflicts. The 'former' document may have been
+			// retrieved earlier and could have a stale _rev value.
+			Document refreshedFormer = contentDaoService.getDocument(repositoryId, former.getId());
+			refreshedFormer.setLatestVersion(false);
+			refreshedFormer.setLatestMajorVersion(false);
+			contentDaoService.update(repositoryId, refreshedFormer);
 			break;
 		case MINOR:
 			d.setLatestVersion(true);
@@ -1374,8 +1378,11 @@ public class ContentServiceImpl implements ContentService {
 			d.setLatestMajorVersion(false);
 			d.setVersionLabel(increasedVersionLabel(former, versioningState));
 			d.setPrivateWorkingCopy(false);
-			former.setLatestVersion(false);
-			contentDaoService.update(repositoryId, former);
+			// CRITICAL FIX (2025-10-21): Refresh document from database before update
+			// to avoid CouchDB revision conflicts
+			Document refreshedFormerMinor = contentDaoService.getDocument(repositoryId, former.getId());
+			refreshedFormerMinor.setLatestVersion(false);
+			contentDaoService.update(repositoryId, refreshedFormerMinor);
 			break;
 		case CHECKEDOUT:
 			d.setLatestVersion(false);

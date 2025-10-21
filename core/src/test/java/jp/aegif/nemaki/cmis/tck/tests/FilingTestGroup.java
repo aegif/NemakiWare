@@ -8,15 +8,28 @@ import org.junit.Ignore;
 import jp.aegif.nemaki.cmis.tck.TckSuite;
 
 /**
- * FilingTestGroup - Tests for CMIS Filing features
- * 
- * NOTE: NemakiWare does NOT support Multifiling and Unfiling features.
- * These are optional CMIS capabilities that NemakiWare has chosen not to implement.
- * The tests are disabled via cmis-tck-filters.properties (FilingTestGroup=false).
- * 
+ * FilingTestGroup - Tests for CMIS Filing features (Multi-filing and Unfiling)
+ *
+ * ========================================================================
+ * PRODUCT SPECIFICATION: NemakiWare does NOT support Multi-filing/Unfiling
+ * ========================================================================
+ *
+ * Multi-filing allows a single object to exist in multiple parent folders.
+ * Unfiling allows objects to exist without any parent folder.
+ *
+ * These are OPTIONAL CMIS 1.1 capabilities that NemakiWare has chosen not to
+ * implement as a product design decision. This is the ONLY TCK test group
+ * that is intentionally skipped.
+ *
+ * CRITICAL: This @Ignore annotation must NOT be removed without explicit
+ * user authorization. See CLAUDE.md "TCK IMPLEMENTATION POLICY" section.
+ *
+ * Policy Reference: CLAUDE.md line 39-98 (TCK IMPLEMENTATION POLICY)
+ * Established: 2025-10-21
+ *
  * This is a product specification limitation, not a bug.
  */
-@Ignore("NemakiWare does not support Multifiling/Unfiling - product specification")
+@Ignore("NemakiWare does not support Multifiling/Unfiling - PRODUCT SPECIFICATION (see CLAUDE.md TCK IMPLEMENTATION POLICY)")
 public class FilingTestGroup extends TckSuite{
 	@Test
 	public void multifilingTest() throws Exception{

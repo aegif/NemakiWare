@@ -36,6 +36,68 @@ Commit: b51046391
 
 ---
 
+## 🔒 TCK IMPLEMENTATION POLICY (CRITICAL - DO NOT MODIFY)
+
+**POLICY ESTABLISHED: 2025-10-21**
+
+### Mandatory TCK Test Implementation
+
+**NemakiWare MUST implement ALL CMIS 1.1 TCK tests with the following SINGLE exception:**
+
+1. **FilingTestGroup** - Multi-filing and unfiling support (**PRODUCT SPECIFICATION: NOT IMPLEMENTED**)
+   - Reason: Optional CMIS feature rarely used in production
+   - Status: CLASS-LEVEL `@Ignore` with clear documentation
+   - Location: `core/src/test/java/jp/aegif/nemaki/cmis/tck/tests/FilingTestGroup.java`
+
+### Prohibited Actions
+
+**NEVER disable TCK tests without explicit user authorization:**
+
+❌ **PROHIBITED**:
+- Adding `@Ignore` annotations to test classes or methods
+- Commenting out `@Test` annotations
+- Skipping test execution in build configurations
+- Reducing test coverage to "fix" failures
+- Creating workaround classes that bypass standard tests
+
+✅ **REQUIRED**:
+- Fix the underlying CMIS implementation to pass the test
+- Document the fix in CLAUDE.md with technical details
+- Verify all related tests still pass after the fix
+
+### Current Active Test Groups (VERIFIED 2025-10-21)
+
+| Test Group | Test Count | Status | Reason |
+|------------|------------|--------|--------|
+| BasicsTestGroup | 3 | ✅ ACTIVE | CMIS fundamentals |
+| ConnectionTestGroup | 2 | ✅ ACTIVE | Connection handling |
+| TypesTestGroup | 3 | ✅ ACTIVE | Type system |
+| ControlTestGroup | 1 | ✅ ACTIVE | ACL operations |
+| VersioningTestGroup | 4 | ✅ ACTIVE | Version management |
+| InheritedFlagTest | 1 | ✅ ACTIVE | Property inheritance |
+| QueryTestGroup | 6 | ✅ ACTIVE | CMIS SQL queries |
+| CrudTestGroup1 | 10 | ✅ ACTIVE | CRUD operations (part 1) |
+| CrudTestGroup2 | 9 | ✅ ACTIVE | CRUD operations (part 2) |
+| **FilingTestGroup** | **3** | **⊘ SKIP** | **Multi-filing (product spec)** |
+
+**Total: 39 active tests + 3 skipped tests (filing only) = 42 total TCK tests**
+
+### Historical Notes
+
+**Previous Disabled Tests (NOW RE-ENABLED)**:
+- CrudTestGroup1: createAndDeleteFolderTest, createAndDeleteDocumentTest, createAndDeleteItemTest, bulkUpdatePropertiesTest - **RE-ENABLED 2025-10-12** (cleanup fix)
+- CrudTestGroup2: nameCharsetTest, deleteTreeTest - **RE-ENABLED 2025-10-12** (cleanup fix)
+- All tests previously disabled due to timeout issues have been **PERMANENTLY RE-ENABLED** through proper fixes
+
+**Deprecated Workaround Classes** (marked @Ignore):
+- DirectTckTestRunner, DirectTckTestRunnerDetailed, DirectTckTestRunnerValidation
+- TypesTestGroupFixed, TypesTestGroupFixed2
+- CrudTestGroup (original, split into CrudTestGroup1/2 for performance)
+
+These deprecated classes are preserved for historical reference only and are NOT part of active test execution.
+
+---
+
 ## 📊 CURRENT TCK STATUS SUMMARY (2025-10-21 - 92% TCK Compliance Achieved)
 
 **Overall TCK Compliance**: **35/38 Tests PASS (92%)** ⬆️ Improved from 87%
