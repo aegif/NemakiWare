@@ -347,7 +347,7 @@ export class CMISService {
             }
           } else {
             console.error('CMIS DEBUG: getRootFolder failed with status:', xhr.status);
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             // For now, still provide fallback but notify about auth error
             const fallbackFolder = {
               id: 'e02f784f8360a02cc14d1314c10038ff',
