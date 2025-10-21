@@ -1365,18 +1365,8 @@ public class ContentServiceImpl implements ContentService {
 			d.setLatestMajorVersion(true);
 			d.setVersionLabel(increasedVersionLabel(former, versioningState));
 			d.setPrivateWorkingCopy(false);
-			// CRITICAL FIX (2025-10-21): Refresh document from database before update
-			// to avoid CouchDB revision conflicts. The 'former' document may have been
-			// retrieved earlier and could have a stale _rev value.
-			// CRITICAL FIX (2025-10-21 Code Review): Added null safety check
-			Document refreshedFormer = contentDaoService.getDocument(repositoryId, former.getId());
-			if (refreshedFormer == null) {
-				log.error("Cannot refresh former version document: {} in repository: {}", former.getId(), repositoryId);
-				throw new CmisObjectNotFoundException("Former version document not found: " + former.getId());
-			}
-			refreshedFormer.setLatestVersion(false);
-			refreshedFormer.setLatestMajorVersion(false);
-			contentDaoService.update(repositoryId, refreshedFormer);
+			// Update former version flags (refresh from DB to avoid CouchDB conflicts)
+			updateFormerVersionFlags(repositoryId, former, true);
 			break;
 		case MINOR:
 			d.setLatestVersion(true);
@@ -1384,16 +1374,8 @@ public class ContentServiceImpl implements ContentService {
 			d.setLatestMajorVersion(false);
 			d.setVersionLabel(increasedVersionLabel(former, versioningState));
 			d.setPrivateWorkingCopy(false);
-			// CRITICAL FIX (2025-10-21): Refresh document from database before update
-			// to avoid CouchDB revision conflicts
-			// CRITICAL FIX (2025-10-21 Code Review): Added null safety check
-			Document refreshedFormerMinor = contentDaoService.getDocument(repositoryId, former.getId());
-			if (refreshedFormerMinor == null) {
-				log.error("Cannot refresh former version document: {} in repository: {}", former.getId(), repositoryId);
-				throw new CmisObjectNotFoundException("Former version document not found: " + former.getId());
-			}
-			refreshedFormerMinor.setLatestVersion(false);
-			contentDaoService.update(repositoryId, refreshedFormerMinor);
+			// Update former version flags (refresh from DB to avoid CouchDB conflicts)
+			updateFormerVersionFlags(repositoryId, former, false);
 			break;
 		case CHECKEDOUT:
 			d.setLatestVersion(false);
@@ -1409,6 +1391,33 @@ public class ContentServiceImpl implements ContentService {
 		default:
 			break;
 		}
+	}
+
+	/**
+	 * Updates version flags for the former version document.
+	 * Refreshes the document from database to avoid CouchDB revision conflicts.
+	 *
+	 * REFACTORING (2025-10-22): Extracted common logic from MAJOR/MINOR version handling
+	 * to eliminate code duplication and improve maintainability.
+	 *
+	 * @param repositoryId Repository ID
+	 * @param former Former version document
+	 * @param updateMajorFlag Whether to update latestMajorVersion flag (true for MAJOR, false for MINOR)
+	 * @throws CmisObjectNotFoundException if former document not found (indicates database corruption)
+	 */
+	private void updateFormerVersionFlags(String repositoryId, Document former, boolean updateMajorFlag) {
+		// Refresh document from database to avoid CouchDB revision conflicts
+		// The 'former' document may have been retrieved earlier and could have a stale _rev value
+		Document refreshedFormer = contentDaoService.getDocument(repositoryId, former.getId());
+		if (refreshedFormer == null) {
+			log.error("Cannot refresh former version document: {} in repository: {}", former.getId(), repositoryId);
+			throw new CmisObjectNotFoundException("Former version document not found: " + former.getId());
+		}
+		refreshedFormer.setLatestVersion(false);
+		if (updateMajorFlag) {
+			refreshedFormer.setLatestMajorVersion(false);
+		}
+		contentDaoService.update(repositoryId, refreshedFormer);
 	}
 
 	private VersionSeries createVersionSeries(CallContext callContext, String repositoryId,
@@ -2567,6 +2576,15 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public List<Rendition> getRenditions(String repositoryId, String objectId) {
 		Content c = getContent(repositoryId, objectId);
+
+		// CRITICAL FIX (2025-10-22): Add null check to prevent NullPointerException
+		// Indicates database corruption or orphaned references
+		if (c == null) {
+			log.error("Content not found for objectId: {} in repository: {} - possible database corruption or orphaned reference",
+				objectId, repositoryId);
+			exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+		}
+
 		List<String> ids = new ArrayList<String>();
 		if (c.isDocument()) {
 			Document d = (Document) c;
