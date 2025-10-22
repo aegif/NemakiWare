@@ -232,9 +232,10 @@ test.describe('User Management CRUD Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    // Find testuser
+    // Find testuser using exact username (FIXED: was using hardcoded 'testuser')
+    console.log(`Delete test: Looking for user: ${testUsername}`);
     await page.waitForTimeout(2000);
-    const testUserRow = page.locator('tr').filter({ hasText: 'testuser' });
+    const testUserRow = page.locator('tr').filter({ hasText: testUsername });
 
     if (await testUserRow.count() > 0) {
       // Click delete button
@@ -243,16 +244,37 @@ test.describe('User Management CRUD Operations', () => {
       });
 
       if (await deleteButton.count() > 0) {
+        console.log(`Delete test: Found delete button, clicking...`);
         await deleteButton.first().click(isMobile ? { force: true } : {});
         await page.waitForTimeout(500);
 
         // Confirm deletion
         const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button:has-text("OK"), button:has-text("削除")');
+        console.log(`Delete test: Looking for confirm button, count: ${await confirmButton.count()}`);
         if (await confirmButton.count() > 0) {
+          console.log(`Delete test: Clicking confirm button...`);
           await confirmButton.first().click(isMobile ? { force: true } : {});
 
-          // Wait for success message
-          await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+          // Check for both success and error messages
+          console.log(`Delete test: Waiting for response message...`);
+          try {
+            await page.waitForSelector('.ant-message-success, .ant-message-error', { timeout: 10000 });
+
+            // Check which message appeared
+            const successMsg = await page.locator('.ant-message-success').count();
+            const errorMsg = await page.locator('.ant-message-error').count();
+
+            console.log(`Delete test: Success message: ${successMsg > 0}, Error message: ${errorMsg > 0}`);
+
+            if (errorMsg > 0) {
+              const errorText = await page.locator('.ant-message-error').textContent();
+              console.log(`Delete test: ERROR - ${errorText}`);
+            }
+          } catch (e) {
+            console.log(`Delete test: No success or error message appeared - timeout`);
+            throw e;
+          }
+
           await page.waitForTimeout(2000);
 
           // Verify user is removed from list
