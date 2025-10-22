@@ -32,6 +32,46 @@ test.describe('Advanced ACL Management', () => {
     await testHelper.waitForAntdLoad();
   });
 
+  test.afterEach(async ({ page }) => {
+    // Cleanup: Delete any test folders via CMIS API to prevent accumulation
+    console.log('afterEach: Cleaning up test folders');
+
+    try {
+      // Query for folders starting with acl-test-folder-
+      const queryResponse = await page.request.get(
+        `http://localhost:8080/core/browser/bedroom?cmisselector=query&q=SELECT%20cmis:objectId%20FROM%20cmis:folder%20WHERE%20cmis:name%20LIKE%20'acl-test-folder-%25'`,
+        {
+          headers: {
+            'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
+          }
+        }
+      );
+
+      if (queryResponse.ok()) {
+        const queryResult = await queryResponse.json();
+        const folders = queryResult.results || [];
+
+        for (const folder of folders) {
+          const folderId = folder.properties?.['cmis:objectId']?.value;
+          if (folderId) {
+            await page.request.post('http://localhost:8080/core/browser/bedroom', {
+              headers: {
+                'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
+              },
+              form: {
+                'cmisaction': 'delete',
+                'objectId': folderId
+              }
+            });
+            console.log(`afterEach: Deleted folder ${folderId}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.log('afterEach: Cleanup failed (non-critical):', error);
+    }
+  });
+
   test.skip('should add group permission to folder', async ({ page, browserName }) => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
@@ -336,45 +376,54 @@ test.describe('Advanced ACL Management', () => {
       test.skip('Parent folder creation failed');
     }
 
-    // Cleanup: Navigate back to parent and delete test folder tree
-    const breadcrumb = page.locator('.ant-breadcrumb').filter({ hasText: testFolderName });
-    if (await breadcrumb.count() > 0) {
-      await breadcrumb.click();
-      await page.waitForTimeout(2000);
-    }
+    // Cleanup: Delete test folder via CMIS API for reliability
+    console.log('Test 2 Cleanup: Deleting test folder via CMIS API');
 
-    // Go back to documents root
-    const documentsLink = page.locator('.ant-breadcrumb a, .ant-breadcrumb span').filter({ hasText: /ドキュメント|Documents/i });
-    if (await documentsLink.count() > 0) {
-      await documentsLink.first().click();
-      await page.waitForTimeout(2000);
-    }
+    try {
+      // Query for the test folder
+      const cleanupQueryResponse = await page.request.get(
+        `http://localhost:8080/core/browser/bedroom?cmisselector=query&q=SELECT%20cmis:objectId%20FROM%20cmis:folder%20WHERE%20cmis:name%20=%20'${encodeURIComponent(testFolderName)}'`,
+        {
+          headers: {
+            'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
+          }
+        }
+      );
 
-    // Delete parent folder (will delete child too)
-    const parentFolderRowCleanup = page.locator('tr').filter({ hasText: testFolderName });
-    if (await parentFolderRowCleanup.count() > 0) {
-      await parentFolderRowCleanup.first().click();
-      await page.waitForTimeout(500);
+      if (cleanupQueryResponse.ok()) {
+        const cleanupResult = await cleanupQueryResponse.json();
+        const cleanupFolderId = cleanupResult.results?.[0]?.properties?.['cmis:objectId']?.value;
 
-      const deleteButton = page.locator('button').filter({ has: page.locator('[data-icon="delete"]') });
-      if (await deleteButton.count() > 0) {
-        await deleteButton.first().click();
-        await page.waitForTimeout(500);
+        if (cleanupFolderId) {
+          // Delete folder via CMIS API (will delete child folders too)
+          const deleteResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+            headers: {
+              'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
+            },
+            form: {
+              'cmisaction': 'delete',
+              'objectId': cleanupFolderId
+            }
+          });
 
-        const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button').filter({ hasText: /OK|確認/ });
-        if (await confirmButton.count() > 0) {
-          await confirmButton.first().click();
-          await page.waitForTimeout(2000);
+          if (deleteResponse.ok()) {
+            console.log('Test 2 Cleanup: Test folder deleted successfully via API');
+          } else {
+            console.log('Test 2 Cleanup: Folder deletion failed - may have been already deleted');
+          }
         }
       }
+    } catch (error) {
+      console.log('Test 2 Cleanup: API cleanup failed (non-critical):', error);
     }
   });
 
   test.skip('should handle access denied scenarios gracefully', async ({ page, browserName }) => {
-    // SKIPPED: Folder creation fails in full suite execution due to resource/database state issues
-    // Works correctly when run individually, but fails with "createResponse.ok() = false"
-    // when run as part of full ACL test suite. Likely related to test folder accumulation
-    // or database connection limits. Requires investigation of test cleanup strategy.
+    // SKIPPED: Passes individually but fails in full suite execution
+    // Individual run: PASS (folder created successfully via CMIS API)
+    // Full suite run: FAIL (createResponse.ok() = false after Test 2)
+    // Likely resource/session issue when running multiple tests sequentially
+    // afterEach hook cleanup working correctly - not a folder accumulation issue
 
     // REFACTORED: Use CMIS API directly to avoid UI timing issues
     console.log('Test: Creating folder via CMIS Browser Binding API');
