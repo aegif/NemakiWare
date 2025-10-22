@@ -62,13 +62,14 @@ export class AuthHelper {
 
     // CRITICAL FIX (2025-10-22): Wait for React SPA to initialize before looking for form fields
     // The React app needs time to mount and render the Login component
+    // Timeout increased to 30000ms per code review - 10000ms was too aggressive for slower systems
     await this.page.waitForFunction(
       () => {
         // Check if React root div has children (app is rendered)
         const root = document.getElementById('root');
         return root && root.children.length > 0;
       },
-      { timeout: 10000 }
+      { timeout: 30000 }
     );
 
     // Additional wait for Ant Design components to fully render

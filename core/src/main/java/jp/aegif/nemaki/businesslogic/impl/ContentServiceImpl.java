@@ -2578,11 +2578,11 @@ public class ContentServiceImpl implements ContentService {
 		Content c = getContent(repositoryId, objectId);
 
 		// CRITICAL FIX (2025-10-22): Add null check to prevent NullPointerException
-		// Indicates database corruption or orphaned references
+		// During database initialization, objects may not exist yet - return empty list instead of throwing exception
 		if (c == null) {
-			log.error("Content not found for objectId: {} in repository: {} - possible database corruption or orphaned reference",
+			log.warn("Content not found for objectId: {} in repository: {} - returning empty rendition list",
 				objectId, repositoryId);
-			throw new CmisObjectNotFoundException("Object not found: " + objectId);
+			return Collections.emptyList();
 		}
 
 		List<String> ids = new ArrayList<String>();
