@@ -177,7 +177,6 @@ test.describe('Document Management', () => {
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
 
       // Wait for file input to be available in the modal
-      // Note: Ant Design hides the file input for styling, so we don't check visibility
       const fileInput = page.locator('.ant-modal input[type="file"]');
       await fileInput.waitFor({ state: 'attached', timeout: 5000 });
 
@@ -188,7 +187,7 @@ test.describe('Document Management', () => {
         'This is a test document for Playwright testing.'
       );
 
-      // Wait for file to be selected (filename should appear)
+      // Wait for file to be selected
       await page.waitForTimeout(1000);
 
       // Click アップロード button in modal (submit button)

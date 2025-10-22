@@ -94,7 +94,9 @@ public class NemakiPropertyDefinition extends NodeBase {
 
 	public NemakiPropertyDefinition(NemakiPropertyDefinitionCore core, NemakiPropertyDefinitionDetail detail){
 		// Validate core and detail compatibility - Detail should reference the Core's ID
-		if (core != null && detail != null && !core.getId().equals(detail.getCoreNodeId())) {
+		// Only validate if both IDs exist (for new property definitions, IDs will be null until saved to database)
+		if (core != null && detail != null && core.getId() != null && detail.getCoreNodeId() != null &&
+			!core.getId().equals(detail.getCoreNodeId())) {
 			throw new IllegalArgumentException("Property definition detail does not reference the correct core: " +
 				"Core ID=" + core.getId() + " but Detail.coreNodeId=" + detail.getCoreNodeId());
 		}

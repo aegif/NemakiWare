@@ -1,30 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Table, 
-  Button, 
-  Space, 
-  Upload, 
-  Modal, 
-  Form, 
-  Input, 
-  message, 
+import {
+  Table,
+  Button,
+  Space,
+  Upload,
+  Modal,
+  Form,
+  Input,
+  message,
   Popconfirm,
   Tooltip,
   Row,
   Col,
   Card,
-  Breadcrumb
+  Breadcrumb,
+  Tag,
+  Radio
 } from 'antd';
-import { 
-  FileOutlined, 
-  FolderOutlined, 
-  UploadOutlined, 
-  PlusOutlined, 
-  DeleteOutlined, 
+import {
+  FileOutlined,
+  FolderOutlined,
+  UploadOutlined,
+  PlusOutlined,
+  DeleteOutlined,
   DownloadOutlined,
   EyeOutlined,
   LockOutlined,
-  HomeOutlined
+  HomeOutlined,
+  HistoryOutlined,
+  EditOutlined,
+  CheckOutlined,
+  CloseOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
@@ -43,6 +49,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [currentFolderPath, setCurrentFolderPath] = useState<string>('/');
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [folderModalVisible, setFolderModalVisible] = useState(false);
+  const [checkInModalVisible, setCheckInModalVisible] = useState(false);
+  const [versionHistoryModalVisible, setVersionHistoryModalVisible] = useState(false);
+  const [currentDocumentId, setCurrentDocumentId] = useState<string>('');
+  const [versionHistory, setVersionHistory] = useState<CMISObject[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchMode, setIsSearchMode] = useState(false);
 
@@ -108,32 +118,30 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   const handleUpload = async (values: any) => {
     const { file, name } = values;
-    console.log('UPLOAD DEBUG: handleUpload called with values:', values);
-    console.log('UPLOAD DEBUG: currentFolderId:', currentFolderId);
-    console.log('UPLOAD DEBUG: file structure:', file);
-    
+
     try {
       const actualFile = file?.[0]?.originFileObj || file?.[0] || file?.fileList?.[0]?.originFileObj;
-      console.log('UPLOAD DEBUG: actualFile:', actualFile);
-      
+
       if (!actualFile) {
         message.error('ファイルが選択されていません');
         return;
       }
-      
+
       if (!currentFolderId) {
         message.error('アップロード先フォルダが選択されていません');
         return;
       }
-      
+
       await cmisService.createDocument(repositoryId, currentFolderId, actualFile, { 'cmis:name': name });
+
       message.success('ファイルをアップロードしました');
       setUploadModalVisible(false);
       form.resetFields();
+
       // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
       await loadObjects();
     } catch (error) {
-      console.error('UPLOAD DEBUG: Upload error:', error);
+      console.error('Upload error:', error);
       message.error('ファイルのアップロードに失敗しました');
     }
   };
@@ -171,6 +179,82 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const handleDownload = (objectId: string) => {
     const url = cmisService.getDownloadUrl(repositoryId, objectId);
     window.open(url, '_blank');
+  };
+
+  const handleCheckOut = async (objectId: string) => {
+    try {
+      setLoading(true);
+      await cmisService.checkOut(repositoryId, objectId);
+      message.success('チェックアウトしました');
+      await loadObjects();
+    } catch (error) {
+      console.error('Check-out error:', error);
+      message.error('チェックアウトに失敗しました');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCheckInClick = (objectId: string) => {
+    setCurrentDocumentId(objectId);
+    setCheckInModalVisible(true);
+  };
+
+  const handleCheckIn = async (values: any) => {
+    const { file, versionType, comment } = values;
+
+    try {
+      setLoading(true);
+      const actualFile = file?.[0]?.originFileObj || file?.[0] || file?.fileList?.[0]?.originFileObj;
+
+      await cmisService.checkIn(
+        repositoryId,
+        currentDocumentId,
+        actualFile,
+        {
+          major: versionType === 'major',
+          checkinComment: comment || ''
+        }
+      );
+
+      message.success('チェックインしました');
+      setCheckInModalVisible(false);
+      form.resetFields();
+      await loadObjects();
+    } catch (error) {
+      console.error('Check-in error:', error);
+      message.error('チェックインに失敗しました');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelCheckOut = async (objectId: string) => {
+    try {
+      setLoading(true);
+      await cmisService.cancelCheckOut(repositoryId, objectId);
+      message.success('チェックアウトをキャンセルしました');
+      await loadObjects();
+    } catch (error) {
+      console.error('Cancel check-out error:', error);
+      message.error('チェックアウトのキャンセルに失敗しました');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewVersionHistory = async (objectId: string) => {
+    try {
+      setLoading(true);
+      const history = await cmisService.getVersionHistory(repositoryId, objectId);
+      setVersionHistory(history);
+      setVersionHistoryModalVisible(true);
+    } catch (error) {
+      console.error('Version history error:', error);
+      message.error('バージョン履歴の取得に失敗しました');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSearch = async () => {
@@ -216,27 +300,37 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       title: '名前',
       dataIndex: 'name',
       key: 'name',
-      render: (name: string, record: CMISObject) => (
-        <Button 
-          type="link" 
-          onClick={() => {
-            console.log('FOLDER CLICK DEBUG:', {
-              name: record.name,
-              id: record.id,
-              baseType: record.baseType,
-              objectType: record.objectType
-            });
-            if (record.baseType === 'cmis:folder') {
-              console.log('Setting folder ID to:', record.id);
-              setCurrentFolderId(record.id);
-            } else {
-              navigate(`/documents/${record.id}`);
-            }
-          }}
-        >
-          {name}
-        </Button>
-      ),
+      render: (name: string, record: CMISObject) => {
+        const isPWC = record.properties?.['cmis:isPrivateWorkingCopy'] === true ||
+                      record.properties?.['cmis:isVersionSeriesCheckedOut'] === true;
+
+        return (
+          <Space>
+            <Button
+              type="link"
+              onClick={() => {
+                console.log('FOLDER CLICK DEBUG:', {
+                  name: record.name,
+                  id: record.id,
+                  baseType: record.baseType,
+                  objectType: record.objectType
+                });
+                if (record.baseType === 'cmis:folder') {
+                  console.log('Setting folder ID to:', record.id);
+                  setCurrentFolderId(record.id);
+                } else {
+                  navigate(`/documents/${record.id}`);
+                }
+              }}
+            >
+              {name}
+            </Button>
+            {isPWC && (
+              <Tag color="orange">作業中</Tag>
+            )}
+          </Space>
+        );
+      },
     },
     {
       title: 'サイズ',
@@ -261,48 +355,91 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     {
       title: 'アクション',
       key: 'actions',
-      width: 200,
-      render: (_: any, record: CMISObject) => (
-        <Space>
-          <Tooltip title="詳細表示">
-            <Button 
-              icon={<EyeOutlined />} 
-              size="small"
-              onClick={() => navigate(`/documents/${record.id}`)}
-            />
-          </Tooltip>
-          {record.baseType === 'cmis:document' && (
-            <Tooltip title="ダウンロード">
-              <Button 
-                icon={<DownloadOutlined />} 
+      width: 300,
+      render: (_: any, record: CMISObject) => {
+        const isPWC = record.properties?.['cmis:isPrivateWorkingCopy'] === true ||
+                      record.properties?.['cmis:isVersionSeriesCheckedOut'] === true;
+        const isVersionable = record.baseType === 'cmis:document';
+
+        return (
+          <Space>
+            <Tooltip title="詳細表示">
+              <Button
+                icon={<EyeOutlined />}
                 size="small"
-                onClick={() => handleDownload(record.id)}
+                onClick={() => navigate(`/documents/${record.id}`)}
               />
             </Tooltip>
-          )}
-          <Tooltip title="権限管理">
-            <Button 
-              icon={<LockOutlined />} 
-              size="small"
-              onClick={() => navigate(`/permissions/${record.id}`)}
-            />
-          </Tooltip>
-          <Popconfirm
-            title="削除しますか？"
-            onConfirm={() => handleDelete(record.id)}
-            okText="はい"
-            cancelText="いいえ"
-          >
-            <Tooltip title="削除">
-              <Button 
-                icon={<DeleteOutlined />} 
+            {record.baseType === 'cmis:document' && (
+              <Tooltip title="ダウンロード">
+                <Button
+                  icon={<DownloadOutlined />}
+                  size="small"
+                  onClick={() => handleDownload(record.id)}
+                />
+              </Tooltip>
+            )}
+            {isVersionable && !isPWC && (
+              <Tooltip title="チェックアウト">
+                <Button
+                  icon={<EditOutlined />}
+                  size="small"
+                  onClick={() => handleCheckOut(record.id)}
+                />
+              </Tooltip>
+            )}
+            {isVersionable && isPWC && (
+              <>
+                <Tooltip title="チェックイン">
+                  <Button
+                    icon={<CheckOutlined />}
+                    size="small"
+                    type="primary"
+                    onClick={() => handleCheckInClick(record.id)}
+                  />
+                </Tooltip>
+                <Tooltip title="チェックアウトキャンセル">
+                  <Button
+                    icon={<CloseOutlined />}
+                    size="small"
+                    onClick={() => handleCancelCheckOut(record.id)}
+                  />
+                </Tooltip>
+              </>
+            )}
+            {isVersionable && (
+              <Tooltip title="バージョン履歴">
+                <Button
+                  icon={<HistoryOutlined />}
+                  size="small"
+                  onClick={() => handleViewVersionHistory(record.id)}
+                />
+              </Tooltip>
+            )}
+            <Tooltip title="権限管理">
+              <Button
+                icon={<LockOutlined />}
                 size="small"
-                danger
+                onClick={() => navigate(`/permissions/${record.id}`)}
               />
             </Tooltip>
-          </Popconfirm>
-        </Space>
-      ),
+            <Popconfirm
+              title="削除しますか？"
+              onConfirm={() => handleDelete(record.id)}
+              okText="はい"
+              cancelText="いいえ"
+            >
+              <Tooltip title="削除">
+                <Button
+                  icon={<DeleteOutlined />}
+                  size="small"
+                  danger
+                />
+              </Tooltip>
+            </Popconfirm>
+          </Space>
+        );
+      },
     },
   ];
 
@@ -382,7 +519,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             rules={[{ required: true, message: 'ファイルを選択してください' }]}
             valuePropName="fileList"
             getValueFromEvent={(e) => {
-              console.log('UPLOAD DEBUG: getValueFromEvent called with:', e);
               if (Array.isArray(e)) {
                 return e;
               }
@@ -393,7 +529,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               beforeUpload={() => false}
               maxCount={1}
               onChange={(info) => {
-                console.log('UPLOAD DEBUG: onChange called with info:', info);
                 if (info.fileList.length > 0 && info.fileList[0].name) {
                   form.setFieldsValue({ name: info.fileList[0].name });
                 }
@@ -453,6 +588,129 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title="チェックイン"
+        open={checkInModalVisible}
+        onCancel={() => {
+          setCheckInModalVisible(false);
+          form.resetFields();
+        }}
+        footer={null}
+        width={600}
+      >
+        <Form form={form} onFinish={handleCheckIn} layout="vertical" initialValues={{ versionType: 'minor' }}>
+          <Form.Item
+            name="file"
+            label="ファイル (オプション - 新しいコンテンツで更新する場合)"
+            valuePropName="fileList"
+            getValueFromEvent={(e) => {
+              if (Array.isArray(e)) {
+                return e;
+              }
+              return e?.fileList;
+            }}
+          >
+            <Upload.Dragger
+              beforeUpload={() => false}
+              maxCount={1}
+            >
+              <p className="ant-upload-drag-icon">
+                <UploadOutlined />
+              </p>
+              <p className="ant-upload-text">ファイルをドラッグ&amp;ドロップまたはクリックして選択</p>
+              <p className="ant-upload-hint">チェックイン時にコンテンツを更新する場合のみファイルを選択してください</p>
+            </Upload.Dragger>
+          </Form.Item>
+          <Form.Item
+            name="versionType"
+            label="バージョンタイプ"
+            rules={[{ required: true, message: 'バージョンタイプを選択してください' }]}
+          >
+            <Radio.Group>
+              <Radio value="minor">マイナーバージョン (例: 1.1 → 1.2)</Radio>
+              <Radio value="major">メジャーバージョン (例: 1.1 → 2.0)</Radio>
+            </Radio.Group>
+          </Form.Item>
+          <Form.Item
+            name="comment"
+            label="チェックインコメント"
+          >
+            <Input.TextArea
+              rows={4}
+              placeholder="変更内容のコメントを入力してください"
+            />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                チェックイン
+              </Button>
+              <Button onClick={() => {
+                setCheckInModalVisible(false);
+                form.resetFields();
+              }}>
+                キャンセル
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="バージョン履歴"
+        open={versionHistoryModalVisible}
+        onCancel={() => setVersionHistoryModalVisible(false)}
+        footer={null}
+        width={800}
+      >
+        <Table
+          dataSource={versionHistory}
+          rowKey="id"
+          pagination={false}
+          size="small"
+          columns={[
+            {
+              title: 'バージョン',
+              dataIndex: 'versionLabel',
+              key: 'version',
+              width: 100,
+            },
+            {
+              title: '更新日時',
+              dataIndex: 'lastModificationDate',
+              key: 'date',
+              width: 180,
+              render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+            },
+            {
+              title: '更新者',
+              dataIndex: 'lastModifiedBy',
+              key: 'author',
+              width: 120,
+            },
+            {
+              title: 'コメント',
+              key: 'comment',
+              render: (record: CMISObject) => record.properties?.['cmis:checkinComment'] || '-',
+            },
+            {
+              title: 'アクション',
+              key: 'actions',
+              width: 100,
+              render: (_: any, record: CMISObject) => (
+                <Tooltip title="ダウンロード">
+                  <Button
+                    icon={<DownloadOutlined />}
+                    size="small"
+                    onClick={() => handleDownload(record.id)}
+                  />
+                </Tooltip>
+              ),
+            },
+          ]}
+        />
       </Modal>
     </div>
   );

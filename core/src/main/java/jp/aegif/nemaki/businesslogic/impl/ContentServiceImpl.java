@@ -2582,7 +2582,7 @@ public class ContentServiceImpl implements ContentService {
 		if (c == null) {
 			log.error("Content not found for objectId: {} in repository: {} - possible database corruption or orphaned reference",
 				objectId, repositoryId);
-			exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+			throw new CmisObjectNotFoundException("Object not found: " + objectId);
 		}
 
 		List<String> ids = new ArrayList<String>();

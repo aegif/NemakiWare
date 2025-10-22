@@ -312,6 +312,8 @@
  </servlet>
 
 <!-- Map React SPA fallback servlet to handle client-side routing -->
+<!-- SIMPLIFIED (2025-10-22): Only handle /ui/dist/ paths for React Router -->
+<!-- /ui/ paths are handled by default servlet with redirect index.html -->
 <servlet-mapping>
  <servlet-name>react-spa-fallback</servlet-name>
  <url-pattern>/ui/dist/*</url-pattern>
@@ -367,11 +369,8 @@
   <url-pattern>*.eot</url-pattern>
  </servlet-mapping>
 
- <!-- UI directory mapping for React SPA -->
- <servlet-mapping>
-  <servlet-name>default</servlet-name>
-  <url-pattern>/ui/*</url-pattern>
- </servlet-mapping>
+ <!-- UI directory mapping removed - now handled by react-spa-fallback servlet -->
+ <!-- REMOVED (2025-10-22): /ui/* mapping moved to ReactSpaFallbackServlet -->
  <servlet-mapping>
   <servlet-name>default</servlet-name>
   <url-pattern>*.html</url-pattern>

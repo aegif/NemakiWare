@@ -57,21 +57,46 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
 
   const loadData = async () => {
     if (!objectId) return;
-    
+
     try {
-      const [obj, aclData, userList, groupList] = await Promise.all([
-        cmisService.getObject(repositoryId, objectId),
-        cmisService.getACL(repositoryId, objectId),
-        cmisService.getUsers(repositoryId),
-        cmisService.getGroups(repositoryId)
-      ]);
-      
+      // Load each API separately with detailed error handling
+      console.log('[ACL DEBUG] Loading object data...');
+      const obj = await cmisService.getObject(repositoryId, objectId)
+        .catch(err => {
+          console.error('[ACL DEBUG] Failed to load object:', err);
+          throw new Error(`オブジェクトの読み込みに失敗: ${err.message}`);
+        });
+
+      console.log('[ACL DEBUG] Loading ACL data...');
+      const aclData = await cmisService.getACL(repositoryId, objectId)
+        .catch(err => {
+          console.error('[ACL DEBUG] Failed to load ACL:', err);
+          throw new Error(`ACLの読み込みに失敗: ${err.message}`);
+        });
+
+      console.log('[ACL DEBUG] Loading users...');
+      const userList = await cmisService.getUsers(repositoryId)
+        .catch(err => {
+          console.error('[ACL DEBUG] Failed to load users:', err);
+          throw new Error(`ユーザー一覧の読み込みに失敗: ${err.message}`);
+        });
+
+      console.log('[ACL DEBUG] Loading groups...');
+      const groupList = await cmisService.getGroups(repositoryId)
+        .catch(err => {
+          console.error('[ACL DEBUG] Failed to load groups:', err);
+          throw new Error(`グループ一覧の読み込みに失敗: ${err.message}`);
+        });
+
+      console.log('[ACL DEBUG] All data loaded successfully');
       setObject(obj);
       setACL(aclData);
       setUsers(userList);
       setGroups(groupList);
     } catch (error) {
-      message.error('データの読み込みに失敗しました');
+      const errorMessage = error instanceof Error ? error.message : 'データの読み込みに失敗しました';
+      message.error(errorMessage);
+      console.error('[ACL DEBUG] Load error:', error);
     } finally {
       setLoading(false);
     }

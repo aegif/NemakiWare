@@ -277,80 +277,130 @@ public class Patch_InitialContentSetup extends AbstractNemakiPatch {
 
     /**
      * Register CMIS specification documents in Technical Documents folder
-     * Creates resource documents including CMIS specification links and welcome information
+     * ENHANCED (2025-10-22): Now registers PDF files instead of text files for better testing
      */
     private void registerCMISSpecificationPDF(ContentService contentService, SystemCallContext callContext,
                                              String repositoryId, String parentFolderId) {
         try {
-            // Register CMIS Specification Resources document
-            final String cmisResourcesName = "CMIS 1.1 Specification Resources.txt";
-            log.info("=== CHECKING CMIS SPECIFICATION RESOURCES DOCUMENT ===");
+            // Register CMIS Specification Resources PDF
+            final String cmisResourcesName = "CMIS 1.1 Specification Resources.pdf";
+            log.info("=== CHECKING CMIS SPECIFICATION RESOURCES PDF ===");
             log.info("Repository: " + repositoryId + ", Parent Folder: " + parentFolderId);
 
             Document existingCmisDoc = findExistingDocumentByName(repositoryId, parentFolderId, cmisResourcesName);
             if (existingCmisDoc == null) {
-                log.info("CMIS specification resources document NOT FOUND - creating new document");
-                String cmisContent = "CMIS 1.1 Specification Resources\n" +
-                        "=================================\n\n" +
-                        "Official CMIS 1.1 Specification (OASIS Standard)\n" +
-                        "------------------------------------------------\n\n" +
-                        "CMIS 1.1 Specification - Part I: Domain Model\n" +
-                        "https://docs.oasis-open.org/cmis/CMIS/v1.1/os/CMIS-v1.1-os-part1-domain-model.pdf\n\n" +
-                        "CMIS 1.1 Specification - Part II: Repository Services\n" +
-                        "https://docs.oasis-open.org/cmis/CMIS/v1.1/os/CMIS-v1.1-os-part2-repository-services.pdf\n\n" +
-                        "Additional Resources\n" +
-                        "-------------------\n\n" +
-                        "OASIS CMIS TC Homepage:\n" +
-                        "https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=cmis\n\n" +
-                        "Apache Chemistry OpenCMIS:\n" +
-                        "https://chemistry.apache.org/java/opencmis.html\n\n" +
-                        "NemakiWare is a CMIS 1.1 compliant content management system.\n" +
-                        "For more information, visit: https://github.com/aegif/NemakiWare\n\n" +
-                        "This document was automatically created during system initialization.\n";
-
-                createDocumentWithContent(contentService, callContext, repositoryId, parentFolderId,
-                                        cmisResourcesName, "text/plain", cmisContent);
-                log.info("✅ CMIS specification resources document CREATED SUCCESSFULLY");
+                log.info("CMIS specification resources PDF NOT FOUND - creating from classpath resource");
+                createDocumentFromClasspathResource(contentService, callContext, repositoryId, parentFolderId,
+                                        cmisResourcesName, "application/pdf",
+                                        "/initial_documents/CMISSpecificationResources.pdf");
+                log.info("✅ CMIS specification resources PDF CREATED SUCCESSFULLY");
             } else {
-                log.info("CMIS specification resources document ALREADY EXISTS (ID: " + existingCmisDoc.getId() + ") - skipping");
+                log.info("CMIS specification resources PDF ALREADY EXISTS (ID: " + existingCmisDoc.getId() + ") - skipping");
             }
 
-            // Register Welcome document
-            final String welcomeName = "Welcome to NemakiWare.txt";
-            log.info("=== CHECKING WELCOME DOCUMENT ===");
+            // Register Welcome PDF
+            final String welcomeName = "Welcome to NemakiWare.pdf";
+            log.info("=== CHECKING WELCOME PDF ===");
             Document existingWelcome = findExistingDocumentByName(repositoryId, parentFolderId, welcomeName);
             if (existingWelcome == null) {
-                log.info("Welcome document NOT FOUND - creating new document");
-                String welcomeContent = "Welcome to NemakiWare - Open Source CMIS Repository\n" +
-                        "==================================================\n\n" +
-                        "NemakiWare is a CMIS 1.1 compliant content management system.\n\n" +
-                        "Features:\n" +
-                        "- CMIS 1.1 full compliance (AtomPub, Browser Binding, Web Services)\n" +
-                        "- Document versioning and workflow\n" +
-                        "- Full-text search with Apache Solr\n" +
-                        "- Access control and permissions management\n" +
-                        "- React-based modern UI\n\n" +
-                        "Getting Started:\n" +
-                        "1. Review the CMIS 1.1 Specification Resources document in this folder\n" +
-                        "2. Explore the UI at http://localhost:8080/core/ui/\n" +
-                        "3. Access CMIS endpoints:\n" +
-                        "   - AtomPub: http://localhost:8080/core/atom/\n" +
-                        "   - Browser Binding: http://localhost:8080/core/browser/\n" +
-                        "   - Web Services: http://localhost:8080/core/services/\n\n" +
-                        "For more information, visit: https://github.com/aegif/NemakiWare\n\n" +
-                        "This document was automatically created during system initialization.\n";
-
-                createDocumentWithContent(contentService, callContext, repositoryId, parentFolderId,
-                                        welcomeName, "text/plain", welcomeContent);
-                log.info("✅ Welcome document CREATED SUCCESSFULLY");
+                log.info("Welcome PDF NOT FOUND - creating from classpath resource");
+                createDocumentFromClasspathResource(contentService, callContext, repositoryId, parentFolderId,
+                                        welcomeName, "application/pdf",
+                                        "/initial_documents/WelcomeGuide.pdf");
+                log.info("✅ Welcome PDF CREATED SUCCESSFULLY");
             } else {
-                log.info("Welcome document ALREADY EXISTS (ID: " + existingWelcome.getId() + ") - skipping");
+                log.info("Welcome PDF ALREADY EXISTS (ID: " + existingWelcome.getId() + ") - skipping");
             }
             log.info("=== INITIAL DOCUMENTS REGISTRATION COMPLETE ===");
 
         } catch (Exception e) {
             log.error("Error registering initial documents in Technical Documents folder", e);
         }
+    }
+
+    /**
+     * Create document from classpath resource (e.g., PDF files)
+     * ENHANCED (2025-10-22): Load binary files from classpath resources
+     */
+    private void createDocumentFromClasspathResource(ContentService contentService, SystemCallContext callContext,
+                                          String repositoryId, String parentFolderId,
+                                          String documentName, String mimeType, String classpathResource) {
+        try {
+            log.info("Creating document from classpath resource: " + classpathResource);
+
+            // Load resource from classpath
+            java.io.InputStream resourceStream = getClass().getResourceAsStream(classpathResource);
+            if (resourceStream == null) {
+                log.error("Classpath resource not found: " + classpathResource);
+                return;
+            }
+
+            // Read all bytes from resource
+            byte[] contentBytes = readAllBytes(resourceStream);
+            resourceStream.close();
+
+            if (contentBytes.length == 0) {
+                log.error("Classpath resource is empty: " + classpathResource);
+                return;
+            }
+
+            log.info("Loaded " + contentBytes.length + " bytes from " + classpathResource);
+
+            // Prepare CMIS properties
+            PropertiesImpl properties = new PropertiesImpl();
+            PropertyIdImpl objectTypeId = new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:document");
+            properties.addProperty(objectTypeId);
+            PropertyStringImpl name = new PropertyStringImpl(PropertyIds.NAME, documentName);
+            properties.addProperty(name);
+
+            // Get parent folder
+            Folder parentFolder = (Folder) contentService.getContent(repositoryId, parentFolderId);
+            if (parentFolder == null) {
+                log.error("Parent folder not found with ID: " + parentFolderId);
+                return;
+            }
+
+            // Create content stream from bytes
+            java.io.ByteArrayInputStream contentStream = new java.io.ByteArrayInputStream(contentBytes);
+
+            org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl cmisContentStream =
+                new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
+                    documentName,
+                    java.math.BigInteger.valueOf(contentBytes.length),
+                    mimeType,
+                    contentStream
+                );
+
+            // Create ACL for document (same as folders: admin:all, GROUP_EVERYONE:read)
+            org.apache.chemistry.opencmis.commons.data.Acl acl = createDefaultFolderAcl();
+
+            // Create document with content
+            Document created = contentService.createDocument(callContext, repositoryId, properties,
+                                                           parentFolder, cmisContentStream,
+                                                           null,  // versioningState
+                                                           null,  // policies
+                                                           acl,   // addAces
+                                                           null); // removeAces
+
+            log.info("✅ Document '" + documentName + "' created successfully with ID: " + created.getId());
+
+        } catch (Exception e) {
+            log.error("Failed to create document from classpath resource: " + documentName, e);
+        }
+    }
+
+    /**
+     * Read all bytes from input stream (Java 8 compatible)
+     */
+    private byte[] readAllBytes(java.io.InputStream inputStream) throws java.io.IOException {
+        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+        int nRead;
+        byte[] data = new byte[16384];
+        while ((nRead = inputStream.read(data, 0, data.length)) != -1) {
+            buffer.write(data, 0, nRead);
+        }
+        buffer.flush();
+        return buffer.toByteArray();
     }
 
     /**

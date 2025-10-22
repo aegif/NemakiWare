@@ -119,12 +119,52 @@ test.describe('Custom Type and Custom Attributes', () => {
         }
       }
 
+      // Capture browser console logs and API errors
+      const consoleLogs: string[] = [];
+      const apiErrors: string[] = [];
+
+      page.on('console', (msg) => {
+        const logText = `[${msg.type()}] ${msg.text()}`;
+        consoleLogs.push(logText);
+        console.log(logText);
+      });
+
+      page.on('pageerror', (error) => {
+        const errorText = `[PAGE ERROR] ${error.message}`;
+        consoleLogs.push(errorText);
+        console.error(errorText);
+      });
+
+      page.on('response', async (response) => {
+        const url = response.url();
+        if (url.includes('/type/create')) {
+          console.log(`API Response: ${response.status()} ${url}`);
+          if (!response.ok()) {
+            try {
+              const body = await response.text();
+              const errorMsg = `API Error ${response.status()}: ${body}`;
+              apiErrors.push(errorMsg);
+              console.error(errorMsg);
+            } catch (e) {
+              console.error(`API Error ${response.status()} (could not read body)`);
+            }
+          }
+        }
+      });
+
       // Submit form
       const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal button:has-text("作成")');
       await submitButton.click(isMobile ? { force: true } : {});
 
       // Wait for success message
-      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+      try {
+        await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+      } catch (error) {
+        console.error('Failed to wait for success message');
+        console.error('Console logs:', consoleLogs);
+        console.error('API errors:', apiErrors);
+        throw error;
+      }
       await page.waitForTimeout(2000);
 
       // Verify type appears in table

@@ -89,8 +89,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const handleAuthError = useCallback((error: any) => {
     console.warn('Authentication error detected:', error);
 
-    // Check if this is a 401 Unauthorized, 403 Forbidden, or 404 Not Found error
-    // All these errors should redirect to login page for better UX
+    // CRITICAL FIX (2025-10-22): Only handle authentication errors (401, 403)
+    // DO NOT handle 404 Not Found errors - these are not authentication failures
+    // 404 errors should be handled by components, not force logout
     const status = error?.status;
     const message = error?.message || '';
 
@@ -100,10 +101,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else if (status === 403 || message.includes('403') || message.includes('Forbidden')) {
       console.log('403 Forbidden error detected - redirecting to login');
       logout();
-    } else if (status === 404 || message.includes('404') || message.includes('Not Found')) {
-      console.log('404 Not Found error detected - redirecting to login');
-      logout();
     }
+    // REMOVED: 404 handling - not an authentication error
   }, [logout]);
 
   const value = {

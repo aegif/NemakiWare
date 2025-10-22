@@ -118,41 +118,50 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
   const handleCheckOut = async () => {
     if (!object) return;
-    
+
     try {
+      setLoading(true);
       await cmisService.checkOut(repositoryId, object.id);
       message.success('チェックアウトしました');
-      loadObject();
+      await loadObject();
     } catch (error) {
       message.error('チェックアウトに失敗しました');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleCheckIn = async (values: any) => {
     if (!object) return;
-    
+
     try {
+      setLoading(true);
       const file = values.file?.file;
       await cmisService.checkIn(repositoryId, object.id, file, values);
       message.success('チェックインしました');
       setCheckoutModalVisible(false);
       form.resetFields();
-      loadObject();
-      loadVersionHistory();
+      await loadObject();
+      await loadVersionHistory();
     } catch (error) {
       message.error('チェックインに失敗しました');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleCancelCheckOut = async () => {
     if (!object) return;
-    
+
     try {
+      setLoading(true);
       await cmisService.cancelCheckOut(repositoryId, object.id);
       message.success('チェックアウトをキャンセルしました');
-      loadObject();
+      await loadObject();
     } catch (error) {
       message.error('チェックアウトのキャンセルに失敗しました');
+    } finally {
+      setLoading(false);
     }
   };
 

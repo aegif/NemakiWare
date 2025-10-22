@@ -3,7 +3,7 @@ import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition,
 
 export class CMISService {
   private baseUrl = '/core/browser';
-  private restBaseUrl = '/core/rest/repo';
+  private restBaseUrl = '/core/rest/repo';  // REST API for type management operations
   private authService: AuthService;
   private onAuthError?: (error: any) => void;
 
@@ -219,7 +219,9 @@ export class CMISService {
 
     console.error('[AUTH DEBUG] CMIS HTTP Error:', error);
 
-    // Handle authentication and permission errors - all should redirect to login
+    // CRITICAL FIX (2025-10-22): Only handle authentication errors (401, 403)
+    // DO NOT handle 404 Not Found errors - these are not authentication failures
+    // 404 errors should be handled by components as normal API failures
     if (status === 401) {
       console.error('[AUTH DEBUG] 401 Unauthorized detected!');
       console.error('[AUTH DEBUG] URL that failed:', url);
@@ -236,12 +238,8 @@ export class CMISService {
       if (this.onAuthError) {
         this.onAuthError(error);
       }
-    } else if (status === 404) {
-      console.warn('404 Not Found - resource may have been deleted or URL is invalid');
-      if (this.onAuthError) {
-        this.onAuthError(error);
-      }
     }
+    // REMOVED: 404 handling - not an authentication error, should be handled by components
 
     return error;
   }
@@ -849,12 +847,12 @@ export class CMISService {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', `${this.baseUrl}/${repositoryId}/search?query=${encodeURIComponent(query)}`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
@@ -869,12 +867,13 @@ export class CMISService {
               reject(new Error('Invalid response format'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during search'));
       xhr.send();
     });
   }
@@ -950,162 +949,310 @@ export class CMISService {
     });
   }
 
+  /**
+   * Check out a document (CMIS Browser Binding standard)
+   * Creates a Private Working Copy (PWC) and returns it
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Document object ID to check out
+   * @returns PWC (Private Working Copy) object
+   */
   async checkOut(repositoryId: string, objectId: string): Promise<CMISObject> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/node/${objectId}/checkout`, true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
+      // CMIS Browser Binding checkOut: POST with form-urlencoded
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
+      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
             try {
               const response = JSON.parse(xhr.responseText);
-              resolve(response.object);
+              const pwc = this.buildCmisObjectFromBrowserData(response);
+              console.log('CMIS DEBUG: checkOut successful, PWC ID:', pwc.id);
+              resolve(pwc);
             } catch (e) {
+              console.error('CMIS DEBUG: checkOut parse error:', e);
               reject(new Error('Invalid response format'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            console.error('CMIS DEBUG: checkOut HTTP error:', xhr.status, xhr.statusText);
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
+
       xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send(JSON.stringify({}));
+
+      // Build form data for Browser Binding checkOut
+      const formData = new URLSearchParams();
+      formData.append('cmisaction', 'checkOut');
+      formData.append('objectId', objectId);
+      formData.append('succinct', 'true');
+
+      xhr.send(formData.toString());
     });
   }
 
+  /**
+   * Check in a PWC (Private Working Copy) (CMIS Browser Binding standard)
+   * Completes the check-out/check-in cycle and creates a new version
+   *
+   * @param repositoryId Repository ID
+   * @param objectId PWC (Private Working Copy) object ID
+   * @param file Optional file to upload as new content
+   * @param properties Optional properties including:
+   *   - major: boolean (true for major version, false for minor)
+   *   - checkinComment: string (version comment)
+   * @returns New version object
+   */
   async checkIn(repositoryId: string, objectId: string, file?: File, properties?: Record<string, any>): Promise<CMISObject> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/node/${objectId}/checkin`, true);
+      // CMIS Browser Binding checkIn: POST with multipart/form-data
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
-      const formData = new FormData();
-      if (file) {
-        formData.append('file', file);
-      }
-      if (properties) {
-        Object.entries(properties).forEach(([key, value]) => {
-          formData.append(key, value);
-        });
-      }
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
             try {
               const response = JSON.parse(xhr.responseText);
-              resolve(response.object);
+              const newVersion = this.buildCmisObjectFromBrowserData(response);
+              console.log('CMIS DEBUG: checkIn successful, new version ID:', newVersion.id);
+              resolve(newVersion);
             } catch (e) {
+              console.error('CMIS DEBUG: checkIn parse error:', e);
               reject(new Error('Invalid response format'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            console.error('CMIS DEBUG: checkIn HTTP error:', xhr.status, xhr.statusText);
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
+
       xhr.onerror = () => reject(new Error('Network error'));
+
+      // Build multipart form data for Browser Binding checkIn
+      const formData = new FormData();
+      formData.append('cmisaction', 'checkIn');
+      formData.append('objectId', objectId);
+      formData.append('succinct', 'true');
+
+      // Extract version type from properties (default to major version)
+      const major = properties?.major !== undefined ? properties.major : true;
+      formData.append('major', String(major));
+
+      // Extract check-in comment from properties
+      if (properties?.checkinComment) {
+        formData.append('checkinComment', properties.checkinComment);
+      }
+
+      // Add file content if provided
+      if (file) {
+        formData.append('content', file);
+        formData.append('filename', file.name);
+        if (file.type) {
+          formData.append('mimetype', file.type);
+        }
+      }
+
       xhr.send(formData);
     });
   }
 
+  /**
+   * Cancel check-out of a PWC (Private Working Copy) (CMIS Browser Binding standard)
+   * Discards the PWC and any changes made
+   *
+   * @param repositoryId Repository ID
+   * @param objectId PWC (Private Working Copy) object ID to cancel
+   */
   async cancelCheckOut(repositoryId: string, objectId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/node/${objectId}/cancelcheckout`, true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
+      // CMIS Browser Binding cancelCheckOut: POST with form-urlencoded
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
+      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200 || xhr.status === 204) {
+            console.log('CMIS DEBUG: cancelCheckOut successful for PWC:', objectId);
             resolve();
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            console.error('CMIS DEBUG: cancelCheckOut HTTP error:', xhr.status, xhr.statusText);
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
+
       xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send(JSON.stringify({}));
+
+      // Build form data for Browser Binding cancelCheckOut
+      const formData = new URLSearchParams();
+      formData.append('cmisaction', 'cancelCheckOut');
+      formData.append('objectId', objectId);
+
+      xhr.send(formData.toString());
     });
   }
 
+  /**
+   * Get ACL for an object (CMIS Browser Binding standard)
+   * Retrieves the Access Control List (permissions) for a CMIS object
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Object ID to get ACL for
+   * @returns ACL object containing permissions
+   */
   async getACL(repositoryId: string, objectId: string): Promise<ACL> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/node/${objectId}/acl`, true);
+      // CMIS Browser Binding ACL: GET with cmisselector=acl
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}?objectId=${objectId}&cmisselector=acl`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
             try {
               const response = JSON.parse(xhr.responseText);
-              resolve(response.acl);
+              console.log('CMIS DEBUG: getACL response:', response);
+
+              // CMIS Browser Binding ACL response structure
+              const aces = response.aces || [];
+              const permissions = aces.map((ace: any) => ({
+                principalId: ace.principal?.principalId || ace.principalId,
+                permissions: ace.permissions || [],
+                direct: ace.isDirect !== false // Default to true if not specified
+              }));
+
+              const acl: ACL = {
+                permissions: permissions,
+                isExact: response.isExact !== false // Default to true if not specified
+              };
+
+              console.log('CMIS DEBUG: getACL parsed:', acl);
+              resolve(acl);
             } catch (e) {
+              console.error('CMIS DEBUG: getACL parse error:', e);
               reject(new Error('Invalid response format'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            console.error('CMIS DEBUG: getACL HTTP error:', xhr.status, xhr.statusText);
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
+
       xhr.onerror = () => reject(new Error('Network error'));
       xhr.send();
     });
   }
 
+  /**
+   * Set ACL for an object (CMIS Browser Binding standard)
+   * Sets the Access Control List (permissions) for a CMIS object using applyACL action
+   *
+   * Strategy: First get current ACL, remove all direct ACEs, then add new ACEs
+   * This ensures we replace the ACL completely rather than just adding to it
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Object ID to set ACL for
+   * @param acl ACL object containing permissions to apply
+   */
   async setACL(repositoryId: string, objectId: string, acl: ACL): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/node/${objectId}/acl`, true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Accept', 'application/json');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+    try {
+      // Step 1: Get current ACL to know what to remove
+      const currentACL = await this.getACL(repositoryId, objectId);
+      console.log('CMIS DEBUG: setACL current ACL:', currentACL);
+
+      // Step 2: Build applyACL request with both remove and add operations
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        // CMIS Browser Binding ACL: POST with cmisaction=applyACL
+        xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.setRequestHeader('Accept', 'application/json');
+
+        const headers = this.getAuthHeaders();
+        Object.entries(headers).forEach(([key, value]) => {
+          xhr.setRequestHeader(key, value);
+        });
+
+        xhr.onreadystatechange = () => {
+          if (xhr.readyState === 4) {
+            if (xhr.status === 200 || xhr.status === 204) {
+              console.log('CMIS DEBUG: setACL successful for object:', objectId);
+              resolve();
+            } else {
+              console.error('CMIS DEBUG: setACL HTTP error:', xhr.status, xhr.statusText);
+              const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+              reject(error);
+            }
           }
-        }
-      };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send(JSON.stringify(acl));
-    });
+        };
+
+        xhr.onerror = () => reject(new Error('Network error'));
+
+        // Build form data for Browser Binding applyACL
+        const formData = new URLSearchParams();
+        formData.append('cmisaction', 'applyACL');
+        formData.append('objectId', objectId);
+
+        // Step 2a: Remove all current direct ACEs (only remove direct permissions, keep inherited)
+        const directACEs = currentACL.permissions.filter(p => p.direct);
+        directACEs.forEach((permission, index) => {
+          formData.append(`removeACEPrincipal[${index}]`, permission.principalId);
+        });
+
+        // Step 2b: Add new ACEs using CMIS Browser Binding format
+        // addACEPrincipal[0], addACEPermission[0][0], addACEPermission[0][1], etc.
+        acl.permissions.forEach((permission, aceIndex) => {
+          formData.append(`addACEPrincipal[${aceIndex}]`, permission.principalId);
+
+          // Add each permission for this principal
+          permission.permissions.forEach((perm, permIndex) => {
+            formData.append(`addACEPermission[${aceIndex}][${permIndex}]`, perm);
+          });
+        });
+
+        console.log('CMIS DEBUG: setACL form data:', formData.toString());
+        xhr.send(formData.toString());
+      });
+    } catch (error) {
+      console.error('CMIS DEBUG: setACL error getting current ACL:', error);
+      throw error;
+    }
   }
 
   async getUsers(repositoryId: string): Promise<User[]> {
@@ -1214,12 +1361,13 @@ export class CMISService {
               reject(new Error('Invalid response format'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
 
-      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.onerror = () => reject(new Error('Network error during user creation'));
 
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
@@ -1259,12 +1407,13 @@ export class CMISService {
               reject(new Error('Invalid response format'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
 
-      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.onerror = () => reject(new Error('Network error during user update'));
 
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
@@ -1286,23 +1435,24 @@ export class CMISService {
       const xhr = new XMLHttpRequest();
       xhr.open('DELETE', `${this.restBaseUrl}/${repositoryId}/user/delete/${userId}`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200 || xhr.status === 204) {
             resolve();
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during user deletion'));
       xhr.send();
     });
   }
@@ -1382,12 +1532,12 @@ export class CMISService {
       xhr.open('POST', `${this.restBaseUrl}/${repositoryId}/group/create/${group.id}`, true);
       xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
@@ -1398,12 +1548,13 @@ export class CMISService {
               reject(new Error('Invalid response format'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during group creation'));
       
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
@@ -1438,20 +1589,21 @@ export class CMISService {
               reject(new Error('Invalid response format'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
-      
+
+      xhr.onerror = () => reject(new Error('Network error during group update'));
+
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
       formData.append('name', group.name || '');  // FORM_GROUPNAME = "name"
       // TypeScript workaround: Server API expects users/groups properties not in Group interface
       formData.append('users', JSON.stringify((group as any).users || []));  // FORM_MEMBER_USERS = "users"
       formData.append('groups', JSON.stringify((group as any).groups || []));  // FORM_MEMBER_GROUPS = "groups"
-      
+
       xhr.send(formData.toString());
     });
   }
@@ -1461,23 +1613,24 @@ export class CMISService {
       const xhr = new XMLHttpRequest();
       xhr.open('DELETE', `${this.restBaseUrl}/${repositoryId}/group/delete/${groupId}`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200 || xhr.status === 204) {
             resolve();
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during group deletion'));
       xhr.send();
     });
   }
@@ -1619,15 +1772,15 @@ export class CMISService {
   async createType(repositoryId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/type/create`, true);
+      xhr.open('POST', `${this.restBaseUrl}/${repositoryId}/type/create`, true);
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
@@ -1638,12 +1791,13 @@ export class CMISService {
               reject(new Error('Invalid response format'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during type creation'));
       xhr.send(JSON.stringify(type));
     });
   }
@@ -1651,15 +1805,15 @@ export class CMISService {
   async updateType(repositoryId: string, typeId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/type/${typeId}/update`, true);
+      xhr.open('PUT', `${this.restBaseUrl}/${repositoryId}/type/update/${typeId}`, true);
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
@@ -1670,12 +1824,13 @@ export class CMISService {
               reject(new Error('Invalid response format'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during type update'));
       xhr.send(JSON.stringify(type));
     });
   }
@@ -1683,25 +1838,26 @@ export class CMISService {
   async deleteType(repositoryId: string, typeId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('DELETE', `${this.baseUrl}/${repositoryId}/type/${typeId}`, true);
+      xhr.open('DELETE', `${this.restBaseUrl}/${repositoryId}/type/delete/${typeId}`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200 || xhr.status === 204) {
             resolve();
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during type deletion'));
       xhr.send();
     });
   }
@@ -1763,12 +1919,12 @@ export class CMISService {
       xhr.open('POST', `${this.baseUrl}/${repositoryId}/relationship/create`, true);
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
@@ -1779,12 +1935,13 @@ export class CMISService {
               reject(new Error('Invalid response format'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during relationship creation'));
       xhr.send(JSON.stringify(relationship));
     });
   }
@@ -1794,23 +1951,24 @@ export class CMISService {
       const xhr = new XMLHttpRequest();
       xhr.open('DELETE', `${this.baseUrl}/${repositoryId}/relationship/${relationshipId}`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200 || xhr.status === 204) {
             resolve();
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during relationship deletion'));
       xhr.send();
     });
   }
@@ -1820,23 +1978,24 @@ export class CMISService {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', `${this.baseUrl}/${repositoryId}/search-engine/init`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200 || xhr.status === 204) {
             resolve();
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during search engine initialization'));
       xhr.send();
     });
   }
@@ -1846,23 +2005,24 @@ export class CMISService {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', `${this.baseUrl}/${repositoryId}/search-engine/reindex`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200 || xhr.status === 204) {
             resolve();
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during search engine reindexing'));
       xhr.send();
     });
   }
@@ -1873,12 +2033,12 @@ export class CMISService {
       // Use correct REST endpoint for archive index
       xhr.open('GET', `/core/rest/repo/${repositoryId}/archive/index`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
@@ -1889,12 +2049,13 @@ export class CMISService {
               reject(new Error('Invalid response format'));
             }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during archive retrieval'));
       xhr.send();
     });
   }
@@ -1905,23 +2066,24 @@ export class CMISService {
       xhr.open('POST', `${this.baseUrl}/${repositoryId}/archive/${objectId}`, true);
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200 || xhr.status === 204) {
             resolve();
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during object archiving'));
       xhr.send(JSON.stringify({}));
     });
   }
@@ -1932,23 +2094,24 @@ export class CMISService {
       xhr.open('POST', `${this.baseUrl}/${repositoryId}/archive/${objectId}/restore`, true);
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200 || xhr.status === 204) {
             resolve();
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
+
+      xhr.onerror = () => reject(new Error('Network error during object restoration'));
       xhr.send(JSON.stringify({}));
     });
   }

@@ -58,7 +58,21 @@ export class AuthHelper {
     }
 
     // Navigate to login page
-    await this.page.goto('/core/ui/dist/index.html');
+    await this.page.goto('/core/ui/dist/index.html', { waitUntil: 'networkidle' });
+
+    // CRITICAL FIX (2025-10-22): Wait for React SPA to initialize before looking for form fields
+    // The React app needs time to mount and render the Login component
+    await this.page.waitForFunction(
+      () => {
+        // Check if React root div has children (app is rendered)
+        const root = document.getElementById('root');
+        return root && root.children.length > 0;
+      },
+      { timeout: 10000 }
+    );
+
+    // Additional wait for Ant Design components to fully render
+    await this.page.waitForTimeout(1000);
 
     // Wait for login form to be visible - try multiple selectors
     const usernameFieldSelectors = [
@@ -70,15 +84,25 @@ export class AuthHelper {
     let usernameField;
     for (const selector of usernameFieldSelectors) {
       const field = this.page.locator(selector).first();
-      if (await field.count() > 0) {
+      try {
         await field.waitFor({ state: 'visible', timeout: 10000 });
         usernameField = field;
         break;
+      } catch (e) {
+        // Try next selector
+        continue;
       }
     }
 
     if (!usernameField) {
-      throw new Error('Username field not found');
+      // Enhanced error message with page state debugging
+      const bodyHtml = await this.page.locator('body').innerHTML();
+      const rootHtml = await this.page.locator('#root').innerHTML().catch(() => 'No #root element');
+      console.error('AuthHelper: Username field not found');
+      console.error('AuthHelper: Current URL:', this.page.url());
+      console.error('AuthHelper: Body HTML length:', bodyHtml?.length);
+      console.error('AuthHelper: Root HTML:', rootHtml?.substring(0, 500));
+      throw new Error('Username field not found - Login page may not have loaded properly');
     }
 
     // Fill username
@@ -94,14 +118,20 @@ export class AuthHelper {
     let passwordField;
     for (const selector of passwordFieldSelectors) {
       const field = this.page.locator(selector).first();
-      if (await field.count() > 0) {
+      try {
+        await field.waitFor({ state: 'visible', timeout: 10000 });
         passwordField = field;
         break;
+      } catch (e) {
+        // Try next selector
+        continue;
       }
     }
 
     if (!passwordField) {
-      throw new Error('Password field not found');
+      console.error('AuthHelper: Password field not found');
+      console.error('AuthHelper: Current URL:', this.page.url());
+      throw new Error('Password field not found - Login page may not have loaded properly');
     }
 
     await passwordField.fill(credentials.password);
@@ -138,14 +168,20 @@ export class AuthHelper {
     let loginButton;
     for (const selector of loginButtonSelectors) {
       const button = this.page.locator(selector).first();
-      if (await button.count() > 0) {
+      try {
+        await button.waitFor({ state: 'visible', timeout: 10000 });
         loginButton = button;
         break;
+      } catch (e) {
+        // Try next selector
+        continue;
       }
     }
 
     if (!loginButton) {
-      throw new Error('Login button not found');
+      console.error('AuthHelper: Login button not found');
+      console.error('AuthHelper: Current URL:', this.page.url());
+      throw new Error('Login button not found - Login page may not have loaded properly');
     }
 
     await loginButton.click();
