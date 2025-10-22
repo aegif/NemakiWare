@@ -1,6 +1,6 @@
 # NemakiWare Playwright Test Status Summary
 **Date**: 2025-10-23
-**Commit**: 386c0b126 (Critical fixes applied)
+**Commit**: 386c0b126 → Latest (testuser password fix applied)
 
 ## Overall Test Results
 
@@ -72,14 +72,16 @@
 
 **Priority**: MEDIUM (functional backend exists, UI integration needed)
 
-#### ACL Management Tests (1/4) - **UI and Permission Issues**
-**Root Cause**: Permission management UI and testuser permissions
-**Failures**:
-- Group permission addition: UI navigation issues
-- Access denied scenarios: Success message timeout
-- Permission level changes: testuser lacks folder read permission
+#### ACL Management Tests (1/4) - **UI Navigation and Timing Issues**
+**Root Cause**: UI navigation blocked by modals, folder creation timing
+**Latest Fix Applied**: testuser password correction (password → test)
+**Current Status**:
+- ✅ **Test 2 PASSING**: Permission inheritance from parent folder (CMIS ACL working correctly!)
+- ❌ Test 1: Group permission addition - Modal blocking navigation to Documents menu
+- ❌ Test 3: Access denied scenarios - Folder creation success message timeout
+- ❌ Test 4: Permission level changes - Test execution timeout
 
-**Priority**: HIGH (security-related functionality)
+**Priority**: MEDIUM (Core ACL functionality works via CMIS API, UI workflow needs refinement)
 
 ## Test Execution Environment
 

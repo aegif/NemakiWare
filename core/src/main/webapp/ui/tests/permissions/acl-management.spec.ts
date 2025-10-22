@@ -425,7 +425,7 @@ test.describe('Advanced ACL Management', () => {
             `http://localhost:8080/core/atom/bedroom/${folderId}`,
             {
               headers: {
-                'Authorization': `Basic ${Buffer.from('testuser:password').toString('base64')}`
+                'Authorization': `Basic ${Buffer.from('testuser:test').toString('base64')}`
               }
             }
           );
@@ -519,7 +519,7 @@ test.describe('Advanced ACL Management', () => {
           `http://localhost:8080/core/atom/bedroom/${folderId}`,
           {
             headers: {
-              'Authorization': `Basic ${Buffer.from('testuser:password').toString('base64')}`
+              'Authorization': `Basic ${Buffer.from('testuser:test').toString('base64')}`
             }
           }
         );
@@ -546,7 +546,7 @@ test.describe('Advanced ACL Management', () => {
           `http://localhost:8080/core/atom/bedroom/${folderId}`,
           {
             headers: {
-              'Authorization': `Basic ${Buffer.from('testuser:password').toString('base64')}`
+              'Authorization': `Basic ${Buffer.from('testuser:test').toString('base64')}`
             }
           }
         );
