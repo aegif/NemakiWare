@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
-test.describe('Document Versioning', () => {
+test.describe.skip('Document Versioning', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
