@@ -119,6 +119,16 @@ test.describe('Advanced Search', () => {
       // Verify no error messages appeared
       const errorMessage = page.locator('.ant-message-error');
       const errorCount = await errorMessage.count();
+
+      // DEBUGGING: Log error message if present
+      if (errorCount > 0) {
+        const errorText = await errorMessage.first().textContent();
+        console.log(`❌ Search error message appeared: "${errorText}"`);
+        console.log(`PRODUCT BUG: Search operation returned error despite valid query`);
+      } else {
+        console.log('✅ No error messages - search executed successfully');
+      }
+
       expect(errorCount).toBe(0);
 
       // Verify we're still on search page (not redirected due to error)
