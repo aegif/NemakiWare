@@ -418,14 +418,12 @@ test.describe('Advanced ACL Management', () => {
     }
   });
 
-  test.skip('should handle access denied scenarios gracefully', async ({ page, browserName }) => {
-    // SKIPPED: Passes individually but fails in full suite execution
-    // Individual run: PASS (folder created successfully via CMIS API)
-    // Full suite run: FAIL (createResponse.ok() = false after Test 2)
-    // Likely resource/session issue when running multiple tests sequentially
-    // afterEach hook cleanup working correctly - not a folder accumulation issue
+  test('should handle access denied scenarios gracefully', async ({ page, browserName }) => {
+    // INVESTIGATION: Previously skipped due to full suite failures
+    // FIXED: Name conflict with Test 2 - using unique name per test instance
 
-    // REFACTORED: Use CMIS API directly to avoid UI timing issues
+    // Generate unique folder name for this test instance
+    const uniqueFolderName = `acl-test-folder-${Date.now()}-test3`;
     console.log('Test: Creating folder via CMIS Browser Binding API');
 
     // Create folder directly via CMIS API
@@ -439,9 +437,17 @@ test.describe('Advanced ACL Management', () => {
         'propertyId[0]': 'cmis:objectTypeId',
         'propertyValue[0]': 'cmis:folder',
         'propertyId[1]': 'cmis:name',
-        'propertyValue[1]': testFolderName
+        'propertyValue[1]': uniqueFolderName
       }
     });
+
+    console.log(`Test 3: Create folder response status: ${createResponse.status()}`);
+
+    if (!createResponse.ok()) {
+      const errorBody = await createResponse.text();
+      console.log('Test 3: Folder creation FAILED!');
+      console.log('Response:', errorBody.substring(0, 1000));
+    }
 
     expect(createResponse.ok()).toBe(true);
     const createResult = await createResponse.json();
@@ -504,7 +510,8 @@ test.describe('Advanced ACL Management', () => {
     // This is a PRODUCT BUG investigation - testuser SHOULD be able to access folder
     // after admin grants cmis:all or cmis:read permission via applyACL
 
-    // REFACTORED: Use CMIS API directly to avoid UI timing issues
+    // Generate unique folder name for this test instance
+    const uniqueFolderName = `acl-test-folder-${Date.now()}-test4`;
     console.log('Test: Creating folder via CMIS Browser Binding API');
 
     // Create folder directly via CMIS API
@@ -518,7 +525,7 @@ test.describe('Advanced ACL Management', () => {
         'propertyId[0]': 'cmis:objectTypeId',
         'propertyValue[0]': 'cmis:folder',
         'propertyId[1]': 'cmis:name',
-        'propertyValue[1]': testFolderName
+        'propertyValue[1]': uniqueFolderName
       }
     });
 
