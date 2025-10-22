@@ -1,0 +1,105 @@
+%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+/Resources <<
+/Font <<
+/F1 <<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+>>
+>>
+>>
+endobj
+4 0 obj
+<<
+/Length 850
+>>
+stream
+BT
+/F1 16 Tf
+50 720 Td
+(CMIS 1.1 Specification Resources) Tj
+/F1 12 Tf
+50 690 Td
+(=====================================) Tj
+50 660 Td
+(Official CMIS 1.1 Specification \(OASIS Standard\)) Tj
+50 630 Td
+(CMIS 1.1 Specification - Part I: Domain Model) Tj
+/F1 10 Tf
+50 615 Td
+(https://docs.oasis-open.org/cmis/CMIS/v1.1/os/) Tj
+50 605 Td
+(CMIS-v1.1-os-part1-domain-model.pdf) Tj
+/F1 12 Tf
+50 575 Td
+(CMIS 1.1 Specification - Part II: Repository Services) Tj
+/F1 10 Tf
+50 560 Td
+(https://docs.oasis-open.org/cmis/CMIS/v1.1/os/) Tj
+50 550 Td
+(CMIS-v1.1-os-part2-repository-services.pdf) Tj
+/F1 12 Tf
+50 520 Td
+(Additional Resources) Tj
+50 500 Td
+(OASIS CMIS TC Homepage:) Tj
+/F1 10 Tf
+50 485 Td
+(https://www.oasis-open.org/committees/) Tj
+50 475 Td
+(tc_home.php?wg_abbrev=cmis) Tj
+/F1 12 Tf
+50 450 Td
+(Apache Chemistry OpenCMIS:) Tj
+/F1 10 Tf
+50 435 Td
+(https://chemistry.apache.org/java/opencmis.html) Tj
+/F1 12 Tf
+50 410 Td
+(NemakiWare GitHub Repository:) Tj
+/F1 10 Tf
+50 395 Td
+(https://github.com/aegif/NemakiWare) Tj
+/F1 9 Tf
+50 360 Td
+(This document was automatically created during) Tj
+50 350 Td
+(system initialization.) Tj
+ET
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000317 00000 n
+trailer
+<<
+/Size 5
+/Root 1 0 R
+>>
+startxref
+1219
+%%EOF

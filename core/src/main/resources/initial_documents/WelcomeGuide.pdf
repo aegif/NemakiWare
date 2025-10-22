@@ -1,0 +1,91 @@
+%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+/Resources <<
+/Font <<
+/F1 <<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+>>
+>>
+>>
+endobj
+4 0 obj
+<<
+/Length 650
+>>
+stream
+BT
+/F1 18 Tf
+50 720 Td
+(Welcome to NemakiWare) Tj
+/F1 12 Tf
+50 690 Td
+(CMIS 1.1 Compliant Content Management System) Tj
+50 660 Td
+(=========================================) Tj
+50 630 Td
+(NemakiWare is an open source Enterprise Content Management) Tj
+50 615 Td
+(system providing full CMIS 1.1 compliance.) Tj
+50 580 Td
+(Key Features:) Tj
+50 560 Td
+(- CMIS 1.1 Full Compliance) Tj
+50 545 Td
+(- Document Versioning) Tj
+50 530 Td
+(- Full-text Search with Apache Solr) Tj
+50 515 Td
+(- Access Control and Permissions) Tj
+50 500 Td
+(- Modern React UI) Tj
+50 470 Td
+(Getting Started:) Tj
+50 450 Td
+(1. Explore the UI at http://localhost:8080/core/ui/) Tj
+50 435 Td
+(2. Review CMIS endpoints and documentation) Tj
+50 420 Td
+(3. Create your first folder and document) Tj
+50 390 Td
+(For more information:) Tj
+50 370 Td
+(https://github.com/aegif/NemakiWare) Tj
+ET
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000317 00000 n
+trailer
+<<
+/Size 5
+/Root 1 0 R
+>>
+startxref
+1019
+%%EOF
