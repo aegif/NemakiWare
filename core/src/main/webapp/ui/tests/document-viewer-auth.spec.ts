@@ -167,6 +167,19 @@ test.describe('Document Viewer Authentication', () => {
         // Check for errors
         const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;
         const hasDocumentDetails = await page.locator('.ant-descriptions').count() > 0;
+        const hasErrorMessage = await page.locator('.ant-message-error, .ant-notification-error').count() > 0;
+
+        // DEBUGGING: Log current state
+        const currentUrl = page.url();
+        console.log(`  Current URL: ${currentUrl}`);
+        console.log(`  Has login form: ${hasLoginForm}`);
+        console.log(`  Has document details: ${hasDocumentDetails}`);
+        console.log(`  Has error message: ${hasErrorMessage}`);
+
+        if (hasErrorMessage) {
+          const errorText = await page.locator('.ant-message-error, .ant-notification-error').first().textContent();
+          console.log(`  Error message: "${errorText}"`);
+        }
 
         if (hasLoginForm) {
           console.log(`❌ Document ${i + 1}: Re-authentication required`);
@@ -175,6 +188,14 @@ test.describe('Document Viewer Authentication', () => {
 
         if (!hasDocumentDetails) {
           console.log(`❌ Document ${i + 1}: Failed to load details`);
+          console.log(`POSSIBLE ISSUE: Document detail page not rendering properly after multiple accesses`);
+
+          // Check if we're stuck on a loading state or if there's a UI error
+          const hasSpinner = await page.locator('.ant-spin').count() > 0;
+          const hasDrawer = await page.locator('.ant-drawer').count() > 0;
+          console.log(`  Has spinner (loading): ${hasSpinner}`);
+          console.log(`  Has drawer: ${hasDrawer}`);
+
           expect(hasDocumentDetails).toBe(true);
         } else {
           console.log(`✅ Document ${i + 1}: Loaded successfully`);
