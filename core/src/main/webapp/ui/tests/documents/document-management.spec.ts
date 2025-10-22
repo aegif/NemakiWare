@@ -56,6 +56,46 @@ test.describe('Document Management', () => {
     }
   });
 
+  test.afterEach(async ({ page }) => {
+    // Cleanup: Delete test documents and folders to prevent accumulation
+    console.log('afterEach: Cleaning up test documents and folders');
+
+    try {
+      // Query for test objects (files and folders starting with test-)
+      const queryResponse = await page.request.get(
+        `http://localhost:8080/core/browser/bedroom?cmisselector=query&q=SELECT%20cmis:objectId%20FROM%20cmis:object%20WHERE%20cmis:name%20LIKE%20'test-%25'`,
+        {
+          headers: {
+            'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
+          }
+        }
+      );
+
+      if (queryResponse.ok()) {
+        const queryResult = await queryResponse.json();
+        const objects = queryResult.results || [];
+
+        for (const obj of objects) {
+          const objectId = obj.properties?.['cmis:objectId']?.value;
+          if (objectId) {
+            await page.request.post('http://localhost:8080/core/browser/bedroom', {
+              headers: {
+                'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
+              },
+              form: {
+                'cmisaction': 'delete',
+                'objectId': objectId
+              }
+            });
+            console.log(`afterEach: Deleted test object ${objectId}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.log('afterEach: Cleanup failed (non-critical):', error);
+    }
+  });
+
   test('should display document list', async ({ page }) => {
     // Debug: Log current URL
     console.log('Current URL:', page.url());
