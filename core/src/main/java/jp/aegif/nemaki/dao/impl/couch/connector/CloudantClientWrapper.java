@@ -1157,8 +1157,12 @@ public class CloudantClientWrapper {
 			log.debug("Ektorp-style update: using object revision " + currentRev + " for document " + id);
 			
 			// Convert CMIS array structures to Cloudant Document model compatible maps
-			documentMap = convertPropertiesArrayToMap(documentMap);
-			documentMap = convertTypeDefinitionPropertiesToMap(documentMap);
+			// CRITICAL FIX (2025-10-22): Skip convertPropertiesArrayToMap for CouchTypeDefinition
+			// CouchTypeDefinition.properties is List<String> (property detail IDs), not List<Map> (property objects)
+			// convertPropertiesArrayToMap expects List<Map> and creates empty map {} for List<String>
+			if (!(document instanceof jp.aegif.nemaki.model.couch.CouchTypeDefinition)) {
+				documentMap = convertPropertiesArrayToMap(documentMap);
+			}
 			
 			// CRITICAL TCK FIX: Use PostDocumentOptions with JSON string to avoid Document serialization issues
 			// The Document class has read-only propertyNames field that causes UnsupportedOperationException
