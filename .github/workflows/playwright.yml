@@ -63,6 +63,22 @@ jobs:
       working-directory: core/src/main/webapp/ui
       run: npx playwright install --with-deps
 
+    - name: Build NemakiWare Dependencies
+      run: |
+        # Build parent POM first
+        echo "Installing parent POM..."
+        mvn clean install -N -DskipTests -q
+        
+        # Build dependency modules
+        echo "Building common module..."
+        mvn clean install -f common/pom.xml -DskipTests -q
+        
+        echo "Building cloudant-init module..."
+        mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+        
+        echo "Building solr module..."
+        mvn clean install -f solr/pom.xml -DskipTests -q
+
     - name: Build NemakiWare Core
       run: |
         mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
