@@ -101,7 +101,7 @@ test.describe('CMIS Versioning API', () => {
       },
     });
 
-    expect(createResponse.status()).toBe(201);
+    expect(createResponse.status()).toBe(200);  // Browser Binding returns 200, not 201
 
     const responseData = await createResponse.json();
     testDocumentId = responseData.succinctProperties['cmis:objectId'];
