@@ -288,6 +288,9 @@ export class AuthHelper {
       const logoutMenuItem = this.page.locator('.ant-dropdown .ant-dropdown-menu-item').filter({ hasText: 'ログアウト' });
 
       console.log('AuthHelper: Clicking logout menu item');
+      // Ensure menu item is in viewport before clicking
+      await logoutMenuItem.scrollIntoViewIfNeeded();
+      await this.page.waitForTimeout(300); // Brief wait after scrolling
       await logoutMenuItem.click({ force: true });
 
       // Wait for navigation to complete (window.location.href causes a hard navigation)
