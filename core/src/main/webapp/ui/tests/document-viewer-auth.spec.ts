@@ -162,7 +162,10 @@ test.describe('Document Viewer Authentication', () => {
 
         // Click document
         await documentButtons.nth(i).click({ force: true });
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(3000);
+        
+        // Wait for navigation to complete
+        await page.waitForURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 });
 
         // Check for errors
         const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;
