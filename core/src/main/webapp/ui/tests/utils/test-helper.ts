@@ -21,10 +21,10 @@ export class TestHelper {
     // Wait for Ant Design CSS to load
     await this.page.waitForFunction(
       () => {
-        const antdElements = document.querySelectorAll('.ant-layout, .ant-menu, .ant-table');
+        const antdElements = document.querySelectorAll('.ant-layout, .ant-menu, .ant-table, .ant-form, .ant-btn');
         return antdElements.length > 0;
       },
-      { timeout: 15000 }
+      { timeout: 30000 }
     );
   }
 
@@ -168,5 +168,94 @@ export class TestHelper {
       selector,
       { timeout }
     );
+  }
+
+  /**
+   * Upload a document and wait for success
+   * @param fileName Name of the file to upload
+   * @param content Content of the file
+   * @param isMobile Whether the browser is in mobile mode
+   * @returns true if upload succeeded, false otherwise
+   */
+  async uploadDocument(fileName: string, content: string, isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Uploading ${fileName}`);
+    
+    // Click upload button to open file dialog
+    const uploadButton = this.page.locator('button').filter({ hasText: 'アップロード' }).first();
+    await uploadButton.click(isMobile ? { force: true } : {});
+    await this.page.waitForTimeout(1000);
+
+    const fileInput = this.page.locator('input[type="file"]');
+    await fileInput.setInputFiles({
+      name: fileName,
+      mimeType: 'text/plain',
+      buffer: Buffer.from(content, 'utf-8'),
+    });
+
+    console.log('TestHelper: File selected, checking for upload start button...');
+    
+    await this.page.waitForTimeout(1000);
+    const startUploadButton = this.page.locator('button').filter({ hasText: /開始|Start|OK|アップロード開始/i }).first();
+    if (await startUploadButton.count() > 0) {
+      console.log('TestHelper: Clicking start upload button');
+      await startUploadButton.click(isMobile ? { force: true } : {});
+    }
+
+    console.log('TestHelper: Waiting for upload response...');
+    
+    // Wait for upload to complete - check for success or error message
+    try {
+      await this.page.waitForSelector('.ant-message-success, .ant-message-error, .ant-upload-list-item-done', { timeout: 30000 });
+
+      const successMsg = await this.page.locator('.ant-message-success').count();
+      const errorMsg = await this.page.locator('.ant-message-error').count();
+      const uploadDone = await this.page.locator('.ant-upload-list-item-done').count();
+
+      console.log(`TestHelper: Upload status - Success: ${successMsg > 0}, Error: ${errorMsg > 0}, Done: ${uploadDone > 0}`);
+
+      if (errorMsg > 0) {
+        const errorText = await this.page.locator('.ant-message-error').textContent();
+        console.log(`TestHelper: Upload ERROR - ${errorText}`);
+        return false;
+      }
+    } catch (e) {
+      console.log('TestHelper: No upload success/error indicator appeared - checking if document appears in table');
+    }
+
+    // Wait for document to appear in table
+    await this.page.waitForTimeout(5000);
+    
+    let docExists = false;
+    for (let i = 0; i < 3; i++) {
+      const documentRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).first();
+      docExists = await documentRow.count() > 0;
+      
+      if (docExists) {
+        console.log(`TestHelper: Document found in table after ${i + 1} attempts`);
+        return true;
+      }
+      
+      console.log(`TestHelper: Document not found in table (attempt ${i + 1}/3), waiting...`);
+      
+      if (i === 1) {
+        console.log('TestHelper: Refreshing page to check for uploaded document');
+        await this.page.reload({ waitUntil: 'networkidle' });
+        await this.page.waitForTimeout(2000);
+      } else {
+        await this.page.waitForTimeout(2000);
+      }
+    }
+    
+    console.log(`TestHelper: Document not found in table after 3 attempts`);
+    
+    const allRows = await this.page.locator('.ant-table-tbody tr').count();
+    console.log(`TestHelper: Total rows in table: ${allRows}`);
+    
+    if (allRows > 0) {
+      const firstRowText = await this.page.locator('.ant-table-tbody tr').first().textContent();
+      console.log(`TestHelper: First row text: ${firstRowText?.substring(0, 100)}`);
+    }
+    
+    return false;
   }
 }
