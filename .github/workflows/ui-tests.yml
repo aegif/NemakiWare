@@ -90,6 +90,18 @@ jobs:
           sleep 10
         done
 
+    - name: Build NemakiWare Dependencies
+      run: |
+        # Build dependency modules first
+        echo "Building common module..."
+        mvn clean install -f common/pom.xml -DskipTests -q
+        
+        echo "Building cloudant-init module..."
+        mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+        
+        echo "Building solr module..."
+        mvn clean install -f solr/pom.xml -DskipTests -q
+
     - name: Build NemakiWare Core
       run: |
         # Build the core WAR file with all dependencies
