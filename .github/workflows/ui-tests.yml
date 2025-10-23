@@ -92,7 +92,11 @@ jobs:
 
     - name: Build NemakiWare Dependencies
       run: |
-        # Build dependency modules first
+        # Build parent POM first
+        echo "Installing parent POM..."
+        mvn clean install -N -DskipTests -q
+        
+        # Build dependency modules
         echo "Building common module..."
         mvn clean install -f common/pom.xml -DskipTests -q
         
