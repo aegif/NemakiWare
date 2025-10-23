@@ -9,7 +9,8 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
 import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
-import play.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 
@@ -27,6 +28,7 @@ import java.util.concurrent.locks.Lock;
 
 @Path("/repo/{repositoryId}/cache/")
 public class CacheResource extends ResourceBase{
+	private static final Logger logger = LoggerFactory.getLogger(CacheResource.class);
 	private NemakiCachePool nemakiCachePool;
 	private ThreadLockService threadLockService;
 	private jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager;
@@ -57,13 +59,13 @@ public class CacheResource extends ResourceBase{
 				GregorianCalendar beforeDate = DataUtil.convertToCalender(strBeforeDate);
 				Content c = cache.getContentCache().get(objectId);
 				if (c == null) {
-					Logger.info("Target cache not found.");
+					logger.info("Target cache not found.");
 					result.put("deleted", false);
 				} else {
 					if (beforeDate.compareTo(c.getModified()) > 0) {
 						cache.removeCmisAndContentCache(objectId);
 						result.put("deleted", true);
-						Logger.info("Remove cmis object and content cache because updated by other.");
+						logger.info("Remove cmis object and content cache because updated by other.");
 					}else{
 						result.put("deleted", false);
 					}
@@ -73,7 +75,7 @@ public class CacheResource extends ResourceBase{
 				result.put("deleted", true);
 			}
 		} catch (ParseException e) {
-			Logger.error(e.getMessage());
+			logger.error(e.getMessage());
 			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_READ);
 		} finally {
 			lock.unlock();
@@ -112,7 +114,7 @@ public class CacheResource extends ResourceBase{
 			cache.removeCmisAndTreeCache(parentId);
 			result.put("deleted", true);
 		} catch (Exception e) {
-			Logger.error(e.getMessage());
+			logger.error(e.getMessage());
 			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_READ);
 		} finally {
 			lock.unlock();
@@ -154,9 +156,9 @@ public class CacheResource extends ResourceBase{
 		JSONArray errMsg = new JSONArray();
 		
 		try {
-			Logger.info("=== TYPE CACHE INVALIDATION REQUEST ===");
-			Logger.info("Repository: " + repositoryId);
-			Logger.info("Triggering TypeManager cache invalidation and regeneration...");
+			logger.info("=== TYPE CACHE INVALIDATION REQUEST ===");
+			logger.info("Repository: " + repositoryId);
+			logger.info("Triggering TypeManager cache invalidation and regeneration...");
 			
 			// Get Spring Application Context
 			ApplicationContext appContext = WebApplicationContextUtils.getWebApplicationContext(
@@ -170,7 +172,7 @@ public class CacheResource extends ResourceBase{
 				throw new RuntimeException("TypeManager not properly injected - check Spring configuration");
 			}
 			
-			Logger.info("TypeManager found: " + typeManager.getClass().getName());
+			logger.info("TypeManager found: " + typeManager.getClass().getName());
 			
 			// Call TypeManager to invalidate and regenerate type definitions
 			// This will force all buildTypeDefinitionFromDB methods to execute with our fixes
@@ -178,14 +180,14 @@ public class CacheResource extends ResourceBase{
 			invalidateMethod.setAccessible(true);
 			invalidateMethod.invoke(typeManager, repositoryId);
 			
-			Logger.info("TYPE CACHE INVALIDATION COMPLETED SUCCESSFULLY");
+			logger.info("TYPE CACHE INVALIDATION COMPLETED SUCCESSFULLY");
 			
 			result.put("invalidated", true);
 			result.put("repository", repositoryId);
 			result.put("message", "Type definition cache invalidated and regenerated successfully");
 			
 		} catch (Exception e) {
-			Logger.error("TYPE CACHE INVALIDATION FAILED: " + e.getMessage(), e);
+			logger.error("TYPE CACHE INVALIDATION FAILED: " + e.getMessage(), e);
 			status = false;
 			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_UPDATE);
 			result.put("invalidated", false);
