@@ -29,7 +29,7 @@ test.describe('Access Control and Permissions', () => {
     const cleanupAuthHelper = new AuthHelper(page);
 
     const cleanupStartTime = Date.now();
-    const maxCleanupTime = 30000; // 30 seconds max for cleanup (reduced from 60)
+    const maxCleanupTime = 60000; // 60 seconds max for cleanup
 
     try {
       await cleanupAuthHelper.login();

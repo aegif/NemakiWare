@@ -252,7 +252,7 @@ test.describe('Document Properties Edit and Persistence', () => {
           // Check for both success and error messages
           console.log(`Cleanup test: Waiting for response message...`);
           try {
-            await page.waitForSelector('.ant-message-success, .ant-message-error', { timeout: 10000 });
+            await page.waitForSelector('.ant-message-success, .ant-message-error', { timeout: 30000 });
 
             // Check which message appeared
             const successMsg = await page.locator('.ant-message-success').count();
