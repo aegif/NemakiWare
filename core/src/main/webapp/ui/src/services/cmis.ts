@@ -845,7 +845,7 @@ export class CMISService {
   async search(repositoryId: string, query: string): Promise<SearchResult> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/search?query=${encodeURIComponent(query)}`, true);
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}?cmisselector=query&q=${encodeURIComponent(query)}`, true);
       xhr.setRequestHeader('Accept', 'application/json');
 
       const headers = this.getAuthHeaders();
