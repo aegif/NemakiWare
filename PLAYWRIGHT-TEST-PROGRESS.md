@@ -2,12 +2,12 @@
 
 ## Current Status (2025-10-23)
 
-### Test Results (Latest Run - Incomplete)
-- ✅ **54 tests passing** (67.5% of completed tests)
-- ❌ **4 tests failing** (5% of completed tests)
-- ⏭️ **22 tests skipped** (27.5% of completed tests)
-- **Total completed: 80/103 tests** (77.7%)
-- **Note**: Test run was interrupted before completion
+### Test Results (Latest Complete Run)
+- ✅ **67 tests passing** (65%)
+- ❌ **7 tests failing** (7%)
+- ⏭️ **29 tests skipped** (28%)
+- **Total: 103 tests** (100% complete)
+- **Runtime**: ~32 minutes
 
 ### Failing Tests
 
@@ -15,7 +15,7 @@
    - `tests/document-viewer-auth.spec.ts:122:7` - should handle multiple document detail accesses without session issues
    - **Issue**: Document 3 fails to load after clicking
    - **Fix Applied**: Added `waitForURL` to ensure navigation completes before checking document details
-   - **Status**: Fix committed (6e1e4e625), needs verification
+   - **Status**: Fix committed (6e1e4e625), **still failing** - needs further investigation
 
 2. **Access Control - Test User Restrictions** (3 tests)
    - `tests/permissions/access-control.spec.ts:903:9` - should be able to view restricted folder as test user
@@ -25,7 +25,18 @@
    - **Issue**: Test users are created successfully (success message appears) but not found in user table
    - **Status**: Needs investigation
 
-### Skipped Tests (22 tests)
+3. **Permission Management UI - ACL Display** (2 tests)
+   - `tests/permissions/permission-management-ui.spec.ts:32:7` - should successfully load ACL data when clicking permissions button
+   - `tests/permissions/permission-management-ui.spec.ts:171:7` - should verify ACL REST API endpoint is accessible
+   - **Issue**: ACL data fails to load or REST API endpoint is not accessible
+   - **Status**: Needs investigation
+
+4. **Advanced Search** (1 test)
+   - `tests/search/advanced-search.spec.ts:97:7` - should execute search without errors
+   - **Issue**: Search execution encounters errors
+   - **Status**: Needs investigation
+
+### Skipped Tests (29 tests)
 
 1. **Custom Type Creation** (5 tests) - UI not implemented
 2. **Group Management CRUD** (5 tests) - UI not implemented
