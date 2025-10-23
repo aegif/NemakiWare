@@ -86,6 +86,7 @@ test.describe('CMIS Versioning API', () => {
     // Create a versionable document using Browser Binding
     // CRITICAL: Browser Binding createDocument REQUIRES multipart/form-data
     // Playwright automatically sets Content-Type with correct boundary
+    const uniqueName = `versioning-test-${Date.now()}.txt`;
     const createResponse = await request.post(baseUrl, {
       headers: {
         'Authorization': authHeader,
@@ -96,12 +97,16 @@ test.describe('CMIS Versioning API', () => {
         'propertyId[0]': 'cmis:objectTypeId',
         'propertyValue[0]': 'cmis:document',
         'propertyId[1]': 'cmis:name',
-        'propertyValue[1]': 'versioning-test-doc.txt',
+        'propertyValue[1]': uniqueName,
+        content: 'Version 1.0 content',
+        filename: uniqueName,
+        mimetype: 'text/plain',
         succinct: 'true',
       },
     });
 
-    expect(createResponse.status()).toBe(200);  // Browser Binding returns 200, not 201
+    // NOTE: Browser Binding createDocument returns HTTP 201 (Created)
+    expect(createResponse.status()).toBe(201);
 
     const responseData = await createResponse.json();
     testDocumentId = responseData.succinctProperties['cmis:objectId'];
@@ -135,6 +140,7 @@ test.describe('CMIS Versioning API', () => {
     // CRITICAL: Browser Binding createDocument REQUIRES multipart/form-data
     // CRITICAL: Document MUST have content for checkout to work (NemakiWare limitation)
     // Playwright automatically sets Content-Type with correct boundary
+    const uniqueName = `checkout-test-${Date.now()}.txt`;
     const createResponse = await request.post(baseUrl, {
       headers: {
         'Authorization': authHeader,
@@ -145,13 +151,16 @@ test.describe('CMIS Versioning API', () => {
         'propertyId[0]': 'cmis:objectTypeId',
         'propertyValue[0]': 'cmis:document',
         'propertyId[1]': 'cmis:name',
-        'propertyValue[1]': 'checkout-test-doc.txt',
+        'propertyValue[1]': uniqueName,
         content: 'Initial version content for checkout test',
-        filename: 'checkout-test-doc.txt',
+        filename: uniqueName,
         mimetype: 'text/plain',
         succinct: 'true',
       },
     });
+
+    // NOTE: Browser Binding createDocument returns HTTP 201 (Created)
+    expect(createResponse.status()).toBe(201);
 
     const createData = await createResponse.json();
     testDocumentId = createData.succinctProperties['cmis:objectId'];
@@ -205,6 +214,7 @@ test.describe('CMIS Versioning API', () => {
 
   test('should check-in a document with new version', async ({ request }) => {
     // 1. Create document with content
+    const uniqueName = `checkin-test-${Date.now()}.txt`;
     const createResponse = await request.post(baseUrl, {
       headers: {
         'Authorization': authHeader,
@@ -215,13 +225,16 @@ test.describe('CMIS Versioning API', () => {
         'propertyId[0]': 'cmis:objectTypeId',
         'propertyValue[0]': 'cmis:document',
         'propertyId[1]': 'cmis:name',
-        'propertyValue[1]': 'checkin-test-doc.txt',
+        'propertyValue[1]': uniqueName,
         content: 'Initial version 1.0',
-        filename: 'checkin-test-doc.txt',
+        filename: uniqueName,
         mimetype: 'text/plain',
         succinct: 'true',
       },
     });
+
+    // NOTE: Browser Binding createDocument returns HTTP 201 (Created)
+    expect(createResponse.status()).toBe(201);
 
     const createData = await createResponse.json();
     testDocumentId = createData.succinctProperties['cmis:objectId'];
@@ -256,7 +269,7 @@ test.describe('CMIS Versioning API', () => {
         major: 'true',  // Create major version (2.0)
         checkinComment: 'Updated to version 2.0 via Playwright test',
         content: 'Updated content for version 2.0',
-        filename: 'checkin-test-doc.txt',
+        filename: uniqueName,
         mimetype: 'text/plain',
         succinct: 'true',
       },
@@ -298,6 +311,7 @@ test.describe('CMIS Versioning API', () => {
   test('should cancel check-out', async ({ request }) => {
     // 1. Create a document with content
     // CRITICAL: Document MUST have content for checkout to work (NemakiWare limitation)
+    const uniqueName = `cancel-checkout-test-${Date.now()}.txt`;
     const createResponse = await request.post(baseUrl, {
       headers: {
         'Authorization': authHeader,
@@ -308,13 +322,16 @@ test.describe('CMIS Versioning API', () => {
         'propertyId[0]': 'cmis:objectTypeId',
         'propertyValue[0]': 'cmis:document',
         'propertyId[1]': 'cmis:name',
-        'propertyValue[1]': 'cancel-checkout-test.txt',
+        'propertyValue[1]': uniqueName,
         content: 'Original content for cancel checkout test',
-        filename: 'cancel-checkout-test.txt',
+        filename: uniqueName,
         mimetype: 'text/plain',
         succinct: 'true',
       },
     });
+
+    // NOTE: Browser Binding createDocument returns HTTP 201 (Created)
+    expect(createResponse.status()).toBe(201);
 
     const createData = await createResponse.json();
     testDocumentId = createData.succinctProperties['cmis:objectId'];
@@ -379,6 +396,7 @@ test.describe('CMIS Versioning API', () => {
 
   test('should retrieve all versions of a document', async ({ request }) => {
     // 1. Create document with initial version
+    const uniqueName = `version-history-test-${Date.now()}.txt`;
     const createResponse = await request.post(baseUrl, {
       headers: {
         'Authorization': authHeader,
@@ -389,13 +407,16 @@ test.describe('CMIS Versioning API', () => {
         'propertyId[0]': 'cmis:objectTypeId',
         'propertyValue[0]': 'cmis:document',
         'propertyId[1]': 'cmis:name',
-        'propertyValue[1]': 'version-history-test.txt',
+        'propertyValue[1]': uniqueName,
         content: 'Version 1.0 content',
-        filename: 'version-history-test.txt',
+        filename: uniqueName,
         mimetype: 'text/plain',
         succinct: 'true',
       },
     });
+
+    // NOTE: Browser Binding createDocument returns HTTP 201 (Created)
+    expect(createResponse.status()).toBe(201);
 
     const createData = await createResponse.json();
     testDocumentId = createData.succinctProperties['cmis:objectId'];
@@ -429,7 +450,7 @@ test.describe('CMIS Versioning API', () => {
         major: 'true',
         checkinComment: 'Version 2.0',
         content: 'Version 2.0 content',
-        filename: 'version-history-test.txt',
+        filename: uniqueName,
         mimetype: 'text/plain',
         succinct: 'true',
       },
@@ -492,6 +513,9 @@ test.describe('CMIS Versioning API', () => {
         succinct: 'true',
       },
     });
+
+    // NOTE: Browser Binding createDocument returns HTTP 201 (Created)
+    expect(createResponse.status()).toBe(201);
 
     const createData = await createResponse.json();
     const version1Id = createData.succinctProperties['cmis:objectId'];
