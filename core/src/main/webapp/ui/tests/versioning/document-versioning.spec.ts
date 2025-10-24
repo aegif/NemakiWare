@@ -76,6 +76,14 @@ test.describe('Document Versioning', () => {
     console.log(`Test: Checkout button found: ${buttonExists}`);
     
     if (buttonExists) {
+      const consoleLogs: string[] = [];
+      page.on('console', msg => {
+        const text = msg.text();
+        if (text.includes('LOAD OBJECTS DEBUG') || text.includes('DocumentList DEBUG')) {
+          consoleLogs.push(text);
+        }
+      });
+      
       await checkoutButton.click(isMobile ? { force: true } : {});
       console.log('Test: Clicked checkout button, waiting for table to reload...');
       
@@ -86,6 +94,8 @@ test.describe('Document Versioning', () => {
       
       // Wait for table to reload after checkout
       await page.waitForTimeout(5000);
+      
+      console.log('Test: Console logs captured:', consoleLogs);
 
       // Verify check-out success - document should show "作業中" (PWC) tag
       const pwcTag = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).locator('.ant-tag').filter({ hasText: '作業中' });
@@ -107,6 +117,19 @@ test.describe('Document Versioning', () => {
           console.log('Test: Document successfully checked out - checkin button is now visible');
         } else {
           console.log('Test: Checkout may have failed - neither PWC tag nor checkin button found');
+          await page.screenshot({ path: 'test-results/checkout-failed.png', fullPage: true });
+          console.log('Test: Screenshot saved to test-results/checkout-failed.png');
+          
+          const allRows = await page.locator('.ant-table-tbody tr').count();
+          console.log(`Test: Total rows in table: ${allRows}`);
+          
+          for (let i = 0; i < Math.min(allRows, 10); i++) {
+            const row = page.locator('.ant-table-tbody tr').nth(i);
+            const rowName = await row.locator('td').nth(1).textContent();
+            const hasPWCTag = await row.locator('.ant-tag').filter({ hasText: '作業中' }).count() > 0;
+            console.log(`Test: Row ${i}: ${rowName}, has PWC tag: ${hasPWCTag}`);
+          }
+          
           test.skip();
         }
       }
