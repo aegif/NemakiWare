@@ -232,9 +232,9 @@ test.describe('Document Versioning', () => {
       await page.waitForTimeout(1000);
     }
 
-    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'checkin-test.txt' }).first();
-    if (await documentRow.count() > 0) {
-      await documentRow.click();
+    const cleanupDocRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'checkin-test.txt' }).first();
+    if (await cleanupDocRow.count() > 0) {
+      await cleanupDocRow.click();
       await page.waitForTimeout(500);
 
       const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
@@ -303,15 +303,15 @@ test.describe('Document Versioning', () => {
     }
 
     // Cleanup: Navigate back to documents list and delete the test document
-    const backButton = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
-    if (await backButton.count() > 0) {
-      await backButton.click();
+    const backButton2 = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
+    if (await backButton2.count() > 0) {
+      await backButton2.click();
       await page.waitForTimeout(1000);
     }
 
-    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'cancel-checkout-test.txt' }).first();
-    if (await documentRow.count() > 0) {
-      await documentRow.click();
+    const cleanupDocRow2 = page.locator('.ant-table-tbody tr').filter({ hasText: 'cancel-checkout-test.txt' }).first();
+    if (await cleanupDocRow2.count() > 0) {
+      await cleanupDocRow2.click();
       await page.waitForTimeout(500);
 
       const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
@@ -389,15 +389,15 @@ test.describe('Document Versioning', () => {
     }
 
     // Cleanup: Navigate back to documents list and delete the test document
-    const backButton = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
-    if (await backButton.count() > 0) {
-      await backButton.click();
+    const backButton3 = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
+    if (await backButton3.count() > 0) {
+      await backButton3.click();
       await page.waitForTimeout(1000);
     }
 
-    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'version-history-test.txt' }).first();
-    if (await documentRow.count() > 0) {
-      await documentRow.click();
+    const cleanupDocRow3 = page.locator('.ant-table-tbody tr').filter({ hasText: 'version-history-test.txt' }).first();
+    if (await cleanupDocRow3.count() > 0) {
+      await cleanupDocRow3.click();
       await page.waitForTimeout(500);
 
       const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
@@ -487,15 +487,15 @@ test.describe('Document Versioning', () => {
     }
 
     // Cleanup: Navigate back to documents list and delete the test document
-    const backButton = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
-    if (await backButton.count() > 0) {
-      await backButton.click();
+    const backButton4 = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
+    if (await backButton4.count() > 0) {
+      await backButton4.click();
       await page.waitForTimeout(1000);
     }
 
-    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'version-download-test.txt' }).first();
-    if (await documentRow.count() > 0) {
-      await documentRow.click();
+    const cleanupDocRow4 = page.locator('.ant-table-tbody tr').filter({ hasText: 'version-download-test.txt' }).first();
+    if (await cleanupDocRow4.count() > 0) {
+      await cleanupDocRow4.click();
       await page.waitForTimeout(500);
 
       const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
