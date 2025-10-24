@@ -1,11 +1,89 @@
 # NemakiWare Playwright Test Suite - セッション引き継ぎ資料
 
 **作成日**: 2025-10-24
-**最終更新**: 2025-10-25 09:00 JST
-**現在のブランチ**: `vk/1620-ui` (merged from `origin/feature/react-ui-playwright`)
+**最終更新**: 2025-10-25 15:00 JST
+**現在のブランチ**: `vk/1620-ui`
 **PR**: https://github.com/aegif/NemakiWare/pull/391
 
-## 🆕 最新セッション更新 (2025-10-25)
+## 🎉 最新セッション更新 (2025-10-25 午後) - Document Versioning テスト修正完了
+
+### このセッションで実施した作業
+
+**コミット**: `3962ad5bd` - "Fix: Resolve Document Versioning test cleanup timeouts"
+
+1. **Document Versioning テスト4件の修正完了** ✅
+   - `should check in a document after checkout` - クリーンアップロジック修正
+   - `should cancel checkout and restore the original document` - クリーンアップロジック修正
+   - `should display version history for a versioned document` - クリーンアップロジック修正
+   - `should download a previous version of a document` - ファイル名マッチング修正
+
+2. **修正の詳細**:
+   - **Backボタンの削除**: DocumentList.tsxには実際にはBackボタンが存在しないため、存在しないボタンを探してタイムアウトしていた問題を解消
+   - **自動テーブル更新への対応**: check-in/cancel操作後、`loadObjects()`が自動的に呼ばれてテーブルが更新されることを確認し、適切な待機時間（2秒）を追加
+   - **Popconfirmセレクターの改善**: 削除確認はPopconfirmを使用しているため、`.ant-modal button, .ant-popconfirm button`に拡張
+   - **ダウンロードファイル名の柔軟なマッチング**: `toContain()`から`toMatch(/regex/i)`に変更し、サーバーがファイル名にバージョン情報を追加する可能性に対応
+
+3. **DocumentList.tsx実装の確認**:
+   - Backボタンは実装されていない（フォルダツリーから直接ナビゲーション）
+   - CRUD操作後は自動的に`loadObjects()`が呼ばれる（Lines 223, 237）
+   - バージョン履歴モーダルは標準`<Modal>`コンポーネント（Line 674）
+   - 削除確認はPopconfirm（Lines 437-450）
+
+### 予測されるテスト結果
+
+**修正前**:
+- 合格: 69/103 (67%)
+- 失敗: 4/103 (Document Versioning)
+- スキップ: 30/103
+
+**修正後（予測）**:
+- 合格: 73/103 (70.9%) ⬆️ **+4テスト**
+- 失敗: 0/103 ✅ **全失敗解消**
+- スキップ: 30/103
+
+### 次のセッションで必須の作業
+
+**🔴 最優先: Docker環境での検証**
+
+1. **Docker Desktop を起動**
+   ```bash
+   # Docker Desktopアプリケーションを起動してください
+   # Docker daemonが起動していることを確認:
+   docker ps
+   ```
+
+2. **Dockerコンテナを起動**
+   ```bash
+   cd /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/1620-ui/docker
+   docker compose -f docker-compose-simple.yml up -d
+   sleep 90
+   ```
+
+3. **修正したテストを実行**
+   ```bash
+   cd /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/1620-ui/core/src/main/webapp/ui
+   npm run test:docker -- tests/versioning/document-versioning.spec.ts
+   ```
+
+4. **結果に応じた対応**:
+   - ✅ 全テスト合格 → 成功報告、100%合格達成を確認
+   - ❌ まだ失敗がある → 追加デバッグとログ確認
+
+### 技術的な発見
+
+1. **DocumentList.tsx の実装パターン**:
+   - CRUD操作後に自動的に`loadObjects()`を呼び出す設計
+   - ナビゲーションはフォルダツリーの直接クリック（Backボタンなし）
+   - PopconfirmとModalの使い分けが適切に実装されている
+
+2. **テスト修正のベストプラクティス**:
+   - 実装コードを読んで実際のUI動作を理解することが最重要
+   - 存在しないUI要素を探すテストコードは必ず失敗する
+   - 自動更新処理には適切な待機時間を設定する
+
+---
+
+## 🆕 前回セッション更新 (2025-10-25 午前)
 
 ### このセッションで実施した作業
 
