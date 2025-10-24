@@ -1,7 +1,7 @@
 # NemakiWare Playwright Test Suite - セッション引き継ぎ資料
 
 **作成日**: 2025-10-24  
-**最終更新**: 2025-10-24 23:30 JST  
+**最終更新**: 2025-10-25 00:30 JST  
 **ブランチ**: `origin/feature/react-ui-playwright`  
 **PR**: https://github.com/aegif/NemakiWare/pull/391
 
@@ -97,6 +97,13 @@
     - ✅ Test 103: should download a specific version - 特定バージョンのダウンロード
     - PWCタグが正しく表示されることを確認しました
     - バージョニング機能が完全に動作していることを確認しました
+
+11. **CIタイムアウト問題を修正**
+    - ファイル: `.github/workflows/ui-tests.yml`
+    - **問題**: UI Testsジョブが30分のタイムアウトを超えてキャンセルされました
+    - **原因**: ローカルでは23.6分で完了しましたが、CI環境では30分を超えてしまいました
+    - **修正**: タイムアウトを30分→60分に延長しました
+    - **コミット**: https://github.com/aegif/NemakiWare/commit/554ed472a
 
 ---
 
