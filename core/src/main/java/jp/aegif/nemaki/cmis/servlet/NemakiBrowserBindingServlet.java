@@ -159,6 +159,17 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     return;
                 }
             }
+
+            // CRITICAL FIX: Handle deleteTree operation directly
+            if ("deleteTree".equals(postMethodCmisaction)) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Routing deleteTree action");
+                }
+                String pathInfo = request.getPathInfo();
+                if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
+                    return;
+                }
+            }
         }
 
         String method = request.getMethod();
@@ -2333,6 +2344,11 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     
                     return handleVersioningOperation(request, response, pathInfo, cmisaction);
 
+                // CRITICAL FIX: Add deleteTree action support
+                case "deleteTree":
+                    
+                    return handleDeleteTreeOperation(request, response, pathInfo);
+
                 default:
                     
                     return false; // Let parent handle other actions
@@ -4132,6 +4148,83 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
         
         return aces;
+    }
+
+    /**
+     * Handle CMIS deleteTree operation via Browser Binding.
+     * Implements the missing deleteTree functionality that was causing "Unknown operation" errors.
+     */
+    private boolean handleDeleteTreeOperation(HttpServletRequest request, HttpServletResponse response, String pathInfo) 
+            throws IOException, ServletException, Exception {
+        
+        try {
+            // Extract folder ID from parameters or path
+            String folderId = request.getParameter("folderId");
+            if (folderId == null && pathInfo != null) {
+                // Try to extract folderId from path like /bedroom/FOLDER_ID
+                String[] pathParts = pathInfo.split("/");
+                if (pathParts.length >= 3) {
+                    folderId = pathParts[2]; // Third part is usually the folderId
+                }
+            }
+            
+            if (folderId == null || folderId.isEmpty()) {
+                throw new IllegalArgumentException("folderId parameter is required for deleteTree operation");
+            }
+            
+            // Extract repository ID from path
+            String repositoryId = extractRepositoryIdFromPath(pathInfo);
+            if (repositoryId == null) {
+                throw new IllegalArgumentException("Could not determine repository ID from path: " + pathInfo);
+            }
+            
+            // Get optional parameters
+            Boolean allVersions = getBooleanParameterSafe(request, "allVersions");
+            String unfileObjectsStr = request.getParameter("unfileObjects");
+            org.apache.chemistry.opencmis.commons.enums.UnfileObject unfileObjects = null;
+            if (unfileObjectsStr != null) {
+                try {
+                    unfileObjects = org.apache.chemistry.opencmis.commons.enums.UnfileObject.fromValue(unfileObjectsStr);
+                } catch (Exception e) {
+                    unfileObjects = org.apache.chemistry.opencmis.commons.enums.UnfileObject.DELETE;
+                }
+            }
+            Boolean continueOnFailure = getBooleanParameterSafe(request, "continueOnFailure");
+            
+            // Get the CMIS service to perform the deleteTree
+            org.apache.chemistry.opencmis.commons.server.CallContext callContext = createCallContext(request, repositoryId, response);
+            CmisService cmisService = null;
+            try {
+                cmisService = getCmisService(callContext);
+            
+                // Perform the deleteTree operation using CmisService
+                cmisService.deleteTree(repositoryId, folderId, allVersions, unfileObjects, continueOnFailure, null);
+            
+                // Return success response (empty JSON object like standard Browser Binding)
+                response.setStatus(HttpServletResponse.SC_OK);
+                response.setContentType("application/json");
+                response.setCharacterEncoding("UTF-8");
+            
+                try (java.io.PrintWriter writer = response.getWriter()) {
+                    writer.write("{}"); // Empty JSON response indicates success
+                }
+            
+                return true; // Successfully handled
+            } finally {
+                if (cmisService != null) {
+                    cmisService.close();
+                }
+            }
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            try {
+                writeErrorResponse(response, e);
+            } catch (Exception writeEx) {
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            }
+            return true; // We handled the error
+        }
     }
 
 }

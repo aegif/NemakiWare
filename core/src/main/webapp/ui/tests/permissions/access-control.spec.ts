@@ -1132,10 +1132,47 @@ test.describe('Access Control and Permissions', () => {
       }
     });
 
-    test.skip('should clean up restricted folder and contents', async ({ page }) => {
+    test('should clean up restricted folder and contents', async ({ page }) => {
       test.setTimeout(60000);
-      console.log(`Cleanup: Skipped - deleteTree operation not supported by CMIS Browser Binding`);
-      console.log(`Cleanup: Manual cleanup required for folder: ${restrictedFolderName}`);
+      console.log(`Cleanup: Attempting to delete folder: ${restrictedFolderName}`);
+      
+      // Use CMIS API to delete the folder tree
+      const baseUrl = 'http://localhost:8080/core/browser/bedroom';
+      const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+      
+      const repoResponse = await page.request.get(`${baseUrl}?cmisselector=repositoryInfo`, {
+        headers: { 'Authorization': authHeader }
+      });
+      const repoData = await repoResponse.json();
+      const rootFolderId = repoData.bedroom.rootFolderId;
+      
+      const searchResponse = await page.request.get(
+        `${baseUrl}?cmisselector=query&q=SELECT cmis:objectId FROM cmis:folder WHERE cmis:name='${restrictedFolderName}'`,
+        { headers: { 'Authorization': authHeader } }
+      );
+      const searchData = await searchResponse.json();
+      
+      if (searchData.results && searchData.results.length > 0) {
+        const folderId = searchData.results[0].succinctProperties['cmis:objectId'];
+        console.log(`Cleanup: Found folder ID: ${folderId}`);
+        
+        // Delete the folder tree using deleteTree operation
+        const deleteResponse = await page.request.post(`${baseUrl}/${folderId}`, {
+          headers: { 'Authorization': authHeader },
+          form: {
+            cmisaction: 'deleteTree',
+            folderId: folderId
+          }
+        });
+        
+        if (deleteResponse.ok()) {
+          console.log(`Cleanup: Successfully deleted folder: ${restrictedFolderName}`);
+        } else {
+          console.log(`Cleanup: Failed to delete folder: ${deleteResponse.status()}`);
+        }
+      } else {
+        console.log(`Cleanup: Folder not found: ${restrictedFolderName}`);
+      }
     });
   });
 
