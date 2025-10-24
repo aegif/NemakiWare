@@ -1,9 +1,110 @@
 # NemakiWare Playwright Test Suite - セッション引き継ぎ資料
 
-**作成日**: 2025-10-24  
-**最終更新**: 2025-10-24 23:00 JST  
-**ブランチ**: `origin/feature/react-ui-playwright`  
+**作成日**: 2025-10-24
+**最終更新**: 2025-10-25 09:00 JST
+**現在のブランチ**: `vk/1620-ui` (merged from `origin/feature/react-ui-playwright`)
 **PR**: https://github.com/aegif/NemakiWare/pull/391
+
+## 🆕 最新セッション更新 (2025-10-25)
+
+### このセッションで実施した作業
+
+1. **リモートブランチのマージ**
+   - `origin/feature/react-ui-playwright`から20コミットをマージ
+   - Fast-forwardマージで競合なし
+   - 主要な改善：Document Versioning、AtomPubパーサー、キャッシュ無効化、deleteTree操作
+
+2. **AGENTS.mdの作成・更新**
+   - ビルド手順の明確化（React UI、Docker、Playwright）
+   - 現在のテスト状況の記録（69合格、4失敗、30スキップ）
+   - トラブルシューティングガイドの追加
+   - 次のセッションへの推奨事項の明記
+
+3. **失敗テストの詳細分析**
+   - Document Versioningテスト4件の失敗原因を特定
+   - クリーンアップロジックの問題点を分析
+   - モーダルセレクターの不一致を確認
+
+### 失敗テストの詳細分析結果
+
+#### 1. `should check-in a document with new version` (Line 160-252)
+**問題**: クリーンアップ時に`checkin-test.txt`が見つからずタイムアウト
+**推定原因**:
+- チェックイン後、ドキュメント名が変更される可能性
+- バックボタン（Line 229-233）での画面遷移が正しく機能していない可能性
+- ドキュメント詳細ビューからリストビューへの遷移処理の問題
+
+**修正案**:
+```typescript
+// Option 1: ドキュメント名を動的に追跡
+const docName = await page.locator('.selected-document .name').textContent();
+const cleanupDocRow = page.locator('.ant-table-tbody tr').filter({ hasText: docName }).first();
+
+// Option 2: ドキュメントリストに直接遷移
+await page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' }).click();
+await page.waitForTimeout(2000);
+
+// Option 3: objectIdで追跡
+const objectId = await page.getAttribute('data-object-id');
+const cleanupDoc = page.locator(`tr[data-object-id="${objectId}"]`);
+```
+
+#### 2. `should cancel check-out` (Line 254-329)
+**問題**: 同様にクリーンアップ時に`cancel-checkout-test.txt`が見つからない
+**推定原因**: check-inテストと同じ原因
+**修正案**: check-inテストと同じアプローチを適用
+
+#### 3. `should display version history` (Line 331-415)
+**問題**: バージョン履歴モーダルが見つからない（Line 364-367）
+**推定原因**:
+- DocumentList.tsxの実際の実装が`.ant-modal`または`.ant-drawer`と異なる
+- モーダルのセレクターが間違っている
+
+**確認が必要**:
+```typescript
+// DocumentList.tsx (Line 661-714) の実際のモーダル実装を確認
+// 実際のclassNameやdata-testid属性を使用するべき
+
+// 修正案:
+const versionHistoryModal = page.locator('[data-testid="version-history-modal"]');
+// または
+const versionHistoryModal = page.locator('.version-history-modal, .ant-modal');
+```
+
+#### 4. `should download a specific version` (Line 417-513)
+**問題**: ダウンロードファイル名が期待と異なる（Line 466）
+**推定原因**:
+- バージョンダウンロード時、CMISが異なるファイル名フォーマットを返す
+- 例: `version-download-test.txt` → `version-download-test_v1.0.txt`
+
+**修正案**:
+```typescript
+// より緩い条件でチェック
+expect(download.suggestedFilename()).toMatch(/version-download-test.*\.txt/);
+// または
+const filename = download.suggestedFilename();
+console.log('Downloaded filename:', filename);
+expect(filename).toBeTruthy(); // まずファイル名が取得できることを確認
+```
+
+### 次のセッションへの推奨アクション
+
+**優先度: 最高**
+1. **DocumentList.tsxの実際のUI実装を確認**
+   - バージョン履歴モーダルの実際のセレクターを確認
+   - ドキュメント詳細ビューからリストビューへの遷移方法を確認
+   - ダウンロードファイル名のフォーマットを確認
+
+2. **テストのセレクター修正**
+   - 実際のUI実装に基づいてセレクターを更新
+   - クリーンアップロジックを改善（ドキュメント名の動的追跡）
+
+**優先度: 高**
+3. **Docker環境でのテスト実行**
+   - 修正したテストを実際の環境で検証
+   - スクリーンショットとデバッグログで問題点を特定
+
+---
 
 ## エグゼクティブサマリー
 
