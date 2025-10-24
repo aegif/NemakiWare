@@ -207,58 +207,36 @@ export class TestHelper {
     const modalUploadButton = this.page.locator('.ant-modal button[type="submit"]').filter({ hasText: 'アップロード' });
     await modalUploadButton.click(isMobile ? { force: true } : {});
 
-    console.log('TestHelper: Waiting for upload response...');
+    console.log('TestHelper: Waiting for upload to complete...');
     
-    // Wait for upload to complete - check for success or error message (shorter timeout)
+    // Wait for modal to close (indicates upload request was sent)
     try {
-      await this.page.waitForSelector('.ant-message-success, .ant-message-error', { timeout: 5000 });
-
-      const successMsg = await this.page.locator('.ant-message-success').count();
-      const errorMsg = await this.page.locator('.ant-message-error').count();
-
-      console.log(`TestHelper: Upload status - Success: ${successMsg > 0}, Error: ${errorMsg > 0}`);
-
-      if (errorMsg > 0) {
-        const errorText = await this.page.locator('.ant-message-error').textContent();
-        console.log(`TestHelper: Upload ERROR - ${errorText}`);
-      }
+      await this.page.waitForSelector('.ant-modal:has-text("ファイルアップロード")', { state: 'hidden', timeout: 20000 });
+      console.log('TestHelper: Upload modal closed');
     } catch (e) {
-      console.log('TestHelper: No upload success/error indicator appeared within 5s - checking if document appears in table');
-    }
-
-    // Wait for document to appear in table (even if error message was shown or no message appeared)
-    await this.page.waitForTimeout(3000);
-    
-    let docExists = false;
-    for (let i = 0; i < 3; i++) {
-      const documentRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).first();
-      docExists = await documentRow.count() > 0;
-      
-      if (docExists) {
-        console.log(`TestHelper: Document found in table after ${i + 1} attempts`);
-        return true;
-      }
-      
-      console.log(`TestHelper: Document not found in table (attempt ${i + 1}/3), waiting...`);
-      
-      if (i === 1) {
-        console.log('TestHelper: Refreshing page to check for uploaded document');
-        await this.page.reload({ waitUntil: 'networkidle' });
-        await this.page.waitForTimeout(2000);
-      } else {
-        await this.page.waitForTimeout(2000);
+      console.log('TestHelper: Upload modal did not close within 20s - trying to close manually');
+      const closeButton = this.page.locator('.ant-modal button').filter({ hasText: 'キャンセル' }).first();
+      if (await closeButton.count() > 0) {
+        await closeButton.click();
+        await this.page.waitForTimeout(1000);
       }
     }
     
-    console.log(`TestHelper: Document not found in table after 3 attempts`);
+    // Wait for document to appear in table
+    console.log(`TestHelper: Waiting for document ${fileName} to appear in table...`);
+    await this.page.waitForTimeout(5000);
     
+    const documentRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).first();
+    const docExists = await documentRow.count() > 0;
+    
+    if (docExists) {
+      console.log(`TestHelper: Document ${fileName} found in table`);
+      return true;
+    }
+    
+    console.log(`TestHelper: Document ${fileName} not found in table`);
     const allRows = await this.page.locator('.ant-table-tbody tr').count();
     console.log(`TestHelper: Total rows in table: ${allRows}`);
-    
-    if (allRows > 0) {
-      const firstRowText = await this.page.locator('.ant-table-tbody tr').first().textContent();
-      console.log(`TestHelper: First row text: ${firstRowText?.substring(0, 100)}`);
-    }
     
     return false;
   }

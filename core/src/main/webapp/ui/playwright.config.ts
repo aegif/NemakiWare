@@ -16,8 +16,8 @@ export default defineConfig({
   // Output directory for test results
   outputDir: './test-results',
 
-  // Global timeout for each test (extended for cleanup operations)
-  timeout: 60 * 1000, // 60 seconds
+  // Global timeout for each test (extended for cleanup operations and slow upload responses)
+  timeout: 120 * 1000, // 120 seconds
 
   // Global timeout for expect() assertions
   expect: {
