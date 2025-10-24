@@ -15,30 +15,6 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
 
-    services:
-      couchdb:
-        image: couchdb:3.3
-        env:
-          COUCHDB_USER: admin
-          COUCHDB_PASSWORD: password
-        ports:
-          - 5984:5984
-        options: >-
-          --health-cmd "curl -f http://admin:password@localhost:5984/_up"
-          --health-interval 30s
-          --health-timeout 10s
-          --health-retries 5
-
-      solr:
-        image: solr:9.7
-        ports:
-          - 8983:8983
-        options: >-
-          --health-cmd "curl -f http://localhost:8983/solr/"
-          --health-interval 30s
-          --health-timeout 10s
-          --health-retries 5
-
     steps:
     - uses: actions/checkout@v4
 
