@@ -225,19 +225,28 @@ test.describe('Document Versioning', () => {
       test.skip();
     }
 
-    // Cleanup: Delete the test document
-    await page.locator('.ant-table-tbody tr').filter({ hasText: 'checkin-test.txt' }).first().click();
-    await page.waitForTimeout(500);
+    // Cleanup: Navigate back to documents list and delete the test document
+    const backButton = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
+    if (await backButton.count() > 0) {
+      await backButton.click();
+      await page.waitForTimeout(1000);
+    }
 
-    const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
-    if (await deleteButton.count() > 0) {
-      await deleteButton.click(isMobile ? { force: true } : {});
+    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'checkin-test.txt' }).first();
+    if (await documentRow.count() > 0) {
+      await documentRow.click();
       await page.waitForTimeout(500);
 
-      const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
-      if (await confirmButton.count() > 0) {
-        await confirmButton.click();
-        await page.waitForTimeout(2000);
+      const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
+      if (await deleteButton.count() > 0) {
+        await deleteButton.click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(500);
+
+        const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
+        if (await confirmButton.count() > 0) {
+          await confirmButton.click();
+          await page.waitForTimeout(2000);
+        }
       }
     }
   });
@@ -293,17 +302,28 @@ test.describe('Document Versioning', () => {
       test.skip();
     }
 
-    // Cleanup
-    await page.locator('.ant-table-tbody tr').filter({ hasText: 'cancel-checkout-test.txt' }).first().click();
-    const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
-    if (await deleteButton.count() > 0) {
-      await deleteButton.click(isMobile ? { force: true } : {});
+    // Cleanup: Navigate back to documents list and delete the test document
+    const backButton = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
+    if (await backButton.count() > 0) {
+      await backButton.click();
+      await page.waitForTimeout(1000);
+    }
+
+    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'cancel-checkout-test.txt' }).first();
+    if (await documentRow.count() > 0) {
+      await documentRow.click();
       await page.waitForTimeout(500);
 
-      const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
-      if (await confirmButton.count() > 0) {
-        await confirmButton.click();
-        await page.waitForTimeout(2000);
+      const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
+      if (await deleteButton.count() > 0) {
+        await deleteButton.click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(500);
+
+        const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
+        if (await confirmButton.count() > 0) {
+          await confirmButton.click();
+          await page.waitForTimeout(2000);
+        }
       }
     }
   });
@@ -368,17 +388,28 @@ test.describe('Document Versioning', () => {
       test.skip();
     }
 
-    // Cleanup
-    await page.locator('.ant-table-tbody tr').filter({ hasText: 'version-history-test.txt' }).first().click();
-    const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
-    if (await deleteButton.count() > 0) {
-      await deleteButton.click(isMobile ? { force: true } : {});
+    // Cleanup: Navigate back to documents list and delete the test document
+    const backButton = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
+    if (await backButton.count() > 0) {
+      await backButton.click();
+      await page.waitForTimeout(1000);
+    }
+
+    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'version-history-test.txt' }).first();
+    if (await documentRow.count() > 0) {
+      await documentRow.click();
       await page.waitForTimeout(500);
 
-      const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
-      if (await confirmButton.count() > 0) {
-        await confirmButton.click();
-        await page.waitForTimeout(2000);
+      const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
+      if (await deleteButton.count() > 0) {
+        await deleteButton.click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(500);
+
+        const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
+        if (await confirmButton.count() > 0) {
+          await confirmButton.click();
+          await page.waitForTimeout(2000);
+        }
       }
     }
   });
@@ -455,17 +486,28 @@ test.describe('Document Versioning', () => {
       test.skip();
     }
 
-    // Cleanup
-    await page.locator('.ant-table-tbody tr').filter({ hasText: 'version-download-test.txt' }).first().click();
-    const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
-    if (await deleteButton.count() > 0) {
-      await deleteButton.click(isMobile ? { force: true } : {});
+    // Cleanup: Navigate back to documents list and delete the test document
+    const backButton = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
+    if (await backButton.count() > 0) {
+      await backButton.click();
+      await page.waitForTimeout(1000);
+    }
+
+    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'version-download-test.txt' }).first();
+    if (await documentRow.count() > 0) {
+      await documentRow.click();
       await page.waitForTimeout(500);
 
-      const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
-      if (await confirmButton.count() > 0) {
-        await confirmButton.click();
-        await page.waitForTimeout(2000);
+      const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
+      if (await deleteButton.count() > 0) {
+        await deleteButton.click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(500);
+
+        const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
+        if (await confirmButton.count() > 0) {
+          await confirmButton.click();
+          await page.waitForTimeout(2000);
+        }
       }
     }
   });
