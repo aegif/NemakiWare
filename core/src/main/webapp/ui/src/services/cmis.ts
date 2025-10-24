@@ -387,7 +387,8 @@ export class CMISService {
       
       // Use AtomPub for all folder children queries due to Browser Binding issues with empty results
       // Always use AtomPub for children queries - more reliable than Browser Binding
-      const url = `/core/atom/${repositoryId}/children?id=${folderId}`;
+      // CRITICAL FIX: Add filter=* to get all properties including versioning properties
+      const url = `/core/atom/${repositoryId}/children?id=${folderId}&filter=*`;
       
       xhr.open('GET', url, true);
 
@@ -474,21 +475,47 @@ export class CMISService {
                   const lastModificationDate = getPropertyValue('cmis:lastModificationDate', 'propertyDateTime');
                   const contentStreamLengthStr = getPropertyValue('cmis:contentStreamLength', 'propertyInteger');
 
+                  // CRITICAL FIX: Extract ALL properties from XML, not just hardcoded ones
+                  const allProperties: Record<string, any> = {
+                    'cmis:name': name,
+                    'cmis:objectId': id,
+                    'cmis:objectTypeId': objectType,
+                    'cmis:createdBy': createdBy,
+                    'cmis:lastModifiedBy': lastModifiedBy,
+                    'cmis:creationDate': creationDate,
+                    'cmis:lastModificationDate': lastModificationDate,
+                    'cmis:contentStreamLength': contentStreamLengthStr ? parseInt(contentStreamLengthStr) : undefined
+                  };
+
+                  // Extract all property types (Boolean, String, Integer, DateTime, Id)
+                  const propertyTypes = ['propertyBoolean', 'propertyString', 'propertyInteger', 'propertyDateTime', 'propertyId'];
+                  for (const propType of propertyTypes) {
+                    const propElements = properties.getElementsByTagName(`cmis:${propType}`);
+                    for (let j = 0; j < propElements.length; j++) {
+                      const elem = propElements[j];
+                      const propName = elem.getAttribute('propertyDefinitionId');
+                      if (propName && !allProperties[propName]) {
+                        const valueElem = elem.querySelector('cmis\\:value, value');
+                        if (valueElem) {
+                          let value: any = valueElem.textContent || '';
+                          // Convert boolean strings to actual booleans
+                          if (propType === 'propertyBoolean') {
+                            value = value === 'true';
+                          } else if (propType === 'propertyInteger') {
+                            value = value ? parseInt(value) : undefined;
+                          }
+                          allProperties[propName] = value;
+                        }
+                      }
+                    }
+                  }
+
                   const cmisObject: CMISObject = {
                     id: id,
                     name: name,
                     objectType: objectType,
                     baseType: objectType.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
-                    properties: {
-                      'cmis:name': name,
-                      'cmis:objectId': id,
-                      'cmis:objectTypeId': objectType,
-                      'cmis:createdBy': createdBy,
-                      'cmis:lastModifiedBy': lastModifiedBy,
-                      'cmis:creationDate': creationDate,
-                      'cmis:lastModificationDate': lastModificationDate,
-                      'cmis:contentStreamLength': contentStreamLengthStr ? parseInt(contentStreamLengthStr) : undefined
-                    },
+                    properties: allProperties,
                     allowableActions: [],
                     createdBy: createdBy,
                     lastModifiedBy: lastModifiedBy,

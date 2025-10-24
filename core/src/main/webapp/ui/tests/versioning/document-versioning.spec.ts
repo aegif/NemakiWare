@@ -43,8 +43,9 @@ test.describe('Document Versioning', () => {
     await documentsMenuItem.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
 
-    // Upload a test document first
-    const filename = 'versioning-test.txt';
+    // Upload a test document first with unique name
+    const timestamp = Date.now();
+    const filename = `versioning-test-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 content', isMobile);
     if (!uploadSuccess) {
       console.log('Test: Upload failed - skipping test');
@@ -79,7 +80,7 @@ test.describe('Document Versioning', () => {
       const consoleLogs: string[] = [];
       page.on('console', msg => {
         const text = msg.text();
-        if (text.includes('LOAD OBJECTS DEBUG') || text.includes('DocumentList DEBUG')) {
+        if (text.includes('LOAD OBJECTS DEBUG') || text.includes('DocumentList DEBUG') || text.includes('PWC DEBUG')) {
           consoleLogs.push(text);
         }
       });

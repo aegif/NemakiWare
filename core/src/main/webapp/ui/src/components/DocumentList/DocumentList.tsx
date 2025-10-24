@@ -303,6 +303,17 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       render: (name: string, record: CMISObject) => {
         const isPWC = record.properties?.['cmis:isPrivateWorkingCopy'] === true ||
                       record.properties?.['cmis:isVersionSeriesCheckedOut'] === true;
+        
+        if (name && name.includes('versioning-test')) {
+          console.log('PWC DEBUG:', {
+            name,
+            isPrivateWorkingCopy: record.properties?.['cmis:isPrivateWorkingCopy'],
+            isVersionSeriesCheckedOut: record.properties?.['cmis:isVersionSeriesCheckedOut'],
+            isPWC,
+            propertyKeys: record.properties ? Object.keys(record.properties) : [],
+            allProperties: JSON.stringify(record.properties, null, 2)
+          });
+        }
 
         return (
           <Space>
