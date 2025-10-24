@@ -212,8 +212,7 @@ test.describe('CMIS Versioning API', () => {
     }
   });
 
-  test.skip('should check-in a document with new version', async ({ request }) => {
-    // NOTE: Skipped because cmis:document type is not versionable in NemakiWare
+  test('should check-in a document with new version', async ({ request }) => {
     // 1. Create document with content
     const uniqueName = `checkin-test-${Date.now()}.txt`;
     const createResponse = await request.post(baseUrl, {
@@ -224,7 +223,7 @@ test.describe('CMIS Versioning API', () => {
         cmisaction: 'createDocument',
         folderId: rootFolderId,
         'propertyId[0]': 'cmis:objectTypeId',
-        'propertyValue[0]': 'VersionableDocument',
+        'propertyValue[0]': 'cmis:document',
         'propertyId[1]': 'cmis:name',
         'propertyValue[1]': uniqueName,
         content: 'Initial version 1.0',
@@ -400,7 +399,7 @@ test.describe('CMIS Versioning API', () => {
     pwcId = '';
   });
 
-  test.skip('should retrieve all versions of a document', async ({ request }) => {
+  test('should retrieve all versions of a document', async ({ request }) => {
     // 1. Create document with initial version
     const uniqueName = `version-history-test-${Date.now()}.txt`;
     const createResponse = await request.post(baseUrl, {
@@ -498,7 +497,7 @@ test.describe('CMIS Versioning API', () => {
     expect(versionLabels).toContain('2.0');
   });
 
-  test.skip('should get latest version of a document', async ({ request }) => {
+  test('should get latest version of a document', async ({ request }) => {
     // 1. Create document with initial version
     // Use unique name to avoid conflicts when running across multiple browsers
     const uniqueName = `latest-version-${Date.now()}.txt`;
