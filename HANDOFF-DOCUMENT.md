@@ -1,16 +1,21 @@
 # NemakiWare Playwright Test Suite - セッション引き継ぎ資料
 
 **作成日**: 2025-10-24  
+**最終更新**: 2025-10-24 23:00 JST  
 **ブランチ**: `origin/feature/react-ui-playwright`  
 **PR**: https://github.com/aegif/NemakiWare/pull/391
 
 ## エグゼクティブサマリー
 
-このセッションでは、NemakiWareのPlaywrightテストスイートの改善作業を実施しました。現在、**68テストが合格（66%）、0テスト失敗、35テストスキップ（34%）**の状態です。
+このセッションでは、NemakiWareのPlaywrightテストスイートの改善作業を実施しました。現在、**69テストが合格（67%）、4テスト失敗（4%）、30テストスキップ（29%）**の状態です。
 
-**重要な発見**: バージョニング機能（チェックアウト/チェックイン）は**完全に実装済み**です。テストがスキップされているのは、テストファイルに`test.describe.skip`が設定されているためであり、UI機能が未実装だからではありません。
+**重要な発見**: 
+1. バージョニング機能（チェックアウト/チェックイン）は**完全に実装済み**です
+2. React UIのAtomPubパーサーが**ハードコードされた8つのプロパティのみ**を抽出していたため、バージョニングプロパティが表示されていませんでした
+3. この問題を修正し、**すべてのCMISプロパティを抽出**するように改善しました
+4. Document Versioning checkoutテストが**成功**し、PWC（作業中）タグが正しく表示されるようになりました
 
-**現在の作業**: Document Versioningテストを有効化する作業を進めています。アップロードモーダルとの対話を修正し、ユニークなファイル名を使用するようにテストを改善しました。アップロード機能の調査を継続中です。
+**現在の作業**: Document Versioningテストの残りの失敗（check-in、cancel check-out、version history、version download）を修正中です。これらは主にクリーンアップ時のタイムアウトとUI実装の問題です。
 
 ---
 
@@ -19,11 +24,11 @@
 ### 1.1 テスト結果サマリー
 
 ```
-✅ 合格: 68テスト (66%)
-❌ 失敗: 0テスト (0%)
-⏭️ スキップ: 35テスト (34%)
+✅ 合格: 69テスト (67%)
+❌ 失敗: 4テスト (4%)
+⏭️ スキップ: 30テスト (29%)
 合計: 103テスト
-実行時間: 21.6分（ローカル環境）
+実行時間: 25.5分（ローカル環境）
 ```
 
 ### 1.2 完了した修正
@@ -59,6 +64,22 @@
    - ファイル: `/home/ubuntu/repos/NemakiWare/core/src/main/webapp/ui/tests/admin/type-management.spec.ts`
    - 変更: `.first()`を追加して重複行の問題を解決
    - 結果: 2つのテストが合格
+
+7. **🎯 React UIのAtomPubパーサーを修正（重要な修正）**
+   - ファイル: `/home/ubuntu/repos/NemakiWare/core/src/main/webapp/ui/src/services/cmis.ts`
+   - **問題**: React UIのAtomPubパーサーが、ハードコードされた8つのプロパティ（`cmis:name`、`cmis:objectId`など）のみを抽出していました
+   - **影響**: バージョニングプロパティ（`cmis:isVersionSeriesCheckedOut`、`cmis:isPrivateWorkingCopy`など）が抽出されず、PWC（作業中）タグが表示されませんでした
+   - **修正内容**:
+     - AtomPub URLに`&filter=*`パラメータを追加して、すべてのプロパティをリクエスト
+     - パーサーを修正して、すべてのプロパティタイプ（propertyBoolean、propertyString、propertyInteger、propertyDateTime、propertyId）を抽出
+     - Boolean値とInteger値を適切に変換
+   - **結果**: Document Versioning checkoutテストが成功し、PWC（作業中）タグが正しく表示されるようになりました
+
+8. **サーバー側のキャッシュ無効化を実装**
+   - ファイル: `/home/ubuntu/repos/NemakiWare/core/src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java`
+   - 変更: `checkOut()`と`cancelCheckOut()`メソッドにキャッシュ無効化コードを追加
+   - 理由: チェックアウト/キャンセル後、UIが古いキャッシュデータを表示していた
+   - 結果: チェックアウト/キャンセル後、UIが最新のバージョニングプロパティを表示するようになりました
 
 ---
 
@@ -135,25 +156,41 @@
 
 ## 3. スキップされたテストの詳細分析
 
-### 3.1 UI機能実装済みだがスキップされているテスト
+### 3.1 失敗しているテスト
 
-#### 3.1.1 Document Versioning (5テスト)
+#### 3.1.1 Document Versioning (4テスト失敗)
 - **ファイル**: `tests/versioning/document-versioning.spec.ts`
-- **スキップ理由**: `test.describe.skip`が5行目に設定されている
-- **実際の状況**: UIは完全に実装済み
-- **推奨アクション**: `test.describe.skip` → `test.describe`に変更して有効化
-- **期待結果**: 全5テストが合格する可能性が高い
+- **ステータス**: 5テスト中1テスト成功、4テスト失敗
 
-**テスト内容**:
-1. `should check-out a document` - チェックアウト機能のテスト
-2. `should check-in a document with new version` - チェックイン機能のテスト
-3. `should cancel check-out` - チェックアウトキャンセル機能のテスト
-4. `should display version history` - バージョン履歴表示のテスト
-5. `should download a specific version` - 特定バージョンのダウンロードのテスト
+**成功したテスト**:
+1. ✅ `should check-out a document` - チェックアウト機能のテスト（PWCタグが正しく表示される）
 
-### 3.2 UI機能未実装のためスキップされているテスト
+**失敗したテスト**:
+1. ❌ `should check-in a document with new version` - クリーンアップ時にタイムアウト
+   - エラー: `TimeoutError: locator.click: Timeout 30000ms exceeded`
+   - 原因: クリーンアップ時にドキュメントが見つからない
+   - 推奨アクション: チェックイン後のドキュメント名を確認し、クリーンアップロジックを修正
 
-#### 3.2.1 Custom Type Creation (3テスト)
+2. ❌ `should cancel check-out` - クリーンアップ時にタイムアウト
+   - エラー: `TimeoutError: locator.click: Timeout 30000ms exceeded`
+   - 原因: クリーンアップ時にドキュメントが見つからない
+   - 推奨アクション: キャンセルチェックアウト後のドキュメント名を確認し、クリーンアップロジックを修正
+
+3. ❌ `should display version history` - バージョン履歴モーダルが見つからない
+   - エラー: `Version history modal not found - UI implementation may differ`
+   - 原因: バージョン履歴モーダルのセレクターが間違っているか、UI実装が異なる
+   - 推奨アクション: DocumentList.tsxのバージョン履歴モーダル実装を確認し、テストのセレクターを修正
+
+4. ❌ `should download a specific version` - ダウンロードが失敗
+   - エラー: `expect(received).toContain(expected) // indexOf`
+   - 原因: ダウンロードされたファイル名が期待と異なる
+   - 推奨アクション: バージョンダウンロード機能の実装を確認し、ファイル名の生成ロジックを修正
+
+### 3.2 スキップされているテスト（30テスト）
+
+#### 3.2.1 UI機能未実装のためスキップされているテスト
+
+**Custom Type Creation (3テスト)**
 - **ファイル**: `tests/admin/custom-type-creation.spec.ts`
 - **スキップ理由**: カスタムタイプ作成UIが未実装
 - **必要な実装**: カスタムタイプ作成フォーム、プロパティ追加UI
