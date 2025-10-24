@@ -180,50 +180,54 @@ export class TestHelper {
   async uploadDocument(fileName: string, content: string, isMobile: boolean = false): Promise<boolean> {
     console.log(`TestHelper: Uploading ${fileName}`);
     
-    // Click upload button to open file dialog
+    // Click upload button to open modal
     const uploadButton = this.page.locator('button').filter({ hasText: 'アップロード' }).first();
     await uploadButton.click(isMobile ? { force: true } : {});
-    await this.page.waitForTimeout(1000);
+    
+    // Wait for upload modal to appear
+    console.log('TestHelper: Waiting for upload modal...');
+    await this.page.waitForSelector('.ant-modal:has-text("ファイルアップロード")', { timeout: 5000 });
+    await this.page.waitForTimeout(500);
 
+    console.log('TestHelper: Selecting file...');
     const fileInput = this.page.locator('input[type="file"]');
     await fileInput.setInputFiles({
       name: fileName,
       mimeType: 'text/plain',
       buffer: Buffer.from(content, 'utf-8'),
     });
-
-    console.log('TestHelper: File selected, checking for upload start button...');
-    
     await this.page.waitForTimeout(1000);
-    const startUploadButton = this.page.locator('button').filter({ hasText: /開始|Start|OK|アップロード開始/i }).first();
-    if (await startUploadButton.count() > 0) {
-      console.log('TestHelper: Clicking start upload button');
-      await startUploadButton.click(isMobile ? { force: true } : {});
-    }
+
+    console.log('TestHelper: Filling file name field...');
+    const nameInput = this.page.locator('.ant-modal input[placeholder*="ファイル名"]');
+    await nameInput.fill(fileName);
+    await this.page.waitForTimeout(500);
+
+    console.log('TestHelper: Clicking upload button in modal...');
+    const modalUploadButton = this.page.locator('.ant-modal button[type="submit"]').filter({ hasText: 'アップロード' });
+    await modalUploadButton.click(isMobile ? { force: true } : {});
 
     console.log('TestHelper: Waiting for upload response...');
     
-    // Wait for upload to complete - check for success or error message
+    // Wait for upload to complete - check for success or error message (shorter timeout)
     try {
-      await this.page.waitForSelector('.ant-message-success, .ant-message-error, .ant-upload-list-item-done', { timeout: 30000 });
+      await this.page.waitForSelector('.ant-message-success, .ant-message-error', { timeout: 5000 });
 
       const successMsg = await this.page.locator('.ant-message-success').count();
       const errorMsg = await this.page.locator('.ant-message-error').count();
-      const uploadDone = await this.page.locator('.ant-upload-list-item-done').count();
 
-      console.log(`TestHelper: Upload status - Success: ${successMsg > 0}, Error: ${errorMsg > 0}, Done: ${uploadDone > 0}`);
+      console.log(`TestHelper: Upload status - Success: ${successMsg > 0}, Error: ${errorMsg > 0}`);
 
       if (errorMsg > 0) {
         const errorText = await this.page.locator('.ant-message-error').textContent();
         console.log(`TestHelper: Upload ERROR - ${errorText}`);
-        return false;
       }
     } catch (e) {
-      console.log('TestHelper: No upload success/error indicator appeared - checking if document appears in table');
+      console.log('TestHelper: No upload success/error indicator appeared within 5s - checking if document appears in table');
     }
 
-    // Wait for document to appear in table
-    await this.page.waitForTimeout(5000);
+    // Wait for document to appear in table (even if error message was shown or no message appeared)
+    await this.page.waitForTimeout(3000);
     
     let docExists = false;
     for (let i = 0; i < 3; i++) {

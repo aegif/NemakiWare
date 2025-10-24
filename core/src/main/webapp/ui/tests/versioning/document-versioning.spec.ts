@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
-test.describe.skip('Document Versioning', () => {
+test.describe('Document Versioning', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
@@ -43,8 +43,10 @@ test.describe.skip('Document Versioning', () => {
     await documentsMenuItem.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
 
-    // Upload a test document first
-    const uploadSuccess = await testHelper.uploadDocument('versioning-test.txt', 'Version 1.0 content', isMobile);
+    // Upload a test document first with unique filename
+    const timestamp = Date.now();
+    const filename = `versioning-test-${timestamp}.txt`;
+    const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 content', isMobile);
     if (!uploadSuccess) {
       console.log('Test: Upload failed - skipping test');
       test.skip();
@@ -52,8 +54,8 @@ test.describe.skip('Document Versioning', () => {
     }
 
     // Find the uploaded document in the table
-    console.log('Test: Looking for versioning-test.txt in document table');
-    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'versioning-test.txt' }).first();
+    console.log(`Test: Looking for ${filename} in document table`);
+    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     const docExists = await documentRow.count() > 0;
     console.log(`Test: Document found in table: ${docExists}`);
 
@@ -65,31 +67,31 @@ test.describe.skip('Document Versioning', () => {
 
     await expect(documentRow).toBeVisible();
 
-    // Click the document row to select it
-    await documentRow.click(isMobile ? { force: true } : {});
+    // Look for check-out button in the document row's action column
+    const checkoutButton = documentRow.locator('button[aria-label*="チェックアウト"], button').filter({ hasText: /^$/ }).nth(0);
+    
     await page.waitForTimeout(1000);
-
-    // Look for check-out action button (might be in action menu or toolbar)
-    const checkoutButton = page.locator('button, .ant-btn').filter({ hasText: /チェックアウト|Check.*Out/i }).first();
-
-    if (await checkoutButton.count() > 0) {
-      await checkoutButton.click(isMobile ? { force: true } : {});
+    
+    const actionButtons = documentRow.locator('button');
+    const buttonCount = await actionButtons.count();
+    console.log(`Test: Found ${buttonCount} buttons in document row`);
+    
+    if (buttonCount > 0) {
+      const firstButton = actionButtons.first();
+      await firstButton.click(isMobile ? { force: true } : {});
       await page.waitForTimeout(2000);
 
-      // Verify check-out success (document should show as checked out)
-      const checkedOutIndicator = page.locator('.ant-table-tbody tr').filter({ hasText: 'versioning-test.txt' });
-      await expect(checkedOutIndicator).toBeVisible();
-
-      // Look for PWC (Private Working Copy) indicator
-      const pwcIndicator = page.locator('.ant-tag, .ant-badge').filter({ hasText: /PWC|作業中|Checked.*Out/i });
-      // Note: PWC indicator might not be visible depending on UI implementation
+      // Verify check-out success - document should show "作業中" (PWC) tag
+      const pwcTag = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).locator('.ant-tag').filter({ hasText: '作業中' });
+      await expect(pwcTag).toBeVisible({ timeout: 5000 });
+      console.log('Test: Document successfully checked out - PWC tag visible');
     } else {
       console.log('Check-out button not found - versioning feature may not be implemented in UI');
       test.skip();
     }
 
     // Cleanup: Delete the test document
-    await page.locator('.ant-table-tbody tr').filter({ hasText: 'versioning-test.txt' }).first().click();
+    await page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first().click();
     await page.waitForTimeout(500);
 
     const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
