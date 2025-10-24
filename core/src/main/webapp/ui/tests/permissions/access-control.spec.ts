@@ -1153,7 +1153,8 @@ test.describe('Access Control and Permissions', () => {
       const searchData = await searchResponse.json();
       
       if (searchData.results && searchData.results.length > 0) {
-        const folderId = searchData.results[0].succinctProperties['cmis:objectId'];
+        const result = searchData.results[0];
+        const folderId = result.succinctProperties ? result.succinctProperties['cmis:objectId'] : result.properties['cmis:objectId'].value;
         console.log(`Cleanup: Found folder ID: ${folderId}`);
         
         // Delete the folder tree using deleteTree operation
