@@ -225,12 +225,10 @@ test.describe('Document Versioning', () => {
       test.skip();
     }
 
-    // Cleanup: Navigate back to documents list and delete the test document
-    const backButton = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
-    if (await backButton.count() > 0) {
-      await backButton.click();
-      await page.waitForTimeout(1000);
-    }
+    // Cleanup: Delete the test document
+    // Note: After check-in, loadObjects() automatically updates the table
+    // Wait for table to refresh after check-in operation
+    await page.waitForTimeout(2000);
 
     const cleanupDocRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'checkin-test.txt' }).first();
     if (await cleanupDocRow.count() > 0) {
@@ -242,7 +240,7 @@ test.describe('Document Versioning', () => {
         await deleteButton.click(isMobile ? { force: true } : {});
         await page.waitForTimeout(500);
 
-        const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
+        const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|はい|削除|確認/i }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
           await page.waitForTimeout(2000);
@@ -302,12 +300,10 @@ test.describe('Document Versioning', () => {
       test.skip();
     }
 
-    // Cleanup: Navigate back to documents list and delete the test document
-    const backButton2 = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
-    if (await backButton2.count() > 0) {
-      await backButton2.click();
-      await page.waitForTimeout(1000);
-    }
+    // Cleanup: Delete the test document
+    // Note: After cancel check-out, loadObjects() automatically updates the table
+    // Wait for table to refresh after cancel operation
+    await page.waitForTimeout(2000);
 
     const cleanupDocRow2 = page.locator('.ant-table-tbody tr').filter({ hasText: 'cancel-checkout-test.txt' }).first();
     if (await cleanupDocRow2.count() > 0) {
@@ -319,7 +315,7 @@ test.describe('Document Versioning', () => {
         await deleteButton.click(isMobile ? { force: true } : {});
         await page.waitForTimeout(500);
 
-        const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
+        const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|はい|削除|確認/i }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
           await page.waitForTimeout(2000);
@@ -388,12 +384,9 @@ test.describe('Document Versioning', () => {
       test.skip();
     }
 
-    // Cleanup: Navigate back to documents list and delete the test document
-    const backButton3 = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
-    if (await backButton3.count() > 0) {
-      await backButton3.click();
-      await page.waitForTimeout(1000);
-    }
+    // Cleanup: Delete the test document
+    // Wait for modal to close if still open
+    await page.waitForTimeout(1000);
 
     const cleanupDocRow3 = page.locator('.ant-table-tbody tr').filter({ hasText: 'version-history-test.txt' }).first();
     if (await cleanupDocRow3.count() > 0) {
@@ -405,7 +398,7 @@ test.describe('Document Versioning', () => {
         await deleteButton.click(isMobile ? { force: true } : {});
         await page.waitForTimeout(500);
 
-        const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
+        const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|はい|削除|確認/i }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
           await page.waitForTimeout(2000);
@@ -462,12 +455,14 @@ test.describe('Document Versioning', () => {
         try {
           const download = await downloadPromise;
 
-          // Verify download started
-          expect(download.suggestedFilename()).toContain('version-download-test');
+          // Verify download started - use regex for flexible filename matching
+          // Server may append version info or other metadata to filename
+          const filename = download.suggestedFilename();
+          expect(filename).toMatch(/version-download-test/i);
 
           // Wait for download to complete
           await download.path();
-          console.log('Version download successful:', download.suggestedFilename());
+          console.log('Version download successful:', filename);
         } catch (error) {
           console.log('Download did not complete:', error);
         }
@@ -486,12 +481,9 @@ test.describe('Document Versioning', () => {
       test.skip();
     }
 
-    // Cleanup: Navigate back to documents list and delete the test document
-    const backButton4 = page.locator('button, .ant-btn').filter({ hasText: /戻る|Back/i }).first();
-    if (await backButton4.count() > 0) {
-      await backButton4.click();
-      await page.waitForTimeout(1000);
-    }
+    // Cleanup: Delete the test document
+    // Wait for modal to close if still open
+    await page.waitForTimeout(1000);
 
     const cleanupDocRow4 = page.locator('.ant-table-tbody tr').filter({ hasText: 'version-download-test.txt' }).first();
     if (await cleanupDocRow4.count() > 0) {
@@ -503,7 +495,7 @@ test.describe('Document Versioning', () => {
         await deleteButton.click(isMobile ? { force: true } : {});
         await page.waitForTimeout(500);
 
-        const confirmButton = page.locator('.ant-modal button').filter({ hasText: /OK|削除|確認/i }).first();
+        const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|はい|削除|確認/i }).first();
         if (await confirmButton.count() > 0) {
           await confirmButton.click();
           await page.waitForTimeout(2000);
