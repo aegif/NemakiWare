@@ -105,6 +105,16 @@
     - **修正**: タイムアウトを30分→60分に延長しました
     - **コミット**: https://github.com/aegif/NemakiWare/commit/554ed472a
 
+12. **CIサーバークラッシュ問題を修正**
+    - ファイル: `.github/workflows/ui-tests.yml`
+    - **問題**: CIでサーバーが途中でクラッシュして、`ERR_CONNECTION_REFUSED`エラーが発生していました
+    - **原因**: CIが`java -jar core.war`で直接WARファイルを実行しようとしていましたが、NemakiWareはTomcatコンテナで実行する必要があります
+    - **修正内容**:
+      - docker-compose-simple.ymlを使用してサーバーを起動（ローカル環境と同じ）
+      - GitHub Actions services（CouchDB、Solr）を削除（docker-composeが管理）
+      - サーバー起動の安定性を向上
+    - **コミット**: https://github.com/aegif/NemakiWare/commit/f9b41eff5
+
 ---
 
 ## 2. バージョニング機能の実装状況
