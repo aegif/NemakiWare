@@ -1,3 +1,112 @@
+/**
+ * Authentication E2E Tests
+ *
+ * Comprehensive test suite for NemakiWare authentication functionality:
+ * - Login/logout workflows with valid/invalid credentials
+ * - Session management and persistence across page refreshes
+ * - Protected route access control and redirect behavior
+ * - Mobile browser support for authentication flows
+ * - Ant Design form component interaction patterns
+ *
+ * Test Coverage (7 tests):
+ * 1. Login page UI validation (fields, buttons, repository selector)
+ * 2. Successful login with valid credentials
+ * 3. Failed login with invalid credentials
+ * 4. Empty credentials validation
+ * 5. Logout functionality
+ * 6. Session persistence on page refresh
+ * 7. Protected route redirect to login
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ *
+ * 1. AuthHelper Utility Usage (Lines 43-46, 148-153, 180-184):
+ *    - Centralized authentication logic in AuthHelper class
+ *    - Provides login(), logout(), isLoggedIn() helper methods
+ *    - Encapsulates repository selection and credential handling
+ *    - Rationale: Reusable authentication logic across all test suites
+ *    - Implementation: await authHelper.login() handles full login flow
+ *
+ * 2. Mobile Browser Support (Lines 61-75, 155-169):
+ *    - Detects mobile viewport: browserName === 'chromium' && width <= 414
+ *    - Closes sidebar before accessing header elements
+ *    - Uses menu toggle button: aria-label="menu-fold" or "menu-unfold"
+ *    - Includes try-catch for graceful failure if sidebar close fails
+ *    - Rationale: Mobile layouts render sidebar as overlay blocking header
+ *    - Performance: 500ms wait after sidebar close for animation
+ *
+ * 3. Multiple Selector Strategy with Fallback (Lines 21, 93):
+ *    - Username field: 'input[type="text"], input[name="username"], input[placeholder="ユーザー名"]'
+ *    - Uses .first() to handle multiple matches gracefully
+ *    - Rationale: UI implementation may use different field attributes
+ *    - Provides robustness against minor UI changes
+ *    - Example: Works with both English and Japanese placeholders
+ *
+ * 4. Session Clean Start Pattern (Lines 6-10):
+ *    - beforeEach hook clears cookies and permissions
+ *    - Ensures each test starts with fresh authentication state
+ *    - Prevents test interdependencies and flaky failures
+ *    - Rationale: Authentication tests must be completely isolated
+ *    - Implementation: context().clearCookies(), clearPermissions()
+ *
+ * 5. Ant Design Component Interaction (Lines 32-35, 100-110):
+ *    - Repository selector: .ant-select component
+ *    - Dropdown handling: .ant-select-dropdown with visibility check
+ *    - Option selection: .ant-select-item-option with text filter
+ *    - Includes scrollIntoViewIfNeeded() for long dropdown lists
+ *    - Wait pattern: 300ms after scroll before click
+ *    - Rationale: Ant Design components require specific interaction sequence
+ *
+ * 6. Login Verification Strategy (Lines 48-59, 189-190):
+ *    - Primary: URL contains '/ui/dist/' (successful redirect)
+ *    - Secondary: Password field not visible (left login page)
+ *    - Tertiary: Main layout elements present (.ant-layout-sider, .ant-layout-content)
+ *    - User display in header: text=admin
+ *    - Repository display: text=bedroom
+ *    - Rationale: Multi-layer verification ensures robust login detection
+ *
+ * 7. Protected Route Access Control (Lines 193-204):
+ *    - Direct navigation to /documents without authentication
+ *    - Expects redirect to login or display of login form
+ *    - Checks both URL redirect and password field visibility
+ *    - Rationale: Verifies React Router protected route implementation
+ *    - Implementation: ProtectedRoute component should redirect unauthenticated users
+ *
+ * 8. Error Handling Patterns (Lines 116-127, 139-144):
+ *    - Invalid credentials: Should remain on login page
+ *    - Empty credentials: Form should not submit
+ *    - No strict requirement for error message display
+ *    - Rationale: Focuses on functional behavior rather than UI messages
+ *    - Allows flexibility in error messaging implementation
+ *
+ * Expected Results:
+ * - All 7 tests should pass across all browser profiles
+ * - Login/logout flow functional on desktop and mobile
+ * - Session persistence verified after page refresh
+ * - Protected routes redirect correctly
+ * - Form validation prevents empty submissions
+ *
+ * Performance Optimizations:
+ * - Uses waitForSelector with timeout for reliable element detection
+ * - Includes waitForTimeout for animation completion (Ant Design)
+ * - Mobile sidebar close wrapped in try-catch for graceful degradation
+ *
+ * Debugging Features:
+ * - TestHelper.checkForJSErrors() validates no console errors
+ * - Multiple selector fallbacks for robust element location
+ * - Clear assertion messages for failure diagnosis
+ *
+ * Authentication Credentials (from AuthHelper):
+ * - Default username: admin
+ * - Default password: admin
+ * - Default repository: bedroom
+ *
+ * Relationship to Other Components:
+ * - AuthHelper: Centralized authentication utility
+ * - TestHelper: Common test utilities (JS error checking, Ant Design load)
+ * - ProtectedRoute: React component enforcing authentication
+ * - React Router: Navigation and route protection
+ */
+
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';

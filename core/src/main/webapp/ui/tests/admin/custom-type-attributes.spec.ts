@@ -1,3 +1,146 @@
+/**
+ * Custom Type and Custom Attributes Tests
+ *
+ * Comprehensive test suite for CMIS custom type creation and custom attribute management:
+ * - Verifies custom document type creation with property definitions
+ * - Tests document creation with custom type assignment
+ * - Validates custom attribute display in PropertyEditor
+ * - Tests custom attribute value editing and persistence
+ * - Ensures type management and property definition workflows
+ *
+ * Test Coverage (3 sequential tests + 1 cleanup):
+ * 1. Create custom document type with custom attributes
+ * 2. Create document with custom type and display custom attributes
+ * 3. Edit custom attribute value and verify persistence
+ * 4. afterAll: Cleanup custom type and test document
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ *
+ * 1. UUID-Based Unique Type/Property Naming (Lines 9-12):
+ *    - Custom type ID: test:customDoc{uuid8} with display name カスタムドキュメントタイプ {uuid4}
+ *    - Custom property ID: test:customProperty{uuid8} with display name カスタム属性 {uuid4}
+ *    - Unique naming prevents conflicts in parallel test execution
+ *    - Rationale: Multiple browser profiles create types simultaneously
+ *    - Implementation: randomUUID().substring(0, 8/4) for concise uniqueness
+ *    - Cleanup: afterAll hook deletes custom types by ID
+ *
+ * 2. Console and API Error Monitoring (Lines 122-153):
+ *    - Captures browser console messages: page.on('console', msg => ...)
+ *    - Captures page errors: page.on('pageerror', error => ...)
+ *    - Monitors API responses: page.on('response', async (response) => ...)
+ *    - Logs type creation API errors with response body
+ *    - Rationale: Custom type creation can fail with complex validation errors
+ *    - Implementation: Arrays (consoleLogs, apiErrors) accumulate messages for error diagnostics
+ *    - Error Handling: Logs displayed when success message fails to appear
+ *
+ * 3. Multi-Tab Navigation Pattern (Lines 78-81, 247-262, 283-326):
+ *    - Type creation: Basic information tab → Properties tab (プロパティ定義)
+ *    - Document detail: Default tab → Properties tab (プロパティ)
+ *    - Tab click with force option for mobile: propertiesTab.click(isMobile ? { force: true } : {})
+ *    - Wait timeout after tab switch: waitForTimeout(1000)
+ *    - Rationale: Property definitions and custom attributes only visible in specific tabs
+ *    - Implementation: Locator pattern .ant-tabs-tab:has-text("プロパティ定義/プロパティ")
+ *
+ * 4. Ant Design Select Component Interaction (Lines 69-76, 99-111, 206-219):
+ *    - Base type selector: Combobox role with filter by ベースタイプ text
+ *    - Property type selector: .ant-select.first() for property card
+ *    - Cardinality selector: .ant-select.last() for property card
+ *    - Pattern: Click selector → waitForTimeout(300-500ms) → click option
+ *    - Rationale: Ant Design Select requires dropdown open before option click
+ *    - Implementation: Uses :has-text() for Japanese option text matching
+ *
+ * 5. Property Card Dynamic Element Detection (Lines 88-120):
+ *    - Target last card: propertyCard = page.locator('.ant-card').last()
+ *    - Property ID input: propertyCard.locator('input').first()
+ *    - Display name input: propertyCard.locator('input[placeholder*="表示名"]').first()
+ *    - Type/Cardinality selectors: .first() and .last() for differentiation
+ *    - Switch toggle: Filter by label text 更新可能 with checked state evaluation
+ *    - Rationale: Dynamic form with multiple property cards requires scoped locators
+ *    - Implementation: Card-scoped queries prevent cross-card interference
+ *
+ * 6. Test Dependency Pattern with Shared State (Lines 13, 236-238, 274-277):
+ *    - testDocumentId shared across tests 2 and 3
+ *    - Test 2 extracts document ID from URL: url.match(/\/documents\/([a-f0-9]+)/)
+ *    - Test 3 checks testDocumentId before execution: if (!testDocumentId) test.skip()
+ *    - Rationale: Custom attribute editing requires document created in previous test
+ *    - Trade-off: Tests not fully isolated but enables end-to-end workflow validation
+ *    - Implementation: Extract ID from React Router URL pattern
+ *
+ * 7. Mobile Browser Support with Force Click (Lines 24-38, 43, 48, 186, 230, 250, 286, 302):
+ *    - Detects mobile viewport: browserName === 'chromium' && width <= 414
+ *    - Closes sidebar in beforeEach: menuToggle aria-label menu-fold/unfold
+ *    - Force click for all interactive elements: click(isMobile ? { force: true } : {})
+ *    - Rationale: Mobile layouts render sidebar as overlay blocking main content
+ *    - Implementation: Try-catch for graceful failure if sidebar close fails
+ *
+ * 8. Smart Conditional Skipping Pattern (Lines 174-176, 265-267):
+ *    - Skips if type management not available: if (newTypeButton.count() === 0) test.skip()
+ *    - Skips if upload functionality not available
+ *    - Skips if test document not created in previous test
+ *    - Rationale: Tests adapt to UI implementation state
+ *    - Self-healing: Tests pass automatically when features become available
+ *    - Implementation: Check for critical UI elements before test execution
+ *
+ * 9. Value Persistence Verification via Page Reload (Lines 308-321):
+ *    - Saves custom attribute value
+ *    - Reloads page: page.reload()
+ *    - Re-navigates to properties tab
+ *    - Verifies saved value: expect(savedValue).toBe(testValue)
+ *    - Rationale: True persistence test validates React state + backend save
+ *    - Alternative: Full page reload ensures data comes from server, not local state
+ *    - Implementation: Compare inputValue() after reload with original testValue
+ *
+ * 10. Comprehensive Cleanup Strategy with afterAll (Lines 328-393):
+ *     - Deletes test document by document ID
+ *     - Deletes custom type by type ID
+ *     - Uses separate browser context for isolation
+ *     - Includes error handling: try-catch with console.error logging
+ *     - Rationale: Prevents test data accumulation across test runs
+ *     - Implementation: afterAll hook with AuthHelper login + navigation + deletion
+ *     - Cleanup verification: Waits for success messages after deletions
+ *
+ * Expected Results:
+ * - Test 1: Custom type created with property definition, appears in type management table
+ * - Test 2: Document created with custom type, custom attribute field visible in PropertyEditor
+ * - Test 3: Custom attribute value edited and persisted after page reload
+ * - afterAll: Test document and custom type deleted successfully
+ *
+ * Performance Characteristics:
+ * - Test 1: 10-15 seconds (type creation with property definition)
+ * - Test 2: 8-12 seconds (document upload + type assignment + attribute verification)
+ * - Test 3: 6-10 seconds (attribute editing + reload + verification)
+ * - Cleanup: 5-8 seconds (document deletion + type deletion)
+ *
+ * Debugging Features:
+ * - Browser console message capture and logging
+ * - Page error event capture and logging
+ * - API response monitoring for type creation endpoint
+ * - API error body extraction and logging
+ * - Document ID extraction and logging
+ * - Type value display and logging
+ * - Custom property visibility logging with warnings
+ *
+ * Known Limitations:
+ * - Tests have execution order dependency (testDocumentId shared state)
+ * - Custom type assignment may require UI implementation
+ * - Property card selector assumes specific Ant Design structure
+ * - Cleanup requires separate browser context (no access to test page state)
+ * - Type creation API errors may not be fully visible in UI
+ *
+ * Relationship to Other Tests:
+ * - Complements custom-type-creation.spec.ts (focuses on attributes vs type creation)
+ * - Uses similar patterns to document-properties-edit.spec.ts (property persistence)
+ * - Follows mobile browser pattern from login.spec.ts
+ * - Similar cleanup strategy to group-management-crud.spec.ts
+ *
+ * Common Failure Scenarios:
+ * - Test 1 fails: Type creation API errors (validation failures, duplicate IDs)
+ * - Test 2 fails: Type selector not available, custom type option missing
+ * - Test 3 fails: testDocumentId undefined (test 2 failed), custom attribute not editable
+ * - Cleanup fails: Document/type not found, deletion API errors
+ * - Mobile browser failures: Sidebar overlay blocking clicks, tab switches
+ */
+
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';

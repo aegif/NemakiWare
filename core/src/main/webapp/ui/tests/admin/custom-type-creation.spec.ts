@@ -1,3 +1,131 @@
+/**
+ * Custom Type Creation and Property Management Tests
+ *
+ * Comprehensive test suite for CMIS custom type creation and property definition workflows:
+ * - Verifies custom document type creation via type management UI
+ * - Tests custom property addition to existing types
+ * - Validates document creation with custom type assignment
+ * - Tests custom property editing in document properties
+ * - Ensures complete CMIS type management workflow end-to-end
+ *
+ * Test Coverage (3 tests):
+ * 1. Create new custom document type with properties
+ * 2. Add custom properties to an existing type
+ * 3. Create document with custom type and edit custom properties
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ *
+ * 1. Placeholder-Based Input Targeting (Lines 93-111):
+ *    - Type ID: input[placeholder*="タイプID"]
+ *    - Display name: input[placeholder*="表示名"]
+ *    - Description: textarea[placeholder*="タイプの説明"], textarea[placeholder*="説明"]
+ *    - Property ID: input[placeholder="プロパティID"]
+ *    - Rationale: Ant Design Form.Item uses name attribute, placeholder is more stable
+ *    - Implementation: Partial match with *= for flexibility
+ *    - Alternative: Could use name="id", name="displayName" but requires Form.Item context
+ *
+ * 2. Form Item Filtering for Select Components (Lines 115-126, 229-240):
+ *    - Base type: .ant-form-item filter hasText ベースタイプ then .ant-select
+ *    - Property type: .ant-form-item filter hasText データ型 then .ant-select.last()
+ *    - Pattern: Locate form item by label text → find Select child
+ *    - Rationale: Avoids ambiguity when multiple selects exist
+ *    - Implementation: Uses hasText for Japanese label matching
+ *    - Scoping: .last() for property cards with multiple selects
+ *
+ * 3. UUID-Based Unique Type Naming (Lines 73-75, 216-218, 284):
+ *    - Type ID: test:customDoc{uuid8}
+ *    - Type name: Test Custom Document {uuid8}
+ *    - Property ID: test:customProp{uuid8}
+ *    - Filename: test-custom-{uuid8}.txt
+ *    - Rationale: Prevents conflicts in parallel test execution across browsers
+ *    - Implementation: randomUUID().substring(0, 8) for concise uniqueness
+ *
+ * 4. Smart Conditional Skipping with Informative Messages (Lines 158-160, 185-187, 252-261, 353-361):
+ *    - Skip if create button not found: test.skip('Create type button not found - UI may not be implemented')
+ *    - Skip if edit button missing: test.skip('Edit button not found')
+ *    - Skip if property tab unavailable: test.skip('Property tab not available')
+ *    - Skip if type selector missing: test.skip('Type selector not implemented in upload modal')
+ *    - Rationale: Tests adapt to UI implementation state with clear diagnostic messages
+ *    - Self-healing: Tests pass automatically when features become available
+ *
+ * 5. Modal/Drawer Flexible Detection (Lines 88-90, 190-192):
+ *    - Unified selector: .ant-modal:visible, .ant-drawer:visible
+ *    - Covers both modal and drawer rendering modes
+ *    - Rationale: UI implementation may use modal or drawer for type management
+ *    - Implementation: Comma-separated selectors for OR logic
+ *    - Visibility filter: :visible ensures currently open modal/drawer
+ *
+ * 6. Table Verification Dual Strategy (Lines 145-155):
+ *    - Primary: tr[data-row-key="${customTypeId}"] - uses Ant Design Table row key
+ *    - Fallback: .ant-table tbody text=${customTypeId} - text search in table body
+ *    - Rationale: Table implementation may or may not use data-row-key attribute
+ *    - Implementation: Try exact key match first, fall back to text search
+ *    - Result: Boolean typeFound combines both strategies
+ *
+ * 7. Multi-Tab Navigation for Property Definition (Lines 194-199):
+ *    - Tab click: .ant-tabs-tab filter hasText プロパティ定義
+ *    - Wait after click: waitForTimeout(500ms)
+ *    - Rationale: Property definition UI only visible in specific tab
+ *    - Implementation: Tab filter by Japanese text with first() for uniqueness
+ *    - Mobile support: No force click needed for tabs (overlay less common)
+ *
+ * 8. Last Element Targeting for Dynamic Forms (Lines 217-225, 230):
+ *    - Property ID: propertyIdInput.last().fill() - targets most recently added property card
+ *    - Property name: propertyNameInput.last().fill()
+ *    - Property type select: propertyTypeFormItem.last().locator('.ant-select')
+ *    - Rationale: Dynamic property addition creates multiple cards
+ *    - Implementation: .last() ensures interaction with newly added property
+ *    - Alternative: Could scope to specific card but last() is more robust
+ *
+ * 9. Existing Type Fallback Strategy (Lines 173-174):
+ *    - Test 2 uses nemaki:parentChildRelationship instead of custom type from test 1
+ *    - Rationale: Tests not dependent on execution order
+ *    - Implementation: Hardcoded known type ID for reliability
+ *    - Trade-off: Less end-to-end but more robust against test 1 failures
+ *
+ * 10. Comprehensive Console Logging for Debugging (Lines 63, 84, 90, 96, 103, etc.):
+ *     - Logs each major step: Clicked button, Filled input, Selected option
+ *     - Uses checkmark emoji ✅ for success, ℹ️ for informational messages
+ *     - Includes values: Filled type ID: ${customTypeId}
+ *     - Rationale: Extensive logging aids CI/CD debugging and test diagnosis
+ *     - Implementation: console.log() at every significant interaction point
+ *
+ * Expected Results:
+ * - Test 1: Custom type created successfully, appears in type management table
+ * - Test 2: Custom property added to existing type, type update submitted
+ * - Test 3: Document created with custom type, custom property editable
+ *
+ * Performance Characteristics:
+ * - Test 1: 8-12 seconds (type creation + verification)
+ * - Test 2: 10-15 seconds (navigate to edit + add property + submit)
+ * - Test 3: 12-18 seconds (document upload + custom type + property edit)
+ *
+ * Debugging Features:
+ * - Step-by-step console logging with emoji indicators
+ * - Value logging for filled inputs (type ID, property ID, filename)
+ * - Success message detection logging
+ * - Table verification result logging
+ * - Informative skip messages for missing UI elements
+ *
+ * Known Limitations:
+ * - Test 2 uses existing type (nemaki:parentChildRelationship) instead of custom type
+ * - No cleanup in afterAll (custom types persist across test runs)
+ * - Property type selection assumes 文字列 (string) option exists
+ * - Document custom type assignment may not persist if UI not fully implemented
+ *
+ * Relationship to Other Tests:
+ * - Complements custom-type-attributes.spec.ts (focuses on creation vs attributes)
+ * - Similar patterns to type-management.spec.ts (type table navigation)
+ * - Uses similar upload pattern to document-management.spec.ts
+ * - Follows mobile browser pattern from login.spec.ts
+ *
+ * Common Failure Scenarios:
+ * - Test 1 fails: Create button not found (UI not implemented or selector mismatch)
+ * - Test 2 fails: Edit button missing, property tab not available
+ * - Test 3 fails: Type selector not in upload modal, custom types not in dropdown
+ * - Mobile browser failures: Modal/drawer overlay issues, force clicks needed
+ */
+
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';

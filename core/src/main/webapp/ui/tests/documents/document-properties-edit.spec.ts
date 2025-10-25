@@ -1,3 +1,131 @@
+/**
+ * Document Properties Edit and Persistence Tests
+ *
+ * Comprehensive test suite for document metadata editing and persistence validation:
+ * - Tests property editing UI workflow (upload → edit → verify → cleanup)
+ * - Validates property changes persist across UI navigation
+ * - Verifies CMIS property update integration
+ * - Tests document lifecycle from creation to deletion
+ * - Supports mobile browser interaction patterns
+ *
+ * Test Coverage (4 sequential tests):
+ * 1. Upload test document - Creates document with unique UUID-based name
+ * 2. Open and edit properties - Updates description and custom fields
+ * 3. Verify persistence after navigation - Confirms changes persist across UI routes
+ * 4. Clean up test document - Deletes test artifact with detailed logging
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ *
+ * 1. Test Sequence Dependency Pattern (Tests 1→2→3→4):
+ *    - Tests must run in order: upload creates document for subsequent tests
+ *    - Each test depends on previous test success
+ *    - Not isolated: share testDocName and testDocId variables
+ *    - Rationale: Document lifecycle testing requires sequential operations
+ *    - Trade-off: Faster execution but failures cascade to later tests
+ *
+ * 2. UUID-Based Unique Document Naming (Line 9):
+ *    - Uses randomUUID().substring(0, 8) for uniqueness
+ *    - Format: "test-props-doc-a1b2c3d4.txt"
+ *    - Prevents conflicts when tests run across multiple browsers
+ *    - Rationale: Parallel browser execution (6 profiles) requires unique names
+ *    - Example: Chromium and Firefox can create documents simultaneously
+ *
+ * 3. Mobile Browser Support with Force Click (Lines 28-53, 58, 90, 163, 228):
+ *    - Detects mobile viewport: browserName === 'chromium' && width <= 414
+ *    - Closes sidebar in beforeEach to prevent overlay blocking
+ *    - Uses force click for all interactive elements: button.click({ force: true })
+ *    - Rationale: Mobile layouts render sidebar as overlay blocking main content
+ *    - Implementation: Try-catch for graceful failure if sidebar close fails
+ *
+ * 4. Smart Conditional Skipping Pattern (Lines 84, 154, 157, 222):
+ *    - Uses test.skip() when required UI elements not found
+ *    - Examples: "Upload functionality not available", "Editable properties not found"
+ *    - Continues test execution without failing entire suite
+ *    - Rationale: Tests adapt to UI implementation state
+ *    - Self-healing: Tests pass automatically when features become available
+ *
+ * 5. Multi-Selector Fallback Strategy (Lines 99-122):
+ *    - Primary: Look for edit/setting/form icon buttons
+ *    - Fallback 1: Click detail view button (eye icon) then edit
+ *    - Fallback 2: Look for "編集" text button
+ *    - Rationale: UI implementation may use different button types/icons
+ *    - Provides robustness against UI component changes
+ *
+ * 6. Property Persistence Verification via UI Navigation (Lines 161-224):
+ *    - Navigates away to User Management then back to Documents
+ *    - Does NOT use page.reload() (breaks React Router)
+ *    - Verifies description contains updated text
+ *    - Rationale: True persistence test validates React state + backend save
+ *    - Alternative: Full page reload would reset React state incorrectly
+ *
+ * 7. Detail View vs Edit Modal Navigation (Lines 106-122, 191-219):
+ *    - First try direct properties button
+ *    - If not found, open detail view then click edit inside
+ *    - Handles different UI layouts (table action buttons vs detail view)
+ *    - Rationale: UI may show edit button in row or in detail drawer/modal
+ *    - Implementation: Sequential fallback with separate selectors
+ *
+ * 8. Console Logging for Cleanup Debugging (Lines 230-276):
+ *    - Logs each step: "Looking for document", "Found document row", "Clicking confirm"
+ *    - Logs success/error message detection
+ *    - Includes timeouts and error responses
+ *    - Rationale: Cleanup failures are common and need detailed diagnostics
+ *    - Use case: CI pipeline debugging when cleanup times out
+ *
+ * 9. Multiple Field Selector Strategy (Lines 128-142):
+ *    - Description: 'textarea[id*="description"], input[id*="description"]'
+ *    - Custom fields: 'input[id*="custom"], input[id*="property"]'
+ *    - Uses id attribute partial match (contains) for flexibility
+ *    - Rationale: Ant Design form item IDs may have prefixes/suffixes
+ *    - Example: id="form_item_description_1" matches id*="description"
+ *
+ * 10. Success/Error Message Dual Detection (Lines 252-270):
+ *     - Waits for '.ant-message-success, .ant-message-error'
+ *     - Logs which message appeared
+ *     - Throws error only if neither appears (timeout)
+ *     - Rationale: Operation may succeed or fail, both are valid test outcomes
+ *     - Implementation: 30-second timeout for slow backend operations
+ *
+ * Expected Results:
+ * - Test 1: Document uploaded successfully and visible in table
+ * - Test 2: Properties edit modal opens, changes saved with success message
+ * - Test 3: Updated description persists after UI navigation
+ * - Test 4: Document deleted successfully or cleanup logs error for debugging
+ *
+ * Performance Characteristics:
+ * - Sequential execution: 4 tests run in order (not parallel)
+ * - Upload wait: 2 seconds after success message
+ * - Edit wait: 2 seconds after save
+ * - Navigation wait: 1-2 seconds per menu transition
+ * - Cleanup timeout: 30 seconds for delete operation
+ *
+ * Debugging Features:
+ * - Detailed console logging for each cleanup step
+ * - Success/error message detection and logging
+ * - Skip messages when UI elements not found
+ * - Timeout error messages for missing responses
+ *
+ * Known Limitations:
+ * - Tests not isolated: depend on execution order
+ * - Cascade failures: upload failure breaks all subsequent tests
+ * - UI-dependent: skips if edit/properties UI not implemented
+ * - Custom property fields: may not exist in all deployments
+ * - React Router dependency: cannot use page.reload() for persistence test
+ *
+ * Relationship to Other Tests:
+ * - Uses AuthHelper and TestHelper utilities
+ * - Follows mobile browser pattern from login.spec.ts
+ * - Similar upload pattern to document-management.spec.ts
+ * - Complements large-file-upload.spec.ts (tests basic properties, not file size)
+ *
+ * Common Failure Scenarios:
+ * - Upload modal not found: Feature not implemented (expected skip)
+ * - Properties button not found: UI layout different (fallback to detail view)
+ * - Edit modal not found: Properties editing not implemented (expected skip)
+ * - Persistence check fails: Backend save failed or React Router state issue
+ * - Cleanup timeout: Delete operation slow or UI unresponsive (30s timeout)
+ */
+
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';

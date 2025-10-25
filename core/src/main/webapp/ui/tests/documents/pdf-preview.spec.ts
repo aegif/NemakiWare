@@ -3,26 +3,166 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
 /**
- * PDF PREVIEW TESTS - SMART CONDITIONAL EXECUTION (Updated 2025-10-25)
+ * PDF Preview Functionality Tests
  *
- * These tests use intelligent conditional skipping:
- * - All 4 tests are ENABLED and execute normally
- * - Tests automatically skip if CMIS-v1.1-Specification-Sample.pdf is not found
- * - When PDF is uploaded to Technical Documents folder, tests run automatically
+ * Comprehensive test suite for PDF document preview and download functionality:
+ * - PDF file existence verification in Technical Documents folder
+ * - PDF preview modal/viewer functionality with pdf.js rendering
+ * - PDF content stream accessibility via CMIS AtomPub API
+ * - PDF download functionality via popup windows
+ * - Smart conditional execution (self-healing tests)
+ * - Mobile browser support for PDF operations
  *
- * This is intentional best practice:
- * ✅ Tests discover when PDF becomes available (self-healing)
- * ✅ No manual test.skip() removal needed when PDF is uploaded
- * ✅ Tests provide clear skip messages when PDF is missing
- *
- * Test Coverage:
+ * Test Coverage (4 tests):
  * 1. PDF file existence in Technical Documents folder
- * 2. PDF preview modal/viewer functionality
- * 3. PDF content stream accessibility via CMIS API
- * 4. PDF download functionality
+ * 2. PDF preview modal/viewer with canvas rendering detection
+ * 3. PDF content stream accessibility via HEAD request to AtomPub endpoint
+ * 4. PDF download functionality via button click or action menu
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ *
+ * 1. Smart Conditional Skipping Pattern (Lines 67-98, 113-186, 258-268, 298-361):
+ *    - test.skip() executed when Technical Documents folder or PDF not found
+ *    - Self-healing tests: automatically run when prerequisites met
+ *    - Clear skip messages explain why test skipped
+ *    - Example: "PDF document not found in repository - file needs to be uploaded"
+ *    - Rationale: Tests document expected functionality without blocking CI
+ *    - Implementation: Conditional skip after element count check or API error
+ *
+ * 2. Mobile Browser Support with Force Clicks (Lines 38-48, 57-62, 104-109):
+ *    - Detects mobile viewport: browserName === 'chromium' && width <= 414
+ *    - Closes sidebar before navigation to prevent overlay blocking
+ *    - Uses force click for menu items and folder links
+ *    - Includes 500ms animation wait after sidebar close
+ *    - Applied in beforeEach and individual tests
+ *    - Rationale: Mobile layouts render sidebar as blocking overlay
+ *    - Implementation: Conditional sidebar close + force click pattern
+ *
+ * 3. Direct CMIS API Testing with page.evaluate() (Lines 189-253):
+ *    - Uses page.evaluate() to run fetch() inside browser context
+ *    - Two-step process: query for PDF by name, then HEAD request to content stream
+ *    - Query endpoint: `/core/browser/bedroom?cmisselector=query&q=...`
+ *    - Content stream endpoint: `/core/atom/bedroom/content?id=${objectId}`
+ *    - Returns structured response: {documentId, contentStreamLength, mimeType, contentAccessible, contentStatus, contentType}
+ *    - Rationale: Tests API-level content stream accessibility independent of UI
+ *    - Implementation: Browser context execution with Basic auth headers
+ *
+ * 4. HEAD Request for Content Stream Accessibility (Lines 234-238):
+ *    - Uses HTTP HEAD method to check accessibility without downloading
+ *    - Avoids downloading large PDF files during test execution
+ *    - Validates Content-Type header and HTTP status code
+ *    - Endpoint: `/core/atom/bedroom/content?id=${objectId}`
+ *    - Rationale: Efficient content stream verification without data transfer
+ *    - Implementation: fetch() with method: 'HEAD', response.headers.get('Content-Type')
+ *
+ * 5. Popup Window Detection for Downloads (Lines 317-331, 345-351):
+ *    - Uses page.waitForEvent('popup') instead of waitForEvent('download')
+ *    - DocumentList.tsx uses window.open() which creates popup, not download event
+ *    - Validates popup URL contains '/content?token='
+ *    - Closes popup window after verification
+ *    - Timeout: 10 seconds for popup appearance
+ *    - Rationale: UI implementation uses popup windows for authenticated downloads
+ *    - Implementation: popupPromise pattern with URL validation and popup.close()
+ *
+ * 6. Technical Documents Folder Navigation Pattern (Lines 60-74, 107-116, 292-301):
+ *    - Consistent pattern: Navigate to ドキュメント menu → Find Technical Documents row → Click folder link
+ *    - Uses .filter({ hasText: 'Technical Documents' }) for folder identification
+ *    - Locator strategy: tr row → button or a link → click
+ *    - 2-second wait after navigation for table load
+ *    - Rationale: Standardized folder navigation across all 4 tests
+ *    - Implementation: Reusable pattern with force click for mobile
+ *
+ * 7. PDF Viewer Element Detection Strategy (Lines 134-147):
+ *    - Multiple viewer strategies: canvas[data-page-number], iframe[src*="pdf"], .pdf-viewer, .react-pdf__Page
+ *    - Prioritizes pdf.js canvas elements with data-page-number attribute
+ *    - Counts canvas elements to verify multi-page rendering
+ *    - 10-second timeout for viewer element appearance
+ *    - Logs modal HTML structure if viewer not found (debugging)
+ *    - Rationale: Different PDF viewer implementations (pdf.js, browser native, custom)
+ *    - Implementation: OR selector strategy with canvas count verification
+ *
+ * 8. Dual Download Method Support (Lines 308-355):
+ *    - Primary method: Download button in table row with [data-icon="download"]
+ *    - Fallback method: Click row first, then download from action menu
+ *    - Both methods use popup window detection (not download event)
+ *    - Action menu pattern: row.click() → wait 1s → actionDownloadButton.click()
+ *    - Rationale: UI may use different button locations for download functionality
+ *    - Implementation: Try row button first, fallback to action menu if not found
+ *
+ * 9. BeforeEach Session Reset Pattern (Lines 31-51):
+ *    - Creates fresh AuthHelper and TestHelper instances per test
+ *    - Performs login to establish authenticated session
+ *    - Waits 2 seconds for UI initialization after login
+ *    - Closes mobile sidebar if applicable
+ *    - Waits for Ant Design component load completion
+ *    - Rationale: Ensures consistent starting state for all tests
+ *    - Implementation: Standard pattern across all PDF preview test files
+ *
+ * 10. AtomPub Content Stream Endpoint Pattern (Lines 231-238):
+ *     - Uses correct AtomPub endpoint: /core/atom/{repositoryId}/content?id={objectId}
+ *     - NOT Browser Binding endpoint: /core/browser/{repositoryId}/...
+ *     - Supports both GET (download) and HEAD (check accessibility) methods
+ *     - Returns Content-Type: application/pdf for PDF documents
+ *     - Includes Basic auth: 'Basic ' + btoa('admin:admin')
+ *     - Rationale: AtomPub binding provides standard content stream access
+ *     - Implementation: Consistent endpoint pattern across API tests
+ *
+ * Expected Results:
+ * - Test 1: PDF file visible in Technical Documents folder table (or skip if not found)
+ * - Test 2: PDF preview modal opens with pdf.js canvas rendering (or skip if PDF not found)
+ * - Test 3: Content stream HEAD request returns 200 with application/pdf (or skip if PDF not found)
+ * - Test 4: Download button creates popup with /content?token= URL (or skip if PDF not found)
+ *
+ * Performance Characteristics:
+ * - Test 1: ~5-7 seconds (navigation + folder browse + table load)
+ * - Test 2: ~10-15 seconds (navigation + PDF preview modal + canvas render + close)
+ * - Test 3: ~2-3 seconds (API query + HEAD request evaluation)
+ * - Test 4: ~7-10 seconds (navigation + download button + popup detection + close)
+ * - Total suite: ~25-35 seconds (all 4 tests, or ~5-10s if all skip)
+ *
+ * Debugging Features:
+ * - Comprehensive console logging for each test phase
+ * - PDF row content logging (file size detection)
+ * - PDF viewer element count logging (canvas pages)
+ * - Modal HTML structure logging when viewer not found
+ * - API response structure logging (documentId, mimeType, contentStreamLength)
+ * - Download popup URL logging
+ * - Alternative download method detection logging
+ * - Skip reason logging with clear messages
+ *
+ * Known Limitations:
+ * - All 4 tests skip if CMIS-v1.1-Specification-Sample.pdf not uploaded
+ * - Requires Technical Documents folder to exist (created by initial setup)
+ * - PDF preview modal detection assumes .ant-modal or .ant-drawer structure
+ * - Canvas rendering detection specific to pdf.js implementation
+ * - Download button assumes [data-icon="download"] icon structure
+ * - Popup window timeout 10s may be insufficient for slow networks
+ * - HEAD request to content stream requires authentication
+ * - Mobile sidebar close may fail silently (graceful degradation)
+ *
+ * Relationship to Other Tests:
+ * - Uses same AuthHelper as all authentication tests
+ * - Mobile browser patterns from document-management.spec.ts
+ * - Similar page.evaluate() pattern as permission-management-ui.spec.ts
+ * - Popup window detection similar to document-management.spec.ts download test
+ * - Technical Documents folder dependency from initial-content-setup.spec.ts
+ * - Smart conditional skipping pattern shared with other WIP tests
+ *
+ * Common Failure Scenarios:
+ * - All tests skip: PDF not uploaded yet (expected - self-healing)
+ * - Test 1 fails: Technical Documents folder missing (setup issue)
+ * - Test 2 fails: PDF preview modal selector changed in UI
+ * - Test 2 fails: pdf.js canvas elements not rendering (viewer issue)
+ * - Test 3 fails: Content stream endpoint returns 404 or 401 (auth issue)
+ * - Test 3 fails: MIME type not application/pdf (file type issue)
+ * - Test 4 fails: Download button not found (UI structure changed)
+ * - Test 4 fails: Popup window timeout (slow network or blocked popups)
+ * - Mobile tests fail: Sidebar overlay blocks folder click
  *
  * Setup to Enable Full Testing:
  * - Upload CMIS-v1.1-Specification-Sample.pdf to Technical Documents folder
+ * - Tests will automatically discover and execute when file is available
+ * - No code changes required (self-healing smart conditional execution)
  */
 test.describe('PDF Preview Functionality (Partial WIP)', () => {
   let authHelper: AuthHelper;

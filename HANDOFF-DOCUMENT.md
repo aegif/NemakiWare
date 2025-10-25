@@ -264,12 +264,366 @@
      - Credentials Reference（CMIS Authentication: admin:admin、CouchDB Authentication: admin:password、Repository: bedroom、Base URL: http://localhost:8080/core）
    - **価値**: Backend testing特有の設計説明、CMIS API-first + CouchDB fallback戦略の文書化、multi-principal ACL regression防止の歴史的背景明記、Patch system integration詳細説明、dual authentication (CMIS vs CouchDB) credentials明確化
 
-14. **スマート条件付きスキップパターンの確認** ✅
+14. **Authentication Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/auth/login.spec.ts`
+   - **Lines**: 1-108 包括的なドキュメントコメント追加
+   - **追加内容**:
+     - テストカバレッジの説明（7つのテスト: login page UI, successful login, invalid credentials, empty credentials, logout, session persistence, protected route redirect）
+     - 重要な設計決定の文書化（8項目）:
+       1. AuthHelper Utility Usage (login/logout/isLoggedIn helper methods、reusable authentication logic、repository selection encapsulation)
+       2. Mobile Browser Support (viewport detection ≤414px、sidebar close before header access、menu toggle aria-label、try-catch graceful failure、500ms animation wait)
+       3. Multiple Selector Strategy with Fallback (username: type/name/placeholder、.first() for multiple matches、robustness against UI changes、English/Japanese placeholders)
+       4. Session Clean Start Pattern (beforeEach clears cookies/permissions、fresh authentication state、prevents test interdependencies、complete isolation)
+       5. Ant Design Component Interaction (.ant-select repository selector、dropdown visibility check、scrollIntoViewIfNeeded()、300ms wait after scroll)
+       6. Login Verification Strategy (multi-layer: URL redirect、password field not visible、layout elements present、user/repository in header)
+       7. Protected Route Access Control (direct /documents navigation、redirect to login expected、URL and password field checks、ProtectedRoute component validation)
+       8. Error Handling Patterns (invalid credentials remain on login、empty credentials form validation、no strict error message requirement、functional behavior focus)
+     - 期待テスト結果の説明（7テスト全ブラウザプロファイル合格、login/logout flow functional、session persistence verified、protected routes redirect correctly、form validation prevents empty)
+     - パフォーマンス最適化（waitForSelector with timeout、waitForTimeout for animations、mobile sidebar close try-catch）
+     - デバッグ機能（TestHelper.checkForJSErrors()、multiple selector fallbacks、clear assertion messages）
+     - Authentication Credentials参照（admin:admin:bedroom default）
+     - 他コンポーネントとの関係性（AuthHelper utility、TestHelper utilities、ProtectedRoute component、React Router）
+   - **価値**: 認証テストアーキテクチャとAuthHelper utilityの使用パターン明確化、モバイルブラウザサポート実装の詳細説明、Ant Design component interaction sequenceの文書化、protected route access controlの検証戦略確立
+
+15. **Basic Connectivity Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/basic-connectivity.spec.ts`
+   - **Lines**: 1-116 包括的なドキュメントコメント追加
+   - **追加内容**:
+     - テストカバレッジの説明（4つの infrastructure tests: UI page loading、backend HTTP connectivity、dynamic static asset detection、React/Ant Design initialization）
+     - 重要な設計決定の文書化（8項目）:
+       1. Infrastructure Diagnostic Focus (prerequisite validation for all other tests、run first in execution order、failures indicate environment setup issues、CI/CD health checks)
+       2. Dynamic Asset Detection Pattern (index.html parsing for JS/CSS paths、regex extraction、avoids hardcoding filenames、Vite content-hash compatibility、validates detected assets 200 OK)
+       3. Console Error Monitoring (captures console errors during page load、logs for debugging、doesn't fail test、informational diagnostic、expected warnings allowed)
+       4. Screenshot Capture for Debugging (full-page screenshot test-results/basic-connectivity.png、visual inspection、captured regardless of pass/fail、CI failure debugging)
+       5. React/Ant Design Initialization Detection (5-second wait for app、counts form/Ant Design elements、logs input attributes、confirms React rendered not static HTML)
+       6. Console Logging Strategy (logs page URL/title、detected assets、HTTP status codes、element counts、input field details first 5、rich diagnostic information)
+       7. Minimal Assertions Philosophy (asserts critical invariants only: title/root div/HTTP 200/JS+CSS detected、doesn't assert element counts、focuses on connectivity not UI、allows UI changes)
+       8. Backend Accessibility Validation (page.request.get() for pure HTTP、no browser rendering required、tests server responding、isolates backend from frontend issues)
+     - 期待テスト結果の説明（4テスト全インフラ正常時合格、title contains NemakiWare、HTTP 200 responses、React app initializes、screenshots saved）
+     - パフォーマンス特性（fast execution <10 seconds、5-second diagnostic wait、no authentication/complex interactions）
+     - デバッグ機能（full-page screenshot、console error logging、element count reporting、input field inspection、asset URL logging）
+     - 既知の制限事項（5-second wait arbitrary、console errors informational、element count loose）
+     - 他テストとの関係性（should run FIRST、validates prerequisites for all UI tests、confirms static asset delivery、baseline for test environment health）
+     - 一般的な失敗シナリオ（server not started 404/connection refused、wrong URL/port、asset build issues、React initialization failure）
+   - **価値**: Infrastructure diagnostic testing戦略の明確化、dynamic asset detection patternの確立、minimal assertionsフィロソフィーの説明、test environment health baselineの提供、CI/CD troubleshooting guideの基礎
+
+16. **Backend Versioning API Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/backend/versioning-api.spec.ts`
+   - **Lines**: 1-131 包括的なドキュメントコメント追加（既存の13行から131行に拡張）
+   - **追加内容**:
+     - テストカバレッジの説明（6つのCMIS versioning tests: create versionable document、check-out、check-in with new version、cancel check-out、retrieve all versions、get latest version）
+     - 重要な設計決定の文書化（10項目）:
+       1. Serial Execution Mode (test.describe.configure serial、CouchDB revision conflict prevention、parallel execution causes "conflict" errors、tests run sequentially for reliability)
+       2. Direct CMIS Browser Binding API Testing (Playwright request context、no UI rendering、HTTP API endpoints POST/GET、validates backend CMIS compliance、faster than UI tests)
+       3. Multipart vs Form-urlencoded Content Type Strategy (createDocument requires multipart/form-data、check-out/check-in use form-urlencoded OR multipart、Playwright auto Content-Type、CMIS Browser Binding spec compliance)
+       4. PWC (Private Working Copy) Lifecycle Management (separate objectId from original、auto-deleted after check-in/cancelCheckOut、manual cleanup for test failures、prevents orphaned PWCs、track pwcId separately)
+       5. NemakiWare Non-Versionable Document Behavior (cmis:document NOT versionable by default、check-out ALLOWED for non-versionable、isVersionSeriesCheckedOut may stay false、versionLabel empty string、accept both behaviors)
+       6. Known Server Bug Handling - cancelCheckOut Returns 400 (HTTP 400 "not versionable" but succeeds、PWC deleted and doc no longer checked out、accept 200 or 400 status、verify document state not HTTP status)
+       7. Unique Document Naming Strategy (timestamp-based names Date.now()、prevents conflicts across browser profiles、each test creates new documents、parallel execution safety、example "checkout-test-1730000000000.txt")
+       8. Succinct Property Format Usage (succinct=true parameter、simple JSON structure succinctProperties、easier TypeScript access、no complex property iteration)
+       9. Cleanup Strategy in afterEach (delete with allVersions=true、separate PWC deletion、ignore 404 errors、30-second timeout、prevent test data accumulation)
+       10. Content Requirement for Checkout (NemakiWare limitation: MUST have content、all tests create with content、empty documents cannot check out、backend validation requirement、cannot test metadata-only versioning)
+     - 期待テスト結果の説明（6テスト serial execution 3-5分、version series creation、PWC lifecycle、version history retrieval、latest version identification、no orphaned PWCs）
+     - パフォーマンス特性（serial execution sequential、30-second timeout check-in/delete、faster than UI tests、typical 1-2 minutes all 6 tests）
+     - デバッグ機能（console logging IDs/PWC IDs/version labels、error response body logging、cleanup failure logging、version history logging）
+     - 既知の制限事項（cannot test versionable type definitions、cancelCheckOut 400 but succeeds、serial prevents parallel、requires content for checkout、version label format not validated）
+     - 他テストとの関係性（complements document-versioning.spec.ts UI tests、same CMIS Browser Binding API direct、validates backend behavior UI depends on、faster feedback on API regressions）
+     - 一般的な失敗シナリオ（CouchDB revision conflicts from parallel、400 "not versionable" expected cancelCheckOut、checkout fails without content、cleanup timeouts CouchDB slow、version label mismatches）
+   - **価値**: Backend CMIS versioning API testing戦略の明確化、serial execution patternの重要性説明、PWC lifecycle managementの詳細説明、NemakiWare-specific behaviorの文書化、known server bugの対処方法説明、direct API testing vs UI testingの区別明確化
+
+17. **Document Properties Edit Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/documents/document-properties-edit.spec.ts`
+   - **Lines**: 1-127 包括的なドキュメントコメント追加（既存のコメントなし状態から127行の包括的ドキュメント作成）
+   - **追加内容**:
+     - テストカバレッジの説明（4つのsequential tests: upload test document、open and edit properties、verify persistence after navigation、clean up test document）
+     - 重要な設計決定の文書化（10項目）:
+       1. Test Sequence Dependency Pattern (tests must run in order upload→edit→verify→cleanup、each depends on previous、not isolated share variables、document lifecycle testing、faster execution but cascade failures)
+       2. UUID-Based Unique Document Naming (randomUUID().substring(0, 8)、format test-props-doc-a1b2c3d4.txt、prevents conflicts across browsers、parallel browser execution 6 profiles)
+       3. Mobile Browser Support with Force Click (detect mobile viewport width <= 414、close sidebar beforeEach、force click all elements、mobile sidebar overlay blocking、try-catch graceful failure)
+       4. Smart Conditional Skipping Pattern (test.skip() when UI not found、examples "Upload functionality not available"、continues execution、self-healing tests)
+       5. Multi-Selector Fallback Strategy (primary edit/setting/form icon、fallback detail view then edit、fallback "編集" text button、UI implementation robustness、sequential fallback selectors)
+       6. Property Persistence Verification via UI Navigation (navigate away User Management then back、NOT page.reload() breaks React Router、verify description updated text、React state + backend save validation)
+       7. Detail View vs Edit Modal Navigation (try direct properties button、fallback detail view then edit inside、handles different UI layouts、row buttons vs detail drawer/modal)
+       8. Console Logging for Cleanup Debugging (logs each step "Looking for document"、success/error detection、timeouts and responses、cleanup failures common diagnostic、CI pipeline debugging)
+       9. Multiple Field Selector Strategy (description textarea/input id*="description"、custom fields id*="custom"/id*="property"、id partial match contains、Ant Design form IDs prefixes/suffixes)
+       10. Success/Error Message Dual Detection (wait .ant-message-success or error、log which appeared、throws only if timeout neither、both valid outcomes、30-second timeout slow operations)
+     - 期待テスト結果の説明（Test 1 uploaded visible、Test 2 edit modal saves success、Test 3 updated description persists、Test 4 deleted or cleanup logs error）
+     - パフォーマンス特性（sequential 4 tests order、upload wait 2s、edit wait 2s、navigation 1-2s per menu、cleanup timeout 30s）
+     - デバッグ機能（detailed cleanup console logging、success/error detection logging、skip messages when not found、timeout error messages）
+     - 既知の制限事項（tests not isolated order dependent、cascade failures upload breaks subsequent、UI-dependent skips if not implemented、custom property fields may not exist、React Router dependency no page.reload()）
+     - 他テストとの関係性（uses AuthHelper/TestHelper utilities、mobile pattern from login.spec.ts、upload pattern from document-management.spec.ts、complements large-file-upload.spec.ts basic properties）
+     - 一般的な失敗シナリオ（upload modal not found feature unimplemented、properties button different layout fallback detail、edit modal not implemented skip、persistence backend save failed、cleanup timeout delete slow）
+   - **価値**: Document lifecycle testing戦略の確立、test sequence dependency patternの説明、UUID-based unique namingの重要性、smart conditional skippingの実装例、property persistence validationの詳細手法、UI navigation vs page.reload()の違い明確化、cleanup debuggingの実践的パターン
+
+18. **Large File Upload Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/documents/large-file-upload.spec.ts`
+   - **Lines**: 1-134 包括的なドキュメントコメント追加（既存のコメントなし状態から134行の包括的ドキュメント作成）
+   - **追加内容**:
+     - テストカバレッジの説明（2つのlarge file tests: upload 110MB with progress tracking、handle 50MB upload cancellation gracefully）
+     - 重要な設計決定の文書化（10項目）:
+       1. Playwright 50MB Buffer Limitation Workaround (setInputFiles() 50MB limit、cannot use Buffer.from() >50MB、solution create temp file on disk、cleanup in finally、os.tmpdir() + fs.writeFileSync() + fs.unlinkSync())
+       2. Extended Timeout Strategy for Large Operations (5-minute timeout 300000ms、cancel test 2-minute 120000ms、success message 2 minutes、110MB upload may take several minutes)
+       3. Progress Tracking Monitoring Pattern (Ant Design indicators .ant-progress .ant-upload-list-item-progress、monitor text /(\d+)%/ regex、log increments、poll 1 second for 30 iterations)
+       4. Temporary File Lifecycle Management (create os.tmpdir() unique Date.now()、write fs.writeFileSync() Buffer.alloc()、delete fs.unlinkSync() finally、try-finally guarantees cleanup)
+       5. Upload Cancellation Testing Pattern (50MB file, wait progress appears、find cancel button、click cancel、verify upload list empty、success message appears)
+       6. File Size Pattern Generation Strategy (repeating content pattern "0123456789"、easy calculate size、predictable pattern、Buffer.alloc() for creation)
+       7. File Size Display Verification (110MB shows "110.0 MB"、format accuracy、upload list item text extraction)
+       8. Cleanup with Delete Confirmation (find document table row、delete button click、popconfirm appears、confirm button click、success message wait、detailed console logging)
+       9. Console Logging for Diagnostic Visibility (each step logged、progress tracking logged、file creation/cleanup logged、helps debug timeout/progress issues)
+       10. Mobile Browser Support (viewport detection width <= 414、sidebar close、force click all buttons、mobile overlay blocking handling)
+     - 期待テスト結果の説明（Test 1 110MB uploaded progress tracked file size displayed、Test 2 50MB cancel succeeds upload list empty cleanup success）
+     - パフォーマンス特性（110MB upload 3-5 minutes depending network、progress tracking 30 second polling、cancel test < 2 minutes、temp file I/O overhead minimal）
+     - デバッグ機能（extensive console logging each step、progress tracking logged、temp file paths logged、cleanup verification logged）
+     - 既知の制限事項（Playwright 50MB buffer limit requires temp files、progress tracking polling-based not real-time、large timeouts necessary may mask issues、temp file cleanup failures silent、mobile force click may hide real interaction issues）
+     - 他テストとの関係性（uses AuthHelper/TestHelper utilities、similar upload pattern to document-management.spec.ts、complements document-properties-edit.spec.ts basic uploads、specialized for large files >100MB）
+     - 一般的な失敗シナリオ（timeout waiting progress network slow、temp file creation fails disk full、cancel button not found UI change、file size mismatch display formatting、cleanup timeout delete operation slow）
+   - **価値**: Large file upload testing戦略の確立、Playwright buffer limitationの回避方法明確化、progress tracking monitoringの実装パターン、temp file lifecycle managementの詳細手法、extended timeout strategyの必要性説明、upload cancellationテストパターン提供
+
+19. **404 Error Handling and Login Redirect Verification Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/verify-404-redirect.spec.ts`
+   - **Lines**: 1-130 包括的なドキュメントコメント追加（既存の11行コメントから130行の包括的ドキュメントへ拡張）
+   - **追加内容**:
+     - テストカバレッジの説明（3つのerror scenarios: CMIS backend 404、auth error 401/403、React Router non-existent page）
+     - ユーザー要求の翻訳付き文書化（"404エラーになる可能性がある場所は初期のログインページへの遷移にして欲しいです"）
+     - 重要な設計決定の文書化（10項目）:
+       1. Product Bug Investigation Pattern (test code内でbugs文書化、test.skip() for known bugs、expected vs actual behavior、self-healing when fixed)
+       2. CMIS Backend Direct Access Testing Strategy (direct endpoint access /core/browser/bedroom/...、bypass React error boundaries、validate backend error responses、raw Tomcat error detection)
+       3. Auth Token Clearing Strategy for 401 Simulation (page.evaluate() localStorage access、remove nemakiware_auth、next API call triggers 401、realistic session expiration)
+       4. Graceful Error Handling Verification (distinguish graceful vs catastrophic、check "Cannot GET"/"404"/"Not Found" text、login form visible OR no catastrophic as success、never show raw error messages)
+       5. Multi-Scenario Error Coverage (3 types: CMIS backend 404、auth errors 401/403、React Router 404、different sources different mechanisms)
+       6. React Router Error Boundary Testing (client-side routing errors、handle unknown routes gracefully、no "Cannot GET" pages、React SPA should handle all routes)
+       7. Console Logging for Diagnostic Visibility (log test phases、URLs after redirects、error detection results、error page content first 200 chars、CI pipeline debugging)
+       8. Conditional Test Skipping for Known Bugs (test.skip(true, 'reason')、specific bug description、pass suite while documenting issues、self-healing on fix)
+       9. URL Pattern Matching for Login Detection (includes('index.html') OR endsWith('/dist/')、explicit and implicit directory index、flexible server configurations)
+       10. HTTP Status Code Extraction from Error Pages (regex /HTTP Status (\d+)/、extract from Tomcat error text、log exact status、identify which errors not handled)
+     - 期待テスト結果の説明（Test 1 SKIP known bug、Test 2 PASS auth redirect、Test 3 PASS React Router graceful）
+     - パフォーマンス特性（each test 5-10s、network minimal 1-2 endpoints、wait timeouts 2-3s generous for CI）
+     - デバッグ機能（extensive console logging redirect steps、URL tracking navigation、error page content extraction、HTTP status detection）
+     - 既知の制限事項と製品バグ（CMIS backend 404 raw Tomcat error、no error boundary CMIS API、users see "HTTP Status 401" text、Test 1 skipped until implemented、TODO error boundary or redirect logic）
+     - 他テストとの関係性（uses AuthHelper utility from login.spec.ts、React Router error handling complements basic-connectivity.spec.ts、validates auth flow errors relates access-control.spec.ts、CMIS backend testing similar backend/versioning-api.spec.ts）
+     - 一般的な失敗シナリオ（Test 1 fails product bug exists、Test 2 fails auth redirect broken、Test 3 fails React Router not handling、timeout errors network latency、login form not found UI changed）
+   - **価値**: Error handling testing戦略の明確化、product bug documentationの実践的パターン、graceful error handlingの検証方法、CMIS backend error testingの戦略、React Router error boundaryのテスト手法、user-friendly error experienceの保証方法、conditional test skippingの適切な使用例
+
+20. **CMIS API 404 Error Handling Verification Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/verify-cmis-404-handling.spec.ts`
+   - **Lines**: 1-132 包括的なドキュメントコメント追加（既存の11行コメントから132行の包括的ドキュメントへ拡張）
+   - **追加内容**:
+     - テストカバレッジの説明（2つのCMIS API error scenarios: document access 404 via route interception、direct API 404 call UI functional）
+     - ユーザー要求の翻訳付き文書化（同じ要求：verify-404-redirect.spec.tsと共通）
+     - 重要な設計決定の文書化（10項目）:
+       1. Playwright Route Interception Pattern (intercept /core/atom/bedroom/id?id=*、synthetic 404 response no server modification、page.route() fulfill() pattern、deterministic errors no test data pollution、intercept before verify after)
+       2. CMIS API Error Simulation Strategy (Test 1 route interception UI-triggered、Test 2 page.evaluate() direct fetch()、both simulate deleted/non-existent content、different error paths different simulation)
+       3. Document vs Folder Click Differentiation (target documents specifically tr:has([aria-label="file"])、img[alt="file"] ensure document row、avoid folders different endpoints getChildren vs getObject、only document triggers intercepted getObject)
+       4. Mobile Browser Support with Sidebar Handling (detect mobile width <= 414、close sidebar before interactions overlay prevention、menu toggle aria-label、500ms animation wait、conditional with graceful failure)
+       5. Dual Test Strategy - Redirect vs Functional UI (Test 1 prefers login accepts error message、Test 2 verifies UI functional regardless、both consider multiple outcomes success、graceful degradation over specific behavior、never stuck always recovery)
+       6. Console Event Monitoring for Debugging (capture console messages page.on('console')、capture page errors page.on('pageerror')、log execution flow、API errors before UI updates、event handlers before navigation)
+       7. Graceful Error Handling Verification (multiple acceptable: login OR error message OR functional UI、reject stuck state、hasLoginForm || hasErrorMessage || hasDocumentsTable、user must have recovery path、any recovery acceptable stuck unacceptable)
+       8. API Direct Call Testing with page.evaluate() (run fetch() inside browser、direct CMIS /core/browser/bedroom/root、return {status, ok, error}、test API-level separate from UI、fetch() with credentials auth headers)
+       9. Force Click for Test Environment Reliability (click({ force: true }) bypass overlay、applied document row + menu navigation、test environment layout differences、bypasses real interaction for stability、sidebar overlays mobile viewport)
+       10. Multi-Outcome Acceptance Pattern (login redirect "preferred"、error message "acceptable"、functional UI "acceptable"、only reject "stuck" no recovery、focus UX outcome not implementation、Boolean OR multiple success paths)
+     - 期待テスト結果の説明（Test 1 login redirect OR error message user not stuck、Test 2 UI functional after API 404 can navigate）
+     - パフォーマンス特性（Test 1 10-15s login + route + error、Test 2 8-12s login + API + verify、route interception instant no server roundtrip、wait timeouts 1-5s UI updates）
+     - デバッグ機能（browser console capture logging、page error capture logging、route interception URL logging、API call result logging、current URL after error、multi-outcome detection logging）
+     - 既知の制限事項（route interception AtomPub only not Browser Binding、force click bypasses validation、multiple outcomes hard enforce specific、mobile sidebar may fail silently、console handlers miss errors before setup）
+     - 他テストとの関係性（complements verify-404-redirect.spec.ts CMIS API focus、mobile patterns like login.spec.ts、API-level testing like access-control.spec.ts、route interception strategy reusable）
+     - 一般的な失敗シナリオ（Test 1 fails user stuck no login no error、Test 2 fails UI broken no documents no login、route interception not triggered wrong pattern/timing、mobile sidebar fails selector changed、force click necessary overlays blocking）
+   - **価値**: Playwright route interception patternの実装例、CMIS API error simulation戦略の確立、multi-outcome acceptance patternの実践、console event monitoringの有効活用、graceful error handlingの包括的検証、API direct call testingの手法明確化、force click適切使用のガイダンス
+
+21. **Document Viewer Authentication Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/document-viewer-auth.spec.ts`
+   - **Lines**: 1-138 包括的なドキュメントコメント追加（既存の10行コメントから138行の包括的ドキュメントへ拡張）
+   - **追加内容**:
+     - テストカバレッジの説明（2テスト: single document detail access no auth errors、multiple document accesses skipped session stability）
+     - ユーザー要求の文書化（Original Issue: "Content detail screen requires re-authentication and then errors"、Goal: seamless access without auth prompts）
+     - 重要な設計決定の文書化（10項目）:
+       1. Console Event Monitoring for Auth Debugging (page.on('console') capture messages、page.on('pageerror') capture errors、log execution flow error details、auth errors console before UI、event handlers before navigation、helps identify token expiration vs network)
+       2. Mobile Browser Sidebar Handling (detect mobile width <= 414、close sidebar before clicks prevent overlay、menu toggle aria-label menu-fold/unfold、count() check graceful failure、500ms animation wait)
+       3. Triple-Layer Authentication State Verification (Layer 1 login form re-auth required、Layer 2 auth error messages token/permission issues、Layer 3 document details successful access、three separate locators distinct assertions、log error text when hasAuthError)
+       4. Force Click Strategy for Test Environment Reliability (click({ force: true }) bypass overlay/visibility、document row clicks + back button、test environment layout differences、bypasses real interaction for stability、sidebar overlays mobile viewport)
+       5. Document Detail Rendering Mode Detection (three modes: page navigation .ant-descriptions、drawer .ant-drawer-open .ant-drawer .ant-descriptions、modal .ant-modal .ant-modal .ant-descriptions、flexible hasAnyDocumentDetails OR logic、UI implementation may vary SPA vs overlay)
+       6. Back Navigation Verification Pattern (test back button button:has-text("戻る")、verify return .ant-table count、force click reliability、primary navigation from detail view、guards navigation stack/history issues)
+       7. Skipped Session Stability Test (test.skip() multiple document access、would test 3 documents sequential、investigating UI rendering mode inconsistencies、must handle drawer/modal/page modes、re-enable when UI stabilizes)
+       8. Multiple Document Access Pattern (sequential access first 3 docs、re-query freshDocumentButtons prevents stale、waitForURL regex timeout、fallback drawer/modal detection、return navigation handle close/back、tests session token doesn't expire)
+       9. URL Pattern Waiting with Fallback (primary waitForURL /\/documents\/[a-f0-9-]+/ navigation、fallback detect drawer/modal if timeout、log navigation result debugging、UI may use overlay not route、try-catch allows overlay instead navigation)
+       10. Extensive Debugging Visibility (log URL after navigation、log auth state flags login/error/details、log document counts re-query results、log error message text、auth issues difficult reproduce diagnose、console.log() every checkpoint、CI/CD diagnostic test output)
+     - 期待テスト結果の説明（Test 1 detail access succeeds no login form、no auth error messages、document details visible ID/properties、back button returns successfully、Test 2 SKIPPED pending UI clarity）
+     - パフォーマンス特性（Test 1 10-20s login + navigation + verification、document click 3s detail load、back navigation 2s list reload、URL pattern timeout 10s max）
+     - デバッグ機能（browser console message capture、page error capture、current URL logging navigation、auth state logging login/error/details、document count logging re-query、error message text extraction）
+     - 既知の制限事項（Test 2 skipped needs UI implementation clarity、force click bypasses real interaction、drawer/modal detection class name patterns、URL pattern CouchDB UUID format [a-f0-9-]+、mobile sidebar may fail silently count check）
+     - 他テストとの関係性（mobile patterns like login.spec.ts、complements document-management.spec.ts auth not CRUD、related verify-404-redirect.spec.ts error patterns、console monitoring like verify-cmis-404-handling.spec.ts）
+     - 一般的な失敗シナリオ（Test 1 login form session token not persisting、auth error permission denied/token expired、no details page not rendering、back button navigation stack broken、mobile sidebar overlay blocking despite close）
+   - **価値**: Document detail view authentication stabilityの包括的検証、triple-layer auth state verificationの実装例、rendering mode detection patternの確立（page/drawer/modal）、extensive debugging visibilityの実践、URL pattern waiting with fallbackの手法、session stability testingの基盤構築、console event monitoringのauth特化応用
+
+22. **Custom Type and Custom Attributes Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/admin/custom-type-attributes.spec.ts`
+   - **Lines**: 1-142 包括的なドキュメントコメント追加（既存コメントなしから142行の包括的ドキュメントへ新規作成）
+   - **追加内容**:
+     - テストカバレッジの説明（3テスト + 1 cleanup: create custom type with attributes、create document with custom type display attributes、edit custom attribute verify persistence、afterAll cleanup type + document）
+     - テスト目的の文書化（CMIS custom type creation and custom attribute management、custom document type with property definitions、document creation with custom type assignment、custom attribute display PropertyEditor、value editing persistence）
+     - 重要な設計決定の文書化（10項目）:
+       1. UUID-Based Unique Type/Property Naming (test:customDoc{uuid8} + カスタムドキュメントタイプ {uuid4}、test:customProperty{uuid8} + カスタム属性 {uuid4}、unique naming parallel test execution、randomUUID().substring(0,8/4) concise、afterAll deletes by ID)
+       2. Console and API Error Monitoring (page.on('console') messages、page.on('pageerror') errors、page.on('response') API monitoring、log type creation errors response body、accumulate consoleLogs + apiErrors arrays、display when success message fails)
+       3. Multi-Tab Navigation Pattern (type creation: Basic → Properties プロパティ定義、document detail: Default → Properties プロパティ、tab.click(isMobile force)、waitForTimeout(1000) after switch、property definitions only visible specific tabs、.ant-tabs-tab:has-text locator)
+       4. Ant Design Select Component Interaction (base type combobox role filter ベースタイプ、property type .ant-select.first() card、cardinality .ant-select.last() card、click selector → wait 300-500ms → click option、dropdown open required before option、:has-text() Japanese matching)
+       5. Property Card Dynamic Element Detection (target last card .ant-card.last()、property ID input .first()、display name input[placeholder*="表示名"].first()、type/cardinality .first()/.last() differentiate、switch filter label 更新可能 checked state、card-scoped locators prevent cross-card interference)
+       6. Test Dependency Pattern with Shared State (testDocumentId shared tests 2-3、test 2 extract ID url.match(/\/documents\/([a-f0-9]+)/)、test 3 check if (!testDocumentId) skip、enable end-to-end workflow validation、extract from React Router URL)
+       7. Mobile Browser Support with Force Click (detect mobile width <= 414、close sidebar beforeEach menuToggle menu-fold/unfold、force click all interactive elements、sidebar overlay blocks main content、try-catch graceful failure)
+       8. Smart Conditional Skipping Pattern (skip if type management not available newTypeButton.count === 0、skip if upload not available、skip if test document not created、adapt to UI implementation state、self-healing pass when available、check critical elements before execution)
+       9. Value Persistence Verification via Page Reload (save custom attribute value、reload page.reload()、re-navigate properties tab、verify expect(savedValue).toBe(testValue)、validates React + backend save、full reload ensures server data not local state、compare inputValue() after reload)
+       10. Comprehensive Cleanup Strategy with afterAll (delete test document by ID、delete custom type by ID、separate browser context isolation、error handling try-catch console.error、prevent test data accumulation、afterAll AuthHelper login + navigate + delete、wait success messages after deletions)
+     - 期待テスト結果の説明（Test 1 custom type created property definition appears table、Test 2 document created custom type attribute field visible PropertyEditor、Test 3 attribute value edited persisted after reload、afterAll document + type deleted successfully）
+     - パフォーマンス特性（Test 1 10-15s type creation property definition、Test 2 8-12s upload + assignment + verification、Test 3 6-10s editing + reload + verification、Cleanup 5-8s document + type deletion）
+     - デバッグ機能（browser console capture、page error capture、API response monitoring type creation、API error body extraction、document ID extraction logging、type value display logging、custom property visibility warnings）
+     - 既知の制限事項（execution order dependency testDocumentId shared、custom type assignment may need UI implementation、property card selector assumes Ant Design structure、cleanup requires separate context no test page state、type creation API errors may not fully visible UI）
+     - 他テストとの関係性（complements custom-type-creation.spec.ts focuses attributes vs creation、similar patterns document-properties-edit.spec.ts property persistence、mobile browser pattern login.spec.ts、cleanup strategy group-management-crud.spec.ts）
+     - 一般的な失敗シナリオ（Test 1 type creation API errors validation duplicates、Test 2 type selector not available option missing、Test 3 testDocumentId undefined test 2 failed attribute not editable、Cleanup document/type not found deletion API errors、Mobile sidebar overlay blocking tabs）
+   - **価値**: CMIS custom type creation管理の包括的検証、custom attribute management end-to-end workflow、UUID-based unique namingの並列テスト対応、console + API error monitoringの実装例、multi-tab navigation patternの確立、property card dynamic detectionの技術、test dependency pattern with shared stateの適用、value persistence via reload verificationの実践、comprehensive cleanup strategyの模範、type management + property definitionの統合テスト
+
+23. **Custom Type Creation and Property Management Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/admin/custom-type-creation.spec.ts`
+   - **Lines**: 1-127 包括的なドキュメントコメント追加（既存SELECTOR FIX コメントの前に新規作成、SELECTOR FIXコメント保持）
+   - **追加内容**:
+     - テストカバレッジの説明（3テスト: create new custom type with properties、add custom properties to existing type、create document with custom type edit properties）
+     - テスト目的の文書化（CMIS custom type creation and property definition workflows、custom document type creation via type management UI、custom property addition existing types、document creation custom type assignment、complete type management workflow end-to-end）
+     - 重要な設計決定の文書化（10項目）:
+       1. Placeholder-Based Input Targeting (type ID input[placeholder*="タイプID"]、display name input[placeholder*="表示名"]、description textarea[placeholder*="タイプの説明/説明"]、property ID input[placeholder="プロパティID"]、Ant Design Form.Item name attribute placeholder more stable、partial match *= flexibility)
+       2. Form Item Filtering for Select Components (base type .ant-form-item filter hasText ベースタイプ then .ant-select、property type .ant-form-item filter hasText データ型 then .ant-select.last()、locate form item by label text → find Select child、avoids ambiguity multiple selects、uses hasText Japanese label、.last() scoping property cards)
+       3. UUID-Based Unique Type Naming (test:customDoc{uuid8} + Test Custom Document {uuid8}、test:customProp{uuid8}、test-custom-{uuid8}.txt、prevents conflicts parallel test execution、randomUUID().substring(0,8) concise)
+       4. Smart Conditional Skipping with Informative Messages (skip create button not found 'UI may not be implemented'、skip edit missing 'Edit button not found'、skip property tab 'Property tab not available'、skip type selector 'Type selector not implemented upload modal'、adapt UI implementation state clear diagnostics、self-healing pass when available)
+       5. Modal/Drawer Flexible Detection (unified selector .ant-modal:visible, .ant-drawer:visible、covers both rendering modes、UI may use modal or drawer、comma-separated OR logic、:visible ensures currently open)
+       6. Table Verification Dual Strategy (primary tr[data-row-key="${customTypeId}"] Ant Design row key、fallback .ant-table tbody text=${customTypeId} text search、table may or may not use data-row-key、try exact match first fall back text、Boolean typeFound combines strategies)
+       7. Multi-Tab Navigation for Property Definition (tab click .ant-tabs-tab filter hasText プロパティ定義、wait 500ms after click、property definition UI only visible specific tab、tab filter Japanese text with first()、mobile no force click tabs overlay less common)
+       8. Last Element Targeting for Dynamic Forms (property ID propertyIdInput.last().fill() most recently added card、property name last()、property type select propertyTypeFormItem.last()、dynamic property addition creates multiple cards、.last() ensures newly added property、alternative scope specific card but last() more robust)
+       9. Existing Type Fallback Strategy (test 2 uses nemaki:parentChildRelationship not custom type test 1、tests not dependent execution order、hardcoded known type ID reliability、less end-to-end but robust against test 1 failures)
+       10. Comprehensive Console Logging for Debugging (log each major step: Clicked button Filled input Selected option、checkmark emoji ✅ success ℹ️ informational、includes values: Filled type ID ${customTypeId}、extensive logging aids CI/CD debugging diagnosis、console.log() every significant interaction)
+     - 期待テスト結果の説明（Test 1 custom type created appears table、Test 2 custom property added type update submitted、Test 3 document created custom type custom property editable）
+     - パフォーマンス特性（Test 1 8-12s type creation + verification、Test 2 10-15s navigate edit + add property + submit、Test 3 12-18s upload + custom type + property edit）
+     - デバッグ機能（step-by-step console logging emoji indicators、value logging filled inputs type/property/filename、success message detection logging、table verification result、informative skip messages missing elements）
+     - 既知の制限事項（test 2 uses existing type nemaki:parentChildRelationship not custom、no cleanup afterAll custom types persist、property type selection assumes 文字列 string option exists、document custom type assignment may not persist UI not fully implemented）
+     - 他テストとの関係性（complements custom-type-attributes.spec.ts creation vs attributes、similar patterns type-management.spec.ts table navigation、upload pattern document-management.spec.ts、mobile browser pattern login.spec.ts）
+     - 一般的な失敗シナリオ（Test 1 create button not found UI not implemented selector mismatch、Test 2 edit button missing property tab not available、Test 3 type selector not upload modal custom types not dropdown、Mobile modal/drawer overlay issues force clicks needed）
+   - **価値**: CMIS custom type creation workflowの包括的検証、property definition management end-to-end、placeholder-based input targetingの安定セレクタパターン、form item filtering for Select componentsの明確化、UUID-based unique namingの並列対応、modal/drawer flexible detectionの柔軟性、table verification dual strategyの堅牢性、last element targeting dynamic formsの技術、existing type fallback strategyの独立性確保、comprehensive console loggingのデバッグ実践
+
+24. **Document Management Core Functionality包括的ドキュメント化** ✅
+  - ファイル: `tests/documents/document-management.spec.ts`
+  - Lines 1-174: 39行のミニマルドキュメントから174行の包括的ドキュメントヘッダーへ拡張
+  - **9テスト + afterEachクリーンアップ**: document list display、folder navigation (desktop/mobile responsive)、file upload、document properties detail view、document search、folder creation、document deletion with confirmation、document download via popup、UI responsiveness
+  - **10個の重要デザイン決定**（行番号付き詳細）:
+    1. Mobile Browser Support with Sidebar Close Logic (Lines 63-90): viewport ≤414px detection、menu-fold/unfold button click、sidebar overlay blocking prevention、force click option、500ms animation wait、graceful fallback selectors
+    2. Automated Test Data Cleanup with CMIS Query (Lines 93-131): afterEach CMIS query `SELECT cmis:objectId WHERE cmis:name LIKE 'test-%'`、Browser Binding cmisaction=delete、prevents test data accumulation、query-based bulk cleanup efficiency、non-critical failure handling
+    3. Responsive Folder Navigation Strategy (Lines 177-229): desktop .ant-tree vs mobile table-based navigation、viewport width detection、folder icon selector for mobile、breadcrumb alternative、conditional test assertions
+    4. UUID-Based Unique Test Data Naming (Lines 240, 396, 438): randomUUID().substring(0, 8) prefix、parallel execution without conflicts、cleanup query-friendly naming
+    5. Smart Conditional Skipping Pattern (Lines 169, 200, 225, 286, 314, 372, 416, 500, 506, 545): test.skip() when UI elements not found、self-healing tests、clear skip messages、graceful degradation
+    6. Extended Timeout Configuration for Slow Server Operations (Lines 421-423): test.setTimeout(120000)、page.setDefaultTimeout(45000)、deletion operations 10-15s、waitForFunction 30s timeout
+    7. Ant Design Popconfirm Loading State Handling (Lines 467-493): .ant-btn-loading class monitoring、waitForFunction for async operation completion、30s loading state timeout、deletion confirmation flow
+    8. Document Download Popup Window Detection (Lines 510-547): page.waitForEvent('popup')、popup URL validation /core/、window.close() after verification、timeout 5s for popup appearance
+    9. BeforeEach Session Reset Pattern (Lines 48-61): consistent test isolation、navigation to /documents before each test、ensures clean starting state
+    10. File Upload Modal Pattern with TestHelper Integration (Lines 231-288): testHelper.uploadFileViaModal()、uuid-based filename、.ant-upload-list-item success message detection、table row verification、centralized upload logic
+  - **期待結果**: Test 1 document table visible、Test 2 desktop .ant-tree or mobile folder icons、Test 3 file uploaded appears in list、Test 4 detail page /documents/[id]、Test 5 search results or clear button、Test 6 folder created in list、Test 7 document deleted (10-15s)、Test 8 download popup /core/ URL、Test 9 UI responsive rapid operations、afterEach all test- objects deleted
+  - **パフォーマンス特性**: document list 2-3s、folder navigation 1-2s、upload 2-4s including modal、properties 1-2s navigation、search 1-2s query submit、folder creation 2-3s、deletion 10-15s with confirmation + loading state、download popup 1-2s window detection、UI responsiveness <1s per operation、cleanup 3-5s CMIS query + delete loop
+  - **デバッグ機能**: console logging upload filenames、deletion operation monitoring、popup window URL logging、sidebar close status、cleanup query results logging、screenshot capture on failure、JS error collection、network request logging
+  - **既知の制限事項**: deletion slow 10-15s unavoidable server operation、mobile sidebar animation timing 500ms may vary、popup window detection timeout 5s may fail slow networks、cleanup query may miss objects not following test- naming、force click bypasses real interaction validation、document properties navigation assumes URL pattern /documents/[id]
+  - **他テストとの関係性**: uses same AuthHelper as login.spec.ts、mobile browser patterns from login.spec.ts、TestHelper upload from initial-content-setup.spec.ts、search pattern similar advanced-search.spec.ts、cleanup pattern complements other test suites、responsive navigation strategy shared with folder tests
+  - **一般的な失敗シナリオ**: Test 1 empty document list no rows shown、Test 2 mobile sidebar blocking folder click、Test 3 upload modal not opening selector changed、Test 4 properties button not found table structure changed、Test 5 search button not clickable overlay blocking、Test 6 folder modal input not found、Test 7 deletion timeout >15s server slow、Test 8 download popup not appearing blocker、Test 9 navigation broken route errors、afterEach cleanup CMIS query fails or objects not deleted
+  - **価値**: NemakiWare core document management functionality完全検証、mobile/desktop responsive testing comprehensive coverage、automated CMIS-based cleanup prevents test pollution、UUID unique naming enables parallel execution、popconfirm loading state handling ensures deletion reliability、popup window detection validates download functionality、extended timeout accommodates slow server operations、smart skipping ensures test suite resilience、comprehensive debugging features accelerate issue resolution、establishes reusable patterns for future test development
+
+25. **Permission Management UI - ACL Display Tests 包括的ドキュメント化** ✅
+  - **ファイル**: `tests/permissions/permission-management-ui.spec.ts`
+  - **Lines 1-159**: ドキュメントなし状態（294行コードのみ）から159行の包括的ドキュメントヘッダーへ新規追加
+  - **3テスト**: UI-based ACL data loading (skipped)、Direct ACL REST API verification、Network request URL validation
+  - **10個の重要デザイン決定**（行番号付き詳細）:
+    1. Timestamp-Based Unique Test Folder Naming (Line 163): Date.now() for `permissions-test-${timestamp}`、parallel execution conflict prevention、cleanup race condition avoidance
+    2. Mobile Browser Support with Sidebar Close Logic (Lines 172-182): viewport ≤414px detection、menu-fold/unfold button click、500ms animation wait、graceful failure handling
+    3. Direct ACL REST API Testing with page.evaluate() (Lines 330-377): browser context fetch() execution、endpoint `/core/rest/repo/bedroom/node/${objectId}/acl`、structured response {status, ok, hasACL, hasPermissions}、UI-independent API verification
+    4. Network Request Monitoring for URL Verification (Lines 398-447): page.on('request') listener、URL filtering 'acl'、array accumulation pattern、REST API endpoint correctness validation
+    5. Smart Conditional Skipping for UI Features (Lines 187, 299, 303): test.skip() when permissions button not found、graceful degradation、console logging explanation、documents expected features without CI blocking
+    6. ACL Endpoint URL Pattern Validation (Lines 433-440): positive assertion /core/rest/repo/.../acl、negative assertion not /core/browser/.../acl、array.some() pattern matching、both expect() calls comprehensive validation
+    7. BeforeEach Session Reset Pattern (Lines 165-185): fresh AuthHelper/TestHelper instances、login establishment、2s UI initialization wait、mobile sidebar close、Ant Design load completion
+    8. Test Folder Creation and Cleanup Pattern (Lines 198-323): timestamp-based unique folder creation、ACL operation testing、delete button + popconfirm cleanup、symmetric create/delete、no test artifacts
+    9. Modal/Drawer Dual Support Strategy (Lines 243, 269): supports both .ant-modal and .ant-drawer、.last() for most recent、UI implementation flexibility
+    10. Error Message Negative Assertion Pattern (Lines 231-240, 295-297): explicit error absence check "データの読み込みに失敗しました"、.not.toBeVisible()、combined error + success verification
+  - **期待結果**: Test 1 (skipped) ACL data loads without error、Test 2 REST API HTTP 200 with valid ACL object、Test 3 UI uses /core/rest/repo/ not /core/browser/
+  - **パフォーマンス特性**: Test 1 ~15-20s folder + ACL UI + cleanup、Test 2 ~2-3s direct API call、Test 3 ~5-10s navigation + monitoring + UI、Total suite ~10-15s (2 active 1 skipped)
+  - **デバッグ機能**: comprehensive console logging each phase、ACL request URL capture、error message detection specific text、API response structure logging、element count before skip、root folder ID extraction
+  - **既知の制限事項**: Test 1 skipped permissions button UI not fully implemented、network monitoring only during execution、cleanup may fail selector changes、mobile sidebar close silent failure、ACL table/list structure assumed、requires root folder existence
+  - **他テストとの関係性**: related to access-control.spec.ts ACL functionality、mobile patterns from document-management.spec.ts、complements acl-management.spec.ts different approach、page.evaluate() pattern from document-versioning.spec.ts、shares AuthHelper/TestHelper utilities
+  - **一般的な失敗シナリオ**: Test 1 skip permissions button selector update needed、Test 2 fails ACL endpoint HTTP 404/500、Test 2 fails root folder query no results、Test 3 fails wrong Browser Binding endpoint、Test 3 fails no ACL requests detected、cleanup delete button selector changed、mobile sidebar close toggle selector/animation timing
+  - **価値**: CMIS ACL display functionality包括的検証、REST API endpoint pattern validation強化、page.evaluate() direct API testing pattern確立、network request monitoring URL correctness確保、timestamp-based unique naming parallel safety、modal/drawer dual support UI flexibility、error message negative assertion precision向上、comprehensive debugging accelerates troubleshooting、documents expected UI features for future implementation、establishes reusable ACL testing patterns
+
+26. **スマート条件付きスキップパターンの確認** ✅
    - テスト本体内で `test.skip(true, 'reason')` を使用
    - PDFが存在すれば自動的にテスト実行
    - PDFが無ければ明確なメッセージでスキップ
    - **セルフヒーリングテスト**: 前提条件が満たされた時点で自動合格
 
+27. **PDF Preview Functionality Tests 包括的ドキュメント化** ✅
+  - **ファイル**: `tests/documents/pdf-preview.spec.ts`
+  - **Lines 5-166**: 22行の簡素なヘッダーから162行の包括的ドキュメントヘッダーへ拡張（+140行）
+  - **4テスト**: PDF file existence Technical Documents、PDF preview modal/viewer canvas rendering、PDF content stream HEAD request、PDF download popup window
+  - **10個の重要デザイン決定**（行番号付き詳細）:
+    1. Smart Conditional Skipping Pattern (Lines 67-98, 113-186, 258-268, 298-361): test.skip() when folder/PDF not found、self-healing tests、clear skip messages、documents expected functionality without CI blocking
+    2. Mobile Browser Support with Force Clicks (Lines 38-48, 57-62, 104-109): viewport ≤414px detection、sidebar close、force click menu/folder links、500ms animation wait
+    3. Direct CMIS API Testing with page.evaluate() (Lines 189-253): browser context fetch()、two-step query + HEAD request、structured response {documentId, contentStreamLength, mimeType, contentAccessible}
+    4. HEAD Request for Content Stream Accessibility (Lines 234-238): HTTP HEAD method、avoids downloading large PDF、validates Content-Type、endpoint /core/atom/bedroom/content?id=
+    5. Popup Window Detection for Downloads (Lines 317-331, 345-351): page.waitForEvent('popup')、window.open() creates popup not download event、validates /content?token= URL、closes popup after verification、10s timeout
+    6. Technical Documents Folder Navigation Pattern (Lines 60-74, 107-116, 292-301): consistent menu → folder row → click pattern、.filter({ hasText: 'Technical Documents' })、tr → button/a link、2s wait、force click mobile
+    7. PDF Viewer Element Detection Strategy (Lines 134-147): multiple strategies canvas[data-page-number], iframe[src*="pdf"], .pdf-viewer, .react-pdf__Page、prioritizes pdf.js canvas、counts elements multi-page、10s timeout、logs modal HTML debugging
+    8. Dual Download Method Support (Lines 308-355): primary row button [data-icon="download"]、fallback action menu after row.click()、both use popup detection、action menu pattern row.click() → 1s wait → button.click()
+    9. BeforeEach Session Reset Pattern (Lines 31-51): fresh AuthHelper/TestHelper、login、2s UI init、mobile sidebar close、Ant Design load
+    10. AtomPub Content Stream Endpoint Pattern (Lines 231-238): /core/atom/{repositoryId}/content?id=、NOT Browser Binding、supports GET/HEAD、Content-Type: application/pdf、Basic auth
+  - **期待結果**: Test 1 PDF visible or skip、Test 2 modal + canvas rendering or skip、Test 3 HEAD 200 application/pdf or skip、Test 4 popup /content?token= or skip
+  - **パフォーマンス特性**: Test 1 ~5-7s navigation + browse、Test 2 ~10-15s modal + canvas + close、Test 3 ~2-3s API query + HEAD、Test 4 ~7-10s download + popup + close、Total ~25-35s (or ~5-10s all skip)
+  - **デバッグ機能**: console logging phases、PDF row content、canvas count、modal HTML structure、API response、popup URL、alternative download method、skip reasons
+  - **既知の制限事項**: all skip if PDF not uploaded、requires Technical Documents folder、modal .ant-modal/.ant-drawer assumption、canvas pdf.js specific、download button [data-icon="download"]、popup 10s timeout、HEAD requires auth、mobile sidebar silent fail
+  - **他テストとの関係性**: AuthHelper all tests、mobile patterns document-management.spec.ts、page.evaluate() permission-management-ui.spec.ts、popup detection document-management.spec.ts download、Technical Documents dependency initial-content-setup.spec.ts、smart skipping WIP tests
+  - **一般的な失敗シナリオ**: all skip PDF not uploaded (expected self-healing)、Test 1 folder missing setup、Test 2 modal selector changed、Test 2 canvas not rendering viewer issue、Test 3 endpoint 404/401 auth、Test 3 MIME type not application/pdf、Test 4 button not found UI changed、Test 4 popup timeout network/blocked、mobile sidebar overlay blocks
+  - **価値**: PDF preview functionality包括的検証、HEAD request efficient content stream verification、popup window detection pattern確立、dual download method support UI flexibility強化、smart conditional skipping self-healing tests、Technical Documents navigation standardized、pdf.js canvas detection multi-viewer support、AtomPub endpoint pattern consistency、comprehensive debugging PDF-specific features、establishes reusable PDF testing patterns
+
+28. **User Management CRUD Operations E2E Tests 包括的ドキュメント化** ✅
+  - **ファイル**: `tests/admin/user-management-crud.spec.ts`
+  - **Lines 5-155**: 56行の基本ドキュメントから155行の包括的ドキュメントヘッダーへ拡張（+99行）
+  - **4テスト（シーケンシャル）**: User creation UUID-based username、User editing email/firstName、Persistence verification UI navigation reload、User deletion confirmation
+  - **10個の重要デザイン決定**（行番号付き詳細）:
+    1. UUID-Based Unique Test Data Strategy (Lines 60-61): randomUUID() for `testuser_${uuid.substring(0, 8)}`、parallel execution conflicts prevention across 6 browser profiles、email format `testuser_<uuid>@test.local`、genuine uniqueness no timestamp race conditions
+    2. Mobile Browser Support with Graceful Fallback (Lines 77-102): viewport ≤414px detection、primary selector menu-fold/unfold、alternative .ant-layout-header button、try-catch continue on fail、force click all interactions、sidebar blocking overlay handling
+    3. Smart Conditional Skipping Pattern (Lines 171-172, 220-224, 278-279, 337-341): check UI element availability、test.skip() descriptive messages、self-healing auto-run when features available、better than hard test.describe.skip()、CI doesn't fail on optional features
+    4. Sequential Test Dependency with Shared State (Lines 60-61, 105-343): shared UUID testUsername describe scope、Test 1 create → Test 2 edit → Test 3 verify → Test 4 delete、execution order matters later require earlier success、inherently sequential CRUD lifecycle、trade-off later skip if earlier fail
+    5. UI Navigation Reload Strategy (Lines 233-248): Documents → User Management navigation instead page.reload()、avoids React Router state break、realistic user behavior simulation、verifies SPA route change persistence、page.reload() auth re-initialization risk
+    6. Dual Modal/Drawer Support Pattern (Lines 120, 196): `.ant-modal, .ant-drawer` both patterns、Ant Design 5.x responsive breakpoint switch、works regardless viewport size、consistent create/edit/detail interactions
+    7. Multiple Button Text Pattern Matching (Lines 161, 214, 305): Create /新規作成|ユーザー追加|追加/、Submit 作成/保存/更新、Confirm OK/削除、Japanese UI terminology variations、regex text matching flexibility
+    8. Flexible Input Selector Strategy (Lines 125-157): username id*/name variations、email type/id*/name、firstName/lastName id*/name、password .first()/.nth(1) confirmation、stable across form refactoring
+    9. Confirmation Dialog Pattern (Lines 305-309): `.ant-popconfirm button.ant-btn-primary, button:has-text("OK/削除")`、class-based + text-based combo、Ant Design popconfirm + generic dialogs、delete → wait 500ms → confirm → success message
+    10. Comprehensive Message Detection (Lines 312-329): wait success OR error `.ant-message-success, .ant-message-error`、logs message type and content、throws on timeout operation didn't execute、delete may fail dependencies detection、diagnose backend vs frontend issues
+  - **期待結果**: Test 1 user created UUID username in list、Test 2 email updated_email@test.local firstName Updated、Test 3 persist after navigation reload backend saved、Test 4 deleted not visible removed from list
+  - **パフォーマンス特性**: Test 1 ~10-15s Create navigation + form + submit、Test 2 ~8-12s Edit find + modal + update、Test 3 ~10-15s Persistence navigate + verify、Test 4 ~8-12s Delete find + confirm + verify、Total ~36-54s sequential execution、Mobile +20-30% force clicks sidebar
+  - **デバッグ機能**: Test 4 console logging username searched button counts confirm attempts message detection、success/error differentiation text content、smart skip messages explain why、timeout errors indicate failed step、force click mobile prevents not clickable
+  - **既知の制限事項**: sequential fail together Test 1 create fail、UI navigation reload React Router config change、form selectors assume Ant Design structure、password confirmation .nth(1) position may vary、smart skipping hides features good CI bad discovery
+  - **他テストとの関係性**: similar group-management-crud.spec.ts group CRUD、AuthHelper login.spec.ts、mobile pattern document-management.spec.ts、sequential document-properties-edit.spec.ts、smart skipping admin/*.spec.ts suites
+  - **一般的な失敗シナリオ**: Test 1 button not found UI incomplete、Test 2 edit button user list render、Test 3 email not persisted backend save fail、Test 4 confirm button popconfirm structure change、all timeout page not loading route/auth、mobile sidebar overlay blocks force click not applied
+  - **価値**: complete user lifecycle CRUD包括的検証、UUID-based uniqueness parallel execution safety確立、sequential dependency pattern realistic CRUD workflow、UI navigation reload SPA state persistence強化、dual modal/drawer responsive UI flexibility、flexible selectors form refactoring stability、comprehensive message detection backend/frontend diagnostic、smart skipping self-healing CI robustness、establishes reusable admin CRUD patterns
+
+29. **Group Management CRUD Operations E2E Tests 包括的ドキュメント化** ✅
+  - **ファイル**: `tests/admin/group-management-crud.spec.ts`
+  - **Lines 5-177**: 62行の基本ドキュメントから177行の包括的ドキュメントヘッダーへ拡張（+115行）
+  - **5テスト（シーケンシャル）**: Group creation UUID-based groupname、Member addition testuser/admin fallback、Description editing updated description、Persistence verification UI navigation reload、Group deletion confirmation
+  - **10個の重要デザイン決定**（行番号付き詳細）:
+    1. UUID-Based Unique Test Data Strategy (Lines 66-67): randomUUID() for `testgroup_${uuid.substring(0, 8)}`、parallel execution conflicts prevention across 6 browser profiles、group name format testgroup_<uuid>、fixed description "Test group for automated testing"、same pattern user-management-crud.spec.ts consistency
+    2. Mobile Browser Support with Graceful Fallback (Lines 84-108): viewport ≤414px detection、primary selector menu-fold/unfold、alternative .ant-layout-header button、try-catch continue on fail、force click Lines 122/144/175/184/217/260/276/321/360/366、sidebar blocking overlay all 5 tests consistent、same pattern user-management-crud.spec.ts document-management.spec.ts
+    3. Smart Conditional Skipping Pattern (Lines 154/222/235/282/339/377): check `if (await element.count() > 0)`、test.skip() graceful when unavailable、self-healing when features available、better than hard test.describe.skip()、group management UI evolution different interaction patterns、multiple skip points each test UI element availability、examples "Group creation functionality not available" "Add member interface not found"
+    4. UI Navigation Reload Strategy (Lines 294-309): Documents → Group Management instead page.reload()、avoids React Router state 404 errors、realistic user behavior actual menu clicks、state persistence navigation transitions、Navigate Documents wait 1000ms → Admin/Group Management wait 2000ms、same pattern user-management-crud.spec.ts、critical persistence verification test #4
+    5. Sequential Test Dependency Pattern (test order matters): Test 1 create prerequisite 2-5、Test 2 add member requires 1、Test 3 edit description requires 1、Test 4 verify persistence requires 3、Test 5 delete cleanup requires 1、realistic CRUD workflow state dependencies、share testGroupName describe scope、risk cascade failure、benefit lifecycle validation realistic order
+    6. Dual Modal/Drawer Responsive UI Support (Lines 126-127/264-265): both patterns `.ant-modal, .ant-drawer`、desktop modals centered overlay、mobile/tablet drawers slide-in panels、single locator both flexibility、Ant Design responsive screen size、consistent create/edit/member addition、same pattern user-management-crud.spec.ts
+    7. Flexible Member Management UI Patterns (Lines 169-236): multiple interaction patterns member button row user/team/edit icon Lines 170-172、click group row detail view Lines 226-227、add member button detail view Lines 179-181、fallback testuser → admin if not exist Lines 194-211、flexible user selection keyboard type + dropdown、progressive fallback specific → generic、Ant Design Select `.ant-select, .ant-select-item`
+    8. Multiple Button Text Pattern Matching (Lines 117-119/143-144/179-181/215-216/275-276/364): Create `/新規作成|グループ追加|追加/` regex variations、Submit "作成"/"保存"/"更新"/"OK"/"削除" multiple combined、Add member "メンバー追加"/"追加"/[data-icon="plus"]/[data-icon="user-add"]、Confirmation "OK"/"削除"/.ant-btn-primary、Japanese UI text variations、flexible regex matching reduces brittleness
+    9. Flexible Input Selectors Multiple Attributes (Lines 131-140/268-272): Group name/ID input[id*="groupName"]/input[id*="groupId"]/input[name="groupName"]/input[name="groupId"]/input[placeholder*="グループ名"]、Description textarea[id*="description"]/textarea[name="description"]/input[id*="description"]、User select `.ant-select, input[placeholder*="ユーザー"]`、form field IDs names UI refactoring、priority id → name → placeholder → type、same pattern user-management-crud.spec.ts
+    10. Confirmation Dialog Pattern Ant Design Popconfirm (Lines 364-366): delete triggers `.ant-popconfirm` overlay、confirmation `.ant-popconfirm button.ant-btn-primary, button:has-text("OK"), button:has-text("削除")`、multiple patterns Ant Design versions Japanese/English、force click mobile bypass overlay、delete icon → wait 500ms → confirm button → success message、similar user-management-crud.spec.ts deletion flow
+  - **期待結果**: Test 1 group created UUID name in list、Test 2 member testuser/admin added success message、Test 3 description updated "Updated description for testing persistence"、Test 4 updated description visible after navigation reload backend persisted、Test 5 group deleted not visible removed from list
+  - **パフォーマンス特性**: Test 1 ~10-15s Create navigation + form + submit、Test 2 ~12-18s Add member find + UI + user selection + save、Test 3 ~8-12s Edit find + modal + update + save、Test 4 ~10-15s Persistence navigate away + back + verify、Test 5 ~8-12s Delete find + confirm + verify、Total ~48-72s sequential execution、Mobile +20-30% force clicks sidebar waits
+  - **デバッグ機能**: UUID group names browser console test reports、conditional skip messages UI elements missing、force click logging mobile interaction debug、success/error message detection timeout error handling、element count logging before skip decisions
+  - **既知の制限事項**: member addition skip if testuser not exist fallback admin、member UI multiple patterns may skip if none match、tests depend previous success cascade failures、force clicks mobile bypass real interaction validation、UI navigation reload time overhead vs page.reload()、no verification member actually added only success message checked
+  - **他テストとの関係性**: AuthHelper user-management-crud.spec.ts login.spec.ts、similar sequential CRUD user-management-crud.spec.ts、mobile support document-management.spec.ts、UUID test data user-management-crud.spec.ts、smart conditional skipping reusable admin suites
+  - **一般的な失敗シナリオ**: Test 1 create button not found modal not appear success timeout、Test 2 member button not found user select not work testuser not exist、Test 3 edit button not found description input not found success timeout、Test 4 group not found after reload persistence issue description not updated、Test 5 delete button not found confirmation not appear group still visible、mobile sidebar overlay blocks force click still failing、sequential Test 1 fail cascades 2-5
+  - **価値**: complete group lifecycle CRUD包括的検証、UUID-based uniqueness parallel execution safety確立、sequential dependency pattern realistic CRUD workflow、UI navigation reload SPA state persistence強化、flexible member management UI patterns multiple fallback、dual modal/drawer responsive UI flexibility、flexible selectors form refactoring stability、smart conditional skipping self-healing CI robustness、member addition fallback testuser/admin environment flexibility、establishes reusable admin CRUD patterns group management
 ### スマート条件付きスキップの例
 
 ```typescript

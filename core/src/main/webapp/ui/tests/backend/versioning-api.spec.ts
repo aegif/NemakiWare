@@ -1,16 +1,138 @@
+/**
+ * CMIS Versioning API Backend Tests
+ *
+ * Direct CMIS Browser Binding API testing for document versioning operations:
+ * - Tests backend versioning functionality without UI interaction
+ * - Validates CMIS 1.1 versioning compliance at API level
+ * - Uses Playwright request context for HTTP API calls
+ * - Verifies version series management, PWC lifecycle, and version history
+ * - Complements UI versioning tests (document-versioning.spec.ts)
+ *
+ * Test Coverage (6 tests):
+ * 1. Create versionable document - Basic document creation with versioning properties
+ * 2. Check-out document - PWC creation and checkout state management
+ * 3. Check-in with new version - Major version creation and version label updates
+ * 4. Cancel check-out - PWC deletion and checkout cancellation
+ * 5. Retrieve all versions - Version history retrieval via cmisselector=versions
+ * 6. Get latest version - Latest version identification and property verification
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ *
+ * 1. Serial Execution Mode (Line 119):
+ *    - Uses test.describe.configure({ mode: 'serial' })
+ *    - Prevents parallel test execution within this suite
+ *    - Rationale: CouchDB revision conflicts when multiple tests modify same version series
+ *    - Example: checkout creates new revision, parallel checkout fails with "conflict"
+ *    - Impact: Tests run sequentially, slower but reliable
+ *
+ * 2. Direct CMIS Browser Binding API Testing (Lines 17-19):
+ *    - Uses Playwright request context instead of page navigation
+ *    - Tests HTTP API endpoints directly: POST/GET to /core/browser/bedroom
+ *    - No UI rendering or browser automation
+ *    - Rationale: Validates backend CMIS compliance independent of UI implementation
+ *    - Faster execution than UI tests (no page load, no React rendering)
+ *
+ * 3. Multipart vs Form-urlencoded Content Type Strategy (Lines 94-105, 171-180):
+ *    - Document creation: multipart/form-data (REQUIRED by Browser Binding spec)
+ *    - Check-out/check-in operations: application/x-www-form-urlencoded OR multipart
+ *    - Implementation: Playwright automatically sets correct Content-Type with boundary
+ *    - Rationale: CMIS Browser Binding spec mandates multipart for content uploads
+ *    - Critical: createDocument with content MUST use multipart, not form-urlencoded
+ *
+ * 4. PWC (Private Working Copy) Lifecycle Management (Lines 24, 58-82, 187-191):
+ *    - PWC created during check-out (separate objectId from original document)
+ *    - PWC automatically deleted after check-in or cancelCheckOut
+ *    - Manual cleanup in afterEach for test failures that leave PWC behind
+ *    - Rationale: Prevent orphaned PWCs from accumulating in repository
+ *    - Implementation: Track pwcId separately from testDocumentId
+ *
+ * 5. NemakiWare Non-Versionable Document Behavior (Lines 132-136, 169, 194-212):
+ *    - cmis:document type is NOT versionable by default in NemakiWare
+ *    - Check-out ALLOWED even for non-versionable documents (creates PWC)
+ *    - cmis:isVersionSeriesCheckedOut may remain false for non-versionable docs
+ *    - versionLabel is empty string for non-versionable documents
+ *    - Rationale: NemakiWare design choice for flexible version control
+ *    - Test approach: Accept both behaviors (checked out flag may be true or false)
+ *
+ * 6. Known Server Bug Handling - cancelCheckOut Returns 400 (Lines 364-383):
+ *    - cancelCheckOut returns HTTP 400 "not versionable" for non-versionable docs
+ *    - Operation actually SUCCEEDS despite error response (PWC deleted, doc no longer checked out)
+ *    - Test strategy: Accept both 200 and 400 status codes
+ *    - Verification: Check document state (isVersionSeriesCheckedOut=false), not HTTP status
+ *    - Rationale: Server bug documented, test validates actual behavior vs. HTTP contract
+ *
+ * 7. Unique Document Naming Strategy (Lines 89, 143, 217, 319, 404, 503):
+ *    - All test documents use timestamp-based unique names: `test-${Date.now()}.txt`
+ *    - Prevents conflicts when tests run across multiple browser profiles
+ *    - Each test creates new documents, never reuses existing ones
+ *    - Rationale: Parallel browser execution (6 profiles) could create name collisions
+ *    - Example: "checkout-test-1730000000000.txt" guarantees uniqueness
+ *
+ * 8. Succinct Property Format Usage (Lines 104, 112, 123, 131, 179):
+ *    - All API requests use succinct=true parameter
+ *    - Response format: { succinctProperties: { "cmis:objectId": "...", ... } }
+ *    - Simpler JSON structure vs. verbose CMIS property arrays
+ *    - Rationale: Easier property access in TypeScript (no array iteration)
+ *    - Example: objectData.succinctProperties['cmis:objectId'] vs complex property iteration
+ *
+ * 9. Cleanup Strategy in afterEach (Lines 32-83):
+ *    - Deletes test document with allVersions=true (removes entire version series)
+ *    - Separately deletes PWC if it exists (only for test failures)
+ *    - Ignores 404 errors (object may already be deleted)
+ *    - 30-second timeout for deletion operations (CouchDB may be slow)
+ *    - Rationale: Prevent test data accumulation, ensure clean repository state
+ *
+ * 10. Content Requirement for Checkout (Lines 141-142, 155, 229, 318, 331):
+ *     - NemakiWare limitation: Document MUST have content for checkout to work
+ *     - All test documents created with content: "Initial version content..."
+ *     - Empty documents cannot be checked out (server returns error)
+ *     - Rationale: Backend validation requires content stream for version operations
+ *     - Impact: Cannot test versioning on metadata-only documents
+ *
+ * Expected Results:
+ * - All 6 tests pass in serial execution (3-5 minutes total)
+ * - Version series creation with multiple versions
+ * - PWC lifecycle (create → modify → check-in → delete)
+ * - Version history retrieval shows all versions
+ * - Latest version identification works correctly
+ * - No orphaned PWCs remain after test completion
+ *
+ * Performance Characteristics:
+ * - Serial execution: Tests run sequentially (not parallel)
+ * - 30-second timeout for check-in and deletion operations
+ * - Faster than UI tests (no browser rendering, direct API calls)
+ * - Typical execution: 1-2 minutes for all 6 tests
+ *
+ * Debugging Features:
+ * - Console logging for document IDs, PWC IDs, version labels
+ * - Error response body logging on check-in failure
+ * - Cleanup failure logging (non-critical errors)
+ * - Version history logging shows all version labels
+ *
+ * Known Limitations:
+ * - Cannot test versionable type definitions (cmis:document not versionable by default)
+ * - cancelCheckOut returns 400 but succeeds (server bug)
+ * - Serial execution prevents parallel testing
+ * - Requires content for checkout (cannot test metadata-only versioning)
+ * - Version label format not validated (server-specific implementation)
+ *
+ * Relationship to Other Tests:
+ * - Complements document-versioning.spec.ts (UI versioning tests)
+ * - Uses same CMIS Browser Binding as UI but tests API directly
+ * - Validates backend behavior that UI depends on
+ * - Provides faster feedback on versioning API regressions
+ *
+ * Common Failure Scenarios:
+ * - CouchDB revision conflicts: Tests running in parallel (fix: serial mode)
+ * - 400 "not versionable": Expected for cancelCheckOut on non-versionable docs
+ * - Checkout fails without content: Document must have content stream
+ * - Cleanup timeouts: CouchDB may be slow, 30-second timeout may be insufficient
+ * - Version label mismatches: Server may use different versioning scheme
+ */
+
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 
-/**
- * CMIS Versioning API Tests
- *
- * Tests document versioning operations using CMIS Browser Binding API
- * This tests the actual backend versioning functionality, not the UI.
- *
- * CRITICAL: Tests run in SERIAL mode to avoid CouchDB revision conflicts.
- * Running versioning tests in parallel causes "conflict" errors because
- * multiple tests modify the same version series documents simultaneously.
- */
 test.describe.configure({ mode: 'serial' });
 
 test.describe('CMIS Versioning API', () => {

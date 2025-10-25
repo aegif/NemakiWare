@@ -1,13 +1,143 @@
-import { test, expect } from '@playwright/test';
-
 /**
- * Test for document viewer authentication issue
+ * Document Viewer Authentication Tests
  *
- * Issue: "Content detail screen requires re-authentication and then errors"
+ * Specialized test suite for document detail view authentication stability:
+ * - Verifies no re-authentication required when accessing document details
+ * - Tests authentication token persistence across document navigation
+ * - Validates session stability across multiple document accesses
+ * - Handles both page navigation and drawer/modal rendering modes
+ * - Prevents "user stuck" scenarios with authentication errors
  *
- * This test verifies that accessing document details doesn't cause
- * authentication issues or repeated login prompts.
+ * User Requirement (Original Issue): "Content detail screen requires re-authentication and then errors"
+ * Goal: Users should access document details seamlessly without authentication prompts
+ *
+ * Test Coverage (2 tests):
+ * 1. Single document detail access - Verifies no auth errors, details load, back button works
+ * 2. Multiple document accesses (SKIPPED) - Session stability test for sequential access patterns
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ *
+ * 1. Console Event Monitoring for Auth Debugging (Lines 14-21):
+ *    - Captures browser console messages: page.on('console', msg => ...)
+ *    - Captures page errors: page.on('pageerror', error => ...)
+ *    - Logs execution flow and error details for authentication issue diagnosis
+ *    - Rationale: Auth errors may appear in console before UI updates
+ *    - Implementation: Event handlers established before navigation
+ *    - Debugging Value: Helps identify token expiration vs network errors
+ *
+ * 2. Mobile Browser Sidebar Handling (Lines 45-56):
+ *    - Detects mobile viewport: browserName === 'chromium' && width <= 414
+ *    - Closes sidebar before document clicks to prevent overlay blocking
+ *    - Uses menu toggle button: aria-label="menu-fold" or "menu-unfold"
+ *    - Includes try-catch pattern with count() check for graceful failure
+ *    - Rationale: Mobile layouts render sidebar as blocking overlay
+ *    - Implementation: Conditional sidebar close with 500ms animation wait
+ *
+ * 3. Triple-Layer Authentication State Verification (Lines 76-92):
+ *    - Layer 1: Check for login form (hasLoginForm) - indicates re-auth required
+ *    - Layer 2: Check for auth error messages (hasAuthError) - indicates token/permission issues
+ *    - Layer 3: Check for document details (hasDocumentDetails) - indicates successful access
+ *    - Rationale: Authentication failures can manifest in different ways
+ *    - Implementation: Three separate locator queries with distinct assertions
+ *    - Error Handling: Logs error text when hasAuthError is true for debugging
+ *
+ * 4. Force Click Strategy for Test Environment Reliability (Lines 70, 112, 174, 267):
+ *    - Uses .click({ force: true }) to bypass overlay/visibility checks
+ *    - Applied to document row clicks and back button navigation
+ *    - Rationale: Test environment may have layout differences from production
+ *    - Trade-off: Bypasses real user interaction validation for test stability
+ *    - Use Case: Sidebar overlays and mobile viewport testing
+ *
+ * 5. Document Detail Rendering Mode Detection (Lines 78, 186-196, 201-206):
+ *    - Detects three possible rendering modes:
+ *      - Page navigation: Full page with .ant-descriptions
+ *      - Drawer rendering: .ant-drawer-open with .ant-drawer .ant-descriptions
+ *      - Modal rendering: .ant-modal with .ant-modal .ant-descriptions
+ *    - Flexible detection: hasAnyDocumentDetails = hasDocumentDetails || hasDrawerDetails || hasModalDetails
+ *    - Rationale: UI implementation may vary (SPA route vs overlay)
+ *    - Implementation: Multiple locator patterns to accommodate all modes
+ *
+ * 6. Back Navigation Verification Pattern (Lines 109-119):
+ *    - Tests back button functionality: button:has-text("戻る")
+ *    - Verifies return to documents list: .ant-table count check
+ *    - Uses force click for reliability
+ *    - Rationale: Back button is primary navigation method from detail view
+ *    - Guards against navigation stack issues or broken history
+ *
+ * 7. Skipped Session Stability Test (Lines 122-284):
+ *    - Test marked with test.skip() for multiple document access pattern
+ *    - Would test accessing 3 documents sequentially
+ *    - Rationale: Currently investigating UI rendering mode inconsistencies
+ *    - Implementation Complexity: Must handle drawer/modal/page navigation modes
+ *    - Future: Re-enable when document detail UI implementation stabilizes
+ *
+ * 8. Multiple Document Access Pattern (Lines 152-283):
+ *    - Sequential access: Loop through first 3 documents
+ *    - Re-query before each click: freshDocumentButtons = page.locator(...) prevents stale elements
+ *    - Wait for URL change: waitForURL(/\/documents\/[a-f0-9-]+/) with timeout
+ *    - Fallback detection: Check for drawer/modal if URL doesn't change
+ *    - Return navigation: Handle drawer close, modal close, or back button
+ *    - Rationale: Tests session token doesn't expire across multiple requests
+ *
+ * 9. URL Pattern Waiting with Fallback (Lines 179-196):
+ *    - Primary: Wait for URL pattern /\/documents\/[a-f0-9-]+/ (page navigation)
+ *    - Fallback: Detect drawer/modal open if URL wait times out
+ *    - Logs navigation result for debugging
+ *    - Rationale: UI may render details in drawer instead of navigating to new route
+ *    - Error Handling: try-catch allows test to continue if UI uses overlay instead of navigation
+ *
+ * 10. Extensive Debugging Visibility (Lines 60-61, 80-82, 155-156, 208-221):
+ *     - Logs current URL after each navigation step
+ *     - Logs authentication state flags (hasLoginForm, hasAuthError, hasDocumentDetails)
+ *     - Logs document counts and re-query results
+ *     - Logs error message text when authentication errors occur
+ *     - Rationale: Authentication issues are difficult to reproduce and diagnose
+ *     - Implementation: Console.log() at every critical checkpoint
+ *     - CI/CD Value: Provides diagnostic information in test output logs
+ *
+ * Expected Results:
+ * - Test 1: Document detail access succeeds without login form appearing
+ * - Test 1: No authentication error messages displayed
+ * - Test 1: Document details (ID, properties tab) visible
+ * - Test 1: Back button returns to document list successfully
+ * - Test 2: SKIPPED - Session stability test pending UI implementation clarity
+ *
+ * Performance Characteristics:
+ * - Test 1 execution: 10-20 seconds (login + navigation + verification)
+ * - Document click wait: 3 seconds for detail page load
+ * - Back navigation wait: 2 seconds for list reload
+ * - URL pattern timeout: 10 seconds maximum
+ *
+ * Debugging Features:
+ * - Browser console message capture and logging
+ * - Page error event capture and logging
+ * - Current URL logging after each navigation
+ * - Authentication state logging (login form, errors, details)
+ * - Document count logging for re-query verification
+ * - Error message text extraction and logging
+ *
+ * Known Limitations:
+ * - Test 2 skipped: Multiple document access pattern needs UI implementation clarity
+ * - Force click usage: Bypasses real interaction validation for stability
+ * - Drawer/modal detection: Relies on class name patterns that could change
+ * - URL pattern matching: Assumes objectId format [a-f0-9-]+ (CouchDB UUIDs)
+ * - Mobile sidebar close: May fail silently (graceful degradation with count check)
+ *
+ * Relationship to Other Tests:
+ * - Uses similar mobile browser patterns as login.spec.ts
+ * - Complements document-management.spec.ts (focuses on auth, not CRUD)
+ * - Related to verify-404-redirect.spec.ts (error handling patterns)
+ * - Similar console event monitoring as verify-cmis-404-handling.spec.ts
+ *
+ * Common Failure Scenarios:
+ * - Test 1 fails with login form: Session token not persisting across detail navigation
+ * - Test 1 fails with auth error: Permission denied or token expired during detail fetch
+ * - Test 1 fails with no details: Document detail page not rendering after click
+ * - Back button fails: Navigation stack broken or React Router state corruption
+ * - Mobile test fails: Sidebar overlay blocking document click despite sidebar close
  */
+
+import { test, expect } from '@playwright/test';
 
 test.describe('Document Viewer Authentication', () => {
   test('should access document details without authentication errors', async ({ page, browserName }) => {
