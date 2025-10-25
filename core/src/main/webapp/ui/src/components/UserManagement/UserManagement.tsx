@@ -278,7 +278,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
           icon={<PlusOutlined />}
           onClick={() => setModalVisible(true)}
         >
-          新規ユーザー
+          新規作成
         </Button>
       </div>
 

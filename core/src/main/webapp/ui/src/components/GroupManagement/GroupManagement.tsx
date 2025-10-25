@@ -252,7 +252,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
           icon={<PlusOutlined />}
           onClick={() => setModalVisible(true)}
         >
-          新規グループ
+          新規作成
         </Button>
       </div>
 

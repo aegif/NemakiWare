@@ -383,12 +383,12 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         <h2 style={{ margin: 0 }}>
           <FileOutlined /> タイプ管理
         </h2>
-        <Button 
-          type="primary" 
+        <Button
+          type="primary"
           icon={<PlusOutlined />}
           onClick={() => setModalVisible(true)}
         >
-          新規タイプ
+          新規タイプ作成
         </Button>
       </div>
 
