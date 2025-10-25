@@ -3,6 +3,114 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
 
+/**
+ * Access Control and Permissions E2E Tests
+ *
+ * Comprehensive end-to-end tests for NemakiWare access control system:
+ * - Dynamic test user creation with unique credentials
+ * - Permission setup via CMIS API and UI interactions
+ * - Permission verification with restricted folder scenarios
+ * - ACL modification and restoration testing
+ * - Multi-phase test architecture with automated cleanup
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ * 1. Multi-Phase Test Architecture (Lines 17-427):
+ *    - Phase 1 (Lines 17-151): Pre-cleanup of old test folders from previous runs
+ *    - Phase 2 (Lines 154-389): Test user creation with unique randomUUID credentials
+ *    - Phase 3 (Lines 392-427): Root folder ACL setup via CMIS Browser Binding API
+ *    - Phase 4 (Lines 429-622): Admin user permission setup tests
+ *    - Phase 5 (Lines 624-822): Admin user ACL modification tests
+ *    - Phase 6 (Lines 824-1120): Test user permission verification tests
+ *    - Phase 7 (Lines 1122-1177): Final cleanup with CMIS deleteTree operation
+ *    - Phase 8 (Lines 1181-1317): Post-test cleanup (afterAll) with batch deletion
+ *    - Rationale: Phased approach ensures proper test data isolation and cleanup
+ *
+ * 2. Unique Test Data Strategy (Lines 9-14):
+ *    - Uses randomUUID() for unique folder names and test usernames
+ *    - Format: restricted-folder-${uuid8} and testuser${uuid8}
+ *    - Prevents conflicts in parallel test execution across browsers
+ *    - Enables reliable cross-browser testing without data collisions
+ *    - Allows multiple test runs without manual cleanup requirements
+ *
+ * 3. Dual Cleanup Strategy (Lines 17-151, 1181-1317):
+ *    - Pre-cleanup (beforeAll): Deletes up to 3 old test folders BEFORE tests start
+ *    - Post-cleanup (afterAll): Deletes up to 10 test folders AFTER tests complete
+ *    - Timeout protection: 60s max for pre-cleanup, 300s max for post-cleanup
+ *    - Failed folder tracking: Skips folders that previously failed to delete
+ *    - SKIP_CLEANUP environment variable: Can be set to 'true' for faster development
+ *    - Rationale: Balances test speed with database cleanliness
+ *
+ * 4. CMIS API-First Setup Strategy (Lines 392-427):
+ *    - Root folder ACL setup uses CMIS Browser Binding API directly
+ *    - Grant cmis:all permission to test user for full read access
+ *    - Note: cmis:read alone is insufficient for getChildren operation
+ *    - Bypasses UI for reliable permission setup
+ *    - Enables consistent test environment across all test phases
+ *
+ * 5. Smart Conditional Skipping Pattern (Lines 498-499, 580-581, 696-697, etc.):
+ *    - Tests check for UI elements before performing actions
+ *    - Skip gracefully if features not available (test.skip())
+ *    - Better than hard test.describe.skip() - self-healing when features become available
+ *    - Maintains test suite flexibility across different UI implementation states
+ *    - Examples: Folder creation, ACL management, permission editing
+ *
+ * 6. Mobile Browser Support (Lines 446-472, 868-893):
+ *    - Sidebar close logic in beforeEach prevents overlay blocking clicks
+ *    - Viewport width ≤414px triggers mobile-specific behavior
+ *    - Force click option for mobile browsers (isMobile ? { force: true } : {})
+ *    - Graceful fallback if sidebar toggle unavailable
+ *    - Consistent with other test suites' mobile support pattern
+ *
+ * 7. Test User Authentication Verification (Lines 832-859):
+ *    - Comprehensive login debugging with URL tracking and error logging
+ *    - Screenshot capture on login failure for debugging
+ *    - Error message detection and logging
+ *    - Graceful test skip if user creation failed or lacks repository access
+ *    - Prevents cascading failures in permission verification tests
+ *
+ * 8. CMIS API Cleanup Strategy (Lines 1139-1177):
+ *    - Uses CMIS Browser Binding deleteTree operation for folder cleanup
+ *    - Query-based folder discovery (SELECT cmis:objectId FROM cmis:folder)
+ *    - Handles both succinctProperties and properties response formats
+ *    - More reliable than UI-based deletion for folders with contents
+ *    - Timeout protection: 60-second test timeout for cleanup test
+ *
+ * Test Execution Flow:
+ * 1. Pre-cleanup: Remove 3 old test folders from previous runs (optional)
+ * 2. Setup: Create unique test user with full credentials
+ * 3. Setup: Grant root folder access to test user via CMIS API
+ * 4. Admin Tests: Create restricted folder and set permissions
+ * 5. Admin Tests: Modify ACL permissions (read-write, remove/restore entry)
+ * 6. Test User Tests: Verify permission restrictions (currently skipped due to visibility issues)
+ * 7. Cleanup: Delete test folder via CMIS deleteTree operation
+ * 8. Post-cleanup: Remove up to 10 test folders in batches (optional)
+ *
+ * Test User Credentials:
+ * - Username: testuser${randomUUID8} (e.g., testuser12a34b56)
+ * - Password: TestPass123!
+ * - Email: testuser${randomUUID8}@example.com
+ * - Display Name: ${username}_display
+ * - Full Name: Test User
+ * - Permissions: cmis:all on root folder (granted in beforeAll)
+ *
+ * CMIS Browser Binding API Usage:
+ * - User Creation: Manual form filling in UI (no CMIS API)
+ * - ACL Setup: cmisaction=applyACL with addACEPrincipal[]/addACEPermission[][] arrays
+ * - Folder Query: cmisselector=query with CMIS SQL WHERE clause
+ * - Folder Deletion: cmisaction=deleteTree with folderId parameter
+ * - Repository Info: cmisselector=repositoryInfo for rootFolderId retrieval
+ *
+ * Known Limitations:
+ * - Test user visibility tests (Lines 903-1029) currently skipped due to CMIS API permission issues
+ * - Test user restriction tests (Lines 1031-1119) currently skipped (dependent on visibility)
+ * - ACL management UI varies across implementations - tests adapt with conditional logic
+ *
+ * Performance Optimizations:
+ * - Reduced pre-cleanup limit from 10 to 3 folders for faster startup
+ * - Extended timeouts for test user creation (180s) and cleanup (300s)
+ * - Failed folder tracking prevents repeated deletion attempts
+ * - Batch deletion with re-query after each deletion to avoid stale elements
+ */
 test.describe('Access Control and Permissions', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;

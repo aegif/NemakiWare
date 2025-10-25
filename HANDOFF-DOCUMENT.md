@@ -28,7 +28,242 @@
      - 実際: 全4テスト有効化済み、スマート条件付きスキップ使用
      - 誤解: テストがハードスキップされているように見えた
 
-3. **スマート条件付きスキップパターンの確認** ✅
+3. **Document Management Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/documents/document-management.spec.ts`
+   - **Lines**: 6-39 包括的なドキュメントコメント追加
+   - **追加内容**:
+     - テストカバレッジの説明（9つのテスト内容）
+     - 重要な設計決定の文書化（4項目）
+     - モバイルブラウザサポートの説明
+     - テストクリーンアップロジックの説明
+     - スマート条件付きスキップパターンの説明
+     - ユニークテストデータ戦略の説明
+   - **価値**: 新しい開発者がテストスイートのアーキテクチャを理解しやすくなる
+
+4. **User Management CRUD Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/admin/user-management-crud.spec.ts`
+   - **Lines**: 5-56 包括的なドキュメントコメント追加
+   - **追加内容**:
+     - テストカバレッジの説明（4つのCRUDライフサイクルテスト）
+     - 重要な設計決定の文書化（6項目）:
+       1. Unique Test Data Strategy (randomUUID)
+       2. Mobile Browser Support (sidebar close, force click)
+       3. Smart Conditional Skipping Pattern
+       4. UI Navigation Reload Strategy
+       5. Test Execution Order (create → edit → verify → delete)
+       6. Ant Design Component Handling (modal/drawer, button text patterns)
+     - デバッグ機能の説明（console logging, error detection）
+   - **価値**: CRUD操作のテストアーキテクチャとベストプラクティスを明確化
+
+5. **Group Management CRUD Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/admin/group-management-crud.spec.ts`
+   - **Lines**: 5-62 包括的なドキュメントコメント追加
+   - **追加内容**:
+     - テストカバレッジの説明（5つのCRUDライフサイクルテスト：create/add member/edit/verify/delete）
+     - 重要な設計決定の文書化（7項目）:
+       1. Unique Test Data Strategy (randomUUID for group names)
+       2. Mobile Browser Support (sidebar close, force click)
+       3. Smart Conditional Skipping Pattern
+       4. UI Navigation Reload Strategy
+       5. Test Execution Order (create → add member → edit → verify → delete)
+       6. Member Management Strategy (複数UIパターンサポート、fallback logic)
+       7. Ant Design Component Handling (modal/drawer, Select component, Popconfirm)
+   - **価値**: グループ管理特有のメンバー管理戦略とUIインタラクションパターンを明確化
+
+6. **ACL Management Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/permissions/acl-management.spec.ts`
+   - **Lines**: 5-72 包括的なドキュメントコメント追加
+   - **追加内容**:
+     - テストカバレッジの説明（4つのACLシナリオテスト）
+     - 重要な設計決定の文書化（7項目）:
+       1. CMIS API-First Testing Strategy (Browser Binding API直接使用)
+       2. Comprehensive Cleanup Strategy (afterEachでパターンマッチング削除)
+       3. Unique Test Data per Instance (Date.now()タイムスタンプ)
+       4. Mobile Browser Support (sidebar close, force click)
+       5. Permission Inheritance Testing Approach (parent → child folder)
+       6. Product Bug Investigation (testuser access issue documentation)
+       7. Test Execution Order (independent tests with own cleanup)
+     - CMIS Browser Binding API使用例の文書化
+     - テストデータプリンシパルの説明（admin, testuser, GROUP_EVERYONE）
+   - **価値**: CMIS APIテスト戦略とACL管理の高度なシナリオを明確化、製品バグ調査の記録
+
+7. **Access Control Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/permissions/access-control.spec.ts`
+   - **Lines**: 6-113 包括的なドキュメントコメント追加
+   - **追加内容**:
+     - テストカバレッジの説明（マルチフェーズテストアーキテクチャ）
+     - 重要な設計決定の文書化（8項目）:
+       1. Multi-Phase Test Architecture (8フェーズ: pre-cleanup → setup → admin tests → test user tests → cleanup)
+       2. Unique Test Data Strategy (randomUUID for folders and usernames)
+       3. Dual Cleanup Strategy (pre-cleanup 3 folders, post-cleanup 10 folders with timeout protection)
+       4. CMIS API-First Setup Strategy (root folder ACL setup via Browser Binding)
+       5. Smart Conditional Skipping Pattern (test.skip() for graceful feature unavailability)
+       6. Mobile Browser Support (sidebar close, force click)
+       7. Test User Authentication Verification (comprehensive debugging, screenshot capture)
+       8. CMIS API Cleanup Strategy (deleteTree operation, query-based discovery)
+     - テスト実行フロー8段階の説明
+     - テストユーザー認証情報の文書化（randomUUID username, TestPass123!）
+     - CMIS Browser Binding API使用例の文書化
+     - 既知の制限事項の記録（テストユーザー可視性問題、ACL UI実装の変動）
+     - パフォーマンス最適化の説明（クリーンアップ制限削減、タイムアウト延長、失敗フォルダー追跡）
+   - **価値**: 複雑なマルチフェーズテストアーキテクチャとCMIS APIセットアップ戦略を明確化、デュアルクリーンアップ戦略の合理性を文書化
+
+8. **Type Management Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/admin/type-management.spec.ts`
+   - **Lines**: 5-106 包括的なドキュメントコメント追加
+   - **追加内容**:
+     - テストカバレッジの説明（CMIS 1.1タイプシステム検証）
+     - 重要な設計決定の文書化（8項目）:
+       1. CMIS 1.1 Type Hierarchy Coverage (6つのベースタイプ: document, folder, relationship, policy, item, secondary)
+       2. NemakiWare Custom Types Validation (nemaki:parentChildRelationship, nemaki:bidirectionalRelationship)
+       3. Precise Selector Strategy (data-row-key属性によるテーブル行の正確な識別)
+       4. Direct CMIS API Verification (Browser Binding API経由でタイプ階層を直接検証)
+       5. Type Details View Testing (タイププロパティ詳細表示とモーダルクローズ)
+       6. Mobile Browser Support (sidebar close, force click)
+       7. Smart Conditional Navigation (admin menu/type management menu存在確認)
+       8. Type Editing Test (WIP - UI未実装またはCMIS仕様制限のためスキップ中)
+     - テストカバレッジ6項目の説明（6テスト: 5有効 + 1スキップ）
+     - CMIS Browser Binding API使用例の文書化（typeChildren selector, typeId parameter）
+     - 期待テスト結果の明記（ベースタイプ6、カスタムタイプ2以上、合計8以上）
+     - 既知の制限事項の記録（タイプ編集WIP、詳細モーダルUI実装変動、CMIS 1.1仕様によるベースタイプ不変性）
+     - パフォーマンス最適化の説明（data-row-key O(1)ルックアップ、Promise.all並列フェッチ、15秒拡張タイムアウト）
+   - **価値**: CMIS 1.1タイプシステムの完全な検証戦略を明確化、カスタムタイプ定義の検証アプローチを文書化、Direct API検証パターンの説明
+
+9. **Document Versioning Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/versioning/document-versioning.spec.ts`
+   - **Lines**: 5-141 包括的なドキュメントコメント追加
+   - **追加内容**:
+     - テストカバレッジの説明（CMIS document versioning system: check-out, check-in, cancel, version history, download）
+     - 重要な設計決定の文書化（11項目）:
+       1. Unique Test Document Names (Date.now()タイムスタンプで並行テスト競合防止)
+       2. PWC (Private Working Copy) Detection Strategy (作業中タグ + チェックインボタン2段階検証、スクリーンショット失敗時キャプチャ)
+       3. Icon-Based Button Selectors (EditOutlined/CheckOutlined aria-label、言語非依存)
+       4. Upload-Then-Test Pattern (各テストが独自ドキュメント作成、隔離されたテストデータ)
+       5. Automatic Table Refresh Handling (loadObjects()自動呼び出し、2-5秒待機)
+       6. Smart Conditional Skipping (バージョニングUIボタン存在確認、セルフヒーリングテスト)
+       7. Mobile Browser Support (sidebar close, force click)
+       8. Comprehensive Cleanup After Each Test (2秒テーブル更新待機、modal/popconfirm両対応)
+       9. Check-In Workflow Testing (バージョンコメント入力、ファイルアップロード、PWC消失検証)
+       10. Version History Modal Handling (modal/drawer両対応、バージョン1.0リスト検証)
+       11. Version Download Testing (Playwrightダウンロードイベント、正規表現ファイル名マッチング)
+     - テストカバレッジ5項目の説明（5テスト: check-out, check-in, cancel, history, download）
+     - CMIS Versioning概念の説明（PWC, Check-Out, Check-In, Cancel Check-Out, Version Series, Version Label）
+     - UI検証パターンの文書化（PWC State: 作業中タグ、Checked-In State: PWCタグ消失）
+     - 期待テスト結果の明記（ユニークドキュメント作成、PWC表示、チェックイン後PWC消失、履歴表示、ダウンロード成功）
+     - 既知の制限事項の記録（UI未実装時のスキップ、デバッグログ使用、test-results/ディレクトリ必要、modal/drawerパターン変動）
+     - パフォーマンス最適化の説明（アイコンベースセレクター高速化、最小待機時間2-5秒、小テキストファイル<1KB、クリーンアップによるDB肥大化防止）
+     - デバッグ機能の説明（コンソールログ、スクリーンショットキャプチャ、テーブル行検査ログ、DocumentList DEBUGメッセージ）
+   - **価値**: CMIS versioningワークフローの完全なテスト戦略を明確化、PWC状態検証の2段階アプローチを文書化、アイコンベースセレクター戦略の説明、Upload-Then-Testパターンのベストプラクティス確立
+
+10. **Advanced Search Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/search/advanced-search.spec.ts`
+   - **Lines**: 4-150 包括的なドキュメントコメント追加
+   - **追加内容**:
+     - テストカバレッジの説明（検索ページアクセス、基本検索実行、CMIS Browser Binding統合、結果ナビゲーション、ページ遷移）
+     - 重要な設計決定の文書化（10項目）:
+       1. Flexible Language Support (日本語「検索」/英語"Search"両対応、placeholder/button text/menuテキスト、多言語環境対応)
+       2. Mobile Browser Support (sidebar close, force click, viewport ≤414px検出)
+       3. Smart Conditional Skipping (検索UI要素存在確認、機能未実装時のスキップ、セルフヒーリングテスト)
+       4. Network Request Monitoring (CMIS Browser Binding search/query requests、URL/status/body logging)
+       5. Error Detection Pattern (ant-message-error監視、errorCount assertion、✅/❌コンソールマーカー)
+       6. URL Verification (/search URL確認、React Router navigation検証)
+       7. Result Interaction Testing (検索結果クリック、エラーメッセージゼロ検証、宛先アサーションなし)
+       8. Multiple Selector Fallbacks (input/button/resultsコンテナ複数セレクター、first()メソッド)
+       9. Search Method Flexibility (ボタンクリック vs Enterキー、両方法CMIS検索トリガー)
+       10. Response Body Logging (first 200 chars、try-catch for binary、デバッグ支援)
+     - テストカバレッジ5項目の説明（5テスト: display page, basic search, execute without errors, navigate to result, navigate back）
+     - Search Functionality Architectureの説明（React Search component、CMIS Browser Binding、CMIS SQL、Ant Design Table）
+     - CMIS Search Integrationの文書化（cmisselector=query、CMIS SQL構文、JSON response format、プロパティリスト、エラーレスポンス）
+     - UI検証パターンの文書化（検索input、検索button、resultsコンテナ、resultリンク、エラーメッセージ）
+     - 期待テスト結果の明記（/search URLアクセス、input/button表示、CMIS requestログ、エラーゼロ、resultsコンテナ表示、resultクリックナビゲーション）
+     - 既知の制限事項の記録（検索UI未実装時スキップ、結果内容精度検証なし、高度な検索フィルターなし、result宛先未アサーション）
+     - パフォーマンス最適化の説明（first()セレクター、最小待機1-2秒、network monitoring無負荷、screenshot初回テストのみ）
+     - デバッグ機能の説明（network requestログ、response status/body、error messageログ、PRODUCT BUGラベル）
+   - **価値**: NemakiWare検索機能の完全なテスト戦略を明確化、CMIS Browser Binding統合パターンの説明、多言語サポート戦略の文書化、柔軟なセレクターフォールバックパターンの確立
+
+11. **User Management Basic Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/admin/user-management.spec.ts`
+   - **Lines**: 4-140 包括的なドキュメントコメント追加
+   - **追加内容**:
+     - テストカバレッジの説明（ユーザー管理ページアクセス、既存ユーザー表示、検索/フィルター、ドキュメントワークスペースへのナビゲーション）
+     - 重要な設計決定の文書化（10項目）:
+       1. Complementary Test Coverage (user-management-crud.spec.ts との関係性、基本UI vs データ操作の分離、関心の分離パターン)
+       2. Mobile Browser Support (sidebar close, force click, viewport ≤414px検出、dual menu toggle selectors、alternative header button fallback)
+       3. Flexible User Detection (admin userのページ内任意位置検索、count > 0パターン、UIリスト読み込み成功検証)
+       4. Search Input Selector Fix (`.ant-input-search input`でActual input element target、Ant Design Search component bug fix、"FIX:"コメント記録)
+       5. Smart Conditional Skipping (検索UI要素存在確認、機能未実装時のスキップ、セルフヒーリングテスト、説明メッセージ)
+       6. Japanese Menu Text Navigation (「管理」「ユーザー管理」「ドキュメント」、English fallbackなし、deployment-specific language)
+       7. BeforeEach Setup Pattern (三段階セットアップ: Login → Navigate → Mobile sidebar close、admin menu expansion check、UI stabilization waits)
+       8. Timeout Strategy (一貫した待機パターン: 2s major navigation、1s minor operations、search debouncing、React component rendering)
+       9. Screenshot Capture (full page screenshot、user_management.png、visual regression detection、documentation artifact)
+       10. Graceful Menu Expansion (admin menu存在確認、count() > 0パターン、browser state対応)
+     - テストカバレッジ4項目の説明（4テスト: display page, display existing users, handle search/filter, navigate back）
+     - User Management Architectureの説明（React component、Ant Design Table、search/filter、React Router、mobile responsive layout）
+     - UI検証パターンの文書化（/users URL、ant-table component、text=admin、search input、documents menu）
+     - 期待テスト結果の明記（/users URLアクセス、テーブル表示、admin user存在、検索機能、/documents遷移、desktop/mobile動作）
+     - 既知の制限事項の記録（検索UI未実装時スキップ、user list content精度検証なし、CRUD操作は別ファイル、pagination/sortingなし、text-based admin検出）
+     - パフォーマンス最適化の説明（first()セレクター、最小待機1-2秒、screenshot初回のみ、conditional admin menu expansion）
+     - デバッグ機能の説明（full page screenshot、smart conditional skipping messages、graceful error handling、count-based assertions）
+     - Mobile Browser固有動作の説明（sidebar close in beforeEach、force click on navigation menu、viewport detection、alternative toggle selector fallback）
+     - 他テストファイルとの関係性（user-management-crud.spec.ts CRUD lifecycle、group-management.spec.ts similar basic functionality、initial-content-setup.spec.ts admin user verification、access-control.spec.ts user-based ACL scenarios）
+   - **価値**: user-management-crud.spec.tsとの補完関係を明確化、Ant Design Search componentバグフィックスの文書化、柔軟なユーザー検出戦略の説明、三段階セットアップパターンのベストプラクティス確立
+
+12. **Group Management Basic Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/admin/group-management.spec.ts`
+   - **Lines**: 4-146 包括的なドキュメントコメント追加
+   - **追加内容**:
+     - テストカバレッジの説明（グループ管理ページアクセス、既存グループ表示、検索/フィルター、ドキュメントワークスペースへのナビゲーション）
+     - 重要な設計決定の文書化（10項目）:
+       1. Complementary Test Coverage (group-management-crud.spec.ts との関係性、基本UI vs データ操作の分離、関心の分離パターン)
+       2. Mobile Browser Support (sidebar close, force click, viewport ≤414px検出、dual menu toggle selectors、alternative header button fallback)
+       3. Flexible Group Detection (table rows > 0 OR empty state、rowCount検証、ant-empty component、新規インストール対応)
+       4. Search Input Selector Fix (`.ant-input-search input`でActual input element target、Ant Design Search component bug fix、"FIX:"コメント記録)
+       5. Smart Conditional Skipping (検索UI要素存在確認、機能未実装時のスキップ、セルフヒーリングテスト、説明メッセージ)
+       6. Japanese Menu Text Navigation (「管理」「グループ管理」「ドキュメント」、English fallbackなし、deployment-specific language)
+       7. BeforeEach Setup Pattern (三段階セットアップ: Login → Navigate → Mobile sidebar close、admin menu expansion check、UI stabilization waits)
+       8. Timeout Strategy (一貫した待機パターン: 2s major navigation、1s minor operations、search debouncing、React component rendering)
+       9. Screenshot Capture (full page screenshot、group_management.png、visual regression detection、documentation artifact)
+       10. Graceful Menu Expansion (admin menu存在確認、count() > 0パターン、browser state対応)
+     - テストカバレッジ4項目の説明（4テスト: display page, display existing groups, handle search/filter, navigate back）
+     - Group Management Architectureの説明（React component、Ant Design Table、search/filter、React Router、mobile responsive layout、Empty State component）
+     - UI検証パターンの文書化（/groups URL、ant-table component、table rows、ant-empty component、search input、documents menu）
+     - 期待テスト結果の明記（/groups URLアクセス、テーブル表示、グループ存在時rows表示、グループ不在時empty state表示、検索機能、/documents遷移、desktop/mobile動作）
+     - 既知の制限事項の記録（検索UI未実装時スキップ、group list content精度検証なし、CRUD操作は別ファイル、member management別ファイル、pagination/sortingなし、count-based group検出）
+     - パフォーマンス最適化の説明（first()セレクター、最小待機1-2秒、screenshot初回のみ、conditional admin menu expansion、graceful empty state handling）
+     - デバッグ機能の説明（full page screenshot、smart conditional skipping messages、graceful error handling、count-based or empty state assertions、empty state detection prevents false failures）
+     - Mobile Browser固有動作の説明（sidebar close in beforeEach、force click on navigation menu、viewport detection、alternative toggle selector fallback）
+     - 他テストファイルとの関係性（group-management-crud.spec.ts CRUD lifecycle + member management、user-management.spec.ts similar basic functionality、initial-content-setup.spec.ts basic group structure verification、access-control.spec.ts group-based ACL scenarios）
+   - **価値**: group-management-crud.spec.tsとの補完関係を明確化、empty state対応の柔軟なグループ検出戦略の説明、Ant Design Search componentバグフィックスの一貫した文書化、三段階セットアップパターンのベストプラクティス継続
+
+13. **Initial Content Setup Tests ドキュメント強化** ✅
+   - **ファイル**: `tests/admin/initial-content-setup.spec.ts`
+   - **Lines**: 3-160 包括的なドキュメントコメント追加（旧8行 → 新158行）
+   - **追加内容**:
+     - テストカバレッジの説明（Patch_InitialContentSetup.java検証、初期フォルダ作成、multi-principal ACL設定、regression防止）
+     - 重要な設計決定の文書化（10項目）:
+       1. Backend-Focused Testing (ブラウザ自動化なし、Pure API testing、fetch() for CMIS Browser Binding、Direct CouchDB HTTP API access、backend operation特化、browser overhead削減)
+       2. CMIS API-First with CouchDB Fallback (Browser Binding for folder discovery、Direct CouchDB for ACL validation、admin:password vs admin:admin、AtomPub ACL retrieval信頼性問題回避)
+       3. Multi-Principal ACL Validation Strategy (3 principals: admin:all, GROUP_EVERYONE:read, system:all、ACL=null regression防止、PatchService.createInitialFolders() proper ACL設定必須)
+       4. Regression Test Pattern (historical bug対策、ACL=null → system-only principal、entries.length > 1 AND hasAdmin AND hasEveryone検証、PatchService変更時regression検出)
+       5. BeforeAll Server Check (CMIS server accessibility早期検証、Browser Binding root endpoint、Error throw for cascading failure prevention)
+       6. Folder Discovery via Browser Binding (cmisselector=children for root contents、cmis:name filtering、cmis:baseTypeId validation、Console objectId logging、JSON format easier than AtomPub XML)
+       7. Direct CouchDB Access for ACL Validation (http://localhost:5984/{repositoryId}/{folderId}、admin:password credentials、complete document including ACL structure、most reliable ACL persistence validation、AtomPub /acl endpoint alternative)
+       8. Test Execution Order (5 tests progressive validation: existence → existence → ACL → ACL → regression、simple to complex構成)
+       9. Console Logging Strategy (✅ checkmark prefix、folder objectId output、complete ACL entries、regression success message、debugging facilitation)
+       10. Constants Configuration (CMIS_BASE_URL、REPOSITORY_ID、ADMIN_CREDENTIALS centralized、environment configuration容易、hardcoded values回避)
+     - テストカバレッジ5項目の説明（5テスト: Sites existence, Technical Documents existence, Sites ACL, Technical Documents ACL, regression multi-principal enforcement）
+     - System Initialization Architectureの説明（Patch System、PatchService.applyPatchesOnStartup()、Patch_InitialContentSetup、ACL Creation、Database Layer CouchDB、CMIS Layer ObjectService.createFolder()）
+     - Patch_InitialContentSetup.java Integration詳細（createInitialFolders method、ObjectService.createFolder with ACL parameter、AccessControlListImpl structure、CouchDB document.acl.entries persistence、test suite validation）
+     - 期待テスト結果の明記（Sites/Tech Docs folders exist、objectId logged、3 ACL entries、admin:all、GROUP_EVERYONE:read、system:all、regression multi-principal confirmation、green ✅ console messages）
+     - 既知の制限事項の記録（properties validation limited、root-level folders only、CMIS properties未検証、folder deletion/modification未テスト、CouchDB direct access依存、localhost deployment assumption）
+     - パフォーマンス最適化の説明（no browser automation overhead、single beforeAll check、minimal network requests 2-3 per test、Direct CouchDB faster than CMIS ACL retrieval）
+     - デバッグ機能の説明（console logging with checkmarks、folder objectId for CouchDB inspection、complete ACL entries logged、beforeAll server check、regression test clear message、error messages show principal/permission failures）
+     - 他コンポーネントとの関係性（Patch_InitialContentSetup.java validation target、PatchService.java orchestration、ObjectService.createFolder() CMIS service、CouchDB database layer、Browser Binding CMIS API、access-control.spec.ts runtime ACL manipulation、acl-management.spec.ts ACL CRUD）
+     - Historical Context - ACL Regression Bug（Original Issue: acl=null folders、Symptom: system-only principal、Impact: admin/GROUP_EVERYONE missing breaking access control、Fix: explicit ACL during creation、Prevention: test suite regression detection）
+     - Credentials Reference（CMIS Authentication: admin:admin、CouchDB Authentication: admin:password、Repository: bedroom、Base URL: http://localhost:8080/core）
+   - **価値**: Backend testing特有の設計説明、CMIS API-first + CouchDB fallback戦略の文書化、multi-principal ACL regression防止の歴史的背景明記、Patch system integration詳細説明、dual authentication (CMIS vs CouchDB) credentials明確化
+
+14. **スマート条件付きスキップパターンの確認** ✅
    - テスト本体内で `test.skip(true, 'reason')` を使用
    - PDFが存在すれば自動的にテスト実行
    - PDFが無ければ明確なメッセージでスキップ

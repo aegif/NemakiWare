@@ -3,6 +3,40 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
 
+/**
+ * Document Management E2E Tests
+ *
+ * Tests core document management functionality in NemakiWare React UI:
+ * - Document list display and loading
+ * - Folder navigation (desktop tree view, mobile table view)
+ * - File upload with unique naming
+ * - Document properties/detail view
+ * - Search functionality
+ * - Folder creation
+ * - Document deletion with cleanup
+ * - Document download
+ * - UI responsiveness during operations
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ * 1. Mobile Browser Support (Lines 29-56):
+ *    - Sidebar close logic prevents overlay blocking clicks in mobile Chrome
+ *    - Viewport width ≤414px triggers mobile-specific behavior
+ *
+ * 2. Test Cleanup (Lines 59-97):
+ *    - Automatic cleanup of test- prefixed objects after each test
+ *    - Prevents test data accumulation in repository
+ *    - Uses CMIS query to find and delete test objects
+ *
+ * 3. Smart Conditional Skipping:
+ *    - Tests skip gracefully if UI features not loaded
+ *    - Self-healing: tests pass when features become available
+ *    - Better than hard test.describe.skip() pattern
+ *
+ * 4. Unique Test Data (randomUUID):
+ *    - All test files/folders use unique names
+ *    - Prevents conflicts in parallel test execution
+ *    - Enables reliable cross-browser testing
+ */
 test.describe('Document Management', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;

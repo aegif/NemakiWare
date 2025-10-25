@@ -2,6 +2,109 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
+/**
+ * Type Management E2E Tests
+ *
+ * Comprehensive end-to-end tests for NemakiWare CMIS type management system:
+ * - CMIS base type display verification (6 base types)
+ * - NemakiWare custom type display (nemaki:parentChildRelationship, nemaki:bidirectionalRelationship)
+ * - Type hierarchy validation (base types + child types)
+ * - Type details viewing and property inspection
+ * - Direct CMIS API verification for type definitions
+ * - Type editing functionality (currently WIP/skipped)
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ * 1. CMIS 1.1 Type Hierarchy Coverage (Lines 44-105):
+ *    - Tests verify all 6 CMIS 1.1 base types are displayed:
+ *      - cmis:document (document content storage)
+ *      - cmis:folder (hierarchical container)
+ *      - cmis:relationship (object associations)
+ *      - cmis:policy (access control policies)
+ *      - cmis:item (unstructured content)
+ *      - cmis:secondary (aspect/facet support)
+ *    - Rationale: Complete CMIS type system validation ensures repository compliance
+ *
+ * 2. NemakiWare Custom Types Validation (Lines 72-105):
+ *    - nemaki:parentChildRelationship: Parent-child relationship type (extends cmis:relationship)
+ *    - nemaki:bidirectionalRelationship: Bidirectional relationship type (extends cmis:relationship)
+ *    - Tests verify custom types inherit from correct base type (cmis:relationship)
+ *    - Total type count validation: 6 base types + 2 custom types = 8 minimum
+ *    - Rationale: Ensures custom type definitions are properly registered and displayed
+ *
+ * 3. Precise Selector Strategy (Lines 64, 88, 114, 148, 255):
+ *    - Uses Ant Design table data-row-key attribute for precise type row identification
+ *    - Pattern: tr[data-row-key="typeId"] for exact type matching
+ *    - Avoids text-based selectors that may match partial type IDs
+ *    - Handles multiple occurrences with .first() when needed
+ *    - Rationale: Eliminates ambiguity in type hierarchy tree tables
+ *
+ * 4. Direct CMIS API Verification (Lines 178-242):
+ *    - Tests CMIS Browser Binding API endpoint directly via page.evaluate()
+ *    - Fetches base types: /core/browser/bedroom?cmisselector=typeChildren
+ *    - Fetches child types for each base type with typeId parameter
+ *    - Verifies API returns complete type hierarchy (base + custom types)
+ *    - Validates nemaki: custom types present in API response
+ *    - Rationale: Ensures backend CMIS type definitions are complete regardless of UI implementation
+ *
+ * 5. Type Details View Testing (Lines 138-176):
+ *    - Clicks type row to open details modal/drawer
+ *    - Verifies type ID is displayed in details view
+ *    - Tests modal close functionality
+ *    - Graceful skip if details view not implemented yet
+ *    - Rationale: Validates user can inspect type properties and definitions
+ *
+ * 6. Mobile Browser Support (Lines 16-26, 138-176):
+ *    - Sidebar close logic in beforeEach prevents overlay blocking clicks
+ *    - Viewport width ≤414px triggers mobile-specific behavior
+ *    - Force click option for mobile browsers (isMobile ? { force: true } : {})
+ *    - Graceful fallback if sidebar toggle unavailable
+ *    - Consistent with other test suites' mobile support pattern
+ *
+ * 7. Smart Conditional Navigation (Lines 31-41):
+ *    - Checks for admin menu existence before clicking
+ *    - Checks for type management menu item before navigation
+ *    - Prevents test failures if admin features restricted for test user
+ *    - Better than hard-coded navigation that assumes menu structure
+ *    - Rationale: Maintains test suite flexibility across different user permission scenarios
+ *
+ * 8. Type Editing Test (Lines 244-315 - Currently Skipped):
+ *    - WIP: Type editing functionality not fully implemented or restricted by CMIS spec
+ *    - Test structure prepared for future type description editing
+ *    - Validates edit modal opening, description field update, and submission
+ *    - Currently skipped with test.skip() until UI implements full type editing
+ *    - Rationale: CMIS 1.1 spec restricts modifying base type definitions
+ *
+ * Test Coverage:
+ * 1. ✅ Base CMIS Types Display (6 types)
+ * 2. ✅ Custom Types Display (2 nemaki: types)
+ * 3. ✅ Type Information Display (display name, base type)
+ * 4. ✅ Type Details View (modal/drawer)
+ * 5. ✅ CMIS API Verification (base + child types)
+ * 6. ⊘ Type Editing (skipped - WIP)
+ *
+ * CMIS Browser Binding API Usage:
+ * - Base types query: cmisselector=typeChildren (no typeId parameter)
+ * - Child types query: cmisselector=typeChildren&typeId={baseTypeId}
+ * - Response format: { types: [{ id, localName, displayName, baseId, ... }] }
+ * - Authentication: Basic auth with admin:admin credentials
+ *
+ * Expected Test Results:
+ * - Base types count: 6 (CMIS 1.1 standard)
+ * - Child types count: ≥2 (nemaki: custom types)
+ * - Total types count: ≥8 (base + custom)
+ * - Type row selectors: data-row-key attribute for precise matching
+ *
+ * Known Limitations:
+ * - Type editing currently skipped (WIP - UI implementation pending)
+ * - Type details modal may not be implemented in all UI versions
+ * - Custom type editing restricted by CMIS 1.1 spec (base types immutable)
+ *
+ * Performance Optimizations:
+ * - Uses data-row-key attribute for O(1) type row lookup
+ * - API verification uses parallel fetching (Promise.all) for child types
+ * - Extended timeout (15s) for table loading to accommodate slow networks
+ */
+
 test.describe('Type Management - Custom Types Display', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;

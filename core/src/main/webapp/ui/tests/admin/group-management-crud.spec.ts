@@ -2,6 +2,65 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { randomUUID } from 'crypto';
 
+/**
+ * Group Management CRUD Operations E2E Tests
+ *
+ * Tests complete CRUD lifecycle for group management in NemakiWare admin interface:
+ * - Group creation with name and description
+ * - Member addition to group (testuser or admin)
+ * - Group description editing
+ * - Data persistence verification (reload test to confirm changes saved)
+ * - Group deletion with confirmation dialog
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ * 1. Unique Test Data Strategy (Lines 7-8):
+ *    - Uses randomUUID() for test group name generation
+ *    - Prevents conflicts in parallel test execution across browsers
+ *    - Format: testgroup_<8-char-uuid>
+ *    - Enables reliable cross-browser testing
+ *
+ * 2. Mobile Browser Support (Lines 24-49):
+ *    - Sidebar close logic in beforeEach prevents overlay blocking clicks
+ *    - Viewport width ≤414px triggers mobile-specific behavior
+ *    - Force click option for mobile browsers (Lines 63, 85, 116, etc.)
+ *    - Graceful fallback if sidebar toggle unavailable
+ *
+ * 3. Smart Conditional Skipping Pattern:
+ *    - Tests check for UI elements before performing actions
+ *    - Skip gracefully if features not available (Lines 95, 163, 176, 180, 223, 226, 280, 318, 321)
+ *    - Better than hard test.describe.skip() - self-healing when features become available
+ *    - Maintains test suite flexibility across different UI implementation states
+ *
+ * 4. UI Navigation Reload Strategy (Lines 230-250):
+ *    - Uses UI navigation (Documents → Group Management) instead of page.reload()
+ *    - Avoids breaking React Router state
+ *    - More realistic user behavior simulation
+ *    - Verifies proper state persistence across navigation
+ *
+ * 5. Test Execution Order:
+ *    - Test 1: Create group (prerequisite for other tests)
+ *    - Test 2: Add member (requires created group)
+ *    - Test 3: Edit description (requires created group)
+ *    - Test 4: Verify persistence (requires edited group)
+ *    - Test 5: Delete group (cleanup)
+ *    - Order matters: Tests depend on previous test success
+ *
+ * 6. Member Management Strategy (Lines 99-181):
+ *    - Multiple UI interaction patterns supported:
+ *      - Member management button in row (user/team/edit icon)
+ *      - Click group row to open detail view
+ *      - Add member button or interface in detail view
+ *    - Fallback logic: Try testuser first, then admin if testuser doesn't exist
+ *    - Flexible user selection (keyboard type + dropdown selection)
+ *
+ * 7. Ant Design Component Handling:
+ *    - Supports both modal and drawer patterns (.ant-modal, .ant-drawer)
+ *    - Multiple button text patterns (作成/保存/更新/削除/メンバー追加)
+ *    - Flexible input selectors (id*, name, placeholder)
+ *    - Confirmation dialog handling (.ant-popconfirm)
+ *    - Select component with dropdown options (.ant-select, .ant-select-item)
+ */
+
 test.describe('Group Management CRUD Operations', () => {
   let authHelper: AuthHelper;
   const testGroupName = `testgroup_${randomUUID().substring(0, 8)}`;

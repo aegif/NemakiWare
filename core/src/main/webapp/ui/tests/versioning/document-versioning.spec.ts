@@ -2,6 +2,143 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
+/**
+ * Document Versioning E2E Tests
+ *
+ * Comprehensive end-to-end tests for NemakiWare CMIS document versioning system:
+ * - Check-out documents (create PWC - Private Working Copy)
+ * - Check-in documents with new content versions
+ * - Cancel check-out operations (discard PWC)
+ * - Display version history with version metadata
+ * - Download specific versions from version history
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ * 1. Unique Test Document Names (Lines 47-48, Timestamps):
+ *    - Uses Date.now() for unique document filenames
+ *    - Pattern: `versioning-test-${timestamp}.txt`, `checkin-test.txt`, etc.
+ *    - Prevents test conflicts when multiple tests run in parallel
+ *    - Enables test execution across different browser contexts without collisions
+ *    - Rationale: Versioning tests require predictable document state for accurate assertions
+ *
+ * 2. PWC (Private Working Copy) Detection Strategy (Lines 102-136):
+ *    - Primary indicator: 作業中 (Working) tag in document table row
+ *    - Fallback indicator: Check-in button visibility (indicates document is checked out)
+ *    - Two-phase verification prevents false negatives from UI rendering delays
+ *    - Screenshot capture on failure (Line 121) for debugging
+ *    - Detailed console logging shows table state after operations
+ *    - Rationale: PWC state is critical for versioning workflow - must verify reliably
+ *
+ * 3. Icon-Based Button Selectors (Lines 74, 113):
+ *    - Check-out button: EditOutlined icon (aria-label="edit")
+ *    - Check-in button: CheckOutlined icon (aria-label="check")
+ *    - Icon-based selectors are more stable than text-based (language-independent)
+ *    - Uses .filter({ has: page.locator('span[role="img"][aria-label="..."]') })
+ *    - Rationale: Ant Design icon buttons have consistent aria-labels across locales
+ *
+ * 4. Upload-Then-Test Pattern (Lines 46-54, 169-175, 261-267, etc.):
+ *    - Each test uploads its own test document before versioning operations
+ *    - Uses TestHelper.uploadDocument() for consistent upload handling
+ *    - Graceful skip if upload fails (prevents cascading failures)
+ *    - Test documents have descriptive names indicating their purpose
+ *    - Rationale: Isolated test data ensures tests don't depend on pre-existing documents
+ *
+ * 5. Automatic Table Refresh Handling (Lines 96-97, 229-231, 304-306):
+ *    - After check-out/check-in/cancel operations, table automatically reloads
+ *    - Tests wait 2-5 seconds for table refresh (loadObjects() in DocumentList component)
+ *    - Longer waits (5s) after check-out to account for PWC state propagation
+ *    - Console logging captures DocumentList DEBUG messages during refresh
+ *    - Rationale: React state updates are asynchronous - explicit waits prevent race conditions
+ *
+ * 6. Smart Conditional Skipping (Lines 138-140, 224-226, 299-301, 383-385, 477-482):
+ *    - Tests check for versioning UI buttons before attempting operations
+ *    - Graceful test.skip() when features not implemented yet
+ *    - Better than hard failures - tests self-heal when UI features are added
+ *    - Console messages explain why tests skipped (aids debugging)
+ *    - Rationale: Versioning UI may not be fully implemented - tests adapt to current state
+ *
+ * 7. Mobile Browser Support (Lines 17-32, 38-39, etc.):
+ *    - Sidebar close logic in beforeEach prevents overlay blocking clicks
+ *    - Viewport width ≤414px triggers mobile-specific behavior
+ *    - Force click option: .click(isMobile ? { force: true } : {})
+ *    - Applied to all interactive elements (document rows, buttons, menu items)
+ *    - Rationale: Mobile layouts have sidebar overlays that block UI interactions
+ *
+ * 8. Comprehensive Cleanup After Each Test (Lines 142-157, 228-249, 303-324, etc.):
+ *    - Every test includes cleanup phase to delete test documents
+ *    - Waits for table refresh before cleanup (2s)
+ *    - Handles both modal and popconfirm deletion confirmation patterns
+ *    - Cleanup runs even if test assertions fail (in finally-like pattern)
+ *    - Rationale: Prevents test data accumulation affecting subsequent test runs
+ *
+ * 9. Check-In Workflow Testing (Lines 160-250):
+ *    - Tests complete check-out → check-in cycle
+ *    - Fills version comment input (コメント field)
+ *    - Uploads new version content via file input
+ *    - Verifies PWC indicator disappears after check-in
+ *    - Tests realistic user workflow: checkout, modify, checkin
+ *    - Rationale: Check-in is multi-step operation requiring form filling and file upload
+ *
+ * 10. Version History Modal Handling (Lines 327-408):
+ *     - Supports both .ant-modal and .ant-drawer layouts
+ *     - Detects version history by heading text (バージョン履歴/Version History)
+ *     - Verifies initial version (1.0/v1) is listed
+ *     - Tests modal close functionality
+ *     - Rationale: Version history UI implementation may use modal or drawer pattern
+ *
+ * 11. Version Download Testing (Lines 410-505):
+ *     - Uses Playwright's download event listener
+ *     - Flexible filename matching (regex) for server-modified filenames
+ *     - Verifies download completion via download.path()
+ *     - Graceful error handling if download times out
+ *     - Rationale: Server may append version metadata to downloaded filenames
+ *
+ * Test Coverage:
+ * 1. ✅ Check-Out Document (creates PWC with 作業中 tag)
+ * 2. ✅ Check-In Document (new version with comment and content)
+ * 3. ✅ Cancel Check-Out (discard PWC, restore original state)
+ * 4. ✅ Display Version History (modal/drawer with version list)
+ * 5. ✅ Download Specific Version (download event verification)
+ *
+ * CMIS Versioning Concepts:
+ * - **PWC (Private Working Copy)**: Checked-out document in editable state
+ * - **Check-Out**: Lock document for editing, create PWC
+ * - **Check-In**: Commit changes, create new version, delete PWC
+ * - **Cancel Check-Out**: Discard PWC, unlock document without version creation
+ * - **Version Series**: Linked chain of document versions (1.0, 1.1, 2.0, etc.)
+ * - **Version Label**: Human-readable version identifier (e.g., "1.0", "2.0")
+ *
+ * UI Verification Patterns:
+ * - PWC State: 作業中 tag presence in document row
+ * - Checked-In State: PWC tag disappearance, check-out button reappears
+ * - Version History: Modal with version list table/list
+ * - Download: Playwright download event with filename verification
+ *
+ * Expected Test Results:
+ * - Each test creates unique test document
+ * - Check-out shows PWC indicator (作業中 tag or check-in button)
+ * - Check-in removes PWC indicator
+ * - Cancel check-out removes PWC indicator without version creation
+ * - Version history displays at least initial version (1.0)
+ * - Download completes successfully with correct filename pattern
+ *
+ * Known Limitations:
+ * - Tests skip gracefully if versioning UI not fully implemented
+ * - Some tests depend on console logging for debugging (may be removed in production)
+ * - Screenshot capture on failure requires test-results/ directory
+ * - Version history UI pattern may vary (modal vs drawer)
+ *
+ * Performance Optimizations:
+ * - Uses icon-based selectors (faster than text search)
+ * - Minimal waits after operations (2-5s for table refresh)
+ * - Uploads small text files for speed (<1KB)
+ * - Cleanup prevents database bloat from accumulated test data
+ *
+ * Debugging Features:
+ * - Console logging for PWC state verification (Lines 77, 83-86, 99)
+ * - Screenshot capture on checkout failure (Line 121)
+ * - Table row inspection logging (Lines 127-132)
+ * - DocumentList DEBUG message capture (Lines 83-86)
+ */
 test.describe('Document Versioning', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;

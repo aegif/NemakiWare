@@ -2,6 +2,59 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { randomUUID } from 'crypto';
 
+/**
+ * User Management CRUD Operations E2E Tests
+ *
+ * Tests complete CRUD lifecycle for user management in NemakiWare admin interface:
+ * - User creation with full profile details (username, email, firstName, lastName, password)
+ * - User information editing (update email, firstName, etc.)
+ * - Data persistence verification (reload test to confirm changes saved)
+ * - User deletion with confirmation dialog
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ * 1. Unique Test Data Strategy (Lines 7-8):
+ *    - Uses randomUUID() for test username generation
+ *    - Prevents conflicts in parallel test execution across browsers
+ *    - Format: testuser_<8-char-uuid>@test.local
+ *    - Enables reliable cross-browser testing
+ *
+ * 2. Mobile Browser Support (Lines 24-49):
+ *    - Sidebar close logic in beforeEach prevents overlay blocking clicks
+ *    - Viewport width ≤414px triggers mobile-specific behavior
+ *    - Force click option for mobile browsers (Lines 63, 109, 139, etc.)
+ *    - Graceful fallback if sidebar toggle unavailable
+ *
+ * 3. Smart Conditional Skipping Pattern:
+ *    - Tests check for UI elements before performing actions
+ *    - Skip gracefully if features not available (Lines 119, 168, 171, 226, 285, 288)
+ *    - Better than hard test.describe.skip() - self-healing when features become available
+ *    - Maintains test suite flexibility across different UI implementation states
+ *
+ * 4. UI Navigation Reload Strategy (Lines 175-195):
+ *    - Uses UI navigation (Documents → User Management) instead of page.reload()
+ *    - Avoids breaking React Router state
+ *    - More realistic user behavior simulation
+ *    - Verifies proper state persistence across navigation
+ *
+ * 5. Test Execution Order:
+ *    - Test 1: Create user (prerequisite for other tests)
+ *    - Test 2: Edit user (requires created user)
+ *    - Test 3: Verify persistence (requires edited user)
+ *    - Test 4: Delete user (cleanup)
+ *    - Order matters: Tests depend on previous test success
+ *
+ * 6. Ant Design Component Handling:
+ *    - Supports both modal and drawer patterns (.ant-modal, .ant-drawer)
+ *    - Multiple button text patterns (作成/保存/更新/削除)
+ *    - Flexible input selectors (id*, name, type)
+ *    - Confirmation dialog handling (.ant-popconfirm)
+ *
+ * DEBUGGING FEATURES:
+ * - Console logging in delete test (Lines 236, 247, 253, 255, 259, 267, 271, 274)
+ * - Success/error message detection for troubleshooting
+ * - Timeout handling with clear error messages
+ */
+
 test.describe('User Management CRUD Operations', () => {
   let authHelper: AuthHelper;
   const testUsername = `testuser_${randomUUID().substring(0, 8)}`;
