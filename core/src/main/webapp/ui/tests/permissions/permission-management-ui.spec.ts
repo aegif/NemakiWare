@@ -168,7 +168,7 @@ test.describe('Permission Management UI - ACL Display', () => {
     }
   });
 
-  test.skip('should verify ACL REST API endpoint is accessible', async ({ page }) => {
+  test('should verify ACL REST API endpoint is accessible', async ({ page }) => {
     console.log('Test: Verifying ACL REST API endpoint');
 
     // Test the ACL endpoint directly via API

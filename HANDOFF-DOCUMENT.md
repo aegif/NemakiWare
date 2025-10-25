@@ -1,11 +1,165 @@
 # NemakiWare Playwright Test Suite - セッション引き継ぎ資料
 
 **作成日**: 2025-10-24
-**最終更新**: 2025-10-25 15:00 JST
+**最終更新**: 2025-10-25 19:00 JST
 **現在のブランチ**: `vk/1620-ui`
 **PR**: https://github.com/aegif/NemakiWare/pull/391
 
-## 🎉 最新セッション更新 (2025-10-25 午後) - Document Versioning テスト修正完了
+## 🎉 最新セッション更新 (2025-10-25 午後3) - スキップテスト解消: UIボタンテキスト修正
+
+### このセッションで実施した作業
+
+**コミット**: `00d492a52` - "fix(ui): Update button text to match Playwright test expectations"
+
+1. **スキップされているテストの全体像を把握** ✅
+   - 30件のスキップテストを10カテゴリーに分類
+   - 各カテゴリーのスキップ理由を特定
+   - 実装状況を詳細に調査
+
+2. **UI機能の実装状況確認** ✅
+   - UserManagement.tsx: **完全実装済み** (CRUD全機能)
+   - GroupManagement.tsx: **完全実装済み** (CRUD全機能)
+   - TypeManagement.tsx: **完全実装済み** (カスタムタイプ作成、プロパティ定義)
+   - PermissionManagement.tsx: **完全実装済み** (ACL管理)
+
+3. **ボタンテキスト不一致の問題を解決** ✅
+   - **UserManagement**: 「新規ユーザー」→「新規作成」
+   - **GroupManagement**: 「新規グループ」→「新規作成」
+   - **TypeManagement**: 「新規タイプ作成」→「新規タイプ」（前回セッションの誤修正を訂正）
+
+### 重要な発見
+
+**UI機能は実装済みだった**:
+- スキップされているテストの多くは、**UI機能が未実装だからではなく、ボタンテキストがテストの期待値と一致しないため**に条件付きスキップされていました
+- テストコードは`test.skip('機能が見つかりません')`パターンを使用しており、ボタンが見つからない場合に自動的にスキップします
+
+**修正の影響範囲** (詳細調査結果):
+- ✅ user-management-crud.spec.ts (4テスト) - ボタン発見可能に（検証済み）
+- ✅ group-management-crud.spec.ts (5テスト) - ボタン発見可能に（検証済み）
+- ⚠️ custom-type-creation.spec.ts (3テスト) - **test.describe.skip()で強制スキップ中** + セレクター要書き換え
+- ✅ custom-type-attributes.spec.ts Line 41 (1テスト) - 有効化可能（セレクター一致確認済み）
+
+### 次のセッションで必須の作業
+
+**🔴 最優先: Docker環境での検証**
+
+1. **Docker Desktop を起動**
+   ```bash
+   # Docker Desktopアプリケーションを起動してください
+   docker ps
+   ```
+
+2. **Dockerコンテナを起動**
+   ```bash
+   cd /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/1620-ui/docker
+   docker compose -f docker-compose-simple.yml up -d
+   sleep 90
+   ```
+
+3. **修正したテストを実行**
+   ```bash
+   cd /private/var/folders/bx/4t_72fv158l76qk70rt_pmg00000gn/T/vibe-kanban/worktrees/1620-ui/core/src/main/webapp/ui
+
+   # ユーザー管理CRUDテスト
+   npm run test:docker -- tests/admin/user-management-crud.spec.ts
+
+   # グループ管理CRUDテスト
+   npm run test:docker -- tests/admin/group-management-crud.spec.ts
+
+   # カスタムタイプ作成テスト
+   npm run test:docker -- tests/admin/custom-type-creation.spec.ts
+   ```
+
+4. **予測される結果** (詳細調査後の正確な見積もり):
+   - **修正前**: 73/103 (70.9%) + 30スキップ
+   - **修正後**: **83/103 (80.6%)** + 20スキップ ⬆️ **+10テスト合格予測**
+
+### スキップテスト残り20件の内訳（詳細調査結果）
+
+**UI機能実装済み（ボタンテキスト修正完了）**: 9テスト → 合格予測 ✅
+- ✅ User Management CRUD: 4テスト（セレクター検証済み）
+- ✅ Group Management CRUD: 5テスト（セレクター検証済み）
+
+**UI実装済みだが追加調査必要**: 5テスト
+- ✅ **Custom Type Attributes**: 1テスト（Line 41、**有効化完了** - test.skip()削除済み）
+- ✅ **Custom Type Attributes**: 2テスト（Line 179, 101、**既に有効化済み** - Line 41のテストに依存、テスト順序で実行）
+- ✅ **Permission Management UI**: 1テスト（Line 37、**有効化完了** - test.skip()削除済み、バックエンドAPIテスト）
+- ❌ Permission Management UI: 1テスト（Line 32、ボタンにテキストなし、スキップ継続）
+- ❌ **ACL Management**: 1テスト（Line 75、**スキップ継続確認済み** - UIボタンは存在するがモーダルではなくナビゲーション発生）
+
+**テスト要書き換え**: 3テスト
+- 🔧 Custom Type Creation: 3テスト（test.describe.skip()強制スキップ中 + セレクター要完全書き換え）
+
+**環境/テスト実装問題**: 4テスト（UI実装とは無関係）
+- ⏱️ Access Control: 3テスト（テストユーザーログインタイムアウト）
+- 🐛 Document Viewer Auth: 1テスト（React UIナビゲーション問題）
+
+**WIP（サンプルデータ未準備）**: 4テスト
+- 📄 PDF Preview: 4テスト（CMIS仕様書PDFファイル未アップロード）
+
+**削除済み**: 2テスト
+- 🐛 404 Redirect: 1テスト（製品バグ - 前回セッションで削除済み）
+- ⚠️ ACL Management: 1テスト（実装調査の結果、30件カウントに含まれない可能性）
+
+### 技術的な発見
+
+1. **Playwrightテストの条件付きスキップパターン**:
+   ```typescript
+   const createButton = page.locator('button').filter({
+     hasText: /新規作成|ユーザー追加|追加/
+   });
+
+   if (await createButton.count() > 0) {
+     // テスト実行
+   } else {
+     test.skip('User creation functionality not available');
+   }
+   ```
+
+2. **Ant Designボタンテキストの標準化の重要性**:
+   - 「新規作成」: 汎用的なCreate操作
+   - 「新規○○作成」: 特定リソースのCreate操作（例: 「新規タイプ作成」）
+   - テストコードはregexで複数パターンをマッチさせるが、UIは一貫性が重要
+
+3. **React UIコンポーネント構造**:
+   - `/components/`ディレクトリに全機能が実装済み
+   - UserManagement, GroupManagement, TypeManagement, PermissionManagement全て完全実装
+   - 未実装と思われていた機能の多くは、実際には完全実装されていた
+
+### 詳細調査結果: custom-type-creation.spec.ts
+
+**重要な訂正**: 前回セッションでこのテストが有効化可能と予測されましたが、**詳細調査の結果、誤りでした**。
+
+**実際の状況**:
+1. **test.describe.skip()で強制スキップ** (Line 20):
+   ```typescript
+   test.describe.skip('Custom Type Creation and Property Management (WIP - UI not implemented)', () => {
+   ```
+   - スキップコメント「UI NOT IMPLEMENTED」は**時代遅れの情報**
+   - TypeManagement.tsxは**完全実装済み**（Lines 289-432）
+   - しかし、テストセレクターが実装と不一致
+
+2. **ボタンテキスト不一致**:
+   - テスト期待値 (Line 76-77): `/新規.*作成|Create.*Type|タイプ作成/`
+   - 実装 (TypeManagement.tsx Line 391): `"新規タイプ"`
+   - **「新規タイプ」はこのregexパターンにマッチしない** ❌
+
+3. **フォームフィールドセレクター不一致**:
+   - テスト (Line 91): `input[id*="typeId"]`
+   - 実装: `name="id"` → generates `id="id"` (部分一致はするが命名が不正確)
+   - テスト (Line 98): `input[id*="name"]`
+   - 実装: `name="displayName"` → generates `id="displayName"` (**不一致** ❌)
+
+**結論**: このテストは**test.describe.skip()を解除するだけでは有効化できません**。セレクターの完全な書き換えが必要です。
+
+**対照的に**: custom-type-attributes.spec.ts Line 41のテストは:
+- ボタンテキスト: 正確な文字列マッチ `"新規タイプ"` ✅
+- フォームフィールド: 正確なID属性マッチ `input[id*="id"]`, `input[id*="displayName"]` ✅
+- **有効化可能** ✅
+
+---
+
+## 🆕 前回セッション更新 (2025-10-25 午後2) - Document Versioning テスト修正完了
 
 ### このセッションで実施した作業
 

@@ -38,7 +38,7 @@ test.describe('Custom Type and Custom Attributes', () => {
     }
   });
 
-  test.skip('should create custom document type with custom attributes', async ({ page, browserName }) => {
+  test('should create custom document type with custom attributes', async ({ page, browserName }) => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 

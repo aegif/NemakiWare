@@ -388,7 +388,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
           icon={<PlusOutlined />}
           onClick={() => setModalVisible(true)}
         >
-          新規タイプ作成
+          新規タイプ
         </Button>
       </div>
 
