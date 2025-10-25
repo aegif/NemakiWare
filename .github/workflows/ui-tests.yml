@@ -20,33 +20,7 @@ jobs:
   ui-tests:
     name: UI Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    services:
-      couchdb:
-        image: couchdb:3.3
-        env:
-          COUCHDB_USER: admin
-          COUCHDB_PASSWORD: password
-        ports:
-          - 5984:5984
-        options: >-
-          --health-cmd "curl -f http://admin:password@localhost:5984/_up"
-          --health-interval 30s
-          --health-timeout 10s
-          --health-retries 5
-
-      solr:
-        image: solr:9
-        env:
-          SOLR_HEAP: 512m
-        ports:
-          - 8983:8983
-        options: >-
-          --health-cmd "curl -f http://localhost:8983/solr/admin/info/system"
-          --health-interval 30s
-          --health-timeout 10s
-          --health-retries 5
+    timeout-minutes: 60
 
     steps:
     - name: Checkout repository
@@ -65,30 +39,6 @@ jobs:
         node-version: '18'
         cache: 'npm'
         cache-dependency-path: 'core/src/main/webapp/ui/package-lock.json'
-
-    - name: Wait for services to be ready
-      run: |
-        # Wait for CouchDB
-        echo "Waiting for CouchDB..."
-        for i in {1..30}; do
-          if curl -f http://admin:password@localhost:5984/_up; then
-            echo "CouchDB is ready"
-            break
-          fi
-          echo "Waiting for CouchDB... ($i/30)"
-          sleep 10
-        done
-
-        # Wait for Solr
-        echo "Waiting for Solr..."
-        for i in {1..30}; do
-          if curl -f http://localhost:8983/solr/admin/info/system; then
-            echo "Solr is ready"
-            break
-          fi
-          echo "Waiting for Solr... ($i/30)"
-          sleep 10
-        done
 
     - name: Build NemakiWare Dependencies
       run: |
@@ -116,16 +66,12 @@ jobs:
 
     - name: Start NemakiWare Server
       run: |
-        # Copy WAR to a location where we can serve it
-        mkdir -p test-server
-        cp core/target/core.war test-server/
+        # Copy WAR to docker directory
+        cd docker
+        cp ../core/target/core.war core/core.war
 
-        # Start embedded Tomcat server in background
-        cd test-server
-        java -jar ../core/target/core.war --server.port=8080 &
-
-        # Store the PID for later cleanup
-        echo $! > server.pid
+        # Start NemakiWare with docker-compose
+        docker compose -f docker-compose-simple.yml up -d --build
 
         # Wait for server to start
         echo "Waiting for NemakiWare server to start..."
@@ -172,10 +118,10 @@ jobs:
     - name: Cleanup
       if: always()
       run: |
-        # Stop the server if it's running
-        if [ -f test-server/server.pid ]; then
-          kill $(cat test-server/server.pid) || true
-        fi
+        # Stop docker-compose services
+        cd docker
+        docker compose -f docker-compose-simple.yml down
+        docker system prune -f
 
   test-summary:
     name: Test Summary

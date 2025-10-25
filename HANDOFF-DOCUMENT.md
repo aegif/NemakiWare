@@ -3,6 +3,7 @@
 **作成日**: 2025-10-24
 **最終更新**: 2025-10-25 21:00 JST
 **現在のブランチ**: `vk/1620-ui`
+**元ブランチ**: `origin/feature/react-ui-playwright`
 **PR**: https://github.com/aegif/NemakiWare/pull/391
 
 ## 🎉 最新セッション更新 (2025-10-25 午後5) - テストスイート調査とドキュメント改善 ✅
@@ -700,15 +701,15 @@ expect(filename).toBeTruthy(); // まずファイル名が取得できること�
 
 ## エグゼクティブサマリー
 
-このセッションでは、NemakiWareのPlaywrightテストスイートの改善作業を実施しました。現在、**69テストが合格（67%）、4テスト失敗（4%）、30テストスキップ（29%）**の状態です。
+このセッションでは、NemakiWareのPlaywrightテストスイートの改善作業を実施しました。現在、**74テストが合格（72%）、0テスト失敗（0%）、29テストスキップ（28%）**の状態です。
 
-**重要な発見**: 
-1. バージョニング機能（チェックアウト/チェックイン）は**完全に実装済み**です
-2. React UIのAtomPubパーサーが**ハードコードされた8つのプロパティのみ**を抽出していたため、バージョニングプロパティが表示されていませんでした
-3. この問題を修正し、**すべてのCMISプロパティを抽出**するように改善しました
-4. Document Versioning checkoutテストが**成功**し、PWC（作業中）タグが正しく表示されるようになりました
+**重要な成果**: 
+1. 🎉 **Document Versioningテストが全て成功しました！**（5テスト全て合格）
+2. React UIのAtomPubパーサーが**ハードコードされた8つのプロパティのみ**を抽出していた問題を修正し、**すべてのCMISプロパティを抽出**するように改善しました
+3. サーバー側のキャッシュ無効化を実装し、チェックアウト/キャンセル後にUIが最新のバージョニングプロパティを表示するようになりました
+4. PWC（作業中）タグが正しく表示され、チェックアウト/チェックイン/キャンセルチェックアウト/バージョン履歴/バージョンダウンロードの全機能が動作しています
 
-**現在の作業**: Document Versioningテストの残りの失敗（check-in、cancel check-out、version history、version download）を修正中です。これらは主にクリーンアップ時のタイムアウトとUI実装の問題です。
+**次のステップ**: 残りのスキップされたテスト（29テスト）を有効化して、100%合格を目指します。
 
 ---
 
@@ -717,11 +718,11 @@ expect(filename).toBeTruthy(); // まずファイル名が取得できること�
 ### 1.1 テスト結果サマリー
 
 ```
-✅ 合格: 69テスト (67%)
-❌ 失敗: 4テスト (4%)
-⏭️ スキップ: 30テスト (29%)
+✅ 合格: 74テスト (72%)
+❌ 失敗: 0テスト (0%)
+⏭️ スキップ: 29テスト (28%)
 合計: 103テスト
-実行時間: 25.5分（ローカル環境）
+実行時間: 約30分（ローカル環境）
 ```
 
 ### 1.2 完了した修正
@@ -773,6 +774,40 @@ expect(filename).toBeTruthy(); // まずファイル名が取得できること�
    - 変更: `checkOut()`と`cancelCheckOut()`メソッドにキャッシュ無効化コードを追加
    - 理由: チェックアウト/キャンセル後、UIが古いキャッシュデータを表示していた
    - 結果: チェックアウト/キャンセル後、UIが最新のバージョニングプロパティを表示するようになりました
+
+9. **Document Versioningテストのクリーンアップ問題を修正**
+   - ファイル: `/home/ubuntu/repos/NemakiWare/core/src/main/webapp/ui/tests/versioning/document-versioning.spec.ts`
+   - **問題**: クリーンアップ時にドキュメントが見つからず、タイムアウトエラーが発生していました（tests 100-103）
+   - **原因**: テスト実行後、ドキュメント詳細ページに留まっていたため、ドキュメントリストに戻らずにクリーンアップを試みていました
+   - **修正内容**: すべてのDocument Versioningテストのクリーンアップコードに、「戻る」ボタンをクリックしてドキュメントリストに戻る処理を追加しました
+   - **結果**: 全てのDocument Versioningテストが成功しました（5テスト全て合格）
+   - **コミット**: https://github.com/aegif/NemakiWare/commit/3c98964f8, https://github.com/aegif/NemakiWare/commit/d8376d974
+
+10. **🎉 Document Versioningテストが全て成功**
+    - ✅ Test 99: should check-out a document - チェックアウト機能（PWCタグ表示）
+    - ✅ Test 100: should check-in a document with new version - チェックイン機能
+    - ✅ Test 101: should cancel check-out - チェックアウトキャンセル機能
+    - ✅ Test 102: should display version history - バージョン履歴表示
+    - ✅ Test 103: should download a specific version - 特定バージョンのダウンロード
+    - PWCタグが正しく表示されることを確認しました
+    - バージョニング機能が完全に動作していることを確認しました
+
+11. **CIタイムアウト問題を修正**
+    - ファイル: `.github/workflows/ui-tests.yml`
+    - **問題**: UI Testsジョブが30分のタイムアウトを超えてキャンセルされました
+    - **原因**: ローカルでは23.6分で完了しましたが、CI環境では30分を超えてしまいました
+    - **修正**: タイムアウトを30分→60分に延長しました
+    - **コミット**: https://github.com/aegif/NemakiWare/commit/554ed472a
+
+12. **CIサーバークラッシュ問題を修正**
+    - ファイル: `.github/workflows/ui-tests.yml`
+    - **問題**: CIでサーバーが途中でクラッシュして、`ERR_CONNECTION_REFUSED`エラーが発生していました
+    - **原因**: CIが`java -jar core.war`で直接WARファイルを実行しようとしていましたが、NemakiWareはTomcatコンテナで実行する必要があります
+    - **修正内容**:
+      - docker-compose-simple.ymlを使用してサーバーを起動（ローカル環境と同じ）
+      - GitHub Actions services（CouchDB、Solr）を削除（docker-composeが管理）
+      - サーバー起動の安定性を向上
+    - **コミット**: https://github.com/aegif/NemakiWare/commit/f9b41eff5
 
 ---
 
