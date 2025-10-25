@@ -4,20 +4,22 @@ import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
 
 /**
- * WORK IN PROGRESS - UI NOT IMPLEMENTED (2025-10-21)
+ * SELECTOR FIX (2025-10-25)
  *
- * Code Review Finding: These tests fail because custom type creation UI is not implemented.
- * Skipping entire suite until UI implementation is complete.
+ * Previous Issue: Tests were skipped due to "UI NOT IMPLEMENTED" comment from 2025-10-21 code review.
+ * Investigation Result: UI IS FULLY IMPLEMENTED in TypeManagement.tsx with all required features:
+ * - ✅ "新規タイプ" button (Line 391)
+ * - ✅ Type creation modal with tabs (Lines 403-428)
+ * - ✅ Property addition UI (Lines 176-287)
+ * - ✅ Full CMIS type management API integration
  *
- * Implementation Requirements:
- * - "新規タイプ作成" / "Create Type" button in type management page
- * - Type creation modal with type ID, name, parent type, and description fields
- * - Property addition UI in type detail modal
- * - Custom type selector in document upload modal
+ * Root Cause: Selector mismatches between test expectations and actual implementation
+ * - Button text: Test expected /新規.*作成/ but actual is "新規タイプ"
+ * - Form fields: Test used id*="typeId" but Ant Design uses name="id"
  *
- * See CLAUDE.md code review section for details.
+ * Fix Applied: Updated selectors to match actual TypeManagement.tsx implementation
  */
-test.describe.skip('Custom Type Creation and Property Management (WIP - UI not implemented)', () => {
+test.describe('Custom Type Creation and Property Management', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   let customTypeId: string;
@@ -72,9 +74,9 @@ test.describe.skip('Custom Type Creation and Property Management (WIP - UI not i
     customTypeId = `test:customDoc${typeIdSuffix}`;
     const typeName = `Test Custom Document ${typeIdSuffix}`;
 
-    // Look for "新規タイプ作成" or "Create Type" button
+    // Look for "新規タイプ" button (TypeManagement.tsx Line 391)
     const createTypeButton = page.locator('button').filter({
-      hasText: /新規.*作成|Create.*Type|タイプ作成/
+      hasText: /新規タイプ|新規.*作成|Create.*Type/
     });
 
     if (await createTypeButton.count() > 0) {
@@ -87,39 +89,40 @@ test.describe.skip('Custom Type Creation and Property Management (WIP - UI not i
       await expect(createModal).toBeVisible({ timeout: 5000 });
       console.log('✅ Create type modal opened');
 
-      // Fill type ID
-      const typeIdInput = createModal.locator('input[id*="typeId"], input[placeholder*="タイプID"]');
+      // Fill type ID (TypeManagement.tsx name="id", placeholder="タイプIDを入力")
+      const typeIdInput = createModal.locator('input[placeholder*="タイプID"]');
       if (await typeIdInput.count() > 0) {
         await typeIdInput.first().fill(customTypeId);
         console.log(`✅ Filled type ID: ${customTypeId}`);
       }
 
-      // Fill type name
-      const typeNameInput = createModal.locator('input[id*="name"], input[placeholder*="タイプ名"]');
+      // Fill type name (TypeManagement.tsx name="displayName", placeholder="表示名を入力")
+      const typeNameInput = createModal.locator('input[placeholder*="表示名"]');
       if (await typeNameInput.count() > 0) {
         await typeNameInput.first().fill(typeName);
         console.log(`✅ Filled type name: ${typeName}`);
       }
 
-      // Select parent type (cmis:document)
-      const parentTypeSelect = createModal.locator('.ant-select:has-text("親タイプ"), .ant-select:has-text("Parent Type")');
-      if (await parentTypeSelect.count() > 0) {
-        await parentTypeSelect.first().click();
-        await page.waitForTimeout(500);
-
-        // Select cmis:document from dropdown
-        const documentOption = page.locator('.ant-select-item:has-text("cmis:document")');
-        if (await documentOption.count() > 0) {
-          await documentOption.first().click();
-          console.log('✅ Selected parent type: cmis:document');
-        }
-      }
-
-      // Add description
-      const descriptionInput = createModal.locator('textarea[id*="description"], textarea[placeholder*="説明"]');
+      // Add description (TypeManagement.tsx name="description", placeholder="タイプの説明を入力")
+      const descriptionInput = createModal.locator('textarea[placeholder*="タイプの説明"], textarea[placeholder*="説明"]');
       if (await descriptionInput.count() > 0) {
         await descriptionInput.first().fill(`This is a test custom type created by Playwright at ${new Date().toISOString()}`);
         console.log('✅ Filled description');
+      }
+
+      // Select base type (TypeManagement.tsx name="baseTypeId" - cmis:document)
+      // Note: Form.Item with label "ベースタイプ" contains the Select
+      const baseTypeSelect = createModal.locator('.ant-form-item').filter({ hasText: 'ベースタイプ' }).locator('.ant-select');
+      if (await baseTypeSelect.count() > 0) {
+        await baseTypeSelect.first().click();
+        await page.waitForTimeout(500);
+
+        // Select cmis:document from dropdown
+        const documentOption = page.locator('.ant-select-item:has-text("ドキュメント")');
+        if (await documentOption.count() > 0) {
+          await documentOption.first().click();
+          console.log('✅ Selected base type: cmis:document');
+        }
       }
 
       // Submit the form
@@ -172,72 +175,86 @@ test.describe.skip('Custom Type Creation and Property Management (WIP - UI not i
     const typeRow = page.locator(`tr[data-row-key="${targetTypeId}"]`);
 
     if (await typeRow.count() > 0) {
-      // Click on type row to view/edit properties
-      await typeRow.first().click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
+      // Click edit button (TypeManagement.tsx Line 137-145)
+      const editButton = typeRow.locator('button').filter({ hasText: '編集' });
+      if (await editButton.count() > 0) {
+        await editButton.first().click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(1000);
+        console.log('✅ Clicked edit button');
+      } else {
+        test.skip('Edit button not found');
+        return;
+      }
 
-      // Look for property management section
-      const propertySection = page.locator('.ant-modal, .ant-drawer').filter({
-        hasText: /プロパティ|Property|Properties/
-      });
+      // Wait for edit modal to open
+      const editModal = page.locator('.ant-modal:visible');
+      await expect(editModal).toBeVisible({ timeout: 5000 });
+      console.log('✅ Edit modal opened');
 
-      if (await propertySection.count() > 0) {
-        console.log('✅ Property management section found');
+      // Switch to "プロパティ定義" tab (TypeManagement.tsx Line 374-376)
+      const propertyTab = editModal.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ定義' });
+      if (await propertyTab.count() > 0) {
+        await propertyTab.first().click();
+        await page.waitForTimeout(500);
+        console.log('✅ Switched to property definition tab');
 
-        // Look for "Add Property" button
-        const addPropertyButton = propertySection.locator('button').filter({
-          hasText: /プロパティ追加|Add.*Property/
+        // Look for "プロパティを追加" button (TypeManagement.tsx Line 276-283)
+        const addPropertyButton = editModal.locator('button').filter({
+          hasText: /プロパティを追加|プロパティ追加|Add.*Property/
         });
 
         if (await addPropertyButton.count() > 0) {
           await addPropertyButton.first().click(isMobile ? { force: true } : {});
           console.log('✅ Clicked add property button');
 
-          // Fill property details
+          // Fill property details (TypeManagement.tsx Lines 183-226)
           await page.waitForTimeout(1000);
 
-          const propertyIdInput = page.locator('input[id*="propertyId"], input[placeholder*="プロパティID"]');
+          // Property ID (placeholder="プロパティID")
+          const propertyIdInput = editModal.locator('input[placeholder="プロパティID"]');
           if (await propertyIdInput.count() > 0) {
             const propertyId = `test:customProp${randomUUID().substring(0, 8)}`;
             await propertyIdInput.last().fill(propertyId);
             console.log(`✅ Filled property ID: ${propertyId}`);
           }
 
-          const propertyNameInput = page.locator('input[id*="propertyName"], input[placeholder*="プロパティ名"]');
+          // Display Name (placeholder="表示名")
+          const propertyNameInput = editModal.locator('input[placeholder="表示名"]');
           if (await propertyNameInput.count() > 0) {
             await propertyNameInput.last().fill('Test Custom Property');
             console.log('✅ Filled property name');
           }
 
-          // Select property type (string)
-          const propertyTypeSelect = page.locator('.ant-select:has-text("プロパティタイプ"), .ant-select:has-text("Property Type")');
+          // Select property type (label="データ型" - string option is "文字列")
+          const propertyTypeFormItem = editModal.locator('.ant-form-item').filter({ hasText: 'データ型' });
+          const propertyTypeSelect = propertyTypeFormItem.last().locator('.ant-select');
           if (await propertyTypeSelect.count() > 0) {
-            await propertyTypeSelect.last().click();
+            await propertyTypeSelect.click();
             await page.waitForTimeout(500);
 
-            const stringOption = page.locator('.ant-select-item').filter({ hasText: /String|文字列/ });
+            const stringOption = page.locator('.ant-select-item').filter({ hasText: '文字列' });
             if (await stringOption.count() > 0) {
               await stringOption.first().click();
-              console.log('✅ Selected property type: String');
+              console.log('✅ Selected property type: String (文字列)');
             }
           }
 
-          // Submit property addition
-          const propertySubmitButton = page.locator('button[type="submit"], button:has-text("追加")').last();
-          if (await propertySubmitButton.count() > 0) {
-            await propertySubmitButton.click(isMobile ? { force: true } : {});
-            console.log('✅ Submitted property');
+          // Submit the entire type update (not individual property - TypeManagement.tsx Line 419-420)
+          const updateButton = editModal.locator('button[type="submit"]').filter({ hasText: '更新' });
+          if (await updateButton.count() > 0) {
+            await updateButton.click(isMobile ? { force: true } : {});
+            console.log('✅ Submitted type update with new property');
           }
 
           await page.waitForTimeout(2000);
           console.log('Test: Custom property addition verified');
         } else {
-          console.log('ℹ️ Add property button not found - feature may not be implemented');
+          console.log('ℹ️ Add property button not found');
           test.skip('Add property feature not available');
         }
       } else {
-        console.log('ℹ️ Property management section not found');
-        test.skip('Property management UI not available');
+        console.log('ℹ️ Property definition tab not found');
+        test.skip('Property tab not available');
       }
     } else {
       test.skip(`Type ${targetTypeId} not found in table`);

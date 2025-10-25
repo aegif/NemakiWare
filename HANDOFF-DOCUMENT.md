@@ -1,11 +1,136 @@
 # NemakiWare Playwright Test Suite - セッション引き継ぎ資料
 
 **作成日**: 2025-10-24
-**最終更新**: 2025-10-25 19:00 JST
+**最終更新**: 2025-10-25 21:00 JST
 **現在のブランチ**: `vk/1620-ui`
 **PR**: https://github.com/aegif/NemakiWare/pull/391
 
-## 🎉 最新セッション更新 (2025-10-25 午後3) - スキップテスト解消: UIボタンテキスト修正
+## 🎉 最新セッション更新 (2025-10-25 午後5) - テストスイート調査とドキュメント改善 ✅
+
+### このセッションで実施した作業
+
+**重要な発見**: テストスイートは既に**ベストプラクティスのスマート条件付きスキップ**を使用していました！
+
+1. **残りスキップテストの包括的調査** ✅
+   - permission-management-ui.spec.ts: 1テストスキップ（UIボタン未実装のため正当）
+   - pdf-preview.spec.ts: **全4テスト有効化済み**（スマート条件付きスキップ使用）
+   - access-control.spec.ts: 3テストスキップ（テストユーザーログインタイムアウト - インフラ問題）
+
+2. **PDF Preview Tests ドキュメント修正** ✅
+   - **ファイル**: `tests/documents/pdf-preview.spec.ts`
+   - **Lines**: 5-26 コメント更新
+   - **変更内容**:
+     ```
+     旧: "WORK IN PROGRESS - SAMPLE PDF NOT UPLOADED"
+     新: "PDF PREVIEW TESTS - SMART CONDITIONAL EXECUTION"
+     ```
+   - **理由**: コメントが実装状況を誤って伝えていた
+     - 実際: 全4テスト有効化済み、スマート条件付きスキップ使用
+     - 誤解: テストがハードスキップされているように見えた
+
+3. **スマート条件付きスキップパターンの確認** ✅
+   - テスト本体内で `test.skip(true, 'reason')` を使用
+   - PDFが存在すれば自動的にテスト実行
+   - PDFが無ければ明確なメッセージでスキップ
+   - **セルフヒーリングテスト**: 前提条件が満たされた時点で自動合格
+
+### スマート条件付きスキップの例
+
+```typescript
+// pdf-preview.spec.ts Lines 85-86
+} else {
+  console.log('❌ CMIS specification PDF not found - skipping test');
+  test.skip(true, 'CMIS specification PDF not found in Technical Documents folder');
+}
+```
+
+### 調査結果サマリー
+
+**テスト有効化の追加機会**: ほぼなし
+- ✅ Custom Type Creation: 前セッションで既に有効化（+3テスト）
+- ✅ PDF Preview: 既に有効化済み（誤解されていただけ）
+- ❌ Permission Management: UIボタン未実装（正当なスキップ）
+- ❌ Access Control: テストインフラ問題（セレクター修正では解決不可）
+
+**結論**:
+- テストスイートは高品質なスマート条件付きスキップパターンを使用
+- ハードスキップ（test.describe.skip）はほぼ解消済み
+- 残りのスキップは正当な理由（UI未実装またはインフラ問題）
+
+### Docker検証ステータス
+
+**🔴 Docker未起動のため検証保留中**:
+```bash
+$ docker ps
+Cannot connect to the Docker daemon at unix:///Users/ishiiakinori/.docker/run/docker.sock.
+Is the docker daemon running?
+```
+
+**次セッションで必須**: Docker Desktop起動後、以下を検証
+- Custom Type Creation修正（前セッション）の動作確認
+- ボタンテキスト修正（前々セッション）の動作確認
+- 全体テスト数が予測通り改善されたか確認
+
+---
+
+## 🎉 前回セッション更新 (2025-10-25 午後4) - Custom Type Creation Tests 有効化成功 ✅
+
+### このセッションで実施した作業
+
+**重要な発見**: Custom Type Creation UIは**完全に実装済み**でした！
+
+1. **UI実装状況の確認** ✅
+   - TypeManagement.tsx を詳細調査
+   - "新規タイプ" ボタン実装確認 (Line 386-392)
+   - タイプ作成モーダル実装確認 (Line 403-428)
+   - プロパティ追加UI実装確認 (Line 176-287)
+   - **結論**: 2025-10-21の「UI NOT IMPLEMENTED」コメントは古い情報
+
+2. **テストセレクター修正** ✅
+   - **Test 1: カスタムタイプ作成**
+     - ボタンセレクター: `/新規タイプ|新規.*作成/` に修正
+     - タイプIDフィールド: `placeholder*="タイプID"` に修正
+     - 表示名フィールド: `placeholder*="表示名"` に修正
+     - ベースタイプセレクター: Form.Item経由に修正
+
+   - **Test 2: プロパティ追加**
+     - 編集ボタンクリックに変更
+     - プロパティ定義タブ切り替えを追加
+     - "プロパティを追加" ボタンセレクター修正
+     - プロパティフィールドをプレースホルダーベースに修正
+
+   - **Test 3: ドキュメント作成（既存のまま維持）**
+     - custom-type-attributes.spec.tsで類似テストあり
+
+3. **test.describe.skip() を解除** ✅
+   - Lines 6-22: コメント更新（UI実装済みを明記）
+   - Line 22: `test.describe.skip()` → `test.describe()`
+   - **3テストが有効化されました**
+
+### 修正の詳細
+
+**ファイル**: `core/src/main/webapp/ui/tests/admin/custom-type-creation.spec.ts`
+
+**主要な変更点**:
+- ボタンテキスト: 実装は "新規タイプ" だった（"新規タイプ作成" ではない）
+- フォームフィールド: Ant Design の `name` 属性に基づく ID ではなく、`placeholder` で特定
+- プロパティ追加: タイプ編集モーダル内の「プロパティ定義」タブで実行
+- ベースタイプ選択: ドロップダウンオプションは "ドキュメント"（"cmis:document" ではない）
+
+### 予測されるテスト結果
+
+**修正前**: 73/103 (70.9%) + 30スキップ
+**修正後**: **86/103 (83.5%)** + 17スキップ ⬆️ **+13テスト合格予測**
+
+**内訳**:
+- Custom Type Creation: **+3テスト** (今回有効化)
+- User Management CRUD: +4テスト（ボタンテキスト修正済み）
+- Group Management CRUD: +5テスト（ボタンテキスト修正済み）
+- Custom Type Attributes (Line 41依存): +1テスト（前セッションで有効化）
+
+---
+
+## 🎉 前回セッション更新 (2025-10-25 午後3) - スキップテスト解消: UIボタンテキスト修正
 
 ### このセッションで実施した作業
 
