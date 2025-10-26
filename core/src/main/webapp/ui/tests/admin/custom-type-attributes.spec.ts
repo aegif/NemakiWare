@@ -1,4 +1,17 @@
 /**
+ * WORK IN PROGRESS - MANUAL FORM UI NOT IMPLEMENTED (2025-10-26)
+ *
+ * Investigation Finding: These tests expect manual form-based type creation UI,
+ * but the actual implementation uses file upload + JSON editing approach (Priority 3/4).
+ *
+ * Expected UI (not implemented): "新規タイプ" button → Manual form
+ * Implemented UI: "ファイルからインポート" button → Upload + JSON editing
+ *
+ * Recommendation: Use type-definition-upload.spec.ts for file upload + JSON editing tests.
+ * See HANDOFF-DOCUMENT.md "既存スキップテストの調査結果" for details.
+ *
+ * ---
+ *
  * Custom Type and Custom Attributes Tests
  *
  * Comprehensive test suite for CMIS custom type creation and custom attribute management:
@@ -146,7 +159,7 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
 
-test.describe('Custom Type and Custom Attributes', () => {
+test.describe.skip('Custom Type and Custom Attributes (WIP - Manual Form UI not implemented)', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   const customTypeId = `test:customDoc${randomUUID().substring(0, 8)}`;
