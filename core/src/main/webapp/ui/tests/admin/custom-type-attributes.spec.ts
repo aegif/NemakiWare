@@ -3,7 +3,29 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
 
-test.describe('Custom Type and Custom Attributes', () => {
+/**
+ * WORK IN PROGRESS - MANUAL FORM UI NOT IMPLEMENTED (2025-10-26)
+ *
+ * Investigation Finding: These tests expect manual form-based type creation UI,
+ * but the actual implementation uses file upload + JSON editing approach.
+ *
+ * Expected UI (not implemented):
+ * - "新規タイプ" button → Type creation form modal
+ * - Manual input for type ID, name, parent type, description
+ * - "プロパティを追加" button for individual property creation
+ * - Custom type selector in document upload modal
+ *
+ * Implemented UI (Priority 3/4):
+ * - "ファイルからインポート" button → Upload.Dragger modal
+ * - JSON/XML file upload for type definitions
+ * - JSON TextArea modal for type editing
+ *
+ * Recommendation: Keep skipped until manual form UI is implemented.
+ * Alternative: Use type-definition-upload.spec.ts for file upload + JSON editing tests.
+ *
+ * See HANDOFF-DOCUMENT.md "既存スキップテストの調査結果" section for details.
+ */
+test.describe.skip('Custom Type and Custom Attributes (WIP - Manual Form UI not implemented)', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   const customTypeId = `test:customDoc${randomUUID().substring(0, 8)}`;
