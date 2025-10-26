@@ -124,7 +124,7 @@ export interface LoginCredentials {
  *    - Dropdown wait: .ant-dropdown:not(.ant-dropdown-hidden) 3s timeout
  *    - Logout menu item: Filter by Japanese text 'ログアウト'
  *    - Force click: { force: true } to bypass overlay/visibility checks
- *    - URL wait: **/ui/dist/** pattern with 5s timeout
+ *    - URL wait: Pattern matching /ui/dist/ path with 5s timeout
  *    - Verification: Check for login form elements (password field OR username field)
  *    - Rationale: Hard navigation requires different wait strategy than SPA routing
  *    - Implementation: Extensive logging and dual verification (URL + form elements)
