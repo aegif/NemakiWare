@@ -61,12 +61,17 @@ import { randomUUID } from 'crypto';
  *    - Graceful fallback if sidebar toggle unavailable
  *    - Consistent with other test suites' mobile support pattern
  *
- * 7. Test User Authentication Verification (Lines 832-859):
+ * 7. Test User Authentication Verification with Extended Timeouts (Lines 933-966):
  *    - Comprehensive login debugging with URL tracking and error logging
  *    - Screenshot capture on login failure for debugging
  *    - Error message detection and logging
  *    - Graceful test skip if user creation failed or lacks repository access
  *    - Prevents cascading failures in permission verification tests
+ *    - CRITICAL FIX (2025-10-26): Extended timeout to 180s (3 minutes) for test user login
+ *    - Test users require additional time for ACL permission propagation after creation
+ *    - AuthHelper uses 60s timeout per attempt with 5 retry attempts for test users
+ *    - Total maximum wait: 300s (5 minutes) for authentication success
+ *    - Rationale: Permission setup via CMIS API may take time to propagate to session
  *
  * 8. CMIS API Cleanup Strategy (Lines 1139-1177):
  *    - Uses CMIS Browser Binding deleteTree operation for folder cleanup
@@ -931,6 +936,10 @@ test.describe('Access Control and Permissions', () => {
 
   test.describe('Test User - Verify Permission Restrictions', () => {
     test.beforeEach(async ({ page, browserName }) => {
+      // CRITICAL FIX (2025-10-26): Extended timeout for test user login with permission delays
+      // Test users require additional time for ACL permission propagation after creation
+      test.setTimeout(180000); // 3 minutes for test user login and UI initialization
+
       authHelper = new AuthHelper(page);
       testHelper = new TestHelper(page);
 

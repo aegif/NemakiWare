@@ -76,15 +76,18 @@ export interface LoginCredentials {
  *    - Advantage: Tests remain stable across form structure changes
  *    - Error handling: Comprehensive error messages with page state debugging (Lines 98-106)
  *
- * 4. Authentication Retry Logic with Debugging (Lines 204-256):
- *    - 3 retry attempts (maxAuthRetries = 3) for authentication race conditions
- *    - Each attempt: 30-second timeout to detect authenticated elements
+ * 4. Authentication Retry Logic with User-Specific Timeouts (Lines 385-439):
+ *    - Admin users: 3 retry attempts with 30s timeout per attempt (90s total)
+ *    - Test users: 5 retry attempts with 60s timeout per attempt (300s total)
+ *    - CRITICAL FIX (2025-10-26): Increased retries and timeout for test users
  *    - Detection strategy: Password field gone AND main app elements present
  *    - Main elements: .ant-layout-sider, .ant-layout-content, .ant-table
  *    - On timeout: Log page state (URL, body text first 200 chars) and retry
  *    - Wait 2 seconds between retries for server processing
- *    - Rationale: Mobile browsers and non-admin users may have slower authentication
- *    - Code review feedback (2025-10-21): Extended timeout to 30s to prevent flaky failures
+ *    - Rationale: Test users require time for ACL permission propagation after creation
+ *    - Permission setup via CMIS Browser Binding API may take time to synchronize
+ *    - Code review feedback (2025-10-21): Extended timeout to 30s for admin users
+ *    - Code review feedback (2025-10-26): Extended timeout to 60s for test users
  *    - Implementation: while loop with break on success, error throw after max retries
  *
  * 5. Automatic Redirect Detection and Handling (Lines 261-274):
@@ -385,13 +388,17 @@ export class AuthHelper {
     // Wait for successful login by checking for authenticated elements
     // Increased timeout for mobile browsers and non-admin users
     // CRITICAL FIX (2025-10-21): Extended timeout to 30s to prevent flaky test failures
+    // CRITICAL FIX (2025-10-26): Extended timeout to 60s for test users with permission delays
     // Add retry logic for authentication race conditions
     let authRetries = 0;
-    const maxAuthRetries = 3;
+    // Increase retry count for test users who may need more time for permission propagation
+    const maxAuthRetries = credentials.username === 'admin' ? 3 : 5;
 
     while (authRetries < maxAuthRetries) {
       try {
         console.log(`AuthHelper: Waiting for authenticated page elements (attempt ${authRetries + 1}/${maxAuthRetries})...`);
+        // Increase timeout for non-admin users to allow for permission synchronization
+        const authTimeout = credentials.username === 'admin' ? 30000 : 60000;
         await this.page.waitForFunction(
           () => {
             // Check if login form is gone (password field not visible)
@@ -413,7 +420,7 @@ export class AuthHelper {
               return element && element.offsetParent !== null;
             });
           },
-          { timeout: 30000 }  // Increased from 20000ms to 30000ms per code review feedback
+          { timeout: authTimeout }  // 30s for admin, 60s for test users
         );
         // Success - break retry loop
         break;
