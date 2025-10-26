@@ -221,10 +221,9 @@ private ContentService getContentServiceSafe() {
 	@Path("/list")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response list(@PathParam("repositoryId") String repositoryId) {
-		// CRITICAL DIAGNOSTIC: Test if ERROR level logs appear
-		log.error("!!! ERROR LEVEL TEST - list() ENTRY POINT for repository: " + repositoryId + " !!!");
-		log.info("UserItemResource.list() called for repository: " + repositoryId);
-		System.err.println("### SYSTEM.ERR TEST - list() called for repository: " + repositoryId + " ###");
+		if (log.isDebugEnabled()) {
+			log.debug("UserItemResource.list() called for repository: " + repositoryId);
+		}
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray listJSON = new JSONArray();
@@ -370,9 +369,7 @@ private ContentService getContentServiceSafe() {
 				String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
 
 				// parent
-				System.err.println("### BEFORE getOrCreateSystemSubFolder for userId: " + userId);
 				final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
-				System.err.println("### AFTER getOrCreateSystemSubFolder for userId: " + userId + ", usersFolder=" + (usersFolder != null ? usersFolder.getId() : "NULL"));
 
 				UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
 
@@ -478,13 +475,13 @@ private ContentService getContentServiceSafe() {
 					// CRITICAL FIX (2025-10-13): Process groups assignment (was missing in createJson)
 					// Extract groups array from JSON input
 					JSONArray groups = (JSONArray) userJson.get("groups");
-					log.error("!!! [" + userId + "] Groups extracted: " + (groups != null ? groups.toString() : "NULL"));
+					log.info("[" + userId + "] Groups extracted: " + (groups != null ? groups.toString() : "NULL"));
 					if (groups != null && !groups.isEmpty()) {
-						log.error("!!! [" + userId + "] Starting group assignment with " + groups.size() + " groups");
+						log.info("[" + userId + "] Starting group assignment with " + groups.size() + " groups");
 						updateUserGroups(repositoryId, userId, groups, service);
-						log.error("!!! [" + userId + "] Group assignment completed");
+						log.info("[" + userId + "] Group assignment completed");
 					} else {
-						log.error("!!! [" + userId + "] No groups specified");
+						log.info("[" + userId + "] No groups specified");
 					}
 				}
 			}
@@ -1250,7 +1247,7 @@ private ContentService getContentServiceSafe() {
 		// Get ThreadLockService - required for proper concurrency control
 		ThreadLockService lockService = getThreadLockService();
 		if (lockService == null) {
-			log.error("!!! ThreadLockService not available - cannot safely update group membership for user " +
+			log.error("ThreadLockService not available - cannot safely update group membership for user " +
 					  userId + " in group " + groupId);
 			return;
 		}
@@ -1259,14 +1256,18 @@ private ContentService getContentServiceSafe() {
 		Lock lock = lockService.getWriteLock(repositoryId, groupId);
 		try {
 			lock.lock();
-			log.error("!!! Acquired write lock for group " + groupId + " (user " + userId + " membership update)");
+			if (log.isDebugEnabled()) {
+			log.debug("Acquired write lock for group " + groupId + " (user " + userId + " membership update)");
+			}
 
 			// RETRY LOOP: Handle CouchDB optimistic locking conflicts
 			// If the group document was modified before we acquired the lock, retry with fresh revision
 			int maxRetries = 3;
 			for (int attempt = 1; attempt <= maxRetries; attempt++) {
 				try {
-					log.error("!!! [" + userId + "] Attempt " + attempt + " to update group " + groupId);
+					if (log.isDebugEnabled()) {
+					log.debug("[" + userId + "] Attempt " + attempt + " to update group " + groupId);
+					}
 
 					// CACHE BYPASS: Fetch group with fresh revision directly from database (bypassing cache)
 					// This ensures we get the latest _rev from CouchDB on each retry attempt
@@ -1283,7 +1284,9 @@ private ContentService getContentServiceSafe() {
 						return;
 					}
 
-					log.error("!!! [" + userId + "] Group fetched: ID=" + group.getId() + ", Rev=" + group.getRevision());
+					if (log.isDebugEnabled()) {
+					log.debug("[" + userId + "] Group fetched: ID=" + group.getId() + ", Rev=" + group.getRevision());
+					}
 
 					// Get current members
 					List<String> currentMembers = group.getUsers();
@@ -1312,13 +1315,15 @@ private ContentService getContentServiceSafe() {
 					}
 
 					// Update the group (lock held - atomic operation)
-					log.error("!!! [" + userId + "] Attempting CouchDB update with revision " + group.getRevision());
+					if (log.isDebugEnabled()) {
+					log.debug("[" + userId + "] Attempting CouchDB update with revision " + group.getRevision());
+					}
 					group.setUsers(currentMembers);
 					service.update(new SystemCallContext(repositoryId), repositoryId, group);
 
 					// Success!
 					String action = addMember ? "Added" : "Removed";
-					log.error("!!! SUCCESS: " + action + " user " + userId + " " + (addMember ? "to" : "from") +
+					log.info("SUCCESS: " + action + " user " + userId + " " + (addMember ? "to" : "from") +
 							  " group " + groupId + " on attempt " + attempt);
 					return; // Exit retry loop on success
 
@@ -1326,18 +1331,18 @@ private ContentService getContentServiceSafe() {
 					// Check if this is a CouchDB revision conflict
 					if (e.getMessage() != null && e.getMessage().contains("revision conflict")) {
 						if (attempt < maxRetries) {
-							log.error("!!! Revision conflict on attempt " + attempt + " for user " + userId +
+							log.warn("Revision conflict on attempt " + attempt + " for user " + userId +
 									  " in group " + groupId + ", retrying with fresh revision...");
 							// Continue to next retry iteration
 							continue;
 						} else {
-							log.error("!!! Max retries (" + maxRetries + ") exceeded for user " + userId +
+							log.error("Max retries (" + maxRetries + ") exceeded for user " + userId +
 									  " in group " + groupId + ": " + e.getMessage(), e);
 							throw e; // Rethrow after max retries
 						}
 					} else {
 						// Not a revision conflict, don't retry
-						log.error("!!! Non-conflict error for user " + userId + " in group " + groupId +
+						log.error("Non-conflict error for user " + userId + " in group " + groupId +
 								  ": " + e.getMessage(), e);
 						throw e;
 					}
@@ -1350,7 +1355,9 @@ private ContentService getContentServiceSafe() {
 					  " group " + groupId + " after all retries: " + e.getMessage(), e);
 		} finally {
 			lock.unlock();
-			log.error("!!! Released write lock for group " + groupId);
+			if (log.isDebugEnabled()) {
+			log.debug("Released write lock for group " + groupId);
+			}
 		}
 	}
 
