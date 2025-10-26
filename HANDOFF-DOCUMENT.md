@@ -1,12 +1,132 @@
 # NemakiWare Playwright Test Suite - セッション引き継ぎ資料
 
 **作成日**: 2025-10-24
-**最終更新**: 2025-10-26 16:00 JST
+**最終更新**: 2025-10-26 17:30 JST
 **現在のブランチ**: `vk/1620-ui`
 **元ブランチ**: `origin/feature/react-ui-playwright`
 **PR**: https://github.com/aegif/NemakiWare/pull/391
 
-## 🎯 最新セッション更新 (2025-10-26 午後 - パート6) - Definition Document Upload機能実装完了 ✅
+## 🎯 最新セッション更新 (2025-10-26 午後 - パート7) - Custom Type JSON編集機能実装完了 ✅ 全優先度タスク完了 🎉
+
+### このセッションで実施した作業
+
+**優先度4タスク完了: Custom Type JSON編集・削除機能**
+
+1. **Custom Type JSON編集機能の完全実装** ✅ (優先度4タスク - JSON Editing)
+
+   **TypeManagement.tsx (1091 lines - 890→1091行に拡張)**:
+
+   **A. JSON Edit State変数追加** (Lines 292-296):
+   ```typescript
+   const [editJsonModalVisible, setEditJsonModalVisible] = useState(false);
+   const [editJsonContent, setEditJsonContent] = useState('');
+   const [editingTypeForJson, setEditingTypeForJson] = useState<TypeDefinition | null>(null);
+   const [editConflictModalVisible, setEditConflictModalVisible] = useState(false);
+   ```
+
+   **B. handleEdit()関数の変更** (Lines 336-341):
+   - **変更前**: フォームモーダルを開く (setModalVisible)
+   - **変更後**: JSON編集モーダルを開く
+   ```typescript
+   const handleEdit = (type: TypeDefinition) => {
+     setEditingTypeForJson(type);
+     setEditJsonContent(JSON.stringify(type, null, 2));
+     setEditJsonModalVisible(true);
+   };
+   ```
+
+   **C. JSON Edit ハンドラ関数実装** (Lines 469-555, 7関数):
+   - `parseJsonContent()`: JSON解析と検証
+     - JSON.parse()でパース
+     - 必須フィールド検証（id, displayName, baseTypeId）
+     - エラー時: `message.error()`
+   - `checkEditConflicts()`: 編集競合チェック（ID変更検出）
+     - 型ID変更検出: typeDefinition.id !== originalId
+     - 新IDが既存型と競合する場合、競合リストを返す
+   - `handleJsonEdit()`: JSON編集メインワークフロー
+     - JSONパース実行
+     - 競合チェック → 競合あり: 編集競合確認モーダル表示 / 競合なし: 即座に更新
+   - `updateTypeFromJson()`: 型更新API呼び出し（CMISService.updateType）
+     - 成功時: `message.success('型定義を更新しました')`
+     - 失敗時: `message.error('型定義の更新に失敗しました: ' + error.message)`
+   - `handleConfirmJsonEdit()`: 競合確認後の更新実行
+   - `handleCancelJsonEdit()`: キャンセル処理（全state初期化）
+
+   **D. JSON Edit モーダルUI追加** (Lines 983-1018):
+   - タイトル: "型定義の編集 (JSON)"
+   - Alert infoタイプで編集機能説明
+   - 編集対象タイプ表示（ID + displayName）
+   - Input.TextArea:
+     - rows: 20
+     - fontFamily: 'monospace'
+     - fontSize: 12
+     - background: '#f5f5f5' (グレー背景でコード風表示)
+     - onChange: setEditJsonContent
+   - OKボタン: "保存"
+   - width: 800px（広めの幅で快適編集）
+
+   **E. Edit Conflict Confirmationモーダル追加** (Lines 1020-1087):
+   - タイトル: "型定義の競合確認（編集）"
+   - Alert warningタイプで競合警告
+   - 型ID変更による競合検出メッセージ
+   - ExclamationCircleOutlinedアイコン
+   - **Before/After比較表示** (2カラムグリッドレイアウト):
+     - **変更前**: 赤系背景 (#fff1f0)、元のID + DisplayName
+     - **変更後**: 緑系背景 (#f6ffed)、新しいID + DisplayName
+     - max-height: 200px、overflow: auto
+     - fontSize: 11 (小さめフォントで詳細表示)
+   - OKボタンテキスト: "上書きして更新"
+
+2. **Custom Type削除機能の確認** ✅ (優先度4タスク - Deletion)
+
+   **既存実装確認** - すでに完全実装済み:
+   - **handleDelete()関数**: Lines 343-350で実装済み
+   - **Popconfirm**:  "このタイプを削除しますか？"
+   - **CMISサービス呼び出し**: cmisService.deleteType(repositoryId, type.id)
+   - **CMIS標準型保護**: `type.id.startsWith('cmis:')` のチェック
+   - **成功メッセージ**: `message.success('タイプを削除しました')`
+   - **自動リロード**: loadTypes() 実行
+
+### 実装の技術的特徴 (JSON編集)
+
+1. **JSON編集ワークフロー**:
+   ```
+   Edit button → JSON modal (JSON.stringify with indent 2) →
+     Parse → Conflict Detection →
+       ├─ No ID Change / No Conflict → 即座に更新 + 成功メッセージ
+       └─ ID Changed + Conflict → 編集競合確認モーダル表示 →
+           ├─ OK → 上書き更新 + 成功メッセージ
+           └─ Cancel → 全state初期化
+   ```
+
+2. **競合検出ロジック**:
+   - **Upload時**: 新規型IDが既存型と重複
+   - **Edit時**: 型IDが変更され、新IDが既存型と重複
+   - 両方とも同じconfirmation modalパターンを使用
+
+3. **UX設計**:
+   - **Monospaceフォント**: コードエディタ風の見た目
+   - **20行TextArea**: 快適な編集サイズ
+   - **グレー背景**: コードブロック風の視覚的フィードバック
+   - **Before/After比較**: カラーコーディングで変更内容を明確化
+   - **800px width**: 広い編集スペース
+
+### 期待される効果
+
+- ✅ **全優先度タスク完了**: Priority 1-4の全タスク実装完了
+  - ✅ Priority 1: ACL/Permission Management UI
+  - ✅ Priority 2: User/Group Search機能（既存実装確認）
+  - ✅ Priority 3: Definition Document Upload機能
+  - ✅ Priority 4: Custom Type JSON編集 + 削除機能（削除は既存実装）
+
+- ✅ **JSON編集UX**: monospaceフォント、20行TextArea、コード風背景
+- ✅ **競合検出**: ID変更時の競合を自動検出、Before/After比較で確認
+- ✅ **エラーハンドリング**: JSON解析エラー、必須フィールド検証
+- ✅ **TypeManagement.tsx**: 667→890→1091行 (+424行の機能追加)
+
+---
+
+## 🎯 前回セッション更新 (2025-10-26 午後 - パート6) - Definition Document Upload機能実装完了 ✅
 
 ### このセッションで実施した作業
 

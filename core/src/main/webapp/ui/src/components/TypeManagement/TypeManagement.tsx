@@ -289,6 +289,12 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   const [conflictTypes, setConflictTypes] = useState<TypeDefinition[]>([]);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
 
+  // JSON edit states
+  const [editJsonModalVisible, setEditJsonModalVisible] = useState(false);
+  const [editJsonContent, setEditJsonContent] = useState('');
+  const [editingTypeForJson, setEditingTypeForJson] = useState<TypeDefinition | null>(null);
+  const [editConflictModalVisible, setEditConflictModalVisible] = useState(false);
+
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
 
@@ -328,9 +334,10 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   };
 
   const handleEdit = (type: TypeDefinition) => {
-    setEditingType(type);
-    form.setFieldsValue(type);
-    setModalVisible(true);
+    // Open JSON edit modal instead of form modal
+    setEditingTypeForJson(type);
+    setEditJsonContent(JSON.stringify(type, null, 2));
+    setEditJsonModalVisible(true);
   };
 
   const handleDelete = async (typeId: string) => {
@@ -456,6 +463,94 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     setConfirmModalVisible(false);
     setParsedTypeDefinition(null);
     setUploadFileList([]);
+    setConflictTypes([]);
+  };
+
+  // JSON edit handlers
+  const parseJsonContent = (jsonText: string): TypeDefinition | null => {
+    try {
+      const parsed = JSON.parse(jsonText);
+
+      // Validate required fields
+      if (!parsed.id || !parsed.displayName || !parsed.baseTypeId) {
+        message.error('無効な型定義です。id、displayName、baseTypeIdが必要です。');
+        return null;
+      }
+
+      return parsed as TypeDefinition;
+    } catch (error) {
+      message.error('JSONの解析に失敗しました: ' + (error as Error).message);
+      return null;
+    }
+  };
+
+  const checkEditConflicts = (typeDefinition: TypeDefinition, originalId: string): TypeDefinition[] => {
+    const conflicts: TypeDefinition[] = [];
+
+    // Check if type ID changed and new ID already exists
+    if (typeDefinition.id !== originalId) {
+      const existingType = types.find(t => t.id === typeDefinition.id);
+      if (existingType) {
+        conflicts.push(existingType);
+      }
+    }
+
+    return conflicts;
+  };
+
+  const handleJsonEdit = async () => {
+    if (!editingTypeForJson) {
+      return;
+    }
+
+    const parsed = parseJsonContent(editJsonContent);
+    if (!parsed) {
+      return;
+    }
+
+    setParsedTypeDefinition(parsed);
+
+    // Check for conflicts
+    const conflicts = checkEditConflicts(parsed, editingTypeForJson.id);
+    if (conflicts.length > 0) {
+      setConflictTypes(conflicts);
+      setEditJsonModalVisible(false);
+      setEditConflictModalVisible(true);
+    } else {
+      // No conflicts, proceed with update
+      setEditJsonModalVisible(false);
+      await updateTypeFromJson(parsed, editingTypeForJson.id);
+    }
+  };
+
+  const updateTypeFromJson = async (typeDefinition: TypeDefinition, originalId: string) => {
+    try {
+      await cmisService.updateType(repositoryId, originalId, typeDefinition);
+      message.success('型定義を更新しました');
+      setEditingTypeForJson(null);
+      setEditJsonContent('');
+      setConflictTypes([]);
+      loadTypes();
+    } catch (error) {
+      message.error('型定義の更新に失敗しました: ' + (error as Error).message);
+    }
+  };
+
+  const handleConfirmJsonEdit = async () => {
+    if (!parsedTypeDefinition || !editingTypeForJson) {
+      return;
+    }
+
+    setEditConflictModalVisible(false);
+    await updateTypeFromJson(parsedTypeDefinition, editingTypeForJson.id);
+  };
+
+  const handleCancelJsonEdit = () => {
+    setEditJsonModalVisible(false);
+    setEditConflictModalVisible(false);
+    setEditingTypeForJson(null);
+    setEditJsonContent('');
+    setParsedTypeDefinition(null);
     setConflictTypes([]);
   };
 
@@ -881,6 +976,112 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
             }}>
               {JSON.stringify(parsedTypeDefinition, null, 2)}
             </pre>
+          </div>
+        )}
+      </Modal>
+
+      {/* JSON Edit Modal */}
+      <Modal
+        title="型定義の編集 (JSON)"
+        open={editJsonModalVisible}
+        onOk={handleJsonEdit}
+        onCancel={handleCancelJsonEdit}
+        okText="保存"
+        cancelText="キャンセル"
+        width={800}
+      >
+        <Alert
+          message="JSON形式で型定義を編集できます"
+          description="JSONテキストを直接編集してください。変更内容は保存時に検証されます。"
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+
+        {editingTypeForJson && (
+          <div style={{ marginBottom: 16 }}>
+            <strong>編集対象タイプ:</strong> {editingTypeForJson.id} - {editingTypeForJson.displayName}
+          </div>
+        )}
+
+        <Input.TextArea
+          value={editJsonContent}
+          onChange={(e) => setEditJsonContent(e.target.value)}
+          rows={20}
+          style={{
+            fontFamily: 'monospace',
+            fontSize: 12,
+            background: '#f5f5f5'
+          }}
+          placeholder="JSON形式の型定義を入力してください"
+        />
+      </Modal>
+
+      {/* Edit Conflict Confirmation Modal */}
+      <Modal
+        title="型定義の競合確認（編集）"
+        open={editConflictModalVisible}
+        onOk={handleConfirmJsonEdit}
+        onCancel={handleCancelJsonEdit}
+        okText="上書きして更新"
+        cancelText="キャンセル"
+        width={600}
+      >
+        <Alert
+          message="既存の型定義との競合が検出されました"
+          description={
+            <div>
+              <p>型IDが変更され、以下の型IDがすでに存在しています：</p>
+              <ul>
+                {conflictTypes.map(type => (
+                  <li key={type.id}>
+                    <strong>{type.id}</strong> - {type.displayName}
+                  </li>
+                ))}
+              </ul>
+              <p>
+                <ExclamationCircleOutlined style={{ color: '#faad14', marginRight: 8 }} />
+                続行すると、既存の型定義が上書きされます。
+              </p>
+            </div>
+          }
+          type="warning"
+          showIcon
+        />
+
+        {parsedTypeDefinition && editingTypeForJson && (
+          <div style={{ marginTop: 16 }}>
+            <h4>変更内容：</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
+                <strong>変更前:</strong>
+                <pre style={{
+                  background: '#fff1f0',
+                  padding: 12,
+                  borderRadius: 4,
+                  maxHeight: 200,
+                  overflow: 'auto',
+                  fontSize: 11
+                }}>
+                  ID: {editingTypeForJson.id}
+                  {'\n'}DisplayName: {editingTypeForJson.displayName}
+                </pre>
+              </div>
+              <div>
+                <strong>変更後:</strong>
+                <pre style={{
+                  background: '#f6ffed',
+                  padding: 12,
+                  borderRadius: 4,
+                  maxHeight: 200,
+                  overflow: 'auto',
+                  fontSize: 11
+                }}>
+                  ID: {parsedTypeDefinition.id}
+                  {'\n'}DisplayName: {parsedTypeDefinition.displayName}
+                </pre>
+              </div>
+            </div>
           </div>
         )}
       </Modal>
