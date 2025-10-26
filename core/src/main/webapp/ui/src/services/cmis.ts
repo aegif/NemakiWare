@@ -2105,9 +2105,11 @@ export class CMISService {
   }
 
   async createType(repositoryId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
-    return new Promise((resolve, reject) => {
+    // First, create the type via REST API
+    await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${this.restBaseUrl}/${repositoryId}/type/create`, true);
+      xhr.timeout = 30000; // 30 second timeout to prevent indefinite hangs
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.setRequestHeader('Accept', 'application/json');
 
@@ -2121,7 +2123,13 @@ export class CMISService {
           if (xhr.status === 200) {
             try {
               const response = JSON.parse(xhr.responseText);
-              resolve(response.type);
+              // Backend returns {message, status} not {type}
+              // Just verify success and then fetch the type separately
+              if (response.status === 'success') {
+                resolve();
+              } else {
+                reject(new Error(response.message || 'Type creation failed'));
+              }
             } catch (e) {
               reject(new Error('Invalid response format'));
             }
@@ -2133,14 +2141,30 @@ export class CMISService {
       };
 
       xhr.onerror = () => reject(new Error('Network error during type creation'));
-      xhr.send(JSON.stringify(type));
+      xhr.ontimeout = () => reject(new Error('Request timed out - type creation took too long'));
+
+      // Map frontend TypeDefinition field names to backend expectations
+      // Backend expects "baseId" instead of "baseTypeId" for CMIS type definitions
+      const backendPayload = {
+        ...type,
+        baseId: type.baseTypeId, // Map baseTypeId to baseId for backend
+      };
+      // Remove baseTypeId to avoid confusion
+      delete (backendPayload as any).baseTypeId;
+
+      xhr.send(JSON.stringify(backendPayload));
     });
+
+    // Then fetch the created type via CMIS API to return complete definition
+    return this.getType(repositoryId, type.id!);
   }
 
   async updateType(repositoryId: string, typeId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
-    return new Promise((resolve, reject) => {
+    // First, update the type via REST API
+    await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', `${this.restBaseUrl}/${repositoryId}/type/update/${typeId}`, true);
+      xhr.timeout = 30000; // 30 second timeout to prevent indefinite hangs
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.setRequestHeader('Accept', 'application/json');
 
@@ -2154,7 +2178,13 @@ export class CMISService {
           if (xhr.status === 200) {
             try {
               const response = JSON.parse(xhr.responseText);
-              resolve(response.type);
+              // Backend returns {message, status} not {type}
+              // Just verify success and then fetch the type separately
+              if (response.status === 'success') {
+                resolve();
+              } else {
+                reject(new Error(response.message || 'Type update failed'));
+              }
             } catch (e) {
               reject(new Error('Invalid response format'));
             }
@@ -2166,8 +2196,22 @@ export class CMISService {
       };
 
       xhr.onerror = () => reject(new Error('Network error during type update'));
-      xhr.send(JSON.stringify(type));
+      xhr.ontimeout = () => reject(new Error('Request timed out - type update took too long'));
+
+      // Map frontend TypeDefinition field names to backend expectations
+      // Backend expects "baseId" instead of "baseTypeId" for CMIS type definitions
+      const backendPayload = {
+        ...type,
+        baseId: type.baseTypeId, // Map baseTypeId to baseId for backend
+      };
+      // Remove baseTypeId to avoid confusion
+      delete (backendPayload as any).baseTypeId;
+
+      xhr.send(JSON.stringify(backendPayload));
     });
+
+    // Then fetch the updated type via CMIS API to return complete definition
+    return this.getType(repositoryId, typeId);
   }
 
   async deleteType(repositoryId: string, typeId: string): Promise<void> {

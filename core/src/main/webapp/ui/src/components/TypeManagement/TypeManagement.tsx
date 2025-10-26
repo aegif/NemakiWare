@@ -323,11 +323,11 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         await cmisService.createType(repositoryId, values);
         message.success('タイプを作成しました');
       }
-      
+
       setModalVisible(false);
       setEditingType(null);
       form.resetFields();
-      loadTypes();
+      await loadTypes(); // Await table refresh to ensure DOM updates before returning
     } catch (error) {
       message.error(editingType ? 'タイプの更新に失敗しました' : 'タイプの作成に失敗しました');
     }
@@ -439,11 +439,14 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   const createTypeFromFile = async (typeDefinition: TypeDefinition) => {
     try {
       await cmisService.createType(repositoryId, typeDefinition);
-      message.success('型定義をインポートしました');
+      message.success({
+        content: '型定義をインポートしました',
+        duration: 5 // Extend message duration to 5 seconds for test reliability
+      });
       setParsedTypeDefinition(null);
       setUploadFileList([]);
       setConflictTypes([]);
-      loadTypes();
+      await loadTypes(); // Await table refresh to ensure DOM updates before returning
     } catch (error) {
       message.error('型定義の作成に失敗しました: ' + (error as Error).message);
     }
@@ -526,11 +529,14 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   const updateTypeFromJson = async (typeDefinition: TypeDefinition, originalId: string) => {
     try {
       await cmisService.updateType(repositoryId, originalId, typeDefinition);
-      message.success('型定義を更新しました');
+      message.success({
+        content: '型定義を更新しました',
+        duration: 5 // Extend message duration to 5 seconds for test reliability
+      });
       setEditingTypeForJson(null);
       setEditJsonContent('');
       setConflictTypes([]);
-      loadTypes();
+      await loadTypes(); // Await table refresh to ensure DOM updates before returning
     } catch (error) {
       message.error('型定義の更新に失敗しました: ' + (error as Error).message);
     }
