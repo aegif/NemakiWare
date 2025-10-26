@@ -162,6 +162,135 @@
 
 ---
 
+## 既存スキップテストの調査結果 ✅ (2025-10-26 18:30)
+
+### 調査の背景
+Priority 1-4 の全機能実装完了後、既存のスキップテスト（29 skipped tests）について、新機能により有効化可能なものがあるか調査を実施。
+
+### 調査対象ファイル
+
+#### 1. custom-type-creation.spec.ts (12 test.skip)
+**ファイルの状態**: 全テストスイートスキップ (`test.describe.skip()` - line 20)
+
+**スキップ理由**: "UI NOT IMPLEMENTED (2025-10-21)"
+```
+Implementation Requirements:
+- "新規タイプ作成" / "Create Type" button in type management page
+- Type creation modal with type ID, name, parent type, and description fields
+- Property addition UI in type detail modal
+- Custom type selector in document upload modal
+```
+
+**期待されるUI**:
+- 「新規タイプ作成」ボタン → タイプ作成フォームモーダル
+- ID, displayName, description, baseType を手動入力
+- プロパティ追加UIでの個別プロパティ定義
+- ドキュメント作成時のカスタムタイプセレクター
+
+**実装済みUI (Priority 3/4)**:
+- 「ファイルからインポート」ボタン → Upload.Dragger モーダル
+- JSON/XML形式のファイルアップロード
+- JSON TextArea モーダルでの全体編集
+
+**判断**: ❌ **有効化不可**
+- UIパターンが根本的に異なる（手動フォーム vs ファイルアップロード）
+- このテストファイルは今後もスキップ維持が適切
+
+#### 2. custom-type-attributes.spec.ts (3 tests - スキップなし)
+**ファイルの状態**: `test.describe()` - スキップなし（実行されるが失敗する）
+
+**テスト内容**:
+1. "should create custom document type with custom attributes" (lines 41-177)
+   - 「新規タイプ」ボタン期待 (line 59)
+   - 基本情報タブでID/名前/説明入力
+   - プロパティ定義タブでプロパティ追加
+
+2. "should create document with custom type and display custom attributes" (lines 179-268)
+   - カスタムタイプでのドキュメント作成
+   - プロパティエディタでカスタム属性表示確認
+
+3. "should edit custom attribute value and verify persistence" (lines 270-326)
+   - カスタム属性値の編集と永続化確認
+
+**判断**: ❌ **現在も失敗**
+- custom-type-creation.spec.ts と同様の手動作成UIを期待
+- 手動タイプ作成UIが存在しないため実行しても失敗する
+- **推奨アクション**: `test.describe.skip()` に変更して明示的にスキップ
+
+#### 3. type-management.spec.ts (6 tests - 1 test.skip)
+**ファイルの状態**: 6テスト中 5テスト実行中、1テストスキップ
+
+**実行中のテスト** (5 tests - ✅ PASS):
+1. "should display all base CMIS types" - ベースタイプ表示確認
+2. "should display nemaki: custom types" - nemaki: カスタムタイプ表示
+3. "should display correct type information for nemaki:parentChildRelationship"
+4. "should allow viewing type details by clicking on type row"
+5. "should verify API returns all types (base + custom)"
+
+**スキップテスト** (line 244):
+```typescript
+test.skip('should allow editing nemaki: custom type description', async ({ page, browserName }) => {
+  // WIP: Type editing functionality not fully implemented or restricted by CMIS spec
+```
+
+**期待されるUI**:
+- 編集ボタンクリック → 編集モーダル
+- description フィールドのみの編集
+- 更新ボタンで保存
+
+**実装済みUI (Priority 4)**:
+- 編集ボタンクリック → JSON編集モーダル
+- JSON全体をTextAreaで編集（description含む）
+- 保存ボタンで更新
+
+**判断**: ⚠️ **テスト書き直しが必要**
+- UIパターンは異なるがJSON編集で同等機能は提供
+- **推奨アクション**: スキップ維持（新規テストファイルがJSON編集を網羅済み）
+
+### UIパターン比較表
+
+| 機能 | 既存テストの期待 | Priority 3/4 実装 | 一致 |
+|------|----------------|------------------|------|
+| **タイプ作成** | 手動フォーム (ID, 名前, 親タイプ, 説明入力) | JSON/XMLファイルアップロード | ❌ |
+| **プロパティ追加** | UI上でプロパティ追加ボタン | JSONファイル内で定義 | ❌ |
+| **タイプ編集** | description フィールドのみ編集 | JSON全体をテキストエリアで編集 | ❌ |
+| **タイプ削除** | 削除ボタン + Popconfirm | 削除ボタン + Popconfirm | ✅ |
+
+### 結論と推奨アクション
+
+#### ✅ 完了している作業
+- Priority 3/4 機能の実装（ファイルアップロード + JSON編集 + 削除）
+- 新機能のテストファイル作成 (type-definition-upload.spec.ts, 7テスト, 485行)
+- すべての変更のコミット＆プッシュ (PR #391 更新済み)
+
+#### ⏸️ 既存スキップテストについて
+
+**custom-type-creation.spec.ts**:
+- **推奨**: そのままスキップ維持
+- **理由**: 手動フォーム作成UIは実装予定なし（ファイルアップロード方式を採用したため）
+- **現状**: `test.describe.skip()` で全テストスイートスキップ済み
+
+**custom-type-attributes.spec.ts**:
+- **推奨**: `test.describe.skip()` に変更してスキップ
+- **理由**: custom-type-creation.spec.ts と同じUIを期待、手動作成UIが存在しない
+- **現状**: スキップなし（実行されるが失敗する）
+- **アクション必要**: test.describe.skip() への変更
+
+**type-management.spec.ts**:
+- **推奨**: 既存のスキップテスト (line 244) は維持
+- **理由**: description フィールド単独編集UIは実装せず、JSON全体編集を採用
+- **現状**: `test.skip()` でスキップ済み
+- **代替**: 新規テストファイル (type-definition-upload.spec.ts) がJSON編集機能を網羅
+
+#### 📝 今後の方針
+
+1. **新機能テスト実行**: type-definition-upload.spec.ts を実行して動作確認
+2. **custom-type-attributes.spec.ts 修正**: test.describe.skip() に変更（推奨）
+3. **既存スキップテスト**: 異なるUIパターンを期待するテストは今後もスキップ維持
+4. **ドキュメント更新**: UIパターンの違いを明記（本セクション）
+
+---
+
 ## 🎯 前回セッション更新 (2025-10-26 午後 - パート6) - Definition Document Upload機能実装完了 ✅
 
 ### このセッションで実施した作業
