@@ -246,13 +246,18 @@ import {
   Card,
   Select,
   Switch,
-  Tabs
+  Tabs,
+  Upload,
+  Alert
 } from 'antd';
 import {
   FileOutlined,
   PlusOutlined,
   EditOutlined,
-  DeleteOutlined
+  DeleteOutlined,
+  ImportOutlined,
+  InboxOutlined,
+  ExclamationCircleOutlined
 } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
 import { TypeDefinition, PropertyDefinition } from '../../types/cmis';
@@ -262,12 +267,27 @@ interface TypeManagementProps {
 }
 
 import { useAuth } from '../../contexts/AuthContext';
+
+type UploadFile = {
+  uid: string;
+  name: string;
+  status?: string;
+  originFileObj?: File;
+};
+
 export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) => {
   const [types, setTypes] = useState<TypeDefinition[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingType, setEditingType] = useState<TypeDefinition | null>(null);
   const [form] = Form.useForm();
+
+  // File upload states
+  const [uploadModalVisible, setUploadModalVisible] = useState(false);
+  const [uploadFileList, setUploadFileList] = useState<UploadFile[]>([]);
+  const [parsedTypeDefinition, setParsedTypeDefinition] = useState<TypeDefinition | null>(null);
+  const [conflictTypes, setConflictTypes] = useState<TypeDefinition[]>([]);
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
@@ -327,6 +347,116 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     setModalVisible(false);
     setEditingType(null);
     form.resetFields();
+  };
+
+  // File upload handlers
+  const handleFileChange = (info: any) => {
+    const { fileList } = info;
+    setUploadFileList(fileList.slice(-1)); // Keep only the latest file
+  };
+
+  const parseTypeDefinitionFile = async (file: File): Promise<TypeDefinition | null> => {
+    try {
+      const text = await file.text();
+      const fileName = file.name.toLowerCase();
+
+      let parsed: any;
+      if (fileName.endsWith('.json')) {
+        parsed = JSON.parse(text);
+      } else if (fileName.endsWith('.xml')) {
+        // Basic XML parsing for CMIS type definition
+        message.error('XML形式は現在サポートされていません。JSON形式のファイルをアップロードしてください。');
+        return null;
+      } else {
+        message.error('JSONまたはXML形式のファイルをアップロードしてください。');
+        return null;
+      }
+
+      // Validate required fields
+      if (!parsed.id || !parsed.displayName || !parsed.baseTypeId) {
+        message.error('無効な型定義ファイルです。id、displayName、baseTypeIdが必要です。');
+        return null;
+      }
+
+      return parsed as TypeDefinition;
+    } catch (error) {
+      message.error('ファイルの解析に失敗しました: ' + (error as Error).message);
+      return null;
+    }
+  };
+
+  const checkTypeConflicts = (typeDefinition: TypeDefinition): TypeDefinition[] => {
+    const conflicts: TypeDefinition[] = [];
+
+    // Check if type ID already exists
+    const existingType = types.find(t => t.id === typeDefinition.id);
+    if (existingType) {
+      conflicts.push(existingType);
+    }
+
+    return conflicts;
+  };
+
+  const handleFileUpload = async () => {
+    if (uploadFileList.length === 0) {
+      message.warning('ファイルを選択してください。');
+      return;
+    }
+
+    const file = uploadFileList[0].originFileObj;
+    if (!file) {
+      message.error('ファイルの読み込みに失敗しました。');
+      return;
+    }
+
+    const parsed = await parseTypeDefinitionFile(file);
+    if (!parsed) {
+      return;
+    }
+
+    setParsedTypeDefinition(parsed);
+
+    // Check for conflicts
+    const conflicts = checkTypeConflicts(parsed);
+    if (conflicts.length > 0) {
+      setConflictTypes(conflicts);
+      setUploadModalVisible(false);
+      setConfirmModalVisible(true);
+    } else {
+      // No conflicts, proceed with creation
+      setUploadModalVisible(false);
+      await createTypeFromFile(parsed);
+    }
+  };
+
+  const createTypeFromFile = async (typeDefinition: TypeDefinition) => {
+    try {
+      await cmisService.createType(repositoryId, typeDefinition);
+      message.success('型定義をインポートしました');
+      setParsedTypeDefinition(null);
+      setUploadFileList([]);
+      setConflictTypes([]);
+      loadTypes();
+    } catch (error) {
+      message.error('型定義の作成に失敗しました: ' + (error as Error).message);
+    }
+  };
+
+  const handleConfirmUpload = async () => {
+    if (!parsedTypeDefinition) {
+      return;
+    }
+
+    setConfirmModalVisible(false);
+    await createTypeFromFile(parsedTypeDefinition);
+  };
+
+  const handleCancelUpload = () => {
+    setUploadModalVisible(false);
+    setConfirmModalVisible(false);
+    setParsedTypeDefinition(null);
+    setUploadFileList([]);
+    setConflictTypes([]);
   };
 
   const columns = [
@@ -618,13 +748,21 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         <h2 style={{ margin: 0 }}>
           <FileOutlined /> タイプ管理
         </h2>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setModalVisible(true)}
-        >
-          新規タイプ
-        </Button>
+        <Space>
+          <Button
+            icon={<ImportOutlined />}
+            onClick={() => setUploadModalVisible(true)}
+          >
+            ファイルからインポート
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setModalVisible(true)}
+          >
+            新規タイプ
+          </Button>
+        </Space>
       </div>
 
       <Table
@@ -660,6 +798,91 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* File Upload Modal */}
+      <Modal
+        title="型定義ファイルのインポート"
+        open={uploadModalVisible}
+        onOk={handleFileUpload}
+        onCancel={handleCancelUpload}
+        okText="インポート"
+        cancelText="キャンセル"
+        width={600}
+      >
+        <Upload.Dragger
+          fileList={uploadFileList}
+          onChange={handleFileChange}
+          beforeUpload={() => false}
+          accept=".json,.xml"
+          maxCount={1}
+        >
+          <p className="ant-upload-drag-icon">
+            <InboxOutlined style={{ fontSize: 48, color: '#1890ff' }} />
+          </p>
+          <p className="ant-upload-text">クリックまたはドラッグして型定義ファイルをアップロード</p>
+          <p className="ant-upload-hint">
+            JSON形式またはXML形式の型定義ファイルをアップロードしてください。
+            ファイルには id、displayName、baseTypeId フィールドが必要です。
+          </p>
+        </Upload.Dragger>
+
+        {uploadFileList.length > 0 && (
+          <Alert
+            message="選択されたファイル"
+            description={uploadFileList[0].name}
+            type="info"
+            style={{ marginTop: 16 }}
+          />
+        )}
+      </Modal>
+
+      {/* Conflict Confirmation Modal */}
+      <Modal
+        title="型定義の競合確認"
+        open={confirmModalVisible}
+        onOk={handleConfirmUpload}
+        onCancel={handleCancelUpload}
+        okText="上書きして作成"
+        cancelText="キャンセル"
+        width={600}
+      >
+        <Alert
+          message="既存の型定義との競合が検出されました"
+          description={
+            <div>
+              <p>以下の型IDがすでに存在しています：</p>
+              <ul>
+                {conflictTypes.map(type => (
+                  <li key={type.id}>
+                    <strong>{type.id}</strong> - {type.displayName}
+                  </li>
+                ))}
+              </ul>
+              <p>
+                <ExclamationCircleOutlined style={{ color: '#faad14', marginRight: 8 }} />
+                続行すると、既存の型定義が上書きされます。
+              </p>
+            </div>
+          }
+          type="warning"
+          showIcon
+        />
+
+        {parsedTypeDefinition && (
+          <div style={{ marginTop: 16 }}>
+            <h4>インポートされる型定義：</h4>
+            <pre style={{
+              background: '#f5f5f5',
+              padding: 12,
+              borderRadius: 4,
+              maxHeight: 200,
+              overflow: 'auto'
+            }}>
+              {JSON.stringify(parsedTypeDefinition, null, 2)}
+            </pre>
+          </div>
+        )}
       </Modal>
     </Card>
   );
