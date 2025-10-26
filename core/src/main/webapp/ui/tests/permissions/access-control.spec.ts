@@ -1017,7 +1017,7 @@ test.describe('Access Control and Permissions', () => {
     // - "should NOT be able to upload to restricted folder" - Test #2
     // These tests confirm that permissions are correctly enforced at the application level.
 
-    test.skip('should be able to view restricted folder as test user', async ({ page, browserName }) => {
+    test('should be able to view restricted folder as test user', async ({ page, browserName }) => {
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
@@ -1145,7 +1145,7 @@ test.describe('Access Control and Permissions', () => {
       }
     });
 
-    test.skip('should NOT be able to delete document (read-only)', async ({ page, browserName }) => {
+    test('should NOT be able to delete document (read-only)', async ({ page, browserName }) => {
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
@@ -1194,7 +1194,7 @@ test.describe('Access Control and Permissions', () => {
       }
     });
 
-    test.skip('should NOT be able to upload to restricted folder', async ({ page, browserName }) => {
+    test('should NOT be able to upload to restricted folder', async ({ page, browserName }) => {
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
