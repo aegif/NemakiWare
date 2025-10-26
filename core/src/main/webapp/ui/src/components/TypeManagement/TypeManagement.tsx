@@ -1,238 +1,3 @@
-/**
- * TypeManagement Component for NemakiWare React UI
- *
- * Custom type management component providing comprehensive CMIS type definition CRUD operations:
- * - Type list display with Ant Design Table component (6 columns: ID, display name, description, base type, parent type, property count)
- * - Custom type creation via Modal form with tabbed interface (basic info + property definitions)
- * - Custom type editing via Modal form (dual-mode: create vs edit)
- * - Custom type deletion with Popconfirm confirmation dialog
- * - Property definition management via Form.List with dynamic add/remove fields
- * - CMIS standard type protection (cmis:* types cannot be edited or deleted)
- * - Comprehensive error handling with Japanese error messages
- * - Type ID immutable after creation to maintain data integrity
- * - Property count rendering from propertyDefinitions object
- * - Grid layout for boolean flags (creatable, fileable, queryable)
- * - Parent type selection from existing types dropdown
- * - Base type restriction (cmis:document and cmis:folder only)
- * - Card-based property definition layout for visual separation
- * - Deletable flag-based delete button disable logic
- *
- * Component Architecture:
- * TypeManagement (stateful CRUD manager)
- *   ├─ useState: types (TypeDefinition[]), loading, modalVisible, editingType, form
- *   ├─ useEffect: loadTypes() on repositoryId change
- *   ├─ loadTypes(): CMISService.getTypes() → setTypes
- *   ├─ handleSubmit(): Create or update type via CMISService
- *   ├─ handleEdit(): Set editing state and populate form
- *   ├─ handleDelete(): Delete type via CMISService with confirmation
- *   └─ Render Structure:
- *       ├─ Card wrapper with header (title + "新規タイプ" button)
- *       ├─ Table (6 columns with ellipsis for description)
- *       └─ Modal (800px width, tabbed form)
- *           ├─ Tabs (basic info + property definitions)
- *           │   ├─ Tab 1: Basic Info (ID, displayName, description, baseTypeId, parentTypeId, flags)
- *           │   └─ Tab 2: Property Definitions (Form.List with Card-based layout)
- *           └─ Footer (submit button + cancel button)
- *
- * Property Definition Form Architecture:
- * PropertyDefinitionForm (nested in Tab 2)
- *   └─ Form.List name="properties"
- *       ├─ fields.map() → Card components
- *       │   ├─ Grid Layout (2 columns: id, displayName, propertyType, cardinality)
- *       │   ├─ Boolean Flags (4 columns: required, queryable, updatable, remove button)
- *       │   └─ Description (TextArea)
- *       └─ Add Property Button (dashed, block, PlusOutlined)
- *
- * Usage Examples:
- * ```typescript
- * // App.tsx - Admin layout type management route
- * <Route path="/types" element={<TypeManagement repositoryId={repositoryId} />} />
- *
- * // Example: Load types on component mount
- * useEffect(() => {
- *   loadTypes(); // Calls CMISService.getTypes(repositoryId)
- * }, [repositoryId]);
- * // Result: types state populated with TypeDefinition array
- *
- * // Example: Create custom document type
- * const values = {
- *   id: 'custom:invoice',
- *   displayName: 'Invoice Document',
- *   description: 'Invoice document type with custom properties',
- *   baseTypeId: 'cmis:document',
- *   parentTypeId: null,
- *   creatable: true,
- *   fileable: true,
- *   queryable: true,
- *   properties: [
- *     { id: 'invoice:number', displayName: 'Invoice Number', propertyType: 'string', cardinality: 'single', required: true, queryable: true, updatable: false },
- *     { id: 'invoice:amount', displayName: 'Amount', propertyType: 'decimal', cardinality: 'single', required: true, queryable: true, updatable: true }
- *   ]
- * };
- * handleSubmit(values); // Calls CMISService.createType(repositoryId, values)
- * // Result: Custom invoice type created with 2 properties
- *
- * // Example: Edit existing custom type
- * const type = types.find(t => t.id === 'custom:invoice');
- * handleEdit(type); // Sets editingType and opens modal with form populated
- * // Form fields populated: { id: 'custom:invoice', displayName: 'Invoice Document', ... }
- * // Type ID field disabled (disabled={!!editingType} on line 302)
- *
- * // Example: CMIS standard type protection
- * const cmisDocType = types.find(t => t.id === 'cmis:document');
- * // Edit button: disabled={!record.deletable && record.id.startsWith('cmis:')} → true
- * // Delete button: Conditionally disabled (line 146-170) → disabled for cmis:* types
- * // Tooltip: "標準CMISタイプは編集できません" or "標準CMISタイプは削除できません"
- *
- * // Example: Property count rendering
- * const propertyCount = Object.keys(type.propertyDefinitions || {}).length;
- * // Renders: 5 (if type has 5 properties)
- * ```
- *
- * IMPORTANT DESIGN DECISIONS:
- *
- * 1. CMIS Standard Type Protection (Lines 141-142, 146-170):
- *    - Edit button disabled if !record.deletable AND record.id.startsWith('cmis:')
- *    - Delete button conditionally rendered: Popconfirm if deletable, disabled button otherwise
- *    - Rationale: CMIS standard types (cmis:document, cmis:folder, etc.) cannot be modified or deleted
- *    - Implementation: if (record.deletable !== false && !record.id.startsWith('cmis:')) render Popconfirm
- *    - Advantage: Prevents accidental modification of system types, maintains CMIS compliance
- *    - Trade-off: Users cannot customize standard types (but can create subtypes)
- *    - Pattern: Prefix-based protection with deletable flag double-check
- *
- * 2. Dual-Mode Modal with Tabbed Interface (Lines 289-378, 403-428):
- *    - Tabs component with 2 tabs: "基本情報" (basic info) and "プロパティ定義" (property definitions)
- *    - Modal title changes based on editingType: "タイプ編集" vs "新規タイプ作成"
- *    - Rationale: Complex type definition UI requires organized navigation between basic metadata and property definitions
- *    - Implementation: tabItems array with 2 objects (key, label, children JSX)
- *    - Advantage: Reduces form complexity, separates concerns (basic vs properties)
- *    - Trade-off: Users cannot see all fields at once (requires tab switching)
- *    - Pattern: Tabbed modal form for multi-section data entry
- *
- * 3. Dynamic Property Definition Form with Form.List (Lines 176-287):
- *    - Form.List name="properties" manages dynamic array of property fields
- *    - Each field rendered as Card with grid layouts for property metadata
- *    - add() function adds new empty property, remove(name) deletes specific property
- *    - Rationale: Custom types can have 0-N properties, number unknown at design time
- *    - Implementation: Form.List with fields.map() → Card components, add/remove buttons
- *    - Advantage: Flexible property definition, supports any number of properties
- *    - Trade-off: Complex form state management, validation applies to entire array
- *    - Pattern: Form.List for dynamic nested object arrays
- *
- * 4. Property Count Rendering from Object Keys (Lines 126-129):
- *    - Table column render: Object.keys(propertyDefinitions || {}).length
- *    - Rationale: propertyDefinitions is Record<string, PropertyDefinition>, need count not object
- *    - Implementation: Object.keys() extracts property IDs as array, .length counts them
- *    - Advantage: Compact display of property count without expanding full object
- *    - Trade-off: Cannot see individual properties in table (must edit to see details)
- *    - Pattern: Object.keys() for counting Record<string, T> entries
- *
- * 5. Grid Layout for Boolean Flags (Lines 229-263, 345-369):
- *    - Property boolean flags: required, queryable, updatable in 4-column grid (includes remove button)
- *    - Type boolean flags: creatable, fileable, queryable in 3-column grid
- *    - Rationale: Boolean flags are compact, horizontal layout saves vertical space
- *    - Implementation: <div style={{ display: 'grid', gridTemplateColumns: 'repeat(N, 1fr)', gap: 16 }}>
- *    - Advantage: Compact UI, clear visual grouping of related flags
- *    - Trade-off: May be too compact on narrow screens (no responsive breakpoints)
- *    - Pattern: CSS Grid for horizontal boolean flag layout
- *
- * 6. Type ID Immutability After Creation (Lines 300-303):
- *    - Type ID field: disabled={!!editingType} prevents editing when editingType is not null
- *    - Rationale: Type ID is primary key, changing it would break document associations
- *    - Implementation: Conditional disabled prop based on editingType truthiness
- *    - Advantage: Prevents data integrity issues, maintains CMIS object references
- *    - Trade-off: Users cannot rename types (must delete and recreate)
- *    - Pattern: Immutable primary key enforcement with disabled field
- *
- * 7. Parent Type Selection from Existing Types (Lines 332-343):
- *    - Parent type dropdown populated with types.map(type => Select.Option)
- *    - Rationale: Custom types can inherit from other custom types (type hierarchy)
- *    - Implementation: <Select allowClear> with types.map() generating options
- *    - Advantage: Users can build type hierarchies, see all available parent types
- *    - Trade-off: Circular dependency prevention not implemented (user can create invalid hierarchy)
- *    - Pattern: Dropdown populated from current state array
- *
- * 8. Base Type Restriction to Document and Folder (Lines 322-330):
- *    - Base type dropdown has only 2 options: cmis:document and cmis:folder
- *    - Rationale: CMIS specification defines 4 base types (document, folder, relationship, policy), but NemakiWare primarily supports document/folder custom types
- *    - Implementation: Hardcoded Select.Option with value="cmis:document" and value="cmis:folder"
- *    - Advantage: Simplifies type creation, focuses on most common use cases
- *    - Trade-off: Cannot create custom relationship or policy types
- *    - Pattern: Hardcoded options for limited enum values
- *
- * 9. Card-Based Property Definition Layout (Lines 181-273):
- *    - Each property field rendered as <Card size="small" style={{ marginBottom: 8 }}>
- *    - Rationale: Property definitions have 7+ fields, need visual grouping to prevent confusion
- *    - Implementation: Card wraps grid layouts for property metadata (id, displayName, type, etc.)
- *    - Advantage: Clear visual separation between properties, easy to distinguish property boundaries
- *    - Trade-off: Vertical space consumption increases with many properties
- *    - Pattern: Card wrapper for complex nested form fields
- *
- * 10. Deletable Flag-Based Delete Button Disable (Lines 146-170):
- *     - Delete button rendering: if (record.deletable !== false && !record.id.startsWith('cmis:'))
- *     - Rationale: Double-check protection prevents deletion of both CMIS standard types AND types marked as non-deletable
- *     - Implementation: Conditional rendering of Popconfirm (enabled) vs disabled Button
- *     - Advantage: Flexible deletion control supports both CMIS standard types and custom non-deletable types
- *     - Trade-off: Complex boolean logic requires careful reading
- *     - Pattern: Multi-condition delete button enable/disable logic
- *
- * Expected Results:
- * - TypeManagement: Renders type list table with 6 columns, "新規タイプ" button
- * - Type list: Shows all custom and CMIS standard types from repository
- * - CMIS standard type protection: cmis:* types have disabled edit/delete buttons with tooltips
- * - Create type modal: Opens with empty form, 2 tabs (basic info + property definitions)
- * - Edit type modal: Opens with form populated with existing type data, type ID disabled
- * - Property definition form: Allows adding/removing properties dynamically with Form.List
- * - Property count column: Displays number of properties for each type
- * - Delete confirmation: Popconfirm shows "このタイプを削除しますか？" before deletion
- * - Success messages: "タイプを作成しました" / "タイプを更新しました" / "タイプを削除しました"
- * - Error messages: "タイプの読み込みに失敗しました" / "タイプの作成に失敗しました" / etc.
- *
- * Performance Characteristics:
- * - Initial render: <10ms (simple wrapper component)
- * - loadTypes() call: Varies by type count (10 types: ~200ms, 50 types: ~500ms)
- * - Table rendering: <50ms for 50 types
- * - Modal open: <10ms (form initialization)
- * - Form submission: Varies by property count (5 properties: ~300ms, 20 properties: ~800ms)
- * - Re-render on state change: <10ms (React reconciliation)
- *
- * Debugging Features:
- * - React DevTools: Inspect types, editingType, modalVisible state
- * - Console errors: Logged on loadTypes/handleSubmit/handleDelete failures
- * - Table dataSource: Inspect types array for loaded type definitions
- * - Form values: Use form.getFieldsValue() to inspect current form state
- * - Property definitions: Inspect propertyDefinitions Record<string, PropertyDefinition>
- *
- * Known Limitations:
- * - No circular dependency prevention: Users can create invalid type hierarchies (parent referencing child)
- * - No type validation: Cannot validate property types against CMIS specification
- * - Limited base type support: Only cmis:document and cmis:folder (no relationship or policy)
- * - No property inheritance display: Cannot see inherited properties from parent type in table
- * - No type deletion cascade check: Deleting type with subtypes may cause orphaned types
- * - No responsive grid layout: Boolean flag grids may overflow on narrow screens (<600px)
- * - No property order control: Properties displayed in arbitrary order (no drag-and-drop)
- * - No property name validation: Allows duplicate property IDs in form (validated server-side)
- * - No base type immutability: Can change baseTypeId after creation (may break CMIS compliance)
- *
- * Relationships to Other Components:
- * - Used by: Admin layout routes (type management page)
- * - Depends on: CMISService for type CRUD operations (getTypes, createType, updateType, deleteType)
- * - Depends on: AuthContext for handleAuthError callback
- * - Depends on: TypeDefinition and PropertyDefinition type interfaces
- * - Renders: Ant Design Table, Modal, Form, Tabs, Select, Switch, Card components
- * - Integration: Operates independently, no parent component communication
- *
- * Common Failure Scenarios:
- * - Invalid type ID: Server rejects type creation with duplicate ID (400 error)
- * - CMIS standard type edit attempt: Edit button disabled, tooltip explains protection
- * - Missing required fields: Form validation prevents submission (type ID, display name, base type required)
- * - Network timeout: loadTypes() fails with message.error('タイプの読み込みに失敗しました')
- * - Circular parent reference: Server may accept but cause infinite loop on type hierarchy traversal
- * - Property definition validation failure: Server rejects invalid property types or cardinality
- * - Authentication failure: handleAuthError redirects to login page (401 error)
- * - Type with objects cannot be deleted: Server rejects deletion if documents exist with that type
- */
-
 import React, { useState, useEffect } from 'react';
 import {
   Table,
@@ -255,10 +20,9 @@ import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
-  ImportOutlined,
-  InboxOutlined,
-  ExclamationCircleOutlined
+  ImportOutlined
 } from '@ant-design/icons';
+import type { UploadFile } from 'antd/es/upload/interface';
 import { CMISService } from '../../services/cmis';
 import { TypeDefinition, PropertyDefinition } from '../../types/cmis';
 
@@ -267,14 +31,6 @@ interface TypeManagementProps {
 }
 
 import { useAuth } from '../../contexts/AuthContext';
-
-type UploadFile = {
-  uid: string;
-  name: string;
-  status?: string;
-  originFileObj?: File;
-};
-
 export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) => {
   const [types, setTypes] = useState<TypeDefinition[]>([]);
   const [loading, setLoading] = useState(false);
@@ -282,18 +38,19 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   const [editingType, setEditingType] = useState<TypeDefinition | null>(null);
   const [form] = Form.useForm();
 
-  // File upload states
+  // Upload functionality states
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [uploadFileList, setUploadFileList] = useState<UploadFile[]>([]);
-  const [parsedTypeDefinition, setParsedTypeDefinition] = useState<TypeDefinition | null>(null);
-  const [conflictTypes, setConflictTypes] = useState<TypeDefinition[]>([]);
-  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [conflictModalVisible, setConflictModalVisible] = useState(false);
+  const [conflictTypes, setConflictTypes] = useState<string[]>([]);
+  const [pendingTypeDefinition, setPendingTypeDefinition] = useState<any>(null);
 
-  // JSON edit states
-  const [editJsonModalVisible, setEditJsonModalVisible] = useState(false);
-  const [editJsonContent, setEditJsonContent] = useState('');
-  const [editingTypeForJson, setEditingTypeForJson] = useState<TypeDefinition | null>(null);
+  // JSON edit functionality states
+  const [jsonEditModalVisible, setJsonEditModalVisible] = useState(false);
+  const [editingTypeJson, setEditingTypeJson] = useState<string>('');
+  const [originalTypeId, setOriginalTypeId] = useState<string>('');
   const [editConflictModalVisible, setEditConflictModalVisible] = useState(false);
+  const [editBeforeAfter, setEditBeforeAfter] = useState<{ before: any; after: any } | null>(null);
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
@@ -323,21 +80,20 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         await cmisService.createType(repositoryId, values);
         message.success('タイプを作成しました');
       }
-
+      
       setModalVisible(false);
       setEditingType(null);
       form.resetFields();
-      await loadTypes(); // Await table refresh to ensure DOM updates before returning
+      loadTypes();
     } catch (error) {
       message.error(editingType ? 'タイプの更新に失敗しました' : 'タイプの作成に失敗しました');
     }
   };
 
   const handleEdit = (type: TypeDefinition) => {
-    // Open JSON edit modal instead of form modal
-    setEditingTypeForJson(type);
-    setEditJsonContent(JSON.stringify(type, null, 2));
-    setEditJsonModalVisible(true);
+    setEditingType(type);
+    form.setFieldsValue(type);
+    setModalVisible(true);
   };
 
   const handleDelete = async (typeId: string) => {
@@ -356,208 +112,167 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     form.resetFields();
   };
 
-  // File upload handlers
-  const handleFileChange = (info: any) => {
-    const { fileList } = info;
-    setUploadFileList(fileList.slice(-1)); // Keep only the latest file
-  };
-
-  const parseTypeDefinitionFile = async (file: File): Promise<TypeDefinition | null> => {
-    try {
-      const text = await file.text();
-      const fileName = file.name.toLowerCase();
-
-      let parsed: any;
-      if (fileName.endsWith('.json')) {
-        parsed = JSON.parse(text);
-      } else if (fileName.endsWith('.xml')) {
-        // Basic XML parsing for CMIS type definition
-        message.error('XML形式は現在サポートされていません。JSON形式のファイルをアップロードしてください。');
-        return null;
-      } else {
-        message.error('JSONまたはXML形式のファイルをアップロードしてください。');
-        return null;
-      }
-
-      // Validate required fields
-      if (!parsed.id || !parsed.displayName || !parsed.baseTypeId) {
-        message.error('無効な型定義ファイルです。id、displayName、baseTypeIdが必要です。');
-        return null;
-      }
-
-      return parsed as TypeDefinition;
-    } catch (error) {
-      message.error('ファイルの解析に失敗しました: ' + (error as Error).message);
-      return null;
-    }
-  };
-
-  const checkTypeConflicts = (typeDefinition: TypeDefinition): TypeDefinition[] => {
-    const conflicts: TypeDefinition[] = [];
-
-    // Check if type ID already exists
-    const existingType = types.find(t => t.id === typeDefinition.id);
-    if (existingType) {
-      conflicts.push(existingType);
-    }
-
-    return conflicts;
+  // Upload functionality handlers
+  const handleImportClick = () => {
+    setUploadModalVisible(true);
+    setUploadFileList([]);
   };
 
   const handleFileUpload = async () => {
+    console.log('[TypeManagement] handleFileUpload called');
     if (uploadFileList.length === 0) {
-      message.warning('ファイルを選択してください。');
+      message.warning('ファイルを選択してください');
       return;
     }
 
-    const file = uploadFileList[0].originFileObj;
-    if (!file) {
-      message.error('ファイルの読み込みに失敗しました。');
-      return;
-    }
+    const file = uploadFileList[0];
+    console.log('[TypeManagement] File selected:', file.name);
+    const reader = new FileReader();
 
-    const parsed = await parseTypeDefinitionFile(file);
-    if (!parsed) {
-      return;
-    }
+    reader.onload = async (e) => {
+      console.log('[TypeManagement] FileReader onload triggered');
+      try {
+        const content = e.target?.result as string;
+        console.log('[TypeManagement] File content length:', content?.length);
+        const typeDef = JSON.parse(content);
+        console.log('[TypeManagement] Parsed type definition:', typeDef.id);
 
-    setParsedTypeDefinition(parsed);
+        // Check for conflicts (type ID already exists)
+        const existingType = types.find(t => t.id === typeDef.id);
+        console.log('[TypeManagement] Existing type found:', !!existingType);
 
-    // Check for conflicts
-    const conflicts = checkTypeConflicts(parsed);
-    if (conflicts.length > 0) {
-      setConflictTypes(conflicts);
-      setUploadModalVisible(false);
-      setConfirmModalVisible(true);
-    } else {
-      // No conflicts, proceed with creation
-      setUploadModalVisible(false);
-      await createTypeFromFile(parsed);
+        if (existingType) {
+          // Show conflict modal
+          console.log('[TypeManagement] Showing conflict modal');
+          setConflictTypes([typeDef.id]);
+          setPendingTypeDefinition(typeDef);
+          setConflictModalVisible(true);
+        } else {
+          // No conflict, create directly
+          console.log('[TypeManagement] No conflict, calling performTypeUpload');
+          await performTypeUpload(typeDef);
+        }
+      } catch (error) {
+        console.error('[TypeManagement] Error parsing file:', error);
+        message.error('ファイルの解析に失敗しました');
+      }
+    };
+
+    // CRITICAL FIX (2025-10-26): Handle both real browser File objects and Playwright test UploadFile objects
+    // In real browsers, file.originFileObj is a File object (which extends Blob)
+    // In Playwright tests, file.originFileObj may not be properly initialized
+    // Use file as Blob directly first, fall back to originFileObj if needed
+    const fileToRead = (file as any).originFileObj || (file as any);
+    console.log('[TypeManagement] File object type:', fileToRead?.constructor?.name);
+
+    try {
+      reader.readAsText(fileToRead);
+      console.log('[TypeManagement] FileReader.readAsText called');
+    } catch (error) {
+      console.error('[TypeManagement] Failed to read file:', error);
+      message.error('ファイルの読み込みに失敗しました');
     }
   };
 
-  const createTypeFromFile = async (typeDefinition: TypeDefinition) => {
+  const performTypeUpload = async (typeDef: any, overwrite: boolean = false) => {
+    console.log('[TypeManagement] performTypeUpload called', { typeId: typeDef.id, overwrite, repositoryId });
     try {
-      await cmisService.createType(repositoryId, typeDefinition);
-      message.success({
-        content: '型定義をインポートしました',
-        duration: 5 // Extend message duration to 5 seconds for test reliability
-      });
-      setParsedTypeDefinition(null);
+      console.log('[TypeManagement] Calling cmisService.createType...');
+      await cmisService.createType(repositoryId, typeDef);
+      console.log('[TypeManagement] createType completed successfully');
+      message.success('型定義をインポートしました');
+      setUploadModalVisible(false);
+      setConflictModalVisible(false);
       setUploadFileList([]);
-      setConflictTypes([]);
-      await loadTypes(); // Await table refresh to ensure DOM updates before returning
+      setPendingTypeDefinition(null);
+      console.log('[TypeManagement] Calling loadTypes to refresh...');
+      loadTypes();
     } catch (error) {
-      message.error('型定義の作成に失敗しました: ' + (error as Error).message);
+      console.error('[TypeManagement] Error in performTypeUpload:', error);
+      message.error('型定義の作成に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
     }
   };
 
-  const handleConfirmUpload = async () => {
-    if (!parsedTypeDefinition) {
-      return;
+  const handleConflictConfirm = async () => {
+    if (pendingTypeDefinition) {
+      await performTypeUpload(pendingTypeDefinition, true);
     }
-
-    setConfirmModalVisible(false);
-    await createTypeFromFile(parsedTypeDefinition);
   };
 
-  const handleCancelUpload = () => {
+  const handleUploadCancel = () => {
     setUploadModalVisible(false);
-    setConfirmModalVisible(false);
-    setParsedTypeDefinition(null);
     setUploadFileList([]);
-    setConflictTypes([]);
   };
 
-  // JSON edit handlers
-  const parseJsonContent = (jsonText: string): TypeDefinition | null => {
-    try {
-      const parsed = JSON.parse(jsonText);
+  const handleConflictCancel = () => {
+    setConflictModalVisible(false);
+    setPendingTypeDefinition(null);
+    setUploadFileList([]);
+  };
 
-      // Validate required fields
-      if (!parsed.id || !parsed.displayName || !parsed.baseTypeId) {
-        message.error('無効な型定義です。id、displayName、baseTypeIdが必要です。');
-        return null;
+  // JSON edit functionality handlers
+  const handleJsonEdit = (type: TypeDefinition) => {
+    setOriginalTypeId(type.id);
+    setEditingTypeJson(JSON.stringify(type, null, 2));
+    setJsonEditModalVisible(true);
+  };
+
+  const handleJsonEditSave = async () => {
+    try {
+      const typeDef = JSON.parse(editingTypeJson);
+
+      // Check if ID changed (conflict detection)
+      if (typeDef.id !== originalTypeId) {
+        const existingType = types.find(t => t.id === typeDef.id);
+        if (existingType) {
+          // Show edit conflict modal
+          const originalType = types.find(t => t.id === originalTypeId);
+          setEditBeforeAfter({
+            before: originalType,
+            after: typeDef
+          });
+          setEditConflictModalVisible(true);
+          return;
+        }
       }
 
-      return parsed as TypeDefinition;
+      // No conflict, update directly
+      await performTypeUpdate(originalTypeId, typeDef);
     } catch (error) {
-      message.error('JSONの解析に失敗しました: ' + (error as Error).message);
-      return null;
+      message.error('JSONの解析に失敗しました');
     }
   };
 
-  const checkEditConflicts = (typeDefinition: TypeDefinition, originalId: string): TypeDefinition[] => {
-    const conflicts: TypeDefinition[] = [];
-
-    // Check if type ID changed and new ID already exists
-    if (typeDefinition.id !== originalId) {
-      const existingType = types.find(t => t.id === typeDefinition.id);
-      if (existingType) {
-        conflicts.push(existingType);
-      }
-    }
-
-    return conflicts;
-  };
-
-  const handleJsonEdit = async () => {
-    if (!editingTypeForJson) {
-      return;
-    }
-
-    const parsed = parseJsonContent(editJsonContent);
-    if (!parsed) {
-      return;
-    }
-
-    setParsedTypeDefinition(parsed);
-
-    // Check for conflicts
-    const conflicts = checkEditConflicts(parsed, editingTypeForJson.id);
-    if (conflicts.length > 0) {
-      setConflictTypes(conflicts);
-      setEditJsonModalVisible(false);
-      setEditConflictModalVisible(true);
-    } else {
-      // No conflicts, proceed with update
-      setEditJsonModalVisible(false);
-      await updateTypeFromJson(parsed, editingTypeForJson.id);
-    }
-  };
-
-  const updateTypeFromJson = async (typeDefinition: TypeDefinition, originalId: string) => {
+  const performTypeUpdate = async (typeId: string, typeDef: any) => {
     try {
-      await cmisService.updateType(repositoryId, originalId, typeDefinition);
-      message.success({
-        content: '型定義を更新しました',
-        duration: 5 // Extend message duration to 5 seconds for test reliability
-      });
-      setEditingTypeForJson(null);
-      setEditJsonContent('');
-      setConflictTypes([]);
-      await loadTypes(); // Await table refresh to ensure DOM updates before returning
+      await cmisService.updateType(repositoryId, typeId, typeDef);
+      message.success('型定義を更新しました');
+      setJsonEditModalVisible(false);
+      setEditConflictModalVisible(false);
+      setEditingTypeJson('');
+      setOriginalTypeId('');
+      setEditBeforeAfter(null);
+      loadTypes();
     } catch (error) {
-      message.error('型定義の更新に失敗しました: ' + (error as Error).message);
+      message.error('型定義の更新に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
     }
   };
 
-  const handleConfirmJsonEdit = async () => {
-    if (!parsedTypeDefinition || !editingTypeForJson) {
-      return;
+  const handleEditConflictConfirm = async () => {
+    if (editBeforeAfter) {
+      await performTypeUpdate(originalTypeId, editBeforeAfter.after);
     }
-
-    setEditConflictModalVisible(false);
-    await updateTypeFromJson(parsedTypeDefinition, editingTypeForJson.id);
   };
 
-  const handleCancelJsonEdit = () => {
-    setEditJsonModalVisible(false);
+  const handleJsonEditCancel = () => {
+    setJsonEditModalVisible(false);
+    setEditingTypeJson('');
+    setOriginalTypeId('');
+  };
+
+  const handleEditConflictCancel = () => {
     setEditConflictModalVisible(false);
-    setEditingTypeForJson(null);
-    setEditJsonContent('');
-    setParsedTypeDefinition(null);
-    setConflictTypes([]);
+    setEditBeforeAfter(null);
   };
 
   const columns = [
@@ -603,7 +318,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
           <Button
             icon={<EditOutlined />}
             size="small"
-            onClick={() => handleEdit(record)}
+            onClick={() => handleJsonEdit(record)}
             disabled={!record.deletable && record.id.startsWith('cmis:')}
             title={!record.deletable && record.id.startsWith('cmis:') ? '標準CMISタイプは編集できません' : ''}
           >
@@ -852,7 +567,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         <Space>
           <Button
             icon={<ImportOutlined />}
-            onClick={() => setUploadModalVisible(true)}
+            onClick={handleImportClick}
           >
             ファイルからインポート
           </Button>
@@ -887,7 +602,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
           layout="vertical"
         >
           <Tabs items={tabItems} />
-          
+
           <Form.Item style={{ marginTop: 16 }}>
             <Space>
               <Button type="primary" htmlType="submit">
@@ -901,192 +616,128 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         </Form>
       </Modal>
 
-      {/* File Upload Modal */}
+      {/* Upload modal */}
       <Modal
         title="型定義ファイルのインポート"
         open={uploadModalVisible}
         onOk={handleFileUpload}
-        onCancel={handleCancelUpload}
+        onCancel={handleUploadCancel}
         okText="インポート"
         cancelText="キャンセル"
-        width={600}
       >
         <Upload.Dragger
-          fileList={uploadFileList}
-          onChange={handleFileChange}
-          beforeUpload={() => false}
-          accept=".json,.xml"
+          accept=".json"
           maxCount={1}
+          fileList={uploadFileList}
+          beforeUpload={(file) => {
+            setUploadFileList([file as any]);
+            return false; // Prevent auto upload
+          }}
+          onRemove={() => {
+            setUploadFileList([]);
+          }}
         >
           <p className="ant-upload-drag-icon">
-            <InboxOutlined style={{ fontSize: 48, color: '#1890ff' }} />
+            <FileOutlined />
           </p>
-          <p className="ant-upload-text">クリックまたはドラッグして型定義ファイルをアップロード</p>
-          <p className="ant-upload-hint">
-            JSON形式またはXML形式の型定義ファイルをアップロードしてください。
-            ファイルには id、displayName、baseTypeId フィールドが必要です。
-          </p>
+          <p className="ant-upload-text">クリックまたはドラッグしてJSONファイルをアップロード</p>
+          <p className="ant-upload-hint">型定義のJSON形式ファイルを選択してください</p>
         </Upload.Dragger>
-
-        {uploadFileList.length > 0 && (
-          <Alert
-            message="選択されたファイル"
-            description={uploadFileList[0].name}
-            type="info"
-            style={{ marginTop: 16 }}
-          />
-        )}
       </Modal>
 
-      {/* Conflict Confirmation Modal */}
+      {/* Conflict confirmation modal */}
       <Modal
         title="型定義の競合確認"
-        open={confirmModalVisible}
-        onOk={handleConfirmUpload}
-        onCancel={handleCancelUpload}
+        open={conflictModalVisible}
+        onOk={handleConflictConfirm}
+        onCancel={handleConflictCancel}
         okText="上書きして作成"
         cancelText="キャンセル"
-        width={600}
       >
         <Alert
-          message="既存の型定義との競合が検出されました"
+          message="以下のタイプIDは既に存在します"
           description={
-            <div>
-              <p>以下の型IDがすでに存在しています：</p>
-              <ul>
-                {conflictTypes.map(type => (
-                  <li key={type.id}>
-                    <strong>{type.id}</strong> - {type.displayName}
-                  </li>
-                ))}
-              </ul>
-              <p>
-                <ExclamationCircleOutlined style={{ color: '#faad14', marginRight: 8 }} />
-                続行すると、既存の型定義が上書きされます。
-              </p>
-            </div>
+            <ul>
+              {conflictTypes.map(typeId => (
+                <li key={typeId}>{typeId}</li>
+              ))}
+            </ul>
           }
           type="warning"
           showIcon
+          style={{ marginBottom: 16 }}
         />
-
-        {parsedTypeDefinition && (
-          <div style={{ marginTop: 16 }}>
-            <h4>インポートされる型定義：</h4>
-            <pre style={{
-              background: '#f5f5f5',
-              padding: 12,
-              borderRadius: 4,
-              maxHeight: 200,
-              overflow: 'auto'
-            }}>
-              {JSON.stringify(parsedTypeDefinition, null, 2)}
+        {pendingTypeDefinition && (
+          <>
+            <p>アップロードしようとしている型定義:</p>
+            <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 4, overflow: 'auto', maxHeight: 300 }}>
+              {JSON.stringify(pendingTypeDefinition, null, 2)}
             </pre>
-          </div>
+          </>
         )}
       </Modal>
 
-      {/* JSON Edit Modal */}
+      {/* JSON edit modal */}
       <Modal
         title="型定義の編集 (JSON)"
-        open={editJsonModalVisible}
-        onOk={handleJsonEdit}
-        onCancel={handleCancelJsonEdit}
+        open={jsonEditModalVisible}
+        onOk={handleJsonEditSave}
+        onCancel={handleJsonEditCancel}
         okText="保存"
         cancelText="キャンセル"
         width={800}
       >
         <Alert
-          message="JSON形式で型定義を編集できます"
-          description="JSONテキストを直接編集してください。変更内容は保存時に検証されます。"
+          message="型定義をJSON形式で直接編集できます"
+          description="IDを変更すると競合確認が表示されます"
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
         />
-
-        {editingTypeForJson && (
-          <div style={{ marginBottom: 16 }}>
-            <strong>編集対象タイプ:</strong> {editingTypeForJson.id} - {editingTypeForJson.displayName}
-          </div>
-        )}
-
         <Input.TextArea
-          value={editJsonContent}
-          onChange={(e) => setEditJsonContent(e.target.value)}
+          value={editingTypeJson}
+          onChange={(e) => setEditingTypeJson(e.target.value)}
           rows={20}
-          style={{
-            fontFamily: 'monospace',
-            fontSize: 12,
-            background: '#f5f5f5'
-          }}
-          placeholder="JSON形式の型定義を入力してください"
+          style={{ fontFamily: 'monospace', fontSize: 12 }}
         />
       </Modal>
 
-      {/* Edit Conflict Confirmation Modal */}
+      {/* Edit conflict confirmation modal */}
       <Modal
         title="型定義の競合確認（編集）"
         open={editConflictModalVisible}
-        onOk={handleConfirmJsonEdit}
-        onCancel={handleCancelJsonEdit}
+        onOk={handleEditConflictConfirm}
+        onCancel={handleEditConflictCancel}
         okText="上書きして更新"
         cancelText="キャンセル"
-        width={600}
+        width={800}
       >
         <Alert
-          message="既存の型定義との競合が検出されました"
-          description={
-            <div>
-              <p>型IDが変更され、以下の型IDがすでに存在しています：</p>
-              <ul>
-                {conflictTypes.map(type => (
-                  <li key={type.id}>
-                    <strong>{type.id}</strong> - {type.displayName}
-                  </li>
-                ))}
-              </ul>
-              <p>
-                <ExclamationCircleOutlined style={{ color: '#faad14', marginRight: 8 }} />
-                続行すると、既存の型定義が上書きされます。
-              </p>
-            </div>
-          }
+          message="タイプIDが変更されています"
+          description="IDを変更すると既存のタイプとして保存されます"
           type="warning"
           showIcon
+          style={{ marginBottom: 16 }}
         />
-
-        {parsedTypeDefinition && editingTypeForJson && (
-          <div style={{ marginTop: 16 }}>
-            <h4>変更内容：</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div>
-                <strong>変更前:</strong>
-                <pre style={{
-                  background: '#fff1f0',
-                  padding: 12,
-                  borderRadius: 4,
-                  maxHeight: 200,
-                  overflow: 'auto',
-                  fontSize: 11
-                }}>
-                  ID: {editingTypeForJson.id}
-                  {'\n'}DisplayName: {editingTypeForJson.displayName}
-                </pre>
-              </div>
-              <div>
-                <strong>変更後:</strong>
-                <pre style={{
-                  background: '#f6ffed',
-                  padding: 12,
-                  borderRadius: 4,
-                  maxHeight: 200,
-                  overflow: 'auto',
-                  fontSize: 11
-                }}>
-                  ID: {parsedTypeDefinition.id}
-                  {'\n'}DisplayName: {parsedTypeDefinition.displayName}
-                </pre>
-              </div>
+        {editBeforeAfter && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div>
+              <h4>変更前</h4>
+              <pre style={{ background: '#fff1f0', padding: 12, borderRadius: 4, overflow: 'auto', maxHeight: 300 }}>
+                {JSON.stringify({
+                  id: editBeforeAfter.before?.id,
+                  displayName: editBeforeAfter.before?.displayName
+                }, null, 2)}
+              </pre>
+            </div>
+            <div>
+              <h4>変更後</h4>
+              <pre style={{ background: '#f6ffed', padding: 12, borderRadius: 4, overflow: 'auto', maxHeight: 300 }}>
+                {JSON.stringify({
+                  id: editBeforeAfter.after.id,
+                  displayName: editBeforeAfter.after.displayName
+                }, null, 2)}
+              </pre>
             </div>
           </div>
         )}
