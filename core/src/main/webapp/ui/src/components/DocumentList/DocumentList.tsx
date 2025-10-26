@@ -642,7 +642,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 icon={<LockOutlined />}
                 size="small"
                 onClick={() => navigate(`/permissions/${record.id}`)}
-              />
+              >
+                権限管理
+              </Button>
             </Tooltip>
             <Popconfirm
               title="削除しますか？"

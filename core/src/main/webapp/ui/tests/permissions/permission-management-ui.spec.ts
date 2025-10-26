@@ -9,7 +9,7 @@
  * - Mobile browser support for permission management operations
  *
  * Test Coverage (3 tests):
- * 1. UI-based ACL data loading (skipped - pending UI implementation)
+ * 1. UI-based ACL data loading (ENABLED - permissions button with text label)
  * 2. Direct ACL REST API endpoint verification
  * 3. Network request URL pattern validation
  *
@@ -97,7 +97,7 @@
  *     - Implementation: Combined error check + success verification approach
  *
  * Expected Results:
- * - Test 1 (skipped): Would verify ACL data loads without error message
+ * - Test 1: Verifies ACL data loads without error message when clicking permissions button
  * - Test 2: ACL REST API endpoint returns HTTP 200 with valid ACL object
  * - Test 3: UI code uses correct /core/rest/repo/ endpoint (not /core/browser/)
  *
@@ -105,7 +105,7 @@
  * - Test 1: ~15-20 seconds (folder creation + ACL UI interaction + cleanup)
  * - Test 2: ~2-3 seconds (direct API call with browser context evaluation)
  * - Test 3: ~5-10 seconds (navigation + network monitoring + UI interaction)
- * - Total suite: ~10-15 seconds (only 2 active tests, test 1 skipped)
+ * - Total suite: ~25-35 seconds (all 3 tests active)
  *
  * Debugging Features:
  * - Comprehensive console logging for each test phase
@@ -116,7 +116,7 @@
  * - Root folder ID extraction logging
  *
  * Known Limitations:
- * - Test 1 skipped: Permissions button UI not fully implemented yet
+ * - Test 1: Permissions button uses text label for proper selector matching
  * - Network monitoring only captures requests during test execution
  * - Cleanup may fail if delete button selectors change
  * - Mobile sidebar close may fail silently (graceful degradation)
@@ -131,7 +131,7 @@
  * - Shares AuthHelper/TestHelper utilities with all test files
  *
  * Common Failure Scenarios:
- * - Test 1 skip: Permissions button selector needs updating for new UI
+ * - Test 1 fails: Permissions button text label missing or changed
  * - Test 2 fails: ACL REST API endpoint not accessible (HTTP 404/500)
  * - Test 2 fails: Root folder query returns no results
  * - Test 3 fails: UI code uses wrong Browser Binding endpoint
@@ -188,7 +188,7 @@ test.describe('Permission Management UI - ACL Display', () => {
     await testHelper.waitForAntdLoad();
   });
 
-  test.skip('should successfully load ACL data when clicking permissions button', async ({ page, browserName }) => {
+  test('should successfully load ACL data when clicking permissions button', async ({ page, browserName }) => {
     console.log('Test: Verifying ACL data loading (fix for "データの読み込みに失敗しました" error)');
 
     const viewportSize = page.viewportSize();
