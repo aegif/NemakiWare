@@ -99,6 +99,28 @@ test.describe('Advanced Search', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
+    const searchRequests: string[] = [];
+    page.on('request', request => {
+      const url = request.url();
+      if (url.includes('browser') && (url.includes('search') || url.includes('query'))) {
+        searchRequests.push(url);
+        console.log(`Search request URL: ${url}`);
+      }
+    });
+
+    page.on('response', async response => {
+      const url = response.url();
+      if (url.includes('browser') && (url.includes('search') || url.includes('query'))) {
+        console.log(`Search response status: ${response.status()}`);
+        try {
+          const body = await response.text();
+          console.log(`Search response body (first 200 chars): ${body.substring(0, 200)}`);
+        } catch (e) {
+          console.log(`Could not read response body`);
+        }
+      }
+    });
+
     // Wait for page to load
     await page.waitForTimeout(2000);
 
@@ -115,6 +137,11 @@ test.describe('Advanced Search', () => {
       }
 
       await page.waitForTimeout(2000);
+
+      console.log(`Total search requests: ${searchRequests.length}`);
+      searchRequests.forEach((url, index) => {
+        console.log(`Request ${index + 1}: ${url}`);
+      });
 
       // Verify no error messages appeared
       const errorMessage = page.locator('.ant-message-error');

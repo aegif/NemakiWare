@@ -1082,6 +1082,10 @@ public class ContentServiceImpl implements ContentService {
 					version.setVersionSeriesCheckedOutId(result.getId());
 					contentDaoService.update(repositoryId, version);
 					log.error("*** CRITICAL TCK FIX: Updated version {} successfully ***", version.getId());
+					
+					// CRITICAL FIX: Invalidate cache for updated version to ensure UI sees updated properties
+					nemakiCachePool.get(repositoryId).getObjectDataCache().remove(version.getId());
+					log.error("*** CRITICAL TCK FIX: Invalidated cache for version {} ***", version.getId());
 				}
 			}
 		} else {
@@ -1127,6 +1131,9 @@ public class ContentServiceImpl implements ContentService {
 				version.setVersionSeriesCheckedOutBy("");
 				version.setVersionSeriesCheckedOutId("");
 				contentDaoService.update(repositoryId, version);
+				
+				// CRITICAL FIX: Invalidate cache for updated version to ensure UI sees updated properties
+				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(version.getId());
 			}
 		}
 

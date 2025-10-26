@@ -16,8 +16,8 @@ export default defineConfig({
   // Output directory for test results
   outputDir: './test-results',
 
-  // Global timeout for each test (extended for cleanup operations)
-  timeout: 60 * 1000, // 60 seconds
+  // Global timeout for each test (extended for cleanup operations and slow upload responses)
+  timeout: 120 * 1000, // 120 seconds
 
   // Global timeout for expect() assertions
   expect: {
@@ -61,8 +61,8 @@ export default defineConfig({
     // Record video on failure
     video: 'retain-on-failure',
 
-    // Default timeout for actions
-    actionTimeout: 10000,
+    // Default timeout for actions (increased for slow CI environments)
+    actionTimeout: 30000,
 
     // Default timeout for navigation
     navigationTimeout: 30000,

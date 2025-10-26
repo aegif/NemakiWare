@@ -60,7 +60,7 @@ test.describe.skip('Custom Type and Custom Attributes (WIP - Manual Form UI not 
     }
   });
 
-  test('should create custom document type with custom attributes', async ({ page, browserName }) => {
+  test.skip('should create custom document type with custom attributes', async ({ page, browserName }) => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 

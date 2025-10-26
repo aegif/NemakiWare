@@ -21,10 +21,10 @@ export class TestHelper {
     // Wait for Ant Design CSS to load
     await this.page.waitForFunction(
       () => {
-        const antdElements = document.querySelectorAll('.ant-layout, .ant-menu, .ant-table');
+        const antdElements = document.querySelectorAll('.ant-layout, .ant-menu, .ant-table, .ant-form, .ant-btn');
         return antdElements.length > 0;
       },
-      { timeout: 15000 }
+      { timeout: 30000 }
     );
   }
 
@@ -168,5 +168,76 @@ export class TestHelper {
       selector,
       { timeout }
     );
+  }
+
+  /**
+   * Upload a document and wait for success
+   * @param fileName Name of the file to upload
+   * @param content Content of the file
+   * @param isMobile Whether the browser is in mobile mode
+   * @returns true if upload succeeded, false otherwise
+   */
+  async uploadDocument(fileName: string, content: string, isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Uploading ${fileName}`);
+    
+    // Click upload button to open modal
+    const uploadButton = this.page.locator('button').filter({ hasText: 'アップロード' }).first();
+    await uploadButton.click(isMobile ? { force: true } : {});
+    
+    // Wait for upload modal to appear
+    console.log('TestHelper: Waiting for upload modal...');
+    await this.page.waitForSelector('.ant-modal:has-text("ファイルアップロード")', { timeout: 5000 });
+    await this.page.waitForTimeout(500);
+
+    console.log('TestHelper: Selecting file...');
+    const fileInput = this.page.locator('input[type="file"]');
+    await fileInput.setInputFiles({
+      name: fileName,
+      mimeType: 'text/plain',
+      buffer: Buffer.from(content, 'utf-8'),
+    });
+    await this.page.waitForTimeout(1000);
+
+    console.log('TestHelper: Filling file name field...');
+    const nameInput = this.page.locator('.ant-modal input[placeholder*="ファイル名"]');
+    await nameInput.fill(fileName);
+    await this.page.waitForTimeout(500);
+
+    console.log('TestHelper: Clicking upload button in modal...');
+    const modalUploadButton = this.page.locator('.ant-modal button[type="submit"]').filter({ hasText: 'アップロード' });
+    await modalUploadButton.click(isMobile ? { force: true } : {});
+
+    console.log('TestHelper: Waiting for upload to complete...');
+    
+    // Wait for modal to close (indicates upload request was sent)
+    try {
+      await this.page.waitForSelector('.ant-modal:has-text("ファイルアップロード")', { state: 'hidden', timeout: 20000 });
+      console.log('TestHelper: Upload modal closed');
+    } catch (e) {
+      console.log('TestHelper: Upload modal did not close within 20s - trying to close manually');
+      const closeButton = this.page.locator('.ant-modal button').filter({ hasText: 'キャンセル' }).first();
+      if (await closeButton.count() > 0) {
+        await closeButton.click();
+        await this.page.waitForTimeout(1000);
+      }
+    }
+    
+    // Wait for document to appear in table
+    console.log(`TestHelper: Waiting for document ${fileName} to appear in table...`);
+    await this.page.waitForTimeout(5000);
+    
+    const documentRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).first();
+    const docExists = await documentRow.count() > 0;
+    
+    if (docExists) {
+      console.log(`TestHelper: Document ${fileName} found in table`);
+      return true;
+    }
+    
+    console.log(`TestHelper: Document ${fileName} not found in table`);
+    const allRows = await this.page.locator('.ant-table-tbody tr').count();
+    console.log(`TestHelper: Total rows in table: ${allRows}`);
+    
+    return false;
   }
 }

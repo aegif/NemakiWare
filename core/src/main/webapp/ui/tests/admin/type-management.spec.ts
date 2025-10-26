@@ -85,7 +85,7 @@ test.describe('Type Management - Custom Types Display', () => {
     // Check if custom types are displayed
     for (const typeId of expectedCustomTypes) {
       // Use more precise selector with data-row-key attribute
-      const typeRow = page.locator(`tr[data-row-key="${typeId}"]`);
+      const typeRow = page.locator(`tr[data-row-key="${typeId}"]`).first();
       const isVisible = await typeRow.count() > 0;
 
       if (isVisible) {
@@ -111,7 +111,7 @@ test.describe('Type Management - Custom Types Display', () => {
     await page.waitForTimeout(2000);
 
     // Use more precise selector with data-row-key attribute
-    const typeRow = page.locator('tr[data-row-key="nemaki:parentChildRelationship"]');
+    const typeRow = page.locator('tr[data-row-key="nemaki:parentChildRelationship"]').first();
 
     if (await typeRow.count() > 0) {
       // Verify type is visible

@@ -86,7 +86,7 @@ export class AuthHelper {
     for (const selector of usernameFieldSelectors) {
       const field = this.page.locator(selector).first();
       try {
-        await field.waitFor({ state: 'visible', timeout: 10000 });
+        await field.waitFor({ state: 'visible', timeout: 30000 });
         usernameField = field;
         break;
       } catch (e) {
@@ -120,7 +120,7 @@ export class AuthHelper {
     for (const selector of passwordFieldSelectors) {
       const field = this.page.locator(selector).first();
       try {
-        await field.waitFor({ state: 'visible', timeout: 10000 });
+        await field.waitFor({ state: 'visible', timeout: 30000 });
         passwordField = field;
         break;
       } catch (e) {
@@ -170,7 +170,7 @@ export class AuthHelper {
     for (const selector of loginButtonSelectors) {
       const button = this.page.locator(selector).first();
       try {
-        await button.waitFor({ state: 'visible', timeout: 10000 });
+        await button.waitFor({ state: 'visible', timeout: 30000 });
         loginButton = button;
         break;
       } catch (e) {

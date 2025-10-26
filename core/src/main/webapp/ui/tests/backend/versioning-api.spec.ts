@@ -277,6 +277,11 @@ test.describe('CMIS Versioning API', () => {
     });
 
     // NOTE: CMIS Browser Binding returns HTTP 200 for checkIn, not 201
+    if (checkinResponse.status() !== 200) {
+      const errorBody = await checkinResponse.text();
+      console.log('Check-in failed with status:', checkinResponse.status());
+      console.log('Error response:', errorBody);
+    }
     expect(checkinResponse.status()).toBe(200);
 
     const checkinData = await checkinResponse.json();
