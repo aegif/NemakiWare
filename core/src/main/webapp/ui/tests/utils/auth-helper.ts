@@ -92,7 +92,7 @@ export interface LoginCredentials {
  *
  * 5. Automatic Redirect Detection and Handling (Lines 261-274):
  *    - React app automatically redirects authenticated users from / to /documents
- *    - Primary: Wait for URL pattern '**/documents' with 5-second timeout
+ *    - Primary: Wait for URL pattern matching /documents with 5-second timeout
  *    - Fallback: Manual navigation if redirect doesn't happen
  *    - Manual navigation steps: goto index.html → click Documents menu item → wait 2s
  *    - Rationale: React Router may not redirect immediately on slow networks
