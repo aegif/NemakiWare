@@ -183,7 +183,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
       await page.waitForTimeout(1000);
     }
 
-    const typeManagementItem = page.locator('.ant-menu-item:has-text("型管理")');
+    const typeManagementItem = page.locator('.ant-menu-item:has-text("タイプ管理")');
     if (await typeManagementItem.count() > 0) {
       await typeManagementItem.click(isMobile ? { force: true } : {});
       await page.waitForTimeout(2000);

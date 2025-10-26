@@ -53,7 +53,7 @@
  *   const { isAuthenticated, authToken } = useAuth();
  *
  *   if (!isAuthenticated || !authToken) {
- *     return <Login onLogin={(auth) => { /* AuthContext handles state */ }} />;
+ *     return <Login onLogin={(auth) => { AuthContext handles state }} />;
  *   }
  *
  *   return (
@@ -65,7 +65,7 @@
  *               <DocumentList repositoryId={authToken.repositoryId} />
  *             </ProtectedRoute>
  *           } />
- *           {/* ... more routes ... */}
+ *           Additional routes rendered here
  *         </Routes>
  *       </Layout>
  *     </Router>

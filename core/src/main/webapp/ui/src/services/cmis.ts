@@ -1939,34 +1939,66 @@ export class CMISService {
   }
 
   async getTypes(repositoryId: string): Promise<TypeDefinition[]> {
-    // CRITICAL FIX (2025-10-21): Fetch both base types AND child types
-    // Previous implementation only returned base types (6), missing custom types (nemaki:*)
-    // This caused Type Management UI to show 6 rows instead of 10
+    // CRITICAL FIX (2025-10-26): Use REST API instead of Browser Binding for consistency
+    // All type CRUD operations (create/update/delete) use REST API, getTypes must use same API
+    // to ensure newly created types appear in the list
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.restBaseUrl}/${repositoryId}/type/list`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
 
-    try {
-      // Step 1: Fetch base types
-      const baseTypes = await this.fetchTypeChildren(repositoryId, null);
-      console.log('CMIS DEBUG: getTypes - base types count:', baseTypes.length);
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
 
-      // Step 2: Fetch child types for each base type
-      const childTypePromises = baseTypes.map(baseType =>
-        this.fetchTypeChildren(repositoryId, baseType.id)
-      );
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
 
-      const childTypeArrays = await Promise.all(childTypePromises);
-      const childTypes = childTypeArrays.flat();
-      console.log('CMIS DEBUG: getTypes - child types count:', childTypes.length);
+              // Response format: { types: [...] }
+              if (!response.types || !Array.isArray(response.types)) {
+                console.warn('CMIS DEBUG: getTypes - invalid response format, returning empty array');
+                resolve([]);
+                return;
+              }
 
-      // Step 3: Combine base types and child types
-      const allTypes = [...baseTypes, ...childTypes];
-      console.log('CMIS DEBUG: getTypes - total types count:', allTypes.length);
-      console.log('CMIS DEBUG: getTypes - all type IDs:', allTypes.map(t => t.id));
+              const types: TypeDefinition[] = response.types.map((type: any) => ({
+                id: type.id,
+                displayName: type.displayName || type.id,
+                description: type.description || '',
+                baseTypeId: type.baseTypeId || type.baseId,
+                parentTypeId: type.parentTypeId,
+                creatable: type.creatable !== false,
+                fileable: type.fileable !== false,
+                queryable: type.queryable !== false,
+                deletable: !type.id.startsWith('cmis:') && type.typeMutability?.delete !== false,
+                propertyDefinitions: type.propertyDefinitions || {}
+              }));
 
-      return allTypes;
-    } catch (error) {
-      console.error('CMIS DEBUG: getTypes error:', error);
-      throw error;
-    }
+              console.log('CMIS DEBUG: getTypes - fetched types count:', types.length);
+              resolve(types);
+            } catch (e) {
+              console.error('CMIS DEBUG: getTypes parse error:', e);
+              reject(new Error('Failed to parse type list response'));
+            }
+          } else {
+            console.error('CMIS DEBUG: getTypes HTTP error:', xhr.status, xhr.statusText);
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
+          }
+        }
+      };
+
+      xhr.onerror = () => {
+        console.error('CMIS DEBUG: getTypes network error');
+        reject(new Error('Network error during type list fetch'));
+      };
+
+      xhr.send();
+    });
   }
 
   private async fetchTypeChildren(repositoryId: string, typeId: string | null): Promise<TypeDefinition[]> {

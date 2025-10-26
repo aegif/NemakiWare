@@ -52,6 +52,44 @@ public class TypeResource extends ResourceBase {
 
 	private final Log log = LogFactory.getLog(TypeResource.class);
 
+	/**
+	 * Ensure TypeService and TypeManager are initialized from Spring context
+	 * This method supports lazy initialization for JAX-RS resources
+	 */
+	private void ensureServicesInitialized() {
+		System.err.println("[TYPERESOURCE DEBUG] ensureServicesInitialized() called");
+		System.err.println("[TYPERESOURCE DEBUG] typeService is null: " + (typeService == null));
+		System.err.println("[TYPERESOURCE DEBUG] typeManager is null: " + (typeManager == null));
+
+		if (typeService == null) {
+			try {
+				System.err.println("[TYPERESOURCE DEBUG] Attempting to get typeService bean from Spring context");
+				typeService = (TypeService) SpringContext.getBean("typeService");
+				System.err.println("[TYPERESOURCE DEBUG] TypeService initialized successfully: " + (typeService != null));
+				log.info("TypeService initialized from Spring context");
+			} catch (Exception e) {
+				System.err.println("[TYPERESOURCE DEBUG] EXCEPTION getting TypeService: " + e.getMessage());
+				e.printStackTrace();
+				log.error("Failed to get TypeService from Spring context", e);
+			}
+		}
+
+		if (typeManager == null) {
+			try {
+				System.err.println("[TYPERESOURCE DEBUG] Attempting to get typeManager bean from Spring context");
+				typeManager = (TypeManager) SpringContext.getBean("typeManager");
+				System.err.println("[TYPERESOURCE DEBUG] TypeManager initialized successfully: " + (typeManager != null));
+				log.info("TypeManager initialized from Spring context");
+			} catch (Exception e) {
+				System.err.println("[TYPERESOURCE DEBUG] EXCEPTION getting TypeManager: " + e.getMessage());
+				e.printStackTrace();
+				log.error("Failed to get TypeManager from Spring context", e);
+			}
+		}
+
+		System.err.println("[TYPERESOURCE DEBUG] ensureServicesInitialized() completed - typeService null: " + (typeService == null) + ", typeManager null: " + (typeManager == null));
+	}
+
 	private final HashMap<String, NemakiTypeDefinition> typeMaps = new HashMap<String, NemakiTypeDefinition>();
 	private final HashMap<String, NemakiPropertyDefinitionCore> coreMaps = new HashMap<String, NemakiPropertyDefinitionCore>();
 	private final HashMap<String, NemakiPropertyDefinitionDetail> detailMaps = new HashMap<String, NemakiPropertyDefinitionDetail>();
@@ -61,14 +99,23 @@ public class TypeResource extends ResourceBase {
 	@Path("/test")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String test(@PathParam("repositoryId") String repositoryId) {
+		System.err.println("[TYPERESOURCE DEBUG] ===== TEST METHOD CALLED =====");
+		System.err.println("[TYPERESOURCE DEBUG] Repository ID: " + repositoryId);
 		log.info("[TYPERESOURCE] TEST METHOD CALLED - Repository ID: " + repositoryId);
-		
+
+		// Initialize services from Spring context if not already injected
+		System.err.println("[TYPERESOURCE DEBUG] About to call ensureServicesInitialized()");
+		ensureServicesInitialized();
+		System.err.println("[TYPERESOURCE DEBUG] ensureServicesInitialized() returned");
+
 		JSONObject result = new JSONObject();
 		result.put("status", "success");
 		result.put("message", "TypeResource test endpoint is working");
 		result.put("repositoryId", repositoryId);
 		result.put("typeServiceNull", (typeService == null));
 		result.put("typeManagerNull", (typeManager == null));
+
+		System.err.println("[TYPERESOURCE DEBUG] Returning JSON: " + result.toJSONString());
 		return result.toJSONString();
 	}
 
@@ -83,9 +130,12 @@ public class TypeResource extends ResourceBase {
 	@SuppressWarnings("unchecked")
 	public Response list(@PathParam("repositoryId") String repositoryId) {
 		log.info("TypeResource.list() called for repository: " + repositoryId);
-		
+
+		// Initialize services from Spring context if not already injected
+		ensureServicesInitialized();
+
 		try {
-			
+
 			if (typeService == null) {
 				JSONObject errorResult = new JSONObject();
 				errorResult.put("status", "error");
@@ -135,9 +185,12 @@ public class TypeResource extends ResourceBase {
 	@SuppressWarnings("unchecked")
 	public Response show(@PathParam("repositoryId") String repositoryId, @PathParam("typeId") String typeId) {
 		log.info("TypeResource.show() called for repository: " + repositoryId + ", typeId: " + typeId);
-		
+
+		// Initialize services from Spring context if not already injected
+		ensureServicesInitialized();
+
 		try {
-			
+
 			if (typeService == null) {
 				JSONObject errorResult = new JSONObject();
 				errorResult.put("status", "error");
@@ -189,9 +242,12 @@ public class TypeResource extends ResourceBase {
 	@SuppressWarnings("unchecked")
 	public Response create(@PathParam("repositoryId") String repositoryId, String jsonInput) {
 		log.info("TypeResource.create() called for repository: " + repositoryId);
-		
+
+		// Initialize services from Spring context if not already injected
+		ensureServicesInitialized();
+
 		try {
-			
+
 			if (typeService == null) {
 				JSONObject errorResult = new JSONObject();
 				errorResult.put("status", "error");
@@ -256,9 +312,12 @@ public class TypeResource extends ResourceBase {
 	@SuppressWarnings("unchecked")
 	public Response update(@PathParam("repositoryId") String repositoryId, @PathParam("typeId") String typeId, String jsonInput) {
 		log.info("TypeResource.update() called for repository: " + repositoryId + ", typeId: " + typeId);
-		
+
+		// Initialize services from Spring context if not already injected
+		ensureServicesInitialized();
+
 		try {
-			
+
 			if (typeService == null) {
 				JSONObject errorResult = new JSONObject();
 				errorResult.put("status", "error");
@@ -327,9 +386,12 @@ public class TypeResource extends ResourceBase {
 	@SuppressWarnings("unchecked")
 	public Response delete(@PathParam("repositoryId") String repositoryId, @PathParam("typeId") String typeId) {
 		log.info("TypeResource.delete() called for repository: " + repositoryId + ", typeId: " + typeId);
-		
+
+		// Initialize services from Spring context if not already injected
+		ensureServicesInitialized();
+
 		try {
-			
+
 			if (typeService == null) {
 				JSONObject errorResult = new JSONObject();
 				errorResult.put("status", "error");
@@ -595,12 +657,15 @@ public class TypeResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		try {
+			// CRITICAL FIX: Initialize services from Spring context before checking
+			ensureServicesInitialized();
+
 			// CRITICAL DEBUG: メソッド呼び出しの確認
 			log.debug("register method called for repository: " + repositoryId);
-			log.debug("Dependencies - InputStream is null: " + (is == null) + 
-					 ", TypeService is null: " + (typeService == null) + 
+			log.debug("Dependencies - InputStream is null: " + (is == null) +
+					 ", TypeService is null: " + (typeService == null) +
 					 ", TypeManager is null: " + (typeManager == null));
-			
+
 			log.error("[TYPERESOURCE] Method entry confirmed - register called for repository: " + repositoryId);
 			log.error("[TYPERESOURCE] Dependencies status - TypeService null: " + (typeService == null) + ", TypeManager null: " + (typeManager == null));
 
@@ -771,10 +836,22 @@ public class TypeResource extends ResourceBase {
 		
 		// Process property definitions
 		List<String> propertyIds = new ArrayList<String>();
-		JSONObject propertyDefinitions = (JSONObject) typeJson.get("propertyDefinitions");
-		if (propertyDefinitions != null && !propertyDefinitions.isEmpty()) {
-			log.debug("Processing " + propertyDefinitions.size() + " property definitions for type: " + typeId);
-			propertyIds = parseJsonPropertyDefinitions(repositoryId, typeId, propertyDefinitions);
+		Object propertyDefinitionsObj = typeJson.get("propertyDefinitions");
+		
+		if (propertyDefinitionsObj != null) {
+			if (propertyDefinitionsObj instanceof JSONArray) {
+				// Handle array format from UI
+				JSONArray propertyDefinitionsArray = (JSONArray) propertyDefinitionsObj;
+				log.debug("Processing " + propertyDefinitionsArray.size() + " property definitions (array format) for type: " + typeId);
+				propertyIds = parseJsonPropertyDefinitionsArray(repositoryId, typeId, propertyDefinitionsArray);
+			} else if (propertyDefinitionsObj instanceof JSONObject) {
+				// Handle object/map format
+				JSONObject propertyDefinitions = (JSONObject) propertyDefinitionsObj;
+				log.debug("Processing " + propertyDefinitions.size() + " property definitions (object format) for type: " + typeId);
+				propertyIds = parseJsonPropertyDefinitions(repositoryId, typeId, propertyDefinitions);
+			} else {
+				log.warn("Unexpected propertyDefinitions type: " + propertyDefinitionsObj.getClass().getName());
+			}
 		}
 		
 		// Set properties list to NemakiTypeDefinition
@@ -881,6 +958,112 @@ public class TypeResource extends ResourceBase {
 		typeProperties.put(typeId, propertyIds);
 		if (log.isDebugEnabled()) {
 			log.debug("Processed " + propertyIds.size() + " properties for type: " + typeId);
+		}
+		return propertyIds;
+	}
+
+	/**
+	 * Parse JSON property definitions from array format (sent by UI)
+	 */
+	private List<String> parseJsonPropertyDefinitionsArray(String repositoryId, String typeId, JSONArray propertyDefinitionsArray) {
+		List<String> propertyIds = new ArrayList<String>();
+		
+		for (Object propObj : propertyDefinitionsArray) {
+			if (!(propObj instanceof JSONObject)) {
+				log.warn("Skipping non-JSONObject property in array");
+				continue;
+			}
+			
+			JSONObject propertyJson = (JSONObject) propObj;
+			String propertyId = (String) propertyJson.get("id");
+			
+			if (propertyId == null || propertyId.trim().isEmpty()) {
+				log.warn("Property ID not found in array element, skipping");
+				continue;
+			}
+			
+			if (log.isDebugEnabled()) {
+				log.debug("Processing property from array: " + propertyId);
+			}
+			
+			// Check if property already exists
+			if (existProperty(repositoryId, propertyId)) {
+				log.warn("Property " + propertyId + " already exists, skipping");
+				continue;
+			}
+			
+			propertyIds.add(propertyId);
+			
+			// Create core and detail property definitions
+			NemakiPropertyDefinitionCore core = new NemakiPropertyDefinitionCore();
+			NemakiPropertyDefinitionDetail detail = new NemakiPropertyDefinitionDetail();
+			
+			// Core properties
+			core.setPropertyId(propertyId);
+			core.setQueryName(propertyId);
+			
+			// Property type conversion
+			String propertyType = (String) propertyJson.get("propertyType");
+			if ("string".equals(propertyType)) {
+				core.setPropertyType(PropertyType.STRING);
+			} else if ("integer".equals(propertyType)) {
+				core.setPropertyType(PropertyType.INTEGER);
+			} else if ("decimal".equals(propertyType)) {
+				core.setPropertyType(PropertyType.DECIMAL);
+			} else if ("datetime".equals(propertyType)) {
+				core.setPropertyType(PropertyType.DATETIME);
+			} else if ("boolean".equals(propertyType)) {
+				core.setPropertyType(PropertyType.BOOLEAN);
+			} else {
+				// Default to string
+				core.setPropertyType(PropertyType.STRING);
+			}
+			
+			// Cardinality
+			String cardinality = (String) propertyJson.get("cardinality");
+			if ("multi".equals(cardinality)) {
+				core.setCardinality(Cardinality.MULTI);
+			} else {
+				core.setCardinality(Cardinality.SINGLE);
+			}
+			
+			coreMaps.put(propertyId, core);
+			
+			// Detail properties
+			detail.setType(NodeType.PROPERTY_DEFINITION_DETAIL.value());
+			
+			// Updatability
+			String updatability = (String) propertyJson.get("updatability");
+			if ("readonly".equals(updatability)) {
+				detail.setUpdatability(Updatability.READONLY);
+			} else if ("oncreate".equals(updatability)) {
+				detail.setUpdatability(Updatability.ONCREATE);
+			} else {
+				detail.setUpdatability(Updatability.READWRITE);
+			}
+			
+			// Required
+			Boolean required = (Boolean) propertyJson.get("required");
+			detail.setRequired(required != null ? required : false);
+			
+			// Queryable
+			Boolean queryable = (Boolean) propertyJson.get("queryable");
+			detail.setQueryable(queryable != null ? queryable : false);
+			
+			// Open choice
+			Boolean openChoice = (Boolean) propertyJson.get("openChoice");
+			detail.setOpenChoice(openChoice != null ? openChoice : false);
+			
+			detailMaps.put(propertyId, detail);
+			
+			if (log.isDebugEnabled()) {
+				log.debug("Successfully parsed property from array: " + propertyId);
+			}
+		}
+		
+		typeProperties.put(typeId, propertyIds);
+		if (log.isDebugEnabled()) {
+			log.debug("Processed " + propertyIds.size() + " properties from array for type: " + typeId);
 		}
 		return propertyIds;
 	}
