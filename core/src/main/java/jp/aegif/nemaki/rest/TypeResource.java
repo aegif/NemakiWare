@@ -57,37 +57,23 @@ public class TypeResource extends ResourceBase {
 	 * This method supports lazy initialization for JAX-RS resources
 	 */
 	private void ensureServicesInitialized() {
-		System.err.println("[TYPERESOURCE DEBUG] ensureServicesInitialized() called");
-		System.err.println("[TYPERESOURCE DEBUG] typeService is null: " + (typeService == null));
-		System.err.println("[TYPERESOURCE DEBUG] typeManager is null: " + (typeManager == null));
-
 		if (typeService == null) {
 			try {
-				System.err.println("[TYPERESOURCE DEBUG] Attempting to get typeService bean from Spring context");
 				typeService = (TypeService) SpringContext.getBean("typeService");
-				System.err.println("[TYPERESOURCE DEBUG] TypeService initialized successfully: " + (typeService != null));
 				log.info("TypeService initialized from Spring context");
 			} catch (Exception e) {
-				System.err.println("[TYPERESOURCE DEBUG] EXCEPTION getting TypeService: " + e.getMessage());
-				e.printStackTrace();
 				log.error("Failed to get TypeService from Spring context", e);
 			}
 		}
 
 		if (typeManager == null) {
 			try {
-				System.err.println("[TYPERESOURCE DEBUG] Attempting to get typeManager bean from Spring context");
 				typeManager = (TypeManager) SpringContext.getBean("typeManager");
-				System.err.println("[TYPERESOURCE DEBUG] TypeManager initialized successfully: " + (typeManager != null));
 				log.info("TypeManager initialized from Spring context");
 			} catch (Exception e) {
-				System.err.println("[TYPERESOURCE DEBUG] EXCEPTION getting TypeManager: " + e.getMessage());
-				e.printStackTrace();
 				log.error("Failed to get TypeManager from Spring context", e);
 			}
 		}
-
-		System.err.println("[TYPERESOURCE DEBUG] ensureServicesInitialized() completed - typeService null: " + (typeService == null) + ", typeManager null: " + (typeManager == null));
 	}
 
 	private final HashMap<String, NemakiTypeDefinition> typeMaps = new HashMap<String, NemakiTypeDefinition>();
@@ -99,14 +85,10 @@ public class TypeResource extends ResourceBase {
 	@Path("/test")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String test(@PathParam("repositoryId") String repositoryId) {
-		System.err.println("[TYPERESOURCE DEBUG] ===== TEST METHOD CALLED =====");
-		System.err.println("[TYPERESOURCE DEBUG] Repository ID: " + repositoryId);
-		log.info("[TYPERESOURCE] TEST METHOD CALLED - Repository ID: " + repositoryId);
+		log.info("TypeResource test endpoint called for repository: " + repositoryId);
 
 		// Initialize services from Spring context if not already injected
-		System.err.println("[TYPERESOURCE DEBUG] About to call ensureServicesInitialized()");
 		ensureServicesInitialized();
-		System.err.println("[TYPERESOURCE DEBUG] ensureServicesInitialized() returned");
 
 		JSONObject result = new JSONObject();
 		result.put("status", "success");
@@ -115,7 +97,6 @@ public class TypeResource extends ResourceBase {
 		result.put("typeServiceNull", (typeService == null));
 		result.put("typeManagerNull", (typeManager == null));
 
-		System.err.println("[TYPERESOURCE DEBUG] Returning JSON: " + result.toJSONString());
 		return result.toJSONString();
 	}
 
@@ -520,15 +501,15 @@ public class TypeResource extends ResourceBase {
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
 	public String registerJson(@PathParam("repositoryId") String repositoryId, String jsonData) {
-		log.info("[TYPERESOURCE] registerJson method called for repository: " + repositoryId);
-		log.debug("[TYPERESOURCE] JSON Data received: " + (jsonData != null ? jsonData.length() + " characters" : "null"));
-		
+		log.info("registerJson method called for repository: " + repositoryId);
+		log.debug("JSON Data received: " + (jsonData != null ? jsonData.length() + " characters" : "null"));
+
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		try {
 			if (jsonData == null || jsonData.trim().isEmpty()) {
-				log.error("[TYPERESOURCE] ERROR: JSON data is null or empty");
+				log.error("JSON data is null or empty");
 				addErrMsg(errMsg, "types", "noDataReceived");
 				result = makeResult(false, result, errMsg);
 				return result.toJSONString();
@@ -587,15 +568,13 @@ public class TypeResource extends ResourceBase {
 	public String registerSimple(@PathParam("repositoryId") String repositoryId, String xmlData) {
 		log.info("registerSimple method called for repository: " + repositoryId);
 		log.debug("XML Data received: " + (xmlData != null ? xmlData.length() + " characters" : "null"));
-		
-		log.error("[TYPERESOURCE] registerSimple method called for repository: " + repositoryId);
-		
+
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		try {
 			if (xmlData == null || xmlData.trim().isEmpty()) {
-				log.error("ERROR: XML data is null or empty");
+				log.error("XML data is null or empty");
 				addErrMsg(errMsg, "types", "noDataReceived");
 				result = makeResult(false, result, errMsg);
 				return result.toJSONString();
@@ -657,20 +636,13 @@ public class TypeResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		try {
-			// CRITICAL FIX: Initialize services from Spring context before checking
+			// Initialize services from Spring context before checking
 			ensureServicesInitialized();
 
-			// CRITICAL DEBUG: メソッド呼び出しの確認
 			log.debug("register method called for repository: " + repositoryId);
-			log.debug("Dependencies - InputStream is null: " + (is == null) +
-					 ", TypeService is null: " + (typeService == null) +
-					 ", TypeManager is null: " + (typeManager == null));
-
-			log.error("[TYPERESOURCE] Method entry confirmed - register called for repository: " + repositoryId);
-			log.error("[TYPERESOURCE] Dependencies status - TypeService null: " + (typeService == null) + ", TypeManager null: " + (typeManager == null));
 
 			if (is == null) {
-				log.error("[TYPERESOURCE] ERROR: InputStream is null - multipart data not received");
+				log.error("InputStream is null - multipart data not received");
 				addErrMsg(errMsg, "types", "noDataReceived");
 				result = makeResult(false, result, errMsg);
 				return result.toJSONString();
@@ -705,7 +677,7 @@ public class TypeResource extends ResourceBase {
 				return result.toJSONString();
 			}
 		} catch (Exception globalException) {
-			log.error("[TYPERESOURCE] Global exception in register method", globalException);
+			log.error("Global exception in register method", globalException);
 			addErrMsg(errMsg, "types", "globalException");
 			result = makeResult(false, result, errMsg);
 			return result.toJSONString();
@@ -727,12 +699,12 @@ public class TypeResource extends ResourceBase {
 			if (parsed instanceof JSONObject) {
 				// Single type definition
 				JSONObject typeJson = (JSONObject) parsed;
-				log.debug("[TYPERESOURCE] Parsing single type definition");
+				log.debug("Parsing single type definition");
 				parseJsonTypeDefinition(repositoryId, typeJson);
 			} else if (parsed instanceof JSONArray) {
 				// Multiple type definitions
 				JSONArray typesArray = (JSONArray) parsed;
-				log.debug("[TYPERESOURCE] Parsing multiple type definitions: " + typesArray.size());
+				log.debug("Parsing multiple type definitions: " + typesArray.size());
 				for (Object typeObj : typesArray) {
 					if (typeObj instanceof JSONObject) {
 						parseJsonTypeDefinition(repositoryId, (JSONObject) typeObj);
@@ -1117,7 +1089,7 @@ public class TypeResource extends ResourceBase {
 		parseTypes(repositoryId, aspects);
 		
 		if (log.isDebugEnabled()) {
-			log.debug("[TYPERESOURCE] Parse method completed");
+			log.debug("Parse method completed");
 		}
 	}
 
@@ -1373,7 +1345,7 @@ public class TypeResource extends ResourceBase {
 			NemakiPropertyDefinitionDetail createdDetail = typeService.createPropertyDefinition(repositoryId, p);
 			
 			if (createdDetail == null) {
-				log.error("[TYPERESOURCE] createPropertyDefinition returned null for: " + originalPropertyId);
+				log.error("createPropertyDefinition returned null for: " + originalPropertyId);
 				continue;
 			}
 			
@@ -1395,28 +1367,28 @@ public class TypeResource extends ResourceBase {
 				}
 			} else {
 				// createdCoreがnullの場合、DetailのcoreNodeIdを使用
-				log.warn("[TYPERESOURCE] Could not find core by propertyId, using detail's coreNodeId");
+				log.warn("Could not find core by propertyId, using detail's coreNodeId");
 				coreEntry.getValue().setId(createdDetail.getCoreNodeId());
 			}
 		}
 
 		// Prepare types
 		if (log.isDebugEnabled()) {
-			log.debug("[TYPERESOURCE] Preparing types");
+			log.debug("Preparing types");
 		}
 		if (typeMaps == null || typeMaps.isEmpty()) {
-			log.warn("[TYPERESOURCE] CRITICAL: No typeMaps found - no types to prepare!");
+			log.warn("CRITICAL: No typeMaps found - no types to prepare!");
 			return;
 		}
 		
 		if (log.isDebugEnabled()) {
-			log.debug("[TYPERESOURCE] Found " + typeMaps.size() + " types to prepare");
+			log.debug("Found " + typeMaps.size() + " types to prepare");
 		}
 		for (Entry<String, NemakiTypeDefinition> typeEntry : typeMaps.entrySet()) {
 			NemakiTypeDefinition t = typeEntry.getValue();
 
 			if (log.isDebugEnabled()) {
-				log.debug("[TYPERESOURCE] Processing type: " + t.getTypeId());
+				log.debug("Processing type: " + t.getTypeId());
 			}
 			
 			// Set property detail ids using the coreNodeId from creation
@@ -1424,7 +1396,7 @@ public class TypeResource extends ResourceBase {
 			List<String> propertyIds = typeProperties.get(t.getTypeId());
 			
 			if (log.isDebugEnabled()) {
-				log.debug("[TYPERESOURCE] Property IDs for type " + t.getTypeId() + ": " + propertyIds);
+				log.debug("Property IDs for type " + t.getTypeId() + ": " + propertyIds);
 			}
 			
 			if (CollectionUtils.isNotEmpty(propertyIds)) {
@@ -1437,21 +1409,21 @@ public class TypeResource extends ResourceBase {
 					NemakiPropertyDefinitionCore coreFromMap = coreMaps.get(propertyId);
 					
 					if (log.isDebugEnabled()) {
-						log.debug("[TYPERESOURCE] Core from map for " + propertyId + ": " + 
+						log.debug("Core from map for " + propertyId + ": " + 
 							(coreFromMap != null ? coreFromMap.getId() : "null"));
 					}
 					
 					if (coreFromMap != null && coreFromMap.getId() != null) {
 						String coreNodeId = coreFromMap.getId();
 						if (log.isDebugEnabled()) {
-							log.debug("[TYPERESOURCE] Querying details for coreNodeId: " + coreNodeId);
+							log.debug("Querying details for coreNodeId: " + coreNodeId);
 						}
 						
 						List<NemakiPropertyDefinitionDetail> details = typeService
 								.getPropertyDefinitionDetailByCoreNodeId(repositoryId, coreNodeId);
 								
 						if (log.isDebugEnabled()) {
-							log.debug("[TYPERESOURCE] Found " + details.size() + " details for coreNodeId: " + coreNodeId);
+							log.debug("Found " + details.size() + " details for coreNodeId: " + coreNodeId);
 						}
 						
 						if (CollectionUtils.isEmpty(details)) {
@@ -1463,7 +1435,7 @@ public class TypeResource extends ResourceBase {
 							String detailId = detail.getId();
 							
 							if (log.isDebugEnabled()) {
-								log.debug("[TYPERESOURCE] Detail ID: " + detailId + " for property: " + propertyId);
+								log.debug("Detail ID: " + detailId + " for property: " + propertyId);
 							}
 							
 							if (detailId != null) {
