@@ -13,7 +13,7 @@
  *
  * Test Coverage (2 tests):
  * 1. Single document detail access - Verifies no auth errors, details load, back button works
- * 2. Multiple document accesses (SKIPPED) - Session stability test for sequential access patterns
+ * 2. Multiple document accesses - Session stability test for sequential access patterns (3 documents)
  *
  * IMPORTANT DESIGN DECISIONS:
  *
@@ -64,12 +64,12 @@
  *    - Rationale: Back button is primary navigation method from detail view
  *    - Guards against navigation stack issues or broken history
  *
- * 7. Skipped Session Stability Test (Lines 122-284):
- *    - Test marked with test.skip() for multiple document access pattern
- *    - Would test accessing 3 documents sequentially
- *    - Rationale: Currently investigating UI rendering mode inconsistencies
- *    - Implementation Complexity: Must handle drawer/modal/page navigation modes
- *    - Future: Re-enable when document detail UI implementation stabilizes
+ * 7. Session Stability Test - ENABLED (Lines 122-284):
+ *    - Tests accessing 3 documents sequentially to verify session persistence
+ *    - CRITICAL FIX (2025-10-26): Re-enabled after UI implementation stabilized
+ *    - Handles all three rendering modes: page navigation, drawer, modal
+ *    - Implementation: Comprehensive multi-mode detection with fallback logic
+ *    - Rationale: Verifies authentication token doesn't expire across multiple requests
  *
  * 8. Multiple Document Access Pattern (Lines 152-283):
  *    - Sequential access: Loop through first 3 documents
@@ -100,7 +100,7 @@
  * - Test 1: No authentication error messages displayed
  * - Test 1: Document details (ID, properties tab) visible
  * - Test 1: Back button returns to document list successfully
- * - Test 2: SKIPPED - Session stability test pending UI implementation clarity
+ * - Test 2: ENABLED (2025-10-26) - Session stability test across 3 sequential document accesses
  *
  * Performance Characteristics:
  * - Test 1 execution: 10-20 seconds (login + navigation + verification)
@@ -117,7 +117,6 @@
  * - Error message text extraction and logging
  *
  * Known Limitations:
- * - Test 2 skipped: Multiple document access pattern needs UI implementation clarity
  * - Force click usage: Bypasses real interaction validation for stability
  * - Drawer/modal detection: Relies on class name patterns that could change
  * - URL pattern matching: Assumes objectId format [a-f0-9-]+ (CouchDB UUIDs)
@@ -249,7 +248,7 @@ test.describe('Document Viewer Authentication', () => {
     }
   });
 
-  test.skip('should handle multiple document detail accesses without session issues', async ({ page, browserName }) => {
+  test('should handle multiple document detail accesses without session issues', async ({ page, browserName }) => {
     // Login
     await page.goto('http://localhost:8080/core/ui/dist/index.html');
     await page.waitForTimeout(1000);
