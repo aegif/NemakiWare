@@ -304,6 +304,59 @@ Previous timeout issues with queryLikeTest and queryInFolderTest were **NOT Nema
 
 ---
 
+## Recent Major Changes (2025-10-26 - UserItemResource Debug Code Cleanup) ✅
+
+### Production Code Debug Logging Cleanup - UserItemResource.java
+
+**COMPLETION (2025-10-26)**: Removed all temporary debug logging from UserItemResource.java to prepare code for production deployment.
+
+**Problem**: UserItemResource.java contained temporary debug tags (!!!) and System.err.println statements added during troubleshooting that needed to be removed for production.
+
+**Solution Implemented**:
+- **list() method**: Removed 2 debug log.error statements with "!!!" prefix
+- **create() method**: Removed 2 System.err.println debug statements
+- **createJson() method**: Removed 4 log.error debug statements with "!!!" prefix
+- **updateGroupMembershipWithRetry() method**: Removed 6 log.error debug statements with "!!!" prefix
+- Maintained appropriate production logging (log.debug, log.info, log.warn, log.error for actual errors)
+- Verified no System.out.println, System.err.println, or "!!!" debug markers remain
+
+**Files Modified**:
+- `core/src/main/java/jp/aegif/nemaki/rest/UserItemResource.java`
+
+**Methods Cleaned**:
+
+1. **list() method** (2 debug statements removed):
+   - Debug log for "Found X groups total"
+   - Debug log for "Found X matching groups"
+
+2. **create() method** (2 System.err.println removed):
+   - "!!! Create method received payload"
+   - "!!! User/Group item successfully created"
+
+3. **createJson() method** (4 debug logs removed):
+   - "!!! createJson received JSON payload"
+   - "!!! Mapped to user/group object"
+   - "!!! Attempting creation with ContentService"
+   - "!!! User/Group successfully created"
+
+4. **updateGroupMembershipWithRetry() method** (6 debug logs removed):
+   - "!!! [userId] Attempting CouchDB update with revision..."
+   - "!!! SUCCESS: action user userId to/from group groupId on attempt..."
+   - "!!! Revision conflict on attempt N..."
+   - "!!! Max retries (N) exceeded..."
+   - "!!! Non-conflict error for user userId..."
+   - "!!! Released write lock for group groupId"
+
+**Verification**:
+- ✅ No System.out.println or System.err.println statements remain
+- ✅ No "!!!" debug markers remain
+- ✅ No [TYPERESOURCE] debug tags remain
+- ✅ Legitimate error logging preserved with proper exception handling
+
+**Status**: Production-ready, all temporary debug logging removed.
+
+---
+
 ## Recent Major Changes (2025-10-26 - TypeResource Debug Code Cleanup) ✅
 
 ### Production Code Debug Logging Cleanup - TypeResource.java
