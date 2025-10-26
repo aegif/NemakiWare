@@ -304,7 +304,42 @@ Previous timeout issues with queryLikeTest and queryInFolderTest were **NOT Nema
 
 ---
 
-## Recent Major Changes (2025-10-26 - UserItemResource Debug Code Cleanup) ✅
+## Recent Major Changes (2025-10-26 - Production Code Debug Logging Cleanup) ✅
+
+### Production Code Debug Logging Cleanup - ContentDaoServiceImpl.java
+
+**COMPLETION (2025-10-26)**: Removed all temporary debug logging from ContentDaoServiceImpl.java to prepare code for production deployment.
+
+**Problem**: ContentDaoServiceImpl.java contained temporary "!!!" debug tags added during CouchDB stale document troubleshooting and GroupItem update debugging that needed to be removed for production.
+
+**Solution Implemented**:
+- **getGroupItemByIdInternal() method**: Removed 3 debug log.error statements with "!!! CRITICAL" prefix
+- **update(GroupItem) method**: Removed 2 debug log.error statements with "!!!" prefix
+- Maintained appropriate production logging (log.debug, log.info, log.error for actual errors)
+- Verified no "!!!" debug markers remain
+
+**Files Modified**:
+- `core/src/main/java/jp/aegif/nemaki/dao/impl/couch/ContentDaoServiceImpl.java`
+
+**Methods Cleaned**:
+
+1. **getGroupItemByIdInternal() method** (3 debug statements removed):
+   - Line 1647: "!!! CRITICAL: Fetching FRESH document directly from DB, ID="
+   - Line 1653: "!!! CRITICAL: Direct DB fetch returned NULL for ID="
+   - Line 1657: "!!! CRITICAL: Fresh document fetched: ID=..., Rev="
+
+2. **update(GroupItem) method** (2 debug statements removed):
+   - Line 2194: "!!! UPDATE ENTRY: GroupItem ID=..., Rev="
+   - Line 2198: "!!! AFTER CouchGroupItem CONVERSION: ID=..., Rev="
+
+**Verification**:
+- ✅ No "!!!" debug markers remain in ContentDaoServiceImpl.java
+- ✅ Legitimate error logging preserved with proper exception handling
+- ✅ Production-ready code maintained
+
+**Status**: Production-ready, all temporary debug logging removed.
+
+---
 
 ### Production Code Debug Logging Cleanup - UserItemResource.java
 
