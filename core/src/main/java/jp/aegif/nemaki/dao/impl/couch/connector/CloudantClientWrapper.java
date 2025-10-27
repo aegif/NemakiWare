@@ -1356,7 +1356,33 @@ public class CloudantClientWrapper {
 						log.error("Document properties is NULL for attachment: " + id);
 					}
 				}
-				
+
+				// TCK FIX (2025-10-27): For CouchVersionSeries, use Document.getProperties() to get actual CouchDB fields
+				// This ensures versionSeriesCheckedOut/By/Id fields are properly deserialized
+				// Root cause: Jackson's convertValue() doesn't properly map Document.getProperties() to @JsonProperty annotated fields
+				if (clazz.getSimpleName().equals("CouchVersionSeries")) {
+					// Get the properties Map which contains the actual CouchDB document fields
+					Map<String, Object> properties = doc.getProperties();
+					if (properties != null) {
+						// Create complete map with both document metadata and individual properties
+						Map<String, Object> completeMap = new HashMap<>();
+						completeMap.put("_id", doc.getId());
+						completeMap.put("_rev", doc.getRev());
+						completeMap.putAll(properties); // Flatten all properties including versionSeries* fields
+
+						try {
+							T result = mapper.convertValue(completeMap, clazz);
+							log.debug("Successfully deserialized CouchVersionSeries with version series fields from properties map");
+							return result;
+						} catch (Exception deserEx) {
+							log.warn("Error deserializing CouchVersionSeries: " + deserEx.getMessage());
+							throw deserEx;
+						}
+					} else {
+						log.error("Document properties is NULL for CouchVersionSeries: " + id);
+					}
+				}
+
 				// Convert immutable Document to mutable Map first, then to target class
 				@SuppressWarnings("unchecked")
 				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);

@@ -739,6 +739,17 @@ public class CompileServiceImpl implements CompileService {
 		if (content.isDocument()) {
 			Document d = (Document) content;
 			versionSeries = contentService.getVersionSeries(repositoryId, d);
+
+			// TCK DEBUG: Log version series state for PWC allowable actions troubleshooting
+			System.err.println("[TCK DEBUG] compileAllowableActions for document: " + d.getId());
+			System.err.println("[TCK DEBUG]   isPrivateWorkingCopy: " + d.isPrivateWorkingCopy());
+			System.err.println("[TCK DEBUG]   versionSeries: " + (versionSeries == null ? "NULL" : "NOT NULL"));
+			if (versionSeries != null) {
+				System.err.println("[TCK DEBUG]   versionSeries.getId: " + versionSeries.getId());
+				System.err.println("[TCK DEBUG]   versionSeries.isVersionSeriesCheckedOut: " + versionSeries.isVersionSeriesCheckedOut());
+				System.err.println("[TCK DEBUG]   versionSeries.getVersionSeriesCheckedOutBy: " + versionSeries.getVersionSeriesCheckedOutBy());
+				System.err.println("[TCK DEBUG]   versionSeries.getVersionSeriesCheckedOutId: " + versionSeries.getVersionSeriesCheckedOutId());
+			}
 		}
 
 		// Get user information from call context  
