@@ -116,8 +116,14 @@ public class CouchNodeBase {
 	// CouchTypeDefinitionの明示的なフィールドは除外する（Jackson王道パターン）
 	@JsonAnySetter
 	public void setAdditionalProperty(String name, Object value) {
+		// TCK DEBUG: Log all calls to @JsonAnySetter
+		boolean explicit = isExplicitField(name);
+		System.err.println("[TCK DEBUG] @JsonAnySetter called: name=" + name +
+			", value=" + value + ", isExplicit=" + explicit +
+			", class=" + this.getClass().getSimpleName());
+
 		// CouchTypeDefinitionで明示的に定義されているフィールドは除外
-		if (!isExplicitField(name)) {
+		if (!explicit) {
 			this.additionalProperties.put(name, value);
 		}
 	}

@@ -2653,18 +2653,45 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// STAGE 1: Create metadata document with proper error handling
 			CouchAttachmentNode can = new CouchAttachmentNode(attachment);
 			
-			// Set content stream properties if available
+			// TCK CRITICAL FIX (2025-10-27): Prioritize attachment parameter properties over ContentStream
+			// Problem: ContentStream may have null/wrong values that overwrite correct attachment properties
+			// Solution: Set from ContentStream if not null, otherwise use defaults
 			if (contentStream != null) {
-				can.setMimeType(contentStream.getMimeType());
-				can.setLength(contentStream.getLength());
-				can.setName(contentStream.getFileName());
-				log.debug("Content stream properties - MimeType: " + contentStream.getMimeType() + ", Length: " + contentStream.getLength());
+				// Set mimeType from ContentStream if available, else use attachment value, else default
+				if (contentStream.getMimeType() != null) {
+					can.setMimeType(contentStream.getMimeType());
+				} else if (can.getMimeType() == null) {
+					can.setMimeType("application/octet-stream");  // Default MIME type
+					log.debug("Using default MIME type: application/octet-stream");
+				}
+				
+				// Set length from ContentStream if available
+				if (contentStream.getLength() > 0) {
+					can.setLength(contentStream.getLength());
+				}
+				
+				// Set fileName from ContentStream if available, else use attachment value
+				if (contentStream.getFileName() != null && !contentStream.getFileName().isEmpty()) {
+					can.setName(contentStream.getFileName());
+				} else if (can.getName() == null || can.getName().equals("-")) {
+					// Keep the "-" placeholder if no filename available
+					can.setName("-");
+				}
+				
+				if (log.isDebugEnabled()) {
+					log.debug("Content stream properties - MimeType: " + can.getMimeType() + ", Name: " + can.getName() + ", Length: " + can.getLength());
+				}
 			}
 			
 			ObjectMapper mapper = createConfiguredObjectMapper();
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(can, Map.class);
-			
+
+			// TCK DEBUG: Verify mimeType is in the map being sent to CouchDB
+			log.error("*** TCK DEBUG: CouchAttachmentNode mimeType BEFORE ObjectMapper: " + can.getMimeType() + " ***");
+			log.error("*** TCK DEBUG: documentMap mimeType value: " + documentMap.get("mimeType") + " ***");
+			log.error("*** TCK DEBUG: documentMap keys: " + documentMap.keySet() + " ***");
+
 			// Create metadata document with retry logic for revision conflicts
 			com.ibm.cloud.cloudant.v1.model.DocumentResult result = null;
 			String documentId = null;

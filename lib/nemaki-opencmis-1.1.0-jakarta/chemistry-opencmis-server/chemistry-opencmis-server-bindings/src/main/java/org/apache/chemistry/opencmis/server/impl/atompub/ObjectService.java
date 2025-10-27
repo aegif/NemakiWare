@@ -631,6 +631,15 @@ public class ObjectService {
                 throw new CmisRuntimeException("Content stream is null!");
             }
 
+            // TCK CRITICAL FIX (2025-10-27): Set Content-Length header BEFORE sendContentStreamHeaders()
+            // Must be before sendContentStreamHeaders() because that method can return early (redirect/cache)
+            // Root cause: PWC validation failures because client receives content with unknown length
+            // AtomPub binding client needs Content-Length header to populate ContentStream.getBigLength()
+            // Without this header, client returns length=-1 causing TCK validation failures
+            if (content.getBigLength() != null && content.getBigLength().signum() == 1) {
+                response.setContentLengthLong(content.getBigLength().longValue());
+            }
+
             // set HTTP headers, if requested by the server implementation
             if (sendContentStreamHeaders(content, request, response)) {
                 return;

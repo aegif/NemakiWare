@@ -717,6 +717,7 @@ public class CompileServiceImpl implements CompileService {
 	@Override
 	public AllowableActions compileAllowableActions(CallContext callContext, String repositoryId, Content content,
 			Acl acl) {
+		log.error("[TCK DEBUG] ========== COMPILE ALLOWABLE ACTIONS START: " + content.getId() + " ==========");
 		// DEBUG: Log entry into compileAllowableActions
 		log.debug("compileAllowableActions CALLED: contentId=" + content.getId() + ", objectType=" + content.getObjectType() + ", user=" + callContext.getUsername());
 		
@@ -738,7 +739,19 @@ public class CompileServiceImpl implements CompileService {
 		VersionSeries versionSeries = null;
 		if (content.isDocument()) {
 			Document d = (Document) content;
+			log.error("[TCK DEBUG] !!!!! DOCUMENT BLOCK ENTERED for doc " + d.getId());
 			versionSeries = contentService.getVersionSeries(repositoryId, d);
+			log.error("[TCK DEBUG] !!!!! AFTER getVersionSeries call, versionSeries is " + (versionSeries == null ? "NULL" : "NOT NULL"));
+			// TCK DEBUG: Log VersionSeries state after loading
+			if (versionSeries != null) {
+				log.error("[TCK DEBUG] VersionSeries loaded for doc " + d.getId() +
+						": vsId=" + versionSeries.getId() +
+						", isCheckedOut=" + versionSeries.isVersionSeriesCheckedOut() +
+						", checkedOutBy=" + versionSeries.getVersionSeriesCheckedOutBy() +
+						", checkedOutId=" + versionSeries.getVersionSeriesCheckedOutId());
+			} else {
+				log.error("[TCK DEBUG] VersionSeries is NULL for doc " + d.getId());
+			}
 		}
 
 		// Get user information from call context  
@@ -814,11 +827,50 @@ public class CompileServiceImpl implements CompileService {
 
 		// Versioning action(checkOut / checkIn)
 		if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKOUT_DOCUMENT)) {
-			return dtdf.isVersionable() && !isVersionSeriesCheckedOutSafe(versionSeries) && document.isLatestVersion();
+			// TCK DEBUG: Log all conditions for CAN_CHECKOUT_DOCUMENT
+			boolean isVersionable = dtdf.isVersionable();
+			boolean isNotCheckedOut = !isVersionSeriesCheckedOutSafe(versionSeries);
+			boolean isLatest = document.isLatestVersion();
+			boolean result = isVersionable && isNotCheckedOut && isLatest;
+
+			log.error("[TCK DEBUG] CAN_CHECKOUT_DOCUMENT check for doc " + document.getId() +
+					": isVersionable=" + isVersionable +
+					", isNotCheckedOut=" + isNotCheckedOut +
+					", isLatestVersion=" + isLatest +
+					", RESULT=" + result);
+
+			if (!result) {
+				// Additional debug for failure cases
+				if (versionSeries != null) {
+					log.error("[TCK DEBUG] VersionSeries state: isCheckedOut=" + versionSeries.isVersionSeriesCheckedOut() +
+							", checkedOutBy=" + versionSeries.getVersionSeriesCheckedOutBy() +
+							", checkedOutId=" + versionSeries.getVersionSeriesCheckedOutId());
+				}
+			}
+
+			return result;
 		} else if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKIN_DOCUMENT)) {
-			return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
+			boolean isVersionable = dtdf.isVersionable();
+		boolean isCheckedOut = isVersionSeriesCheckedOutSafe(versionSeries);
+		boolean isPWC = document.isPrivateWorkingCopy();
+		boolean result = isVersionable && isCheckedOut && isPWC;
+		log.error("[TCK DEBUG] Allowable action check for PWC " + document.getId() +
+				": isVersionable=" + isVersionable +
+				", isCheckedOut=" + isCheckedOut +
+				", isPWC=" + isPWC +
+				", RESULT=" + result);
+		return result;
 		} else if (permissionMappingKey.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
-			return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
+			boolean isVersionable = dtdf.isVersionable();
+		boolean isCheckedOut = isVersionSeriesCheckedOutSafe(versionSeries);
+		boolean isPWC = document.isPrivateWorkingCopy();
+		boolean result = isVersionable && isCheckedOut && isPWC;
+		log.error("[TCK DEBUG] Allowable action check for PWC " + document.getId() +
+				": isVersionable=" + isVersionable +
+				", isCheckedOut=" + isCheckedOut +
+				", isPWC=" + isPWC +
+				", RESULT=" + result);
+		return result;
 		}
 
 		// Lock as an effect of checkOut
@@ -1356,6 +1408,10 @@ public class CompileServiceImpl implements CompileService {
 
 	private void setCmisAttachmentProperties(String repositoryId, PropertiesImpl properties, TypeDefinition tdf,
 			Document document) {
+		// TCK DEBUG: Track setCmisAttachmentProperties entry
+		log.error("*** TCK DEBUG: setCmisAttachmentProperties called for docId=" + document.getId() +
+			", attachmentNodeId=" + document.getAttachmentNodeId() + " ***");
+
 		Long length = null;
 		String mimeType = null;
 		String fileName = null;
@@ -1383,6 +1439,14 @@ public class CompileServiceImpl implements CompileService {
 
 			attachment = getAttachmentWithRetry(repositoryId, document.getAttachmentNodeId(), document.getId());
 
+			// TCK DEBUG: Track attachment retrieval
+			log.error("*** TCK DEBUG: After getAttachmentWithRetry - attachment is " + (attachment != null ? "NOT NULL" : "NULL") +
+				" for docId=" + document.getId() + ", attachmentId=" + document.getAttachmentNodeId() + " ***");
+			if (attachment != null) {
+				log.error("*** TCK DEBUG: Attachment details - mimeType=" + attachment.getMimeType() +
+					", fileName=" + attachment.getName() + ", length=" + attachment.getLength() + " ***");
+			}
+
 			if (attachment == null) {
 				// CLOUDANT SDK FIX: Handle null attachment with proper logging and CMIS compliance
 				if (log.isDebugEnabled()) {
@@ -1395,15 +1459,21 @@ public class CompileServiceImpl implements CompileService {
 					log.warn("Document type requires content stream but no attachment found - document may be incomplete");
 				}
 			} else {
+			log.error("*** EXECUTION TRACE: Entered else block at line 1461 - attachment is NOT null ***");
 				if (log.isDebugEnabled()) {
 					log.debug("Attachment found: length=" + attachment.getLength() + ", mimeType=" + attachment.getMimeType());
 				}
+			log.error("*** EXECUTION TRACE: After log.isDebugEnabled check at line 1465 ***");
+
 				
 				// CRITICAL TCK FIX: Handle attachment length with proper CMIS 1.1 compliance
 				long attachmentLength = attachment.getLength();
+			log.error("*** EXECUTION TRACE: Got attachmentLength: " + attachmentLength + " ***");
 				if (log.isDebugEnabled()) {
 					log.debug("Attachment raw length from DB: " + attachmentLength);
 				}
+				log.error("*** EXECUTION TRACE: Before if (true) block at line 1474 ***");
+
 				
 				// CRITICAL TCK FIX: Always retrieve actual size from CouchDB
 				// This ensures cmis:contentStreamLength is always accurate, even after appendContent
@@ -1413,6 +1483,7 @@ public class CompileServiceImpl implements CompileService {
 					}
 
 					// CLOUDANT SDK: Try to get actual attachment size with _rev safety
+				log.error("*** EXECUTION TRACE: Entering try block at line 1480 ***");
 					try {
 						Long actualSize = contentService.getAttachmentActualSize(repositoryId, attachment.getId());
 						if (actualSize != null && actualSize > 0) {
@@ -1437,8 +1508,22 @@ public class CompileServiceImpl implements CompileService {
 						}
 					}
 				}
+				log.error("*** EXECUTION TRACE: After try-catch block at line 1503, about to get mimeType ***");
+
 				
 				mimeType = attachment.getMimeType();
+				log.error("*** MIME DEBUG: Original mimeType from attachment: " + mimeType + " ***");
+				// TCK CRITICAL FIX (2025-10-27): Default MIME type for null/empty values
+				// PWC (Private Working Copy) documents can have attachments with null mimeType
+				// CMIS 1.1 spec: Content stream properties should have valid values, not null
+				if (mimeType == null || mimeType.isEmpty()) {
+					mimeType = "application/octet-stream";  // Default MIME type per RFC 2046
+					log.error("*** MIME DEBUG: mimeType was null/empty, set to: " + mimeType + " ***");
+					if (log.isDebugEnabled()) {
+						log.debug("Attachment " + attachment.getId() + " has null/empty mimeType, using default: application/octet-stream");
+					}
+				}
+				log.error("*** MIME DEBUG: Final mimeType before property setting: " + mimeType + " ***");
 				if(attachment.getName() == null || attachment.getName().isEmpty()){
 					fileName = document.getName();
 				}else{
@@ -1465,6 +1550,8 @@ public class CompileServiceImpl implements CompileService {
 		if (attachment != null && length != null) {
 			// Case 1: Content stream exists with known size (length >= 0)
 			// Case 2: Content stream exists with unknown size (length = -1)
+			System.err.println("[MIME DEBUG] Entering Case 1/2: attachment != null && length != null");
+			log.error("*** MIME DEBUG: About to add mimeType property: " + mimeType + " ***");
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_LENGTH, length >= 0 ? length : -1L);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_MIME_TYPE, mimeType);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_FILE_NAME, fileName);

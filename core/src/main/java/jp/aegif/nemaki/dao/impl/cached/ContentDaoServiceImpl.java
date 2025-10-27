@@ -520,12 +520,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		VersionSeries v = versionSeriesCache.get(nodeId);
 
 		if (v != null) {
+			System.err.println("[TCK DEBUG ContentDaoServiceImpl] CACHE HIT for VersionSeries: " + nodeId);
+			System.err.println("[TCK DEBUG]   versionSeriesCheckedOut: " + v.isVersionSeriesCheckedOut());
+			System.err.println("[TCK DEBUG]   versionSeriesCheckedOutBy: " + v.getVersionSeriesCheckedOutBy());
+			System.err.println("[TCK DEBUG]   versionSeriesCheckedOutId: " + v.getVersionSeriesCheckedOutId());
 			return (VersionSeries) v;
 		}
+		System.err.println("[TCK DEBUG ContentDaoServiceImpl] CACHE MISS - fetching from DB: " + nodeId);
 		VersionSeries vs = nonCachedContentDaoService.getVersionSeries(repositoryId, nodeId);
 		if (vs == null) {
+			System.err.println("[TCK DEBUG ContentDaoServiceImpl] DB returned NULL for: " + nodeId);
 			return null;
 		} else {
+			System.err.println("[TCK DEBUG ContentDaoServiceImpl] DB returned VersionSeries: " + nodeId);
+			System.err.println("[TCK DEBUG]   versionSeriesCheckedOut: " + vs.isVersionSeriesCheckedOut());
+			System.err.println("[TCK DEBUG]   versionSeriesCheckedOutBy: " + vs.getVersionSeriesCheckedOutBy());
+			System.err.println("[TCK DEBUG]   versionSeriesCheckedOutId: " + vs.getVersionSeriesCheckedOutId());
+			System.err.println("[TCK DEBUG ContentDaoServiceImpl] Caching VersionSeries: " + nodeId);
 			versionSeriesCache.put(new Element(nodeId, vs));
 			return vs;
 		}

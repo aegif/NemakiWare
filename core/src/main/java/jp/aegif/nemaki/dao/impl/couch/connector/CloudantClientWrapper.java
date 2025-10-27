@@ -1356,7 +1356,64 @@ public class CloudantClientWrapper {
 						log.error("Document properties is NULL for attachment: " + id);
 					}
 				}
-				
+
+				// TCK FIX: For CouchVersionSeries, use Document.getProperties() to get individual fields
+				// Without this, Jackson converts Document.getProperties() to a Map and passes it to @JsonAnySetter
+				// causing versionSeriesCheckedOut/By/Id to be captured as a nested Map instead of individual fields
+				System.err.println("[TCK DEBUG CloudantClientWrapper] get() called with class: " + clazz.getSimpleName() + ", id: " + id);
+				if (clazz.getSimpleName().equals("CouchVersionSeries")) {
+					System.err.println("[TCK DEBUG CloudantClientWrapper] CouchVersionSeries class name check MATCHED!");
+					Map<String, Object> properties = doc.getProperties();
+					System.err.println("[TCK DEBUG] properties map size: " + (properties != null ? properties.size() : "NULL"));
+					System.err.println("[TCK DEBUG] properties keys: " + (properties != null ? properties.keySet() : "NULL"));
+					if (properties != null) {
+						System.err.println("[TCK DEBUG] Printing each property:");
+						for (Map.Entry<String, Object> entry : properties.entrySet()) {
+							System.err.println("[TCK DEBUG]   " + entry.getKey() + " = " + entry.getValue() + " (type: " + (entry.getValue() != null ? entry.getValue().getClass().getSimpleName() : "null") + ")");
+						}
+					}
+					if (properties != null) {
+						// Create complete map with both document metadata and individual properties
+						Map<String, Object> completeMap = new HashMap<>();
+						completeMap.put("_id", doc.getId());
+						completeMap.put("_rev", doc.getRev());
+						completeMap.putAll(properties); // Flatten all properties
+
+						System.err.println("[TCK DEBUG] completeMap size: " + completeMap.size());
+						System.err.println("[TCK DEBUG] completeMap keys: " + completeMap.keySet());
+						System.err.println("[TCK DEBUG] completeMap contains versionSeriesCheckedOut: " + completeMap.containsKey("versionSeriesCheckedOut"));
+						System.err.println("[TCK DEBUG] completeMap contains versionSeriesCheckedOutBy: " + completeMap.containsKey("versionSeriesCheckedOutBy"));
+						System.err.println("[TCK DEBUG] completeMap contains versionSeriesCheckedOutId: " + completeMap.containsKey("versionSeriesCheckedOutId"));
+						System.err.println("[TCK DEBUG] completeMap versionSeriesCheckedOut value: " + completeMap.get("versionSeriesCheckedOut"));
+
+						try {
+							// CRITICAL FIX (2025-10-27): Use readValue instead of convertValue to ensure @JsonCreator is called
+							// convertValue() doesn't properly invoke @JsonCreator constructors with date parsing logic
+							// This causes GregorianCalendar deserialization to fail when CouchDB returns numeric timestamps
+							// Evidence: "Cannot deserialize value of type `java.util.GregorianCalendar` from Floating-point value"
+							System.err.println("[TCK DEBUG] Converting completeMap to JSON string for proper @JsonCreator invocation");
+							String jsonString = mapper.writeValueAsString(completeMap);
+							System.err.println("[TCK DEBUG] Calling mapper.readValue() to invoke @JsonCreator");
+							T result = mapper.readValue(jsonString, clazz);
+
+							// Debug: Check what fields were set in the result object
+							if (result instanceof jp.aegif.nemaki.model.couch.CouchVersionSeries) {
+								jp.aegif.nemaki.model.couch.CouchVersionSeries vs = (jp.aegif.nemaki.model.couch.CouchVersionSeries) result;
+								System.err.println("[TCK DEBUG] Result CouchVersionSeries fields:");
+								System.err.println("[TCK DEBUG]   versionSeriesCheckedOut: " + vs.isVersionSeriesCheckedOut());
+								System.err.println("[TCK DEBUG]   versionSeriesCheckedOutBy: " + vs.getVersionSeriesCheckedOutBy());
+								System.err.println("[TCK DEBUG]   versionSeriesCheckedOutId: " + vs.getVersionSeriesCheckedOutId());
+							}
+
+							return result;
+						} catch (Exception deserEx) {
+							log.error("Error deserializing CouchVersionSeries with ID " + id + ": " + deserEx.getMessage(), deserEx);
+							System.err.println("[TCK DEBUG] Deserialization FAILED: " + deserEx.getClass().getSimpleName() + ": " + deserEx.getMessage());
+							return null;
+						}
+					}
+				}
+
 				// Convert immutable Document to mutable Map first, then to target class
 				@SuppressWarnings("unchecked")
 				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);

@@ -418,7 +418,12 @@ public class DocumentImpl extends AbstractFilableCmisObject implements Document 
 
     @Override
     public ContentStream getContentStream() {
-        return getContentStream(null, null, null);
+        System.err.println("[GET CONTENT STREAM DEBUG] getContentStream() called for document: " + getId());
+        System.err.println("[GET CONTENT STREAM DEBUG] Properties: length=" + getContentStreamLength() +
+                         ", mimeType=" + getContentStreamMimeType() + ", fileName=" + getContentStreamFileName());
+        ContentStream result = getContentStream(null, null, null);
+        System.err.println("[GET CONTENT STREAM DEBUG] getContentStream() returned: " + (result != null ? "NOT NULL" : "NULL"));
+        return result;
     }
 
     @Override
@@ -437,21 +442,33 @@ public class DocumentImpl extends AbstractFilableCmisObject implements Document 
         ContentStream contentStream = getSession().getContentStream(this, streamId, offset, length);
 
         if (contentStream == null) {
+            System.err.println("[CONTENT STREAM DETAIL] Retrieved contentStream is NULL for document: " + getId());
             return null;
         }
 
         // the AtomPub binding doesn't return a file name
         // -> get the file name from properties, if present
         String filename = contentStream.getFileName();
+        System.err.println("[CONTENT STREAM DETAIL] Retrieved contentStream.getFileName(): " + filename);
         if (filename == null) {
             filename = getContentStreamFileName();
+            System.err.println("[CONTENT STREAM DETAIL] Using document property fileName: " + filename);
         }
 
         long lengthLong = (contentStream.getBigLength() == null ? -1 : contentStream.getBigLength().longValue());
+        System.err.println("[CONTENT STREAM DETAIL] Retrieved contentStream.getBigLength(): " + lengthLong);
+        System.err.println("[CONTENT STREAM DETAIL] Retrieved contentStream.getMimeType(): " + contentStream.getMimeType());
+        System.err.println("[CONTENT STREAM DETAIL] Document properties - fileName=" + getContentStreamFileName() +
+                         ", mimeType=" + getContentStreamMimeType() + ", length=" + getContentStreamLength());
 
         // convert and return stream object
-        return getSession().getObjectFactory().createContentStream(filename, lengthLong, contentStream.getMimeType(),
+        ContentStream result = getSession().getObjectFactory().createContentStream(filename, lengthLong, contentStream.getMimeType(),
                 contentStream.getStream(), contentStream instanceof PartialContentStream);
+
+        System.err.println("[CONTENT STREAM DETAIL] Created new ContentStream - fileName=" + result.getFileName() +
+                         ", mimeType=" + result.getMimeType() + ", length=" + result.getLength());
+
+        return result;
     }
 
     @Override
