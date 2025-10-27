@@ -216,18 +216,11 @@ public abstract class AbstractAtomPubService implements LinkAccess {
      */
     @Override
     public String loadLink(String repositoryId, String id, String rel, String type) {
-        System.err.println("[LOAD LINK DEBUG] loadLink() called: id=" + id + ", rel=" + rel + ", type=" + type);
-
         String link = getLink(repositoryId, id, rel, type);
-        System.err.println("[LOAD LINK DEBUG] First getLink() returned: " + (link != null ? link : "NULL"));
-
         if (link == null) {
-            System.err.println("[LOAD LINK DEBUG] Link not in cache, calling getObjectInternal() to fetch object and populate cache");
             getObjectInternal(repositoryId, IdentifierType.ID, id, ReturnVersion.THIS, "cmis:objectId", Boolean.FALSE,
                     IncludeRelationships.NONE, "cmis:none", Boolean.FALSE, Boolean.FALSE, null);
-
             link = getLink(repositoryId, id, rel, type);
-            System.err.println("[LOAD LINK DEBUG] Second getLink() after fetch returned: " + (link != null ? link : "STILL NULL"));
         }
 
         return link;
@@ -951,28 +944,14 @@ public abstract class AbstractAtomPubService implements LinkAccess {
             // clean up cache
             removeLinks(repositoryId, entry.getId());
 
-            System.err.println("[LINK CACHE DEBUG] Processing AtomEntry for object: " + entry.getId());
-            int linkCount = 0;
-
             // walk through the entry
             for (AtomElement element : entry.getElements()) {
                 if (element.getObject() instanceof AtomLink) {
-                    AtomLink atomLink = (AtomLink) element.getObject();
-                    addLink(repositoryId, entry.getId(), atomLink);
-                    linkCount++;
-                    System.err.println("[LINK CACHE DEBUG] Added link #" + linkCount + ": rel=" + atomLink.getRel() +
-                                     ", type=" + atomLink.getType() + ", href=" + atomLink.getHref());
+                    addLink(repositoryId, entry.getId(), (AtomLink) element.getObject());
                 } else if (element.getObject() instanceof ObjectData) {
                     result = (ObjectData) element.getObject();
                 }
             }
-
-            System.err.println("[LINK CACHE DEBUG] Total links added to cache: " + linkCount);
-
-            // Verify version-history link was cached
-            String versionHistoryLink = getLink(repositoryId, entry.getId(), Constants.REL_VERSIONHISTORY, Constants.MEDIATYPE_FEED);
-            System.err.println("[LINK CACHE DEBUG] Version-history link in cache: " +
-                             (versionHistoryLink != null ? versionHistoryLink : "NOT FOUND"));
         } finally {
             unlockLinks();
         }

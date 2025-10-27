@@ -325,24 +325,12 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public VersionSeries getVersionSeries(String repositoryId, Document document) {
-		System.err.println("[TCK DEBUG ContentServiceImpl] getVersionSeries(Document) called for versionSeriesId: " + document.getVersionSeriesId());
-		VersionSeries result = getVersionSeries(repositoryId, document.getVersionSeriesId());
-		System.err.println("[TCK DEBUG ContentServiceImpl] getVersionSeries(Document) returned, isNull: " + (result == null));
-		return result;
+		return getVersionSeries(repositoryId, document.getVersionSeriesId());
 	}
 
 	@Override
 	public VersionSeries getVersionSeries(String repositoryId, String versionSeriesId) {
-		System.err.println("[TCK DEBUG ContentServiceImpl] getVersionSeries(String) called for versionSeriesId: " + versionSeriesId);
-		System.err.println("[TCK DEBUG ContentServiceImpl] About to call contentDaoService.getVersionSeries()");
-		VersionSeries result = contentDaoService.getVersionSeries(repositoryId, versionSeriesId);
-		System.err.println("[TCK DEBUG ContentServiceImpl] contentDaoService.getVersionSeries() returned, isNull: " + (result == null));
-		if (result != null) {
-			System.err.println("[TCK DEBUG ContentServiceImpl]   versionSeriesCheckedOut: " + result.isVersionSeriesCheckedOut());
-			System.err.println("[TCK DEBUG ContentServiceImpl]   versionSeriesCheckedOutBy: " + result.getVersionSeriesCheckedOutBy());
-			System.err.println("[TCK DEBUG ContentServiceImpl]   versionSeriesCheckedOutId: " + result.getVersionSeriesCheckedOutId());
-		}
-		return result;
+		return contentDaoService.getVersionSeries(repositoryId, versionSeriesId);
 	}
 
 	@Override
@@ -1050,15 +1038,11 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Document checkOut(CallContext callContext, String repositoryId, String objectId, ExtensionsData extension) {
-		log.error("*** TCK DEBUG: checkOut() called for objectId: {} ***", objectId);
 		Document latest = getDocument(repositoryId, objectId);
-		log.error("*** TCK DEBUG: Latest document retrieved, attachmentNodeId: {} ***", latest.getAttachmentNodeId());
 		Document pwc = buildCopyDocument(callContext, repositoryId, latest, null, null);
 
 		// Create PWC attachment
-		log.error("*** TCK DEBUG: About to call copyAttachment() for attachmentId: {} ***", latest.getAttachmentNodeId());
 		String attachmentId = copyAttachment(callContext, repositoryId, latest.getAttachmentNodeId());
-		log.error("*** TCK DEBUG: copyAttachment() returned attachmentId: {} ***", attachmentId);
 		pwc.setAttachmentNodeId(attachmentId);
 
 		// Create PWC renditions
@@ -1133,8 +1117,8 @@ public class ContentServiceImpl implements ContentService {
 		// Reverse the effect of checkout
 		setModifiedSignature(callContext, vs);
 		vs.setVersionSeriesCheckedOut(false);
-		vs.setVersionSeriesCheckedOutBy(null);
-		vs.setVersionSeriesCheckedOutId(null);
+		vs.setVersionSeriesCheckedOutBy("");
+		vs.setVersionSeriesCheckedOutId("");
 		contentDaoService.update(repositoryId, vs);
 
 		// CRITICAL TCK FIX: Update all versions in version series to reflect canceled checkout state
@@ -1144,8 +1128,8 @@ public class ContentServiceImpl implements ContentService {
 			for (Document version : versions) {
 				// Update versioning properties to reflect VersionSeries state (no PWC filtering needed)
 				version.setVersionSeriesCheckedOut(false);
-				version.setVersionSeriesCheckedOutBy(null);
-				version.setVersionSeriesCheckedOutId(null);
+				version.setVersionSeriesCheckedOutBy("");
+				version.setVersionSeriesCheckedOutId("");
 				contentDaoService.update(repositoryId, version);
 				
 				// CRITICAL FIX: Invalidate cache for updated version to ensure UI sees updated properties
@@ -1362,11 +1346,6 @@ public class ContentServiceImpl implements ContentService {
 			d.setLatestMajorVersion(false);
 			d.setVersionLabel("0.1");
 			d.setPrivateWorkingCopy(false);
-			// TCK CRITICAL FIX (2025-10-27): Clear version series checked out properties after checkin
-			// These properties must be null when document is not checked out per CMIS 1.1 spec
-			d.setVersionSeriesCheckedOut(false);
-			d.setVersionSeriesCheckedOutBy(null);
-			d.setVersionSeriesCheckedOutId(null);
 			// CRITICAL CMIS 1.1 COMPLIANCE: Set isVersionSeriesCheckedOut=false for non-checked out documents
 			d.setVersionSeriesCheckedOut(false);
 			// Clear additional versioning properties for non-checked out documents
@@ -1393,11 +1372,6 @@ public class ContentServiceImpl implements ContentService {
 			d.setLatestMajorVersion(true);
 			d.setVersionLabel(increasedVersionLabel(former, versioningState));
 			d.setPrivateWorkingCopy(false);
-			// TCK CRITICAL FIX (2025-10-27): Clear version series checked out properties after checkin
-			// These properties must be null when document is not checked out per CMIS 1.1 spec
-			d.setVersionSeriesCheckedOut(false);
-			d.setVersionSeriesCheckedOutBy(null);
-			d.setVersionSeriesCheckedOutId(null);
 			// Update former version flags (refresh from DB to avoid CouchDB conflicts)
 			updateFormerVersionFlags(repositoryId, former, true);
 			break;
@@ -1407,11 +1381,6 @@ public class ContentServiceImpl implements ContentService {
 			d.setLatestMajorVersion(false);
 			d.setVersionLabel(increasedVersionLabel(former, versioningState));
 			d.setPrivateWorkingCopy(false);
-			// TCK CRITICAL FIX (2025-10-27): Clear version series checked out properties after checkin
-			// These properties must be null when document is not checked out per CMIS 1.1 spec
-			d.setVersionSeriesCheckedOut(false);
-			d.setVersionSeriesCheckedOutBy(null);
-			d.setVersionSeriesCheckedOutId(null);
 			// Update former version flags (refresh from DB to avoid CouchDB conflicts)
 			updateFormerVersionFlags(repositoryId, former, false);
 			break;
@@ -1748,41 +1717,16 @@ public class ContentServiceImpl implements ContentService {
 
 	private String copyAttachment(CallContext callContext, String repositoryId, String attachmentId) {
 		AttachmentNode original = getAttachment(repositoryId, attachmentId);
-
-		log.error("*** TCK DEBUG: copyAttachment called for attachmentId: {} ***", attachmentId);
-		log.error("*** TCK DEBUG: Original mimeType: {} ***", original.getMimeType());
-		log.error("*** TCK DEBUG: Original fileName: {} ***", original.getName());
-
-		// TCK CRITICAL FIX (2025-10-27): Set default values for null/empty properties when copying
-		// This ensures PWC (Private Working Copy) documents have valid content stream properties
-		String mimeType = original.getMimeType();
-		if (mimeType == null || mimeType.isEmpty()) {
-			mimeType = "application/octet-stream";  // Default MIME type
-			log.error("*** TCK DEBUG: Original attachment mimeType is null/empty, using default: application/octet-stream ***");
-		}
-
-		String fileName = original.getName();
-		if (fileName == null || fileName.isEmpty()) {
-			fileName = "-";  // Placeholder for missing fileName
-			log.error("*** TCK DEBUG: Original attachment fileName is null/empty, using placeholder: - ***");
-		}
-
-		log.error("*** TCK DEBUG: Creating ContentStream with mimeType: {}, fileName: {} ***", mimeType, fileName);
-
-		ContentStream cs = new ContentStreamImpl(fileName, BigInteger.valueOf(original.getLength()),
-				mimeType, original.getInputStream());
+		ContentStream cs = new ContentStreamImpl(original.getName(), BigInteger.valueOf(original.getLength()),
+				original.getMimeType(), original.getInputStream());
 
 		AttachmentNode copy = new AttachmentNode();
-		copy.setName(fileName);
+		copy.setName(original.getName());
 		copy.setLength(original.getLength());
-		copy.setMimeType(mimeType);
+		copy.setMimeType(original.getMimeType());
 		setSignature(callContext, copy);
 
-		log.error("*** TCK DEBUG: About to call contentDaoService.createAttachment with mimeType: {} ***", copy.getMimeType());
-		String result = contentDaoService.createAttachment(repositoryId, copy, cs);
-		log.error("*** TCK DEBUG: copyAttachment completed, new attachmentId: {} ***", result);
-
-		return result;
+		return contentDaoService.createAttachment(repositoryId, copy, cs);
 	}
 
 	private List<String> copyRenditions(CallContext callContext, String repositoryId, List<String> renditionIds) {
@@ -2485,13 +2429,7 @@ public class ContentServiceImpl implements ContentService {
 
 	private String createAttachment(CallContext callContext, String repositoryId, ContentStream contentStream) {
 		AttachmentNode a = new AttachmentNode();
-		// TCK CRITICAL FIX (2025-10-27): Set default MIME type if ContentStream doesn't provide one
-		String mimeType = contentStream.getMimeType();
-		if (mimeType == null || mimeType.isEmpty()) {
-			mimeType = "application/octet-stream";  // Default MIME type for binary content
-			log.debug("ContentStream mimeType is null/empty, using default: application/octet-stream");
-		}
-		a.setMimeType(mimeType);
+		a.setMimeType(contentStream.getMimeType());
 		
 		// CRITICAL FIX: Calculate actual stream size when length is unknown (-1) or invalid (0 or negative)
 		// BUT avoid consuming the stream if it doesn't support mark/reset
@@ -2519,13 +2457,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 		
 		a.setLength(streamLength);
-		// TCK CRITICAL FIX (2025-10-27): Set placeholder if ContentStream doesn't provide fileName
-		String fileName = contentStream.getFileName();
-		if (fileName == null || fileName.isEmpty()) {
-			fileName = "-";  // Placeholder for missing fileName
-			log.debug("ContentStream fileName is null/empty, using placeholder: -");
-		}
-		a.setName(fileName);
+		a.setName(contentStream.getFileName());
 		setSignature(callContext, a);
 		return contentDaoService.createAttachment(repositoryId, a, contentStream);
 	}

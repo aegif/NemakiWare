@@ -586,28 +586,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		ObjectData objectData = objectService.getObject(getCallContext(), repositoryId, objectId, filter,
 				includeAllowableActions, includeRelationships, renditionFilter, includePolicyIds, includeAcl,
 				extension);
-
-		// TCK CRITICAL FIX (2025-10-27): Fetch unfiltered object for ObjectInfo generation
-		// When filter parameter is present, objectData may have properties filtered out.
-		// However, ObjectInfo is used for AtomPub link generation, which should NOT be affected by filter.
-		// Per CMIS 1.1 specification: filter affects properties only, not links.
-		// Solution: Always fetch complete object data for ObjectInfo, regardless of filter used above.
-		System.err.println("[TCK DEBUG] ========================================");
-		System.err.println("[TCK DEBUG] getObject() called with filter=" + filter + " for objectId=" + objectId);
-		ObjectData unfilteredObjectForInfo = objectService.getObject(getCallContext(), repositoryId, objectId,
-				null,  // filter=null to get all properties needed for link generation
-				false, // includeAllowableActions - not needed for ObjectInfo
-				IncludeRelationships.NONE, // relationships - not needed for ObjectInfo
-				null,  // renditionFilter - not needed for ObjectInfo
-				false, // includePolicyIds - not needed for ObjectInfo
-				false, // includeAcl - not needed for ObjectInfo
-				extension);
-		String versionSeriesId = getIdProperty(unfilteredObjectForInfo, PropertyIds.VERSION_SERIES_ID);
-		System.err.println("[TCK DEBUG] Unfiltered object fetched, versionSeriesId=" + versionSeriesId);
-		ObjectInfo info = setObjectInfo(repositoryId, unfilteredObjectForInfo);
-		System.err.println("[TCK DEBUG] ObjectInfo set, info.getVersionSeriesId()=" + (info != null ? info.getVersionSeriesId() : "null"));
-		System.err.println("[TCK DEBUG] ========================================");
-
+		setObjectInfo(repositoryId, objectData);
 		return objectData;
 	}
 
@@ -621,13 +600,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		ObjectData objectData = objectService.getObjectByPath(getCallContext(), repositoryId, path, filter,
 				includeAllowableActions, includeRelationships, renditionFilter, includePolicyIds, includeAcl,
 				extension);
-
-		// TCK CRITICAL FIX (2025-10-27): Fetch unfiltered object for ObjectInfo generation
-		// Same fix as getObject() - ObjectInfo should not be affected by filter parameter
-		ObjectData unfilteredObjectForInfo = objectService.getObject(getCallContext(), repositoryId, objectData.getId(),
-				null, false, IncludeRelationships.NONE, null, false, false, extension);
-		setObjectInfo(repositoryId, unfilteredObjectForInfo);
-
+		setObjectInfo(repositoryId, objectData);
 		return objectData;
 	}
 

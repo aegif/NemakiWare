@@ -155,14 +155,6 @@ public class ObjectServiceImpl implements ObjectService {
 			Content content = contentService.getContent(repositoryId, objectId);
 			log.info(MessageFormat.format("ObjcetService#getObject getContent success: Repo={0}, Id={1}", repositoryId, objectId));
 
-			// TCK DEBUG: Track PWC document type
-			if (content != null && content.isDocument()) {
-				Document doc = (Document) content;
-				log.error("*** TCK DEBUG: ObjectServiceImpl.getObject - docId=" + objectId +
-					", isPrivateWorkingCopy=" + doc.isPrivateWorkingCopy() +
-					", attachmentNodeId=" + doc.getAttachmentNodeId() + " ***");
-			}
-
 			// WORK AROUND: getObject(versionSeriesId) is interpreted as
 			// getDocumentOflatestVersion
 			if (content == null) {
@@ -179,10 +171,8 @@ public class ObjectServiceImpl implements ObjectService {
 			// //////////////////
 			// Body of the method
 			// //////////////////
-			log.error("*** TCK DEBUG: About to call compileService.compileObjectData for docId=" + objectId + " ***");
 			ObjectData object = compileService.compileObjectData(callContext, repositoryId, content, filter,
 					includeAllowableActions, includeRelationships, null, includeAcl);
-			log.error("*** TCK DEBUG: compileObjectData returned for docId=" + objectId + " ***");
 
 			log.info(MessageFormat.format("ObjcetService#getObject END: Repo={0}, Id={1} Type={2} Name={3}", repositoryId, objectId, content.getObjectType(), content.getObjectType(), content.getName()));
 
@@ -297,18 +287,6 @@ public class ObjectServiceImpl implements ObjectService {
 			log.debug("Content name: " + name);
 		}
 		String mimeType = attachment.getMimeType();
-		System.err.println("[CONTENT MIME DEBUG] Original mimeType from attachment: " + mimeType);
-		// TCK CRITICAL FIX (2025-10-27): Default MIME type for null/empty values
-		// PWC (Private Working Copy) documents can have attachments with null mimeType
-		// CMIS 1.1 spec: Content stream should have valid MIME type, not null
-		if (mimeType == null || mimeType.isEmpty()) {
-			mimeType = "application/octet-stream";  // Default MIME type per RFC 2046
-			System.err.println("[CONTENT MIME DEBUG] mimeType was null/empty, set to: " + mimeType);
-			if (log.isDebugEnabled()) {
-				log.debug("Attachment has null/empty mimeType, using default: application/octet-stream");
-			}
-		}
-		System.err.println("[CONTENT MIME DEBUG] Final mimeType for ContentStream: " + mimeType);
 		if (log.isDebugEnabled()) {
 			log.debug("Content mimeType: " + mimeType);
 		}

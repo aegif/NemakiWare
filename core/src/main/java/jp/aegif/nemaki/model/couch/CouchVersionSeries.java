@@ -27,11 +27,8 @@ import jp.aegif.nemaki.model.VersionSeries;
 
 public class CouchVersionSeries extends CouchNodeBase{
 	private static final long serialVersionUID = 3137549058772266715L;
-	@JsonProperty("versionSeriesCheckedOut")
 	private Boolean versionSeriesCheckedOut;
-	@JsonProperty("versionSeriesCheckedOutBy")
 	private String versionSeriesCheckedOutBy;
-	@JsonProperty("versionSeriesCheckedOutId")
 	private String versionSeriesCheckedOutId;
 	
 	public CouchVersionSeries(){
@@ -51,45 +48,23 @@ public class CouchVersionSeries extends CouchNodeBase{
 		return versionSeriesCheckedOut != null ? versionSeriesCheckedOut : false;
 	}
 	public void setVersionSeriesCheckedOut(Boolean versionSeriesCheckedOut) {
-		// TCK DEBUG: Log setter call
-		System.err.println("[TCK DEBUG] setVersionSeriesCheckedOut CALLED with value: " + versionSeriesCheckedOut);
 		this.versionSeriesCheckedOut = versionSeriesCheckedOut;
 	}
 	public String getVersionSeriesCheckedOutBy() {
 		return versionSeriesCheckedOutBy;
 	}
 	public void setVersionSeriesCheckedOutBy(String versionSeriesCheckedOutBy) {
-		// TCK DEBUG: Log setter call
-		System.err.println("[TCK DEBUG] setVersionSeriesCheckedOutBy CALLED with value: " + versionSeriesCheckedOutBy);
 		this.versionSeriesCheckedOutBy = versionSeriesCheckedOutBy;
 	}
 	public String getVersionSeriesCheckedOutId() {
 		return versionSeriesCheckedOutId;
 	}
 	public void setVersionSeriesCheckedOutId(String versionSeriesCheckedOutId) {
-		// TCK DEBUG: Log setter call
-		System.err.println("[TCK DEBUG] setVersionSeriesCheckedOutId CALLED with value: " + versionSeriesCheckedOutId);
 		this.versionSeriesCheckedOutId = versionSeriesCheckedOutId;
-	}
-
-	// TCK FIX: Override to include versionSeries* fields as explicit fields
-	// Without this, @JsonAnySetter captures them into additionalProperties instead
-	@Override
-	protected boolean isExplicitField(String fieldName) {
-		return super.isExplicitField(fieldName) ||
-		       "versionSeriesCheckedOut".equals(fieldName) ||
-		       "versionSeriesCheckedOutBy".equals(fieldName) ||
-		       "versionSeriesCheckedOutId".equals(fieldName);
 	}
 
 	public VersionSeries convert(){
 		VersionSeries vs = new VersionSeries(super.convert());
-		// TCK DEBUG: Log the values being converted
-		System.err.println("[TCK DEBUG] CouchVersionSeries.convert() - ID: " + getId() + 
-			", versionSeriesCheckedOut field=" + versionSeriesCheckedOut + 
-			", isVersionSeriesCheckedOut()=" + isVersionSeriesCheckedOut() +
-			", versionSeriesCheckedOutBy=" + versionSeriesCheckedOutBy +
-			", versionSeriesCheckedOutId=" + versionSeriesCheckedOutId);
 		vs.setVersionSeriesCheckedOut(isVersionSeriesCheckedOut());
 		vs.setVersionSeriesCheckedOutBy(getVersionSeriesCheckedOutBy());
 		vs.setVersionSeriesCheckedOutId(getVersionSeriesCheckedOutId());
