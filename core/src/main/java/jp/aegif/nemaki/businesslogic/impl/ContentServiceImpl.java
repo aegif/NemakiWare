@@ -1113,24 +1113,24 @@ public class ContentServiceImpl implements ContentService {
 		contentDaoService.delete(repositoryId, pwc.getAttachmentNodeId());
 		contentDaoService.delete(repositoryId, pwc.getId());
 
-		VersionSeries vs = getVersionSeries(repositoryId, pwc);
-		// Reverse the effect of checkout
-		setModifiedSignature(callContext, vs);
-		vs.setVersionSeriesCheckedOut(false);
-		vs.setVersionSeriesCheckedOutBy("");
-		vs.setVersionSeriesCheckedOutId("");
-		contentDaoService.update(repositoryId, vs);
+	VersionSeries vs = getVersionSeries(repositoryId, pwc);
+	// Reverse the effect of checkout
+	setModifiedSignature(callContext, vs);
+	vs.setVersionSeriesCheckedOut(false);
+	vs.setVersionSeriesCheckedOutBy(null);
+	vs.setVersionSeriesCheckedOutId(null);
+	contentDaoService.update(repositoryId, vs);
 
-		// CRITICAL TCK FIX: Update all versions in version series to reflect canceled checkout state
-		// This ensures cmis:isVersionSeriesCheckedOut and related properties are updated
-		List<Document> versions = contentDaoService.getAllVersions(repositoryId, vs.getId());
-		if (CollectionUtils.isNotEmpty(versions)) {
-			for (Document version : versions) {
-				// Update versioning properties to reflect VersionSeries state (no PWC filtering needed)
-				version.setVersionSeriesCheckedOut(false);
-				version.setVersionSeriesCheckedOutBy("");
-				version.setVersionSeriesCheckedOutId("");
-				contentDaoService.update(repositoryId, version);
+	// CRITICAL TCK FIX: Update all versions in version series to reflect canceled checkout state
+	// This ensures cmis:isVersionSeriesCheckedOut and related properties are updated
+	List<Document> versions = contentDaoService.getAllVersions(repositoryId, vs.getId());
+	if (CollectionUtils.isNotEmpty(versions)) {
+		for (Document version : versions) {
+			// Update versioning properties to reflect VersionSeries state (no PWC filtering needed)
+			version.setVersionSeriesCheckedOut(false);
+			version.setVersionSeriesCheckedOutBy(null);
+			version.setVersionSeriesCheckedOutId(null);
+			contentDaoService.update(repositoryId, version);
 				
 				// CRITICAL FIX: Invalidate cache for updated version to ensure UI sees updated properties
 				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(version.getId());
@@ -1365,25 +1365,31 @@ public class ContentServiceImpl implements ContentService {
 			Document d, Document former) {
 		d.setVersionSeriesId(former.getVersionSeriesId());
 
-		switch (versioningState) {
-		case MAJOR:
-			d.setLatestVersion(true);
-			d.setMajorVersion(true);
-			d.setLatestMajorVersion(true);
-			d.setVersionLabel(increasedVersionLabel(former, versioningState));
-			d.setPrivateWorkingCopy(false);
-			// Update former version flags (refresh from DB to avoid CouchDB conflicts)
-			updateFormerVersionFlags(repositoryId, former, true);
-			break;
-		case MINOR:
-			d.setLatestVersion(true);
-			d.setMajorVersion(false);
-			d.setLatestMajorVersion(false);
-			d.setVersionLabel(increasedVersionLabel(former, versioningState));
-			d.setPrivateWorkingCopy(false);
-			// Update former version flags (refresh from DB to avoid CouchDB conflicts)
-			updateFormerVersionFlags(repositoryId, former, false);
-			break;
+	switch (versioningState) {
+	case MAJOR:
+		d.setLatestVersion(true);
+		d.setMajorVersion(true);
+		d.setLatestMajorVersion(true);
+		d.setVersionLabel(increasedVersionLabel(former, versioningState));
+		d.setPrivateWorkingCopy(false);
+		d.setVersionSeriesCheckedOut(false);
+		d.setVersionSeriesCheckedOutBy(null);
+		d.setVersionSeriesCheckedOutId(null);
+		// Update former version flags (refresh from DB to avoid CouchDB conflicts)
+		updateFormerVersionFlags(repositoryId, former, true);
+		break;
+	case MINOR:
+		d.setLatestVersion(true);
+		d.setMajorVersion(false);
+		d.setLatestMajorVersion(false);
+		d.setVersionLabel(increasedVersionLabel(former, versioningState));
+		d.setPrivateWorkingCopy(false);
+		d.setVersionSeriesCheckedOut(false);
+		d.setVersionSeriesCheckedOutBy(null);
+		d.setVersionSeriesCheckedOutId(null);
+		// Update former version flags (refresh from DB to avoid CouchDB conflicts)
+		updateFormerVersionFlags(repositoryId, former, false);
+		break;
 		case CHECKEDOUT:
 			d.setLatestVersion(false);
 			d.setMajorVersion(false);
@@ -1717,13 +1723,24 @@ public class ContentServiceImpl implements ContentService {
 
 	private String copyAttachment(CallContext callContext, String repositoryId, String attachmentId) {
 		AttachmentNode original = getAttachment(repositoryId, attachmentId);
-		ContentStream cs = new ContentStreamImpl(original.getName(), BigInteger.valueOf(original.getLength()),
-				original.getMimeType(), original.getInputStream());
+		
+		String mimeType = original.getMimeType();
+		if (mimeType == null || mimeType.isEmpty()) {
+			mimeType = "application/octet-stream";
+		}
+		
+		String fileName = original.getName();
+		if (fileName == null || fileName.isEmpty()) {
+			fileName = "-";
+		}
+		
+		ContentStream cs = new ContentStreamImpl(fileName, BigInteger.valueOf(original.getLength()),
+				mimeType, original.getInputStream());
 
 		AttachmentNode copy = new AttachmentNode();
-		copy.setName(original.getName());
+		copy.setName(fileName);
 		copy.setLength(original.getLength());
-		copy.setMimeType(original.getMimeType());
+		copy.setMimeType(mimeType);
 		setSignature(callContext, copy);
 
 		return contentDaoService.createAttachment(repositoryId, copy, cs);
@@ -2429,7 +2446,12 @@ public class ContentServiceImpl implements ContentService {
 
 	private String createAttachment(CallContext callContext, String repositoryId, ContentStream contentStream) {
 		AttachmentNode a = new AttachmentNode();
-		a.setMimeType(contentStream.getMimeType());
+		
+		String mimeType = contentStream.getMimeType();
+		if (mimeType == null || mimeType.isEmpty()) {
+			mimeType = "application/octet-stream";
+		}
+		a.setMimeType(mimeType);
 		
 		// CRITICAL FIX: Calculate actual stream size when length is unknown (-1) or invalid (0 or negative)
 		// BUT avoid consuming the stream if it doesn't support mark/reset
@@ -2457,7 +2479,13 @@ public class ContentServiceImpl implements ContentService {
 		}
 		
 		a.setLength(streamLength);
-		a.setName(contentStream.getFileName());
+		
+		String fileName = contentStream.getFileName();
+		if (fileName == null || fileName.isEmpty()) {
+			fileName = "-";
+		}
+		a.setName(fileName);
+		
 		setSignature(callContext, a);
 		return contentDaoService.createAttachment(repositoryId, a, contentStream);
 	}
