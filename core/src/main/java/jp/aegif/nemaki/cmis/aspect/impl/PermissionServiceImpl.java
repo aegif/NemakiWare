@@ -450,10 +450,30 @@ public class PermissionServiceImpl implements PermissionService {
 		// Versioning Services
 		if (PermissionMapping.CAN_CHECKOUT_DOCUMENT.equals(key))
 			return BaseTypeId.CMIS_DOCUMENT.value().equals(baseType);
-		if (PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT.equals(key))
-			return BaseTypeId.CMIS_DOCUMENT.value().equals(baseType);
-		if (PermissionMapping.CAN_CHECKIN_DOCUMENT.equals(key))
-			return BaseTypeId.CMIS_DOCUMENT.value().equals(baseType);
+		if (PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT.equals(key)) {
+			if (!BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)) {
+				log.error("CAN_CANCEL_CHECKOUT_DOCUMENT: baseType is not DOCUMENT: " + baseType);
+				return false;
+			}
+			if (content instanceof Document) {
+				Document doc = (Document) content;
+				boolean isPWC = doc.isPrivateWorkingCopy();
+				log.error("CAN_CANCEL_CHECKOUT_DOCUMENT: docId=" + doc.getId() + ", isPWC=" + isPWC);
+				return isPWC;
+			}
+			log.error("CAN_CANCEL_CHECKOUT_DOCUMENT: content is not a Document");
+			return false;
+		}
+		if (PermissionMapping.CAN_CHECKIN_DOCUMENT.equals(key)) {
+			if (!BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)) {
+				return false;
+			}
+			if (content instanceof Document) {
+				Document doc = (Document) content;
+				return doc.isPrivateWorkingCopy();
+			}
+			return false;
+		}
 		if (PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES.equals(key))
 			return BaseTypeId.CMIS_DOCUMENT.value().equals(baseType);
 		// Relationship Services

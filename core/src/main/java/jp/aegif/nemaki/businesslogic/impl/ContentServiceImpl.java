@@ -1109,7 +1109,15 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public void cancelCheckOut(CallContext callContext, String repositoryId, String objectId,
 			ExtensionsData extension) {
+		log.error("cancelCheckOut called for objectId: {}", objectId);
 		Document pwc = getDocument(repositoryId, objectId);
+		
+		if (pwc == null) {
+			log.error("Document not found for objectId: {}", objectId);
+			throw new RuntimeException("Document not found: " + objectId);
+		}
+		
+		log.error("Document found: id={}, name={}, isPWC={}", pwc.getId(), pwc.getName(), pwc.isPrivateWorkingCopy());
 
 		writeChangeEvent(callContext, repositoryId, pwc, ChangeType.DELETED);
 

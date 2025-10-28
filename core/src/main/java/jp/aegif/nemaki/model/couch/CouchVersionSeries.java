@@ -27,8 +27,11 @@ import jp.aegif.nemaki.model.VersionSeries;
 
 public class CouchVersionSeries extends CouchNodeBase{
 	private static final long serialVersionUID = 3137549058772266715L;
+	@JsonProperty("versionSeriesCheckedOut")
 	private Boolean versionSeriesCheckedOut;
+	@JsonProperty("versionSeriesCheckedOutBy")
 	private String versionSeriesCheckedOutBy;
+	@JsonProperty("versionSeriesCheckedOutId")
 	private String versionSeriesCheckedOutId;
 	
 	public CouchVersionSeries(){
@@ -61,6 +64,14 @@ public class CouchVersionSeries extends CouchNodeBase{
 	}
 	public void setVersionSeriesCheckedOutId(String versionSeriesCheckedOutId) {
 		this.versionSeriesCheckedOutId = versionSeriesCheckedOutId;
+	}
+
+	@Override
+	protected boolean isExplicitField(String fieldName) {
+		return super.isExplicitField(fieldName) ||
+		       "versionSeriesCheckedOut".equals(fieldName) ||
+		       "versionSeriesCheckedOutBy".equals(fieldName) ||
+		       "versionSeriesCheckedOutId".equals(fieldName);
 	}
 
 	public VersionSeries convert(){
