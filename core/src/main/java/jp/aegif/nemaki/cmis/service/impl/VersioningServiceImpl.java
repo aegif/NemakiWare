@@ -121,6 +121,20 @@ public class VersioningServiceImpl implements VersioningService {
 			// //////////////////
 			Document document = contentService.getDocument(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, document, objectId);
+			
+			// CRITICAL TCK FIX: If the objectId is not a PWC, get the PWC from the version series
+			// CMIS spec allows cancelCheckOut to be called with either the PWC ID or the base document ID
+			String pwcId = objectId;
+			if (!document.isPrivateWorkingCopy()) {
+				VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
+				if (vs != null && vs.isVersionSeriesCheckedOut()) {
+					pwcId = vs.getVersionSeriesCheckedOutId();
+					log.error("TCK FIX: cancelCheckOut called with base document ID " + objectId + ", using PWC ID " + pwcId);
+					document = contentService.getDocument(repositoryId, pwcId);
+					exceptionService.objectNotFound(DomainType.OBJECT, document, pwcId);
+				}
+			}
+			
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
 
@@ -129,10 +143,10 @@ public class VersioningServiceImpl implements VersioningService {
 			// //////////////////
 			exceptionService.constraintVersionable(repositoryId, document.getObjectType());
 
-			// //////////////////
-			// Body of the method
-			// //////////////////
-			contentService.cancelCheckOut(callContext, repositoryId, objectId, extension);
+		// //////////////////
+		// Body of the method
+		// //////////////////
+		contentService.cancelCheckOut(callContext, repositoryId, pwcId, extension);
 
 			//remove cache
 			

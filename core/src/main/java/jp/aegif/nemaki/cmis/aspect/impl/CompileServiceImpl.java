@@ -825,11 +825,17 @@ public class CompileServiceImpl implements CompileService {
 
 		// Versioning action(checkOut / checkIn)
 		if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKOUT_DOCUMENT)) {
-			return dtdf.isVersionable() && !isVersionSeriesCheckedOutSafe(versionSeries) && document.isLatestVersion();
+			boolean result = dtdf.isVersionable() && !isVersionSeriesCheckedOutSafe(versionSeries) && document.isLatestVersion();
+			log.error("CAN_CHECKOUT_DOCUMENT: docId=" + document.getId() + ", isVersionable=" + dtdf.isVersionable() + ", isCheckedOut=" + isVersionSeriesCheckedOutSafe(versionSeries) + ", isLatestVersion=" + document.isLatestVersion() + ", result=" + result);
+			return result;
 		} else if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKIN_DOCUMENT)) {
-			return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
+			boolean result = dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
+			log.error("CAN_CHECKIN_DOCUMENT: docId=" + document.getId() + ", isVersionable=" + dtdf.isVersionable() + ", isCheckedOut=" + isVersionSeriesCheckedOutSafe(versionSeries) + ", isPWC=" + document.isPrivateWorkingCopy() + ", result=" + result);
+			return result;
 		} else if (permissionMappingKey.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
-			return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
+			boolean result = dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
+			log.error("CAN_CANCEL_CHECKOUT_DOCUMENT: docId=" + document.getId() + ", isVersionable=" + dtdf.isVersionable() + ", isCheckedOut=" + isVersionSeriesCheckedOutSafe(versionSeries) + ", isPWC=" + document.isPrivateWorkingCopy() + ", result=" + result);
+			return result;
 		}
 
 		// Lock as an effect of checkOut
