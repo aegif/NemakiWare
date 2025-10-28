@@ -2061,6 +2061,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		// This avoids unnecessary DB reads and race conditions in consecutive operations
 		if (update.getRevision() == null || update.getRevision().isEmpty()) {
 			CouchVersionSeries cvs = connectorPool.getClient(repositoryId).get(CouchVersionSeries.class, versionSeries.getId());
+			if (cvs == null) {
+				throw new IllegalArgumentException("VersionSeries " + versionSeries.getId() + " not found in database - " +
+					"cannot update non-existent version series");
+			}
 			update.setRevision(cvs.getRevision());
 			log.debug("Fetched latest revision for version series update: " + cvs.getRevision());
 		} else {
