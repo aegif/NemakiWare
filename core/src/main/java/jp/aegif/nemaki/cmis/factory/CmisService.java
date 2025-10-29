@@ -181,27 +181,20 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 			Boolean isLatest = getBooleanProperty(object, PropertyIds.IS_LATEST_VERSION);
 			info.setIsCurrentVersion(isLatest == null ? true : isLatest.booleanValue());
 
-			Boolean isCheckedOut = getBooleanProperty(object, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
-			if (isCheckedOut != null && isCheckedOut.booleanValue()) {
-				info.setWorkingCopyId(getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
+		Boolean isCheckedOut = getBooleanProperty(object, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
+		Boolean isPWC = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
 
-				// get latest version
-				// // Nemaki Cusomization START ////
-				/*
-				 * List<ObjectData> versions = getAllVersions(repositoryId,
-				 * object.getId(), info.getVersionSeriesId(), null,
-				 * Boolean.FALSE, null); if (versions != null && versions.size()
-				 * > 0) {
-				 * info.setWorkingCopyOriginalId(versions.get(0).getId()); }
-				 */
+		if (isCheckedOut != null && isCheckedOut.booleanValue()) {
+			String pwcId = getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID);
 
-				// NOTE:Spec2.2.7.6 only says the first element of
-				// getAllVersions MUST be PWC.
-				// When isCheckedOut = true, PWC MUST exsits, and
-				// cmis:versionSeriesCheckedOutId is PWC id(2.1.13.5.1).
-				info.setWorkingCopyOriginalId(getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
-				// // Nemaki Cusomization END ////
+			if (isPWC != null && isPWC.booleanValue()) {
+				info.setWorkingCopyId(null);
+				info.setWorkingCopyOriginalId(null);
+			} else {
+				info.setWorkingCopyId(pwcId);
+				info.setWorkingCopyOriginalId(null);
 			}
+		}
 		}
 
 		// content

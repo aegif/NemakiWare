@@ -717,9 +717,6 @@ public class CompileServiceImpl implements CompileService {
 	@Override
 	public AllowableActions compileAllowableActions(CallContext callContext, String repositoryId, Content content,
 			Acl acl) {
-		// DEBUG: Log entry into compileAllowableActions
-		log.debug("compileAllowableActions CALLED: contentId=" + content.getId() + ", objectType=" + content.getObjectType() + ", user=" + callContext.getUsername());
-		
 		// Get parameters to calculate AllowableActions
 		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content.getObjectType());
 		Acl contentAcl = content.getAcl();
@@ -730,27 +727,13 @@ public class CompileServiceImpl implements CompileService {
 				.getPermissionMapping();
 		String baseType = content.getType();
 
-
-		// CRITICAL DEBUG: Log content type at entry
-
-		// Calculate AllowableActions
-		Set<Action> actionSet = new HashSet<Action>();
-		VersionSeries versionSeries = null;
-		if (content.isDocument()) {
-			Document d = (Document) content;
-			versionSeries = contentService.getVersionSeries(repositoryId, d);
-
-			// TCK DEBUG: Log version series state for PWC allowable actions troubleshooting
-			System.err.println("[TCK DEBUG] compileAllowableActions for document: " + d.getId());
-			System.err.println("[TCK DEBUG]   isPrivateWorkingCopy: " + d.isPrivateWorkingCopy());
-			System.err.println("[TCK DEBUG]   versionSeries: " + (versionSeries == null ? "NULL" : "NOT NULL"));
-			if (versionSeries != null) {
-				System.err.println("[TCK DEBUG]   versionSeries.getId: " + versionSeries.getId());
-				System.err.println("[TCK DEBUG]   versionSeries.isVersionSeriesCheckedOut: " + versionSeries.isVersionSeriesCheckedOut());
-				System.err.println("[TCK DEBUG]   versionSeries.getVersionSeriesCheckedOutBy: " + versionSeries.getVersionSeriesCheckedOutBy());
-				System.err.println("[TCK DEBUG]   versionSeries.getVersionSeriesCheckedOutId: " + versionSeries.getVersionSeriesCheckedOutId());
-			}
-		}
+	// Calculate AllowableActions
+	Set<Action> actionSet = new HashSet<Action>();
+	VersionSeries versionSeries = null;
+	if (content.isDocument()) {
+		Document d = (Document) content;
+		versionSeries = contentService.getVersionSeries(repositoryId, d);
+	}
 
 		// Get user information from call context  
 		String userName = callContext.getUsername();
@@ -812,11 +795,6 @@ public class CompileServiceImpl implements CompileService {
 		AllowableActionsImpl allowableActions = new AllowableActionsImpl();
 		allowableActions.setAllowableActions(actionSet);
 
-		// CRITICAL DEBUG: Log final allowable actions for relationships
-		if (content.getObjectType().equals("cmis:relationship") ||
-		    (tdf != null && BaseTypeId.CMIS_RELATIONSHIP == tdf.getBaseTypeId())) {
-		}
-
 		return allowableActions;
 	}
 
@@ -825,18 +803,12 @@ public class CompileServiceImpl implements CompileService {
 
 		// Versioning action(checkOut / checkIn)
 		if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKOUT_DOCUMENT)) {
-			boolean result = dtdf.isVersionable() && !isVersionSeriesCheckedOutSafe(versionSeries) && document.isLatestVersion();
-			log.error("CAN_CHECKOUT_DOCUMENT: docId=" + document.getId() + ", isVersionable=" + dtdf.isVersionable() + ", isCheckedOut=" + isVersionSeriesCheckedOutSafe(versionSeries) + ", isLatestVersion=" + document.isLatestVersion() + ", result=" + result);
-			return result;
+			return dtdf.isVersionable() && !isVersionSeriesCheckedOutSafe(versionSeries) && document.isLatestVersion();
 		} else if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKIN_DOCUMENT)) {
-			boolean result = dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
-			log.error("CAN_CHECKIN_DOCUMENT: docId=" + document.getId() + ", isVersionable=" + dtdf.isVersionable() + ", isCheckedOut=" + isVersionSeriesCheckedOutSafe(versionSeries) + ", isPWC=" + document.isPrivateWorkingCopy() + ", result=" + result);
-			return result;
-		} else if (permissionMappingKey.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
-			boolean result = dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
-			log.error("CAN_CANCEL_CHECKOUT_DOCUMENT: docId=" + document.getId() + ", isVersionable=" + dtdf.isVersionable() + ", isCheckedOut=" + isVersionSeriesCheckedOutSafe(versionSeries) + ", isPWC=" + document.isPrivateWorkingCopy() + ", result=" + result);
-			return result;
-		}
+			return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
+	} else if (permissionMappingKey.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
+		return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
+	}
 
 		// Lock as an effect of checkOut
 		if (dtdf.isVersionable()) {

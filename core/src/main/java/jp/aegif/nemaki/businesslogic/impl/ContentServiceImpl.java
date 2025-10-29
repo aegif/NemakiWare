@@ -1056,10 +1056,11 @@ public class ContentServiceImpl implements ContentService {
 
 		// CRITICAL TCK FIX: Set versionSeriesCheckedOutId for PWC after it has been created and has an ID
 		log.error("*** CRITICAL TCK FIX: Setting versionSeriesCheckedOutId for PWC {} ***", result.getId());
+		result.setPrivateWorkingCopy(true); // CRITICAL FIX: Ensure PWC flag is set before update
 		result.setVersionSeriesCheckedOutId(result.getId());
 		result.setVersionSeriesCheckedOut(true);
 		result.setVersionSeriesCheckedOutBy(callContext.getUsername());
-		contentDaoService.update(repositoryId, result);
+		result = contentDaoService.update(repositoryId, result); // CRITICAL FIX: Use updated result
 		log.error("*** CRITICAL TCK FIX: PWC versionSeriesCheckedOutId set to: {} ***", result.getVersionSeriesCheckedOutId());
 
 	// Modify versionSeries
@@ -1485,11 +1486,6 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	private void updateVersionSeriesWithPwc(CallContext callContext, String repositoryId, VersionSeries versionSeries,
 			Document pwc) {
-
-	// CRITICAL FIX: Invalidate cache before fetching to ensure we get fresh data from DB
-	// This prevents using stale cached data if VersionSeries was recently deleted
-	nemakiCachePool.get(repositoryId).getObjectDataCache().remove(versionSeries.getId());
-	log.error("Invalidated cache for VersionSeries before fetch: {}", versionSeries.getId());
 		
 		// CRITICAL FIX: Fetch latest VersionSeries from DB to ensure _rev synchronization
 		// This prevents Cloudant SDK revision conflicts during update operations
