@@ -1,3 +1,138 @@
+/**
+ * Large File Upload Tests
+ *
+ * Specialized test suite for large file upload functionality (>100MB):
+ * - Tests upload performance and progress tracking for files exceeding 100MB
+ * - Validates upload cancellation gracefully handles large in-progress uploads
+ * - Verifies file size display accuracy and proper cleanup
+ * - Implements Playwright-specific workarounds for >50MB buffer limitation
+ * - Supports extended timeouts for large file operations
+ *
+ * Test Coverage (2 tests):
+ * 1. Upload large file (110MB) with progress tracking - Validates upload success, progress monitoring, file size display
+ * 2. Handle upload cancellation gracefully (50MB) - Tests cancel button functionality and cleanup
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ *
+ * 1. Playwright 50MB Buffer Limitation Workaround (Lines 50-64, 179-188):
+ *    - Playwright setInputFiles() has 50MB buffer limit
+ *    - Cannot use Buffer.from() directly for >50MB files
+ *    - Solution: Create temporary file on disk, pass file path to setInputFiles()
+ *    - Cleanup: Delete temp file in finally block
+ *    - Rationale: Avoids "Buffer too large" error for large file uploads
+ *    - Implementation: os.tmpdir() + fs.writeFileSync() + fs.unlinkSync()
+ *
+ * 2. Extended Timeout Strategy for Large Operations (Lines 41, 116, 170):
+ *    - Large file upload: 5-minute timeout (300000ms)
+ *    - Cancel test: 2-minute timeout (120000ms)
+ *    - Success message wait: 2 minutes (120000ms)
+ *    - Deletion wait: 5 seconds (large files take time to delete)
+ *    - Rationale: 110MB upload may take several minutes depending on network/backend
+ *    - Default Playwright timeout (30s) too short for large operations
+ *
+ * 3. Progress Tracking Monitoring Pattern (Lines 80-112):
+ *    - Looks for Ant Design progress indicators: .ant-progress, .ant-upload-list-item-progress
+ *    - Monitors progress text changes: /(\d+)%/ regex extraction
+ *    - Logs progress increments: "Upload progress: 45%"
+ *    - Polls every 1 second for 30 iterations (30 seconds max)
+ *    - Rationale: Visual confirmation that upload is progressing, not stalled
+ *    - Implementation: Loop with textContent extraction and regex matching
+ *
+ * 4. Temporary File Lifecycle Management (Lines 62-64, 161-166, 186-188, 264-270):
+ *    - Create: os.tmpdir() + unique filename with Date.now()
+ *    - Write: fs.writeFileSync() with Buffer.alloc()
+ *    - Delete: fs.unlinkSync() in finally block
+ *    - Rationale: Ensures cleanup even if test fails or throws
+ *    - Pattern: try-finally guarantees temp file deletion
+ *    - Example: /tmp/large-file-1730000000000.bin
+ *
+ * 5. Upload Cancellation Testing Pattern (Lines 169-271):
+ *    - Uploads 50MB file (smaller than main test for faster execution)
+ *    - Waits 2 seconds for upload to start showing progress
+ *    - Looks for cancel button: .ant-upload-list-item button with close/delete icon
+ *    - Clicks cancel, verifies file NOT in document list
+ *    - Fallback: If cancel not found, skip test with message
+ *    - Rationale: Cancel UI may not appear if upload too fast
+ *
+ * 6. File Size Pattern Generation (Lines 52-57, 180-183):
+ *    - Creates Buffer with Buffer.alloc(fileSize)
+ *    - Fills with repeating pattern: "LARGE_FILE_TEST_CONTENT"
+ *    - Pattern written every 1024 bytes for compressibility
+ *    - Rationale: Some backends compress data, pattern ensures realistic test
+ *    - Performance: Pattern fill faster than random data generation
+ *
+ * 7. File Size Display Verification (Lines 132-139):
+ *    - Finds table cell containing /MB|KB|GB/i
+ *    - Extracts displayed file size text
+ *    - Verifies contains "MB" (for 110MB file)
+ *    - Logs actual displayed size for manual verification
+ *    - Rationale: Ensures UI correctly formats and displays large file sizes
+ *
+ * 8. Cleanup with Delete Confirmation (Lines 141-156, 225-240, 245-262):
+ *    - Clicks file row to select
+ *    - Finds delete button with [data-icon="delete"]
+ *    - Clicks delete, waits for popconfirm
+ *    - Clicks OK/確認 button in confirmation dialog
+ *    - Waits 5 seconds for large file deletion to complete
+ *    - Rationale: Large files may take time to delete from backend storage
+ *
+ * 9. Console Logging for Diagnostic Visibility (Lines 48, 59, 64, 76, 83, 100-105, 117-120, 129, 154):
+ *    - Logs each major step: "Preparing to upload", "Buffer created", "File set to input"
+ *    - Logs progress increments: "Upload progress: 67%"
+ *    - Logs success/timeout: "Upload success message appeared"
+ *    - Logs cleanup: "Large file deleted", "Temporary file cleaned up"
+ *    - Rationale: Provides visibility into test execution for CI/CD debugging
+ *
+ * 10. Mobile Browser Support (Lines 20-30, 42-43, 69, 171-172, 193):
+ *     - Detects mobile viewport: browserName === 'chromium' && width <= 414
+ *     - Closes sidebar in beforeEach to prevent overlay blocking
+ *     - Uses force click for upload button: click({ force: true })
+ *     - Rationale: Mobile layouts may have sidebar overlay blocking buttons
+ *     - Implementation: Same pattern as other mobile-aware tests
+ *
+ * Expected Results:
+ * - Test 1: 110MB file uploads successfully with progress tracking, appears in list, size displayed correctly
+ * - Test 2: 50MB file upload can be cancelled, file does not appear in list after cancellation
+ * - Both tests: Temporary files cleaned up from disk regardless of test outcome
+ *
+ * Performance Characteristics:
+ * - Test 1 execution: 2-5 minutes depending on network and backend
+ * - Test 2 execution: 30-60 seconds (smaller file, cancel quickly)
+ * - Progress monitoring: Polls every 1 second for up to 30 seconds
+ * - Deletion wait: 5 seconds for large files
+ * - Temp file I/O: Minimal (<1 second for 110MB write/delete)
+ *
+ * Debugging Features:
+ * - Comprehensive console logging for each step
+ * - Progress percentage logging shows upload not stalled
+ * - Success/timeout messages logged
+ * - Temp file path logged for manual inspection if needed
+ * - File size display logged for verification
+ *
+ * Known Limitations:
+ * - Requires Playwright temp file workaround (cannot use >50MB buffers)
+ * - Upload speed depends on network and backend (may timeout on slow connections)
+ * - Cancel button may not appear if upload completes too quickly
+ * - Progress tracking requires Ant Design Upload component with progress UI
+ * - Large file deletion may take time (5-second wait may be insufficient)
+ * - Temp file storage: requires sufficient disk space in os.tmpdir()
+ *
+ * Relationship to Other Tests:
+ * - Complements document-properties-edit.spec.ts (tests large files, not metadata)
+ * - Uses same upload modal pattern as document-management.spec.ts
+ * - More specialized than basic upload tests (focuses on large file edge cases)
+ * - Validates backend file size handling beyond UI upload functionality
+ *
+ * Common Failure Scenarios:
+ * - "Buffer too large" error: Attempted to use buffer instead of temp file
+ * - Upload timeout: Backend or network too slow for 110MB in 5 minutes
+ * - Progress tracking not found: Upload component doesn't show progress UI
+ * - Cancel button not found: Upload completed before cancel could be clicked
+ * - File not in list after upload: Success message timeout or backend processing delay
+ * - Temp file cleanup fails: Insufficient disk permissions or file locked
+ * - Deletion timeout: Large file backend deletion takes >5 seconds
+ */
+
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';

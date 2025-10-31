@@ -96,6 +96,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
+        log.error("*** TCK DEBUG SERVICE START: method=" + request.getMethod() + ", URI=" + request.getRequestURI() + " ***");
+
         if (log.isDebugEnabled()) {
             log.debug("Browser Binding service: " + request.getMethod() + " " + request.getRequestURI());
         }
@@ -707,7 +709,32 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 return;
             }
         }
-        
+
+        // CRITICAL FIX: Route GET requests with object IDs in path to custom handler
+        // URL format: /browser/{repositoryId}/{objectId}?cmisselector=object
+        log.error("*** TCK DEBUG ROUTING: method=" + method + ", pathInfo=" + pathInfo + ", cmisselector=" + cmisselector + " ***");
+        if ("GET".equals(method) && pathInfo != null && cmisselector != null) {
+            String[] pathParts = pathInfo.split("/");
+            log.error("*** TCK DEBUG ROUTING: pathParts.length=" + pathParts.length + ", pathParts=" + java.util.Arrays.toString(pathParts) + " ***");
+            // pathParts: ["", "bedroom", "25dcbeae8fb9cb16a29220dbc40c4150"] for /bedroom/25dcbeae8fb9cb16a29220dbc40c4150
+            if (pathParts.length >= 3 && pathParts[0].isEmpty()) {
+                // We have repository ID and object ID in path
+                String[] pathFragments = new String[]{pathParts[1], pathParts[2]}; // [repositoryId, objectId]
+                log.error("*** TCK DEBUG: Detected object-specific GET request, calling handleObjectSpecificGetOperation ***");
+                log.error("*** TCK DEBUG: pathInfo=" + pathInfo + ", pathFragments=" + java.util.Arrays.toString(pathFragments) + ", cmisselector=" + cmisselector + " ***");
+                try {
+                    handleObjectSpecificGetOperation(finalRequest, response, pathFragments, cmisselector);
+                    return; // Don't call super.service()
+                } catch (ServletException | IOException e) {
+                    log.error("*** TCK DEBUG: handleObjectSpecificGetOperation threw servlet/IO exception: " + e.getMessage(), e);
+                    throw e;
+                } catch (Exception e) {
+                    log.error("*** TCK DEBUG: handleObjectSpecificGetOperation threw unexpected exception: " + e.getMessage(), e);
+                    throw new ServletException("Error handling object-specific GET operation", e);
+                }
+            }
+        }
+
         try {
             super.service(finalRequest, response);
         } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException objNotFoundException) {
@@ -919,14 +946,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
             };
             
-            // Create call context for CMIS service operations
-            // CRITICAL FIX: Use correct OpenCMIS BrowserCallContextImpl constructor pattern
-            // Authentication is handled automatically by OpenCMIS framework via NemakiAuthCallContextHandler
-            BrowserCallContextImpl callContext = new BrowserCallContextImpl(
-                CallContext.BINDING_BROWSER, CmisVersion.CMIS_1_1, repositoryId,
-                getServletContext(), wrappedRequest, response, getServiceFactory(), null);
-            
-            // Get authenticated CMIS service using proper Browser Binding context
+            // Create call context with proper authentication handling
+            // CRITICAL FIX: Use createContext() method which invokes NemakiAuthCallContextHandler
+            // to extract authentication from wrappedRequest's Authorization header
+            CallContext callContext = createContext(getServletContext(), wrappedRequest, response, null);
+
+            // Get authenticated CMIS service using properly authenticated context
             CmisService service = getServiceFactory().getService(callContext);
             
             // Handle different cmisselector operations
@@ -1014,6 +1039,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Handle object operation - equivalent to getObject CMIS service call
      */
     private Object handleObjectOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+        // TCK DEBUG: Track handleObjectOperation entry
+        log.error("*** TCK DEBUG: handleObjectOperation called for objectId=" + objectId + " ***");
+
         // Parse parameters
         String filter = HttpUtils.getStringParameter(request, "filter");
         Boolean includeAllowableActions = getBooleanParameterSafe(request, "includeAllowableActions");
@@ -1021,14 +1049,22 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String renditionFilter = HttpUtils.getStringParameter(request, "renditionFilter");
         Boolean includePolicyIds = getBooleanParameterSafe(request, "includePolicyIds");
         Boolean includeACL = getBooleanParameterSafe(request, "includeACL");
-        
+
+        log.error("*** TCK DEBUG: About to call service.getObject for objectId=" + objectId + " ***");
+
         // Call CMIS service
         org.apache.chemistry.opencmis.commons.data.ObjectData object = service.getObject(
             repositoryId, objectId, filter,
             includeAllowableActions, includeRelationships, renditionFilter,
             includePolicyIds, includeACL, null
         );
-        
+
+        log.error("*** TCK DEBUG: service.getObject returned, object=" + (object != null ? "NOT NULL" : "NULL") + " ***");
+        if (object != null && object.getProperties() != null) {
+            org.apache.chemistry.opencmis.commons.data.Properties props = object.getProperties();
+            log.error("*** TCK DEBUG: Properties count=" + (props.getProperties() != null ? props.getProperties().size() : "NULL") + " ***");
+        }
+
         return object;
     }
     

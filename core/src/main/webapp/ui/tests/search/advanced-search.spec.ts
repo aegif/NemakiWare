@@ -1,6 +1,153 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 
+/**
+ * Advanced Search E2E Tests
+ *
+ * Comprehensive end-to-end tests for NemakiWare search functionality:
+ * - Search page accessibility and interface rendering
+ * - Basic search execution with query input
+ * - Search request/response monitoring (CMIS Browser Binding integration)
+ * - Search result navigation without errors
+ * - Navigation back to documents page
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ * 1. Flexible Language Support (Lines 68, 75, 128, 132, 177, 204):
+ *    - Supports both Japanese (検索) and English ("Search") text patterns
+ *    - Dual placeholder matching: "検索" and "search"
+ *    - Button text patterns: "検索", "Search"
+ *    - Menu navigation: "ドキュメント" (Documents)
+ *    - Makes tests resilient to UI language configuration changes
+ *    - Pattern: input[placeholder*="検索"], input[placeholder*="search"]
+ *    - Rationale: NemakiWare may be deployed in multilingual environments
+ *
+ * 2. Mobile Browser Support (Lines 17-42, 60-62, 78, 99-100, 134):
+ *    - Sidebar close logic in beforeEach prevents overlay blocking clicks
+ *    - Viewport width ≤414px triggers mobile-specific behavior
+ *    - Force click option for search button: .click(isMobile ? { force: true } : {})
+ *    - Menu toggle detection with graceful fallback
+ *    - Alternative toggle selector: '.ant-layout-header button, banner button'
+ *    - Applied to all search interactions (input, button clicks)
+ *    - Rationale: Mobile layouts have sidebar overlays that block UI interactions
+ *
+ * 3. Smart Conditional Skipping (Lines 93-94, 164-165, 195-196):
+ *    - Tests check for search UI elements before attempting operations
+ *    - Graceful test.skip() when search functionality not available
+ *    - Better than hard failures - tests self-heal when features are implemented
+ *    - Console messages explain why tests skipped (aids debugging)
+ *    - Skip conditions: search input not found, search functionality not available
+ *    - Rationale: Search UI may not be fully implemented in all deployments
+ *
+ * 4. Network Request Monitoring (Lines 102-122, 141-144):
+ *    - Captures CMIS Browser Binding search/query requests
+ *    - URL pattern: includes('browser') && (includes('search') || includes('query'))
+ *    - Logs request URLs and response status codes
+ *    - Response body logging (first 200 chars) for debugging
+ *    - Tracks total search request count
+ *    - Console output for each request with index numbering
+ *    - Rationale: Verifies search integrates correctly with CMIS backend
+ *
+ * 5. Error Detection Pattern (Lines 147-159):
+ *    - Monitors for Ant Design error messages (.ant-message-error)
+ *    - Expects zero error messages after search execution
+ *    - Logs error message text if present (debugging aid)
+ *    - Console markers: ✅ success, ❌ error with "PRODUCT BUG" label
+ *    - Assertion: expect(errorCount).toBe(0)
+ *    - Rationale: Search errors indicate backend integration problems
+ *
+ * 6. URL Verification (Lines 47, 162, 209):
+ *    - Confirms navigation to /search page (Line 47)
+ *    - Verifies staying on /search after search execution (Line 162)
+ *    - Validates navigation to /documents after menu click (Line 209)
+ *    - Pattern: expect(page.url()).toContain('/search')
+ *    - Rationale: Ensures React Router navigation works correctly
+ *
+ * 7. Result Interaction Testing (Lines 183-191):
+ *    - Tests clicking on search result table rows/links
+ *    - Flexible selector: '.ant-table tbody tr a, .ant-table tbody tr td'
+ *    - Verifies navigation occurs without error messages
+ *    - Does not assert specific destination (could be detail view or download)
+ *    - Rationale: Result click behavior may vary by document type
+ *
+ * 8. Multiple Selector Fallbacks (Lines 68, 75, 128, 132, 177):
+ *    - Search input: placeholder matching OR .ant-input-search input
+ *    - Search button: Japanese text OR English text OR .ant-input-search-button
+ *    - Results container: .ant-table OR .search-results OR .ant-list
+ *    - First matching selector used (.first() method)
+ *    - Rationale: Search UI implementation may use different Ant Design components
+ *
+ * 9. Search Method Flexibility (Lines 74-82, 132-137, 177-180):
+ *    - Primary method: Click search button
+ *    - Fallback method: Press Enter key in search input
+ *    - Button detection first, Enter key if button not found
+ *    - Both methods trigger CMIS search operation
+ *    - Rationale: Supports both explicit button clicks and keyboard-driven workflows
+ *
+ * 10. Response Body Logging (Lines 115-120):
+ *     - Captures first 200 characters of search response body
+ *     - Try-catch block for response.text() (may fail for binary responses)
+ *     - Console output: "Could not read response body" on error
+ *     - Helps diagnose CMIS Browser Binding response format issues
+ *     - Rationale: Search response structure validation for debugging
+ *
+ * Test Coverage:
+ * 1. ✅ Display Search Page (URL /search, interface visible, screenshot)
+ * 2. ✅ Basic Search (input query "test", execute, verify results container)
+ * 3. ✅ Execute Search Without Errors (CMIS requests, no error messages, URL persistence)
+ * 4. ✅ Navigate to Document from Results (click result, no errors)
+ * 5. ✅ Navigate Back from Search (Documents menu → /documents)
+ *
+ * Search Functionality Architecture:
+ * - **Frontend**: React Search component with Ant Design Table for results
+ * - **Backend Integration**: CMIS Browser Binding search/query endpoints
+ * - **Query Processing**: Server-side CMIS SQL query execution
+ * - **Result Rendering**: Table display with clickable document links
+ * - **Error Handling**: Ant Design message component for user feedback
+ *
+ * CMIS Search Integration:
+ * - **Search Endpoint**: CMIS Browser Binding cmisselector=query
+ * - **Query Language**: CMIS SQL (SELECT * FROM cmis:document WHERE ...)
+ * - **Response Format**: JSON with results array
+ * - **Properties Returned**: cmis:objectId, cmis:name, cmis:contentStreamMimeType, etc.
+ * - **Error Responses**: HTTP error codes + JSON error messages
+ *
+ * UI Verification Patterns:
+ * - Search Input: input with placeholder "検索" or "search"
+ * - Search Button: button with text "検索" or "Search" or .ant-input-search-button
+ * - Results Container: .ant-table or .search-results or .ant-list
+ * - Result Links: .ant-table tbody tr a or .ant-table tbody tr td
+ * - Error Messages: .ant-message-error
+ *
+ * Expected Test Results:
+ * - Search page accessible at /search URL
+ * - Search input and button visible
+ * - Search query "test" or "test-search-query" executes
+ * - CMIS Browser Binding requests logged
+ * - Zero error messages appear
+ * - Results container becomes visible
+ * - Result click navigates without errors
+ * - Documents menu returns to /documents page
+ *
+ * Known Limitations:
+ * - Tests skip gracefully if search UI not implemented
+ * - Does not verify result content accuracy (only presence)
+ * - Does not test advanced search filters (future enhancement)
+ * - Result click destination varies by document type (not asserted)
+ * - Search query terms are simple strings (no complex queries tested)
+ *
+ * Performance Optimizations:
+ * - Uses first() selector method (stops at first match)
+ * - Minimal waits: 1-2 seconds for UI updates
+ * - Network request monitoring doesn't slow tests
+ * - Screenshot only on first test (page display)
+ *
+ * Debugging Features:
+ * - Network request URL logging (Lines 107, 142-144)
+ * - Response status and body logging (Lines 114-120)
+ * - Error message text logging (Lines 152-154)
+ * - Success/error console markers (✅/❌)
+ * - "PRODUCT BUG" label for search errors (Line 154)
+ */
 test.describe('Advanced Search', () => {
   let authHelper: AuthHelper;
 

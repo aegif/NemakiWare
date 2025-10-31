@@ -717,9 +717,6 @@ public class CompileServiceImpl implements CompileService {
 	@Override
 	public AllowableActions compileAllowableActions(CallContext callContext, String repositoryId, Content content,
 			Acl acl) {
-		// DEBUG: Log entry into compileAllowableActions
-		log.debug("compileAllowableActions CALLED: contentId=" + content.getId() + ", objectType=" + content.getObjectType() + ", user=" + callContext.getUsername());
-		
 		// Get parameters to calculate AllowableActions
 		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content.getObjectType());
 		Acl contentAcl = content.getAcl();
@@ -730,16 +727,13 @@ public class CompileServiceImpl implements CompileService {
 				.getPermissionMapping();
 		String baseType = content.getType();
 
-
-		// CRITICAL DEBUG: Log content type at entry
-
-		// Calculate AllowableActions
-		Set<Action> actionSet = new HashSet<Action>();
-		VersionSeries versionSeries = null;
-		if (content.isDocument()) {
-			Document d = (Document) content;
-			versionSeries = contentService.getVersionSeries(repositoryId, d);
-		}
+	// Calculate AllowableActions
+	Set<Action> actionSet = new HashSet<Action>();
+	VersionSeries versionSeries = null;
+	if (content.isDocument()) {
+		Document d = (Document) content;
+		versionSeries = contentService.getVersionSeries(repositoryId, d);
+	}
 
 		// Get user information from call context  
 		String userName = callContext.getUsername();
@@ -801,11 +795,6 @@ public class CompileServiceImpl implements CompileService {
 		AllowableActionsImpl allowableActions = new AllowableActionsImpl();
 		allowableActions.setAllowableActions(actionSet);
 
-		// CRITICAL DEBUG: Log final allowable actions for relationships
-		if (content.getObjectType().equals("cmis:relationship") ||
-		    (tdf != null && BaseTypeId.CMIS_RELATIONSHIP == tdf.getBaseTypeId())) {
-		}
-
 		return allowableActions;
 	}
 
@@ -817,9 +806,9 @@ public class CompileServiceImpl implements CompileService {
 			return dtdf.isVersionable() && !isVersionSeriesCheckedOutSafe(versionSeries) && document.isLatestVersion();
 		} else if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKIN_DOCUMENT)) {
 			return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
-		} else if (permissionMappingKey.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
-			return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
-		}
+	} else if (permissionMappingKey.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
+		return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
+	}
 
 		// Lock as an effect of checkOut
 		if (dtdf.isVersionable()) {

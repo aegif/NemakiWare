@@ -2,6 +2,74 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
+/**
+ * Advanced ACL (Access Control List) Management E2E Tests
+ *
+ * Tests advanced ACL scenarios in NemakiWare CMIS repository:
+ * - Group permission assignment to folders (UI-based, currently skipped)
+ * - Permission inheritance verification from parent to child folders
+ * - Access denied scenarios for restricted resources
+ * - Permission level changes (cmis:all → cmis:read) without breaking access
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ * 1. CMIS API-First Testing Strategy (Lines 270-690):
+ *    - Uses CMIS Browser Binding API directly for folder creation, ACL operations
+ *    - Bypasses UI interactions for reliability and speed
+ *    - Enables precise ACL verification via dedicated ACL endpoint
+ *    - Example: createFolder, applyACL, query operations via HTTP requests
+ *    - Rationale: UI ACL management may not be fully implemented, API is stable
+ *
+ * 2. Comprehensive Cleanup Strategy (Lines 35-73):
+ *    - afterEach hook queries for all test folders matching pattern "acl-test-folder-%"
+ *    - Deletes folders via CMIS API (not UI clicks)
+ *    - Prevents test data accumulation across test runs
+ *    - Non-critical failures logged but don't stop test execution
+ *    - Complements per-test cleanup for maximum reliability
+ *
+ * 3. Unique Test Data per Instance (Lines 8-10, 426, 514):
+ *    - Uses Date.now() timestamps for unique folder names
+ *    - Format: acl-test-folder-${timestamp} or acl-test-folder-${timestamp}-test3
+ *    - Prevents conflicts between parallel test executions
+ *    - Enables reliable cross-browser and concurrent testing
+ *
+ * 4. Mobile Browser Support (Lines 20-30):
+ *    - Sidebar close logic prevents overlay blocking in mobile Chrome
+ *    - Viewport width ≤414px triggers mobile-specific behavior
+ *    - Consistent with other test suites' mobile support pattern
+ *
+ * 5. Permission Inheritance Testing Approach (Lines 243-419):
+ *    - Creates parent folder with specific user permission (testuser: cmis:read)
+ *    - Creates child folder inside parent
+ *    - Verifies child folder ACL via AtomPub XML endpoint
+ *    - Note: CMIS spec allows repositories to implement inheritance differently
+ *    - Test validates NemakiWare's specific inheritance behavior
+ *
+ * 6. Product Bug Investigation (Lines 508-697):
+ *    - Test 4 documents known issue: testuser cannot access folder despite cmis:all permission
+ *    - Includes detailed logging of ACL application, verification, and access attempts
+ *    - Currently tests ACL presence (not actual access) due to product limitation
+ *    - Expected behavior: HTTP 200, Actual: HTTP 401/403/404
+ *    - Valuable for future debugging when bug is fixed
+ *
+ * 7. Test Execution Order:
+ *    - Test 1 (skipped): Group permission assignment (requires UI implementation)
+ *    - Test 2: Permission inheritance verification (parent → child)
+ *    - Test 3: Access denied scenarios (admin-only folder)
+ *    - Test 4: Permission level changes (cmis:all → cmis:read)
+ *    - Tests are independent (each creates/deletes own test data)
+ *
+ * CMIS Browser Binding API Usage:
+ * - Folder Creation: cmisaction=createFolder with propertyId[]/propertyValue[] arrays
+ * - ACL Application: cmisaction=applyACL with addACEPrincipal[]/addACEPermission[][] arrays
+ * - Folder Deletion: cmisaction=delete with objectId
+ * - Query: cmisselector=query with CMIS SQL WHERE clause
+ * - ACL Retrieval: AtomPub /acl endpoint or Browser Binding object properties
+ *
+ * Test Data Principals:
+ * - admin: Full access principal (cmis:all permission)
+ * - testuser: Test user principal (cmis:read or cmis:all permissions in tests)
+ * - GROUP_EVERYONE: Default group removed in access control tests
+ */
 test.describe('Advanced ACL Management', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;

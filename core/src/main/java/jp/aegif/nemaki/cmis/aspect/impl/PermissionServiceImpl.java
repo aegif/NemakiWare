@@ -447,15 +447,15 @@ public class PermissionServiceImpl implements PermissionService {
 		if (PermissionMapping.CAN_REMOVE_FROM_FOLDER_FOLDER.equals(key))
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType) || BaseTypeId.CMIS_POLICY
 					.value().equals(baseType));
-		// Versioning Services
-		if (PermissionMapping.CAN_CHECKOUT_DOCUMENT.equals(key))
-			return BaseTypeId.CMIS_DOCUMENT.value().equals(baseType);
-		if (PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT.equals(key))
-			return BaseTypeId.CMIS_DOCUMENT.value().equals(baseType);
-		if (PermissionMapping.CAN_CHECKIN_DOCUMENT.equals(key))
-			return BaseTypeId.CMIS_DOCUMENT.value().equals(baseType);
-		if (PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES.equals(key))
-			return BaseTypeId.CMIS_DOCUMENT.value().equals(baseType);
+	// Versioning Services
+	if (PermissionMapping.CAN_CHECKOUT_DOCUMENT.equals(key))
+		return BaseTypeId.CMIS_DOCUMENT.value().equals(baseType);
+	if (PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT.equals(key))
+		return BaseTypeId.CMIS_DOCUMENT.value().equals(baseType);
+	if (PermissionMapping.CAN_CHECKIN_DOCUMENT.equals(key))
+		return BaseTypeId.CMIS_DOCUMENT.value().equals(baseType);
+	if (PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES.equals(key))
+		return BaseTypeId.CMIS_DOCUMENT.value().equals(baseType);
 		// Relationship Services
 		if (PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT.equals(key))
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)

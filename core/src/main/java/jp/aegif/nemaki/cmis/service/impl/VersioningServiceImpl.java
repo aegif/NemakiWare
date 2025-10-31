@@ -121,18 +121,30 @@ public class VersioningServiceImpl implements VersioningService {
 			// //////////////////
 			Document document = contentService.getDocument(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, document, objectId);
-			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
+			
+		// If the objectId is not a PWC, get the PWC from the version series
+		String pwcId = objectId;
+		if (!document.isPrivateWorkingCopy()) {
+			VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
+			if (vs != null && vs.isVersionSeriesCheckedOut()) {
+				pwcId = vs.getVersionSeriesCheckedOutId();
+				document = contentService.getDocument(repositoryId, pwcId);
+				exceptionService.objectNotFound(DomainType.OBJECT, document, pwcId);
+			}
+		}
+			
+		exceptionService.permissionDenied(callContext,
+				repositoryId, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, document);
 
 			// //////////////////
 			// Specific Exception
 			// //////////////////
 			exceptionService.constraintVersionable(repositoryId, document.getObjectType());
 
-			// //////////////////
-			// Body of the method
-			// //////////////////
-			contentService.cancelCheckOut(callContext, repositoryId, objectId, extension);
+		// //////////////////
+		// Body of the method
+		// //////////////////
+		contentService.cancelCheckOut(callContext, repositoryId, pwcId, extension);
 
 			//remove cache
 			

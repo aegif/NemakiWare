@@ -43,6 +43,7 @@ public class VersionSeries extends NodeBase{
 		setCreator(n.getCreator());
 		setModified(n.getModified());
 		setModifier(n.getModifier());
+		setRevision(n.getRevision());
 	}
 	
 	public Boolean isVersionSeriesCheckedOut() {

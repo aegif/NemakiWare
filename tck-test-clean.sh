@@ -105,7 +105,7 @@ echo ""
 
 # Step 4: Java environment setup
 echo -e "${YELLOW}[Step 4/5] Setting up Java environment...${NC}"
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 export PATH=$JAVA_HOME/bin:$PATH
 
 JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2)

@@ -631,6 +631,10 @@ public class ObjectService {
                 throw new CmisRuntimeException("Content stream is null!");
             }
 
+            if (content.getBigLength() != null && content.getBigLength().signum() == 1) {
+                response.setContentLengthLong(content.getBigLength().longValue());
+            }
+
             // set HTTP headers, if requested by the server implementation
             if (sendContentStreamHeaders(content, request, response)) {
                 return;

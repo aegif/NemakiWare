@@ -3,6 +3,175 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
 
+/**
+ * Document Management E2E Tests
+ *
+ * Comprehensive end-to-end tests for NemakiWare React UI document management features:
+ * - Document list display with table rendering verification
+ * - Folder navigation (desktop tree view, mobile table-based navigation)
+ * - File upload with unique naming and success message validation
+ * - Document properties/detail view with navigation testing
+ * - Search functionality with query submission and result validation
+ * - Folder creation with name input and list update verification
+ * - Document deletion with confirmation popover and loading state handling
+ * - Document download with popup window detection
+ * - UI responsiveness testing during rapid navigation operations
+ *
+ * Test Coverage (9 comprehensive tests + cleanup):
+ * 1. Document list display verification
+ * 2. Folder structure navigation (desktop/mobile responsive)
+ * 3. File upload functionality
+ * 4. Document properties detail view
+ * 5. Document search with input/button interaction
+ * 6. Folder creation workflow
+ * 7. Document deletion with confirmation
+ * 8. Document download via popup window
+ * 9. UI responsiveness under rapid operations
+ * afterEach: Automated CMIS query-based test data cleanup
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ *
+ * 1. Mobile Browser Support with Sidebar Close Logic (Lines 63-90):
+ *    - Viewport width ≤414px triggers mobile-specific behavior
+ *    - Sidebar overlay blocking prevented by programmatic close: menu-fold/unfold button
+ *    - Graceful fallback to alternative selectors (.ant-layout-header button, banner button)
+ *    - Force click option: isMobile ? { force: true } : {}
+ *    - Rationale: Mobile Chrome renders sidebar as blocking overlay
+ *    - Implementation: Conditional sidebar close with try-catch error tolerance
+ *    - Animation wait: 500ms after sidebar close for smooth transition
+ *
+ * 2. Automated Test Data Cleanup with CMIS Query (Lines 93-131):
+ *    - afterEach hook runs CMIS query: SELECT cmis:objectId WHERE cmis:name LIKE 'test-%'
+ *    - Deletes all test- prefixed objects (documents and folders)
+ *    - Prevents test data accumulation in repository across multiple test runs
+ *    - Browser Binding cmisaction=delete for each found object
+ *    - Non-critical failure handling: cleanup errors don't fail tests
+ *    - Rationale: Parallel test execution creates unique objects, cleanup ensures clean state
+ *    - Performance: Query-based bulk cleanup more efficient than manual tracking
+ *
+ * 3. Responsive Folder Navigation Strategy (Lines 177-229):
+ *    - Desktop: Ant Design .ant-tree sidebar navigation with expand/collapse
+ *    - Mobile: Table-based navigation with folder icons ([data-icon="folder"])
+ *    - Breadcrumb fallback if tree not available
+ *    - Viewport detection: (browserName === 'chromium' || 'webkit') && width <= 414
+ *    - Test skipping: Graceful skip if neither tree nor breadcrumb found
+ *    - Rationale: Mobile UX hides tree/breadcrumb, uses table rows for navigation
+ *
+ * 4. UUID-Based Unique Test Data Naming (Lines 240, 396, 438):
+ *    - File upload: test-upload-{uuid8}.txt
+ *    - Folder creation: test-folder-{uuid8}
+ *    - Document deletion: test-delete-{uuid8}.txt
+ *    - Pattern: test- prefix for cleanup query + randomUUID().substring(0, 8)
+ *    - Prevents naming conflicts in parallel test execution (6 browsers simultaneously)
+ *    - Enables reliable afterEach cleanup with CMIS query
+ *    - Example: test-upload-a1b2c3d4.txt
+ *
+ * 5. Smart Conditional Skipping Pattern (Lines 169, 200, 225, 286, 314, 372, 416, 500, 506, 545):
+ *    - Tests check for feature availability before execution: if (await element.count() > 0)
+ *    - Graceful skip with informative messages: test.skip('Feature not found')
+ *    - Self-healing: Tests automatically pass when UI features become available
+ *    - Better than test.describe.skip() which requires manual re-enable
+ *    - Rationale: UI features may not be implemented or temporarily unavailable
+ *    - Example messages: "Upload functionality not found", "Search not available"
+ *
+ * 6. Extended Timeout Configuration for Slow Server Operations (Lines 421-423):
+ *    - Document deletion: test.setTimeout(120000) - 120 seconds total test timeout
+ *    - Page operations: page.setDefaultTimeout(45000) - 45 seconds for page interactions
+ *    - Server deletion duration: 10-15 seconds (database, cache invalidation, Solr updates)
+ *    - Popconfirm loading state: waitForFunction() with 30-second timeout (line 474)
+ *    - Rationale: CMIS delete operations trigger multiple backend updates
+ *    - Implementation: Extended timeouts prevent false failures during legitimate slow operations
+ *
+ * 7. Ant Design Popconfirm Loading State Handling (Lines 467-493):
+ *    - Waits for .ant-btn-loading class to clear (async handler completion indicator)
+ *    - page.waitForFunction() monitors loadingButton === null condition
+ *    - Timeout: 30 seconds for server-side deletion to complete
+ *    - Success message wait: 15 seconds after loading state clears
+ *    - Table refresh wait: 2 seconds for React state update
+ *    - Rationale: Popconfirm keeps button in loading state until async handler resolves
+ *    - Critical: Premature verification causes false "document still visible" failures
+ *
+ * 8. Document Download Popup Window Detection (Lines 510-547):
+ *    - Uses page.waitForEvent('popup') to detect new window/tab
+ *    - Download triggered via window.open() with CMIS download URL
+ *    - URL validation: expect(popupUrl).toContain('/core/')
+ *    - Popup cleanup: await popup.close() after verification
+ *    - Graceful error handling: Try-catch with informative console log
+ *    - Rationale: Download doesn't trigger file save dialog, uses popup window for URL access
+ *
+ * 9. BeforeEach Session Reset Pattern (Lines 48-61):
+ *    - Clears cookies and permissions before each test
+ *    - Fresh login via AuthHelper.login() for isolated test state
+ *    - Documents menu navigation: .ant-menu-item filter hasText 'ドキュメント'
+ *    - 2-second stabilization wait after navigation
+ *    - Rationale: Prevents auth token carryover and session conflicts between tests
+ *    - Ensures each test starts from clean authenticated state
+ *
+ * 10. File Upload Modal Pattern with TestHelper Integration (Lines 231-288):
+ *     - Waits for modal to appear: .ant-modal:not(.ant-modal-hidden)
+ *     - File input scoped to modal: .ant-modal input[type="file"]
+ *     - TestHelper.uploadTestFile() creates temporary file with unique name
+ *     - Success message validation: .ant-message-success with 10-second timeout
+ *     - Modal close verification: modalVisible === false after operation
+ *     - Document list update: expect(uploadedFile).toBeVisible() confirms appearance
+ *     - Rationale: Ensures complete upload workflow including UI feedback
+ *
+ * Expected Results:
+ * - Test 1: Document list table visible with rows or empty state
+ * - Test 2: Desktop shows .ant-tree folder navigation, mobile shows table with folder icons
+ * - Test 3: File uploaded successfully, appears in document list
+ * - Test 4: Document detail page navigated to, URL matches /documents/[id] pattern
+ * - Test 5: Search query submitted, results table or clear button visible
+ * - Test 6: Folder created with unique name, appears in document list
+ * - Test 7: Document deleted after confirmation, removed from list (10-15s operation)
+ * - Test 8: Download popup window opened with /core/ URL, closed successfully
+ * - Test 9: UI remains responsive during rapid reload/back/forward operations
+ * - afterEach: All test- prefixed objects deleted from repository
+ *
+ * Performance Characteristics:
+ * - Document list load: 3-second stabilization + spinner wait
+ * - File upload workflow: 1-2 seconds for modal + file selection + submission
+ * - Document deletion: 10-15 seconds server-side (extended timeout: 120s test, 45s page, 30s waitForFunction)
+ * - Search operation: 1-second result display after query submission
+ * - Folder creation: 1-second modal + submission + list refresh
+ * - Test cleanup: CMIS query + delete for each test- object (varies by test data count)
+ *
+ * Debugging Features:
+ * - Console logging: Current URL, table existence, folder count
+ * - Screenshot capture: test-results/debug-document-list.png for list display test
+ * - JS error checking: testHelper.checkForJSErrors() integration
+ * - Popconfirm loading state logging: waitForFunction monitors loading button
+ * - Cleanup failure logging: afterEach errors logged as non-critical
+ * - Download popup logging: "Download popup test completed" informative message
+ *
+ * Known Limitations:
+ * - Mobile deletion test may timeout waiting for table refresh (2s may be insufficient)
+ * - Search functionality assumes server-side query endpoint (/search or /query)
+ * - Download test doesn't verify actual file content, only popup URL
+ * - Folder navigation test doesn't verify deep folder hierarchy
+ * - Document properties test doesn't validate property values, only navigation
+ * - Cleanup query may miss objects if CMIS query syntax incompatible
+ *
+ * Relationship to Other Tests:
+ * - Uses AuthHelper utility (same as login.spec.ts, basic-connectivity.spec.ts)
+ * - Uses TestHelper.uploadTestFile() (same as large-file-upload.spec.ts)
+ * - Mobile browser support pattern (same as group-management.spec.ts, user-management.spec.ts)
+ * - UUID-based unique naming (same as custom-type-attributes.spec.ts)
+ * - Smart conditional skipping (same as type-management.spec.ts, custom-type-creation.spec.ts)
+ * - CMIS Browser Binding query (related to verify-cmis-404-handling.spec.ts)
+ *
+ * Common Failure Scenarios:
+ * - Test 1 fails: Document list table not loaded (routing issue or auth failure)
+ * - Test 2 fails: Folder tree not visible (sidebar collapsed or mobile viewport detection)
+ * - Test 3 fails: Upload modal not appearing (button not found or modal render delay)
+ * - Test 4 fails: Detail button not found in document rows (UI not rendering action buttons)
+ * - Test 5 fails: Search input/button not available (search feature not implemented)
+ * - Test 6 fails: Folder creation modal submit fails (validation error or server issue)
+ * - Test 7 fails: Deletion timeout (server operations >30s) or document still visible (table refresh delay)
+ * - Test 8 fails: Download popup not triggered (download URL direct response instead of window.open)
+ * - Test 9 fails: Error state detected during rapid navigation (error page or crash)
+ * - Cleanup fails: CMIS query syntax error or delete permission denied (non-critical)
+ */
 test.describe('Document Management', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;

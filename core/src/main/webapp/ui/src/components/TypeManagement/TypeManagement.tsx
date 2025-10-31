@@ -1,24 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Table, 
-  Button, 
-  Space, 
-  Modal, 
-  Form, 
-  Input, 
-  message, 
+import {
+  Table,
+  Button,
+  Space,
+  Modal,
+  Form,
+  Input,
+  message,
   Popconfirm,
   Card,
   Select,
   Switch,
-  Tabs
+  Tabs,
+  Upload,
+  Alert
 } from 'antd';
 import {
   FileOutlined,
   PlusOutlined,
   EditOutlined,
-  DeleteOutlined
+  DeleteOutlined,
+  ImportOutlined
 } from '@ant-design/icons';
+import type { UploadFile } from 'antd/es/upload/interface';
 import { CMISService } from '../../services/cmis';
 import { TypeDefinition, PropertyDefinition } from '../../types/cmis';
 
@@ -33,6 +37,20 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingType, setEditingType] = useState<TypeDefinition | null>(null);
   const [form] = Form.useForm();
+
+  // Upload functionality states
+  const [uploadModalVisible, setUploadModalVisible] = useState(false);
+  const [uploadFileList, setUploadFileList] = useState<UploadFile[]>([]);
+  const [conflictModalVisible, setConflictModalVisible] = useState(false);
+  const [conflictTypes, setConflictTypes] = useState<string[]>([]);
+  const [pendingTypeDefinition, setPendingTypeDefinition] = useState<any>(null);
+
+  // JSON edit functionality states
+  const [jsonEditModalVisible, setJsonEditModalVisible] = useState(false);
+  const [editingTypeJson, setEditingTypeJson] = useState<string>('');
+  const [originalTypeId, setOriginalTypeId] = useState<string>('');
+  const [editConflictModalVisible, setEditConflictModalVisible] = useState(false);
+  const [editBeforeAfter, setEditBeforeAfter] = useState<{ before: any; after: any } | null>(null);
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
@@ -94,6 +112,169 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     form.resetFields();
   };
 
+  // Upload functionality handlers
+  const handleImportClick = () => {
+    setUploadModalVisible(true);
+    setUploadFileList([]);
+  };
+
+  const handleFileUpload = async () => {
+    console.log('[TypeManagement] handleFileUpload called');
+    if (uploadFileList.length === 0) {
+      message.warning('ファイルを選択してください');
+      return;
+    }
+
+    const file = uploadFileList[0];
+    console.log('[TypeManagement] File selected:', file.name);
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      console.log('[TypeManagement] FileReader onload triggered');
+      try {
+        const content = e.target?.result as string;
+        console.log('[TypeManagement] File content length:', content?.length);
+        const typeDef = JSON.parse(content);
+        console.log('[TypeManagement] Parsed type definition:', typeDef.id);
+
+        // Check for conflicts (type ID already exists)
+        const existingType = types.find(t => t.id === typeDef.id);
+        console.log('[TypeManagement] Existing type found:', !!existingType);
+
+        if (existingType) {
+          // Show conflict modal
+          console.log('[TypeManagement] Showing conflict modal');
+          setConflictTypes([typeDef.id]);
+          setPendingTypeDefinition(typeDef);
+          setConflictModalVisible(true);
+        } else {
+          // No conflict, create directly
+          console.log('[TypeManagement] No conflict, calling performTypeUpload');
+          await performTypeUpload(typeDef);
+        }
+      } catch (error) {
+        console.error('[TypeManagement] Error parsing file:', error);
+        message.error('ファイルの解析に失敗しました');
+      }
+    };
+
+    // CRITICAL FIX (2025-10-26): Handle both real browser File objects and Playwright test UploadFile objects
+    // In real browsers, file.originFileObj is a File object (which extends Blob)
+    // In Playwright tests, file.originFileObj may not be properly initialized
+    // Use file as Blob directly first, fall back to originFileObj if needed
+    const fileToRead = (file as any).originFileObj || (file as any);
+    console.log('[TypeManagement] File object type:', fileToRead?.constructor?.name);
+
+    try {
+      reader.readAsText(fileToRead);
+      console.log('[TypeManagement] FileReader.readAsText called');
+    } catch (error) {
+      console.error('[TypeManagement] Failed to read file:', error);
+      message.error('ファイルの読み込みに失敗しました');
+    }
+  };
+
+  const performTypeUpload = async (typeDef: any, overwrite: boolean = false) => {
+    console.log('[TypeManagement] performTypeUpload called', { typeId: typeDef.id, overwrite, repositoryId });
+    try {
+      console.log('[TypeManagement] Calling cmisService.createType...');
+      await cmisService.createType(repositoryId, typeDef);
+      console.log('[TypeManagement] createType completed successfully');
+      message.success('型定義をインポートしました');
+      setUploadModalVisible(false);
+      setConflictModalVisible(false);
+      setUploadFileList([]);
+      setPendingTypeDefinition(null);
+      console.log('[TypeManagement] Calling loadTypes to refresh...');
+      loadTypes();
+    } catch (error) {
+      console.error('[TypeManagement] Error in performTypeUpload:', error);
+      message.error('型定義の作成に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
+    }
+  };
+
+  const handleConflictConfirm = async () => {
+    if (pendingTypeDefinition) {
+      await performTypeUpload(pendingTypeDefinition, true);
+    }
+  };
+
+  const handleUploadCancel = () => {
+    setUploadModalVisible(false);
+    setUploadFileList([]);
+  };
+
+  const handleConflictCancel = () => {
+    setConflictModalVisible(false);
+    setPendingTypeDefinition(null);
+    setUploadFileList([]);
+  };
+
+  // JSON edit functionality handlers
+  const handleJsonEdit = (type: TypeDefinition) => {
+    setOriginalTypeId(type.id);
+    setEditingTypeJson(JSON.stringify(type, null, 2));
+    setJsonEditModalVisible(true);
+  };
+
+  const handleJsonEditSave = async () => {
+    try {
+      const typeDef = JSON.parse(editingTypeJson);
+
+      // Check if ID changed (conflict detection)
+      if (typeDef.id !== originalTypeId) {
+        const existingType = types.find(t => t.id === typeDef.id);
+        if (existingType) {
+          // Show edit conflict modal
+          const originalType = types.find(t => t.id === originalTypeId);
+          setEditBeforeAfter({
+            before: originalType,
+            after: typeDef
+          });
+          setEditConflictModalVisible(true);
+          return;
+        }
+      }
+
+      // No conflict, update directly
+      await performTypeUpdate(originalTypeId, typeDef);
+    } catch (error) {
+      message.error('JSONの解析に失敗しました');
+    }
+  };
+
+  const performTypeUpdate = async (typeId: string, typeDef: any) => {
+    try {
+      await cmisService.updateType(repositoryId, typeId, typeDef);
+      message.success('型定義を更新しました');
+      setJsonEditModalVisible(false);
+      setEditConflictModalVisible(false);
+      setEditingTypeJson('');
+      setOriginalTypeId('');
+      setEditBeforeAfter(null);
+      loadTypes();
+    } catch (error) {
+      message.error('型定義の更新に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
+    }
+  };
+
+  const handleEditConflictConfirm = async () => {
+    if (editBeforeAfter) {
+      await performTypeUpdate(originalTypeId, editBeforeAfter.after);
+    }
+  };
+
+  const handleJsonEditCancel = () => {
+    setJsonEditModalVisible(false);
+    setEditingTypeJson('');
+    setOriginalTypeId('');
+  };
+
+  const handleEditConflictCancel = () => {
+    setEditConflictModalVisible(false);
+    setEditBeforeAfter(null);
+  };
+
   const columns = [
     {
       title: 'タイプID',
@@ -137,7 +318,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
           <Button
             icon={<EditOutlined />}
             size="small"
-            onClick={() => handleEdit(record)}
+            onClick={() => handleJsonEdit(record)}
             disabled={!record.deletable && record.id.startsWith('cmis:')}
             title={!record.deletable && record.id.startsWith('cmis:') ? '標準CMISタイプは編集できません' : ''}
           >
@@ -383,13 +564,21 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         <h2 style={{ margin: 0 }}>
           <FileOutlined /> タイプ管理
         </h2>
-        <Button 
-          type="primary" 
-          icon={<PlusOutlined />}
-          onClick={() => setModalVisible(true)}
-        >
-          新規タイプ
-        </Button>
+        <Space>
+          <Button
+            icon={<ImportOutlined />}
+            onClick={handleImportClick}
+          >
+            ファイルからインポート
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setModalVisible(true)}
+          >
+            新規タイプ
+          </Button>
+        </Space>
       </div>
 
       <Table
@@ -413,7 +602,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
           layout="vertical"
         >
           <Tabs items={tabItems} />
-          
+
           <Form.Item style={{ marginTop: 16 }}>
             <Space>
               <Button type="primary" htmlType="submit">
@@ -425,6 +614,133 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Upload modal */}
+      <Modal
+        title="型定義ファイルのインポート"
+        open={uploadModalVisible}
+        onOk={handleFileUpload}
+        onCancel={handleUploadCancel}
+        okText="インポート"
+        cancelText="キャンセル"
+      >
+        <Upload.Dragger
+          accept=".json"
+          maxCount={1}
+          fileList={uploadFileList}
+          beforeUpload={(file) => {
+            setUploadFileList([file as any]);
+            return false; // Prevent auto upload
+          }}
+          onRemove={() => {
+            setUploadFileList([]);
+          }}
+        >
+          <p className="ant-upload-drag-icon">
+            <FileOutlined />
+          </p>
+          <p className="ant-upload-text">クリックまたはドラッグしてJSONファイルをアップロード</p>
+          <p className="ant-upload-hint">型定義のJSON形式ファイルを選択してください</p>
+        </Upload.Dragger>
+      </Modal>
+
+      {/* Conflict confirmation modal */}
+      <Modal
+        title="型定義の競合確認"
+        open={conflictModalVisible}
+        onOk={handleConflictConfirm}
+        onCancel={handleConflictCancel}
+        okText="上書きして作成"
+        cancelText="キャンセル"
+      >
+        <Alert
+          message="以下のタイプIDは既に存在します"
+          description={
+            <ul>
+              {conflictTypes.map(typeId => (
+                <li key={typeId}>{typeId}</li>
+              ))}
+            </ul>
+          }
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+        {pendingTypeDefinition && (
+          <>
+            <p>アップロードしようとしている型定義:</p>
+            <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 4, overflow: 'auto', maxHeight: 300 }}>
+              {JSON.stringify(pendingTypeDefinition, null, 2)}
+            </pre>
+          </>
+        )}
+      </Modal>
+
+      {/* JSON edit modal */}
+      <Modal
+        title="型定義の編集 (JSON)"
+        open={jsonEditModalVisible}
+        onOk={handleJsonEditSave}
+        onCancel={handleJsonEditCancel}
+        okText="保存"
+        cancelText="キャンセル"
+        width={800}
+      >
+        <Alert
+          message="型定義をJSON形式で直接編集できます"
+          description="IDを変更すると競合確認が表示されます"
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+        <Input.TextArea
+          value={editingTypeJson}
+          onChange={(e) => setEditingTypeJson(e.target.value)}
+          rows={20}
+          style={{ fontFamily: 'monospace', fontSize: 12 }}
+        />
+      </Modal>
+
+      {/* Edit conflict confirmation modal */}
+      <Modal
+        title="型定義の競合確認（編集）"
+        open={editConflictModalVisible}
+        onOk={handleEditConflictConfirm}
+        onCancel={handleEditConflictCancel}
+        okText="上書きして更新"
+        cancelText="キャンセル"
+        width={800}
+      >
+        <Alert
+          message="タイプIDが変更されています"
+          description="IDを変更すると既存のタイプとして保存されます"
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+        {editBeforeAfter && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div>
+              <h4>変更前</h4>
+              <pre style={{ background: '#fff1f0', padding: 12, borderRadius: 4, overflow: 'auto', maxHeight: 300 }}>
+                {JSON.stringify({
+                  id: editBeforeAfter.before?.id,
+                  displayName: editBeforeAfter.before?.displayName
+                }, null, 2)}
+              </pre>
+            </div>
+            <div>
+              <h4>変更後</h4>
+              <pre style={{ background: '#f6ffed', padding: 12, borderRadius: 4, overflow: 'auto', maxHeight: 300 }}>
+                {JSON.stringify({
+                  id: editBeforeAfter.after.id,
+                  displayName: editBeforeAfter.after.displayName
+                }, null, 2)}
+              </pre>
+            </div>
+          </div>
+        )}
       </Modal>
     </Card>
   );

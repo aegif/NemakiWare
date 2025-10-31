@@ -1056,15 +1056,20 @@ public class ContentServiceImpl implements ContentService {
 
 		// CRITICAL TCK FIX: Set versionSeriesCheckedOutId for PWC after it has been created and has an ID
 		log.error("*** CRITICAL TCK FIX: Setting versionSeriesCheckedOutId for PWC {} ***", result.getId());
+		result.setPrivateWorkingCopy(true); // CRITICAL FIX: Ensure PWC flag is set before update
 		result.setVersionSeriesCheckedOutId(result.getId());
 		result.setVersionSeriesCheckedOut(true);
 		result.setVersionSeriesCheckedOutBy(callContext.getUsername());
-		contentDaoService.update(repositoryId, result);
+		result = contentDaoService.update(repositoryId, result); // CRITICAL FIX: Use updated result
 		log.error("*** CRITICAL TCK FIX: PWC versionSeriesCheckedOutId set to: {} ***", result.getVersionSeriesCheckedOutId());
 
-		// Modify versionSeries
-		VersionSeries vs = getVersionSeries(repositoryId, result);
-		updateVersionSeriesWithPwc(callContext, repositoryId, vs, result);
+	// Modify versionSeries
+	VersionSeries vs = getVersionSeries(repositoryId, result);
+	if (vs == null) {
+		log.warn("VersionSeries not found for document: {} during checkOut - document may have been deleted concurrently", result.getId());
+		return result;
+	}
+	updateVersionSeriesWithPwc(callContext, repositoryId, vs, result);
 
 		// CRITICAL TCK FIX: Update all versions in version series to reflect checked-out state
 		// This ensures cmis:isVersionSeriesCheckedOut and related properties are updated
@@ -1105,32 +1110,50 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public void cancelCheckOut(CallContext callContext, String repositoryId, String objectId,
 			ExtensionsData extension) {
+		log.error("cancelCheckOut called for objectId: {}", objectId);
 		Document pwc = getDocument(repositoryId, objectId);
+		
+		if (pwc == null) {
+			log.error("Document not found for objectId: {}", objectId);
+			throw new RuntimeException("Document not found: " + objectId);
+		}
+		
+		log.error("Document found: id={}, name={}, isPWC={}", pwc.getId(), pwc.getName(), pwc.isPrivateWorkingCopy());
 
 		writeChangeEvent(callContext, repositoryId, pwc, ChangeType.DELETED);
 
-		// Delete attachment & document itself(without archiving)
-		contentDaoService.delete(repositoryId, pwc.getAttachmentNodeId());
-		contentDaoService.delete(repositoryId, pwc.getId());
+	// Delete attachment & document itself(without archiving)
+	contentDaoService.delete(repositoryId, pwc.getAttachmentNodeId());
+	contentDaoService.delete(repositoryId, pwc.getId());
 
-		VersionSeries vs = getVersionSeries(repositoryId, pwc);
-		// Reverse the effect of checkout
-		setModifiedSignature(callContext, vs);
-		vs.setVersionSeriesCheckedOut(false);
-		vs.setVersionSeriesCheckedOutBy("");
-		vs.setVersionSeriesCheckedOutId("");
-		contentDaoService.update(repositoryId, vs);
+	// CRITICAL FIX: Invalidate cache before fetching to ensure we get fresh data from DB
+	// This prevents using stale cached data if VersionSeries was recently deleted
+	String versionSeriesId = pwc.getVersionSeriesId();
+	nemakiCachePool.get(repositoryId).getObjectDataCache().remove(versionSeriesId);
+	log.error("Invalidated cache for VersionSeries before fetch in cancelCheckOut: {}", versionSeriesId);
+	
+	VersionSeries vs = getVersionSeries(repositoryId, pwc);
+	if (vs == null) {
+		log.warn("VersionSeries not found for PWC: {} during cancelCheckOut - document may have been deleted concurrently", pwc.getId());
+		return;
+	}
+	// Reverse the effect of checkout
+	setModifiedSignature(callContext, vs);
+	vs.setVersionSeriesCheckedOut(false);
+	vs.setVersionSeriesCheckedOutBy(null);
+	vs.setVersionSeriesCheckedOutId(null);
+	contentDaoService.update(repositoryId, vs);
 
-		// CRITICAL TCK FIX: Update all versions in version series to reflect canceled checkout state
-		// This ensures cmis:isVersionSeriesCheckedOut and related properties are updated
-		List<Document> versions = contentDaoService.getAllVersions(repositoryId, vs.getId());
-		if (CollectionUtils.isNotEmpty(versions)) {
-			for (Document version : versions) {
-				// Update versioning properties to reflect VersionSeries state (no PWC filtering needed)
-				version.setVersionSeriesCheckedOut(false);
-				version.setVersionSeriesCheckedOutBy("");
-				version.setVersionSeriesCheckedOutId("");
-				contentDaoService.update(repositoryId, version);
+	// CRITICAL TCK FIX: Update all versions in version series to reflect canceled checkout state
+	// This ensures cmis:isVersionSeriesCheckedOut and related properties are updated
+	List<Document> versions = contentDaoService.getAllVersions(repositoryId, vs.getId());
+	if (CollectionUtils.isNotEmpty(versions)) {
+		for (Document version : versions) {
+			// Update versioning properties to reflect VersionSeries state (no PWC filtering needed)
+			version.setVersionSeriesCheckedOut(false);
+			version.setVersionSeriesCheckedOutBy(null);
+			version.setVersionSeriesCheckedOutId(null);
+			contentDaoService.update(repositoryId, version);
 				
 				// CRITICAL FIX: Invalidate cache for updated version to ensure UI sees updated properties
 				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(version.getId());
@@ -1365,25 +1388,31 @@ public class ContentServiceImpl implements ContentService {
 			Document d, Document former) {
 		d.setVersionSeriesId(former.getVersionSeriesId());
 
-		switch (versioningState) {
-		case MAJOR:
-			d.setLatestVersion(true);
-			d.setMajorVersion(true);
-			d.setLatestMajorVersion(true);
-			d.setVersionLabel(increasedVersionLabel(former, versioningState));
-			d.setPrivateWorkingCopy(false);
-			// Update former version flags (refresh from DB to avoid CouchDB conflicts)
-			updateFormerVersionFlags(repositoryId, former, true);
-			break;
-		case MINOR:
-			d.setLatestVersion(true);
-			d.setMajorVersion(false);
-			d.setLatestMajorVersion(false);
-			d.setVersionLabel(increasedVersionLabel(former, versioningState));
-			d.setPrivateWorkingCopy(false);
-			// Update former version flags (refresh from DB to avoid CouchDB conflicts)
-			updateFormerVersionFlags(repositoryId, former, false);
-			break;
+	switch (versioningState) {
+	case MAJOR:
+		d.setLatestVersion(true);
+		d.setMajorVersion(true);
+		d.setLatestMajorVersion(true);
+		d.setVersionLabel(increasedVersionLabel(former, versioningState));
+		d.setPrivateWorkingCopy(false);
+		d.setVersionSeriesCheckedOut(false);
+		d.setVersionSeriesCheckedOutBy(null);
+		d.setVersionSeriesCheckedOutId(null);
+		// Update former version flags (refresh from DB to avoid CouchDB conflicts)
+		updateFormerVersionFlags(repositoryId, former, true);
+		break;
+	case MINOR:
+		d.setLatestVersion(true);
+		d.setMajorVersion(false);
+		d.setLatestMajorVersion(false);
+		d.setVersionLabel(increasedVersionLabel(former, versioningState));
+		d.setPrivateWorkingCopy(false);
+		d.setVersionSeriesCheckedOut(false);
+		d.setVersionSeriesCheckedOutBy(null);
+		d.setVersionSeriesCheckedOutId(null);
+		// Update former version flags (refresh from DB to avoid CouchDB conflicts)
+		updateFormerVersionFlags(repositoryId, former, false);
+		break;
 		case CHECKEDOUT:
 			d.setLatestVersion(false);
 			d.setMajorVersion(false);
@@ -1457,29 +1486,37 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	private void updateVersionSeriesWithPwc(CallContext callContext, String repositoryId, VersionSeries versionSeries,
 			Document pwc) {
-
+		
 		// CRITICAL FIX: Fetch latest VersionSeries from DB to ensure _rev synchronization
 		// This prevents Cloudant SDK revision conflicts during update operations
 		log.debug("Fetching latest VersionSeries from DB for revision synchronization: {}", versionSeries.getId());
 		VersionSeries latestVersionSeries = contentDaoService.getVersionSeries(repositoryId, versionSeries.getId());
 		
-		if (latestVersionSeries == null) {
-			log.error("VersionSeries not found in database: {}", versionSeries.getId());
-			throw new IllegalStateException("VersionSeries not found for update: " + versionSeries.getId());
-		}
-		
-		// Apply updates to the fresh object with current _rev
-		latestVersionSeries.setVersionSeriesCheckedOut(true);
-		latestVersionSeries.setVersionSeriesCheckedOutId(pwc.getId());
-		latestVersionSeries.setVersionSeriesCheckedOutBy(callContext.getUsername());
-		
-		log.debug("Updating VersionSeries with current revision: {} for PWC: {}", 
-			latestVersionSeries.getRevision(), pwc.getId());
-		
-		// Update with synchronized revision
+	if (latestVersionSeries == null) {
+		log.warn("VersionSeries {} not found in database during checkout - document may have been deleted concurrently", versionSeries.getId());
+		return;
+	}
+	
+	log.error("VersionSeries found: id={}, revision={}", latestVersionSeries.getId(), latestVersionSeries.getRevision());
+	
+	// Apply updates to the fresh object with current _rev
+	latestVersionSeries.setVersionSeriesCheckedOut(true);
+	latestVersionSeries.setVersionSeriesCheckedOutId(pwc.getId());
+	latestVersionSeries.setVersionSeriesCheckedOutBy(callContext.getUsername());
+	
+	log.error("Updating VersionSeries with current revision: {} for PWC: {}", 
+		latestVersionSeries.getRevision(), pwc.getId());
+	
+	try {
 		contentDaoService.update(repositoryId, latestVersionSeries);
-		
 		log.debug("VersionSeries update completed successfully for PWC: {}", pwc.getId());
+	} catch (IllegalArgumentException e) {
+		if (e.getMessage() != null && e.getMessage().contains("not found in database")) {
+			log.warn("VersionSeries {} was deleted during update - document may have been deleted concurrently", latestVersionSeries.getId());
+			return;
+		}
+		throw e;
+	}
 	}
 
 	@Override
@@ -1717,13 +1754,24 @@ public class ContentServiceImpl implements ContentService {
 
 	private String copyAttachment(CallContext callContext, String repositoryId, String attachmentId) {
 		AttachmentNode original = getAttachment(repositoryId, attachmentId);
-		ContentStream cs = new ContentStreamImpl(original.getName(), BigInteger.valueOf(original.getLength()),
-				original.getMimeType(), original.getInputStream());
+		
+		String mimeType = original.getMimeType();
+		if (mimeType == null || mimeType.isEmpty()) {
+			mimeType = "application/octet-stream";
+		}
+		
+		String fileName = original.getName();
+		if (fileName == null || fileName.isEmpty()) {
+			fileName = "-";
+		}
+		
+		ContentStream cs = new ContentStreamImpl(fileName, BigInteger.valueOf(original.getLength()),
+				mimeType, original.getInputStream());
 
 		AttachmentNode copy = new AttachmentNode();
-		copy.setName(original.getName());
+		copy.setName(fileName);
 		copy.setLength(original.getLength());
-		copy.setMimeType(original.getMimeType());
+		copy.setMimeType(mimeType);
 		setSignature(callContext, copy);
 
 		return contentDaoService.createAttachment(repositoryId, copy, cs);
@@ -2314,7 +2362,7 @@ public class ContentServiceImpl implements ContentService {
 			log.error("Completed delete() for version: {}", version.getId());
 		}
 
-		// Move up the latest version
+		// Move up the latest version OR delete VersionSeries
 		if (!allVersions) {
 			Document latestVersion = getDocumentOfLatestVersion(repositoryId, versionSeriesId);
 			if (latestVersion != null) {
@@ -2322,7 +2370,21 @@ public class ContentServiceImpl implements ContentService {
 				latestVersion.setLatestMajorVersion(latestVersion.isMajorVersion());
 				contentDaoService.update(repositoryId, latestVersion);
 			}
+	} else {
+		// CRITICAL FIX: When all versions are deleted, delete the VersionSeries as well
+		log.error("All versions deleted for versionSeriesId: {} - deleting VersionSeries", versionSeriesId);
+		try {
+			contentDaoService.delete(repositoryId, versionSeriesId);
+			log.error("VersionSeries {} deleted successfully", versionSeriesId);
+			
+			// CRITICAL FIX: Invalidate cache for deleted VersionSeries to prevent stale data
+			nemakiCachePool.get(repositoryId).getObjectDataCache().remove(versionSeriesId);
+			log.error("Invalidated cache for deleted VersionSeries: {}", versionSeriesId);
+		} catch (Exception e) {
+			log.error("Failed to delete VersionSeries {}: {}", versionSeriesId, e.getMessage(), e);
+			// Continue even if VersionSeries deletion fails - documents are already deleted
 		}
+	}
 
 		// Call Solr indexing(optional)
 		// TODO: Update with specific document indexing 
@@ -2429,7 +2491,12 @@ public class ContentServiceImpl implements ContentService {
 
 	private String createAttachment(CallContext callContext, String repositoryId, ContentStream contentStream) {
 		AttachmentNode a = new AttachmentNode();
-		a.setMimeType(contentStream.getMimeType());
+		
+		String mimeType = contentStream.getMimeType();
+		if (mimeType == null || mimeType.isEmpty()) {
+			mimeType = "application/octet-stream";
+		}
+		a.setMimeType(mimeType);
 		
 		// CRITICAL FIX: Calculate actual stream size when length is unknown (-1) or invalid (0 or negative)
 		// BUT avoid consuming the stream if it doesn't support mark/reset
@@ -2457,7 +2524,13 @@ public class ContentServiceImpl implements ContentService {
 		}
 		
 		a.setLength(streamLength);
-		a.setName(contentStream.getFileName());
+		
+		String fileName = contentStream.getFileName();
+		if (fileName == null || fileName.isEmpty()) {
+			fileName = "-";
+		}
+		a.setName(fileName);
+		
 		setSignature(callContext, a);
 		return contentDaoService.createAttachment(repositoryId, a, contentStream);
 	}

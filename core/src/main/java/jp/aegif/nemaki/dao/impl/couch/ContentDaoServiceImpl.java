@@ -1644,19 +1644,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				// Solution: Get document ID from view, then fetch DIRECTLY from database
 				String documentId = firstRow.getId();
 
-				log.debug("Fetching document directly from DB, ID=" + documentId);
 
 				// Fetch the absolute latest revision directly from CouchDB (NOT from view result)
 				com.ibm.cloud.cloudant.v1.model.Document freshDoc = client.get(documentId);
 
 				if (freshDoc == null) {
-					log.warn("Direct DB fetch returned NULL for ID=" + documentId);
 					return null;
 				}
 
-				if (log.isDebugEnabled()) {
-				log.debug("Fresh document fetched: ID=" + freshDoc.getId() + ", Rev=" + freshDoc.getRev());
-			}
 
 				// Convert Cloudant Document to Map for processing
 				Map<String, Object> docMap = new HashMap<>();
@@ -2066,6 +2061,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		// This avoids unnecessary DB reads and race conditions in consecutive operations
 		if (update.getRevision() == null || update.getRevision().isEmpty()) {
 			CouchVersionSeries cvs = connectorPool.getClient(repositoryId).get(CouchVersionSeries.class, versionSeries.getId());
+			if (cvs == null) {
+				throw new IllegalArgumentException("VersionSeries " + versionSeries.getId() + " not found in database - " +
+					"cannot update non-existent version series");
+			}
 			update.setRevision(cvs.getRevision());
 			log.debug("Fetched latest revision for version series update: " + cvs.getRevision());
 		} else {
@@ -2193,15 +2192,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public GroupItem update(String repositoryId, GroupItem groupItem) {
-		if (log.isDebugEnabled()) {
-			log.debug("UPDATE ENTRY: GroupItem ID=" + groupItem.getId() + ", Rev=" + groupItem.getRevision());
-		}
-
 		CouchGroupItem update = new CouchGroupItem(groupItem);
-
-		if (log.isDebugEnabled()) {
-			log.debug("AFTER CouchGroupItem CONVERSION: ID=" + update.getId() + ", Rev=" + update.getRevision());
-		}
 
 		// Ektorp-style: Object must maintain its own revision state
 		// CloudantClientWrapper expects objects to have valid revisions
