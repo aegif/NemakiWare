@@ -392,6 +392,103 @@ docker logs docker-core-1 2>&1 | grep "TCK DEBUG" | wc -l
 
 ---
 
+## 📋 Versioning Functionality Regression History (バージョニング機能デグレ履歴)
+
+**PURPOSE**: This section documents recurring regression issues in versioning functionality to prevent future occurrences and facilitate rapid diagnosis.
+
+### 2025-11-02: VersioningTestGroup HTTP 500 "Object Info is missing!" - TEST SCRIPT ISSUE ✅
+
+**Status**: **RESOLVED** - Root cause was in test scripts, not NemakiWare code
+
+**Problem Identified**:
+- VersioningTestGroup tests failing with HTTP 500 error: "Object Info is missing!"
+- Symptom: Documents created via AtomPub POST with content streams returned errors on subsequent GET requests
+- Expected: version-history link in AtomPub response
+- Actual: HTTP 500 error when retrieving created documents
+
+**Investigation Phase**:
+Added extensive debug logging to trace the issue:
+- ExceptionServiceImpl.java: Type validation and permission check tracing
+- TypeManagerImpl.java: Type definition building process tracing
+- ObjectServiceImpl.java: Object creation ID tracing
+- ContentServiceImpl.java: Document creation and attachment handling tracing
+
+**Root Cause Discovery** (2025-11-02):
+The issue was **NOT in NemakiWare code** but in **test script regex patterns**:
+
+**Problem**: Test scripts were using `grep -A 2` pattern which doesn't work on single-line XML
+```bash
+# ❌ INCORRECT (used in failing tests)
+OBJECT_ID=$(grep -A 2 'propertyDefinitionId="cmis:objectId"' | grep '<cmis:value>' | sed 's/.*<cmis:value>\([^<]*\)<\/cmis:value>.*/\1/')
+# This pattern assumes multi-line XML with line breaks
+# AtomPub POST responses are SINGLE-LINE XML → pattern fails
+# Result: Extracts cmis:contentStreamId (AttachmentNode ID) instead of cmis:objectId (Document ID)
+```
+
+**Correct Pattern**:
+```bash
+# ✅ CORRECT (single-line XML compatible)
+OBJECT_ID=$(echo "$RESPONSE" | grep -o '<cmis:propertyId propertyDefinitionId="cmis:objectId"[^>]*>[^<]*<cmis:value>[^<]*</cmis:value>' | sed 's/.*<cmis:value>\([^<]*\)<\/cmis:value>.*/\1/')
+# Matches entire property element in single line
+# Correctly extracts cmis:objectId value
+```
+
+**AtomPub Response Structure** (Critical Understanding):
+```xml
+<!-- AtomPub POST response is SINGLE-LINE XML (no line breaks) -->
+<entry><cmis:object><cmis:properties><cmis:propertyId propertyDefinitionId="cmis:objectId"><cmis:value>abc123</cmis:value></cmis:propertyId><cmis:propertyId propertyDefinitionId="cmis:contentStreamId"><cmis:value>xyz789</cmis:value></cmis:propertyId></cmis:properties></cmis:object></entry>
+```
+
+**Impact of Wrong ID Extraction**:
+- Using `cmis:contentStreamId` (AttachmentNode ID) for GET request → HTTP 500 "Object Info is missing!"
+- Using correct `cmis:objectId` (Document ID) for GET request → HTTP 200 with version-history link ✅
+
+**NemakiWare Code Status**:
+- ✅ **CMIS 1.1 COMPLIANT** - No code changes required
+- ✅ All versioning properties correctly set (cmis:versionSeriesId, cmis:isVersionSeriesCheckedOut, etc.)
+- ✅ Content stream handling working correctly per specification
+
+**Resolution Actions**:
+1. ✅ Created corrected test script: `/tmp/test_fixed_extraction.sh`
+2. ✅ Verified GET requests work with correct object ID
+3. ✅ Removed all investigation-phase debug logging (production code cleanup)
+
+**Files Cleaned (Debug Logging Removed)**:
+- `ExceptionServiceImpl.java` - 3 locations (type validation, permission checks)
+- `TypeManagerImpl.java` - 3 locations (type definition building)
+- `ObjectServiceImpl.java` - 1 location (object creation tracing)
+- `ContentServiceImpl.java` - 3 locations (document creation, attachment handling)
+
+**Verification**:
+```bash
+# Verify no debug logging remains
+grep -rn "log.error.*CRITICAL DEBUG" core/src/main/java/ | wc -l
+# Result: 0 ✅
+
+grep -rn "System\.\(out\|err\)\.println.*DEBUG" core/src/main/java/ | wc -l
+# Result: 0 ✅
+```
+
+**Lesson Learned**:
+- **Always verify test script assumptions** before modifying production code
+- **AtomPub responses are single-line XML** - regex patterns must account for this
+- **Debug logging must be cleaned up** after investigation to maintain production code quality
+- **Document root cause** even if issue is in test infrastructure, not product code
+
+**Prevention**:
+- Use correct single-line XML regex patterns for all AtomPub response parsing
+- Test scripts should be reviewed for XML structure assumptions
+- Document AtomPub response format in test script comments
+
+### Previous Versioning-Related Fixes
+
+**Reference**: See CLAUDE.md sections below for detailed history:
+- **2025-10-21**: parseDateTime() null handling and string timestamp support (queryRootFolderTest fix)
+- **2025-10-12**: TCK Complete Success with cleanup logic fixes
+- **2025-10-09**: Static initialization fix for TestGroupBase (prevented loadParameters() hang)
+
+---
+
 ## Recent Major Changes (2025-10-26 - Production Code Debug Logging Cleanup) ✅
 
 ### Production Code Debug Logging Cleanup - ContentDaoServiceImpl.java
