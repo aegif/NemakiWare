@@ -60,7 +60,7 @@
 - **検証結果**: initial-content-setup.spec.ts → **30/30 PASS** (全6ブラウザプロファイル) ✅
   - Sites, Technical Documentsフォルダの全プロパティ正常にプリミティブ値で取得
 - **CMIS 1.1準拠**: Browser Binding仕様完全準拠 ✅
-- **コミット**: (To be committed)
+- **コミット**: dedf50d2d
 
 ---
 
