@@ -192,14 +192,25 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
     const data = await response.json();
 
     // Find Sites folder in children
+    // Note: Browser Binding returns value as array ["Sites"] instead of string "Sites"
     const sitesFolder = data.objects?.find(
-      (obj: any) => obj.object.properties['cmis:name']?.value === 'Sites'
+      (obj: any) => {
+        const nameValue = obj.object.properties['cmis:name']?.value;
+        const name = Array.isArray(nameValue) ? nameValue[0] : nameValue;
+        return name === 'Sites';
+      }
     );
 
     expect(sitesFolder).toBeDefined();
-    expect(sitesFolder.object.properties['cmis:baseTypeId'].value).toBe('cmis:folder');
 
-    console.log('✅ Sites folder found:', sitesFolder.object.properties['cmis:objectId'].value);
+    // Note: Browser Binding returns all property values as arrays
+    const baseTypeValue = sitesFolder.object.properties['cmis:baseTypeId'].value;
+    const baseType = Array.isArray(baseTypeValue) ? baseTypeValue[0] : baseTypeValue;
+    expect(baseType).toBe('cmis:folder');
+
+    const objectIdValue = sitesFolder.object.properties['cmis:objectId'].value;
+    const objectId = Array.isArray(objectIdValue) ? objectIdValue[0] : objectIdValue;
+    console.log('✅ Sites folder found:', objectId);
   });
 
   test('Technical Documents folder should exist in root folder', async () => {
@@ -216,14 +227,25 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
     const data = await response.json();
 
     // Find Technical Documents folder in children
+    // Note: Browser Binding returns value as array ["Technical Documents"] instead of string
     const techDocsFolder = data.objects?.find(
-      (obj: any) => obj.object.properties['cmis:name']?.value === 'Technical Documents'
+      (obj: any) => {
+        const nameValue = obj.object.properties['cmis:name']?.value;
+        const name = Array.isArray(nameValue) ? nameValue[0] : nameValue;
+        return name === 'Technical Documents';
+      }
     );
 
     expect(techDocsFolder).toBeDefined();
-    expect(techDocsFolder.object.properties['cmis:baseTypeId'].value).toBe('cmis:folder');
 
-    console.log('✅ Technical Documents folder found:', techDocsFolder.object.properties['cmis:objectId'].value);
+    // Note: Browser Binding returns all property values as arrays
+    const baseTypeValue = techDocsFolder.object.properties['cmis:baseTypeId'].value;
+    const baseType = Array.isArray(baseTypeValue) ? baseTypeValue[0] : baseTypeValue;
+    expect(baseType).toBe('cmis:folder');
+
+    const objectIdValue = techDocsFolder.object.properties['cmis:objectId'].value;
+    const objectId = Array.isArray(objectIdValue) ? objectIdValue[0] : objectIdValue;
+    console.log('✅ Technical Documents folder found:', objectId);
   });
 
   test('Sites folder should have correct ACL (admin:all, GROUP_EVERYONE:read, system:all)', async () => {
@@ -239,11 +261,18 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
 
     const childrenData = await childrenResponse.json();
     const sitesFolder = childrenData.objects?.find(
-      (obj: any) => obj.object.properties['cmis:name']?.value === 'Sites'
+      (obj: any) => {
+        const nameValue = obj.object.properties['cmis:name']?.value;
+        const name = Array.isArray(nameValue) ? nameValue[0] : nameValue;
+        return name === 'Sites';
+      }
     );
 
     expect(sitesFolder).toBeDefined();
-    const folderId = sitesFolder.object.properties['cmis:objectId'].value;
+
+    // Note: Browser Binding returns all property values as arrays
+    const objectIdValue = sitesFolder.object.properties['cmis:objectId'].value;
+    const folderId = Array.isArray(objectIdValue) ? objectIdValue[0] : objectIdValue;
 
     // Note: AtomPub ACL retrieval via /atom/{repo}/acl endpoint
     // For this test, we focus on CouchDB validation which is more reliable
@@ -301,11 +330,18 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
 
     const childrenData = await childrenResponse.json();
     const techDocsFolder = childrenData.objects?.find(
-      (obj: any) => obj.object.properties['cmis:name']?.value === 'Technical Documents'
+      (obj: any) => {
+        const nameValue = obj.object.properties['cmis:name']?.value;
+        const name = Array.isArray(nameValue) ? nameValue[0] : nameValue;
+        return name === 'Technical Documents';
+      }
     );
 
     expect(techDocsFolder).toBeDefined();
-    const folderId = techDocsFolder.object.properties['cmis:objectId'].value;
+
+    // Note: Browser Binding returns all property values as arrays
+    const objectIdValue = techDocsFolder.object.properties['cmis:objectId'].value;
+    const folderId = Array.isArray(objectIdValue) ? objectIdValue[0] : objectIdValue;
 
     // Verify via direct CouchDB access
     const couchDbResponse = await fetch(
@@ -362,11 +398,18 @@ test.describe('Initial Content Setup - Folder Creation and ACL', () => {
 
     const childrenData = await childrenResponse.json();
     const sitesFolder = childrenData.objects?.find(
-      (obj: any) => obj.object.properties['cmis:name']?.value === 'Sites'
+      (obj: any) => {
+        const nameValue = obj.object.properties['cmis:name']?.value;
+        const name = Array.isArray(nameValue) ? nameValue[0] : nameValue;
+        return name === 'Sites';
+      }
     );
 
     expect(sitesFolder).toBeDefined();
-    const folderId = sitesFolder.object.properties['cmis:objectId'].value;
+
+    // Note: Browser Binding returns all property values as arrays
+    const objectIdValue = sitesFolder.object.properties['cmis:objectId'].value;
+    const folderId = Array.isArray(objectIdValue) ? objectIdValue[0] : objectIdValue;
 
     const couchDbResponse = await fetch(
       `http://localhost:5984/${REPOSITORY_ID}/${folderId}`,
