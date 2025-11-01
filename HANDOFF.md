@@ -1,12 +1,56 @@
 # エージェント引き継ぎ資料
 
 **作成日**: 2025-11-01
+**更新日**: 2025-11-01 (セッション2)
 **ブランチ**: vk/368c-tck
-**最新コミット**: 9cab06376
+**最新コミット**: c985df2f4
 
 ---
 
-## 📋 完了した作業（このセッション）
+## 📋 完了した作業（セッション2 - クリーンビルド&TCK検証）
+
+### 1. Browser Binding修正の互換性確認 ✅
+- **目的**: クリーンビルドからのフルTCK検証（デグレチェック）
+- **実施内容**:
+  - データベースクリーンアップ（503ドキュメント → 116ドキュメント）
+  - Browser Binding修正の互換性確認（元のメタデータ設定コード復元）
+  - TCKコアグループ全実行
+- **結果**:
+  - **Browser Binding**: 単一値プロパティが正しくプリミティブ型としてシリアライズ ✅
+  - **TCKコアグループ**: 7/7 PASS (BasicsTestGroup 3/3, TypesTestGroup 3/3, ControlTestGroup 1/1) ✅
+  - **デグレ**: なし ✅
+
+### 2. VersioningTestGroup既知の問題 ⚠️
+- **状態**: 3/4 FAIL（checkedOutTest のみPASS）
+- **重要な発見**: Browser Binding修正とは無関係
+  - 修正前: 3/4 FAIL
+  - 修正後: 3/4 FAIL（同じ結果）
+  - データベースクリーン状態でも同じ結果
+- **エラー**: `CmisNotSupportedException: Operation not supported by the repository for this object!`
+- **影響**: 本セッションの修正には影響なし
+- **対応**: 別途調査が必要（CLAUDE.mdに2025-11-01早朝にVersioningTestGroup 4/4 PASSの記録あり）
+
+### 3. Browser Binding修正の最終版 ✅
+- **修正内容** (CompileServiceImpl.java Lines 1838-1851):
+  ```java
+  private <T> void addPropertyBase(PropertiesImpl props, String id, AbstractPropertyData<T> p,
+          PropertyDefinition<?> pdf) {
+      // CRITICAL BROWSER BINDING FIX (2025-11-01): Set PropertyDefinition on property object
+      p.setPropertyDefinition((PropertyDefinition<T>) pdf);
+      // Keep original property metadata setup for compatibility (required for versioning tests)
+      p.setDisplayName(pdf.getDisplayName());
+      p.setLocalName(id);
+      p.setQueryName(pdf.getQueryName());
+      props.addProperty(p);
+  }
+  ```
+- **重要**: 元のメタデータ設定コード（setDisplayName, setLocalName, setQueryName）を維持
+- **理由**: VersioningTestGroupとの互換性維持（今回のセッションで追加確認）
+- **コミット**: c985df2f4
+
+---
+
+## 📋 完了した作業（セッション1）
 
 ### 1. Browser Binding "root"変換修正 ✅
 - **問題**: `/browser/bedroom/root?cmisselector=children`が空配列を返していた
