@@ -2097,10 +2097,12 @@ public class CompileServiceImpl implements CompileService {
 	 * CMIS Compliance Helper: Check if action is only applicable to documents
 	 */
 	private boolean isDocumentOnlyAction(String key) {
+		// CRITICAL TCK FIX (2025-11-01): Removed CAN_GET_ALL_VERSIONS from document-only actions
+		// CAN_GET_ALL_VERSIONS should only be available for versionable documents (handled in isVersioningAction)
+		// Previous bug: All documents got CAN_GET_ALL_VERSIONS, even non-versionable ones
 		return PermissionMapping.CAN_VIEW_CONTENT_OBJECT.equals(key) ||
 			   PermissionMapping.CAN_DELETE_CONTENT_DOCUMENT.equals(key) ||
-			   PermissionMapping.CAN_SET_CONTENT_DOCUMENT.equals(key) ||
-			   PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES.equals(key);
+			   PermissionMapping.CAN_SET_CONTENT_DOCUMENT.equals(key);
 	}
 
 	/**
