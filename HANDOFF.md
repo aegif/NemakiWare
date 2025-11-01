@@ -36,7 +36,7 @@
   - **フェーズ3** (必要に応じて): PDFプレビュー、権限管理改善
 - **詳細**: `PLAYWRIGHT_SKIP_ANALYSIS.md` 参照
 
-### 5. Browser Binding検証完了とプロパティ値配列問題発見 ✅ **NEW**
+### 5. Browser Binding検証完了とプロパティ値配列問題発見 ✅
 - **Playwrightテスト結果**: initial-content-setup.spec.ts → **5/5 PASS** ✅
 - **Browser Binding "root"修正**: 完全に検証済み（4フォルダ正常に返却）
 - **新発見**: Browser Bindingプロパティ値の配列化問題
@@ -46,6 +46,23 @@
 - **テスト側対応**: 配列対応コード追加（`Array.isArray(value) ? value[0] : value`）
 - **推奨バックエンド修正**: CompileServiceImplのプロパティ値シリアル化見直し
 - **コミット**: 3aa83025c
+
+### 6. UIデプロイ問題解決とテスト全通過 ✅ **RESOLVED**
+- **問題発見**: Playwrightテスト実行でUI要素が0件検出
+  - React要素検出失敗: `Found 0 form elements, 0 Ant Design elements`
+  - 原因: 主要JavaScriptファイル`index-B_mvt4L7.js`がコンテナに存在せず
+- **根本原因**: WARファイルビルド時にUIアセットが不完全
+- **解決方法**: 完全リビルド・デプロイ
+  ```bash
+  mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
+  cp core/target/core.war docker/core/core.war
+  docker compose up -d --build --force-recreate core
+  ```
+- **検証結果**: 完全成功 ✅
+  - basic-connectivity.spec.ts: 24/24 PASS (全ブラウザ)
+  - initial-content-setup.spec.ts: 30/30 PASS (5テスト × 6ブラウザプロファイル)
+  - React要素正常検出: `Found 7 form elements, 66 Ant Design elements, 3 input elements`
+- **コミット**: デプロイ修正のみ（コード変更なし）
 
 ---
 
