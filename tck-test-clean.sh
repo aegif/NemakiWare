@@ -105,7 +105,15 @@ echo ""
 
 # Step 4: Java environment setup
 echo -e "${YELLOW}[Step 4/5] Setting up Java environment...${NC}"
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+# Detect OS and set JAVA_HOME accordingly
+if [ -d "/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home" ]; then
+    export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+elif [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
+    export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+else
+    echo -e "${RED}ERROR: Java 17 not found in expected locations${NC}"
+    exit 1
+fi
 export PATH=$JAVA_HOME/bin:$PATH
 
 JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2)
