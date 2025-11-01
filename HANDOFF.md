@@ -2,7 +2,7 @@
 
 **作成日**: 2025-11-01
 **ブランチ**: vk/368c-tck
-**最新コミット**: d06bc63f5
+**最新コミット**: 9cab06376
 
 ---
 
@@ -22,7 +22,19 @@
 ### 3. ドキュメント整備 ✅
 - **BUILD_DEPLOY_GUIDE.md**: ビルド・デプロイ・テスト完全ガイド作成
 - **CLAUDE.md**: 今回の修正を記録
+- **AGENTS.md**: エージェント間連携ガイド追加（Claude Code、Devin、Cursor向け）
 - **目的**: 「ビルドにもテストにも手惑うケースが多い」問題に対応
+
+### 4. Playwrightスキップ項目整理とUI実装計画 ✅
+- **18個のテストファイル**のスキップパターンを分析
+- **2つのカテゴリー**:
+  - 完全スキップ (test.describe.skip): 1ファイル（最優先実装）
+  - 条件付きスキップ (test.skip()): 17ファイル（セルフヒーリング設計）
+- **3段階実装計画**:
+  - **フェーズ1** (1-2週間): カスタムタイプ作成UI（手動フォーム） - Devin委譲推奨
+  - **フェーズ2** (2-3週間): タイプ編集機能、プロパティ管理UI
+  - **フェーズ3** (必要に応じて): PDFプレビュー、権限管理改善
+- **詳細**: `PLAYWRIGHT_SKIP_ANALYSIS.md` 参照
 
 ---
 
@@ -92,6 +104,8 @@ timeout 300s mvn test -Dtest=BasicsTestGroup -f core/pom.xml -Pdevelopment
 ### 詳細ガイド
 - **BUILD_DEPLOY_GUIDE.md**: ビルド・デプロイ・テスト完全手順（トラブルシューティング含む）
 - **CLAUDE.md**: プロジェクト全体の歴史と技術詳細
+- **AGENTS.md**: エージェント間連携ガイド（テスト委譲プロセス、チェックリスト）
+- **PLAYWRIGHT_SKIP_ANALYSIS.md**: Playwrightスキップ項目分析とUI実装計画（フェーズ1-3）
 
 ### 今回の修正の技術詳細
 **ファイル**: `core/src/main/java/jp/aegif/nemaki/cmis/servlet/NemakiBrowserBindingServlet.java`
@@ -149,6 +163,31 @@ git log --oneline -3
 ---
 
 ## 📝 次のステップの提案
+
+### 🎯 優先タスク: Devinへのテスト委譲（フェーズ1）
+
+**タスク**: カスタムタイプ作成UI実装（手動フォーム）
+
+**対象ファイル**:
+- テスト: `tests/admin/custom-type-attributes.spec.ts`
+- UI実装: `core/src/main/webapp/ui/src/components/TypeManagement.tsx`
+
+**前提条件**:
+- Docker環境起動済み（`docker ps` で確認）
+- QAテスト全通過（`./qa-test.sh` → 56/56）
+
+**期待成果**:
+1. "新規タイプ"ボタンクリック → 手動フォームモーダル表示
+2. プロパティ定義タブでプロパティ追加機能実装
+3. `test.describe.skip` → `test.describe` 変更後、3テスト全PASS
+
+**工数**: 5-8日（Devin最適タスク）
+
+**詳細**: `PLAYWRIGHT_SKIP_ANALYSIS.md` のフェーズ1セクション参照
+
+---
+
+### その他の確認タスク
 
 1. **Playwrightテストの実行**
    - initial-content-setup.spec.ts の5つのテストが通過するか確認
