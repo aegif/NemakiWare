@@ -307,6 +307,93 @@ Previous timeout issues with queryLikeTest and queryInFolderTest were **NOT Nema
 - ✅ Core CMIS 1.1 functionality: Fully operational (QA 56/56, TCK 33/38)
 
 ---
+## Recent Major Changes (2025-11-01 - Browser Binding "root" Translation Fix) ✅
+
+### Browser Binding "root" Marker Translation - COMPLETE SUCCESS
+
+**CRITICAL FIX (2025-11-01)**: Resolved Browser Binding issue where URL path marker "root" was being passed directly to CMIS services, causing "This objectId is not a folder id [cmis:objectId = root]" errors.
+
+**Problem Identified**:
+- Browser Binding URLs use convention `/browser/{repositoryId}/root?cmisselector=children`
+- The literal string "root" was being passed to CMIS service methods
+- CMIS services validate object IDs and reject "root" as invalid
+- Result: Empty objects array instead of 4 children from root folder
+
+**Root Cause**:
+```java
+// handleChildrenOperation - BEFORE FIX
+private Object handleChildrenOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+    // objectId = "root" (literal string from URL path)
+    ObjectInFolderList children = service.getChildren(repositoryId, objectId, ...);
+    // ❌ FAILS: CmisInvalidArgumentException
+}
+```
+
+**Solution Implemented** (NemakiBrowserBindingServlet.java):
+
+Added "root" marker translation to 5 handler methods:
+- `handleChildrenOperation` (lines 995-1022)
+- `handleDescendantsOperation` (lines 1027-1050)
+- `handleObjectOperation` (lines 1056-1080)
+- `handlePropertiesOperation` (lines 1082-1102)
+- `handleAllowableActionsOperation` (lines 1104-1121)
+
+```java
+// Pattern applied to all 5 methods
+private Object handleXxxOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+    // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
+    if ("root".equals(objectId)) {
+        org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
+        objectId = repoInfo.getRootFolderId();
+        log.debug("Translated 'root' marker to actual root folder ID: " + objectId);
+    }
+
+    // ... rest of method with translated objectId
+}
+```
+
+**Debug Logging Cleanup**:
+- Removed all verbose `*** TCK DEBUG:` log statements (7 locations)
+- Replaced with clean `log.debug()` statements with `isDebugEnabled()` guards
+- Updated date stamps from "2025-10-18" to "2025-11-01"
+
+**Test Results**:
+```bash
+# Browser Binding now works correctly
+curl -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisselector=children"
+# Returns: {"numItems": 4, "objects": [...]} ✅
+
+# Log verification
+docker logs docker-core-1 2>&1 | grep "TCK DEBUG" | wc -l
+# Returns: 0 ✅ (all debug logs cleaned up)
+```
+
+**Files Modified**:
+- `core/src/main/java/jp/aegif/nemaki/cmis/servlet/NemakiBrowserBindingServlet.java`:
+  - Lines 99: Removed verbose service start debug log
+  - Lines 713-741: Cleaned up GET request routing debug logs
+  - Lines 995-1121: Added "root" translation to 5 handler methods
+
+**Deployment Notes**:
+- **Build Location**: Git worktree at `/private/var/folders/.../worktrees/368c-tck/`
+- **WAR Copy**: Must copy to `/Users/ishiiakinori/NemakiWare/docker/core/core.war`
+- **Docker Deploy**: Required `--build --force-recreate` flags (restart alone insufficient)
+- **Verification**: Sleep 35 seconds after deployment for container startup
+
+**Impact**:
+- ✅ Browser Binding `/repositoryId/root` URLs now work correctly
+- ✅ Playwright initial-content-setup.spec.ts tests should now pass
+- ✅ Production-ready: All debug logging cleaned up
+- ✅ Consistent with CMIS Browser Binding specification
+
+**Git Commit**: 91384ee48 "完璧です！✅ 最終検証が成功しました："
+**Branch**: vk/368c-tck
+**Pushed to Origin**: 2025-11-01
+
+**Related Documentation**:
+- New file: `BUILD_DEPLOY_GUIDE.md` - Comprehensive build/deploy/test guide created to address confusion with build and deployment procedures
+
+---
 
 ## Recent Major Changes (2025-11-01 - Complete TCK Compliance Verification from Clean Build) ✅
 
@@ -435,7 +522,6 @@ timeout 600s mvn test -f core/pom.xml -Pdevelopment \
 - Clear documentation for future test execution
 
 **Status**: Production-ready, all versioning operations verified through TCK compliance tests.
-
 ---
 
 ## Recent Major Changes (2025-10-26 - Production Code Debug Logging Cleanup) ✅
