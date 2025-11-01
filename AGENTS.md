@@ -1,3 +1,161 @@
+# NemakiWare エージェント間連携ガイド
+
+**最終更新**: 2025-11-01
+**対象**: Claude Code、Devin、Cursor、その他のAIエージェント
+**目的**: エージェント間でスムーズにタスクを委譲できる体制を構築
+
+---
+
+## 📌 このドキュメントの目的
+
+CLAUDE.mdはClaude Code固有の技術詳細を記録していますが、このAGENTS.mdは**全てのAIエージェント**が参照できる汎用的なガイドです。特に**テストの委譲**をスムーズにすることを重視しています。
+
+---
+
+## 🤝 エージェント別の推奨タスク
+
+### Claude Code
+**得意分野**: Javaバックエンド、CMIS仕様、アーキテクチャ設計、ドキュメント整備
+**推奨タスク**:
+- CMISサービス層の実装・修正
+- TCK準拠テストの修正・デバッグ
+- データベース層の最適化
+- 技術ドキュメントの整備
+
+### Devin
+**得意分野**: UIテスト、E2Eテスト、フロントエンド実装、並列タスク実行
+**推奨タスク**:
+- **Playwrightテストの作成・修正**（最適）
+- React UIコンポーネントの実装
+- UI/UXの改善
+- テストカバレッジの向上
+
+**Devinへの委譲例**:
+```markdown
+タスク: Playwrightスキップテストの解除
+範囲: tests/admin/custom-type-creation.spec.ts
+前提条件: カスタムタイプ作成UIが実装済み
+期待成果: test.describe.skip → test.describe に変更し、全テスト通過
+```
+
+### Cursor
+**得意分野**: コード編集、リファクタリング、インタラクティブな修正
+**推奨タスク**:
+- 既存コードのリファクタリング
+- バグ修正
+- TypeScript型定義の改善
+- 単体テストの作成
+
+### その他のエージェント
+**汎用的なタスク**:
+- ドキュメント整備
+- 設定ファイルの修正
+- QAテストの実行とレポート作成
+
+---
+
+## 🧪 テスト委譲のプロセス
+
+### ステップ1: 委譲前の準備（委譲元エージェント）
+
+```bash
+# 1. 環境の健全性確認
+docker ps                       # 全コンテナ起動確認
+./qa-test.sh                    # QAテスト全通過確認（56/56）
+git status                      # クリーンな状態確認
+
+# 2. ベースライン結果の記録
+cd core/src/main/webapp/ui
+npx playwright test > baseline_results.txt
+# 現在の通過率を記録
+
+# 3. 委譲内容をHANDOFF.mdに記載
+```
+
+**委譲内容の明確化**:
+- [ ] 何をテストするのか（例: カスタムタイプ作成機能）
+- [ ] どのファイルが対象か（例: tests/admin/custom-type-creation.spec.ts）
+- [ ] 前提条件は何か（例: UIが実装済み、スキップを解除）
+- [ ] 期待される成果物（例: テスト通過率の向上、バグレポート）
+
+### ステップ2: テスト実行（委譲先エージェント）
+
+```bash
+# 1. 環境セットアップ確認
+docker ps                       # コンテナ起動確認
+curl -u admin:admin http://localhost:8080/core/atom/bedroom  # サービス確認
+cd core/src/main/webapp/ui
+npx playwright --version        # Playwrightインストール確認
+
+# 2. ベースラインテスト実行（委譲前の状態確認）
+npx playwright test --project=chromium
+
+# 3. タスク実行（例: スキップ解除）
+# ファイルを編集してtest.describe.skip → test.describe
+
+# 4. テスト再実行
+npx playwright test tests/admin/custom-type-creation.spec.ts --project=chromium
+
+# 5. 結果の記録
+npx playwright show-report
+```
+
+### ステップ3: 成果物の記録（委譲先エージェント）
+
+```bash
+# 1. 変更のコミット
+git add tests/admin/custom-type-creation.spec.ts
+git commit -m "test: Enable custom type creation tests"
+
+# 2. HANDOFF.mdの更新
+# - 実行したテスト
+# - 通過/失敗の詳細
+# - 発見したバグ
+# - 次のステップの提案
+
+# 3. プッシュ
+git push origin <branch-name>
+```
+
+---
+
+## ✅ テスト委譲チェックリスト
+
+### 委譲元エージェント（Claude Code等）
+
+**環境準備**:
+- [ ] Dockerコンテナ全て起動済み（`docker ps`で確認）
+- [ ] QAテスト全通過（`./qa-test.sh` → 56/56）
+- [ ] Gitブランチがクリーン（`git status`）
+- [ ] 最新のコミットがプッシュ済み
+
+**委譲内容の明確化**:
+- [ ] HANDOFF.mdに委譲内容を記載
+- [ ] 対象ファイル/機能を特定
+- [ ] 前提条件を明記（例: UI実装済み）
+- [ ] 期待成果を定義（例: テスト通過、バグレポート）
+
+### 委譲先エージェント（Devin、Cursor等）
+
+**環境セットアップ**:
+- [ ] Java 17確認（TCKテストの場合のみ）
+- [ ] Node.js 18+確認（Playwrightテストの場合）
+- [ ] Playwrightブラウザインストール済み（`npx playwright install`）
+- [ ] Dockerコンテナ起動確認
+
+**テスト実行前**:
+- [ ] HANDOFF.mdを読んで委譲内容を理解
+- [ ] BUILD_DEPLOY_GUIDE.mdでビルド手順を確認
+- [ ] ベースラインテスト実行（委譲前の状態確認）
+
+**テスト実行後**:
+- [ ] テスト結果の記録（通過/失敗の詳細）
+- [ ] バグを発見した場合は詳細をレポート
+- [ ] 変更のコミット・プッシュ
+- [ ] HANDOFF.mdを更新（次のエージェントへ）
+
+---
+
 # Repository Guidelines
 
 ## Project Structure & Modules
