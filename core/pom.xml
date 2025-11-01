@@ -733,7 +733,21 @@
 				<configuration>
 					<packagingExcludes>
 						**/custom-nemakiware.properties,
-						**/custom-repository.yml
+						**/custom-repository.yml,
+						ui/node_modules/**,
+						ui/node/**,
+						ui/src/**,
+						ui/tests/**,
+						ui/.vite/**,
+						ui/playwright-report/**,
+						ui/test-results/**,
+						ui/login/**,
+						ui/package*.json,
+						ui/tsconfig.json,
+						ui/vite.config.ts,
+						ui/playwright.config.ts,
+						ui/.gitignore,
+						ui/README.md
 						<!-- No OpenCMIS exclusions needed - using only 1.2.0-nemakiware Jakarta EE 10 compatible versions -->
 				</packagingExcludes>
 				</configuration>
