@@ -803,7 +803,20 @@ public class CompileServiceImpl implements CompileService {
 
 		// Versioning action(checkOut / checkIn)
 		if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKOUT_DOCUMENT)) {
-			return dtdf.isVersionable() && !isVersionSeriesCheckedOutSafe(versionSeries) && document.isLatestVersion();
+		// CRITICAL TCK DEBUG (2025-11-01): Diagnose which condition is failing for checkOut
+		boolean isVersionable = dtdf.isVersionable();
+		boolean notCheckedOut = !isVersionSeriesCheckedOutSafe(versionSeries);
+		boolean isLatest = document.isLatestVersion();
+		boolean canCheckOut = isVersionable && notCheckedOut && isLatest;
+
+		// ALWAYS log for TCK debugging (removed isDebugEnabled check)
+			log.error("!!! CAN_CHECKOUT_DOCUMENT check for document: " + document.getId() +
+					", isVersionable=" + isVersionable +
+					", notCheckedOut=" + notCheckedOut +
+					", isLatest=" + isLatest +
+					", canCheckOut=" + canCheckOut);
+
+		return canCheckOut;
 		} else if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKIN_DOCUMENT)) {
 			return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
 	} else if (permissionMappingKey.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
@@ -812,6 +825,13 @@ public class CompileServiceImpl implements CompileService {
 
 		// Lock as an effect of checkOut
 		if (dtdf.isVersionable()) {
+			// CRITICAL TCK FIX (2025-11-01): Allow CAN_DELETE_OBJECT for all versions
+			// CMIS 1.1 spec allows deletion of any version, not just the latest version
+			// TCK tests verify this by deleting old versions in versionDeleteTest
+			if (permissionMappingKey.equals(PermissionMapping.CAN_DELETE_OBJECT)) {
+				return true;  // Allow deletion of any version (latest, old, or PWC)
+			}
+
 			if (isLockableAction(permissionMappingKey)) {
 				if (document.isLatestVersion()) {
 					// LocK only when checked out

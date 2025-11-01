@@ -179,7 +179,11 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		info.setVersionSeriesId(getIdProperty(object, PropertyIds.VERSION_SERIES_ID));
 		if (info.getVersionSeriesId() != null) {
 			Boolean isLatest = getBooleanProperty(object, PropertyIds.IS_LATEST_VERSION);
-			info.setIsCurrentVersion(isLatest == null ? true : isLatest.booleanValue());
+			// CRITICAL TCK FIX (2025-11-01): Default to FALSE instead of TRUE when IS_LATEST_VERSION is null
+			// Previous behavior: Defaulted to TRUE causing old versions to incorrectly appear as "current version"
+			// Correct behavior: Default to FALSE - only latest version should have isLatestVersion=true
+			// This prevents incorrect AtomPub link generation for non-latest versions
+			info.setIsCurrentVersion(isLatest == null ? false : isLatest.booleanValue());
 
 		Boolean isCheckedOut = getBooleanProperty(object, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
 		Boolean isPWC = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
