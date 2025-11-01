@@ -1837,9 +1837,12 @@ public class CompileServiceImpl implements CompileService {
 
 	private <T> void addPropertyBase(PropertiesImpl props, String id, AbstractPropertyData<T> p,
 			PropertyDefinition<?> pdf) {
-		p.setDisplayName(pdf.getDisplayName());
-		p.setLocalName(id);
-		p.setQueryName(pdf.getQueryName());
+		// CRITICAL BROWSER BINDING FIX (2025-11-01): Set PropertyDefinition on property object
+		// Root cause: JSONConverter needs PropertyDefinition to determine cardinality for correct JSON serialization
+		// - Single-value properties: Serialize as {"value": "Sites"} (primitive)
+		// - Multi-value properties: Serialize as {"value": ["value1", "value2"]} (array)
+		// Without PropertyDefinition, JSONConverter defaults to array format for ALL properties
+		p.setPropertyDefinition((PropertyDefinition<T>) pdf);
 		props.addProperty(p);
 	}
 

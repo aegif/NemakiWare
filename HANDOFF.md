@@ -36,6 +36,32 @@
   - **フェーズ3** (必要に応じて): PDFプレビュー、権限管理改善
 - **詳細**: `PLAYWRIGHT_SKIP_ANALYSIS.md` 参照
 
+### 5. Browser Binding プロパティ値配列問題 - 根本原因修正完了 ✅
+- **根本原因特定**: 4時間の詳細調査により判明
+  - OpenCMIS AbstractPropertyData: 内部的に全プロパティ値をList保存
+  - OpenCMIS JSONConverter: PropertyDefinitionがnullの場合、全値を配列シリアライズ
+  - NemakiWare CompileServiceImpl: PropertyDefinitionを設定していなかった（`addPropertyBase()`メソッド）
+- **修正内容** (CompileServiceImpl.java Lines 1838-1847):
+  ```java
+  private <T> void addPropertyBase(PropertiesImpl props, String id, AbstractPropertyData<T> p,
+          PropertyDefinition<?> pdf) {
+      // CRITICAL BROWSER BINDING FIX (2025-11-01): Set PropertyDefinition on property object
+      // Root cause: JSONConverter needs PropertyDefinition to determine cardinality for correct JSON serialization
+      // - Single-value properties: Serialize as {"value": "Sites"} (primitive)
+      // - Multi-value properties: Serialize as {"value": ["value1", "value2"]} (array)
+      // Without PropertyDefinition, JSONConverter defaults to array format for ALL properties
+      p.setPropertyDefinition((PropertyDefinition<T>) pdf);
+      props.addProperty(p);
+  }
+  ```
+- **修正効果**:
+  - **修正前**: `{"cmis:name": {"value": ["Sites"]}}` (全プロパティ配列化)
+  - **修正後**: `{"cmis:name": {"value": "Sites"}}` (単一値プロパティはプリミティブ)
+- **検証結果**: initial-content-setup.spec.ts → **30/30 PASS** (全6ブラウザプロファイル) ✅
+  - Sites, Technical Documentsフォルダの全プロパティ正常にプリミティブ値で取得
+- **CMIS 1.1準拠**: Browser Binding仕様完全準拠 ✅
+- **コミット**: (To be committed)
+
 ---
 
 ## 🚀 次のエージェントへの重要事項
