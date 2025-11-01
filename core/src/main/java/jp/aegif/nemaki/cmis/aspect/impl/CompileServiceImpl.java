@@ -1843,6 +1843,10 @@ public class CompileServiceImpl implements CompileService {
 		// - Multi-value properties: Serialize as {"value": ["value1", "value2"]} (array)
 		// Without PropertyDefinition, JSONConverter defaults to array format for ALL properties
 		p.setPropertyDefinition((PropertyDefinition<T>) pdf);
+		// Keep original property metadata setup for compatibility
+		p.setDisplayName(pdf.getDisplayName());
+		p.setLocalName(id);
+		p.setQueryName(pdf.getQueryName());
 		props.addProperty(p);
 	}
 
