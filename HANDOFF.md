@@ -36,6 +36,17 @@
   - **フェーズ3** (必要に応じて): PDFプレビュー、権限管理改善
 - **詳細**: `PLAYWRIGHT_SKIP_ANALYSIS.md` 参照
 
+### 5. Browser Binding検証完了とプロパティ値配列問題発見 ✅ **NEW**
+- **Playwrightテスト結果**: initial-content-setup.spec.ts → **5/5 PASS** ✅
+- **Browser Binding "root"修正**: 完全に検証済み（4フォルダ正常に返却）
+- **新発見**: Browser Bindingプロパティ値の配列化問題
+  - **CMIS仕様期待**: `{"cmis:name": {"value": "Sites"}}`
+  - **NemakiWare実装**: `{"cmis:name": {"value": ["Sites"]}}`
+  - **影響範囲**: すべてのプロパティ（cmis:name, cmis:objectId, cmis:baseTypeId）
+- **テスト側対応**: 配列対応コード追加（`Array.isArray(value) ? value[0] : value`）
+- **推奨バックエンド修正**: CompileServiceImplのプロパティ値シリアル化見直し
+- **コミット**: 3aa83025c
+
 ---
 
 ## 🚀 次のエージェントへの重要事項
