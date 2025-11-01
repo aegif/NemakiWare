@@ -96,8 +96,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
-        log.error("*** TCK DEBUG SERVICE START: method=" + request.getMethod() + ", URI=" + request.getRequestURI() + " ***");
-
         if (log.isDebugEnabled()) {
             log.debug("Browser Binding service: " + request.getMethod() + " " + request.getRequestURI());
         }
@@ -710,26 +708,31 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
         }
 
-        // CRITICAL FIX: Route GET requests with object IDs in path to custom handler
+        // CRITICAL FIX (2025-11-01): Route GET requests with object IDs in path to custom handler
         // URL format: /browser/{repositoryId}/{objectId}?cmisselector=object
-        log.error("*** TCK DEBUG ROUTING: method=" + method + ", pathInfo=" + pathInfo + ", cmisselector=" + cmisselector + " ***");
+        if (log.isDebugEnabled()) {
+            log.debug("Browser Binding request routing: method=" + method + ", pathInfo=" + pathInfo + ", cmisselector=" + cmisselector);
+        }
+
         if ("GET".equals(method) && pathInfo != null && cmisselector != null) {
             String[] pathParts = pathInfo.split("/");
-            log.error("*** TCK DEBUG ROUTING: pathParts.length=" + pathParts.length + ", pathParts=" + java.util.Arrays.toString(pathParts) + " ***");
             // pathParts: ["", "bedroom", "25dcbeae8fb9cb16a29220dbc40c4150"] for /bedroom/25dcbeae8fb9cb16a29220dbc40c4150
             if (pathParts.length >= 3 && pathParts[0].isEmpty()) {
                 // We have repository ID and object ID in path
                 String[] pathFragments = new String[]{pathParts[1], pathParts[2]}; // [repositoryId, objectId]
-                log.error("*** TCK DEBUG: Detected object-specific GET request, calling handleObjectSpecificGetOperation ***");
-                log.error("*** TCK DEBUG: pathInfo=" + pathInfo + ", pathFragments=" + java.util.Arrays.toString(pathFragments) + ", cmisselector=" + cmisselector + " ***");
+
+                if (log.isDebugEnabled()) {
+                    log.debug("Object-specific GET request detected: repositoryId=" + pathFragments[0] + ", objectId=" + pathFragments[1] + ", cmisselector=" + cmisselector);
+                }
+
                 try {
                     handleObjectSpecificGetOperation(finalRequest, response, pathFragments, cmisselector);
                     return; // Don't call super.service()
                 } catch (ServletException | IOException e) {
-                    log.error("*** TCK DEBUG: handleObjectSpecificGetOperation threw servlet/IO exception: " + e.getMessage(), e);
+                    log.error("Error in object-specific GET operation: " + e.getMessage(), e);
                     throw e;
                 } catch (Exception e) {
-                    log.error("*** TCK DEBUG: handleObjectSpecificGetOperation threw unexpected exception: " + e.getMessage(), e);
+                    log.error("Unexpected error in object-specific GET operation: " + e.getMessage(), e);
                     throw new ServletException("Error handling object-specific GET operation", e);
                 }
             }
@@ -993,6 +996,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Handle children operation - equivalent to getChildren CMIS service call
      */
     private Object handleChildrenOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+        // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
+        // Browser Binding URLs use /repositoryId/root convention, but CMIS service needs actual object ID
+        if ("root".equals(objectId)) {
+            org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
+            objectId = repoInfo.getRootFolderId();
+            log.debug("Translated 'root' marker to actual root folder ID: " + objectId);
+        }
+
         // Parse parameters
         String filter = HttpUtils.getStringParameter(request, "filter");
         String orderBy = HttpUtils.getStringParameter(request, "orderBy");
@@ -1002,14 +1013,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         Boolean includePathSegment = getBooleanParameterSafe(request, "includePathSegment");
         java.math.BigInteger maxItems = getBigIntegerParameterSafe(request, "maxItems");
         java.math.BigInteger skipCount = getBigIntegerParameterSafe(request, "skipCount");
-        
+
         // Call CMIS service
         org.apache.chemistry.opencmis.commons.data.ObjectInFolderList children = service.getChildren(
             repositoryId, objectId, filter, orderBy,
             includeAllowableActions, includeRelationships, renditionFilter,
             includePathSegment, maxItems, skipCount, null
         );
-        
+
         return children;
     }
     
@@ -1017,6 +1028,13 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Handle descendants operation - equivalent to getFolderTree CMIS service call
      */
     private Object handleDescendantsOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+        // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
+        if ("root".equals(objectId)) {
+            org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
+            objectId = repoInfo.getRootFolderId();
+            log.debug("Translated 'root' marker to actual root folder ID: " + objectId);
+        }
+
         // Parse parameters
         java.math.BigInteger depth = getBigIntegerParameterSafe(request, "depth");
         String filter = HttpUtils.getStringParameter(request, "filter");
@@ -1024,14 +1042,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         org.apache.chemistry.opencmis.commons.enums.IncludeRelationships includeRelationships = getIncludeRelationshipsParameter(request, "includeRelationships");
         String renditionFilter = HttpUtils.getStringParameter(request, "renditionFilter");
         Boolean includePathSegment = getBooleanParameterSafe(request, "includePathSegment");
-        
+
         // Call CMIS service
         java.util.List<org.apache.chemistry.opencmis.commons.data.ObjectInFolderContainer> descendants = service.getFolderTree(
             repositoryId, objectId, depth, filter,
             includeAllowableActions, includeRelationships, renditionFilter,
             includePathSegment, null
         );
-        
+
         return descendants;
     }
     
@@ -1039,8 +1057,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Handle object operation - equivalent to getObject CMIS service call
      */
     private Object handleObjectOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
-        // TCK DEBUG: Track handleObjectOperation entry
-        log.error("*** TCK DEBUG: handleObjectOperation called for objectId=" + objectId + " ***");
+        // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
+        if ("root".equals(objectId)) {
+            org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
+            objectId = repoInfo.getRootFolderId();
+            log.debug("Translated 'root' marker to actual root folder ID: " + objectId);
+        }
 
         // Parse parameters
         String filter = HttpUtils.getStringParameter(request, "filter");
@@ -1050,20 +1072,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         Boolean includePolicyIds = getBooleanParameterSafe(request, "includePolicyIds");
         Boolean includeACL = getBooleanParameterSafe(request, "includeACL");
 
-        log.error("*** TCK DEBUG: About to call service.getObject for objectId=" + objectId + " ***");
-
         // Call CMIS service
         org.apache.chemistry.opencmis.commons.data.ObjectData object = service.getObject(
             repositoryId, objectId, filter,
             includeAllowableActions, includeRelationships, renditionFilter,
             includePolicyIds, includeACL, null
         );
-
-        log.error("*** TCK DEBUG: service.getObject returned, object=" + (object != null ? "NOT NULL" : "NULL") + " ***");
-        if (object != null && object.getProperties() != null) {
-            org.apache.chemistry.opencmis.commons.data.Properties props = object.getProperties();
-            log.error("*** TCK DEBUG: Properties count=" + (props.getProperties() != null ? props.getProperties().size() : "NULL") + " ***");
-        }
 
         return object;
     }
@@ -1072,14 +1086,21 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Handle properties operation - equivalent to getProperties CMIS service call
      */
     private Object handlePropertiesOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+        // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
+        if ("root".equals(objectId)) {
+            org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
+            objectId = repoInfo.getRootFolderId();
+            log.debug("Translated 'root' marker to actual root folder ID: " + objectId);
+        }
+
         // Parse parameters
         String filter = HttpUtils.getStringParameter(request, "filter");
-        
+
         // Call CMIS service
         org.apache.chemistry.opencmis.commons.data.Properties properties = service.getProperties(
             repositoryId, objectId, filter, null
         );
-        
+
         return properties;
     }
     
@@ -1087,11 +1108,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Handle allowableActions operation - equivalent to getAllowableActions CMIS service call
      */
     private Object handleAllowableActionsOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+        // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
+        if ("root".equals(objectId)) {
+            org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
+            objectId = repoInfo.getRootFolderId();
+            log.debug("Translated 'root' marker to actual root folder ID: " + objectId);
+        }
+
         // Call CMIS service
         org.apache.chemistry.opencmis.commons.data.AllowableActions allowableActions = service.getAllowableActions(
             repositoryId, objectId, null
         );
-        
+
         return allowableActions;
     }
     
