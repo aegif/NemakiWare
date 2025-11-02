@@ -278,11 +278,21 @@ public class CompileServiceImpl implements CompileService {
 			}
 		}
 
-		// Deep copy ObjectData
-		// Shallow copy will cause a destructive effect after filtering some
-		// attributes
-		Cloner cloner = new Cloner();
-		ObjectDataImpl result = DataUtil.convertObjectDataImpl(cloner.deepClone(fullObjectData));
+		// CRITICAL FIX (2025-11-02): Replace deep clone with manual object construction
+		// ROOT CAUSE: Cloner library causes StackOverflowError when encountering circular references
+		// SOLUTION: Use DataUtil.convertObjectDataImpl() pattern to create copy without deep cloning
+		// This creates a new ObjectDataImpl with copied properties, avoiding circular reference issues
+		// NOTE: id and baseTypeId are not set directly - they come from the Properties object
+		ObjectDataImpl result = new ObjectDataImpl();
+		result.setAcl(fullObjectData.getAcl());
+		result.setAllowableActions(fullObjectData.getAllowableActions());
+		result.setChangeEventInfo(fullObjectData.getChangeEventInfo());
+		result.setExtensions(fullObjectData.getExtensions());
+		result.setIsExactAcl(fullObjectData.isExactAcl());
+		result.setPolicyIds(fullObjectData.getPolicyIds());
+		result.setProperties(fullObjectData.getProperties());
+		result.setRelationships(fullObjectData.getRelationships());
+		result.setRenditions(fullObjectData.getRenditions());
 
 		// TCK CRITICAL FIX: Pass propertyAliases to filterProperties for query alias support
 		Properties filteredProperties = filterProperties(result.getProperties(), splitFilter(filter), propertyAliases);

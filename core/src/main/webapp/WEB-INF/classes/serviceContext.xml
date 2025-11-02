@@ -53,6 +53,9 @@
         <property name="aclService">
             <ref bean="AclService" />
         </property>
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
 	</bean>
 
   	<bean id="repositoryInfoMap" class="jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap" init-method="init"

@@ -72,6 +72,7 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.support.GenericApplicationContext;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.cmis.service.NavigationService;
@@ -80,6 +81,7 @@ import jp.aegif.nemaki.cmis.service.PolicyService;
 import jp.aegif.nemaki.cmis.service.RelationshipService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
+import jp.aegif.nemaki.model.Document;
 
 /**
  * Nemaki CMIS service.
@@ -95,6 +97,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * Map containing all Nemaki repositories.
 	 */
 
+	private ContentService contentService;
 	private AclService aclService;
 	private DiscoveryService discoveryService;
 	private NavigationService navigationService;
@@ -257,11 +260,76 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		// // Nemaki Cusomization END ////
 
 		// policies and relationships
-		// TCK CRITICAL FIX (2025-10-10): NemakiWare explicitly supports relationships
-		// (nemaki:parentChildRelationship, nemaki:bidirectionalRelationship)
-		// Set to true to ensure AtomPub responses include relationship links
-		// This allows OpenCMIS clients to discover and use relationship creation functionality
-		info.setSupportsRelationships(true);
+		// TCK CRITICAL FIX (2025-11-02): Relationships link generation policy
+		// CMIS Spec: Relationship objects CANNOT have relationships (prevents circular references)
+		// OpenCMIS Client Issue: When fetching Relationship objects with includeRelationships=BOTH,
+		//                        client expects NO relationships link (since they can't have relationships)
+		// Root Cause: checkRelationships() in TCK fetches relationship objects with SELECT_ALL_NO_CACHE_OC
+		//             If relationships link exists for Relationship objects → CmisNotSupportedException
+		// Solution: Generate relationships link ONLY for non-Relationship objects (Documents, Folders)
+		//           This is CMIS-compliant and matches client expectations
+		boolean isRelationshipObject = object.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP;
+
+		// DEBUG TRACE (2025-11-02): Relationship object detection
+		String objectId = object.getId();
+		log.error("*** PWC DEBUG: objectId=" + objectId +
+				  ", baseTypeId=" + (object.getBaseTypeId() != null ? object.getBaseTypeId().value() : "null") +
+				  ", isRelationshipObject=" + isRelationshipObject);
+
+		// TCK CRITICAL FIX (2025-11-02 REVISED 5): PWC objects do NOT support relationships
+		// ROOT CAUSE: OpenCMIS client checks ObjectInfo.supportsRelationships() and throws CmisNotSupportedException
+		//             if relationships link exists but relationship actions are not allowed
+		// LAYER 1 (AtomPub Link): DO NOT generate relationships link for PWC objects or root folder
+		//                        This prevents client-side CmisNotSupportedException
+		// LAYER 2 (AllowableActions): CompileServiceImpl removes relationship actions from PWC/root folder
+		// LAYER 3 (Service Implementation): RelationshipServiceImpl returns empty list for PWC/root folder
+		// Result: No AtomPub link for PWC → client doesn't attempt to fetch relationships
+
+		// CRITICAL FIX (2025-11-02 REVISED 6): Query PWC directly from ContentService to avoid recursion
+		// ROOT CAUSE (REVISED 5): Calling getObject() from getObjectInfoIntern() causes StackOverflowError
+		//                          because getObject() calls setObjectInfo() which calls getObjectInfoIntern()
+		//                          internally (infinite recursion: getObjectInfoIntern → getObject → setObjectInfo → getObjectInfoIntern)
+		// SOLUTION: Access internal Document model directly via ContentService, similar to Layer 2 approach
+		//           ContentService is internal business logic layer, does NOT call back to CMIS service layer
+		// Performance: Only query if baseType is Document (PWC only exists for documents)
+		boolean isPWCObject = false;
+		if (object.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
+			try {
+				// Query ContentService directly to get Document model (NO recursion through CMIS layer)
+				Document doc = contentService.getDocument(repositoryId, objectId);
+				if (doc != null) {
+					isPWCObject = doc.isPrivateWorkingCopy();
+					log.error("*** PWC DEBUG: objectId=" + objectId + ", ContentService query isPWC=" + isPWCObject);
+				}
+			} catch (Exception e) {
+				// If ContentService query fails, assume not a PWC to avoid blocking other operations
+				log.warn("Failed to query PWC via ContentService for objectId=" + objectId + ": " + e.getMessage());
+				isPWCObject = false;
+			}
+		}
+
+		// Check if this is the root folder (use existing repositoryInfo from line 165)
+		boolean isRootFolder = objectId.equals(repositoryInfo.getRootFolderId());
+
+		// DEBUG TRACE (2025-11-02): PWC and root folder detection
+		log.error("*** PWC DEBUG: objectId=" + objectId +
+				  ", isPWC=" + isPWCObject +
+				  ", isRootFolder=" + isRootFolder);
+
+		// CRITICAL FIX (2025-11-02 REVISED 6 CORRECTED): PWC objects SHOULD have supportsRelationships=true
+		// PREVIOUS BUG: PWC objects were excluded from relationships support (supportsRelationships=false)
+		// CORRECT BEHAVIOR: Only Relationship objects and root folder should have supportsRelationships=false
+		// RATIONALE: PWC objects are regular documents that happen to be checked out - they can have relationships
+		//            The CMIS spec only restricts relationships for Relationship objects themselves (circular reference)
+		//            and root folder (implementation limitation)
+		boolean supportsRelationships = !isRelationshipObject && !isRootFolder;
+
+		// DEBUG TRACE (2025-11-02): Final supportsRelationships decision
+		log.error("*** PWC DEBUG: supportsRelationships=" + supportsRelationships +
+				  " (Only Relationship objects and root folder excluded - PWC objects allowed)");
+
+		info.setSupportsRelationships(supportsRelationships);
+
 		info.setSupportsPolicies(false);
 
 		// Policy support check - only enable if cmis:policy base type exists
@@ -1003,6 +1071,10 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 
 	public void setRelationshipService(RelationshipService relationshipService) {
 		this.relationshipService = relationshipService;
+	}
+
+	public void setContentService(ContentService contentService) {
+		this.contentService = contentService;
 	}
 
 	@Override

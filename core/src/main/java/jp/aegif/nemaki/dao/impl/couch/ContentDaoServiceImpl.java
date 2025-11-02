@@ -1317,16 +1317,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// Query childrenNames view
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			ViewResult result = client.queryView("_repo", "childrenNames", parentId);
-			
+
 			List<String> names = new ArrayList<String>();
-			if (result.getRows() != null) {
+			// CRITICAL FIX (2025-11-02): Check if result is null before calling getRows()
+			// NullPointerException occurs when view query returns null (view doesn't exist or query fails)
+			if (result != null && result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getValue() != null) {
 						names.add(row.getValue().toString());
 					}
 				}
 			}
-			
+
 			return names;
 		} catch (Exception e) {
 			log.error("Error getting children names for parent: " + parentId + " in repository: " + repositoryId, e);
