@@ -270,11 +270,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		//           This is CMIS-compliant and matches client expectations
 		boolean isRelationshipObject = object.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP;
 
-		// DEBUG TRACE (2025-11-02): Relationship object detection
 		String objectId = object.getId();
-		log.error("*** PWC DEBUG: objectId=" + objectId +
-				  ", baseTypeId=" + (object.getBaseTypeId() != null ? object.getBaseTypeId().value() : "null") +
-				  ", isRelationshipObject=" + isRelationshipObject);
 
 		// TCK CRITICAL FIX (2025-11-02 REVISED 5): PWC objects do NOT support relationships
 		// ROOT CAUSE: OpenCMIS client checks ObjectInfo.supportsRelationships() and throws CmisNotSupportedException
@@ -299,7 +295,6 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 				Document doc = contentService.getDocument(repositoryId, objectId);
 				if (doc != null) {
 					isPWCObject = doc.isPrivateWorkingCopy();
-					log.error("*** PWC DEBUG: objectId=" + objectId + ", ContentService query isPWC=" + isPWCObject);
 				}
 			} catch (Exception e) {
 				// If ContentService query fails, assume not a PWC to avoid blocking other operations
@@ -311,10 +306,6 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		// Check if this is the root folder (use existing repositoryInfo from line 165)
 		boolean isRootFolder = objectId.equals(repositoryInfo.getRootFolderId());
 
-		// DEBUG TRACE (2025-11-02): PWC and root folder detection
-		log.error("*** PWC DEBUG: objectId=" + objectId +
-				  ", isPWC=" + isPWCObject +
-				  ", isRootFolder=" + isRootFolder);
 
 		// CRITICAL FIX (2025-11-02 REVISED 6 CORRECTED): PWC objects SHOULD have supportsRelationships=true
 		// PREVIOUS BUG: PWC objects were excluded from relationships support (supportsRelationships=false)
@@ -324,9 +315,6 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		//            and root folder (implementation limitation)
 		boolean supportsRelationships = !isRelationshipObject && !isRootFolder;
 
-		// DEBUG TRACE (2025-11-02): Final supportsRelationships decision
-		log.error("*** PWC DEBUG: supportsRelationships=" + supportsRelationships +
-				  " (Only Relationship objects and root folder excluded - PWC objects allowed)");
 
 		info.setSupportsRelationships(supportsRelationships);
 
