@@ -507,8 +507,9 @@ public class ObjectServiceImpl implements ObjectService {
 			throw new CmisObjectNotFoundException("Cannot create object of type '" + typeId + "'!");
 		}
 
+		Content retrievedContent = contentService.getContent(repositoryId, objectId);
 		ObjectData object = compileService.compileObjectData(callContext, repositoryId,
-				contentService.getContent(repositoryId, objectId), null, false, IncludeRelationships.NONE, null, false);
+				retrievedContent, null, false, IncludeRelationships.NONE, null, false);
 
 		return object;
 	}

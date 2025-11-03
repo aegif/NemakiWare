@@ -980,10 +980,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 super.service(wrappedRequest, response);
                 return;
             }
-            
+
             // Convert result to JSON and write response
             writeJsonResponse(response, result);
-            
+
             log.info("NEMAKI CMIS: Successfully handled " + cmisselector + " operation");
             
         } catch (Exception e) {
@@ -1311,17 +1311,32 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Write JSON response using Browser Binding JSON format
      */
     private void writeJsonResponse(HttpServletResponse response, Object result) throws Exception {
+        System.err.println("*** DEBUG NemakiBrowserBindingServlet.writeJsonResponse() called with result type: " +
+            (result == null ? "null" : result.getClass().getName()));
+
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
-        
+
         try (java.io.PrintWriter writer = response.getWriter()) {
             // CRITICAL FIX: Use OpenCMIS JSONConverter instead of plain Jackson ObjectMapper
             // to ensure CMIS 1.1 compliant JSON field names (e.g., "id" instead of "propertyDefinitionId")
             if (result instanceof org.apache.chemistry.opencmis.commons.data.ObjectData) {
+                System.err.println("*** DEBUG: result is instanceof ObjectData");
                 // For ObjectData, use OpenCMIS JSONConverter to get proper CMIS 1.1 JSON format
-                org.apache.chemistry.opencmis.commons.data.ObjectData objectData = 
+                org.apache.chemistry.opencmis.commons.data.ObjectData objectData =
                     (org.apache.chemistry.opencmis.commons.data.ObjectData) result;
-                    
+
+                // DEBUG: Check properties in ObjectData before JSONConverter serialization
+                if (objectData.getProperties() != null && objectData.getProperties().getProperties() != null) {
+                    org.apache.chemistry.opencmis.commons.data.PropertyData<?> creationDateProp =
+                        objectData.getProperties().getProperties().get(org.apache.chemistry.opencmis.commons.PropertyIds.CREATION_DATE);
+                    org.apache.chemistry.opencmis.commons.data.PropertyData<?> lastModDateProp =
+                        objectData.getProperties().getProperties().get(org.apache.chemistry.opencmis.commons.PropertyIds.LAST_MODIFICATION_DATE);
+                    System.err.println("*** DEBUG NemakiBrowserBindingServlet BEFORE JSONConverter.convert():");
+                    System.err.println("  creationDate in ObjectData: " + (creationDateProp == null ? "null" : creationDateProp.getFirstValue()));
+                    System.err.println("  lastModificationDate in ObjectData: " + (lastModDateProp == null ? "null" : lastModDateProp.getFirstValue()));
+                }
+
                 // Use OpenCMIS JSONConverter.convert() method for proper CMIS JSON serialization
                 // Parameters: ObjectData, TypeCache, PropertyMode, succinct, DateTimeFormat
                 org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonObject = 

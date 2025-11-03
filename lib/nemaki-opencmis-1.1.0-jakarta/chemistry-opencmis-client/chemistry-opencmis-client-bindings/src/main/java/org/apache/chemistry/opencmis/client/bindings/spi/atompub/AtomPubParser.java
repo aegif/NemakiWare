@@ -274,6 +274,7 @@ public class AtomPubParser {
      */
     private AtomEntry parseEntry(XMLStreamReader parser) throws XMLStreamException {
         AtomEntry result = new AtomEntry();
+        System.err.println("!!! AtomPubParser.parseEntry: ENTRY parsing started");
 
         XMLUtils.next(parser);
 
@@ -281,8 +282,12 @@ public class AtomPubParser {
         while (true) {
             int event = parser.getEventType();
             if (event == XMLStreamConstants.START_ELEMENT) {
+                QName elementName = parser.getName();
+                System.err.println("!!! AtomPubParser.parseEntry: Found element: namespace=" + elementName.getNamespaceURI() + ", localPart=" + elementName.getLocalPart());
+
                 AtomElement element = parseElement(parser);
                 if (element != null) {
+                    System.err.println("!!! AtomPubParser.parseEntry: Element parsed successfully, adding to entry");
                     // add to entry
                     result.addElement(element);
 
@@ -292,6 +297,8 @@ public class AtomPubParser {
                     } else if (element.getObject() instanceof TypeDefinition) {
                         result.setId(((TypeDefinition) element.getObject()).getId());
                     }
+                } else {
+                    System.err.println("!!! AtomPubParser.parseEntry: Element parsing returned NULL");
                 }
             } else if (event == XMLStreamConstants.END_ELEMENT) {
                 break;
@@ -326,6 +333,7 @@ public class AtomPubParser {
      */
     private AtomElement parseElement(XMLStreamReader parser) throws XMLStreamException {
         QName name = parser.getName();
+        System.err.println("!!! AtomPubParser.parseElement: namespace=" + name.getNamespaceURI() + ", localPart=" + name.getLocalPart());
 
         if (XMLConstants.NAMESPACE_RESTATOM.equals(name.getNamespaceURI())) {
             if (TAG_OBJECT.equals(name.getLocalPart())) {
@@ -340,6 +348,7 @@ public class AtomPubParser {
             }
         } else if (XMLConstants.NAMESPACE_ATOM.equals(name.getNamespaceURI())) {
             if (TAG_LINK.equals(name.getLocalPart())) {
+                System.err.println("!!! AtomPubParser.parseElement: ATOM LINK DETECTED - calling parseLink()");
                 return parseLink(parser);
             } else if (TAG_CONTENT.equals(name.getLocalPart())) {
                 return parseAtomContentSrc(parser);
@@ -347,6 +356,7 @@ public class AtomPubParser {
         }
 
         // we don't know it - skip it
+        System.err.println("!!! AtomPubParser.parseElement: Unknown element - SKIPPING");
         XMLUtils.skip(parser);
 
         return null;
@@ -497,21 +507,26 @@ public class AtomPubParser {
     private static AtomElement parseLink(XMLStreamReader parser) throws XMLStreamException {
         QName name = parser.getName();
         AtomLink result = new AtomLink();
+        System.err.println("!!! AtomPubParser.parseLink: PARSING LINK TAG");
 
         // save attributes
         for (int i = 0; i < parser.getAttributeCount(); i++) {
             if (LINK_REL.equals(parser.getAttributeLocalName(i))) {
                 result.setRel(parser.getAttributeValue(i));
+                System.err.println("!!! AtomPubParser.parseLink: rel=" + parser.getAttributeValue(i));
             } else if (LINK_HREF.equals(parser.getAttributeLocalName(i))) {
                 result.setHref(parser.getAttributeValue(i));
+                System.err.println("!!! AtomPubParser.parseLink: href=" + parser.getAttributeValue(i));
             } else if (LINK_TYPE.equals(parser.getAttributeLocalName(i))) {
                 result.setType(parser.getAttributeValue(i));
+                System.err.println("!!! AtomPubParser.parseLink: type=" + parser.getAttributeValue(i));
             }
         }
 
         // skip enclosed tags, if any
         XMLUtils.skip(parser);
 
+        System.err.println("!!! AtomPubParser.parseLink: Link parsing completed, returning AtomElement");
         return new AtomElement(name, result);
     }
 

@@ -788,10 +788,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			String name = (String) doc.get("name");
 			String creator = (String) doc.get("creator");
 			String modifier = (String) doc.get("modifier");
-			String created = convertToString(doc.get("created"));
-			String modified = convertToString(doc.get("modified"));
+			// CRITICAL TCK FIX (2025-11-03): Keep date fields as original type (numeric or string)
+			// Do NOT convert to String - let CouchNodeBase.parseDateTime() handle the conversion
+			// CouchDB stores timestamps as numbers, but Cloudant SDK may return as strings
+			Object created = doc.get("created");
+			Object modified = doc.get("modified");
 			String changeToken = (String) doc.get("changeToken");
-			
+
+			// CRITICAL TCK FIX (2025-11-03): Convert Gson LazilyParsedNumber to Long for Jackson compatibility
+			// LazilyParsedNumber is a Gson internal class that Jackson cannot deserialize properly
+			if (created != null && created.getClass().getName().contains("LazilyParsedNumber")) {
+				created = ((Number) created).longValue();
+			}
+			if (modified != null && modified.getClass().getName().contains("LazilyParsedNumber")) {
+				modified = ((Number) modified).longValue();
+			}
+
 			log.info("CLOUDANT FIX: Direct field access results:");
 			log.info("  - type: " + type);
 			log.info("  - objectType: " + objectType);
@@ -854,10 +866,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			
 			// Create ObjectMapper for type conversion
 			ObjectMapper mapper = createConfiguredObjectMapper();
-			
+
+			// DEBUG: Verify actualDocMap contains date values
+			System.err.println("*** DEBUG ContentDaoServiceImpl BEFORE mapper.convertValue:");
+			System.err.println("  actualDocMap.created = " + (actualDocMap.containsKey("created") ? actualDocMap.get("created").getClass().getName() + "=" + actualDocMap.get("created") : "NOT PRESENT"));
+			System.err.println("  actualDocMap.modified = " + (actualDocMap.containsKey("modified") ? actualDocMap.get("modified").getClass().getName() + "=" + actualDocMap.get("modified") : "NOT PRESENT"));
+
 			if ("folder".equals(actualType) || "cmis:folder".equals(actualType)) {
 				log.info("Converting to CouchFolder for type: " + actualType);
 				CouchFolder folder = mapper.convertValue(actualDocMap, CouchFolder.class);
+
+				// DEBUG: Verify CouchFolder has date values after conversion
+				System.err.println("*** DEBUG ContentDaoServiceImpl AFTER mapper.convertValue:");
+				System.err.println("  folder.getCreated() = " + (folder.getCreated() == null ? "null" : folder.getCreated().getTime()));
+				System.err.println("  folder.getModified() = " + (folder.getModified() == null ? "null" : folder.getModified().getTime()));
+
 				log.info("CouchFolder created, calling convert()");
 				Content content = folder.convert();
 				log.info("Content converted. Type: " + content.getClass().getSimpleName() + ", ObjectType: " + content.getObjectType());

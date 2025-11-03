@@ -613,7 +613,7 @@ public class ContentServiceImpl implements ContentService {
 	try {
 		// PHASE 1: Prepare all components without CouchDB writes
 		Document d = buildNewBasicDocument(callContext, repositoryId, properties, parentFolder, addAces, removeAces);
-		
+
 		// CRITICAL FIX: Evaluate ContentStreamAllowed considering Secondary Types
 		DocumentTypeDefinition tdf = (DocumentTypeDefinition) (getTypeManager().getTypeDefinition(repositoryId, d));
 		ContentStreamAllowed csa = tdf.getContentStreamAllowed();
@@ -678,11 +678,11 @@ public class ContentServiceImpl implements ContentService {
 		// PHASE 4: Atomic Document creation (single CouchDB write)
 		log.debug("PHASE 4: Creating document atomically with versionSeriesId: {}", d.getVersionSeriesId());
 	log.debug("Document.attachmentNodeId before DAO: {}", d.getAttachmentNodeId());
-		
+
 		atomicResult = contentDaoService.create(repositoryId, d);
 		createdDocumentId = atomicResult.getId();
 		log.debug("Created Document atomically: {} with revision: {}", createdDocumentId, atomicResult.getRevision());
-		
+
 	log.debug("Created Document ID: {}, atomicResult.attachmentNodeId: {}", createdDocumentId, atomicResult.getAttachmentNodeId());
 		
 	// PHASE 5: Version series update (if required)

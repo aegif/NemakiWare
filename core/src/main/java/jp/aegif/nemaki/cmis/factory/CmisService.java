@@ -318,20 +318,33 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		// LAYER 3 (Service Implementation): RelationshipServiceImpl returns empty list for PWC/root folder
 		// Result: No AtomPub link for PWC → client doesn't attempt to fetch relationships
 
-		// CRITICAL TCK FIX (2025-11-03): Read PWC status directly from ObjectData properties
-		// ROOT CAUSE: ContentService.getDocument() returns incorrect PWC status (returns false when should be true)
-		//             Same object ID shows isPWC=true in Layer 2 but isPWC=false in ContentService query
-		// SOLUTION: Read IS_PRIVATE_WORKING_COPY property directly from ObjectData, same as Layer 2 approach
-		//           This ensures consistency with CompileServiceImpl which correctly sets the property
-		// Performance: Direct property access, no database query required
+		// CRITICAL TCK FIX (2025-11-03): PWC detection with property filter fallback
+		// ROOT CAUSE: When client applies property filter, cmis:isPrivateWorkingCopy may be excluded from ObjectData
+		//             This causes getBooleanProperty() to return null, even though document is actually a PWC
+		// SOLUTION: Two-phase detection:
+		//           1. Try to read IS_PRIVATE_WORKING_COPY property from ObjectData (fast, when available)
+		//           2. If null (filtered), check if objectId equals versionSeriesCheckedOutId (CMIS spec fallback)
+		// CMIS Spec: A document is a PWC if and only if its ID equals the versionSeriesCheckedOutId
+
 		boolean isPWCObject = false;
 		if (object.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
 			Boolean isPWCProperty = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
-			isPWCObject = (isPWCProperty != null && isPWCProperty.booleanValue());
 
-			if (log.isDebugEnabled()) {
-				log.debug("PWC detection for objectId=" + objectId + ": isPWC=" + isPWCObject +
-						 " (read from ObjectData properties, same as Layer 2)");
+			if (isPWCProperty != null) {
+				// Property available: Use it directly (normal case)
+				isPWCObject = isPWCProperty.booleanValue();
+				if (log.isDebugEnabled()) {
+					log.debug("PWC detection for objectId=" + objectId + ": isPWC=" + isPWCObject +
+							 " (from IS_PRIVATE_WORKING_COPY property)");
+				}
+			} else {
+				// Property null (filtered): Use versionSeriesCheckedOutId fallback (CMIS spec method)
+				String versionSeriesCheckedOutId = getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID);
+				isPWCObject = (versionSeriesCheckedOutId != null && objectId.equals(versionSeriesCheckedOutId));
+				if (log.isDebugEnabled()) {
+					log.debug("PWC detection for objectId=" + objectId + ": isPWC=" + isPWCObject +
+							 " (property filtered, used versionSeriesCheckedOutId=" + versionSeriesCheckedOutId + " fallback)");
+				}
 			}
 		}
 
@@ -343,12 +356,16 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 				  ", isPWC=" + isPWCObject +
 				  ", isRootFolder=" + isRootFolder);
 
-		// CRITICAL: Exclude Relationship objects, PWC objects, and root folder from relationships support
-		boolean supportsRelationships = !isRelationshipObject && !isPWCObject && !isRootFolder;
+		// CRITICAL FIX (2025-11-03): Exclude ONLY Relationship objects and root folder from relationships support
+		// PWC objects are regular documents that can have relationships
+		boolean supportsRelationships = !isRelationshipObject && !isRootFolder;
 
-		// DEBUG TRACE (2025-11-02): Final supportsRelationships decision
-		log.error("*** PWC DEBUG: supportsRelationships=" + supportsRelationships +
-				  " (Relationship objects, PWC objects, and root folder excluded)");
+		// DEBUG TRACE (2025-11-03): Final supportsRelationships decision
+		if (log.isDebugEnabled()) {
+			log.debug("supportsRelationships=" + supportsRelationships +
+					  " (objectId=" + objectId + ", isPWC=" + isPWCObject +
+					  ", isRelationship=" + isRelationshipObject + ", isRoot=" + isRootFolder + ")");
+		}
 
 		info.setSupportsRelationships(supportsRelationships);
 

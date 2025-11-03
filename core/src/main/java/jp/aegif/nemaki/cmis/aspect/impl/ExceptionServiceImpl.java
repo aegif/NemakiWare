@@ -287,15 +287,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			}
 			
 		} catch (Exception e) {
-			log.error("CRITICAL DEBUG: Exception caught during type validation", e);
-			log.error("Exception class: " + e.getClass().getName());
-			log.error("Exception message: " + e.getMessage());
-			log.error("Type ID: " + (type != null ? type.getId() : "null"));
-			log.error("Parent Type ID: " + (type != null ? type.getParentTypeId() : "null"));
-			log.error("Base Type ID: " + (type != null && type.getBaseTypeId() != null ? type.getBaseTypeId().value() : "null"));
-			if (e.getCause() != null) {
-				log.error("Caused by: " + e.getCause().getClass().getName() + ": " + e.getCause().getMessage());
-			}
+			log.error("Exception during type validation for type: " + (type != null ? type.getId() : "null"), e);
 			msg = "Internal error during type validation: " + e.getClass().getSimpleName() + " - " + e.getMessage();
 		}
 
@@ -430,19 +422,6 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void permissionDenied(CallContext context, String repositoryId,
 			String key, Content content) {
 
-		// CRITICAL DEBUG: Method entry point
-		try {
-			java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-			debugWriter.write("=== EXCEPTION SERVICE PERMISSION DENIED ENTRY ===\n");
-			debugWriter.write("Timestamp: " + new java.util.Date() + "\n");
-			debugWriter.write("User: " + context.getUsername() + "\n");
-			debugWriter.write("Key: " + key + "\n");
-			debugWriter.write("Content: " + content.getId() + "\n");
-			debugWriter.close();
-		} catch (Exception e) {
-			log.debug("Failed to write debug information to log file", e);
-		}
-
 		// Admin user always pass a permission check(skip calculateAcl)
 		String userId = context.getUsername();
 		log.debug("permissionDenied called for user=" + userId + ", key=" + key + ", content=" + content.getId());
@@ -462,30 +441,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	private void permissionDeniedInternal(CallContext callContext, String repositoryId,
-			String key, Acl acl, String baseTypeId, Content content) {		// CRITICAL DEBUG: About to check permission in permissionDeniedInternal
-		try {
-			java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-			debugWriter.write("=== PERMISSION DENIED INTERNAL DEBUG ===\n");
-			debugWriter.write("Timestamp: " + new java.util.Date() + "\n");
-			debugWriter.write("User: " + callContext.getUsername() + "\n");
-			debugWriter.write("Key: " + key + "\n");
-			debugWriter.write("Content: " + content.getId() + " (" + content.getName() + ")\n");
-			debugWriter.write("About to call permissionService.checkPermission()\n");
-			debugWriter.close();
-		} catch (Exception e) {
-			log.debug("Failed to write permission check debug information", e);
-		}
-		
+			String key, Acl acl, String baseTypeId, Content content) {
 		boolean permissionResult = permissionService.checkPermission(callContext, repositoryId, key, acl, baseTypeId, content);
-		
-		try {
-			java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-			debugWriter.write("Permission check result: " + permissionResult + "\n");
-			debugWriter.close();
-		} catch (Exception e) {
-			log.debug("Failed to write permission result debug information", e);
-		}
-		
+
 		if (!permissionResult) {
 			String msg = String.format( "Permission Denied! repositoryId=%s key=%s acl=%s  content={id:%s, name:%s} ", repositoryId, key, acl, content.getId(), content.getName()) ;
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);

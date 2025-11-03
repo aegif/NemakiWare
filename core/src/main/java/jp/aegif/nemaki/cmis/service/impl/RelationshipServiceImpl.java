@@ -76,6 +76,25 @@ public class RelationshipServiceImpl implements RelationshipService {
 
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+
+			// TCK FIX (2025-11-02): Root folder cannot have relationships
+			// Return empty list gracefully instead of throwing permission exception
+			// This aligns with ObjectInfo.setSupportsRelationships(false) and allowable actions exclusion
+			if (contentService.isRoot(repositoryId, content)) {
+				return new ObjectListImpl();
+			}
+
+			// TCK FIX (2025-11-02): PWC objects cannot have relationships (Three-Layer Defense - Layer 3)
+			// PWC (Private Working Copy) objects are temporary checkout states that shouldn't have relationships
+			// LAYER 3: Return empty list from server-side service
+			// This works with Layer 1 (AtomPub link exists) and Layer 2 (AllowableActions exclusion)
+			if (content instanceof jp.aegif.nemaki.model.Document) {
+				jp.aegif.nemaki.model.Document doc = (jp.aegif.nemaki.model.Document) content;
+				if (doc.isPrivateWorkingCopy()) {
+					return new ObjectListImpl();
+				}
+			}
+
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, content);
 

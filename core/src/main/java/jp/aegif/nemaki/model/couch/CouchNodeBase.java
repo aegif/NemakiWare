@@ -78,7 +78,7 @@ public class CouchNodeBase {
 			if (properties.containsKey("type")) {
 				this.type = (String) properties.get("type");
 			}
-			
+
 			// 日付フィールドの処理（CouchDBの複数形式をGregorianCalendarに変換）
 			if (properties.containsKey("created")) {
 				this.created = parseDateTime(properties.get("created"));
@@ -86,14 +86,14 @@ public class CouchNodeBase {
 			if (properties.containsKey("modified")) {
 				this.modified = parseDateTime(properties.get("modified"));
 			}
-			
+
 			if (properties.containsKey("creator")) {
 				this.creator = (String) properties.get("creator");
 			}
 			if (properties.containsKey("modifier")) {
 				this.modifier = (String) properties.get("modifier");
 			}
-			
+
 			// その他のプロパティを保存
 			this.additionalProperties.putAll(properties);
 		}
@@ -172,8 +172,25 @@ public class CouchNodeBase {
 		return created;
 	}
 
-	public void setCreated(GregorianCalendar created) {
-		this.created = created;
+	// CRITICAL TCK FIX (2025-11-03): Accept Object type to handle Jackson deserialization
+	// Jackson with PropertyAccessor.SETTER calls this method with numeric timestamps from CouchDB
+	// Previously expected GregorianCalendar only, causing null dates in CMIS API
+	// DEFENSIVE FIX: Don't override existing non-null value with null (Jackson calls setter after @JsonCreator)
+	public void setCreated(Object created) {
+
+		// DEFENSIVE: Don't override existing non-null value with null
+		if (created == null && this.created != null) {
+			return;
+		}
+
+		if (created == null) {
+			this.created = null;
+		} else if (created instanceof GregorianCalendar) {
+			this.created = (GregorianCalendar) created;
+		} else {
+			// Handle numeric timestamps (Long, Double) or string timestamps from CouchDB
+			this.created = parseDateTime(created);
+		}
 	}
 
 	public String getCreator() {
@@ -188,8 +205,24 @@ public class CouchNodeBase {
 		return modified;
 	}
 
-	public void setModified(GregorianCalendar modified) {
-		this.modified = modified;
+	// CRITICAL TCK FIX (2025-11-03): Accept Object type to handle Jackson deserialization
+	// Jackson with PropertyAccessor.SETTER calls this method with numeric timestamps from CouchDB
+	// Previously expected GregorianCalendar only, causing null dates in CMIS API
+	// DEFENSIVE FIX: Don't override existing non-null value with null (Jackson calls setter after @JsonCreator)
+	public void setModified(Object modified) {
+		// DEFENSIVE: Don't override existing non-null value with null
+		if (modified == null && this.modified != null) {
+			return;
+		}
+
+		if (modified == null) {
+			this.modified = null;
+		} else if (modified instanceof GregorianCalendar) {
+			this.modified = (GregorianCalendar) modified;
+		} else {
+			// Handle numeric timestamps (Long, Double) or string timestamps from CouchDB
+			this.modified = parseDateTime(modified);
+		}
 	}
 
 	public String getModifier() {
