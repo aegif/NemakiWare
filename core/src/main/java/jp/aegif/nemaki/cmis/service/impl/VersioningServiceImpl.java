@@ -66,13 +66,9 @@ public class VersioningServiceImpl implements VersioningService {
 	 */
 	public void checkOut(CallContext callContext, String repositoryId,
 			Holder<String> objectId, Holder<Boolean> contentCopied, ExtensionsData extension) {
-		System.err.println("!!! VERSIONING SERVICE DEBUG: checkOut() method called for objectId=" + (objectId != null ? objectId.getValue() : "null"));
-		log.error("!!! VERSIONING SERVICE DEBUG: checkOut() method called for objectId=" + (objectId != null ? objectId.getValue() : "null"));
-
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 		String originalId = objectId.getValue();
-		System.err.println("!!! VERSIONING SERVICE DEBUG: originalId=" + originalId + ", acquiring lock...");
-		
+
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
 		
 		try{
@@ -98,18 +94,12 @@ public class VersioningServiceImpl implements VersioningService {
 			// //////////////////
 			// Body of the method
 			// //////////////////
-			System.err.println("!!! VERSIONING SERVICE DEBUG: All validation passed, calling contentService.checkOut()...");
-			log.error("!!! VERSIONING SERVICE DEBUG: All validation passed, calling contentService.checkOut()...");
 			Document pwc = contentService.checkOut(callContext, repositoryId, objectId.getValue(), extension);
-			System.err.println("!!! VERSIONING SERVICE DEBUG: contentService.checkOut() returned PWC: " + pwc.getId());
-			log.error("!!! VERSIONING SERVICE DEBUG: contentService.checkOut() returned PWC: " + pwc.getId());
 
 			// CRITICAL TCK FIX (2025-11-03): Remove cache for original document AFTER checkout
 			// The original document was retrieved at Line 84 (before checkout) and cached with old properties
 			// After checkout, CouchDB has updated properties, so we must invalidate the stale cache
-			System.err.println("!!! CACHE FIX DEBUG: About to invalidate cache for originalId=" + originalId);
 			nemakiCachePool.get(repositoryId).removeCmisCache(originalId);
-			System.err.println("!!! CACHE FIX DEBUG: Cache invalidated successfully for originalId=" + originalId);
 
 			objectId.setValue(pwc.getId());
 			Holder<Boolean> copied = new Holder<Boolean>(true);

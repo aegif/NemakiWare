@@ -413,7 +413,22 @@ public class CompileServiceImpl implements CompileService {
 					hasValidContentStreamProperty = pd.getFirstValue() != null;
 				}
 
-				if (filter.contains(pd.getQueryName()) || hasValidContentStreamProperty) {
+				// CRITICAL TCK FIX (2025-11-03): Always include versioning properties WITH VALID VALUES
+				// Version-related properties are required for AtomPub link generation.
+				// Without cmis:versionSeriesId, no version-history link is generated,
+				// causing "Operation not supported" errors for PWC objects.
+				//
+				// versionSeriesId: Required for version-history link (AbstractAtomPubServiceCall line 212)
+				// isPrivateWorkingCopy: Required for PWC identification
+				// versionSeriesCheckedOutId: Required for PWC detection fallback
+				boolean hasValidVersioningProperty = false;
+				if (PropertyIds.VERSION_SERIES_ID.equals(pd.getId()) ||
+					PropertyIds.IS_PRIVATE_WORKING_COPY.equals(pd.getId()) ||
+					PropertyIds.VERSION_SERIES_CHECKED_OUT_ID.equals(pd.getId())) {
+					hasValidVersioningProperty = pd.getFirstValue() != null;
+				}
+
+				if (filter.contains(pd.getQueryName()) || hasValidContentStreamProperty || hasValidVersioningProperty) {
 					// TCK CRITICAL FIX: Apply query alias if propertyAliases map is provided
 					// Check if this property's queryName matches any value in the aliases map
 					// If it does, set the property's queryName to the corresponding alias (key)
