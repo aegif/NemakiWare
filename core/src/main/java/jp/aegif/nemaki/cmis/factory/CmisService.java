@@ -72,6 +72,7 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.support.GenericApplicationContext;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.cmis.service.NavigationService;
@@ -80,6 +81,7 @@ import jp.aegif.nemaki.cmis.service.PolicyService;
 import jp.aegif.nemaki.cmis.service.RelationshipService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
+import jp.aegif.nemaki.model.Document;
 
 /**
  * Nemaki CMIS service.
@@ -95,6 +97,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * Map containing all Nemaki repositories.
 	 */
 
+	private ContentService contentService;
 	private AclService aclService;
 	private DiscoveryService discoveryService;
 	private NavigationService navigationService;
@@ -119,13 +122,24 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		ObjectInfo info = null;
 		// object info has not been found -> create one
 		try {
+			if (object == null || object.getId() == null) {
+				log.error("setObjectInfo called with null object or null objectId!");
+				return null;
+			}
+
+
 			info = getObjectInfoIntern(repositoryId, object);
+
+
+			if (info == null) {
+				log.error("getObjectInfoIntern returned NULL for objectId: " + object.getId());
+			}
+
 			// add object info
 			addObjectInfo(info);
 
-
-
 		} catch (Exception e) {
+			log.error("EXCEPTION in setObjectInfo for objectId: " + (object != null ? object.getId() : "null"), e);
 			e.printStackTrace();
 		} finally {
 
@@ -151,6 +165,10 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 */
 	@Override
 	protected ObjectInfo getObjectInfoIntern(String repositoryId, ObjectData object) {
+		// DEBUG TRACE (2025-11-03): Method entry
+		System.err.println("!!! [TRACE] getObjectInfoIntern ENTRY: objectId=" +
+			(object != null ? object.getId() : "null"));
+
 		// if the object has no properties, stop here
 		if (object.getProperties() == null || object.getProperties().getProperties() == null) {
 			throw new CmisRuntimeException("No properties!");
@@ -162,8 +180,9 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		RepositoryInfo repositoryInfo = getRepositoryInfo(repositoryId, null);
 
 		// general properties
+		String objectId = object.getId();
 		info.setObject(object);
-		info.setId(object.getId());
+		info.setId(objectId);
 		info.setName(getStringProperty(object, PropertyIds.NAME));
 		info.setCreatedBy(getStringProperty(object, PropertyIds.CREATED_BY));
 		info.setCreationDate(getDateTimeProperty(object, PropertyIds.CREATED_BY));
@@ -179,22 +198,49 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		info.setVersionSeriesId(getIdProperty(object, PropertyIds.VERSION_SERIES_ID));
 		if (info.getVersionSeriesId() != null) {
 			Boolean isLatest = getBooleanProperty(object, PropertyIds.IS_LATEST_VERSION);
-			info.setIsCurrentVersion(isLatest == null ? true : isLatest.booleanValue());
+			Boolean isPWC = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
+
+			// DEBUG TRACE (2025-11-03): PWC detection
+			System.err.println("!!! [TRACE] ObjectId=" + objectId +
+				", isLatest=" + isLatest +
+				", isPWC=" + isPWC);
+
+			// CRITICAL TCK FIX (2025-11-03): PWC documents MUST have isCurrentVersion=true
+			boolean isCurrentVersion;
+			if (isPWC != null && isPWC.booleanValue()) {
+				isCurrentVersion = true;
+				System.err.println("!!! [TRACE] Setting isCurrentVersion=TRUE for PWC document: " + objectId);
+			} else {
+				isCurrentVersion = (isLatest == null ? false : isLatest.booleanValue());
+				System.err.println("!!! [TRACE] Setting isCurrentVersion=" + isCurrentVersion +
+					" (isLatest=" + isLatest + ") for non-PWC document: " + objectId);
+			}
+
+			info.setIsCurrentVersion(isCurrentVersion);
+			System.err.println("!!! [TRACE] ObjectInfo.isCurrentVersion set to: " + isCurrentVersion +
+				" for objectId=" + objectId);
+		}
 
 		Boolean isCheckedOut = getBooleanProperty(object, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
-		Boolean isPWC = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
+		Boolean isPWC2 = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
 
 		if (isCheckedOut != null && isCheckedOut.booleanValue()) {
 			String pwcId = getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID);
 
-			if (isPWC != null && isPWC.booleanValue()) {
+			// REVERTED (2025-11-03): Historical evidence shows 2025-11-01 working version had workingCopyId=null
+			// Git commit a31198254 (2025-10-29): PWC had workingCopyId=null and tests passed 100%
+			// Previous "fix" (workingCopyId=objectId) was incorrect - reversing to working version
+			if (isPWC2 != null && isPWC2.booleanValue()) {
+				// PWC document: Set workingCopyId to null (matches working 2025-11-01 version)
 				info.setWorkingCopyId(null);
 				info.setWorkingCopyOriginalId(null);
+				System.err.println("!!! [TRACE] PWC workingCopyId REVERTED to null (2025-11-01 working version)");
 			} else {
+				// Non-PWC document in checked-out version series: Set workingCopyId to PWC ID
 				info.setWorkingCopyId(pwcId);
 				info.setWorkingCopyOriginalId(null);
+				System.err.println("!!! [TRACE] Non-PWC workingCopyId set to: " + pwcId);
 			}
-		}
 		}
 
 		// content
@@ -253,11 +299,59 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		// // Nemaki Cusomization END ////
 
 		// policies and relationships
-		// TCK CRITICAL FIX (2025-10-10): NemakiWare explicitly supports relationships
-		// (nemaki:parentChildRelationship, nemaki:bidirectionalRelationship)
-		// Set to true to ensure AtomPub responses include relationship links
-		// This allows OpenCMIS clients to discover and use relationship creation functionality
-		info.setSupportsRelationships(true);
+		// TCK CRITICAL FIX (2025-11-02): Relationships link generation policy
+		// CMIS Spec: Relationship objects CANNOT have relationships (prevents circular references)
+		// OpenCMIS Client Issue: When fetching Relationship objects with includeRelationships=BOTH,
+		//                        client expects NO relationships link (since they can't have relationships)
+		// Root Cause: checkRelationships() in TCK fetches relationship objects with SELECT_ALL_NO_CACHE_OC
+		//             If relationships link exists for Relationship objects → CmisNotSupportedException
+		// Solution: Generate relationships link ONLY for non-Relationship objects (Documents, Folders)
+		//           This is CMIS-compliant and matches client expectations
+		boolean isRelationshipObject = object.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP;
+
+		// TCK CRITICAL FIX (2025-11-02 REVISED 5): PWC objects do NOT support relationships
+		// ROOT CAUSE: OpenCMIS client checks ObjectInfo.supportsRelationships() and throws CmisNotSupportedException
+		//             if relationships link exists but relationship actions are not allowed
+		// LAYER 1 (AtomPub Link): DO NOT generate relationships link for PWC objects or root folder
+		//                        This prevents client-side CmisNotSupportedException
+		// LAYER 2 (AllowableActions): CompileServiceImpl removes relationship actions from PWC/root folder
+		// LAYER 3 (Service Implementation): RelationshipServiceImpl returns empty list for PWC/root folder
+		// Result: No AtomPub link for PWC → client doesn't attempt to fetch relationships
+
+		// CRITICAL TCK FIX (2025-11-03): Read PWC status directly from ObjectData properties
+		// ROOT CAUSE: ContentService.getDocument() returns incorrect PWC status (returns false when should be true)
+		//             Same object ID shows isPWC=true in Layer 2 but isPWC=false in ContentService query
+		// SOLUTION: Read IS_PRIVATE_WORKING_COPY property directly from ObjectData, same as Layer 2 approach
+		//           This ensures consistency with CompileServiceImpl which correctly sets the property
+		// Performance: Direct property access, no database query required
+		boolean isPWCObject = false;
+		if (object.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
+			Boolean isPWCProperty = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
+			isPWCObject = (isPWCProperty != null && isPWCProperty.booleanValue());
+
+			if (log.isDebugEnabled()) {
+				log.debug("PWC detection for objectId=" + objectId + ": isPWC=" + isPWCObject +
+						 " (read from ObjectData properties, same as Layer 2)");
+			}
+		}
+
+		// Check if this is the root folder (use existing repositoryInfo from line 173)
+		boolean isRootFolder = objectId.equals(repositoryInfo.getRootFolderId());
+
+		// DEBUG TRACE (2025-11-02): PWC and root folder detection
+		log.error("*** PWC DEBUG: objectId=" + objectId +
+				  ", isPWC=" + isPWCObject +
+				  ", isRootFolder=" + isRootFolder);
+
+		// CRITICAL: Exclude Relationship objects, PWC objects, and root folder from relationships support
+		boolean supportsRelationships = !isRelationshipObject && !isPWCObject && !isRootFolder;
+
+		// DEBUG TRACE (2025-11-02): Final supportsRelationships decision
+		log.error("*** PWC DEBUG: supportsRelationships=" + supportsRelationships +
+				  " (Relationship objects, PWC objects, and root folder excluded)");
+
+		info.setSupportsRelationships(supportsRelationships);
+
 		info.setSupportsPolicies(false);
 
 		// Policy support check - only enable if cmis:policy base type exists
@@ -999,6 +1093,10 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 
 	public void setRelationshipService(RelationshipService relationshipService) {
 		this.relationshipService = relationshipService;
+	}
+
+	public void setContentService(ContentService contentService) {
+		this.contentService = contentService;
 	}
 
 	@Override
