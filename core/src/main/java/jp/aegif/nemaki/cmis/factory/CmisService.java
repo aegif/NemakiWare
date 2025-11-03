@@ -182,25 +182,47 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		info.setVersionSeriesId(getIdProperty(object, PropertyIds.VERSION_SERIES_ID));
 		if (info.getVersionSeriesId() != null) {
 			Boolean isLatest = getBooleanProperty(object, PropertyIds.IS_LATEST_VERSION);
-			// CRITICAL TCK FIX (2025-11-01): Default to FALSE instead of TRUE when IS_LATEST_VERSION is null
-			// Previous behavior: Defaulted to TRUE causing old versions to incorrectly appear as "current version"
-			// Correct behavior: Default to FALSE - only latest version should have isLatestVersion=true
-			// This prevents incorrect AtomPub link generation for non-latest versions
-			info.setIsCurrentVersion(isLatest == null ? false : isLatest.booleanValue());
+			Boolean isPWC = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
+
+			// CRITICAL TCK FIX (2025-11-03): PWC documents MUST have isCurrentVersion=true
+			// Even though PWC objects are not the "latest version", they ARE the "current version" for versioning operations
+			// OpenCMIS client checks isCurrentVersion() before allowing getAllVersions() and other versioning operations
+			// Without this fix, versioning operations on PWC throw CmisNotSupportedException
+			boolean isCurrentVersion;
+			if (isPWC != null && isPWC.booleanValue()) {
+				isCurrentVersion = true;  // PWCs are always "current version" for versioning operations
+				log.debug("Setting isCurrentVersion=true for PWC document");
+			} else {
+				// CRITICAL TCK FIX (2025-11-01): Default to FALSE instead of TRUE when IS_LATEST_VERSION is null
+				// Previous behavior: Defaulted to TRUE causing old versions to incorrectly appear as "current version"
+				// Correct behavior: Default to FALSE - only latest version should have isLatestVersion=true
+				// This prevents incorrect AtomPub link generation for non-latest versions
+				isCurrentVersion = (isLatest == null ? false : isLatest.booleanValue());
+			}
+
+			info.setIsCurrentVersion(isCurrentVersion);
 
 		Boolean isCheckedOut = getBooleanProperty(object, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
-		Boolean isPWC = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
+
+		System.err.println("!!! WORKING-COPY DEBUG: objectId=" + object.getId() +
+		                   ", isCheckedOut=" + isCheckedOut +
+		                   ", isPWC=" + isPWC);
 
 		if (isCheckedOut != null && isCheckedOut.booleanValue()) {
 			String pwcId = getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID);
+			System.err.println("!!! WORKING-COPY DEBUG: pwcId=" + pwcId);
 
 			if (isPWC != null && isPWC.booleanValue()) {
+				System.err.println("!!! WORKING-COPY DEBUG: Object IS PWC → setWorkingCopyId(null)");
 				info.setWorkingCopyId(null);
 				info.setWorkingCopyOriginalId(null);
 			} else {
+				System.err.println("!!! WORKING-COPY DEBUG: Object IS checked-out original → setWorkingCopyId(" + pwcId + ")");
 				info.setWorkingCopyId(pwcId);
 				info.setWorkingCopyOriginalId(null);
 			}
+		} else {
+			System.err.println("!!! WORKING-COPY DEBUG: Object NOT checked out → setWorkingCopyId remains null");
 		}
 		}
 
@@ -715,7 +737,11 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	@Override
 	public void checkOut(String repositoryId, Holder<String> objectId, ExtensionsData extension,
 			Holder<Boolean> contentCopied) {
+		System.err.println("!!! CMIS SERVICE DEBUG: checkOut() method called for repositoryId=" + repositoryId + ", objectId=" + (objectId != null ? objectId.getValue() : "null"));
+		log.error("!!! CMIS SERVICE DEBUG: checkOut() method called for repositoryId=" + repositoryId + ", objectId=" + (objectId != null ? objectId.getValue() : "null"));
 		versioningService.checkOut(getCallContext(), repositoryId, objectId, contentCopied, extension);
+		System.err.println("!!! CMIS SERVICE DEBUG: checkOut() completed, PWC objectId=" + (objectId != null ? objectId.getValue() : "null"));
+		log.error("!!! CMIS SERVICE DEBUG: checkOut() completed, PWC objectId=" + (objectId != null ? objectId.getValue() : "null"));
 	}
 
 	@Override

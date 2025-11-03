@@ -952,6 +952,17 @@ public class CompileServiceImpl implements CompileService {
 				return false;
 			}
 			DocumentTypeDefinition dtdf = (DocumentTypeDefinition) tdf;
+
+			// CRITICAL TCK FIX (2025-11-03): Allow versioning actions on PWCs (Private Working Copies)
+			// PWCs are part of the versioning process and should support getAllVersions() and similar operations
+			// even though they may not have the same type-level versionable flag as checked-in documents
+			if (content instanceof Document) {
+				Document document = (Document) content;
+				if (document.isPrivateWorkingCopy()) {
+					return true;  // PWCs always support versioning actions by definition
+				}
+			}
+
 			return dtdf.isVersionable();
 		} else if (isRootFolderRestrictedAction(key, content, repositoryId)) {
 			// Actions not allowed on root folder
@@ -1308,7 +1319,7 @@ public class CompileServiceImpl implements CompileService {
 
 	private void setCmisDocumentProperties(CallContext callContext, String repositoryId, PropertiesImpl properties,
 			TypeDefinition tdf, Document document) {
-		
+
 		// CRITICAL FIX: Use addProperty when possible, but add mandatory CMIS properties directly if needed
 		try {
 			addProperty(properties, tdf, PropertyIds.BASE_TYPE_ID, BaseTypeId.CMIS_DOCUMENT.value());
@@ -1317,7 +1328,7 @@ public class CompileServiceImpl implements CompileService {
 			PropertyIdImpl baseTypeIdProp = new PropertyIdImpl(PropertyIds.BASE_TYPE_ID, BaseTypeId.CMIS_DOCUMENT.value());
 			properties.addProperty(baseTypeIdProp);
 		}
-		
+
 		// TCK compliance verified without this property for documents
 
 		Boolean isImmutable = (document.isImmutable() == null) ? false : document.isImmutable();
@@ -1331,6 +1342,13 @@ public class CompileServiceImpl implements CompileService {
 
 		DocumentTypeDefinition type = (DocumentTypeDefinition) typeManager.getTypeDefinition(repositoryId, tdf.getId());
 		if (type.isVersionable()) {
+			// TCK CRITICAL DEBUG (2025-11-03): Trace versioning property values at ObjectData compilation
+			System.err.println("!!! COMPILE-PROPERTIES DEBUG: Document ID = " + document.getId());
+			System.err.println("!!! COMPILE-PROPERTIES DEBUG: isPrivateWorkingCopy = " + document.isPrivateWorkingCopy());
+			System.err.println("!!! COMPILE-PROPERTIES DEBUG: isVersionSeriesCheckedOut = " + document.isVersionSeriesCheckedOut());
+			System.err.println("!!! COMPILE-PROPERTIES DEBUG: versionSeriesCheckedOutBy = " + document.getVersionSeriesCheckedOutBy());
+			System.err.println("!!! COMPILE-PROPERTIES DEBUG: versionSeriesCheckedOutId = " + document.getVersionSeriesCheckedOutId());
+
 			addProperty(properties, tdf, PropertyIds.IS_PRIVATE_WORKING_COPY, document.isPrivateWorkingCopy());
 			addProperty(properties, tdf, PropertyIds.IS_LATEST_VERSION, document.isLatestVersion());
 			addProperty(properties, tdf, PropertyIds.IS_MAJOR_VERSION, document.isMajorVersion());

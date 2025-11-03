@@ -1038,6 +1038,9 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Document checkOut(CallContext callContext, String repositoryId, String objectId, ExtensionsData extension) {
+		System.err.println("!!! CHECKOUT ENTRY DEBUG: checkOut() method called for objectId=" + objectId + " by user=" + callContext.getUsername());
+		log.error("!!! CHECKOUT ENTRY DEBUG: checkOut() method called for objectId=" + objectId + " by user=" + callContext.getUsername());
+
 		Document latest = getDocument(repositoryId, objectId);
 		Document pwc = buildCopyDocument(callContext, repositoryId, latest, null, null);
 

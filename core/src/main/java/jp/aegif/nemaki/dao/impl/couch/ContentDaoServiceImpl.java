@@ -966,7 +966,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		if (cd == null) {
 			return null;
 		}
-		return cd.convert();
+
+		// TCK CRITICAL DEBUG (2025-11-03): Trace versioning properties during RETRIEVAL from CouchDB
+		System.err.println("!!! RETRIEVAL DEBUG: getDocument called for objectId=" + objectId);
+		System.err.println("!!! RETRIEVAL DEBUG: CouchDocument retrieved from DB, ID=" + cd.getId() + ", Rev=" + cd.getRevision());
+		System.err.println("!!! RETRIEVAL DEBUG: CouchDocument BEFORE convert() - versionSeriesCheckedOut (via getter)=" + cd.isVersionSeriesCheckedOut());
+		System.err.println("!!! RETRIEVAL DEBUG: CouchDocument BEFORE convert() - versionSeriesCheckedOutBy (via getter)=" + cd.getVersionSeriesCheckedOutBy());
+		System.err.println("!!! RETRIEVAL DEBUG: CouchDocument BEFORE convert() - versionSeriesCheckedOutId (via getter)=" + cd.getVersionSeriesCheckedOutId());
+
+		Document result = cd.convert();
+
+		System.err.println("!!! RETRIEVAL DEBUG: Document AFTER convert() - ID=" + result.getId());
+		System.err.println("!!! RETRIEVAL DEBUG: Document AFTER convert() - isVersionSeriesCheckedOut()=" + result.isVersionSeriesCheckedOut());
+		System.err.println("!!! RETRIEVAL DEBUG: Document AFTER convert() - getVersionSeriesCheckedOutBy()=" + result.getVersionSeriesCheckedOutBy());
+		System.err.println("!!! RETRIEVAL DEBUG: Document AFTER convert() - getVersionSeriesCheckedOutId()=" + result.getVersionSeriesCheckedOutId());
+
+		return result;
 	}
 
 	@Override
