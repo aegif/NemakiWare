@@ -1858,14 +1858,16 @@ export class CMISService {
       };
 
       xhr.onerror = () => reject(new Error('Network error during group creation'));
-      
+
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
       formData.append('name', group.name || '');  // FORM_GROUPNAME = "name"
-      // TypeScript workaround: Server API expects users/groups properties not in Group interface
-      formData.append('users', JSON.stringify((group as any).users || []));  // FORM_MEMBER_USERS = "users"
+      // CRITICAL FIX: GroupManagement sends 'members' field, but API expects 'users' field
+      // Convert members array to users for server-side compatibility
+      const members = (group as any).members || (group as any).users || [];
+      formData.append('users', JSON.stringify(members));  // FORM_MEMBER_USERS = "users"
       formData.append('groups', JSON.stringify((group as any).groups || []));  // FORM_MEMBER_GROUPS = "groups"
-      
+
       xhr.send(formData.toString());
     });
   }
@@ -1903,8 +1905,10 @@ export class CMISService {
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
       formData.append('name', group.name || '');  // FORM_GROUPNAME = "name"
-      // TypeScript workaround: Server API expects users/groups properties not in Group interface
-      formData.append('users', JSON.stringify((group as any).users || []));  // FORM_MEMBER_USERS = "users"
+      // CRITICAL FIX: GroupManagement sends 'members' field, but API expects 'users' field
+      // Convert members array to users for server-side compatibility
+      const members = (group as any).members || (group as any).users || [];
+      formData.append('users', JSON.stringify(members));  // FORM_MEMBER_USERS = "users"
       formData.append('groups', JSON.stringify((group as any).groups || []));  // FORM_MEMBER_GROUPS = "groups"
 
       xhr.send(formData.toString());
