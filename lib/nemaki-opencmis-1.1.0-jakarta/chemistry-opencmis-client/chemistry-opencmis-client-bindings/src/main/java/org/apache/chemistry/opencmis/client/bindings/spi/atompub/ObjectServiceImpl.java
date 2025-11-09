@@ -464,6 +464,7 @@ public class ObjectServiceImpl extends AbstractAtomPubService implements ObjectS
     @Override
     public void deleteObject(String repositoryId, String objectId, Boolean allVersions, ExtensionsData extension) {
 
+
         // find the link
         String link = loadLink(repositoryId, objectId, Constants.REL_SELF, Constants.MEDIATYPE_ENTRY);
 
@@ -475,6 +476,12 @@ public class ObjectServiceImpl extends AbstractAtomPubService implements ObjectS
         url.addParameter(Constants.PARAM_ALL_VERSIONS, allVersions);
 
         delete(url);
+
+        // TCK FIX (2025-11-02): Remove object from link cache after deletion
+        // Root cause: AbstractSessionTest.exists() calls object.refresh() which uses cached links
+        // If links remain in cache after deletion, checkLink() returns index 2 (rel missing)
+        // causing CmisNotSupportedException instead of proper objectNotFound behavior
+        removeLinks(repositoryId, objectId);
     }
 
     @Override
@@ -522,6 +529,10 @@ public class ObjectServiceImpl extends AbstractAtomPubService implements ObjectS
 
         // check response code
         if (resp.getResponseCode() == 200 || resp.getResponseCode() == 202 || resp.getResponseCode() == 204) {
+            // TCK FIX (2025-11-02): Remove folder from link cache after successful tree deletion
+            // Same issue as deleteObject() - folders deleted via deleteTree() also need cache cleanup
+            // to prevent CmisNotSupportedException on subsequent exists() checks
+            removeLinks(repositoryId, folderId);
             return new FailedToDeleteDataImpl();
         }
 

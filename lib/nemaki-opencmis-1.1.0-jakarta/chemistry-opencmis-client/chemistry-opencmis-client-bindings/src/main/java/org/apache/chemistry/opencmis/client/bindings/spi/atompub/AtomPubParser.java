@@ -281,6 +281,8 @@ public class AtomPubParser {
         while (true) {
             int event = parser.getEventType();
             if (event == XMLStreamConstants.START_ELEMENT) {
+                QName elementName = parser.getName();
+
                 AtomElement element = parseElement(parser);
                 if (element != null) {
                     // add to entry
@@ -292,6 +294,7 @@ public class AtomPubParser {
                     } else if (element.getObject() instanceof TypeDefinition) {
                         result.setId(((TypeDefinition) element.getObject()).getId());
                     }
+                } else {
                 }
             } else if (event == XMLStreamConstants.END_ELEMENT) {
                 break;

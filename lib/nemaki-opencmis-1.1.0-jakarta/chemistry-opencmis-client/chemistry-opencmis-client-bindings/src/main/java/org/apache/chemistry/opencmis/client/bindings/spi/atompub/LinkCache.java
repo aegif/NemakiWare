@@ -52,6 +52,7 @@ public class LinkCache implements Serializable {
         KNOWN_LINKS.add(Constants.REL_RELATIONSHIPS);
         KNOWN_LINKS.add(Constants.REL_SELF);
         KNOWN_LINKS.add(Constants.REL_ALLOWABLEACTIONS);
+        KNOWN_LINKS.add(Constants.REL_EDIT);  // TCK CRITICAL FIX (2025-11-03): Add edit link for versioning operations
         KNOWN_LINKS.add(Constants.REL_EDITMEDIA);
         KNOWN_LINKS.add(Constants.REL_POLICIES);
         KNOWN_LINKS.add(Constants.REL_VERSIONHISTORY);
@@ -126,6 +127,7 @@ public class LinkCache implements Serializable {
      * Adds a link.
      */
     public void addLink(String repositoryId, String id, String rel, String type, String link) {
+
         if (KNOWN_LINKS.contains(rel)) {
             linkCache.put(link, repositoryId, id, rel, type);
         } else if (Constants.REL_ALTERNATE.equals(rel)) {
@@ -134,6 +136,7 @@ public class LinkCache implements Serializable {
             if (streamId != null) {
                 linkCache.put(link, repositoryId, id, rel, streamId);
             }
+        } else {
         }
     }
 
@@ -159,14 +162,30 @@ public class LinkCache implements Serializable {
      * Removes all links of an object.
      */
     public void removeLinks(String repositoryId, String id) {
+
+        // TCK CRITICAL FIX (2025-11-03): Use 3-level check to properly verify id branch removal
+        // check() only verifies intermediate levels (keys.length - 1), so:
+        // - check(repo, id) only verifies repo level exists (useless for verifying id removal)
+        // - check(repo, id, rel) verifies both repo AND id levels (correct way to check id removal)
+
+        // Check state before removal (use dummy "rel" key to verify id level)
+        int checkBefore = linkCache.check(repositoryId, id, "self");  // Check if [repo][id] exists
+
         linkCache.remove(repositoryId, id);
+
+        // Check state after removal (use dummy "rel" key to verify id level)
+        int checkAfter = linkCache.check(repositoryId, id, "self");  // Check if [repo][id] exists
+
+        if (checkAfter != 1) {
+        }
     }
 
     /**
      * Gets a link.
      */
     public String getLink(String repositoryId, String id, String rel, String type) {
-        return (String) linkCache.get(repositoryId, id, rel, type);
+        String link = (String) linkCache.get(repositoryId, id, rel, type);
+        return link;
     }
 
     /**
@@ -180,7 +199,8 @@ public class LinkCache implements Serializable {
      * Checks a link.
      */
     public int checkLink(String repositoryId, String id, String rel, String type) {
-        return linkCache.check(repositoryId, id, rel, type);
+        int result = linkCache.check(repositoryId, id, rel, type);
+        return result;
     }
 
     /**
