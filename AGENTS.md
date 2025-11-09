@@ -302,40 +302,134 @@ npx playwright show-report
 - Primary config: `core/nemakiware.properties`, `docker/repositories.yml`.
 - For Java 17, ensure `MAVEN_OPTS` includes required `--add-opens` (see `core/start-jetty-dev.sh`).
 
-## Current Work Status (2025-10-25)
+## Current Work Status (2025-11-09)
 
 ### Active Branch
-- **Branch**: `vk/1620-ui` (merged from `origin/feature/react-ui-playwright`)
-- **Related PR**: https://github.com/aegif/NemakiWare/pull/391
-- **Focus**: UI test improvements and React UI enhancements
+- **Branch**: `vk/368c-tck`
+- **Focus**: TCK test complete success - All 39/39 implemented CMIS features passing
 
-### Recent Improvements
-1. **Merged 20 commits** from origin/feature/react-ui-playwright:
-   - Document Versioning test improvements
-   - AtomPub parser fixes
-   - Cache invalidation for checkout operations
-   - deleteTree operation support
-   - CI/CD fixes
+### TCK Complete Success Achievement (2025-11-09) 🎉
 
-2. **Test Status**:
-   - 69 passing (67%)
-   - 4 failing (Document Versioning cleanup issues)
-   - 30 skipped (UI not implemented or test issues)
+**Status**: ✅ **39/39 Tests PASS (100% of implemented features)**
+**TCK Compliance**: 92.9% (39/42 tests, 3 skipped for unimplemented multi-filing feature)
+
+| Test Group | Tests | Status | Time |
+|------------|-------|--------|------|
+| BasicsTestGroup | 3/3 | ✅ PASS | 24.9s |
+| ConnectionTestGroup | 2/2 | ✅ PASS | 1.4s |
+| TypesTestGroup | 3/3 | ✅ PASS | 172.0s |
+| ControlTestGroup | 1/1 | ✅ PASS | 30.4s |
+| VersioningTestGroup | 4/4 | ✅ PASS | 358.1s |
+| InheritedFlagTest | 1/1 | ✅ PASS | 1.2s |
+| QueryTestGroup | 6/6 | ✅ PASS | Various |
+| CrudTestGroup1 | 10/10 | ✅ PASS | 35m 2s |
+| CrudTestGroup2 | 9/9 | ✅ PASS | 14m 57s |
+| FilingTestGroup | 0/3 | ⊘ SKIP | - |
+
+**Total**: 39 tests PASS, 0 FAIL, 3 SKIP (intentional)
+
+### Critical Fix: queryRootFolderTest (2025-11-09)
+
+**Problem**: WHERE clause queries with explicit SELECT + aliases were missing selected properties
+
+**Example Query**:
+```sql
+SELECT cmis:name AS folderName, cmis:objectId AS folderId
+FROM cmis:folder
+WHERE cmis:creationDate > TIMESTAMP '2012-12-31T23:00:00.000Z'
+```
+❌ **Before**: Only returned objectTypeId, baseTypeId (required properties)
+✅ **After**: Returns folderName, folderId, objectTypeId, baseTypeId (all expected)
+
+**Root Cause**: WAR file corruption/stale class files preventing Spring Bean initialization
+
+**Solution**: Clean build + proper Docker deployment
+```bash
+# 1. Stop containers
+docker compose -f docker/docker-compose-simple.yml down
+
+# 2. Clean build
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests
+
+# 3. Copy WAR (verify 118MB size)
+cp core/target/core.war docker/core/core.war
+
+# 4. Force recreate containers
+docker compose -f docker/docker-compose-simple.yml up -d --build --force-recreate
+
+# 5. Wait for initialization
+sleep 90
+```
+
+### Lessons Learned: Debugging Failed Approaches ⚠️
+
+**What NOT to Do When Debugging**:
+
+1. ❌ **Adding System.err.println() to production code**
+   - **Problem**: Caused Spring BeanCreationException
+   - **Error**: `ClassNotFoundException: org.apache.chemistry.opencmis.commons.data.ObjectInFolderData`
+   - **Lesson**: Even simple debug statements can break Spring class loading
+   - **Better Approach**: Use existing JSON logs or remote debugger
+
+2. ❌ **Changing logback.xml without verifying output**
+   - **Problem**: DEBUG level set but no output appeared
+   - **Issue**: Logger may not be initialized or output suppressed
+   - **Lesson**: Always verify logging changes produce expected output
+
+3. ❌ **Incremental rebuilds without clean**
+   - **Problem**: Stale class files cause unpredictable behavior
+   - **Lesson**: Always use `mvn clean` for critical fixes
+
+**What DOES Work** ✅:
+
+1. ✅ **Clean build + force recreate deployment**
+   - Most reliable way to eliminate build artifacts issues
+   - Guarantees consistent state
+
+2. ✅ **Analyze existing Docker JSON logs**
+   - CMIS operations already produce detailed JSON logs
+   - No code modifications needed
+
+3. ✅ **Use tck-test-clean.sh for TCK tests**
+   - Prevents database bloat issues
+   - Provides consistent test environment
+
+### Regression Prevention Guidelines
+
+**Before Making Changes**:
+1. Record current test status (QA: 56/56, TCK: 39/39)
+2. Create git branch for changes
+3. Document expected behavior
+
+**After Making Changes**:
+1. Clean build: `mvn clean package`
+2. Force recreate: `docker compose down && up -d --build --force-recreate`
+3. Verify QA tests: `./qa-test.sh` (should show 56/56)
+4. Verify affected TCK tests
+5. Commit with detailed description
+
+**When Debugging**:
+- Prefer analyzing existing logs over adding debug code
+- If adding debug code is necessary, test in isolated environment first
+- Always revert debug code before committing
+- Document what was tried and why it failed
 
 ### Next Steps
-1. **High Priority**:
-   - Fix Document Versioning test cleanup timeouts
-   - Fix version history modal selector
-   - Fix version download filename mismatch
 
-2. **Medium Priority**:
-   - Fix Access Control test user timeout
-   - Fix Document Viewer Auth navigation issue
-   - Improve CI/CD timeout handling (extend to 90 minutes)
+1. **High Priority - TCK Maintenance**:
+   - Monitor for regressions using `./qa-test.sh` (56/56) and TCK tests
+   - Keep database clean for reliable test execution
+   - Document any new CMIS features with corresponding TCK tests
+
+2. **Medium Priority - Playwright UI Tests**:
+   - Verify current Playwright test status
+   - Fix any failures introduced by recent changes
+   - Continue improving test coverage
 
 3. **Low Priority**:
-   - Implement missing UI features (Custom Type Creation, User/Group Management CRUD, etc.)
+   - Implement missing UI features (Custom Type Creation, User/Group Management CRUD)
    - Complete PDF Preview functionality
+   - Improve CI/CD timeout handling
 
 ### Reference Documents
 - **HANDOFF-DOCUMENT.md**: Detailed session handoff with technical findings
