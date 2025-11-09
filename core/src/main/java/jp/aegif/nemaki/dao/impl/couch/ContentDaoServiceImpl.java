@@ -867,19 +867,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// Create ObjectMapper for type conversion
 			ObjectMapper mapper = createConfiguredObjectMapper();
 
-			// DEBUG: Verify actualDocMap contains date values
-			System.err.println("*** DEBUG ContentDaoServiceImpl BEFORE mapper.convertValue:");
-			System.err.println("  actualDocMap.created = " + (actualDocMap.containsKey("created") ? actualDocMap.get("created").getClass().getName() + "=" + actualDocMap.get("created") : "NOT PRESENT"));
-			System.err.println("  actualDocMap.modified = " + (actualDocMap.containsKey("modified") ? actualDocMap.get("modified").getClass().getName() + "=" + actualDocMap.get("modified") : "NOT PRESENT"));
-
 			if ("folder".equals(actualType) || "cmis:folder".equals(actualType)) {
 				log.info("Converting to CouchFolder for type: " + actualType);
 				CouchFolder folder = mapper.convertValue(actualDocMap, CouchFolder.class);
-
-				// DEBUG: Verify CouchFolder has date values after conversion
-				System.err.println("*** DEBUG ContentDaoServiceImpl AFTER mapper.convertValue:");
-				System.err.println("  folder.getCreated() = " + (folder.getCreated() == null ? "null" : folder.getCreated().getTime()));
-				System.err.println("  folder.getModified() = " + (folder.getModified() == null ? "null" : folder.getModified().getTime()));
 
 				log.info("CouchFolder created, calling convert()");
 				Content content = folder.convert();

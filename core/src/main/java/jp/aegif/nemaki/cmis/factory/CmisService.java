@@ -165,10 +165,6 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 */
 	@Override
 	protected ObjectInfo getObjectInfoIntern(String repositoryId, ObjectData object) {
-		// DEBUG TRACE (2025-11-03): Method entry
-		System.err.println("!!! [TRACE] getObjectInfoIntern ENTRY: objectId=" +
-			(object != null ? object.getId() : "null"));
-
 		// if the object has no properties, stop here
 		if (object.getProperties() == null || object.getProperties().getProperties() == null) {
 			throw new CmisRuntimeException("No properties!");
@@ -195,30 +191,22 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		info.setWorkingCopyId(null);
 		info.setWorkingCopyOriginalId(null);
 
-		info.setVersionSeriesId(getIdProperty(object, PropertyIds.VERSION_SERIES_ID));
+		String versionSeriesIdValue = getIdProperty(object, PropertyIds.VERSION_SERIES_ID);
+		info.setVersionSeriesId(versionSeriesIdValue);
+
 		if (info.getVersionSeriesId() != null) {
 			Boolean isLatest = getBooleanProperty(object, PropertyIds.IS_LATEST_VERSION);
 			Boolean isPWC = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
-
-			// DEBUG TRACE (2025-11-03): PWC detection
-			System.err.println("!!! [TRACE] ObjectId=" + objectId +
-				", isLatest=" + isLatest +
-				", isPWC=" + isPWC);
 
 			// CRITICAL TCK FIX (2025-11-03): PWC documents MUST have isCurrentVersion=true
 			boolean isCurrentVersion;
 			if (isPWC != null && isPWC.booleanValue()) {
 				isCurrentVersion = true;
-				System.err.println("!!! [TRACE] Setting isCurrentVersion=TRUE for PWC document: " + objectId);
 			} else {
 				isCurrentVersion = (isLatest == null ? false : isLatest.booleanValue());
-				System.err.println("!!! [TRACE] Setting isCurrentVersion=" + isCurrentVersion +
-					" (isLatest=" + isLatest + ") for non-PWC document: " + objectId);
 			}
 
 			info.setIsCurrentVersion(isCurrentVersion);
-			System.err.println("!!! [TRACE] ObjectInfo.isCurrentVersion set to: " + isCurrentVersion +
-				" for objectId=" + objectId);
 		}
 
 		Boolean isCheckedOut = getBooleanProperty(object, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
@@ -234,12 +222,10 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 				// PWC document: Set workingCopyId to null (matches working 2025-11-01 version)
 				info.setWorkingCopyId(null);
 				info.setWorkingCopyOriginalId(null);
-				System.err.println("!!! [TRACE] PWC workingCopyId REVERTED to null (2025-11-01 working version)");
 			} else {
 				// Non-PWC document in checked-out version series: Set workingCopyId to PWC ID
 				info.setWorkingCopyId(pwcId);
 				info.setWorkingCopyOriginalId(null);
-				System.err.println("!!! [TRACE] Non-PWC workingCopyId set to: " + pwcId);
 			}
 		}
 
@@ -330,6 +316,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		if (object.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
 			Boolean isPWCProperty = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
 
+
 			if (isPWCProperty != null) {
 				// Property available: Use it directly (normal case)
 				isPWCObject = isPWCProperty.booleanValue();
@@ -340,7 +327,9 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 			} else {
 				// Property null (filtered): Use versionSeriesCheckedOutId fallback (CMIS spec method)
 				String versionSeriesCheckedOutId = getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID);
+
 				isPWCObject = (versionSeriesCheckedOutId != null && objectId.equals(versionSeriesCheckedOutId));
+
 				if (log.isDebugEnabled()) {
 					log.debug("PWC detection for objectId=" + objectId + ": isPWC=" + isPWCObject +
 							 " (property filtered, used versionSeriesCheckedOutId=" + versionSeriesCheckedOutId + " fallback)");
@@ -351,21 +340,11 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		// Check if this is the root folder (use existing repositoryInfo from line 173)
 		boolean isRootFolder = objectId.equals(repositoryInfo.getRootFolderId());
 
-		// DEBUG TRACE (2025-11-02): PWC and root folder detection
-		log.error("*** PWC DEBUG: objectId=" + objectId +
-				  ", isPWC=" + isPWCObject +
-				  ", isRootFolder=" + isRootFolder);
 
 		// CRITICAL FIX (2025-11-03): Exclude ONLY Relationship objects and root folder from relationships support
 		// PWC objects are regular documents that can have relationships
 		boolean supportsRelationships = !isRelationshipObject && !isRootFolder;
 
-		// DEBUG TRACE (2025-11-03): Final supportsRelationships decision
-		if (log.isDebugEnabled()) {
-			log.debug("supportsRelationships=" + supportsRelationships +
-					  " (objectId=" + objectId + ", isPWC=" + isPWCObject +
-					  ", isRelationship=" + isRelationshipObject + ", isRoot=" + isRootFolder + ")");
-		}
 
 		info.setSupportsRelationships(supportsRelationships);
 

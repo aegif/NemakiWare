@@ -127,20 +127,16 @@ public class LinkCache implements Serializable {
      * Adds a link.
      */
     public void addLink(String repositoryId, String id, String rel, String type, String link) {
-        System.err.println("!!! LinkCache.addLink: repositoryId=" + repositoryId + ", id=" + id + ", rel=" + rel + ", type=" + type);
 
         if (KNOWN_LINKS.contains(rel)) {
             linkCache.put(link, repositoryId, id, rel, type);
-            System.err.println("!!! LinkCache.addLink: KNOWN_LINK added to cache");
         } else if (Constants.REL_ALTERNATE.equals(rel)) {
             // use streamId instead of type as discriminating parameter
             String streamId = extractStreamId(link);
             if (streamId != null) {
                 linkCache.put(link, repositoryId, id, rel, streamId);
-                System.err.println("!!! LinkCache.addLink: ALTERNATE link added with streamId=" + streamId);
             }
         } else {
-            System.err.println("!!! LinkCache.addLink: Link NOT added (not a known link or alternate)");
         }
     }
 
@@ -166,7 +162,6 @@ public class LinkCache implements Serializable {
      * Removes all links of an object.
      */
     public void removeLinks(String repositoryId, String id) {
-        System.err.println("!!! LinkCache.removeLinks ENTRY: repositoryId=" + repositoryId + ", id=" + id);
 
         // TCK CRITICAL FIX (2025-11-03): Use 3-level check to properly verify id branch removal
         // check() only verifies intermediate levels (keys.length - 1), so:
@@ -175,17 +170,13 @@ public class LinkCache implements Serializable {
 
         // Check state before removal (use dummy "rel" key to verify id level)
         int checkBefore = linkCache.check(repositoryId, id, "self");  // Check if [repo][id] exists
-        System.err.println("!!! LinkCache check BEFORE remove: " + checkBefore + " (0=repo missing, 1=id missing, 2=rel missing)");
 
         linkCache.remove(repositoryId, id);
-        System.err.println("!!! LinkCache.remove() completed");
 
         // Check state after removal (use dummy "rel" key to verify id level)
         int checkAfter = linkCache.check(repositoryId, id, "self");  // Check if [repo][id] exists
-        System.err.println("!!! LinkCache check AFTER remove: " + checkAfter + " (expected: 1=id missing)");
 
         if (checkAfter != 1) {
-            System.err.println("!!! WARNING: LinkCache.remove() did NOT properly remove object branch! Expected check=1, got check=" + checkAfter);
         }
     }
 
@@ -194,7 +185,6 @@ public class LinkCache implements Serializable {
      */
     public String getLink(String repositoryId, String id, String rel, String type) {
         String link = (String) linkCache.get(repositoryId, id, rel, type);
-        System.err.println("!!! LinkCache.getLink: repositoryId=" + repositoryId + ", id=" + id + ", rel=" + rel + ", type=" + type + " → " + (link != null ? "FOUND" : "NOT FOUND"));
         return link;
     }
 
@@ -210,7 +200,6 @@ public class LinkCache implements Serializable {
      */
     public int checkLink(String repositoryId, String id, String rel, String type) {
         int result = linkCache.check(repositoryId, id, rel, type);
-        System.err.println("!!! LinkCache.checkLink: repositoryId=" + repositoryId + ", id=" + id + ", rel=" + rel + ", type=" + type + " → index=" + result);
         return result;
     }
 

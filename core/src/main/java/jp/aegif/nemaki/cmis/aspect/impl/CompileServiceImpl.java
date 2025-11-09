@@ -425,7 +425,19 @@ public class CompileServiceImpl implements CompileService {
 					hasValidContentStreamProperty = pd.getFirstValue() != null;
 				}
 
-				if (filter.contains(pd.getQueryName()) || isRequiredProperty || hasValidContentStreamProperty) {
+				// CRITICAL TCK FIX (2025-11-03): Always include PWC detection properties when they have values
+				// ROOT CAUSE: getAllVersions() applies property filter that excludes IS_PRIVATE_WORKING_COPY
+				//             and VERSION_SERIES_CHECKED_OUT_ID, causing PWC fallback detection to fail
+				// SOLUTION: Treat these properties like content stream properties - include them when non-null
+				//           to ensure PWC detection works even with restrictive property filters
+				boolean hasPWCDetectionProperty = false;
+				if (PropertyIds.IS_PRIVATE_WORKING_COPY.equals(pd.getId()) ||
+				    PropertyIds.VERSION_SERIES_CHECKED_OUT_ID.equals(pd.getId()) ||
+				    PropertyIds.VERSION_SERIES_ID.equals(pd.getId())) {
+					hasPWCDetectionProperty = pd.getFirstValue() != null;
+				}
+
+				if (filter.contains(pd.getQueryName()) || isRequiredProperty || hasValidContentStreamProperty || hasPWCDetectionProperty) {
 					// TCK CRITICAL FIX: Apply query alias if propertyAliases map is provided
 					// Check if this property's queryName matches any value in the aliases map
 					// If it does, set the property's queryName to the corresponding alias (key)
@@ -781,6 +793,7 @@ public class CompileServiceImpl implements CompileService {
 
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
+
 			// TODO WORKAROUND. implement class cast check
 
 			// FIXME WORKAROUND: skip canCreatePolicy.Folder
@@ -845,11 +858,23 @@ public class CompileServiceImpl implements CompileService {
 				}
 			}
 
+
+		// DEBUG: Check versionSeries for CAN_GET_ALL_VERSIONS
+		if (PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES.equals(key)) {
+			boolean isDoc = content instanceof Document;
+			boolean docIsPWC = false;
+			if (isDoc) {
+				docIsPWC = ((Document) content).isPrivateWorkingCopy();
+			}
+		}
+
 			if (versionSeries != null) {
 				Document d = (Document) content;
 				DocumentTypeDefinition dtdf = (DocumentTypeDefinition) tdf;
-				if (!isAllowableActionForVersionableDocument(callContext, mappingEntry.getKey(), d, versionSeries,
-						dtdf)) {
+				boolean versioningCheckPassed = isAllowableActionForVersionableDocument(callContext, mappingEntry.getKey(), d, versionSeries,
+						dtdf);
+
+				if (!versioningCheckPassed) {
 					continue;
 				}
 			}
@@ -884,6 +909,13 @@ public class CompileServiceImpl implements CompileService {
 			return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
 	} else if (permissionMappingKey.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
 		return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
+	} else if (permissionMappingKey.equals(PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES)) {
+		// CRITICAL TCK FIX (2025-11-08 CORRECTED): PWC CAN call getAllVersions()
+		// CMIS 1.1 SPECIFICATION: getAllVersions() can be called on ANY document in version series, including PWC
+		// When called on PWC, it returns all non-PWC versions in the series
+		// TCK Test Evidence: VersioningSmokeTest.java:133 calls pwc.getAllVersions() and expects it to work
+		// SOLUTION: Always return true for versionable documents (including PWC)
+		return true;
 	}
 
 		// Lock as an effect of checkOut
@@ -1082,16 +1114,18 @@ public class CompileServiceImpl implements CompileService {
 			return new PropertiesImpl();
 		}
 		
-		// FORCE ERROR log for visibility
-		log.debug("=== COMPILE PROPERTIES DEBUG ===");
-		log.error("Repository: " + repositoryId);
-		log.error("Content ID: " + content.getId());
-		log.error("Content Name: " + content.getName());
-		log.error("Content Type: " + content.getClass().getSimpleName());
-		log.error("Is Document: " + content.isDocument());
-		if (content.isDocument()) {
-			Document doc = (Document) content;
-			log.error("Document AttachmentNodeId: " + doc.getAttachmentNodeId());
+		// Debug logging at appropriate level
+		if (log.isDebugEnabled()) {
+			log.debug("=== COMPILE PROPERTIES DEBUG ===");
+			log.debug("Repository: " + repositoryId);
+			log.debug("Content ID: " + content.getId());
+			log.debug("Content Name: " + content.getName());
+			log.debug("Content Type: " + content.getClass().getSimpleName());
+			log.debug("Is Document: " + content.isDocument());
+			if (content.isDocument()) {
+				Document doc = (Document) content;
+				log.debug("Document AttachmentNodeId: " + doc.getAttachmentNodeId());
+			}
 		}
 		
 		String objectType = content.getObjectType();
@@ -2153,10 +2187,13 @@ public class CompileServiceImpl implements CompileService {
 	 * CMIS Compliance Helper: Check if action is only applicable to documents
 	 */
 	private boolean isDocumentOnlyAction(String key) {
+		// CRITICAL TCK FIX (2025-11-08): Removed CAN_GET_ALL_VERSIONS from here
+		// Reason: CAN_GET_ALL_VERSIONS needs special PWC handling in isAllowableActionForVersionableDocument()
+		// If we classify it as "document-only", the code returns true at line 1012 for ALL documents
+		// This prevents reaching the PWC-specific logic at line 862
 		return PermissionMapping.CAN_VIEW_CONTENT_OBJECT.equals(key) ||
 			   PermissionMapping.CAN_DELETE_CONTENT_DOCUMENT.equals(key) ||
-			   PermissionMapping.CAN_SET_CONTENT_DOCUMENT.equals(key) ||
-			   PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES.equals(key);
+			   PermissionMapping.CAN_SET_CONTENT_DOCUMENT.equals(key);
 	}
 
 	/**

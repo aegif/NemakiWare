@@ -248,7 +248,6 @@ public abstract class AbstractAtomPubService implements LinkAccess {
      * Adds a link to the cache.
      */
     protected void addLink(String repositoryId, String id, String rel, String type, String link) {
-        System.err.println("!!! AbstractAtomPubService.addLink(5 params): id=" + id + ", rel=" + rel + ", type=" + type);
         getLinkCache().addLink(repositoryId, id, rel, type, link);
     }
 
@@ -256,7 +255,6 @@ public abstract class AbstractAtomPubService implements LinkAccess {
      * Adds a link to the cache.
      */
     protected void addLink(String repositoryId, String id, AtomLink link) {
-        System.err.println("!!! AbstractAtomPubService.addLink(AtomLink): id=" + id + ", rel=" + link.getRel() + ", type=" + link.getType());
         getLinkCache().addLink(repositoryId, id, link.getRel(), link.getType(), link.getHref());
     }
 

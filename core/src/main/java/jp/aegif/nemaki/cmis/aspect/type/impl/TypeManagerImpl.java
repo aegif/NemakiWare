@@ -1088,7 +1088,6 @@ public class TypeManagerImpl implements TypeManager {
 		if (log.isDebugEnabled()) {
 			log.debug("=== SYSTEM DEBUG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
 		}
-		log.error("=== ERROR LOG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
 		
 		String typeId = type.getId();
 		try {

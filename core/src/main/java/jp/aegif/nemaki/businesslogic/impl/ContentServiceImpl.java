@@ -1055,13 +1055,17 @@ public class ContentServiceImpl implements ContentService {
 		Document result = contentDaoService.create(repositoryId, pwc);
 
 		// CRITICAL TCK FIX: Set versionSeriesCheckedOutId for PWC after it has been created and has an ID
-		log.error("*** CRITICAL TCK FIX: Setting versionSeriesCheckedOutId for PWC {} ***", result.getId());
+		if (log.isDebugEnabled()) {
+			log.debug("Setting versionSeriesCheckedOutId for PWC: {}", result.getId());
+		}
 		result.setPrivateWorkingCopy(true); // CRITICAL FIX: Ensure PWC flag is set before update
 		result.setVersionSeriesCheckedOutId(result.getId());
 		result.setVersionSeriesCheckedOut(true);
 		result.setVersionSeriesCheckedOutBy(callContext.getUsername());
 		result = contentDaoService.update(repositoryId, result); // CRITICAL FIX: Use updated result
-		log.error("*** CRITICAL TCK FIX: PWC versionSeriesCheckedOutId set to: {} ***", result.getVersionSeriesCheckedOutId());
+		if (log.isDebugEnabled()) {
+			log.debug("PWC versionSeriesCheckedOutId set to: {}", result.getVersionSeriesCheckedOutId());
+		}
 
 	// Modify versionSeries
 	VersionSeries vs = getVersionSeries(repositoryId, result);
@@ -1073,28 +1077,32 @@ public class ContentServiceImpl implements ContentService {
 
 		// CRITICAL TCK FIX: Update all versions in version series to reflect checked-out state
 		// This ensures cmis:isVersionSeriesCheckedOut and related properties are updated
-		log.error("*** CRITICAL TCK FIX: Starting version series update for VS: {} ***", vs.getId());
+		if (log.isDebugEnabled()) {
+			log.debug("Starting version series update for VS: {}", vs.getId());
+		}
 		List<Document> versions = contentDaoService.getAllVersions(repositoryId, vs.getId());
-		log.error("*** CRITICAL TCK FIX: Found {} versions in version series ***", (versions != null ? versions.size() : 0));
+		if (log.isDebugEnabled()) {
+			log.debug("Found {} versions in version series", (versions != null ? versions.size() : 0));
+		}
 		if (CollectionUtils.isNotEmpty(versions)) {
 			for (Document version : versions) {
-				log.error("*** CRITICAL TCK FIX: Processing version {} (PWC: {}) ***", version.getId(), version.isPrivateWorkingCopy());
+				if (log.isDebugEnabled()) {
+					log.debug("Processing version {} (PWC: {})", version.getId(), version.isPrivateWorkingCopy());
+				}
 				if (!version.isPrivateWorkingCopy()) { // Don't update PWC, it already has correct properties
 					// Update versioning properties to reflect VersionSeries state
-					log.error("*** CRITICAL TCK FIX: Updating version {} with checkout properties ***", version.getId());
 					version.setVersionSeriesCheckedOut(true);
 					version.setVersionSeriesCheckedOutBy(callContext.getUsername());
 					version.setVersionSeriesCheckedOutId(result.getId());
 					contentDaoService.update(repositoryId, version);
-					log.error("*** CRITICAL TCK FIX: Updated version {} successfully ***", version.getId());
-					
+
 					// CRITICAL FIX: Invalidate cache for updated version to ensure UI sees updated properties
 					nemakiCachePool.get(repositoryId).getObjectDataCache().remove(version.getId());
-					log.error("*** CRITICAL TCK FIX: Invalidated cache for version {} ***", version.getId());
+					if (log.isDebugEnabled()) {
+						log.debug("Updated and invalidated cache for version {}", version.getId());
+					}
 				}
 			}
-		} else {
-			log.error("*** CRITICAL TCK FIX: No versions found in version series {} ***", vs.getId());
 		}
 
 		// Write change event
@@ -1110,15 +1118,19 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public void cancelCheckOut(CallContext callContext, String repositoryId, String objectId,
 			ExtensionsData extension) {
-		log.error("cancelCheckOut called for objectId: {}", objectId);
+		if (log.isDebugEnabled()) {
+			log.debug("cancelCheckOut called for objectId: {}", objectId);
+		}
 		Document pwc = getDocument(repositoryId, objectId);
-		
+
 		if (pwc == null) {
 			log.error("Document not found for objectId: {}", objectId);
 			throw new RuntimeException("Document not found: " + objectId);
 		}
-		
-		log.error("Document found: id={}, name={}, isPWC={}", pwc.getId(), pwc.getName(), pwc.isPrivateWorkingCopy());
+
+		if (log.isDebugEnabled()) {
+			log.debug("Document found: id={}, name={}, isPWC={}", pwc.getId(), pwc.getName(), pwc.isPrivateWorkingCopy());
+		}
 
 		writeChangeEvent(callContext, repositoryId, pwc, ChangeType.DELETED);
 
@@ -1130,7 +1142,9 @@ public class ContentServiceImpl implements ContentService {
 	// This prevents using stale cached data if VersionSeries was recently deleted
 	String versionSeriesId = pwc.getVersionSeriesId();
 	nemakiCachePool.get(repositoryId).getObjectDataCache().remove(versionSeriesId);
-	log.error("Invalidated cache for VersionSeries before fetch in cancelCheckOut: {}", versionSeriesId);
+	if (log.isDebugEnabled()) {
+		log.debug("Invalidated cache for VersionSeries before fetch in cancelCheckOut: {}", versionSeriesId);
+	}
 	
 	VersionSeries vs = getVersionSeries(repositoryId, pwc);
 	if (vs == null) {
@@ -1504,8 +1518,10 @@ public class ContentServiceImpl implements ContentService {
 	latestVersionSeries.setVersionSeriesCheckedOutId(pwc.getId());
 	latestVersionSeries.setVersionSeriesCheckedOutBy(callContext.getUsername());
 	
-	log.error("Updating VersionSeries with current revision: {} for PWC: {}", 
-		latestVersionSeries.getRevision(), pwc.getId());
+	if (log.isDebugEnabled()) {
+		log.debug("Updating VersionSeries with current revision: {} for PWC: {}",
+			latestVersionSeries.getRevision(), pwc.getId());
+	}
 	
 	try {
 		contentDaoService.update(repositoryId, latestVersionSeries);
@@ -2167,9 +2183,6 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	@Override
 	public void delete(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent) {
-		log.error("=== CONTENTSERVICE DELETE FLOW START ===");
-		log.error("ContentServiceImpl.delete() called for object: {} in repository: {}", objectId, repositoryId);
-		log.error("Thread: {}", Thread.currentThread().getName());
 		
 		Content content = getContent(repositoryId, objectId);
 
@@ -2180,7 +2193,6 @@ public class ContentServiceImpl implements ContentService {
 			return;
 		}
 
-		log.error("Content found: {} (type: {})", content.getName(), content.getObjectType());
 
 		// Record the change event(Before the content is deleted!)
 		writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);
@@ -2219,22 +2231,17 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Delete item
-		log.error("About to call contentDaoService.delete() for object: {}", objectId);
-		log.error("contentDaoService instance: {}", contentDaoService.getClass().getName());
 		
 		try {
 			contentDaoService.delete(repositoryId, objectId);
-			log.error("contentDaoService.delete() completed successfully for object: {}", objectId);
 		} catch (Exception e) {
 			log.error("ERROR in contentDaoService.delete() for object {}: {}", objectId, e.getMessage(), e);
 			throw e; // Re-throw to maintain original error handling
 		}
 
 		// Call Solr indexing(optional) - delete from index
-		log.error("Calling Solr delete for object: {}", objectId);
 		solrUtil.deleteDocument(repositoryId, objectId);
 		
-		log.error("=== CONTENTSERVICE DELETE FLOW END ===");
 	}
 	
 	/**
@@ -2312,10 +2319,6 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public void deleteDocument(CallContext callContext, String repositoryId, String objectId, Boolean allVersions,
 			Boolean deleteWithParent) {
-		log.error("=== CONTENTSERVICE DELETEDOCUMENT FLOW START ===");
-		log.error("ContentServiceImpl.deleteDocument() called for object: {} in repository: {}", objectId, repositoryId);
-		log.error("allVersions: {}, deleteWithParent: {}", allVersions, deleteWithParent);
-		
 		Document document = (Document) getContent(repositoryId, objectId);
 
 		// Make the list of objects to be deleted
@@ -2357,9 +2360,7 @@ public class ContentServiceImpl implements ContentService {
 			}
 
 			// Delete a document
-			log.error("About to call delete() for version: {} (deleteWithParent: {})", version.getId(), deleteWithParent);
 			delete(callContext, repositoryId, version.getId(), deleteWithParent);
-			log.error("Completed delete() for version: {}", version.getId());
 		}
 
 		// Move up the latest version OR delete VersionSeries
@@ -2372,14 +2373,11 @@ public class ContentServiceImpl implements ContentService {
 			}
 	} else {
 		// CRITICAL FIX: When all versions are deleted, delete the VersionSeries as well
-		log.error("All versions deleted for versionSeriesId: {} - deleting VersionSeries", versionSeriesId);
 		try {
 			contentDaoService.delete(repositoryId, versionSeriesId);
-			log.error("VersionSeries {} deleted successfully", versionSeriesId);
 			
 			// CRITICAL FIX: Invalidate cache for deleted VersionSeries to prevent stale data
 			nemakiCachePool.get(repositoryId).getObjectDataCache().remove(versionSeriesId);
-			log.error("Invalidated cache for deleted VersionSeries: {}", versionSeriesId);
 		} catch (Exception e) {
 			log.error("Failed to delete VersionSeries {}: {}", versionSeriesId, e.getMessage(), e);
 			// Continue even if VersionSeries deletion fails - documents are already deleted
