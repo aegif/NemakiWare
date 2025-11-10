@@ -122,24 +122,13 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		ObjectInfo info = null;
 		// object info has not been found -> create one
 		try {
-			if (object == null || object.getId() == null) {
-				log.error("setObjectInfo called with null object or null objectId!");
-				return null;
-			}
-
-
 			info = getObjectInfoIntern(repositoryId, object);
-
-
-			if (info == null) {
-				log.error("getObjectInfoIntern returned NULL for objectId: " + object.getId());
-			}
-
 			// add object info
 			addObjectInfo(info);
 
+
+
 		} catch (Exception e) {
-			log.error("EXCEPTION in setObjectInfo for objectId: " + (object != null ? object.getId() : "null"), e);
 			e.printStackTrace();
 		} finally {
 
@@ -176,9 +165,8 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		RepositoryInfo repositoryInfo = getRepositoryInfo(repositoryId, null);
 
 		// general properties
-		String objectId = object.getId();
 		info.setObject(object);
-		info.setId(objectId);
+		info.setId(object.getId());
 		info.setName(getStringProperty(object, PropertyIds.NAME));
 		info.setCreatedBy(getStringProperty(object, PropertyIds.CREATED_BY));
 		info.setCreationDate(getDateTimeProperty(object, PropertyIds.CREATED_BY));
@@ -186,47 +174,79 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		info.setTypeId(getIdProperty(object, PropertyIds.OBJECT_TYPE_ID));
 		info.setBaseType(object.getBaseTypeId());
 
+		// CRITICAL TCK FIX (2025-11-03): PWC detection with property filter fallback MUST happen BEFORE versioning logic
+		// ROOT CAUSE: When client applies property filter, cmis:isPrivateWorkingCopy may be excluded from ObjectData
+		//             This causes getBooleanProperty() to return null, even though document is actually a PWC
+		// SOLUTION: Two-phase detection:
+		//           1. Try to read IS_PRIVATE_WORKING_COPY property from ObjectData (fast, when available)
+		//           2. If null (filtered), check if objectId equals versionSeriesCheckedOutId (CMIS spec fallback)
+		// CMIS Spec: A document is a PWC if and only if its ID equals the versionSeriesCheckedOutId
+		String objectId = object.getId();
+		boolean isPWCObject = false;
+		if (object.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
+			Boolean isPWCProperty = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
+
+			if (isPWCProperty != null) {
+				// Property available: Use it directly (normal case)
+				isPWCObject = isPWCProperty.booleanValue();
+				if (log.isDebugEnabled()) {
+					log.debug("PWC detection for objectId=" + objectId + ": isPWC=" + isPWCObject +
+							 " (from IS_PRIVATE_WORKING_COPY property)");
+				}
+			} else {
+				// Property null (filtered): Use versionSeriesCheckedOutId fallback (CMIS spec method)
+				String versionSeriesCheckedOutId = getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID);
+				isPWCObject = (versionSeriesCheckedOutId != null && objectId.equals(versionSeriesCheckedOutId));
+				if (log.isDebugEnabled()) {
+					log.debug("PWC detection for objectId=" + objectId + ": isPWC=" + isPWCObject +
+							 " (property filtered, used versionSeriesCheckedOutId=" + versionSeriesCheckedOutId + " fallback)");
+				}
+			}
+		}
+
 		// versioning
 		info.setIsCurrentVersion(object.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT);
 		info.setWorkingCopyId(null);
 		info.setWorkingCopyOriginalId(null);
 
-		String versionSeriesIdValue = getIdProperty(object, PropertyIds.VERSION_SERIES_ID);
-		info.setVersionSeriesId(versionSeriesIdValue);
-
+		info.setVersionSeriesId(getIdProperty(object, PropertyIds.VERSION_SERIES_ID));
 		if (info.getVersionSeriesId() != null) {
 			Boolean isLatest = getBooleanProperty(object, PropertyIds.IS_LATEST_VERSION);
-			Boolean isPWC = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
+			// CRITICAL TCK FIX (2025-11-03): Use pre-computed isPWCObject instead of getBooleanProperty()
+			// This ensures PWC status is correctly detected even when IS_PRIVATE_WORKING_COPY property is filtered
+			Boolean isPWC = isPWCObject ? Boolean.TRUE : getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
 
 			// CRITICAL TCK FIX (2025-11-03): PWC documents MUST have isCurrentVersion=true
+			// Even though PWC objects are not the "latest version", they ARE the "current version" for versioning operations
+			// OpenCMIS client checks isCurrentVersion() before allowing getAllVersions() and other versioning operations
+			// Without this fix, versioning operations on PWC throw CmisNotSupportedException
 			boolean isCurrentVersion;
 			if (isPWC != null && isPWC.booleanValue()) {
-				isCurrentVersion = true;
+				isCurrentVersion = true;  // PWCs are always "current version" for versioning operations
+				log.debug("Setting isCurrentVersion=true for PWC document");
 			} else {
+				// CRITICAL TCK FIX (2025-11-01): Default to FALSE instead of TRUE when IS_LATEST_VERSION is null
+				// Previous behavior: Defaulted to TRUE causing old versions to incorrectly appear as "current version"
+				// Correct behavior: Default to FALSE - only latest version should have isLatestVersion=true
+				// This prevents incorrect AtomPub link generation for non-latest versions
 				isCurrentVersion = (isLatest == null ? false : isLatest.booleanValue());
 			}
 
 			info.setIsCurrentVersion(isCurrentVersion);
-		}
 
 		Boolean isCheckedOut = getBooleanProperty(object, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
-		Boolean isPWC2 = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
 
 		if (isCheckedOut != null && isCheckedOut.booleanValue()) {
 			String pwcId = getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID);
 
-			// REVERTED (2025-11-03): Historical evidence shows 2025-11-01 working version had workingCopyId=null
-			// Git commit a31198254 (2025-10-29): PWC had workingCopyId=null and tests passed 100%
-			// Previous "fix" (workingCopyId=objectId) was incorrect - reversing to working version
-			if (isPWC2 != null && isPWC2.booleanValue()) {
-				// PWC document: Set workingCopyId to null (matches working 2025-11-01 version)
+			if (isPWC != null && isPWC.booleanValue()) {
 				info.setWorkingCopyId(null);
 				info.setWorkingCopyOriginalId(null);
 			} else {
-				// Non-PWC document in checked-out version series: Set workingCopyId to PWC ID
 				info.setWorkingCopyId(pwcId);
 				info.setWorkingCopyOriginalId(null);
 			}
+		}
 		}
 
 		// content
@@ -295,54 +315,16 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		//           This is CMIS-compliant and matches client expectations
 		boolean isRelationshipObject = object.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP;
 
-		// TCK CRITICAL FIX (2025-11-02 REVISED 5): PWC objects do NOT support relationships
-		// ROOT CAUSE: OpenCMIS client checks ObjectInfo.supportsRelationships() and throws CmisNotSupportedException
-		//             if relationships link exists but relationship actions are not allowed
-		// LAYER 1 (AtomPub Link): DO NOT generate relationships link for PWC objects or root folder
-		//                        This prevents client-side CmisNotSupportedException
-		// LAYER 2 (AllowableActions): CompileServiceImpl removes relationship actions from PWC/root folder
-		// LAYER 3 (Service Implementation): RelationshipServiceImpl returns empty list for PWC/root folder
-		// Result: No AtomPub link for PWC → client doesn't attempt to fetch relationships
-
-		// CRITICAL TCK FIX (2025-11-03): PWC detection with property filter fallback
-		// ROOT CAUSE: When client applies property filter, cmis:isPrivateWorkingCopy may be excluded from ObjectData
-		//             This causes getBooleanProperty() to return null, even though document is actually a PWC
-		// SOLUTION: Two-phase detection:
-		//           1. Try to read IS_PRIVATE_WORKING_COPY property from ObjectData (fast, when available)
-		//           2. If null (filtered), check if objectId equals versionSeriesCheckedOutId (CMIS spec fallback)
-		// CMIS Spec: A document is a PWC if and only if its ID equals the versionSeriesCheckedOutId
-
-		boolean isPWCObject = false;
-		if (object.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
-			Boolean isPWCProperty = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
-
-
-			if (isPWCProperty != null) {
-				// Property available: Use it directly (normal case)
-				isPWCObject = isPWCProperty.booleanValue();
-				if (log.isDebugEnabled()) {
-					log.debug("PWC detection for objectId=" + objectId + ": isPWC=" + isPWCObject +
-							 " (from IS_PRIVATE_WORKING_COPY property)");
-				}
-			} else {
-				// Property null (filtered): Use versionSeriesCheckedOutId fallback (CMIS spec method)
-				String versionSeriesCheckedOutId = getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID);
-
-				isPWCObject = (versionSeriesCheckedOutId != null && objectId.equals(versionSeriesCheckedOutId));
-
-				if (log.isDebugEnabled()) {
-					log.debug("PWC detection for objectId=" + objectId + ": isPWC=" + isPWCObject +
-							 " (property filtered, used versionSeriesCheckedOutId=" + versionSeriesCheckedOutId + " fallback)");
-				}
-			}
-		}
-
-		// Check if this is the root folder (use existing repositoryInfo from line 173)
+		// Check if this is the root folder (use existing repositoryInfo from line 165)
 		boolean isRootFolder = objectId.equals(repositoryInfo.getRootFolderId());
 
 
-		// CRITICAL FIX (2025-11-03): Exclude ONLY Relationship objects and root folder from relationships support
-		// PWC objects are regular documents that can have relationships
+		// CRITICAL FIX (2025-11-02 REVISED 6 CORRECTED): PWC objects SHOULD have supportsRelationships=true
+		// PREVIOUS BUG: PWC objects were excluded from relationships support (supportsRelationships=false)
+		// CORRECT BEHAVIOR: Only Relationship objects and root folder should have supportsRelationships=false
+		// RATIONALE: PWC objects are regular documents that happen to be checked out - they can have relationships
+		//            The CMIS spec only restricts relationships for Relationship objects themselves (circular reference)
+		//            and root folder (implementation limitation)
 		boolean supportsRelationships = !isRelationshipObject && !isRootFolder;
 
 

@@ -1038,6 +1038,11 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Document checkOut(CallContext callContext, String repositoryId, String objectId, ExtensionsData extension) {
+		// Production-ready debug logging (only when debug is enabled)
+		if (log.isDebugEnabled()) {
+			log.debug("checkOut() called for objectId=" + objectId + " by user=" + callContext.getUsername());
+		}
+
 		Document latest = getDocument(repositoryId, objectId);
 		Document pwc = buildCopyDocument(callContext, repositoryId, latest, null, null);
 

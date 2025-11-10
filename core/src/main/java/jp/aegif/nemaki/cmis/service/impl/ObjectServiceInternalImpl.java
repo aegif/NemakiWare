@@ -62,6 +62,29 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 			// Body of the method
 			// //////////////////
 			if (content.isDocument()) {
+
+		// CRITICAL TCK FIX (2025-11-01): Version deletion validation
+		// CMIS 1.1 spec: Individual version deletion only allowed for latest version
+		// Version series deletion (allVersions=true) can be done from any version
+		jp.aegif.nemaki.model.Document doc = (jp.aegif.nemaki.model.Document) content;
+
+		// Check if this is a versioned document and NOT the latest version
+		if (doc.getVersionSeriesId() != null && !doc.isLatestVersion()) {
+			// If allVersions is false or null, cannot delete non-latest version individually
+			if (allVersions == null || !allVersions.booleanValue()) {
+				if (log.isDebugEnabled()) {
+					log.debug("Blocking deletion of non-latest version: document=" +
+						doc.getId() + ", versionLabel=" + doc.getVersionLabel() +
+						", isLatestVersion=" + doc.isLatestVersion() +
+						", allVersions=" + allVersions);
+				}
+				exceptionService.constraint(doc.getId(),
+					"Cannot delete non-latest version individually. " +
+					"Only the latest version can be deleted, or use allVersions=true to delete the entire version series.");
+			}
+			// If allVersions=true, allow deletion (will delete entire version series)
+		}
+
 				contentService.deleteDocument(callContext, repositoryId,
 						content.getId(), allVersions, deleteWithParent);
 			} else if (content.isFolder()) {

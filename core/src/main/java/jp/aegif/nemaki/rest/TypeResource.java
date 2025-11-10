@@ -2,6 +2,7 @@ package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.service.RepositoryService;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
@@ -49,11 +50,12 @@ public class TypeResource extends ResourceBase {
 
 	private TypeService typeService;
 	private TypeManager typeManager;
+	private RepositoryService repositoryService;
 
 	private final Log log = LogFactory.getLog(TypeResource.class);
 
 	/**
-	 * Ensure TypeService and TypeManager are initialized from Spring context
+	 * Ensure TypeService, TypeManager, and RepositoryService are initialized from Spring context
 	 * This method supports lazy initialization for JAX-RS resources
 	 */
 	private void ensureServicesInitialized() {
@@ -72,6 +74,15 @@ public class TypeResource extends ResourceBase {
 				log.info("TypeManager initialized from Spring context");
 			} catch (Exception e) {
 				log.error("Failed to get TypeManager from Spring context", e);
+			}
+		}
+
+		if (repositoryService == null) {
+			try {
+				repositoryService = (RepositoryService) SpringContext.getBean("repositoryService");
+				log.info("RepositoryService initialized from Spring context");
+			} catch (Exception e) {
+				log.error("Failed to get RepositoryService from Spring context", e);
 			}
 		}
 	}
@@ -103,7 +114,7 @@ public class TypeResource extends ResourceBase {
 	// New CRUD endpoints for UI management
 
 	/**
-	 * Get all type definitions
+	 * Get all type definitions (including base CMIS types and custom types)
 	 */
 	@GET
 	@Path("/list")
@@ -125,31 +136,56 @@ public class TypeResource extends ResourceBase {
 						.entity(errorResult.toJSONString()).build();
 			}
 
-			List<NemakiTypeDefinition> typeDefinitions = typeService.getTypeDefinitions(repositoryId);
 			JSONArray typesArray = new JSONArray();
-			
-			for (NemakiTypeDefinition nemakiType : typeDefinitions) {
+
+			// Get base CMIS types via RepositoryService
+			if (repositoryService != null) {
+				try {
+					// Get all base types (typeId=null returns base types)
+					org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList baseTypes =
+						repositoryService.getTypeChildren(null, repositoryId, null, true, null, null, null);
+
+					if (baseTypes != null && baseTypes.getList() != null) {
+						log.info("Found " + baseTypes.getList().size() + " base CMIS types");
+						for (org.apache.chemistry.opencmis.commons.definitions.TypeDefinition baseType : baseTypes.getList()) {
+							JSONObject typeJson = convertBaseTypeToJson(baseType);
+							typesArray.add(typeJson);
+						}
+					}
+				} catch (Exception e) {
+					log.warn("Failed to retrieve base types, continuing with custom types only: " + e.getMessage());
+				}
+			} else {
+				log.warn("RepositoryService not available, skipping base types");
+			}
+
+			// Get custom types from TypeService
+			List<NemakiTypeDefinition> customTypes = typeService.getTypeDefinitions(repositoryId);
+			log.info("Found " + customTypes.size() + " custom types");
+
+			for (NemakiTypeDefinition nemakiType : customTypes) {
 				JSONObject typeJson = convertTypeToJson(repositoryId, nemakiType);
 				typesArray.add(typeJson);
 			}
-			
+
 			JSONObject result = new JSONObject();
 			result.put("types", typesArray);
 			result.put("status", "success");
-			
+			log.info("Returning " + typesArray.size() + " total types (base + custom)");
+
 			return Response.status(Response.Status.OK)
 					.entity(result.toJSONString())
 					.type(MediaType.APPLICATION_JSON)
 					.build();
-			
+
 		} catch (Exception e) {
 			log.error("Exception occurred in list(): " + e.getMessage(), e);
-			
+
 			JSONObject errorResult = new JSONObject();
 			errorResult.put("status", "error");
 			errorResult.put("message", "Failed to retrieve type list");
 			errorResult.put("error", e.getMessage());
-			
+
 			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
 					.entity(errorResult.toJSONString())
 					.type(MediaType.APPLICATION_JSON)
@@ -479,7 +515,7 @@ public class TypeResource extends ResourceBase {
 	@SuppressWarnings("unchecked")
 	private JSONObject convertPropertyToJson(NemakiPropertyDefinitionCore core, NemakiPropertyDefinitionDetail detail) {
 		JSONObject propJson = new JSONObject();
-		
+
 		propJson.put("id", core.getPropertyId());
 		propJson.put("localName", core.getPropertyId());
 		propJson.put("displayName", core.getPropertyId());
@@ -487,13 +523,64 @@ public class TypeResource extends ResourceBase {
 		propJson.put("propertyType", core.getPropertyType() != null ? core.getPropertyType().value() : null);
 		propJson.put("cardinality", core.getCardinality() != null ? core.getCardinality().value() : null);
 		propJson.put("updatability", detail.getUpdatability() != null ? detail.getUpdatability().value() : null);
-		
+
 		propJson.put("required", detail.isRequired());
 		propJson.put("queryable", detail.isQueryable());
 		propJson.put("orderable", false); // Not available in detail
 		propJson.put("inherited", false);
-		
+
 		return propJson;
+	}
+
+	/**
+	 * Convert base CMIS TypeDefinition to JSON format
+	 * This handles base types returned from RepositoryService.getTypeChildren()
+	 */
+	@SuppressWarnings("unchecked")
+	private JSONObject convertBaseTypeToJson(org.apache.chemistry.opencmis.commons.definitions.TypeDefinition typeDef) {
+		JSONObject typeJson = new JSONObject();
+
+		// Basic type information
+		typeJson.put("id", typeDef.getId());
+		typeJson.put("localName", typeDef.getLocalName());
+		typeJson.put("displayName", typeDef.getDisplayName());
+		typeJson.put("description", typeDef.getDescription());
+		typeJson.put("baseTypeId", typeDef.getBaseTypeId() != null ? typeDef.getBaseTypeId().value() : null);
+		typeJson.put("parentTypeId", typeDef.getParentTypeId());
+
+		// Boolean attributes
+		typeJson.put("creatable", typeDef.isCreatable());
+		typeJson.put("queryable", typeDef.isQueryable());
+		typeJson.put("controllableAcl", typeDef.isControllableAcl());
+		typeJson.put("controllablePolicy", typeDef.isControllablePolicy());
+		typeJson.put("fulltextIndexed", typeDef.isFulltextIndexed());
+		typeJson.put("includedInSupertypeQuery", typeDef.isIncludedInSupertypeQuery());
+
+		// Property definitions - base types have property definitions in the TypeDefinition object
+		JSONArray propertiesArray = new JSONArray();
+		if (typeDef.getPropertyDefinitions() != null) {
+			for (org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> propDef : typeDef.getPropertyDefinitions().values()) {
+				JSONObject propJson = new JSONObject();
+
+				propJson.put("id", propDef.getId());
+				propJson.put("localName", propDef.getLocalName());
+				propJson.put("displayName", propDef.getDisplayName());
+				propJson.put("description", propDef.getDescription());
+				propJson.put("propertyType", propDef.getPropertyType() != null ? propDef.getPropertyType().value() : null);
+				propJson.put("cardinality", propDef.getCardinality() != null ? propDef.getCardinality().value() : null);
+				propJson.put("updatability", propDef.getUpdatability() != null ? propDef.getUpdatability().value() : null);
+
+				propJson.put("required", propDef.isRequired());
+				propJson.put("queryable", propDef.isQueryable());
+				propJson.put("orderable", propDef.isOrderable());
+				propJson.put("inherited", propDef.isInherited());
+
+				propertiesArray.add(propJson);
+			}
+		}
+		typeJson.put("propertyDefinitions", propertiesArray);
+
+		return typeJson;
 	}
 
 	@POST

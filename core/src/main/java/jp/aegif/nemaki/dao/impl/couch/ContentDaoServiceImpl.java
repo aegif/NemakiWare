@@ -979,7 +979,25 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		if (cd == null) {
 			return null;
 		}
-		return cd.convert();
+
+		// Production-ready debug logging (only when debug is enabled)
+		if (log.isDebugEnabled()) {
+			log.debug("getDocument called for objectId=" + objectId + ", retrieved CouchDocument ID=" + cd.getId() + ", Rev=" + cd.getRevision());
+			log.debug("CouchDocument BEFORE convert() - versionSeriesCheckedOut=" + cd.isVersionSeriesCheckedOut() +
+					", checkedOutBy=" + cd.getVersionSeriesCheckedOutBy() +
+					", checkedOutId=" + cd.getVersionSeriesCheckedOutId());
+		}
+
+		Document result = cd.convert();
+
+		if (log.isDebugEnabled()) {
+			log.debug("Document AFTER convert() - ID=" + result.getId() +
+					", isVersionSeriesCheckedOut=" + result.isVersionSeriesCheckedOut() +
+					", checkedOutBy=" + result.getVersionSeriesCheckedOutBy() +
+					", checkedOutId=" + result.getVersionSeriesCheckedOutId());
+		}
+
+		return result;
 	}
 
 	@Override
@@ -1330,16 +1348,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// Query childrenNames view
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			ViewResult result = client.queryView("_repo", "childrenNames", parentId);
-			
+
 			List<String> names = new ArrayList<String>();
-			if (result.getRows() != null) {
+			// CRITICAL FIX (2025-11-02): Check if result is null before calling getRows()
+			// NullPointerException occurs when view query returns null (view doesn't exist or query fails)
+			if (result != null && result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getValue() != null) {
 						names.add(row.getValue().toString());
 					}
 				}
 			}
-			
+
 			return names;
 		} catch (Exception e) {
 			log.error("Error getting children names for parent: " + parentId + " in repository: " + repositoryId, e);

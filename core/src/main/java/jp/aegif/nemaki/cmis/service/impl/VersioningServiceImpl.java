@@ -66,10 +66,9 @@ public class VersioningServiceImpl implements VersioningService {
 	 */
 	public void checkOut(CallContext callContext, String repositoryId,
 			Holder<String> objectId, Holder<Boolean> contentCopied, ExtensionsData extension) {
-
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 		String originalId = objectId.getValue();
-		
+
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
 		
 		try{
@@ -96,6 +95,12 @@ public class VersioningServiceImpl implements VersioningService {
 			// Body of the method
 			// //////////////////
 			Document pwc = contentService.checkOut(callContext, repositoryId, objectId.getValue(), extension);
+
+			// CRITICAL TCK FIX (2025-11-03): Remove cache for original document AFTER checkout
+			// The original document was retrieved at Line 84 (before checkout) and cached with old properties
+			// After checkout, CouchDB has updated properties, so we must invalidate the stale cache
+			nemakiCachePool.get(repositoryId).removeCmisCache(originalId);
+
 			objectId.setValue(pwc.getId());
 			Holder<Boolean> copied = new Holder<Boolean>(true);
 			contentCopied = copied;

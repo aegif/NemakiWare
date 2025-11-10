@@ -336,6 +336,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 			if (v != null) {
 				log.info("CACHE HIT: Found content in cache for " + objectId + ". Type: " + v.getClass().getSimpleName() + ", ObjectType: " + v.getObjectType() + ", isFolder: " + v.isFolder());
+
+				// Production-ready debug logging for versioning properties (only when debug is enabled)
+				if (log.isDebugEnabled() && v instanceof Document) {
+					Document cachedDoc = (Document) v;
+					log.debug("Document " + objectId + " retrieved from cache - " +
+							"isVersionSeriesCheckedOut=" + cachedDoc.isVersionSeriesCheckedOut() +
+							", checkedOutBy=" + cachedDoc.getVersionSeriesCheckedOutBy() +
+							", checkedOutId=" + cachedDoc.getVersionSeriesCheckedOutId());
+				}
+
 				return v;
 			}
 

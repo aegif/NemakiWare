@@ -533,6 +533,12 @@ public class CloudantClientWrapper {
 			String id = (String) document.get("_id");
 			String rev = (String) document.get("_rev");
 
+			// Production-ready debug logging (only when debug is enabled)
+			if (log.isDebugEnabled()) {
+				log.debug("Updating document via Map method: id=" + id +
+						", hasVersioningProps=" + document.containsKey("versionSeriesCheckedOut"));
+			}
+
 			if (id == null) {
 				throw new IllegalArgumentException("Document must have '_id' field for update");
 			}
@@ -1138,8 +1144,31 @@ public class CloudantClientWrapper {
 		try {
 			ObjectMapper mapper = getObjectMapper();
 
+			// Production-ready debug logging (only when debug is enabled)
+			if (log.isDebugEnabled()) {
+				log.debug("Updating document of type: " + document.getClass().getSimpleName());
+				if (document instanceof jp.aegif.nemaki.model.couch.CouchDocument) {
+					jp.aegif.nemaki.model.couch.CouchDocument doc = (jp.aegif.nemaki.model.couch.CouchDocument) document;
+					log.debug("CouchDocument update - id=" + doc.getId() +
+							", versionSeriesCheckedOut=" + doc.isVersionSeriesCheckedOut() +
+							", checkedOutBy=" + doc.getVersionSeriesCheckedOutBy() +
+							", checkedOutId=" + doc.getVersionSeriesCheckedOutId());
+				}
+			}
+
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
+
+			// Production-ready debug logging (only when debug is enabled)
+			if (log.isDebugEnabled()) {
+				log.debug("ObjectMapper convertValue completed - map size: " + documentMap.size() +
+						", hasVersioningProps: " + documentMap.containsKey("versionSeriesCheckedOut"));
+				if (documentMap.containsKey("versionSeriesCheckedOut")) {
+					log.debug("Versioning properties in map - versionSeriesCheckedOut=" + documentMap.get("versionSeriesCheckedOut") +
+							", checkedOutBy=" + documentMap.get("versionSeriesCheckedOutBy") +
+							", checkedOutId=" + documentMap.get("versionSeriesCheckedOutId"));
+				}
+			}
 
 			String id = (String) documentMap.get("_id");
 			if (id == null) {
@@ -1170,6 +1199,14 @@ public class CloudantClientWrapper {
 			Map<String, Object> typeSafeDocumentMap = normalizeDataTypes(documentMap);
 
 			String jsonString = mapper.writeValueAsString(typeSafeDocumentMap);
+
+			// Production-ready debug logging (only when debug is enabled)
+			if (log.isDebugEnabled() && typeSafeDocumentMap.containsKey("versionSeriesCheckedOut")) {
+				log.debug("Writing document " + id + " with versionSeriesCheckedOut=" +
+						typeSafeDocumentMap.get("versionSeriesCheckedOut") +
+						", versionSeriesCheckedOutBy=" + typeSafeDocumentMap.get("versionSeriesCheckedOutBy") +
+						", versionSeriesCheckedOutId=" + typeSafeDocumentMap.get("versionSeriesCheckedOutId"));
+			}
 
 			// Use PostDocumentOptions with JSON body instead of PutDocumentOptions with Document
 			PostDocumentOptions options = new PostDocumentOptions.Builder()
@@ -1360,6 +1397,7 @@ public class CloudantClientWrapper {
 		// TCK FIX (2025-10-27): For CouchVersionSeries, use Document.getProperties() to get actual CouchDB fields
 		// This ensures versionSeriesCheckedOut/By/Id fields are properly deserialized
 		// Root cause: Jackson's convertValue() doesn't properly map Document.getProperties() to @JsonProperty annotated fields
+		// CRITICAL FIX (2025-11-02): Add timestamp field conversion to prevent GregorianCalendar deserialization errors
 		if (clazz.getSimpleName().equals("CouchVersionSeries")) {
 			// Get the properties Map which contains the actual CouchDB document fields
 			Map<String, Object> properties = doc.getProperties();
@@ -1368,21 +1406,45 @@ public class CloudantClientWrapper {
 				Map<String, Object> completeMap = new HashMap<>();
 				completeMap.put("_id", doc.getId());
 				completeMap.put("_rev", doc.getRev());
-				completeMap.putAll(properties); // Flatten all properties including versionSeries* fields
 
-				log.error("CouchVersionSeries deserialization - _id: {}, _rev: {}", doc.getId(), doc.getRev());
+				// CRITICAL FIX (2025-11-02): Convert timestamp fields from Number to GregorianCalendar
+				// Old PWC objects have timestamps stored as numeric values (Long/Double)
+				// Jackson cannot directly deserialize Number → GregorianCalendar, causing:
+				// "Cannot deserialize value of type `java.util.GregorianCalendar` from Floating-point value"
+				for (Map.Entry<String, Object> entry : properties.entrySet()) {
+					String key = entry.getKey();
+					Object value = entry.getValue();
+
+					// Convert timestamp fields: created, modified
+					if (("created".equals(key) || "modified".equals(key)) && value instanceof Number) {
+						long timestamp = ((Number) value).longValue();
+						java.util.GregorianCalendar calendar = new java.util.GregorianCalendar(java.util.TimeZone.getTimeZone("UTC"));
+						calendar.setTimeInMillis(timestamp);
+						completeMap.put(key, calendar);
+
+						if (log.isDebugEnabled()) {
+							log.debug("CouchVersionSeries: Converted timestamp field '" + key + "': " + value + " -> " + calendar.getTime());
+						}
+					} else {
+						completeMap.put(key, value);
+					}
+				}
+
+				if (log.isDebugEnabled()) {
+					log.debug("CouchVersionSeries deserialization - _id: {}, _rev: {}", doc.getId(), doc.getRev());
+				}
 
 			try {
 				T result = mapper.convertValue(completeMap, clazz);
-				
+
 				if (result instanceof jp.aegif.nemaki.model.couch.CouchVersionSeries) {
 					jp.aegif.nemaki.model.couch.CouchVersionSeries cvs = (jp.aegif.nemaki.model.couch.CouchVersionSeries) result;
-					
+
 					if (doc.getRev() != null) {
 						cvs.setRevision(doc.getRev());
 					}
 				}
-				
+
 				return result;
 				} catch (Exception deserEx) {
 					log.warn("Error deserializing CouchVersionSeries: " + deserEx.getMessage());

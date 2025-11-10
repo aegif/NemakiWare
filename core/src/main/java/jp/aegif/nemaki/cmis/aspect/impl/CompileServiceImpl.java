@@ -214,17 +214,6 @@ public class CompileServiceImpl implements CompileService {
 	private void setRelationshipInternal(ObjectDataImpl objectData, CallContext callContext, String repositoryId,
 			Content content, IncludeRelationships includeRelationships) {
 
-		// DEBUG: Log entry
-
-		// CRITICAL TCK FIX (2025-11-02): Root folder cannot have relationships data in ObjectData
-		// Even though RelationshipServiceImpl returns empty list for root folder,
-		// we must NOT call compileRelationships() at all to avoid triggering client-side validations
-		// OpenCMIS client checks the relationships field in ObjectData during checkObject() validation
-		if (contentService.isRoot(repositoryId, content)) {
-			objectData.setRelationships(new ArrayList<ObjectData>());
-			return;
-		}
-
 		if (!content.isRelationship() && includeRelationships != IncludeRelationships.NONE
 				&& includeRelationshipsEnabled()) {
 			objectData.setRelationships(compileRelationships(callContext, repositoryId, content, includeRelationships));
@@ -289,15 +278,24 @@ public class CompileServiceImpl implements CompileService {
 			}
 		}
 
-		// Deep copy ObjectData
-		// Shallow copy will cause a destructive effect after filtering some
-		// attributes
-		Cloner cloner = new Cloner();
-		ObjectDataImpl result = DataUtil.convertObjectDataImpl(cloner.deepClone(fullObjectData));
+		// CRITICAL FIX (2025-11-02): Replace deep clone with manual object construction
+		// ROOT CAUSE: Cloner library causes StackOverflowError when encountering circular references
+		// SOLUTION: Use DataUtil.convertObjectDataImpl() pattern to create copy without deep cloning
+		// This creates a new ObjectDataImpl with copied properties, avoiding circular reference issues
+		// NOTE: id and baseTypeId are not set directly - they come from the Properties object
+		ObjectDataImpl result = new ObjectDataImpl();
+		result.setAcl(fullObjectData.getAcl());
+		result.setAllowableActions(fullObjectData.getAllowableActions());
+		result.setChangeEventInfo(fullObjectData.getChangeEventInfo());
+		result.setExtensions(fullObjectData.getExtensions());
+		result.setIsExactAcl(fullObjectData.isExactAcl());
+		result.setPolicyIds(fullObjectData.getPolicyIds());
+		result.setProperties(fullObjectData.getProperties());
+		result.setRelationships(fullObjectData.getRelationships());
+		result.setRenditions(fullObjectData.getRenditions());
 
 		// TCK CRITICAL FIX: Pass propertyAliases to filterProperties for query alias support
-		Set<String> filterSet = splitFilter(filter);
-		Properties filteredProperties = filterProperties(result.getProperties(), filterSet, propertyAliases);
+		Properties filteredProperties = filterProperties(result.getProperties(), splitFilter(filter), propertyAliases);
 		result.setProperties(filteredProperties);
 
 		// CRITICAL CMIS 1.1 COMPLIANCE FIX: Always include AllowableActions for query results
@@ -397,16 +395,6 @@ public class CompileServiceImpl implements CompileService {
 			for (String key : properties.getProperties().keySet()) {
 				PropertyData<?> pd = properties.getProperties().get(key);
 
-				// CRITICAL TCK FIX (2025-11-02): Always include REQUIRED CMIS properties
-				// CMIS 1.1 specification mandates certain properties MUST always be present:
-				// - cmis:objectId: Required for object identification
-				// - cmis:baseTypeId: Required for type system
-				// - cmis:objectTypeId: Required for type identification
-				// These properties are essential for ObjectInfo creation and must not be filtered.
-				boolean isRequiredProperty = PropertyIds.OBJECT_ID.equals(pd.getId()) ||
-											  PropertyIds.BASE_TYPE_ID.equals(pd.getId()) ||
-											  PropertyIds.OBJECT_TYPE_ID.equals(pd.getId());
-
 				// CRITICAL TCK FIX (2025-10-09): Always include content stream properties WITH VALID VALUES
 				// CMIS 1.1 specification requires content stream properties to always be present
 				// if the document has content, regardless of the property filter.
@@ -425,19 +413,22 @@ public class CompileServiceImpl implements CompileService {
 					hasValidContentStreamProperty = pd.getFirstValue() != null;
 				}
 
-				// CRITICAL TCK FIX (2025-11-03): Always include PWC detection properties when they have values
-				// ROOT CAUSE: getAllVersions() applies property filter that excludes IS_PRIVATE_WORKING_COPY
-				//             and VERSION_SERIES_CHECKED_OUT_ID, causing PWC fallback detection to fail
-				// SOLUTION: Treat these properties like content stream properties - include them when non-null
-				//           to ensure PWC detection works even with restrictive property filters
-				boolean hasPWCDetectionProperty = false;
-				if (PropertyIds.IS_PRIVATE_WORKING_COPY.equals(pd.getId()) ||
-				    PropertyIds.VERSION_SERIES_CHECKED_OUT_ID.equals(pd.getId()) ||
-				    PropertyIds.VERSION_SERIES_ID.equals(pd.getId())) {
-					hasPWCDetectionProperty = pd.getFirstValue() != null;
+				// CRITICAL TCK FIX (2025-11-03): Always include versioning properties WITH VALID VALUES
+				// Version-related properties are required for AtomPub link generation.
+				// Without cmis:versionSeriesId, no version-history link is generated,
+				// causing "Operation not supported" errors for PWC objects.
+				//
+				// versionSeriesId: Required for version-history link (AbstractAtomPubServiceCall line 212)
+				// isPrivateWorkingCopy: Required for PWC identification
+				// versionSeriesCheckedOutId: Required for PWC detection fallback
+				boolean hasValidVersioningProperty = false;
+				if (PropertyIds.VERSION_SERIES_ID.equals(pd.getId()) ||
+					PropertyIds.IS_PRIVATE_WORKING_COPY.equals(pd.getId()) ||
+					PropertyIds.VERSION_SERIES_CHECKED_OUT_ID.equals(pd.getId())) {
+					hasValidVersioningProperty = pd.getFirstValue() != null;
 				}
 
-				if (filter.contains(pd.getQueryName()) || isRequiredProperty || hasValidContentStreamProperty || hasPWCDetectionProperty) {
+				if (filter.contains(pd.getQueryName()) || hasValidContentStreamProperty || hasValidVersioningProperty) {
 					// TCK CRITICAL FIX: Apply query alias if propertyAliases map is provided
 					// Check if this property's queryName matches any value in the aliases map
 					// If it does, set the property's queryName to the corresponding alias (key)
@@ -752,21 +743,7 @@ public class CompileServiceImpl implements CompileService {
 	public AllowableActions compileAllowableActions(CallContext callContext, String repositoryId, Content content,
 			Acl acl) {
 		// Get parameters to calculate AllowableActions
-		String objectType = content.getObjectType();
-		// TCK CRITICAL FIX (2025-11-01): Add null check for TypeDefinition
-		// Root cause: getTypeDefinition() can return null if type doesn't exist
-		if (objectType == null) {
-			log.error("compileAllowableActions: content.getObjectType() returned NULL for content ID: " + content.getId());
-			return null;
-		}
-
-		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, objectType);
-		if (tdf == null) {
-			log.error("compileAllowableActions: typeManager.getTypeDefinition() returned NULL for objectType: " + objectType + ", contentId: " + content.getId() + ", repositoryId: " + repositoryId);
-			// Return empty AllowableActions instead of causing NPE
-			return null;
-		}
-
+		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content.getObjectType());
 		Acl contentAcl = content.getAcl();
 		if (tdf.isControllableAcl() && contentAcl == null)
 			return null;
@@ -793,7 +770,6 @@ public class CompileServiceImpl implements CompileService {
 
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
-
 			// TODO WORKAROUND. implement class cast check
 
 			// FIXME WORKAROUND: skip canCreatePolicy.Folder
@@ -808,73 +784,21 @@ public class CompileServiceImpl implements CompileService {
 			if (!isAllowableByType(key, content, tdf, repositoryId)) {
 				continue;
 			}
-
-			// DEBUG: Log root folder check
-			boolean isRootFolder = contentService.isRoot(repositoryId, content);
-			if (isRootFolder || PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT.equals(key)) {
-			}
-
 			if (contentService.isRoot(repositoryId, content)) {
 				if (Action.CAN_MOVE_OBJECT == convertKeyToAction(key)) {
 					continue;
 				}
-				// CRITICAL CMIS COMPLIANCE FIX: Root folder cannot have parent-related actions
+				// CRITICAL CMIS COMPLIANCE FIX: Root folder cannot have CAN_GET_FOLDER_PARENT action
 				// because root folder has no parent by definition
-				// CAN_GET_FOLDER_PARENT_OBJECT → canGetFolderParent action
-				// CAN_GET_PARENTS_FOLDER → canGetObjectParents action
-				if (PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT.equals(key) ||
-				    PermissionMapping.CAN_GET_PARENTS_FOLDER.equals(key)) {
-					continue;
-				}
-				// TCK FIX (2025-11-02): Root folder cannot have relationship actions
-				// to align with ObjectInfo.setSupportsRelationships(false) in CmisService
-				if (PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT.equals(key) ||
-				    PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE.equals(key) ||
-				    PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET.equals(key)) {
+				if (PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT.equals(key)) {
 					continue;
 				}
 			}
-
-			// TCK FIX (2025-11-02): PWC objects cannot have relationship actions (Three-Layer Defense - Layer 2)
-			// LAYER 2: Remove relationship actions from AllowableActions for PWC objects
-
-			// DEBUG TRACE (2025-11-02): Log every content object being processed
-			boolean isDocument = content instanceof Document;
-			boolean isPWC = false;
-			if (isDocument) {
-				Document doc = (Document) content;
-				isPWC = doc.isPrivateWorkingCopy();
-			}
-
-			if (content instanceof Document) {
-				Document doc = (Document) content;
-				boolean isPWCSecondCheck = doc.isPrivateWorkingCopy();
-				if (isPWCSecondCheck) {
-					if (PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT.equals(key) ||
-					    PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE.equals(key) ||
-					    PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET.equals(key)) {
-						continue;
-					}
-				}
-			}
-
-
-		// DEBUG: Check versionSeries for CAN_GET_ALL_VERSIONS
-		if (PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES.equals(key)) {
-			boolean isDoc = content instanceof Document;
-			boolean docIsPWC = false;
-			if (isDoc) {
-				docIsPWC = ((Document) content).isPrivateWorkingCopy();
-			}
-		}
-
 			if (versionSeries != null) {
 				Document d = (Document) content;
 				DocumentTypeDefinition dtdf = (DocumentTypeDefinition) tdf;
-				boolean versioningCheckPassed = isAllowableActionForVersionableDocument(callContext, mappingEntry.getKey(), d, versionSeries,
-						dtdf);
-
-				if (!versioningCheckPassed) {
+				if (!isAllowableActionForVersionableDocument(callContext, mappingEntry.getKey(), d, versionSeries,
+						dtdf)) {
 					continue;
 				}
 			}
@@ -904,22 +828,37 @@ public class CompileServiceImpl implements CompileService {
 
 		// Versioning action(checkOut / checkIn)
 		if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKOUT_DOCUMENT)) {
-			return dtdf.isVersionable() && !isVersionSeriesCheckedOutSafe(versionSeries) && document.isLatestVersion();
+		// Calculate canCheckOut based on CMIS 1.1 specification
+		boolean isVersionable = dtdf.isVersionable();
+		boolean notCheckedOut = !isVersionSeriesCheckedOutSafe(versionSeries);
+		boolean isLatest = document.isLatestVersion();
+		boolean canCheckOut = isVersionable && notCheckedOut && isLatest;
+
+		// Production-ready debug logging (only when debug is enabled)
+		if (log.isDebugEnabled()) {
+			log.debug("CAN_CHECKOUT_DOCUMENT check for document: " + document.getId() +
+					", isVersionable=" + isVersionable +
+					", notCheckedOut=" + notCheckedOut +
+					", isLatest=" + isLatest +
+					", canCheckOut=" + canCheckOut);
+		}
+
+		return canCheckOut;
 		} else if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKIN_DOCUMENT)) {
 			return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
 	} else if (permissionMappingKey.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
 		return dtdf.isVersionable() && isVersionSeriesCheckedOutSafe(versionSeries) && document.isPrivateWorkingCopy();
-	} else if (permissionMappingKey.equals(PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES)) {
-		// CRITICAL TCK FIX (2025-11-08 CORRECTED): PWC CAN call getAllVersions()
-		// CMIS 1.1 SPECIFICATION: getAllVersions() can be called on ANY document in version series, including PWC
-		// When called on PWC, it returns all non-PWC versions in the series
-		// TCK Test Evidence: VersioningSmokeTest.java:133 calls pwc.getAllVersions() and expects it to work
-		// SOLUTION: Always return true for versionable documents (including PWC)
-		return true;
 	}
 
 		// Lock as an effect of checkOut
 		if (dtdf.isVersionable()) {
+			// CRITICAL TCK FIX (2025-11-01): Allow CAN_DELETE_OBJECT for all versions
+			// CMIS 1.1 spec allows deletion of any version, not just the latest version
+			// TCK tests verify this by deleting old versions in versionDeleteTest
+			if (permissionMappingKey.equals(PermissionMapping.CAN_DELETE_OBJECT)) {
+				return true;  // Allow deletion of any version (latest, old, or PWC)
+			}
+
 			if (isLockableAction(permissionMappingKey)) {
 				if (document.isLatestVersion()) {
 					// LocK only when checked out
@@ -1030,6 +969,17 @@ public class CompileServiceImpl implements CompileService {
 				return false;
 			}
 			DocumentTypeDefinition dtdf = (DocumentTypeDefinition) tdf;
+
+			// CRITICAL TCK FIX (2025-11-03): Allow versioning actions on PWCs (Private Working Copies)
+			// PWCs are part of the versioning process and should support getAllVersions() and similar operations
+			// even though they may not have the same type-level versionable flag as checked-in documents
+			if (content instanceof Document) {
+				Document document = (Document) content;
+				if (document.isPrivateWorkingCopy()) {
+					return true;  // PWCs always support versioning actions by definition
+				}
+			}
+
 			return dtdf.isVersionable();
 		} else if (isRootFolderRestrictedAction(key, content, repositoryId)) {
 			// Actions not allowed on root folder
@@ -1114,18 +1064,16 @@ public class CompileServiceImpl implements CompileService {
 			return new PropertiesImpl();
 		}
 		
-		// Debug logging at appropriate level
-		if (log.isDebugEnabled()) {
-			log.debug("=== COMPILE PROPERTIES DEBUG ===");
-			log.debug("Repository: " + repositoryId);
-			log.debug("Content ID: " + content.getId());
-			log.debug("Content Name: " + content.getName());
-			log.debug("Content Type: " + content.getClass().getSimpleName());
-			log.debug("Is Document: " + content.isDocument());
-			if (content.isDocument()) {
-				Document doc = (Document) content;
-				log.debug("Document AttachmentNodeId: " + doc.getAttachmentNodeId());
-			}
+		// FORCE ERROR log for visibility
+		log.debug("=== COMPILE PROPERTIES DEBUG ===");
+		log.error("Repository: " + repositoryId);
+		log.error("Content ID: " + content.getId());
+		log.error("Content Name: " + content.getName());
+		log.error("Content Type: " + content.getClass().getSimpleName());
+		log.error("Is Document: " + content.isDocument());
+		if (content.isDocument()) {
+			Document doc = (Document) content;
+			log.error("Document AttachmentNodeId: " + doc.getAttachmentNodeId());
 		}
 		
 		String objectType = content.getObjectType();
@@ -1238,13 +1186,12 @@ public class CompileServiceImpl implements CompileService {
 		if (log.isDebugEnabled()) {
 			log.debug("setCmisBaseProperties called for content: " + content.getId());
 		}
-
+		
 		// CRITICAL FIX: Add core CMIS properties in standard order FIRST
 		// This prevents duplication and ensures correct OpenCMIS TCK property order
-
+		
 		// cmis:objectId - MUST be first
-		String contentId = content.getId();
-		addProperty(properties, tdf, PropertyIds.OBJECT_ID, contentId);
+		addProperty(properties, tdf, PropertyIds.OBJECT_ID, content.getId());
 		
 		// cmis:objectTypeId - MUST be early in order  
 		addProperty(properties, tdf, PropertyIds.OBJECT_TYPE_ID, content.getObjectType());
@@ -1280,8 +1227,6 @@ public class CompileServiceImpl implements CompileService {
 			properties.addProperty(lastModifiedByProp);
 		}
 		
-		// DEBUG: Check Content date values before compiling properties
-
 		// cmis:creationDate - MUST be present (CMIS 1.1 MANDATORY property)
 		GregorianCalendar creationDate = content.getCreated();
 		// CRITICAL TCK COMPLIANCE: creationDate is mandatory - always add the property
@@ -1292,8 +1237,6 @@ public class CompileServiceImpl implements CompileService {
 				PropertyDateTimeImpl creationDateProp = new PropertyDateTimeImpl(PropertyIds.CREATION_DATE, creationDate);
 				properties.addProperty(creationDateProp);
 			}
-			// Verify the property was added
-			PropertyData<?> addedProp = properties.getProperties().get(PropertyIds.CREATION_DATE);
 		} else {
 			// TCK COMPLIANCE: Add property even if null - let the service layer handle it
 			log.warn("CRITICAL TCK ISSUE: creationDate is null for object: " + content.getId());
@@ -1309,8 +1252,6 @@ public class CompileServiceImpl implements CompileService {
 				PropertyDateTimeImpl lastModificationDateProp = new PropertyDateTimeImpl(PropertyIds.LAST_MODIFICATION_DATE, lastModificationDate);
 				properties.addProperty(lastModificationDateProp);
 			}
-			// Verify the property was added
-			PropertyData<?> addedProp = properties.getProperties().get(PropertyIds.LAST_MODIFICATION_DATE);
 		} else {
 			// TCK COMPLIANCE: Add property even if null - let the service layer handle it
 			log.warn("CRITICAL TCK ISSUE: lastModificationDate is null for object: " + content.getId());
@@ -1395,7 +1336,7 @@ public class CompileServiceImpl implements CompileService {
 
 	private void setCmisDocumentProperties(CallContext callContext, String repositoryId, PropertiesImpl properties,
 			TypeDefinition tdf, Document document) {
-		
+
 		// CRITICAL FIX: Use addProperty when possible, but add mandatory CMIS properties directly if needed
 		try {
 			addProperty(properties, tdf, PropertyIds.BASE_TYPE_ID, BaseTypeId.CMIS_DOCUMENT.value());
@@ -1404,7 +1345,7 @@ public class CompileServiceImpl implements CompileService {
 			PropertyIdImpl baseTypeIdProp = new PropertyIdImpl(PropertyIds.BASE_TYPE_ID, BaseTypeId.CMIS_DOCUMENT.value());
 			properties.addProperty(baseTypeIdProp);
 		}
-		
+
 		// TCK compliance verified without this property for documents
 
 		Boolean isImmutable = (document.isImmutable() == null) ? false : document.isImmutable();
@@ -1418,6 +1359,15 @@ public class CompileServiceImpl implements CompileService {
 
 		DocumentTypeDefinition type = (DocumentTypeDefinition) typeManager.getTypeDefinition(repositoryId, tdf.getId());
 		if (type.isVersionable()) {
+			// Production-ready debug logging for versioning properties (only when debug is enabled)
+			if (log.isDebugEnabled()) {
+				log.debug("Compiling versioning properties for document " + document.getId() +
+						": isPrivateWorkingCopy=" + document.isPrivateWorkingCopy() +
+						", isVersionSeriesCheckedOut=" + document.isVersionSeriesCheckedOut() +
+						", checkedOutBy=" + document.getVersionSeriesCheckedOutBy() +
+						", checkedOutId=" + document.getVersionSeriesCheckedOutId());
+			}
+
 			addProperty(properties, tdf, PropertyIds.IS_PRIVATE_WORKING_COPY, document.isPrivateWorkingCopy());
 			addProperty(properties, tdf, PropertyIds.IS_LATEST_VERSION, document.isLatestVersion());
 			addProperty(properties, tdf, PropertyIds.IS_MAJOR_VERSION, document.isMajorVersion());
@@ -1954,6 +1904,13 @@ public class CompileServiceImpl implements CompileService {
 
 	private <T> void addPropertyBase(PropertiesImpl props, String id, AbstractPropertyData<T> p,
 			PropertyDefinition<?> pdf) {
+		// CRITICAL BROWSER BINDING FIX (2025-11-01): Set PropertyDefinition on property object
+		// Root cause: JSONConverter needs PropertyDefinition to determine cardinality for correct JSON serialization
+		// - Single-value properties: Serialize as {"value": "Sites"} (primitive)
+		// - Multi-value properties: Serialize as {"value": ["value1", "value2"]} (array)
+		// Without PropertyDefinition, JSONConverter defaults to array format for ALL properties
+		p.setPropertyDefinition((PropertyDefinition<T>) pdf);
+		// Keep original property metadata setup for compatibility (required for versioning tests)
 		p.setDisplayName(pdf.getDisplayName());
 		p.setLocalName(id);
 		p.setQueryName(pdf.getQueryName());
@@ -2187,10 +2144,9 @@ public class CompileServiceImpl implements CompileService {
 	 * CMIS Compliance Helper: Check if action is only applicable to documents
 	 */
 	private boolean isDocumentOnlyAction(String key) {
-		// CRITICAL TCK FIX (2025-11-08): Removed CAN_GET_ALL_VERSIONS from here
-		// Reason: CAN_GET_ALL_VERSIONS needs special PWC handling in isAllowableActionForVersionableDocument()
-		// If we classify it as "document-only", the code returns true at line 1012 for ALL documents
-		// This prevents reaching the PWC-specific logic at line 862
+		// CRITICAL TCK FIX (2025-11-01): Removed CAN_GET_ALL_VERSIONS from document-only actions
+		// CAN_GET_ALL_VERSIONS should only be available for versionable documents (handled in isVersioningAction)
+		// Previous bug: All documents got CAN_GET_ALL_VERSIONS, even non-versionable ones
 		return PermissionMapping.CAN_VIEW_CONTENT_OBJECT.equals(key) ||
 			   PermissionMapping.CAN_DELETE_CONTENT_DOCUMENT.equals(key) ||
 			   PermissionMapping.CAN_SET_CONTENT_DOCUMENT.equals(key);

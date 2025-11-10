@@ -414,10 +414,10 @@ public class PermissionServiceImpl implements PermissionService {
 		if (PermissionMapping.CAN_MOVE_SOURCE.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 		if (PermissionMapping.CAN_DELETE_OBJECT.equals(key))
-			if(contentService.isRoot(repositoryId, content)){
-				return false;
-			}else{
-				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
+	if(contentService.isRoot(repositoryId, content)){
+		return false;
+	}else{
+		return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 						|| BaseTypeId.CMIS_FOLDER.value().equals(baseType)
 						|| BaseTypeId.CMIS_RELATIONSHIP.value().equals(baseType)
 						|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
