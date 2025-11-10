@@ -200,3 +200,4 @@ temp-extract
 # OpenCMIS build artifacts (auto-generated)
 build-workspace/chemistry-opencmis/built-jars/*.jar
 tck-evidence-2025-10-11.tar.gz
+*.bak*
