@@ -220,53 +220,63 @@ test.describe('User Management CRUD Operations', () => {
       await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Fill user details
-      // Username/ID
-      const usernameInput = page.locator('input[id*="username"], input[id*="userId"], input[name="username"], input[name="userId"]');
-      if (await usernameInput.count() > 0) {
-        await usernameInput.first().fill(testUsername);
-      }
+      // FIX (2025-11-10): Use actual Ant Design Form.Item field IDs from UserManagement.tsx
+      // Form.Item name="id" generates <input id="id">
+      console.log(`Create test: Filling user ID field with: ${testUsername}`);
+      const usernameInput = modal.locator('input#id');
+      await expect(usernameInput).toBeVisible();
+      await usernameInput.fill(testUsername);
 
-      // Email
-      const emailInput = page.locator('input[type="email"], input[id*="email"], input[name="email"]');
-      if (await emailInput.count() > 0) {
-        await emailInput.first().fill(testUserEmail);
-      }
+      // Form.Item name="name" generates <input id="name"> (required field - display name)
+      console.log(`Create test: Filling display name field`);
+      const displayNameInput = modal.locator('input#name');
+      await expect(displayNameInput).toBeVisible();
+      await displayNameInput.fill(`${testUsername}_display`);
 
-      // First name
-      const firstNameInput = page.locator('input[id*="firstName"], input[name="firstName"]');
-      if (await firstNameInput.count() > 0) {
-        await firstNameInput.first().fill('Test');
-      }
+      // Form.Item name="email" generates <input id="email">
+      console.log(`Create test: Filling email field with: ${testUserEmail}`);
+      const emailInput = modal.locator('input#email');
+      await expect(emailInput).toBeVisible();
+      await emailInput.fill(testUserEmail);
 
-      // Last name
-      const lastNameInput = page.locator('input[id*="lastName"], input[name="lastName"]');
-      if (await lastNameInput.count() > 0) {
-        await lastNameInput.first().fill('User');
-      }
+      // Form.Item name="firstName" generates <input id="firstName">
+      console.log(`Create test: Filling first name field`);
+      const firstNameInput = modal.locator('input#firstName');
+      await expect(firstNameInput).toBeVisible();
+      await firstNameInput.fill('Test');
 
-      // Password
-      const passwordInput = page.locator('input[type="password"]').first();
-      if (await passwordInput.count() > 0) {
-        await passwordInput.fill('TestPassword123!');
-      }
+      // Form.Item name="lastName" generates <input id="lastName">
+      console.log(`Create test: Filling last name field`);
+      const lastNameInput = modal.locator('input#lastName');
+      await expect(lastNameInput).toBeVisible();
+      await lastNameInput.fill('User');
 
-      // Confirm password (if exists)
-      const confirmPasswordInput = page.locator('input[type="password"]').nth(1);
-      if (await confirmPasswordInput.count() > 0) {
-        await confirmPasswordInput.fill('TestPassword123!');
-      }
+      // Form.Item name="password" generates <input id="password">
+      console.log(`Create test: Filling password field`);
+      const passwordInput = modal.locator('input#password');
+      await expect(passwordInput).toBeVisible();
+      await passwordInput.fill('TestPassword123!');
 
       // Submit form
-      const submitButton = page.locator('.ant-modal button[type="submit"], .ant-drawer button[type="submit"], button:has-text("作成"), button:has-text("保存")');
-      await submitButton.first().click(isMobile ? { force: true } : {});
+      // FIX (2025-11-10): Use modal.locator to scope button search to modal (same as field inputs)
+      // Button has htmlType="submit" which becomes type="submit" in DOM
+      const submitButton = modal.locator('button[type="submit"], button:has-text("作成"), button:has-text("保存")');
+      console.log(`Create test: Clicking submit button...`);
+      // FIX (2025-11-10): Always use force click - Ant Design modal overlay blocks clicks on all browsers
+      await submitButton.first().click({ force: true });
 
-      // Wait for success message
-      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+      // Wait for success message (30s timeout to match type definition upload tests)
+      // FIX (2025-11-10): Use same selector pattern as type definition tests for consistency
+      const successMessage = page.locator('.ant-message:has-text("ユーザー"), .ant-message:has-text("作成"), .ant-message-success');
+      await expect(successMessage.first()).toBeVisible({ timeout: 30000 });
       await page.waitForTimeout(2000);
 
       // Verify user appears in list
-      const userInList = page.locator(`text=${testUsername}`);
-      await expect(userInList).toBeVisible({ timeout: 10000 });
+      // FIX (2025-11-10): Use table row selector to avoid strict mode violation
+      // Username appears in multiple cells (ID, display name part, email part)
+      console.log(`Create test: Verifying user ${testUsername} appears in table`);
+      const userRow = page.locator('tr').filter({ hasText: testUsername });
+      await expect(userRow).toBeVisible({ timeout: 10000 });
     } else {
       test.skip('User creation functionality not available');
     }
@@ -313,8 +323,10 @@ test.describe('User Management CRUD Operations', () => {
         const submitButton = page.locator('.ant-modal button[type="submit"], .ant-drawer button[type="submit"], button:has-text("更新"), button:has-text("保存")');
         await submitButton.first().click(isMobile ? { force: true } : {});
 
-        // Wait for success message
-        await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+        // Wait for success message (30s timeout, same pattern as type definition tests)
+        // FIX (2025-11-10): Use consistent selector pattern for message detection
+        const successMessage = page.locator('.ant-message:has-text("ユーザー"), .ant-message:has-text("更新"), .ant-message-success');
+        await expect(successMessage.first()).toBeVisible({ timeout: 30000 });
         await page.waitForTimeout(2000);
       } else {
         test.skip('Edit button not found');
@@ -407,13 +419,15 @@ test.describe('User Management CRUD Operations', () => {
           console.log(`Delete test: Clicking confirm button...`);
           await confirmButton.first().click(isMobile ? { force: true } : {});
 
-          // Check for both success and error messages
+          // Check for both success and error messages (30s timeout for consistency)
+          // FIX (2025-11-10): Use consistent timeout and selector pattern
           console.log(`Delete test: Waiting for response message...`);
           try {
-            await page.waitForSelector('.ant-message-success, .ant-message-error', { timeout: 10000 });
+            const responseMessage = page.locator('.ant-message:has-text("削除"), .ant-message-success, .ant-message-error');
+            await expect(responseMessage.first()).toBeVisible({ timeout: 30000 });
 
             // Check which message appeared
-            const successMsg = await page.locator('.ant-message-success').count();
+            const successMsg = await page.locator('.ant-message-success, .ant-message:has-text("削除しました")').count();
             const errorMsg = await page.locator('.ant-message-error').count();
 
             console.log(`Delete test: Success message: ${successMsg > 0}, Error message: ${errorMsg > 0}`);

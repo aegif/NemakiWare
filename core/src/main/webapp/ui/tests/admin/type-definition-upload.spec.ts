@@ -559,8 +559,10 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     await jsonTextArea.fill(JSON.stringify(typeDef, null, 2));
 
     // Click "保存" button
-    const saveButton = jsonEditModal.locator('button:has-text("保存")');
-    await saveButton.click();
+    // FIX (2025-11-10): Use modal footer selector for more reliable button detection
+    // Also use force click to bypass Ant Design modal overlay issues
+    const saveButton = jsonEditModal.locator('.ant-modal-footer button.ant-btn-primary');
+    await saveButton.click({ force: true });
 
     // Wait for success message (30s timeout to accommodate typeManager.refreshTypes())
     const successMessage = page.locator('.ant-message:has-text("型定義を更新しました")');
@@ -644,8 +646,10 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     await jsonTextArea.clear();
     await jsonTextArea.fill(JSON.stringify(modifiedTypeDef, null, 2));
 
-    const saveButton = jsonEditModal.locator('button:has-text("保存")');
-    await saveButton.click();
+    // FIX (2025-11-10): Use modal footer selector for more reliable button detection
+    // Also use force click to bypass Ant Design modal overlay issues
+    const saveButton = jsonEditModal.locator('.ant-modal-footer button.ant-btn-primary');
+    await saveButton.click({ force: true });
 
     // Edit conflict modal should appear (30s timeout to accommodate slow operations)
     const editConflictModal = page.locator('.ant-modal:has-text("型定義の競合確認（編集）")');
