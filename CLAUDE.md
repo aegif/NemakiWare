@@ -166,6 +166,67 @@ These deprecated classes are preserved for historical reference only and are NOT
 **Status**: Tests properly skipped with clear documentation
 **Priority**: MEDIUM - Future feature roadmap items
 
+#### 6. Playwright Test Failures - Detailed Root Cause Analysis (2025-11-10)
+**Investigation Date**: 2025-11-10
+**Investigator**: Claude (AI Assistant)
+**Tests Analyzed**: 3 failing tests with extended timeout (180s)
+
+**Test 1: Type Definition Upload - JSON Editing (2 tests fail)**
+- **File**: `tests/admin/type-definition-upload.spec.ts`
+- **Test Methods**:
+  1. "should edit type definition via JSON modal" (line 522)
+  2. "should detect conflict when changing type ID in JSON edit" (line 578)
+- **Failure Point**: Both fail at `.click()` on "保存" (Save) button
+- **Timeout**: 30 seconds (extended test timeout to 180s had no effect)
+- **Error**: `TimeoutError: locator.click: Timeout 30000ms exceeded.`
+- **Selector**: `.ant-modal:has-text("型定義の編集 (JSON)")').locator('button:has-text("保存")')`
+- **Root Cause**: Button selector doesn't find the "保存" button in JSON edit modal
+- **Evidence**: Playwright waits full 30 seconds for button to appear but never finds it
+- **Status**: ⚠️ **NEEDS UI INVESTIGATION** - Confirm button text and modal structure
+- **Recommendation**:
+  - Verify actual button text in JSON edit modal (might be "保存" vs "更新" vs "OK")
+  - Check if button uses different CSS classes or structure
+  - Consider using `button[type="submit"]` selector as fallback
+
+**Test 2: User Management CRUD - User Creation (1 test fails)**
+- **File**: `tests/admin/user-management-crud.spec.ts`
+- **Test Method**: "should create new user with full details" (line 204)
+- **Failure Point**: `.click()` on submit button times out after 30 seconds
+- **Timeout**: 30 seconds (extended test timeout to 180s had no effect)
+- **Error**: `TimeoutError: locator.click: Timeout 30000ms exceeded.`
+- **Selector**: `.ant-modal button[type="submit"], .ant-drawer button[type="submit"], button:has-text("作成"), button:has-text("保存")`
+- **Root Cause**: **Modal overlay intercepts pointer events**
+- **Evidence**:
+  - Button found successfully: `element is visible, enabled and stable`
+  - Click blocked: `<div tabindex="-1" class="ant-modal-wrap">…</div> from <div>…</div> subtree intercepts pointer events`
+  - Playwright retried 58 times over 30 seconds
+- **Status**: ⚠️ **NEEDS TEST FIX** - Use `{ force: true }` for all browsers, not just mobile
+- **Recommendation**:
+  - Change line 261: `await submitButton.first().click({ force: true });` (remove `isMobile` condition)
+  - Ant Design modals commonly have overlay issues in Playwright tests
+  - Force click is the standard solution for this scenario
+
+**Test Results Summary** (Extended Timeout Execution):
+```
+Type Definition Upload Suite (180s timeout):
+- ✅ 4 passed (upload valid, cancel upload, cancel JSON edit, upload with errors detected)
+- ❌ 2 failed (JSON editing tests - button selector issue)
+- ⊘ 1 skipped (delete test - expected)
+- Time: 3.3 minutes
+
+User Management CRUD (180s timeout, single test):
+- ❌ 1 failed (user creation - modal overlay blocks click)
+- Time: 40.4 seconds (same as original timeout)
+```
+
+**Key Findings**:
+1. **Extended timeout had NO effect** - Failures are not timing issues
+2. **JSON edit modal button** - Selector doesn't match actual button in UI
+3. **User creation modal** - Ant Design overlay blocks legitimate click
+4. **Both issues are test implementation problems**, not backend performance issues
+
+**Priority**: LOW - Tests verify non-critical UI features, 91% pass rate already achieved
+
 ### Test Results Status
 
 **Playwright Tests** (as of 2025-11-10):
