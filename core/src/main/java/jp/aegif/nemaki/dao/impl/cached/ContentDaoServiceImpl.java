@@ -337,13 +337,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			if (v != null) {
 				log.info("CACHE HIT: Found content in cache for " + objectId + ". Type: " + v.getClass().getSimpleName() + ", ObjectType: " + v.getObjectType() + ", isFolder: " + v.isFolder());
 
-				// TCK CRITICAL DEBUG (2025-11-03): Trace versioning properties from CACHE
-				if (v instanceof Document) {
+				// Production-ready debug logging for versioning properties (only when debug is enabled)
+				if (log.isDebugEnabled() && v instanceof Document) {
 					Document cachedDoc = (Document) v;
-					System.err.println("!!! CACHE HIT DEBUG: Document " + objectId + " retrieved from CACHE");
-					System.err.println("!!! CACHE HIT DEBUG: isVersionSeriesCheckedOut()=" + cachedDoc.isVersionSeriesCheckedOut());
-					System.err.println("!!! CACHE HIT DEBUG: getVersionSeriesCheckedOutBy()=" + cachedDoc.getVersionSeriesCheckedOutBy());
-					System.err.println("!!! CACHE HIT DEBUG: getVersionSeriesCheckedOutId()=" + cachedDoc.getVersionSeriesCheckedOutId());
+					log.debug("Document " + objectId + " retrieved from cache - " +
+							"isVersionSeriesCheckedOut=" + cachedDoc.isVersionSeriesCheckedOut() +
+							", checkedOutBy=" + cachedDoc.getVersionSeriesCheckedOutBy() +
+							", checkedOutId=" + cachedDoc.getVersionSeriesCheckedOutId());
 				}
 
 				return v;

@@ -967,19 +967,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return null;
 		}
 
-		// TCK CRITICAL DEBUG (2025-11-03): Trace versioning properties during RETRIEVAL from CouchDB
-		System.err.println("!!! RETRIEVAL DEBUG: getDocument called for objectId=" + objectId);
-		System.err.println("!!! RETRIEVAL DEBUG: CouchDocument retrieved from DB, ID=" + cd.getId() + ", Rev=" + cd.getRevision());
-		System.err.println("!!! RETRIEVAL DEBUG: CouchDocument BEFORE convert() - versionSeriesCheckedOut (via getter)=" + cd.isVersionSeriesCheckedOut());
-		System.err.println("!!! RETRIEVAL DEBUG: CouchDocument BEFORE convert() - versionSeriesCheckedOutBy (via getter)=" + cd.getVersionSeriesCheckedOutBy());
-		System.err.println("!!! RETRIEVAL DEBUG: CouchDocument BEFORE convert() - versionSeriesCheckedOutId (via getter)=" + cd.getVersionSeriesCheckedOutId());
+		// Production-ready debug logging (only when debug is enabled)
+		if (log.isDebugEnabled()) {
+			log.debug("getDocument called for objectId=" + objectId + ", retrieved CouchDocument ID=" + cd.getId() + ", Rev=" + cd.getRevision());
+			log.debug("CouchDocument BEFORE convert() - versionSeriesCheckedOut=" + cd.isVersionSeriesCheckedOut() +
+					", checkedOutBy=" + cd.getVersionSeriesCheckedOutBy() +
+					", checkedOutId=" + cd.getVersionSeriesCheckedOutId());
+		}
 
 		Document result = cd.convert();
 
-		System.err.println("!!! RETRIEVAL DEBUG: Document AFTER convert() - ID=" + result.getId());
-		System.err.println("!!! RETRIEVAL DEBUG: Document AFTER convert() - isVersionSeriesCheckedOut()=" + result.isVersionSeriesCheckedOut());
-		System.err.println("!!! RETRIEVAL DEBUG: Document AFTER convert() - getVersionSeriesCheckedOutBy()=" + result.getVersionSeriesCheckedOutBy());
-		System.err.println("!!! RETRIEVAL DEBUG: Document AFTER convert() - getVersionSeriesCheckedOutId()=" + result.getVersionSeriesCheckedOutId());
+		if (log.isDebugEnabled()) {
+			log.debug("Document AFTER convert() - ID=" + result.getId() +
+					", isVersionSeriesCheckedOut=" + result.isVersionSeriesCheckedOut() +
+					", checkedOutBy=" + result.getVersionSeriesCheckedOutBy() +
+					", checkedOutId=" + result.getVersionSeriesCheckedOutId());
+		}
 
 		return result;
 	}

@@ -533,13 +533,10 @@ public class CloudantClientWrapper {
 			String id = (String) document.get("_id");
 			String rev = (String) document.get("_rev");
 
-			// TCK CRITICAL DEBUG (2025-11-03): Trace Map update method - CHECK IF THIS PATH IS USED
-			System.err.println("!!! MAP-UPDATE DEBUG: update(Map) method called for document ID: " + id);
-			System.err.println("!!! MAP-UPDATE DEBUG: document.containsKey('versionSeriesCheckedOut') = " + document.containsKey("versionSeriesCheckedOut"));
-			if (document.containsKey("versionSeriesCheckedOut")) {
-				System.err.println("!!! MAP-UPDATE DEBUG: versionSeriesCheckedOut = " + document.get("versionSeriesCheckedOut"));
-				System.err.println("!!! MAP-UPDATE DEBUG: versionSeriesCheckedOutBy = " + document.get("versionSeriesCheckedOutBy"));
-				System.err.println("!!! MAP-UPDATE DEBUG: versionSeriesCheckedOutId = " + document.get("versionSeriesCheckedOutId"));
+			// Production-ready debug logging (only when debug is enabled)
+			if (log.isDebugEnabled()) {
+				log.debug("Updating document via Map method: id=" + id +
+						", hasVersioningProps=" + document.containsKey("versionSeriesCheckedOut"));
 			}
 
 			if (id == null) {
@@ -1147,26 +1144,30 @@ public class CloudantClientWrapper {
 		try {
 			ObjectMapper mapper = getObjectMapper();
 
-			// TCK CRITICAL DEBUG (2025-11-03): Trace document type and properties BEFORE Map conversion
-			System.err.println("!!! PRE-CONVERSION DEBUG: Document class = " + document.getClass().getName());
-			if (document instanceof jp.aegif.nemaki.model.couch.CouchDocument) {
-				jp.aegif.nemaki.model.couch.CouchDocument doc = (jp.aegif.nemaki.model.couch.CouchDocument) document;
-				System.err.println("!!! PRE-CONVERSION DEBUG: CouchDocument ID = " + doc.getId());
-				System.err.println("!!! PRE-CONVERSION DEBUG: CouchDocument versionSeriesCheckedOut (via getter) = " + doc.isVersionSeriesCheckedOut());
-				System.err.println("!!! PRE-CONVERSION DEBUG: CouchDocument versionSeriesCheckedOutBy (via getter) = " + doc.getVersionSeriesCheckedOutBy());
-				System.err.println("!!! PRE-CONVERSION DEBUG: CouchDocument versionSeriesCheckedOutId (via getter) = " + doc.getVersionSeriesCheckedOutId());
+			// Production-ready debug logging (only when debug is enabled)
+			if (log.isDebugEnabled()) {
+				log.debug("Updating document of type: " + document.getClass().getSimpleName());
+				if (document instanceof jp.aegif.nemaki.model.couch.CouchDocument) {
+					jp.aegif.nemaki.model.couch.CouchDocument doc = (jp.aegif.nemaki.model.couch.CouchDocument) document;
+					log.debug("CouchDocument update - id=" + doc.getId() +
+							", versionSeriesCheckedOut=" + doc.isVersionSeriesCheckedOut() +
+							", checkedOutBy=" + doc.getVersionSeriesCheckedOutBy() +
+							", checkedOutId=" + doc.getVersionSeriesCheckedOutId());
+				}
 			}
 
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
 
-			// TCK CRITICAL DEBUG (2025-11-03): Check what's in documentMap after conversion
-			System.err.println("!!! POST-CONVERTVALUE DEBUG: documentMap size = " + documentMap.size());
-			System.err.println("!!! POST-CONVERTVALUE DEBUG: documentMap.containsKey('versionSeriesCheckedOut') = " + documentMap.containsKey("versionSeriesCheckedOut"));
-			if (documentMap.containsKey("versionSeriesCheckedOut")) {
-				System.err.println("!!! POST-CONVERTVALUE DEBUG: documentMap versionSeriesCheckedOut = " + documentMap.get("versionSeriesCheckedOut"));
-				System.err.println("!!! POST-CONVERTVALUE DEBUG: documentMap versionSeriesCheckedOutBy = " + documentMap.get("versionSeriesCheckedOutBy"));
-				System.err.println("!!! POST-CONVERTVALUE DEBUG: documentMap versionSeriesCheckedOutId = " + documentMap.get("versionSeriesCheckedOutId"));
+			// Production-ready debug logging (only when debug is enabled)
+			if (log.isDebugEnabled()) {
+				log.debug("ObjectMapper convertValue completed - map size: " + documentMap.size() +
+						", hasVersioningProps: " + documentMap.containsKey("versionSeriesCheckedOut"));
+				if (documentMap.containsKey("versionSeriesCheckedOut")) {
+					log.debug("Versioning properties in map - versionSeriesCheckedOut=" + documentMap.get("versionSeriesCheckedOut") +
+							", checkedOutBy=" + documentMap.get("versionSeriesCheckedOutBy") +
+							", checkedOutId=" + documentMap.get("versionSeriesCheckedOutId"));
+				}
 			}
 
 			String id = (String) documentMap.get("_id");
@@ -1199,12 +1200,12 @@ public class CloudantClientWrapper {
 
 			String jsonString = mapper.writeValueAsString(typeSafeDocumentMap);
 
-			// TCK CRITICAL DEBUG (2025-11-03): Log versioning properties before writing to CouchDB
-			if (typeSafeDocumentMap.containsKey("versionSeriesCheckedOut")) {
-				System.err.println("!!! CLOUDANT UPDATE DEBUG: Writing document " + id + " with versionSeriesCheckedOut=" +
-					typeSafeDocumentMap.get("versionSeriesCheckedOut") +
-					", versionSeriesCheckedOutBy=" + typeSafeDocumentMap.get("versionSeriesCheckedOutBy") +
-					", versionSeriesCheckedOutId=" + typeSafeDocumentMap.get("versionSeriesCheckedOutId"));
+			// Production-ready debug logging (only when debug is enabled)
+			if (log.isDebugEnabled() && typeSafeDocumentMap.containsKey("versionSeriesCheckedOut")) {
+				log.debug("Writing document " + id + " with versionSeriesCheckedOut=" +
+						typeSafeDocumentMap.get("versionSeriesCheckedOut") +
+						", versionSeriesCheckedOutBy=" + typeSafeDocumentMap.get("versionSeriesCheckedOutBy") +
+						", versionSeriesCheckedOutId=" + typeSafeDocumentMap.get("versionSeriesCheckedOutId"));
 			}
 
 			// Use PostDocumentOptions with JSON body instead of PutDocumentOptions with Document

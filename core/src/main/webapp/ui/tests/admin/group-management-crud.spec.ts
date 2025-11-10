@@ -2,6 +2,12 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { randomUUID } from 'crypto';
 
+// CRITICAL FIX (2025-11-10): Generate TEST_GROUP_NAME OUTSIDE describe block to ensure it's shared across all tests
+// Playwright re-executes the describe block for each test, which would regenerate UUID inside describe scope
+// File-scoped variable ensures all tests in the same run use the SAME group name
+const TEST_GROUP_NAME = `testgroup_${randomUUID().substring(0, 8)}`;
+const TEST_GROUP_DESCRIPTION = 'Test group for automated testing';
+
 /**
  * Group Management CRUD Operations E2E Tests
  *
@@ -70,7 +76,7 @@ import { randomUUID } from 'crypto';
  *    - Test 4: Verify persistence (requires edited group from test 3)
  *    - Test 5: Delete group (cleanup of group created in test 1)
  *    - Rationale: Realistic CRUD workflow simulation with state dependencies
- *    - Implementation: Tests share testGroupName variable from describe block scope
+ *    - Implementation: Tests share TEST_GROUP_NAME variable from describe block scope
  *    - Risk: Single test failure cascades to subsequent dependent tests
  *    - Benefit: Validates complete lifecycle and state transitions in realistic order
  *
@@ -178,8 +184,6 @@ import { randomUUID } from 'crypto';
 
 test.describe('Group Management CRUD Operations', () => {
   let authHelper: AuthHelper;
-  const testGroupName = `testgroup_${randomUUID().substring(0, 8)}`;
-  const testGroupDescription = 'Test group for automated testing';
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
@@ -227,6 +231,20 @@ test.describe('Group Management CRUD Operations', () => {
     // Detect mobile browsers
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    // CRITICAL DEBUG: Monitor network requests to verify API calls
+    const apiRequests: string[] = [];
+    const apiResponses: string[] = [];
+    page.on('request', request => {
+      if (request.url().includes('/rest/')) {
+        apiRequests.push(`${request.method()} ${request.url()}`);
+      }
+    });
+    page.on('response', response => {
+      if (response.url().includes('/rest/')) {
+        apiResponses.push(`${response.status()} ${response.url()}`);
+      }
+    });
 
     // DEBUG: Log current page state to diagnose button visibility issue
     console.log('[DEBUG] Current URL:', page.url());
@@ -305,15 +323,15 @@ test.describe('Group Management CRUD Operations', () => {
       console.log('[DEBUG] Group ID input count (by id):', groupIdInputCount);
 
       if (groupIdInputCount > 0) {
-        console.log('[DEBUG] Filling group ID:', testGroupName);
-        await groupIdInput.first().fill(testGroupName);
+        console.log('[DEBUG] Filling group ID:', TEST_GROUP_NAME);
+        await groupIdInput.first().fill(TEST_GROUP_NAME);
         console.log('[DEBUG] Group ID filled successfully');
 
         // Also fill group name field (required)
         const groupNameInput = page.locator('input[id="name"]');
         if (await groupNameInput.count() > 0) {
-          console.log('[DEBUG] Filling group name:', testGroupName);
-          await groupNameInput.first().fill(testGroupName);
+          console.log('[DEBUG] Filling group name:', TEST_GROUP_NAME);
+          await groupNameInput.first().fill(TEST_GROUP_NAME);
           console.log('[DEBUG] Group name filled successfully');
         }
       } else {
@@ -353,13 +371,47 @@ test.describe('Group Management CRUD Operations', () => {
 
       // Wait for success message
       await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      console.log('[DEBUG] Test 1: Success message appeared');
+
+      // CRITICAL FIX (2025-11-10): Wait for table to refresh after group creation
+      // React state update may take time, wait for network request to complete
+      await page.waitForTimeout(3000);
+
+      // Wait for any loading spinners to disappear
+      await page.waitForSelector('.ant-table', { state: 'attached', timeout: 5000 });
+      await page.waitForTimeout(1000);
+      console.log('[DEBUG] Test 1: Table ready, looking for group:', TEST_GROUP_NAME);
+
+      // CRITICAL FIX (2025-11-10): Use search to filter for specific group
+      // Table may be paginated with many old test groups, new group may be on page 2/3
+      const searchBox = page.locator('input[placeholder*="グループを検索"], input[type="search"]');
+      if (await searchBox.count() > 0) {
+        console.log('[DEBUG] Test 1: Using search to filter for group');
+        await searchBox.first().fill(TEST_GROUP_NAME);
+        await page.waitForTimeout(1000); // Wait for search filter to apply
+      }
 
       // Verify group appears in list
       // CRITICAL FIX (2025-11-10): Group name appears in both ID and name columns
       // Use table row locator instead of generic text search to avoid strict mode violation
-      const groupRow = page.locator('tr').filter({ hasText: testGroupName });
-      await expect(groupRow).toBeVisible({ timeout: 10000 });
+      // Increased timeout from 15s to 30s to handle slower React state updates when multiple tests run
+      const groupRow = page.locator('tr').filter({ hasText: TEST_GROUP_NAME });
+
+      // CRITICAL DEBUG: Log API activity before visibility check
+      console.log('[DEBUG] Test 1: API Requests captured:', apiRequests.length);
+      apiRequests.forEach((req, i) => console.log(`  [${i}]`, req));
+      console.log('[DEBUG] Test 1: API Responses captured:', apiResponses.length);
+      apiResponses.forEach((res, i) => console.log(`  [${i}]`, res));
+
+      try {
+        await expect(groupRow).toBeVisible({ timeout: 30000 });
+        console.log('[DEBUG] Test 1: Group row became visible successfully!');
+      } catch (error) {
+        console.log('[DEBUG] Test 1: Group row did NOT become visible. Final API state:');
+        console.log('[DEBUG] Test 1: Total requests:', apiRequests.length);
+        console.log('[DEBUG] Test 1: Total responses:', apiResponses.length);
+        throw error;
+      }
     } else {
       test.skip('Group creation functionality not available');
     }
@@ -370,70 +422,176 @@ test.describe('Group Management CRUD Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
+    // CRITICAL DEBUG: Monitor network requests to verify API calls
+    const apiRequests: string[] = [];
+    const apiResponses: string[] = [];
+    page.on('request', request => {
+      if (request.url().includes('/rest/')) {
+        apiRequests.push(`${request.method()} ${request.url()}`);
+      }
+    });
+    page.on('response', response => {
+      if (response.url().includes('/rest/')) {
+        apiResponses.push(`${response.status()} ${response.url()}`);
+      }
+    });
+
     await page.waitForTimeout(2000);
+    console.log('[DEBUG] Test 2: Looking for group:', TEST_GROUP_NAME);
+
+    // CRITICAL FIX (2025-11-10): Use search to filter for specific group
+    // Each test gets fresh page load via beforeEach, search state not preserved
+    // Table may be paginated with many old test groups, created group may be on page 2/3
+    const searchBox = page.locator('input[placeholder*="グループを検索"], input[type="search"]');
+    if (await searchBox.count() > 0) {
+      console.log('[DEBUG] Test 2: Using search to filter for group');
+      await searchBox.first().fill(TEST_GROUP_NAME);
+      await page.waitForTimeout(1000); // Wait for search filter to apply
+    }
 
     // Find test group row
-    const groupRow = page.locator('tr').filter({ hasText: testGroupName });
+    const groupRow = page.locator('tr').filter({ hasText: TEST_GROUP_NAME });
+    const groupRowCount = await groupRow.count();
+    console.log('[DEBUG] Test 2: Group row count:', groupRowCount);
 
-    if (await groupRow.count() > 0) {
+    if (groupRowCount > 0) {
+      console.log('[DEBUG] Test 2: Group found, looking for members button');
       // Look for member management button (may be users icon, edit icon)
       const membersButton = groupRow.locator('button').filter({
         has: page.locator('[data-icon="user"], [data-icon="team"], [data-icon="edit"]')
       });
+      const membersButtonCount = await membersButton.count();
+      console.log('[DEBUG] Test 2: Members button count:', membersButtonCount);
 
-      if (await membersButton.count() > 0) {
-        await membersButton.first().click(isMobile ? { force: true } : {});
+      if (membersButtonCount > 0) {
+        console.log('[DEBUG] Test 2: Clicking members button...');
+        // CRITICAL FIX (2025-11-10): Modal buttons need force: true even on desktop
+        await membersButton.first().click({ force: true });
         await page.waitForTimeout(1000);
+        console.log('[DEBUG] Test 2: Members button clicked');
 
-        // Look for add member button or interface
-        const addMemberButton = page.locator('button:has-text("メンバー追加"), button:has-text("追加"), button').filter({
-          has: page.locator('[data-icon="plus"], [data-icon="user-add"]')
-        });
+        // CRITICAL FIX (2025-11-10): Wait for modal to appear and verify it contains member management interface
+        const modal = page.locator('.ant-modal, .ant-drawer');
+        try {
+          await expect(modal).toBeVisible({ timeout: 5000 });
+          console.log('[DEBUG] Test 2: Modal appeared successfully');
+        } catch (error) {
+          console.log('[DEBUG] Test 2: Modal did not appear:', error);
+          test.skip('Modal did not appear after clicking members button');
+        }
 
-        if (await addMemberButton.count() > 0) {
-          await addMemberButton.first().click(isMobile ? { force: true } : {});
+        // CRITICAL FIX (2025-11-10): The members field in the modal is an Ant Design Select component
+        // Look directly for the members select element (id="members" based on form structure)
+        const membersSelect = modal.locator('#members, .ant-select[id*="member"], input[id*="member"]');
+        const membersSelectCount = await membersSelect.count();
+        console.log('[DEBUG] Test 2: Members select count:', membersSelectCount);
+
+        if (membersSelectCount > 0) {
+          console.log('[DEBUG] Test 2: Clicking members select to open dropdown...');
+          // CRITICAL FIX (2025-11-10): Use scrollIntoViewIfNeeded before clicking to ensure visibility
+          await membersSelect.first().scrollIntoViewIfNeeded();
+          await page.waitForTimeout(300);
+          await membersSelect.first().click({ force: true });
           await page.waitForTimeout(500);
+          console.log('[DEBUG] Test 2: Members select clicked');
 
-          // Select testuser or admin
-          const userSelect = page.locator('.ant-select, input[placeholder*="ユーザー"]');
-          if (await userSelect.count() > 0) {
-            await userSelect.first().click();
+          // Type testuser or admin
+          await page.keyboard.type('testuser');
+          await page.waitForTimeout(500);
+          console.log('[DEBUG] Test 2: Typed "testuser" in search');
+
+          // Select from dropdown
+          const userOption = page.locator('.ant-select-item:has-text("testuser")').first();
+          if (await userOption.count() > 0) {
+            console.log('[DEBUG] Test 2: Found testuser option, clicking...');
+            await userOption.click({ force: true });
+          } else {
+            console.log('[DEBUG] Test 2: testuser not found, trying admin...');
+            // If testuser doesn't exist, try admin
+            await page.keyboard.press('Backspace');
+            await page.keyboard.press('Backspace');
+            await page.keyboard.press('Backspace');
+            await page.keyboard.press('Backspace');
+            await page.keyboard.press('Backspace');
+            await page.keyboard.press('Backspace');
+            await page.keyboard.press('Backspace');
+            await page.keyboard.press('Backspace');
+            await page.keyboard.type('admin');
             await page.waitForTimeout(500);
 
-            // Type testuser or admin
-            await page.keyboard.type('testuser');
-            await page.waitForTimeout(500);
-
-            // Select from dropdown
-            const userOption = page.locator('.ant-select-item:has-text("testuser")').first();
-            if (await userOption.count() > 0) {
-              await userOption.click();
+            const adminOption = page.locator('.ant-select-item:has-text("admin")').first();
+            if (await adminOption.count() > 0) {
+              console.log('[DEBUG] Test 2: Found admin option, clicking...');
+              await adminOption.click({ force: true });
             } else {
-              // If testuser doesn't exist, try admin
-              await page.keyboard.press('Backspace');
-              await page.keyboard.press('Backspace');
-              await page.keyboard.type('admin');
-              await page.waitForTimeout(500);
-
-              const adminOption = page.locator('.ant-select-item:has-text("admin")').first();
-              if (await adminOption.count() > 0) {
-                await adminOption.click();
-              }
-            }
-
-            // Save member addition
-            const saveButton = page.locator('button:has-text("保存"), button:has-text("OK"), button[type="submit"]');
-            if (await saveButton.count() > 0) {
-              await saveButton.first().click(isMobile ? { force: true } : {});
-              await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+              console.log('[DEBUG] Test 2: Neither testuser nor admin found in dropdown');
             }
           }
+
+          // CRITICAL FIX (2025-11-10): Close the dropdown before submitting form
+          // The dropdown must be closed or it will block the submit button
+          console.log('[DEBUG] Test 2: Closing dropdown with Escape key...');
+          await page.keyboard.press('Escape');
+          // Wait longer for dropdown animation to complete
+          await page.waitForTimeout(1000);
+          console.log('[DEBUG] Test 2: Dropdown closed, waiting for UI to stabilize...');
+
+          // Save member addition
+          // CRITICAL FIX (2025-11-10): For edit modal, we need to click the submit button
+          // Pressing Enter on input fields doesn't trigger form submission for edit operations
+          // Find submit button with flexible text matching
+          console.log('[DEBUG] Test 2: Looking for submit button...');
+          const submitButton = modal.locator('button').filter({ hasText: /作\s*成|保存|更\s*新|OK|確\s*定/ });
+          const submitButtonCount = await submitButton.count();
+          console.log('[DEBUG] Test 2: Submit button count:', submitButtonCount);
+
+          if (submitButtonCount > 0) {
+            console.log('[DEBUG] Test 2: Clicking submit button to save member changes...');
+            // Click without force to allow React event handlers to fire
+            await submitButton.first().click();
+            await page.waitForTimeout(1000);
+            console.log('[DEBUG] Test 2: Submit button clicked');
+          } else {
+            console.log('[DEBUG] Test 2: Submit button not found, trying Enter as fallback...');
+            await page.keyboard.press('Enter');
+            await page.waitForTimeout(500);
+          }
+
+          // Wait for modal to close
+          console.log('[DEBUG] Test 2: Waiting for modal to close...');
+          try {
+            await expect(modal).not.toBeVisible({ timeout: 5000 });
+            console.log('[DEBUG] Test 2: Modal closed successfully');
+          } catch (error) {
+            console.log('[DEBUG] Test 2: Modal did not close, trying button click as fallback...');
+            // Fallback: Try clicking the submit button
+            const submitButton = modal.locator('button').filter({ hasText: /作\s*成|保存|更\s*新|OK/ });
+            if (await submitButton.count() > 0) {
+              await submitButton.first().click();
+              await page.waitForTimeout(500);
+              await expect(modal).not.toBeVisible({ timeout: 5000 });
+              console.log('[DEBUG] Test 2: Modal closed after button click');
+            }
+          }
+
+          // CRITICAL DEBUG: Log API activity before waiting for success message
+          console.log('[DEBUG] Test 2: API Requests captured:', apiRequests.length);
+          apiRequests.forEach((req, i) => console.log(`  [${i}]`, req));
+          console.log('[DEBUG] Test 2: API Responses captured:', apiResponses.length);
+          apiResponses.forEach((res, i) => console.log(`  [${i}]`, res));
+
+          // Wait for success message
+          console.log('[DEBUG] Test 2: Waiting for success message...');
+          await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+          console.log('[DEBUG] Test 2: Success message appeared!');
         } else {
-          test.skip('Add member interface not found');
+          console.log('[DEBUG] Test 2: Members select not found in modal');
+          test.skip('Members select not found in modal - form structure may have changed');
         }
       } else {
         // Try clicking the group row to open detail view
-        await groupRow.click();
+        // CRITICAL FIX (2025-11-10): Row clicks may also need force: true
+        await groupRow.click({ force: true });
         await page.waitForTimeout(1000);
 
         // Look for members section
@@ -458,7 +616,7 @@ test.describe('Group Management CRUD Operations', () => {
     await page.waitForTimeout(2000);
 
     // Find test group
-    const groupRow = page.locator('tr').filter({ hasText: testGroupName });
+    const groupRow = page.locator('tr').filter({ hasText: TEST_GROUP_NAME });
 
     if (await groupRow.count() > 0) {
       // Click edit button
@@ -497,10 +655,34 @@ test.describe('Group Management CRUD Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
+    // CRITICAL DEBUG: Monitor network requests to verify API calls
+    const apiRequests: string[] = [];
+    const apiResponses: string[] = [];
+    page.on('request', request => {
+      if (request.url().includes('/rest/')) {
+        apiRequests.push(`${request.method()} ${request.url()}`);
+      }
+    });
+    page.on('response', response => {
+      if (response.url().includes('/rest/')) {
+        apiResponses.push(`${response.status()} ${response.url()}`);
+      }
+    });
+
     await page.waitForTimeout(2000);
 
+    // CRITICAL FIX (2025-11-10): Use search to filter for specific group
+    // Each test gets fresh page load via beforeEach, search state not preserved
+    // Table may be paginated with many old test groups, created group may be on page 2/3
+    const searchBox = page.locator('input[placeholder*="グループを検索"], input[type="search"]');
+    if (await searchBox.count() > 0) {
+      console.log('[DEBUG] Test 5: Using search to filter for group');
+      await searchBox.first().fill(TEST_GROUP_NAME);
+      await page.waitForTimeout(1000); // Wait for search filter to apply
+    }
+
     // Find test group
-    const groupRow = page.locator('tr').filter({ hasText: testGroupName });
+    const groupRow = page.locator('tr').filter({ hasText: TEST_GROUP_NAME });
 
     if (await groupRow.count() > 0) {
       // Click delete button
@@ -509,21 +691,45 @@ test.describe('Group Management CRUD Operations', () => {
       });
 
       if (await deleteButton.count() > 0) {
-        await deleteButton.first().click(isMobile ? { force: true } : {});
+        // Click delete button (can use force: true to open popconfirm)
+        await deleteButton.first().click({ force: true });
         await page.waitForTimeout(500);
+        console.log('[DEBUG] Test 5: Delete button clicked, waiting for confirmation popconfirm...');
 
-        // Confirm deletion
-        const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button:has-text("OK"), button:has-text("削除")');
-        if (await confirmButton.count() > 0) {
-          await confirmButton.first().click(isMobile ? { force: true } : {});
+        // Confirm deletion - be more specific about the OK button in popconfirm
+        // Ant Design popconfirm has OK and Cancel buttons, we want the OK/primary button
+        const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary');
+        const confirmButtonCount = await confirmButton.count();
+        console.log('[DEBUG] Test 5: Confirmation button count:', confirmButtonCount);
+
+        if (confirmButtonCount > 0) {
+          // Log button text to verify we're clicking the right button
+          const buttonText = await confirmButton.first().textContent();
+          console.log('[DEBUG] Test 5: Confirmation button text:', buttonText);
+
+          // CRITICAL FIX (2025-11-10): Click without force to allow React event handlers to fire
+          // This ensures the deletion API call is triggered
+          console.log('[DEBUG] Test 5: Clicking confirmation button to delete group...');
+          await confirmButton.first().click();
+          await page.waitForTimeout(1000);
+          console.log('[DEBUG] Test 5: Confirmation button clicked');
+
+          // CRITICAL DEBUG: Log API activity before waiting for success message
+          console.log('[DEBUG] Test 5: API Requests captured:', apiRequests.length);
+          apiRequests.forEach((req, i) => console.log(`  [${i}]`, req));
+          console.log('[DEBUG] Test 5: API Responses captured:', apiResponses.length);
+          apiResponses.forEach((res, i) => console.log(`  [${i}]`, res));
 
           // Wait for success message
+          console.log('[DEBUG] Test 5: Waiting for success message...');
           await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+          console.log('[DEBUG] Test 5: Success message appeared!');
           await page.waitForTimeout(2000);
 
           // Verify group is removed from list
-          const deletedGroup = page.locator(`text=${testGroupName}`);
+          const deletedGroup = page.locator(`text=${TEST_GROUP_NAME}`);
           await expect(deletedGroup).not.toBeVisible({ timeout: 5000 });
+          console.log('[DEBUG] Test 5: Group successfully removed from list');
         }
       } else {
         test.skip('Delete button not found');

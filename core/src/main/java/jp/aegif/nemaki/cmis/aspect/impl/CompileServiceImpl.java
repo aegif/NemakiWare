@@ -828,18 +828,20 @@ public class CompileServiceImpl implements CompileService {
 
 		// Versioning action(checkOut / checkIn)
 		if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKOUT_DOCUMENT)) {
-		// CRITICAL TCK DEBUG (2025-11-01): Diagnose which condition is failing for checkOut
+		// Calculate canCheckOut based on CMIS 1.1 specification
 		boolean isVersionable = dtdf.isVersionable();
 		boolean notCheckedOut = !isVersionSeriesCheckedOutSafe(versionSeries);
 		boolean isLatest = document.isLatestVersion();
 		boolean canCheckOut = isVersionable && notCheckedOut && isLatest;
 
-		// ALWAYS log for TCK debugging (removed isDebugEnabled check)
-			log.error("!!! CAN_CHECKOUT_DOCUMENT check for document: " + document.getId() +
+		// Production-ready debug logging (only when debug is enabled)
+		if (log.isDebugEnabled()) {
+			log.debug("CAN_CHECKOUT_DOCUMENT check for document: " + document.getId() +
 					", isVersionable=" + isVersionable +
 					", notCheckedOut=" + notCheckedOut +
 					", isLatest=" + isLatest +
 					", canCheckOut=" + canCheckOut);
+		}
 
 		return canCheckOut;
 		} else if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKIN_DOCUMENT)) {
@@ -1357,12 +1359,14 @@ public class CompileServiceImpl implements CompileService {
 
 		DocumentTypeDefinition type = (DocumentTypeDefinition) typeManager.getTypeDefinition(repositoryId, tdf.getId());
 		if (type.isVersionable()) {
-			// TCK CRITICAL DEBUG (2025-11-03): Trace versioning property values at ObjectData compilation
-			System.err.println("!!! COMPILE-PROPERTIES DEBUG: Document ID = " + document.getId());
-			System.err.println("!!! COMPILE-PROPERTIES DEBUG: isPrivateWorkingCopy = " + document.isPrivateWorkingCopy());
-			System.err.println("!!! COMPILE-PROPERTIES DEBUG: isVersionSeriesCheckedOut = " + document.isVersionSeriesCheckedOut());
-			System.err.println("!!! COMPILE-PROPERTIES DEBUG: versionSeriesCheckedOutBy = " + document.getVersionSeriesCheckedOutBy());
-			System.err.println("!!! COMPILE-PROPERTIES DEBUG: versionSeriesCheckedOutId = " + document.getVersionSeriesCheckedOutId());
+			// Production-ready debug logging for versioning properties (only when debug is enabled)
+			if (log.isDebugEnabled()) {
+				log.debug("Compiling versioning properties for document " + document.getId() +
+						": isPrivateWorkingCopy=" + document.isPrivateWorkingCopy() +
+						", isVersionSeriesCheckedOut=" + document.isVersionSeriesCheckedOut() +
+						", checkedOutBy=" + document.getVersionSeriesCheckedOutBy() +
+						", checkedOutId=" + document.getVersionSeriesCheckedOutId());
+			}
 
 			addProperty(properties, tdf, PropertyIds.IS_PRIVATE_WORKING_COPY, document.isPrivateWorkingCopy());
 			addProperty(properties, tdf, PropertyIds.IS_LATEST_VERSION, document.isLatestVersion());
