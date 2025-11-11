@@ -1678,23 +1678,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
         
         // Delegate to the parent servlet with the appropriate request
-        log.info("*** NEMAKI DEBUG: About to call super.service() with selector: " + inferredSelector + " ***");
-        if (log.isDebugEnabled()) {
-            log.debug("*** NEMAKI DEBUG: About to call super.service() with selector: " + inferredSelector + " ***");
-        }
         
         try {
             super.service(requestToUse, response);
-            
-            log.info("*** NEMAKI DEBUG: super.service() completed successfully for selector: " + inferredSelector + " ***");
-            if (log.isDebugEnabled()) {
-                log.debug("*** NEMAKI DEBUG: super.service() completed successfully for selector: " + inferredSelector + " ***");
-            }
         } catch (Exception e) {
-            log.error("*** NEMAKI DEBUG: Exception in super.service() for selector: " + inferredSelector + " - " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***", e);
-            if (log.isDebugEnabled()) {
-                log.debug("*** NEMAKI DEBUG: Exception in super.service() for selector: " + inferredSelector + " - " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
-            }
             throw e;
         }
         
@@ -4167,12 +4154,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
             java.util.Map<String, String[]> parameterMap = request.getParameterMap();
 
-            // TEMPORARY DEBUG (2025-11-12): Investigate why permissions are not persisting correctly
-            log.error("!!! ACL EXTRACT DEBUG: paramPrefix=" + paramPrefix + ", parameterMap size=" + parameterMap.size());
-            for (java.util.Map.Entry<String, String[]> debugEntry : parameterMap.entrySet()) {
-                log.error("!!! ACL PARAM: " + debugEntry.getKey() + " = " + java.util.Arrays.toString(debugEntry.getValue()));
-            }
-
             for (java.util.Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
                 String paramName = entry.getKey();
 
@@ -4236,13 +4217,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl(principal, permissionList);
 
                     aces.add(ace);
-                    // TEMPORARY DEBUG (2025-11-12)
-                    log.error("!!! ACL EXTRACT DEBUG: Added ACE - principal=" + principalId + ", permissions=" + permissionList);
                 }
             }
 
-            // TEMPORARY DEBUG (2025-11-12)
-            log.error("!!! ACL EXTRACT DEBUG: Extracted " + aces.size() + " ACEs for paramPrefix=" + paramPrefix);
 
         } catch (Exception e) {
             log.error("!!! ACL EXTRACT ERROR: ", e);
