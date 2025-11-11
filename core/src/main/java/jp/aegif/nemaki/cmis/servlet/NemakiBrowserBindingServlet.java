@@ -4167,9 +4167,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
             java.util.Map<String, String[]> parameterMap = request.getParameterMap();
 
-            // Debug logging for ACL parameter extraction
-            if (log.isDebugEnabled()) {
-                log.debug("Extracting ACL parameters with prefix: " + paramPrefix);
+            // TEMPORARY DEBUG (2025-11-12): Investigate why permissions are not persisting correctly
+            log.error("!!! ACL EXTRACT DEBUG: paramPrefix=" + paramPrefix + ", parameterMap size=" + parameterMap.size());
+            for (java.util.Map.Entry<String, String[]> debugEntry : parameterMap.entrySet()) {
+                log.error("!!! ACL PARAM: " + debugEntry.getKey() + " = " + java.util.Arrays.toString(debugEntry.getValue()));
             }
 
             for (java.util.Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
@@ -4235,18 +4236,17 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl(principal, permissionList);
 
                     aces.add(ace);
-                    if (log.isDebugEnabled()) {
-                        log.debug("Added ACE: principal=" + principalId + ", permissions=" + permissionList);
-                    }
+                    // TEMPORARY DEBUG (2025-11-12)
+                    log.error("!!! ACL EXTRACT DEBUG: Added ACE - principal=" + principalId + ", permissions=" + permissionList);
                 }
             }
 
-            if (log.isDebugEnabled()) {
-                log.debug("Extracted " + aces.size() + " ACE(s) for prefix: " + paramPrefix);
-            }
+            // TEMPORARY DEBUG (2025-11-12)
+            log.error("!!! ACL EXTRACT DEBUG: Extracted " + aces.size() + " ACEs for paramPrefix=" + paramPrefix);
 
         } catch (Exception e) {
-            log.warn("Failed to extract ACL parameters with prefix '" + paramPrefix + "': " + e.getMessage());
+            log.error("!!! ACL EXTRACT ERROR: ", e);
+            e.printStackTrace();
             // Return empty list if extraction fails
         }
 
