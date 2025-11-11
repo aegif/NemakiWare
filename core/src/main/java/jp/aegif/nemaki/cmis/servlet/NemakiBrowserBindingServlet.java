@@ -4166,11 +4166,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             java.util.Map<Integer, java.util.List<String>> permissions = new java.util.TreeMap<>();
 
             java.util.Map<String, String[]> parameterMap = request.getParameterMap();
-            
+
+            // CRITICAL DEBUG (2025-11-11): Log all ACL parameters for troubleshooting
+            log.error("!!! ACL EXTRACT DEBUG: paramPrefix=" + paramPrefix + ", parameterMap size=" + parameterMap.size());
+            for (java.util.Map.Entry<String, String[]> debugEntry : parameterMap.entrySet()) {
+                log.error("!!! ACL PARAM: " + debugEntry.getKey() + " = " + java.util.Arrays.toString(debugEntry.getValue()));
+            }
 
             for (java.util.Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
                 String paramName = entry.getKey();
-                
+
 
                 // Check for principal parameters: addACEPrincipal[0], addACEPrincipal[1], etc.
                 if (paramName.startsWith(principalParamName + "[")) {
@@ -4231,12 +4236,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl(principal, permissionList);
 
                     aces.add(ace);
-                    
+                    log.error("!!! ACL EXTRACT DEBUG: Added ACE - principal=" + principalId + ", permissions=" + permissionList);
                 }
             }
 
+            log.error("!!! ACL EXTRACT DEBUG: Extracted " + aces.size() + " ACEs for paramPrefix=" + paramPrefix);
+
         } catch (Exception e) {
-            
+            log.error("!!! ACL EXTRACT ERROR: ", e);
             e.printStackTrace();
             // Return empty list if extraction fails
         }
