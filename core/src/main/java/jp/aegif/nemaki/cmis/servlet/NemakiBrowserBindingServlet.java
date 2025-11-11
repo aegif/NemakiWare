@@ -970,6 +970,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 result = handlePropertiesOperation(service, repositoryId, objectId, request);
             } else if ("allowableActions".equals(cmisselector)) {
                 result = handleAllowableActionsOperation(service, repositoryId, objectId, request);
+            } else if ("acl".equals(cmisselector)) {
+                // CRITICAL FIX (2025-11-11): Handle ACL GET requests to resolve HTTP 405 error in permission management UI
+                result = handleAclOperation(service, repositoryId, objectId, request);
             } else if ("content".equals(cmisselector)) {
                 result = handleContentOperation(service, repositoryId, objectId, request, response);
                 return; // Content operation handles response directly
@@ -1122,7 +1125,35 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
         return allowableActions;
     }
-    
+
+    /**
+     * Handle acl operation - equivalent to getAcl CMIS service call
+     * CRITICAL FIX (2025-11-11): Added support for cmisselector=acl to resolve HTTP 405 error
+     * in permission management UI
+     */
+    private Object handleAclOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+        // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
+        if ("root".equals(objectId)) {
+            org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
+            objectId = repoInfo.getRootFolderId();
+            log.debug("Translated 'root' marker to actual root folder ID: " + objectId);
+        }
+
+        // Parse onlyBasicPermissions parameter (optional, defaults to true per CMIS spec)
+        String onlyBasicPermStr = request.getParameter("onlyBasicPermissions");
+        Boolean onlyBasicPermissions = true; // CMIS 1.1 spec default
+        if (onlyBasicPermStr != null) {
+            onlyBasicPermissions = Boolean.parseBoolean(onlyBasicPermStr);
+        }
+
+        // Call CMIS service to get ACL
+        org.apache.chemistry.opencmis.commons.data.Acl acl = service.getAcl(
+            repositoryId, objectId, onlyBasicPermissions, null
+        );
+
+        return acl;
+    }
+
     /**
      * Handle typeDefinition operation - equivalent to getTypeDefinition CMIS service call
      * This method handles typeDefinition cmisselector requests with inherited flag corrections.
@@ -4135,11 +4166,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             java.util.Map<Integer, java.util.List<String>> permissions = new java.util.TreeMap<>();
 
             java.util.Map<String, String[]> parameterMap = request.getParameterMap();
-            
+
+            // CRITICAL DEBUG (2025-11-11): Log all ACL parameters for troubleshooting
+            log.error("!!! ACL EXTRACT DEBUG: paramPrefix=" + paramPrefix + ", parameterMap size=" + parameterMap.size());
+            for (java.util.Map.Entry<String, String[]> debugEntry : parameterMap.entrySet()) {
+                log.error("!!! ACL PARAM: " + debugEntry.getKey() + " = " + java.util.Arrays.toString(debugEntry.getValue()));
+            }
 
             for (java.util.Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
                 String paramName = entry.getKey();
-                
+
 
                 // Check for principal parameters: addACEPrincipal[0], addACEPrincipal[1], etc.
                 if (paramName.startsWith(principalParamName + "[")) {
@@ -4200,12 +4236,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl(principal, permissionList);
 
                     aces.add(ace);
-                    
+                    log.error("!!! ACL EXTRACT DEBUG: Added ACE - principal=" + principalId + ", permissions=" + permissionList);
                 }
             }
 
+            log.error("!!! ACL EXTRACT DEBUG: Extracted " + aces.size() + " ACEs for paramPrefix=" + paramPrefix);
+
         } catch (Exception e) {
-            
+            log.error("!!! ACL EXTRACT ERROR: ", e);
             e.printStackTrace();
             // Return empty list if extraction fails
         }
