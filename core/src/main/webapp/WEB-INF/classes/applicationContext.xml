@@ -13,13 +13,10 @@
 	<!-- Enable component scanning for configuration classes FIRST -->
 	<!-- This ensures ObjectMapper beans are available before any DAO contexts -->
 	<context:component-scan base-package="jp.aegif.nemaki.config" />
-	
-	<!-- Phase 1 database initialization is now handled via XML bean configuration -->
-	<!-- Component scanning for jp.aegif.nemaki.init removed to prevent conflicts -->
-	
-	<!-- Import database pre-initialization context (Phase 1) -->
-	<import resource="classpath:databaseInitContext.xml" />
-	
+
+	<!-- DatabasePreInitializer moved to patchContext.xml as explicit bean definition (2025-11-10) -->
+	<!-- This ensures it executes in child context after NemakiApplicationContextLoader.refresh() -->
+
 	<!-- Enable component scanning for REST resources after property context is loaded -->
 	<context:component-scan base-package="jp.aegif.nemaki.rest">
 		<!-- Exclude AuthenticationFilter from component scan to control initialization order -->
@@ -57,7 +54,7 @@
 			<list>
 				<value>classpath*:${context.log}</value>
 				<value>classpath:propertyContext.xml</value>
-				<value>classpath:databaseInitContext.xml</value>
+				<!-- databaseInitContext.xml removed - now using @Component scanning for DatabasePreInitializer -->
 				<value>classpath:jacksonContext.xml</value>
 				<value>classpath*:${context.dao.implementation}</value>
 				<value>classpath*:${context.dao}</value>

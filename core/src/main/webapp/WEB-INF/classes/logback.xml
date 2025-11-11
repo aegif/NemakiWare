@@ -43,4 +43,14 @@
 		<appender-ref ref="STDOUT" />
 	</logger>
 
+	<!-- Spring Bean Factory DEBUG for troubleshooting PatchService bean creation -->
+	<logger name="org.springframework.beans.factory" level="DEBUG" additivity="false">
+		<appender-ref ref="FILE" />
+		<appender-ref ref="STDOUT" />
+	</logger>
+	<logger name="org.springframework.context" level="DEBUG" additivity="false">
+		<appender-ref ref="FILE" />
+		<appender-ref ref="STDOUT" />
+	</logger>
+
 </configuration>

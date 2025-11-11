@@ -8,7 +8,11 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.core.annotation.Order;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TypeService;
@@ -29,37 +33,35 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 
 /**
- * TCK CRITICAL FIX: Bean initialization via explicit XML definition in patchContext.xml
+ * PHASE 3: PatchService - ApplicationListener-based initialization
  *
- * @Component removed to prevent conflicts with explicit bean definition
- * Bean registration and initialization controlled entirely by patchContext.xml:
- * <bean id="patchService" class="jp.aegif.nemaki.patch.PatchService" init-method="applyPatchesOnStartup">
+ * Executes after CMISPostInitializer (Phase 2) to perform system property initialization,
+ * TCK compliance operations, and Solr indexing.
+ *
+ * NOTE: This class is registered as a Spring Bean in patchContext.xml (NOT via @Component)
+ * to allow proper dependency injection and ApplicationListener registration in child context.
+ * @Order(3) ensures execution after DatabasePreInitializer (@Order(1)) and CMISPostInitializer (@Order(2))
  */
-public class PatchService {
+@Order(3)
+public class PatchService implements ApplicationListener<ContextRefreshedEvent> {
 	private static final Log log = LogFactory.getLog(PatchService.class);
+	private static final AtomicBoolean initialized = new AtomicBoolean(false);
 
-	@Autowired
 	private RepositoryInfoMap repositoryInfoMap;
 
-	@Autowired
 	private CloudantClientPool connectorPool;
 
-	@Autowired
 	private PropertyManager propertyManager;
 
-	// NEW: Required dependencies for PropertyDefinitionDetail creation
-	@Autowired
+	// Required dependencies for PropertyDefinitionDetail creation
 	private TypeService typeService;
 
-	@Autowired
 	private TypeManager typeManager;
 
-	// NEW: Required dependency for initial folder creation
-	@Autowired
+	// Required dependency for initial folder creation
 	private ContentService contentService;
 
-	// NEW: Required dependency for Solr indexing
-	@Autowired
+	// Required dependency for Solr indexing
 	private SolrUtil solrUtil;
 
 	// Configuration properties for database initialization - Docker environment compatible
@@ -100,32 +102,43 @@ public class PatchService {
 	public PatchService() {
 		// The patch application is triggered via init-method="applyPatchesOnStartup" in patchContext.xml
 		// This ensures compatibility and prevents circular dependency issues during Spring context initialization
-		// DEBUG: PatchService constructor called (logged by log.info below)
-		log.info("=== PATCH DEBUG: PatchService constructor called ===");
+		// DEBUG: PatchService constructor called (logged by log.error below for visibility)
+		log.error("*** PatchService CONSTRUCTOR CALLED ***");
 	}
 
 	/**
-	 * Called by Spring via init-method="applyPatchesOnStartup" in patchContext.xml
-	 * @PostConstruct removed to prevent conflicts with explicit init-method
+	 * PHASE 3: ApplicationListener implementation
+	 * Executes after CMISPostInitializer (Phase 2) when Spring context is fully refreshed
 	 */
-	public void applyPatchesOnStartup() {
-		log.info("=== PHASE 2: PatchService.applyPatchesOnStartup() EXECUTING ===");
+	@Override
+	public void onApplicationEvent(ContextRefreshedEvent event) {
+		// Idempotency check: Execute only once despite multiple ContextRefreshedEvent firings
+		if (!initialized.compareAndSet(false, true)) {
+			log.error("*** PatchService.onApplicationEvent() CALLED BUT ALREADY EXECUTED - SKIPPING ***");
+			return;
+		}
+
+		log.error("*** =================================================================== ***");
+		log.error("*** PHASE 3: PatchService.onApplicationEvent() EXECUTING ***");
+		log.error("*** Event source: " + event.getSource().getClass().getName() + " ***");
+		log.error("*** =================================================================== ***");
+
 		try {
-			log.info("Starting CMIS patch application (Phase 2)");
-			
+			log.error("*** Starting CMIS patch application (Phase 3) ***");
+
 			// Note: All database initialization (Phase 1) is handled by DatabasePreInitializer
 			// This method focuses on CMIS-aware operations that require fully initialized services
-			
+
 			// CRITICAL FIX: Create PropertyDefinitionDetail records for system CMIS properties
 			// This addresses the root cause of PropertyDefinitionCore contamination
 			initializeSystemPropertyDefinitionDetails();
-			
-			// PRIORITY 4: TypeManager cache forced update for TCK compliance
-			// This ensures that PropertyDefinitionDetail changes are immediately reflected in type cache
-			invalidateTypeManagerCaches();
 
 			// TCK REQUIREMENT: Create custom secondary type for TCK tests
 			createTCKSecondaryType();
+
+			// PRIORITY 4: TypeManager cache forced update for TCK compliance
+			// This ensures that PropertyDefinitionDetail changes are immediately reflected in type cache
+			invalidateTypeManagerCaches();
 
 			// INITIAL CONTENT: Create Sites and Technical Documents folders
 			// DISABLED: Folder creation moved to Patch_InitialContentSetup with proper ACL configuration
@@ -134,22 +147,24 @@ public class PatchService {
 			// createInitialFolders();
 
 			// TODO: Initialize test users for QA and development (requires principalService injection)
-			log.info("Test user initialization skipped - requires principalService dependency");
+			log.error("*** Test user initialization skipped - requires principalService dependency ***");
 
 			// CRITICAL TCK FIX: Index root folders in Solr for query tests
 			indexRootFoldersInSolr();
 
 			// Apply any future patches if they exist
 			if (patchList != null && !patchList.isEmpty()) {
-				log.info("Applying " + patchList.size() + " CMIS patches");
+				log.error("*** Applying " + patchList.size() + " CMIS patches ***");
 				apply();
 			} else {
-				log.info("No CMIS patches to apply - Phase 2 completed");
+				log.error("*** No CMIS patches to apply - Phase 3 completed ***");
 			}
 
-			log.info("CMIS patch application completed successfully");
+			log.error("*** =================================================================== ***");
+			log.error("*** CMIS patch application completed successfully ***");
+			log.error("*** =================================================================== ***");
 		} catch (Exception e) {
-			log.error("Failed to apply CMIS patches on startup", e);
+			log.error("*** FAILED TO APPLY CMIS PATCHES ON STARTUP ***", e);
 			// Continue with application startup even if patches fail
 		}
 	}
@@ -405,12 +420,12 @@ public class PatchService {
 	}
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
-		log.debug("setRepositoryInfoMap called with " + (repositoryInfoMap != null ? repositoryInfoMap.getClass().getName() : "null"));
+		log.error("*** PatchService.setRepositoryInfoMap() CALLED ***");
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
 	public void setConnectorPool(CloudantClientPool connectorPool) {
-		log.debug("setConnectorPool called with " + (connectorPool != null ? connectorPool.getClass().getName() : "null"));
+		log.error("*** PatchService.setConnectorPool() CALLED ***");
 		this.connectorPool = connectorPool;
 	}
 
@@ -428,17 +443,17 @@ public class PatchService {
 	
 	// NEW: Setter methods for required dependencies
 	public void setTypeService(TypeService typeService) {
-		log.debug("setTypeService called with " + (typeService != null ? typeService.getClass().getName() : "null"));
+		log.error("*** PatchService.setTypeService() CALLED ***");
 		this.typeService = typeService;
 	}
-	
+
 	public void setTypeManager(TypeManager typeManager) {
-		log.debug("setTypeManager called with " + (typeManager != null ? typeManager.getClass().getName() : "null"));
+		log.error("*** PatchService.setTypeManager() CALLED ***");
 		this.typeManager = typeManager;
 	}
-	
+
 	public void setPropertyManager(PropertyManager propertyManager) {
-		log.debug("setPropertyManager called with " + (propertyManager != null ? propertyManager.getClass().getName() : "null"));
+		log.error("*** PatchService.setPropertyManager() CALLED ***");
 		this.propertyManager = propertyManager;
 	}
 	
@@ -665,8 +680,35 @@ public class PatchService {
 	}
 
 	public void setContentService(ContentService contentService) {
-		log.debug("setContentService called with " + (contentService != null ? contentService.getClass().getName() : "null"));
+		log.error("*** PatchService.setContentService() CALLED ***");
 		this.contentService = contentService;
+	}
+
+	public void setSolrUtil(SolrUtil solrUtil) {
+		log.error("*** PatchService.setSolrUtil() CALLED ***");
+		this.solrUtil = solrUtil;
+	}
+
+	/**
+	 * CRITICAL FIX: Init method to force Spring bean instantiation
+	 *
+	 * Spring's child context (created by NemakiApplicationContextLoader) does not eagerly
+	 * instantiate ApplicationListener beans unless they have property dependencies or an
+	 * init-method declaration.
+	 *
+	 * This method forces Spring to create the bean instance, allowing the ApplicationListener
+	 * interface to be registered properly for ContextRefreshedEvent handling.
+	 *
+	 * Called by Spring after all setter property injections are complete, but before
+	 * onApplicationEvent() is triggered by ContextRefreshedEvent.
+	 *
+	 * @see patchContext.xml - bean definition with init-method="initializeIfNeeded"
+	 */
+	public void initializeIfNeeded() {
+		log.error("*** PatchService.initializeIfNeeded() CALLED BY SPRING ***");
+		log.error("*** All setters completed - ApplicationListener ready for ContextRefreshedEvent ***");
+		// The actual initialization work happens in onApplicationEvent() when ContextRefreshedEvent fires
+		// This method exists solely to trigger bean instantiation in Spring's child context
 	}
 
 	/**

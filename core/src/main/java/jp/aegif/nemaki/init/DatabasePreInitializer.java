@@ -21,75 +21,96 @@
  ******************************************************************************/
 package jp.aegif.nemaki.init;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
 
 /**
  * Phase 1 Database Pre-Initializer for NemakiWare
- * 
- * This class handles database-level initialization operations that complete
- * early in the Spring context initialization process. It uses InitializingBean
- * with high precedence to ensure database setup happens before most other beans.
- * 
+ *
+ * CRITICAL FIX (2025-11-10): Converted to ApplicationListener<ContextRefreshedEvent>
+ *
+ * Problem History:
+ * 1. Original: XML bean in databaseInitContext.xml - destroyed by NemakiApplicationContextLoader.refresh()
+ * 2. Attempt 1: @Component with @PostConstruct - @PostConstruct never executed in child context
+ * 3. Solution: ApplicationListener<ContextRefreshedEvent> - same pattern as CMISPostInitializer
+ *
+ * Why ApplicationListener Works:
+ * - ContextRefreshedEvent fires AFTER entire Spring context is fully initialized
+ * - Works reliably with both XML bean definitions and @Component annotation
+ * - Event-driven pattern guaranteed to execute after context refresh
+ * - AtomicBoolean ensures single execution even if event fires multiple times
+ *
  * Phase 1 Operations (DB Direct):
  * - Create databases if they don't exist
  * - Load dump file data directly into CouchDB
  * - Set up design documents and views
- * 
+ *
  * CRITICAL DESIGN CHANGE: System folder (.system) is now provided by
  * bedroom_init.dump file and should NOT be created by DatabasePreInitializer.
  * This prevents duplicate System folder creation and ensures proper security configuration.
- * 
- * This phase executes early in Spring context initialization,
- * ensuring that the database prerequisites are met before services
- * that depend on complex beans.
+ *
+ * This phase executes when ContextRefreshedEvent fires, ensuring database
+ * prerequisites are met before CMIS services require them.
  */
-public class DatabasePreInitializer {
-    
+@Component
+@Order(1)  // Execute before other beans
+public class DatabasePreInitializer implements ApplicationListener<ContextRefreshedEvent> {
+
     private static final Log log = LogFactory.getLog(DatabasePreInitializer.class);
-    
-    // Configuration properties for database initialization (injected via Spring)
+
+    // AtomicBoolean to ensure database initialization happens only once even if ContextRefreshedEvent fires multiple times
+    private final AtomicBoolean initialized = new AtomicBoolean(false);
+
+    // Configuration properties for database initialization with default values
     private String couchdbUrl = "http://couchdb:5984";
     private String couchdbUsername = "admin";
     private String couchdbPassword = "password";
-    
-    // Setters for Spring property injection
-    public void setCouchdbUrl(String couchdbUrl) {
-        this.couchdbUrl = couchdbUrl;
-    }
-    
-    public void setCouchdbUsername(String couchdbUsername) {
-        this.couchdbUsername = couchdbUsername;
-    }
-    
-    public void setCouchdbPassword(String couchdbPassword) {
-        this.couchdbPassword = couchdbPassword;
-    }
-    
+
     public DatabasePreInitializer() {
-        // Constructor - initialization handled by Spring init-method
+        // Constructor - initialization handled by onApplicationEvent
+        log.info("DatabasePreInitializer bean created");
     }
-    
+
     /**
      * Execute Phase 1 database initialization
-     * 
+     *
+     * CRITICAL: This method is called by Spring AFTER the entire ApplicationContext is fully
+     * initialized, ensuring all basic infrastructure is ready for database operations.
+     *
+     * Uses AtomicBoolean to ensure execution happens exactly once, even if ContextRefreshedEvent
+     * fires multiple times (e.g., parent/child context scenarios).
+     *
      * This is pure database-layer initialization that does NOT depend on:
      * - CMIS services
-     * - Nemakiware application services  
+     * - Nemakiware application services
      * - Complex Spring beans
-     * 
+     *
      * Uses only basic HTTP operations to ensure database prerequisites.
-     * Called via Spring init-method configuration.
      */
-    public void initializeDatabase() {
-        if (log.isDebugEnabled()) {
-            log.debug("PHASE 1: DatabasePreInitializer.initializeDatabase() executing");
-            log.debug("This should create databases and load dump files");
+    @Override
+    public void onApplicationEvent(ContextRefreshedEvent event) {
+        log.info("*** DatabasePreInitializer.onApplicationEvent() CALLED ***");
+        log.info("*** Event source: " + event.getSource().getClass().getName() + " ***");
+
+        // Ensure this runs only once
+        if (!initialized.compareAndSet(false, true)) {
+            log.info("DatabasePreInitializer already executed, skipping");
+            return;
         }
-        log.info("PHASE 1: DatabasePreInitializer.initializeDatabase() executing");
-        log.info("DATABASE PRE-INITIALIZATION (Phase 1) started - Pure database layer operations");
-        
+
+        log.info("=== DATABASE PRE-INITIALIZATION (Phase 1) STARTED ===");
+        log.info("Triggered by ContextRefreshedEvent - Basic infrastructure is now ready");
+
         try {
+            // Phase 1: Pure database-layer operations
+            // These operations should ONLY use HTTP clients, NOT CMIS services
+            // Database operations must complete before CMIS services initialize
             // Wait a moment for CouchDB to be ready
             Thread.sleep(2000);
             
@@ -133,12 +154,9 @@ public class DatabasePreInitializer {
                 log.debug("SYSTEM FOLDER: Skipping creation - provided by dump file with proper .system name and security");
             }
             log.info("System folder creation skipped - provided by dump file");
-            
-            if (log.isDebugEnabled()) {
-                log.debug("DATABASE PRE-INITIALIZATION (Phase 1) COMPLETED");
-            }
-            log.info("DATABASE PRE-INITIALIZATION (Phase 1) COMPLETED");
-            
+
+            log.info("=== DATABASE PRE-INITIALIZATION (Phase 1) COMPLETED ===");
+
         } catch (Exception e) {
             log.error("Phase 1 database pre-initialization failed", e);
             // Don't fail the entire startup - let Phase 2 handle missing data gracefully

@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <beans xmlns="http://www.springframework.org/schema/beans"
 	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:context="http://www.springframework.org/schema/context"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
-		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
 	
 	<!-- Property Configurer -->
 	<bean id="propertyConfigurer" class="jp.aegif.nemaki.util.spring.SpringPropertiesUtil">
@@ -31,4 +33,13 @@
     <bean id="springPropertyManager" class="jp.aegif.nemaki.util.SpringPropertyManager">
         <property name="propertyConfigurer" ref="propertyConfigurer" />
     </bean>
+
+	<!-- Enable annotation processing (@PostConstruct, @Resource, etc.) -->
+	<!-- CRITICAL: Required for @PostConstruct to work in child context after refresh -->
+	<context:annotation-config />
+
+	<!-- Enable component scanning for database initialization (Phase 1) -->
+	<!-- DatabasePreInitializer uses @Component with @Order(1) and @PostConstruct -->
+	<!-- This scanning happens in NemakiApplicationContextLoader's child context -->
+	<context:component-scan base-package="jp.aegif.nemaki.init" />
 </beans>

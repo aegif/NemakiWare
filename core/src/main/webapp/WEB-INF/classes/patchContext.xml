@@ -12,7 +12,8 @@
     http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
 
     <context:annotation-config />
-	<context:component-scan base-package="jp.aegif.nemaki.patch" />
+	<!-- Component scanning for jp.aegif.nemaki.patch intentionally disabled to prevent conflicts -->
+	<!-- PatchService is registered as explicit bean definition below instead -->
 	<!-- Component scanning for jp.aegif.nemaki.init intentionally disabled to prevent conflicts -->
 	<!-- CMISPostInitializer is registered as explicit bean definition below instead -->
 
@@ -58,14 +59,30 @@
 	</bean>
 
 	<!--
-		PatchService Bean Definition - RE-ENABLED FOR TCK FIX
+		PHASE 3: PatchService - ApplicationListener via Explicit Bean Definition
 
-		TCK CRITICAL FIX: Re-enabled explicit bean definition with init-method to ensure
-		indexRootFoldersInSolr() is executed during startup.
-		The @Component annotation alone is not sufficient for @PostConstruct execution.
+		Similar to CMISPostInitializer, PatchService is registered as an explicit bean
+		to ensure proper ApplicationListener registration in the child context.
+		@Component scanning alone does not guarantee ApplicationListener registration
+		in NemakiApplicationContextLoader's child context.
+
+		Execution order managed by Spring's @Order(3) annotation in PatchService.java.
 	-->
-	<bean id="patchService" class="jp.aegif.nemaki.patch.PatchService" init-method="applyPatchesOnStartup">
-		<!-- Properties are injected via @Autowired in the class itself -->
+	<!--
+		CRITICAL DISCOVERY (2025-11-10): Spring does not automatically create beans in child context
+		unless they have properties or init-method. CMISPostInitializer works because it has
+		cmisPatchList property. Adding init-method="initializeIfNeeded" to force bean creation.
+
+		COMPLETE FIX: init-method forces bean instantiation, properties provide required dependencies
+	-->
+	<bean id="patchService" class="jp.aegif.nemaki.patch.PatchService" init-method="initializeIfNeeded">
+		<property name="repositoryInfoMap"><ref bean="repositoryInfoMap" /></property>
+		<property name="connectorPool"><ref bean="connectorPool" /></property>
+		<property name="propertyManager"><ref bean="propertyManager" /></property>
+		<property name="typeService"><ref bean="typeService" /></property>
+		<property name="typeManager"><ref bean="TypeManager" /></property>
+		<property name="contentService"><ref bean="ContentService" /></property>
+		<property name="solrUtil"><ref bean="solrUtil" /></property>
 	</bean>
 
 	<bean id="patchUtil" class="jp.aegif.nemaki.patch.PatchUtil">
