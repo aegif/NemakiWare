@@ -102,8 +102,9 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	public PatchService() {
 		// The patch application is triggered via init-method="applyPatchesOnStartup" in patchContext.xml
 		// This ensures compatibility and prevents circular dependency issues during Spring context initialization
-		// DEBUG: PatchService constructor called (logged by log.error below for visibility)
-		log.error("*** PatchService CONSTRUCTOR CALLED ***");
+		if (log.isDebugEnabled()) {
+			log.debug("PatchService constructor called");
+		}
 	}
 
 	/**
@@ -114,17 +115,17 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	public void onApplicationEvent(ContextRefreshedEvent event) {
 		// Idempotency check: Execute only once despite multiple ContextRefreshedEvent firings
 		if (!initialized.compareAndSet(false, true)) {
-			log.error("*** PatchService.onApplicationEvent() CALLED BUT ALREADY EXECUTED - SKIPPING ***");
+			log.warn("PatchService.onApplicationEvent() called but already executed - skipping duplicate");
 			return;
 		}
 
-		log.error("*** =================================================================== ***");
-		log.error("*** PHASE 3: PatchService.onApplicationEvent() EXECUTING ***");
-		log.error("*** Event source: " + event.getSource().getClass().getName() + " ***");
-		log.error("*** =================================================================== ***");
+		log.info("=== PHASE 3: PatchService initialization starting ===");
+		if (log.isDebugEnabled()) {
+			log.debug("Event source: " + event.getSource().getClass().getName());
+		}
 
 		try {
-			log.error("*** Starting CMIS patch application (Phase 3) ***");
+			log.info("Starting CMIS patch application (Phase 3)");
 
 			// Note: All database initialization (Phase 1) is handled by DatabasePreInitializer
 			// This method focuses on CMIS-aware operations that require fully initialized services
@@ -147,24 +148,24 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 			// createInitialFolders();
 
 			// TODO: Initialize test users for QA and development (requires principalService injection)
-			log.error("*** Test user initialization skipped - requires principalService dependency ***");
+			if (log.isDebugEnabled()) {
+				log.debug("Test user initialization skipped - requires principalService dependency");
+			}
 
 			// CRITICAL TCK FIX: Index root folders in Solr for query tests
 			indexRootFoldersInSolr();
 
 			// Apply any future patches if they exist
 			if (patchList != null && !patchList.isEmpty()) {
-				log.error("*** Applying " + patchList.size() + " CMIS patches ***");
+				log.info("Applying " + patchList.size() + " CMIS patches");
 				apply();
 			} else {
-				log.error("*** No CMIS patches to apply - Phase 3 completed ***");
+				log.info("No CMIS patches to apply - Phase 3 completed");
 			}
 
-			log.error("*** =================================================================== ***");
-			log.error("*** CMIS patch application completed successfully ***");
-			log.error("*** =================================================================== ***");
+			log.info("=== CMIS patch application completed successfully ===");
 		} catch (Exception e) {
-			log.error("*** FAILED TO APPLY CMIS PATCHES ON STARTUP ***", e);
+			log.error("Failed to apply CMIS patches on startup", e);
 			// Continue with application startup even if patches fail
 		}
 	}
@@ -420,12 +421,16 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	}
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
-		log.error("*** PatchService.setRepositoryInfoMap() CALLED ***");
+		if (log.isDebugEnabled()) {
+			log.debug("PatchService.setRepositoryInfoMap() called");
+		}
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
 	public void setConnectorPool(CloudantClientPool connectorPool) {
-		log.error("*** PatchService.setConnectorPool() CALLED ***");
+		if (log.isDebugEnabled()) {
+			log.debug("PatchService.setConnectorPool() called");
+		}
 		this.connectorPool = connectorPool;
 	}
 
@@ -443,17 +448,23 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	
 	// NEW: Setter methods for required dependencies
 	public void setTypeService(TypeService typeService) {
-		log.error("*** PatchService.setTypeService() CALLED ***");
+		if (log.isDebugEnabled()) {
+			log.debug("PatchService.setTypeService() called");
+		}
 		this.typeService = typeService;
 	}
 
 	public void setTypeManager(TypeManager typeManager) {
-		log.error("*** PatchService.setTypeManager() CALLED ***");
+		if (log.isDebugEnabled()) {
+			log.debug("PatchService.setTypeManager() called");
+		}
 		this.typeManager = typeManager;
 	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {
-		log.error("*** PatchService.setPropertyManager() CALLED ***");
+		if (log.isDebugEnabled()) {
+			log.debug("PatchService.setPropertyManager() called");
+		}
 		this.propertyManager = propertyManager;
 	}
 	
@@ -680,12 +691,16 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	}
 
 	public void setContentService(ContentService contentService) {
-		log.error("*** PatchService.setContentService() CALLED ***");
+		if (log.isDebugEnabled()) {
+			log.debug("PatchService.setContentService() called");
+		}
 		this.contentService = contentService;
 	}
 
 	public void setSolrUtil(SolrUtil solrUtil) {
-		log.error("*** PatchService.setSolrUtil() CALLED ***");
+		if (log.isDebugEnabled()) {
+			log.debug("PatchService.setSolrUtil() called");
+		}
 		this.solrUtil = solrUtil;
 	}
 
@@ -705,8 +720,9 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	 * @see patchContext.xml - bean definition with init-method="initializeIfNeeded"
 	 */
 	public void initializeIfNeeded() {
-		log.error("*** PatchService.initializeIfNeeded() CALLED BY SPRING ***");
-		log.error("*** All setters completed - ApplicationListener ready for ContextRefreshedEvent ***");
+		if (log.isDebugEnabled()) {
+			log.debug("PatchService.initializeIfNeeded() called by Spring - all setters completed, ApplicationListener ready");
+		}
 		// The actual initialization work happens in onApplicationEvent() when ContextRefreshedEvent fires
 		// This method exists solely to trigger bean instantiation in Spring's child context
 	}

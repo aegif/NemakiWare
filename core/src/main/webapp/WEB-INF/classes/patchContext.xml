@@ -74,8 +74,13 @@
 		cmisPatchList property. Adding init-method="initializeIfNeeded" to force bean creation.
 
 		COMPLETE FIX: init-method forces bean instantiation, properties provide required dependencies
+
+		DEPLOYMENT (2025-11-11): Deploying this fix after discovering it was not yet deployed
+
+		EXPERIMENTAL FIX (2025-11-11): Temporarily removing init-method to test if it prevents
+		ApplicationListener registration. Properties alone should be sufficient to force bean creation.
 	-->
-	<bean id="patchService" class="jp.aegif.nemaki.patch.PatchService" init-method="initializeIfNeeded">
+	<bean id="patchService" class="jp.aegif.nemaki.patch.PatchService">
 		<property name="repositoryInfoMap"><ref bean="repositoryInfoMap" /></property>
 		<property name="connectorPool"><ref bean="connectorPool" /></property>
 		<property name="propertyManager"><ref bean="propertyManager" /></property>
@@ -83,6 +88,12 @@
 		<property name="typeManager"><ref bean="TypeManager" /></property>
 		<property name="contentService"><ref bean="ContentService" /></property>
 		<property name="solrUtil"><ref bean="solrUtil" /></property>
+		<!-- EXPERIMENTAL FIX (2025-11-11): Add empty List property to trigger bean creation in child context -->
+		<!-- CMISPostInitializer uses List<Patch> property which triggers bean creation without init-method -->
+		<!-- Testing if List property type is the key to proper ApplicationListener registration -->
+		<property name="patchList">
+			<list />
+		</property>
 	</bean>
 
 	<bean id="patchUtil" class="jp.aegif.nemaki.patch.PatchUtil">
