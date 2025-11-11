@@ -2428,6 +2428,31 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			}
 		}
 
+		// CRITICAL FIX (2025-11-10): Defensive initialization for static fields
+		// If subTypeProperties is null (bean init() not called), initialize it immediately
+		// This handles edge cases where Spring proxy prevents normal bean lifecycle execution
+		if (subTypeProperties == null) {
+			log.warn("DEFENSIVE INIT: subTypeProperties was null, initializing now");
+			synchronized (TypeManagerImpl.class) {
+				if (subTypeProperties == null) {
+					subTypeProperties = new ConcurrentHashMap<>();
+				}
+				// Also initialize other static fields if null
+				if (TYPES == null) {
+					TYPES = new ConcurrentHashMap<>();
+				}
+				if (basetypes == null) {
+					basetypes = new ConcurrentHashMap<>();
+				}
+				if (propertyDefinitionCoresByPropertyId == null) {
+					propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
+				}
+				if (propertyDefinitionCoresByQueryName == null) {
+					propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
+				}
+			}
+		}
+
 		// for subTypeProperties
 		if (subTypeProperties.containsKey(type.getParentTypeId())) {
 			List<PropertyDefinition<?>> parentSpecificProperties = subTypeProperties

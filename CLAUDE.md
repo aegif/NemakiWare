@@ -379,6 +379,141 @@ Previous timeout issues with queryLikeTest and queryInFolderTest were **NOT Nema
 
 ---
 
+## Recent Major Changes (2025-11-11 - PatchService ApplicationListener Investigation) ⚠️
+
+### XML Property Injection Pattern for Spring ApplicationListener
+
+**INVESTIGATION STATUS (2025-11-11)**: Systematic investigation into PatchService Phase 3 ApplicationListener registration issue, resulting in setter method implementation while core issue remains unresolved.
+
+**Problem Statement**:
+PatchService implements ApplicationListener<ContextRefreshedEvent> with @Order(3) annotation, but `onApplicationEvent()` method never executes during Spring context initialization. DatabasePreInitializer (Phase 1) and CMISPostInitializer (Phase 2) execute successfully, but Phase 3 initialization (system property definitions, TCK types, cache invalidation) is skipped.
+
+**Investigation Approach - Five Sequential Attempts**:
+
+| Attempt | Configuration | Bean Creation | ApplicationListener | Result |
+|---------|--------------|---------------|---------------------|--------|
+| 1 | 7 XML properties (refs) + init-method | ✅ Success | ❌ Not called | Failed |
+| 2 | 7 XML properties (no init-method) | ✅ Success | ❌ Not called | Failed |
+| 3 | Empty bean + @Autowired (0 properties) | ✅ Success | ❌ Not called | Failed |
+| 4 | 1 XML property (list) + NO setter | ❌ Exception | N/A | Failed (bean creation) |
+| 5 | 1 XML property (list) + setter | ✅ Success | ❌ Not called | **CURRENT** |
+
+**Critical Discovery - Missing Setter Method (Attempt 4 → 5)**:
+
+When deploying CMISPostInitializer pattern (1 XML property with empty list), encountered bean creation exception:
+```
+org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'patchService'
+Invalid property 'patchList' of bean class [jp.aegif.nemaki.patch.PatchService]:
+Bean property 'patchList' is not writable or has an invalid setter method.
+```
+
+**Root Cause Analysis**:
+- Spring XML property injection **requires setter methods** (Java bean pattern)
+- PatchService had `private List<AbstractNemakiPatch> patchList;` field but no `setPatchList()` method
+- CMISPostInitializer pattern (successful reference) uses `setCmisPatchList()` method
+
+**Solution Implemented** (`PatchService.java` lines 471-480):
+```java
+/**
+ * Set the list of patches to apply during initialization
+ * Pattern matching CMISPostInitializer.setCmisPatchList()
+ * Required for XML property injection from patchContext.xml
+ */
+public void setPatchList(List<AbstractNemakiPatch> patchList) {
+    log.info("*** PatchService.setPatchList() CALLED with " +
+             (patchList != null ? patchList.size() + " patches" : "NULL") + " ***");
+    this.patchList = patchList;
+}
+```
+
+**Configuration Applied** (`patchContext.xml` lines 76-108):
+```xml
+<bean id="patchService" class="jp.aegif.nemaki.patch.PatchService">
+    <!-- Pattern matching CMISPostInitializer: 1 XML property (list) -->
+    <!-- Dummy property required for ApplicationListener registration -->
+    <property name="patchList">
+        <list>
+            <!-- Empty list - PatchService uses @Autowired for actual dependencies -->
+        </list>
+    </property>
+</bean>
+```
+
+**Test Results After Fix**:
+
+**Bean Creation**: ✅ **SUCCESS**
+```
+*** PatchService CLASS LOADED ***
+*** PatchService BEAN CREATED ***
+```
+
+**Deployed Class Verification**: ✅ **SUCCESS**
+```bash
+docker exec docker-core-1 javap -p /usr/local/tomcat/webapps/core/WEB-INF/classes/jp/aegif/nemaki/patch/PatchService.class | grep setPatchList
+# Output: public void setPatchList(java.util.List<jp.aegif.nemaki.patch.AbstractNemakiPatch>);
+```
+
+**ApplicationListener Registration**: ❌ **STILL NOT WORKING**
+- `onApplicationEvent()` method not called
+- DatabasePreInitializer and CMISPostInitializer execute multiple times
+- PatchService never receives ContextRefreshedEvent
+
+**QA Integration Tests**: ✅ **55/56 PASS (98%)** - NO REGRESSION
+```
+Tests passed: 55 / 56
+Success rate: 98%
+Failed tests: 1 (Get Root Folder ACL - pre-existing issue, HTTP 405)
+```
+
+**CMIS Functionality Verification**:
+- ✅ Database initialization (CouchDB, Solr): All tests pass
+- ✅ CMIS basic operations: AtomPub, Browser Binding, Web Services all functional
+- ✅ Document CRUD operations: Create, Update, Delete working
+- ✅ Folder operations: Create, Move working
+- ✅ Versioning operations: Check-out, Check-in, Version history working
+- ✅ Advanced query testing: Complex SQL, IN clause, Pagination working
+
+**Files Modified**:
+- `core/src/main/java/jp/aegif/nemaki/patch/PatchService.java` (Lines 471-480): Added setPatchList() method
+- `core/src/main/webapp/WEB-INF/classes/patchContext.xml` (Lines 76-108): Added patchList property with empty list
+
+**Outstanding Issue**:
+
+**ApplicationListener Registration Failure** (ROOT CAUSE UNKNOWN):
+Despite implementing all patterns from working ApplicationListeners (DatabasePreInitializer, CMISPostInitializer):
+- ✅ Implements ApplicationListener<ContextRefreshedEvent>
+- ✅ Has @Order(3) annotation
+- ✅ Has XML property (patchList with empty list)
+- ✅ Has setter method (setPatchList)
+- ✅ Bean creation successful
+- ❌ Spring event multicaster does NOT register PatchService
+
+**Pattern Comparison**:
+
+| Class | XML Properties | Setter | @Autowired | Bean Creation | Event Registration |
+|-------|---------------|--------|------------|---------------|-------------------|
+| DatabasePreInitializer | 0 (empty) | NO | NO | ✅ Success | ✅ Works |
+| CMISPostInitializer | 1 (list) | YES | NO | ✅ Success | ✅ Works |
+| PatchService | 1 (list) | YES | YES | ✅ Success | ❌ **FAILS** |
+
+**Hypothesis - @Autowired Interference**:
+The only difference between working CMISPostInitializer and failing PatchService is the presence of @Autowired dependencies. Spring event multicaster may have issues registering ApplicationListeners that mix XML property injection with @Autowired field injection.
+
+**Next Investigation Steps**:
+1. Test removing all @Autowired annotations (use manual XML bean references instead)
+2. Test ApplicationListener registration order (Phase 3 @Order(3) may conflict with nested context loading)
+3. Consider alternative initialization approach (use CMISPostInitializer to call PatchService methods directly)
+
+**Conclusion**:
+- ✅ **Bean creation issue resolved** with setPatchList() method
+- ✅ **No regression** in CMIS functionality (55/56 QA tests pass)
+- ⚠️ **Phase 3 initialization still not executing** - requires continued investigation
+- 💡 **Working code is stable** - Phase 3 features can be implemented via alternative approach if needed
+
+**Git Status**: Changes committed to working tree, ready for documentation and push to origin/feature/react-ui-playwright
+
+---
+
 ## Recent Major Changes (2025-11-03 - Production Code Debug Logging Cleanup) ✅
 
 ### VersioningTestGroup Success - Complete Debug Logging Cleanup

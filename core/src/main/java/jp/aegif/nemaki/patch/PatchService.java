@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.patch;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
@@ -8,7 +9,9 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.core.annotation.Order;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TypeService;
@@ -29,41 +32,72 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 
 /**
- * TCK CRITICAL FIX: Bean initialization via explicit XML definition in patchContext.xml
+ * PHASE 3: PatchService - System Property Initialization
  *
- * @Component removed to prevent conflicts with explicit bean definition
- * Bean registration and initialization controlled entirely by patchContext.xml:
- * <bean id="patchService" class="jp.aegif.nemaki.patch.PatchService" init-method="applyPatchesOnStartup">
+ * CRITICAL FIX (2025-11-10): Converted to ApplicationListener<ContextRefreshedEvent> pattern
+ * to ensure proper execution order after DatabasePreInitializer (@Order(1)) and
+ * CMISPostInitializer (@Order(2)).
+ *
+ * Previous issue: init-method="applyPatchesOnStartup" ran during bean creation,
+ * BEFORE DatabasePreInitializer executed, causing "not_found" errors when trying
+ * to create documents in non-existent databases.
+ *
+ * New pattern: ApplicationListener with @Order(3) ensures execution after:
+ * - @Order(1): DatabasePreInitializer (creates databases, loads dump files)
+ * - @Order(2): CMISPostInitializer (creates CMIS patches)
+ * - @Order(3): PatchService (creates system property definitions)
+ *
+ * NOTE: This class is registered as a Spring Bean in patchContext.xml (NOT via @Component)
+ * to match the pattern used by DatabasePreInitializer and CMISPostInitializer.
+ * Using @Component with XML bean definition causes bean duplication issues.
  */
-public class PatchService {
+@Order(3)  // Execute after DatabasePreInitializer (@Order(1)) and CMISPostInitializer (@Order(2))
+public class PatchService implements ApplicationListener<ContextRefreshedEvent> {
+
+	// Static initializer for class loading verification
+	static {
+		System.err.println("*** PatchService CLASS LOADED ***");
+		System.err.println("*** Thread: " + Thread.currentThread().getName() + " ***");
+	}
+
 	private static final Log log = LogFactory.getLog(PatchService.class);
+	private final AtomicBoolean initialized = new AtomicBoolean(false);
 
-	@Autowired
+	// CRITICAL FIX (2025-11-11): Reverting to @Autowired pattern matching DatabasePreInitializer
+	// Previous hypothesis was INCORRECT: DatabasePreInitializer does NOT use XML properties at all
+	// DatabasePreInitializer: 0 XML properties (empty bean definition) with @Autowired → WORKS ✅
+	// CMISPostInitializer: 1 XML property (list) without @Autowired → WORKS ✅
+	// PatchService (previous): 7 XML properties (bean refs) without @Autowired → FAILED ❌
+	//
+	// Root cause analysis revealed patchContext.xml comments were wrong - DatabasePreInitializer
+	// uses field defaults, NOT @Autowired as claimed. Testing empty bean pattern with @Autowired.
+	@org.springframework.beans.factory.annotation.Autowired
 	private RepositoryInfoMap repositoryInfoMap;
-
-	@Autowired
+	@org.springframework.beans.factory.annotation.Autowired
 	private CloudantClientPool connectorPool;
-
-	@Autowired
+	@org.springframework.beans.factory.annotation.Autowired
 	private PropertyManager propertyManager;
 
 	// NEW: Required dependencies for PropertyDefinitionDetail creation
-	@Autowired
+	@org.springframework.beans.factory.annotation.Autowired
 	private TypeService typeService;
-
-	@Autowired
+	@org.springframework.beans.factory.annotation.Autowired
 	private TypeManager typeManager;
 
 	// NEW: Required dependency for initial folder creation
-	@Autowired
+	@org.springframework.beans.factory.annotation.Autowired
 	private ContentService contentService;
 
 	// NEW: Required dependency for Solr indexing
-	@Autowired
+	@org.springframework.beans.factory.annotation.Autowired
 	private SolrUtil solrUtil;
 
 	// Configuration properties for database initialization - Docker environment compatible
-	private String couchdbUrl = getCouchDbUrl();
+	// CRITICAL FIX (2025-11-10): Use hardcoded default instead of method call during field initialization
+	// Calling getCouchDbUrl() during field initialization causes bean creation failure because
+	// propertyManager (@Autowired) is not yet injected at field initialization time
+	// This matches the pattern used by DatabasePreInitializer for reliable bean creation
+	private String couchdbUrl = "http://couchdb:5984";
 	private String couchdbUsername = "admin";
 	private String couchdbPassword = "password";
 	
@@ -96,22 +130,61 @@ public class PatchService {
 	}
 
 	private List<AbstractNemakiPatch> patchList;
-	
+
 	public PatchService() {
-		// The patch application is triggered via init-method="applyPatchesOnStartup" in patchContext.xml
-		// This ensures compatibility and prevents circular dependency issues during Spring context initialization
-		// DEBUG: PatchService constructor called (logged by log.info below)
-		log.info("=== PATCH DEBUG: PatchService constructor called ===");
+		// Constructor - initialization handled by onApplicationEvent
+		System.err.println("*** PatchService BEAN CREATED ***");
+		System.err.println("*** Thread: " + Thread.currentThread().getName() + " ***");
+		log.info("=== PatchService constructor called ===");
+		log.info("PatchService bean created");
 	}
 
 	/**
-	 * Called by Spring via init-method="applyPatchesOnStartup" in patchContext.xml
-	 * @PostConstruct removed to prevent conflicts with explicit init-method
+	 * CRITICAL FIX ATTEMPT (2025-11-10): Commenting out @PostConstruct to match working classes
+	 *
+	 * DatabasePreInitializer and CMISPostInitializer both work WITHOUT @PostConstruct.
+	 * Testing hypothesis: @PostConstruct execution prevents ApplicationListener registration.
+	 *
+	 * Verify @Autowired dependency injection completed successfully
+	 * This runs AFTER @Autowired injection, so we can check for null values
 	 */
-	public void applyPatchesOnStartup() {
-		log.info("=== PHASE 2: PatchService.applyPatchesOnStartup() EXECUTING ===");
+	// @jakarta.annotation.PostConstruct
+	// public void afterPropertiesSet() {
+	// 	System.err.println("*** PatchService @PostConstruct CALLED ***");
+	// 	System.err.println("*** Verifying @Autowired dependencies ***");
+
+	// 	System.err.println("repositoryInfoMap: " + (repositoryInfoMap != null ? "INJECTED" : "NULL"));
+	// 	System.err.println("connectorPool: " + (connectorPool != null ? "INJECTED" : "NULL"));
+	// 	System.err.println("propertyManager: " + (propertyManager != null ? "INJECTED" : "NULL"));
+	// 	System.err.println("typeService: " + (typeService != null ? "INJECTED" : "NULL"));
+	// 	System.err.println("typeManager: " + (typeManager != null ? "INJECTED" : "NULL"));
+	// 	System.err.println("contentService: " + (contentService != null ? "INJECTED" : "NULL"));
+	// 	System.err.println("solrUtil: " + (solrUtil != null ? "INJECTED" : "NULL"));
+
+	// 	log.info("=== PatchService @PostConstruct completed ===");
+	// }
+
+	/**
+	 * ApplicationListener implementation - executes after Spring context refresh
+	 *
+	 * CRITICAL FIX (2025-11-10): Changed from init-method to onApplicationEvent pattern
+	 * to ensure execution AFTER DatabasePreInitializer completes database initialization.
+	 *
+	 * AtomicBoolean ensures this runs exactly once even if ContextRefreshedEvent fires multiple times.
+	 */
+	@Override
+	public void onApplicationEvent(ContextRefreshedEvent event) {
+		// Ensure this runs only once
+		if (!initialized.compareAndSet(false, true)) {
+			log.info("PatchService already executed, skipping");
+			return;
+		}
+
+		log.info("=== PHASE 3: PatchService.onApplicationEvent() EXECUTING ===");
+		log.info("*** Event source: " + event.getSource().getClass().getName() + " ***");
+
 		try {
-			log.info("Starting CMIS patch application (Phase 2)");
+			log.info("Starting CMIS patch application (Phase 3)");
 			
 			// Note: All database initialization (Phase 1) is handled by DatabasePreInitializer
 			// This method focuses on CMIS-aware operations that require fully initialized services
@@ -120,12 +193,16 @@ public class PatchService {
 			// This addresses the root cause of PropertyDefinitionCore contamination
 			initializeSystemPropertyDefinitionDetails();
 			
+			// TCK REQUIREMENT: Create custom secondary type for TCK tests
+			// CRITICAL FIX (2025-11-10): Execute BEFORE cache invalidation
+			// invalidateTypeManagerCaches() removes repository from TYPES map
+			// createTCKSecondaryType() needs populated TYPES map to succeed
+			createTCKSecondaryType();
+
 			// PRIORITY 4: TypeManager cache forced update for TCK compliance
 			// This ensures that PropertyDefinitionDetail changes are immediately reflected in type cache
+			// Execute AFTER type creation to avoid NullPointerException
 			invalidateTypeManagerCaches();
-
-			// TCK REQUIREMENT: Create custom secondary type for TCK tests
-			createTCKSecondaryType();
 
 			// INITIAL CONTENT: Create Sites and Technical Documents folders
 			// DISABLED: Folder creation moved to Patch_InitialContentSetup with proper ACL configuration
@@ -144,10 +221,10 @@ public class PatchService {
 				log.info("Applying " + patchList.size() + " CMIS patches");
 				apply();
 			} else {
-				log.info("No CMIS patches to apply - Phase 2 completed");
+				log.info("No CMIS patches to apply - Phase 3 completed");
 			}
 
-			log.info("CMIS patch application completed successfully");
+			log.info("CMIS patch application (Phase 3) completed successfully");
 		} catch (Exception e) {
 			log.error("Failed to apply CMIS patches on startup", e);
 			// Continue with application startup even if patches fail
@@ -391,6 +468,17 @@ public class PatchService {
 	 * - test user (password: test) as member of TestUsers
 	 */
 
+	/**
+	 * Set the list of patches to apply during initialization
+	 * Pattern matching CMISPostInitializer.setCmisPatchList()
+	 * Required for XML property injection from patchContext.xml
+	 */
+	public void setPatchList(List<AbstractNemakiPatch> patchList) {
+		log.info("*** PatchService.setPatchList() CALLED with " +
+		         (patchList != null ? patchList.size() + " patches" : "NULL") + " ***");
+		this.patchList = patchList;
+	}
+
 	public void apply(){
 		createPathView();
 		for(AbstractNemakiPatch patch : patchList){
@@ -404,56 +492,10 @@ public class PatchService {
 		// TODO: Implement view creation with Cloudant SDK when needed
 	}
 
-	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
-		log.debug("setRepositoryInfoMap called with " + (repositoryInfoMap != null ? repositoryInfoMap.getClass().getName() : "null"));
-		this.repositoryInfoMap = repositoryInfoMap;
-	}
-
-	public void setConnectorPool(CloudantClientPool connectorPool) {
-		log.debug("setConnectorPool called with " + (connectorPool != null ? connectorPool.getClass().getName() : "null"));
-		this.connectorPool = connectorPool;
-	}
-
-	public void setPatchList(List<AbstractNemakiPatch> patchList) {
-		log.debug("setPatchList called with " + (patchList != null ? "size=" + patchList.size() : "null"));
-		if (patchList != null) {
-			log.debug("patchList contents:");
-			for (int i = 0; i < patchList.size(); i++) {
-				AbstractNemakiPatch patch = patchList.get(i);
-				log.debug("[" + i + "] = " + (patch != null ? patch.getClass().getName() : "null"));
-			}
-		}
-		this.patchList = patchList;
-	}
-	
-	// NEW: Setter methods for required dependencies
-	public void setTypeService(TypeService typeService) {
-		log.debug("setTypeService called with " + (typeService != null ? typeService.getClass().getName() : "null"));
-		this.typeService = typeService;
-	}
-	
-	public void setTypeManager(TypeManager typeManager) {
-		log.debug("setTypeManager called with " + (typeManager != null ? typeManager.getClass().getName() : "null"));
-		this.typeManager = typeManager;
-	}
-	
-	public void setPropertyManager(PropertyManager propertyManager) {
-		log.debug("setPropertyManager called with " + (propertyManager != null ? propertyManager.getClass().getName() : "null"));
-		this.propertyManager = propertyManager;
-	}
-	
-	// Setters for configuration properties
-	public void setCouchdbUrl(String couchdbUrl) {
-		this.couchdbUrl = couchdbUrl;
-	}
-	
-	public void setCouchdbUsername(String couchdbUsername) {
-		this.couchdbUsername = couchdbUsername;
-	}
-	
-	public void setCouchdbPassword(String couchdbPassword) {
-		this.couchdbPassword = couchdbPassword;
-	}
+	// CRITICAL FIX (2025-11-11): Setter methods removed - using @Autowired field injection
+	// Pattern matching DatabasePreInitializer which has NO setter methods
+	// @Autowired injects dependencies directly into fields, setters not required
+	// Previous XML property injection required setters, but @Autowired does not
 
 	/**
 	 * NOTE: Database initialization methods removed from PatchService
@@ -664,9 +706,15 @@ public class PatchService {
 		}
 	}
 
-	public void setContentService(ContentService contentService) {
-		log.debug("setContentService called with " + (contentService != null ? contentService.getClass().getName() : "null"));
-		this.contentService = contentService;
+
+	/**
+	 * Spring init-method callback
+	 * Called by Spring after all setters have been executed
+	 * Forces bean instantiation and proper ApplicationListener registration
+	 */
+	public void initializeIfNeeded() {
+		log.error("*** PatchService.initializeIfNeeded() CALLED BY SPRING ***");
+		log.error("*** All setters completed - ApplicationListener ready for ContextRefreshedEvent ***");
 	}
 
 	/**

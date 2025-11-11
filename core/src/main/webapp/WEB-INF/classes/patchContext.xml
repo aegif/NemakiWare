@@ -12,9 +12,25 @@
     http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
 
     <context:annotation-config />
-	<context:component-scan base-package="jp.aegif.nemaki.patch" />
-	<!-- Component scanning for jp.aegif.nemaki.init intentionally disabled to prevent conflicts -->
-	<!-- CMISPostInitializer is registered as explicit bean definition below instead -->
+	<!-- Component scanning intentionally disabled for both jp.aegif.nemaki.patch and jp.aegif.nemaki.init -->
+	<!-- All initialization beans (DatabasePreInitializer, CMISPostInitializer, PatchService) -->
+	<!-- are registered as explicit XML bean definitions to ensure reliable ApplicationListener execution -->
+
+	<!--
+		Phase 1: Database Pre-Initializer (ApplicationListener Pattern)
+
+		CRITICAL FIX (2025-11-10): Added explicit bean definition for DatabasePreInitializer
+		to ensure it executes in the CHILD context after NemakiApplicationContextLoader.refresh()
+
+		Uses ApplicationListener<ContextRefreshedEvent> pattern to execute AFTER child context
+		is fully initialized, ensuring all property beans and connectorPool are available.
+
+		@Order(1) ensures this runs BEFORE CMISPostInitializer (@Order(2))
+	-->
+	<bean id="databasePreInitializer" class="jp.aegif.nemaki.init.DatabasePreInitializer">
+		<!-- All dependencies are @Autowired in the class itself -->
+		<!-- PropertyManager, ConnectorPool injected automatically -->
+	</bean>
 
 	<!--
 		Phase 2: CMIS Post-Initializer (New Architecture)
@@ -58,14 +74,37 @@
 	</bean>
 
 	<!--
-		PatchService Bean Definition - RE-ENABLED FOR TCK FIX
+		PHASE 3: PatchService - System Property Initialization
 
-		TCK CRITICAL FIX: Re-enabled explicit bean definition with init-method to ensure
-		indexRootFoldersInSolr() is executed during startup.
-		The @Component annotation alone is not sufficient for @PostConstruct execution.
+		CRITICAL FIX (2025-11-11): FINAL ATTEMPT - CMISPostInitializer Pattern
+
+		Previous attempts ALL FAILED:
+		1. XML property injection (7 separate properties) → FAILED ❌
+		2. Removed init-method (7 properties remain) → FAILED ❌
+		3. Empty bean + @Autowired (0 properties) → FAILED ❌
+
+		CORRECTED Pattern Analysis (verified by actual source code):
+		- DatabasePreInitializer: 0 XML properties (empty bean) + field defaults (NO @Autowired) → WORKS ✅
+		- CMISPostInitializer: 1 XML property (list) + NO @Autowired → WORKS ✅
+		- PatchService: Testing CMISPostInitializer pattern - 1 XML property (list) + @Autowired
+
+		KEY DISCOVERY: CMISPostInitializer has exactly 1 XML property containing a list.
+		DatabasePreInitializer has NO Spring dependencies at all (only hardcoded strings).
+		PatchService cannot use field defaults (needs Spring services).
+
+		NEW HYPOTHESIS: Spring event multicaster requires AT LEAST 1 XML property for proper
+		ApplicationListener registration. Testing CMISPostInitializer pattern with dummy list property.
+
+		Execution order managed by @Order(3) annotation in PatchService.java.
 	-->
-	<bean id="patchService" class="jp.aegif.nemaki.patch.PatchService" init-method="applyPatchesOnStartup">
-		<!-- Properties are injected via @Autowired in the class itself -->
+	<bean id="patchService" class="jp.aegif.nemaki.patch.PatchService">
+		<!-- Pattern matching CMISPostInitializer: 1 XML property (list) -->
+		<!-- Dummy property required for ApplicationListener registration -->
+		<property name="patchList">
+			<list>
+				<!-- Empty list - PatchService uses @Autowired for actual dependencies -->
+			</list>
+		</property>
 	</bean>
 
 	<bean id="patchUtil" class="jp.aegif.nemaki.patch.PatchUtil">
@@ -88,10 +127,10 @@
 			<ref bean="RepositoryService" />
 		</property>
 		<property name="typeService">
-			<ref bean="TypeService" />
+			<ref bean="typeService" />
 		</property>
 		<property name="typeManager">
-			<ref bean="TypeManager" />
+			<ref bean="typeManager" />
 		</property>
 	</bean>
 

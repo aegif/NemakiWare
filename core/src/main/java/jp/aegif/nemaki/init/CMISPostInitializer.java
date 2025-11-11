@@ -28,11 +28,23 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.core.annotation.Order;
 
 import jp.aegif.nemaki.patch.AbstractNemakiPatch;
 
 /**
- * Phase 2 CMIS Post-Initializer for NemakiWare
+ * PHASE 2: CMISPostInitializer - CMIS Patch Application
+ *
+ * CRITICAL FIX (2025-11-10): Added @Order(2) annotation to ensure proper execution order
+ *
+ * Execution order:
+ * - @Order(1): DatabasePreInitializer (creates databases, loads dump files)
+ * - @Order(2): CMISPostInitializer (applies CMIS patches) ← THIS CLASS
+ * - @Order(3): PatchService (creates system property definitions)
+ *
+ * Previous issue: Without @Order annotation, Spring did not enforce execution order,
+ * causing PatchService to execute before CMISPostInitializer completed, resulting in
+ * NullPointerException when trying to access uninitialized TypeManager.
  *
  * CRITICAL FIX: Execution timing changed from InitializingBean to ApplicationListener<ContextRefreshedEvent>
  *
@@ -62,6 +74,7 @@ import jp.aegif.nemaki.patch.AbstractNemakiPatch;
  * NOTE: This class is registered as a Spring Bean in patchContext.xml (NOT via @Component)
  * to allow proper dependency injection of cmisPatchList property.
  */
+@Order(2)  // Execute after DatabasePreInitializer (@Order(1)) and before PatchService (@Order(3))
 public class CMISPostInitializer implements ApplicationListener<ContextRefreshedEvent> {
 
     private static final Log log = LogFactory.getLog(CMISPostInitializer.class);
