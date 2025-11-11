@@ -185,8 +185,6 @@ public class ObjectServiceImpl implements ObjectService {
 	@Override
 	public ContentStream getContentStream(CallContext callContext, String repositoryId, String objectId,
 			String streamId, BigInteger offset, BigInteger length) {
-
-		log.error("DEBUG TRACE: getContentStream() called - objectId=" + objectId + ", streamId=" + streamId);
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
@@ -583,11 +581,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 		// CRITICAL DEBUG: Always log contentStream status at ERROR level
 		Object nameProperty = properties.getProperties().get("cmis:name");
-		log.error("DEBUG TRACE: ObjectServiceImpl.createDocument - DocumentName=" + nameProperty +
-			", ContentStream=" + (contentStream != null ? "PROVIDED" : "NULL"));
 		if (contentStream != null) {
-			log.error("DEBUG TRACE: ContentStream details - Length=" + contentStream.getLength() +
-				", MimeType=" + contentStream.getMimeType() + ", FileName=" + contentStream.getFileName());
 		}
 
 		if (log.isDebugEnabled()) {
