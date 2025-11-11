@@ -1098,10 +1098,6 @@ public class TypeManagerImpl implements TypeManager {
 				log.info("DEBUG: Initial property keys: " + initialProps.keySet());
 			}
 		} catch (Exception e) {
-			log.error("*** FLOW DEBUG: Exception in initial setup: " + e.getMessage() + " ***", e);
-			if (log.isDebugEnabled()) {
-				log.debug("*** FLOW DEBUG: Exception in initial setup: " + e.getMessage() + " ***");
-			}
 			throw e;
 		}
 		
@@ -1755,6 +1751,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	private DocumentTypeDefinitionImpl buildDocumentTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
+
 		// CRITICAL FIX: Ensure TYPES is initialized when creating types post-startup
 		Map<String, TypeDefinitionContainer>types = TYPES != null ? TYPES.get(repositoryId) : null;
 		if (types == null && TYPES != null && !TYPES.containsKey(repositoryId)) {
@@ -1805,6 +1802,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// They will inherit them from their parent type
 		if (isBaseType) {
 			addDocumentPropertyDefinitions(repositoryId, type, false);
+
 		}
 
 		// Add specific attributes
@@ -1822,6 +1820,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	private FolderTypeDefinitionImpl buildFolderTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
+
 		// CRITICAL FIX: Ensure TYPES is initialized when creating types post-startup
 		Map<String, TypeDefinitionContainer>types = TYPES != null ? TYPES.get(repositoryId) : null;
 		if (types == null && TYPES != null && !TYPES.containsKey(repositoryId)) {
