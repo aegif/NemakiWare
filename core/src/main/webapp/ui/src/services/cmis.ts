@@ -1454,9 +1454,9 @@ export class CMISService {
               // CMIS Browser Binding ACL response structure
               const aces = response.aces || [];
               const permissions = aces.map((ace: any) => ({
-                principalId: ace.principal?.principalId || ace.principalId,
+                principalId: ace.principal?.id || ace.principalId,
                 permissions: ace.permissions || [],
-                direct: ace.isDirect !== false // Default to true if not specified
+                direct: ace.direct !== false // Default to true if not specified
               }));
 
               const acl: ACL = {
