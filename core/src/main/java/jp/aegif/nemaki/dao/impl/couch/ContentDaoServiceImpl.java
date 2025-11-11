@@ -2450,7 +2450,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						log.error("Successfully retrieved binary attachment stream for: " + attachmentId);
 
 						// DEBUG: Log retrieved content details
-						log.error("=== ATTACHMENT RETRIEVAL DEBUG ===");
 						log.error("Attachment ID: " + attachmentId);
 						try {
 							// Try to peek at the content without consuming it
@@ -2728,7 +2727,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						contentStream.getMimeType() : "application/octet-stream";
 
 					// DEBUG: Log content details
-					log.error("=== ATTACHMENT CREATION DEBUG ===");
 					log.error("Document ID: " + documentId);
 					log.error("Content Type: " + contentType);
 					try {
