@@ -18,12 +18,62 @@
 	<!-- CMISPostInitializer is registered as explicit bean definition below instead -->
 
 	<!--
+		PHASE 3: PatchService - ApplicationListener via Explicit Bean Definition
+
+		Similar to CMISPostInitializer, PatchService is registered as an explicit bean
+		to ensure proper ApplicationListener registration in the child context.
+		@Component scanning alone does not guarantee ApplicationListener registration
+		in NemakiApplicationContextLoader's child context.
+
+		Execution order managed by Spring's @Order(3) annotation in PatchService.java.
+
+		BEAN ORDER TEST (2025-11-11): Moved PatchService BEFORE CMISPostInitializer to test
+		if bean definition order affects ApplicationListener registration.
+	-->
+	<!--
+		CRITICAL DISCOVERY (2025-11-10): Spring does not automatically create beans in child context
+		unless they have properties or init-method. CMISPostInitializer works because it has
+		cmisPatchList property. Adding init-method="initializeIfNeeded" to force bean creation.
+
+		COMPLETE FIX: init-method forces bean instantiation, properties provide required dependencies
+
+		EXPERIMENTAL FIX (2025-11-11): Temporarily removing init-method to test if it prevents
+		ApplicationListener registration. Properties alone should be sufficient to force bean creation.
+	-->
+	<bean id="patchService" class="jp.aegif.nemaki.patch.PatchService">
+		<property name="repositoryInfoMap"><ref bean="repositoryInfoMap" /></property>
+		<property name="connectorPool"><ref bean="connectorPool" /></property>
+		<property name="propertyManager"><ref bean="propertyManager" /></property>
+		<property name="typeService"><ref bean="typeService" /></property>
+		<property name="typeManager"><ref bean="TypeManager" /></property>
+		<property name="contentService"><ref bean="ContentService" /></property>
+		<property name="solrUtil"><ref bean="solrUtil" /></property>
+		<!-- EXPERIMENTAL FIX (2025-11-11): Add List with INLINE bean to match CMISPostInitializer pattern -->
+		<!-- CMISPostInitializer uses inline <bean class="..."> elements, not <ref bean="..."> -->
+		<!-- Testing if inline bean definition is required for ApplicationListener registration -->
+		<!-- NOTE: These patches will NOT be executed (apply() requires init-method or explicit call) -->
+		<property name="patchList">
+			<list>
+				<!-- Using inline bean definition instead of reference to match CMISPostInitializer pattern -->
+				<bean class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+			</list>
+		</property>
+	</bean>
+
+	<!--
 		Phase 2: CMIS Post-Initializer (New Architecture)
 
 		CRITICAL FIX: Changed from InitializingBean to ContextRefreshedEvent
 		Uses @EventListener to execute CMIS operations AFTER entire Spring context
 		is fully initialized, ensuring TypeManager and all services are operational.
 		This prevents "TYPES is empty" errors during patch execution.
+
+		BEAN ORDER TEST (2025-11-11): Moved AFTER PatchService to test if bean definition
+		order affects ApplicationListener registration.
 	-->
 	<bean id="cmisPostInitializer" class="jp.aegif.nemaki.init.CMISPostInitializer">
 		<property name="cmisPatchList">
@@ -55,42 +105,6 @@
 					</property>
 				</bean>
 			</list>
-		</property>
-	</bean>
-
-	<!--
-		PHASE 3: PatchService - ApplicationListener via Explicit Bean Definition
-
-		Similar to CMISPostInitializer, PatchService is registered as an explicit bean
-		to ensure proper ApplicationListener registration in the child context.
-		@Component scanning alone does not guarantee ApplicationListener registration
-		in NemakiApplicationContextLoader's child context.
-
-		Execution order managed by Spring's @Order(3) annotation in PatchService.java.
-	-->
-	<!--
-		CRITICAL DISCOVERY (2025-11-10): Spring does not automatically create beans in child context
-		unless they have properties or init-method. CMISPostInitializer works because it has
-		cmisPatchList property. Adding init-method="initializeIfNeeded" to force bean creation.
-
-		COMPLETE FIX: init-method forces bean instantiation, properties provide required dependencies
-
-		EXPERIMENTAL FIX (2025-11-11): Temporarily removing init-method to test if it prevents
-		ApplicationListener registration. Properties alone should be sufficient to force bean creation.
-	-->
-	<bean id="patchService" class="jp.aegif.nemaki.patch.PatchService">
-		<property name="repositoryInfoMap"><ref bean="repositoryInfoMap" /></property>
-		<property name="connectorPool"><ref bean="connectorPool" /></property>
-		<property name="propertyManager"><ref bean="propertyManager" /></property>
-		<property name="typeService"><ref bean="typeService" /></property>
-		<property name="typeManager"><ref bean="TypeManager" /></property>
-		<property name="contentService"><ref bean="ContentService" /></property>
-		<property name="solrUtil"><ref bean="solrUtil" /></property>
-		<!-- EXPERIMENTAL FIX (2025-11-11): Add empty List property to trigger bean creation in child context -->
-		<!-- CMISPostInitializer uses List<Patch> property which triggers bean creation without init-method -->
-		<!-- Testing if List property type is the key to proper ApplicationListener registration -->
-		<property name="patchList">
-			<list />
 		</property>
 	</bean>
 

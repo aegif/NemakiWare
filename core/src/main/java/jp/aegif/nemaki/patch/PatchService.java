@@ -102,6 +102,7 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	public PatchService() {
 		// The patch application is triggered via init-method="applyPatchesOnStartup" in patchContext.xml
 		// This ensures compatibility and prevents circular dependency issues during Spring context initialization
+		log.error("!!! TEMPORARY DEBUG: PatchService constructor called - bean creation successful !!!");
 		if (log.isDebugEnabled()) {
 			log.debug("PatchService constructor called");
 		}
@@ -113,6 +114,10 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	 */
 	@Override
 	public void onApplicationEvent(ContextRefreshedEvent event) {
+		// CRITICAL DEBUG: This should appear if ApplicationListener is properly registered
+		log.error("!!! TEMPORARY DEBUG: PatchService.onApplicationEvent() CALLED !!!");
+		log.error("!!! TEMPORARY DEBUG: Event source: " + event.getSource().getClass().getName() + " !!!");
+
 		// Idempotency check: Execute only once despite multiple ContextRefreshedEvent firings
 		if (!initialized.compareAndSet(false, true)) {
 			log.warn("PatchService.onApplicationEvent() called but already executed - skipping duplicate");
@@ -435,11 +440,13 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	}
 
 	public void setPatchList(List<AbstractNemakiPatch> patchList) {
+		log.error("!!! TEMPORARY DEBUG: setPatchList called with " + (patchList != null ? "size=" + patchList.size() : "null") + " !!!");
 		log.debug("setPatchList called with " + (patchList != null ? "size=" + patchList.size() : "null"));
 		if (patchList != null) {
 			log.debug("patchList contents:");
 			for (int i = 0; i < patchList.size(); i++) {
 				AbstractNemakiPatch patch = patchList.get(i);
+				log.error("!!! TEMPORARY DEBUG: patchList[" + i + "] = " + (patch != null ? patch.getClass().getName() : "null") + " !!!");
 				log.debug("[" + i + "] = " + (patch != null ? patch.getClass().getName() : "null"));
 			}
 		}
