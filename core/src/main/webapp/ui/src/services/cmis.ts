@@ -1435,7 +1435,8 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       // CMIS Browser Binding ACL: GET with cmisselector=acl
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}?objectId=${objectId}&cmisselector=acl`, true);
+      // CRITICAL FIX (2025-11-11): ObjectId must be in URL path, not query parameter
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/${objectId}?cmisselector=acl`, true);
       xhr.setRequestHeader('Accept', 'application/json');
 
       const headers = this.getAuthHeaders();
