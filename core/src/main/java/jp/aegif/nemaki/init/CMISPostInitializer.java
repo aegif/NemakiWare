@@ -101,16 +101,16 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
      */
     @Override
     public void onApplicationEvent(ContextRefreshedEvent event) {
-        log.error("*** CMISPostInitializer.onApplicationEvent() CALLED ***");
-        log.error("*** Event source: " + event.getSource().getClass().getName() + " ***");
-
         // Ensure this runs only once
         if (!initialized.compareAndSet(false, true)) {
             return;
         }
 
-        log.error("=== CMIS POST-INITIALIZATION (Phase 2) STARTED ===");
-        log.error("Triggered by ContextRefreshedEvent - All Spring services are now fully initialized");
+        if (log.isDebugEnabled()) {
+            log.debug("CMISPostInitializer.onApplicationEvent() called, event source: " + event.getSource().getClass().getName());
+        }
+
+        log.info("=== PHASE 2: CMIS POST-INITIALIZATION STARTED ===");
 
         try {
             // Phase 2: CMIS-specific patches that require running services
@@ -118,13 +118,13 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
             // Database-level operations should be handled by DatabasePreInitializer (Phase 1)
 
             if (cmisPatchList != null && !cmisPatchList.isEmpty()) {
-                log.error("Applying " + cmisPatchList.size() + " CMIS patches (Phase 2 only)");
+                log.info("Applying " + cmisPatchList.size() + " CMIS patches");
                 applyCMISPatches();
             } else {
-                log.error("No CMIS patches to apply in Phase 2");
+                log.info("No CMIS patches to apply");
             }
 
-            log.error("=== CMIS POST-INITIALIZATION (Phase 2) COMPLETED ===");
+            log.info("=== PHASE 2: CMIS POST-INITIALIZATION COMPLETED ===");
 
         } catch (Exception e) {
             log.error("Phase 2 CMIS post-initialization failed", e);
@@ -139,9 +139,13 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
     private void applyCMISPatches() {
         for (AbstractNemakiPatch patch : cmisPatchList) {
             try {
-                log.error("Applying CMIS patch: " + patch.getClass().getSimpleName());
+                if (log.isDebugEnabled()) {
+                    log.debug("Applying CMIS patch: " + patch.getClass().getSimpleName());
+                }
                 patch.apply();
-                log.error("Successfully applied CMIS patch: " + patch.getClass().getSimpleName());
+                if (log.isDebugEnabled()) {
+                    log.debug("Successfully applied CMIS patch: " + patch.getClass().getSimpleName());
+                }
             } catch (Exception e) {
                 log.error("Failed to apply CMIS patch: " + patch.getClass().getSimpleName(), e);
                 // Continue with other patches even if one fails
@@ -153,8 +157,10 @@ public class CMISPostInitializer implements ApplicationListener<ContextRefreshed
      * Set the list of CMIS patches to apply during initialization
      */
     public void setCmisPatchList(List<AbstractNemakiPatch> cmisPatchList) {
-        log.error("*** CMISPostInitializer.setCmisPatchList() CALLED with " +
-                 (cmisPatchList != null ? cmisPatchList.size() + " patches" : "NULL") + " ***");
+        if (log.isDebugEnabled()) {
+            log.debug("setCmisPatchList called with " +
+                     (cmisPatchList != null ? cmisPatchList.size() + " patches" : "null"));
+        }
         this.cmisPatchList = cmisPatchList;
     }
 }

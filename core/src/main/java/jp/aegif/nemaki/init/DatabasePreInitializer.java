@@ -28,25 +28,23 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
 
 /**
  * Phase 1 Database Pre-Initializer for NemakiWare
  *
  * CRITICAL FIX (2025-11-10): Converted to ApplicationListener<ContextRefreshedEvent>
- * and registered as explicit XML bean in patchContext.xml (NOT via @Component annotation)
  *
  * Problem History:
  * 1. Original: XML bean in databaseInitContext.xml - destroyed by NemakiApplicationContextLoader.refresh()
  * 2. Attempt 1: @Component with @PostConstruct - @PostConstruct never executed in child context
- * 3. Attempt 2: @Component with ApplicationListener - @Component conflicted with XML bean definition
- * 4. Solution: Explicit XML bean definition in patchContext.xml - same pattern as CMISPostInitializer
+ * 3. Solution: ApplicationListener<ContextRefreshedEvent> - same pattern as CMISPostInitializer
  *
- * Why Explicit XML Bean Definition Works:
+ * Why ApplicationListener Works:
  * - ContextRefreshedEvent fires AFTER entire Spring context is fully initialized
- * - Explicit XML bean definition ensures creation in correct context (child context after refresh)
+ * - Works reliably with both XML bean definitions and @Component annotation
  * - Event-driven pattern guaranteed to execute after context refresh
  * - AtomicBoolean ensures single execution even if event fires multiple times
- * - NO @Component annotation to avoid conflicts with XML bean definition
  *
  * Phase 1 Operations (DB Direct):
  * - Create databases if they don't exist
@@ -59,18 +57,12 @@ import org.springframework.core.annotation.Order;
  *
  * This phase executes when ContextRefreshedEvent fires, ensuring database
  * prerequisites are met before CMIS services require them.
- *
- * NOTE: This class is registered as a Spring Bean in patchContext.xml (NOT via @Component)
  */
+@Component
 @Order(1)  // Execute before other beans
 public class DatabasePreInitializer implements ApplicationListener<ContextRefreshedEvent> {
 
     private static final Log log = LogFactory.getLog(DatabasePreInitializer.class);
-
-    // Static initializer to track class loading
-    static {
-        System.err.println("*** DatabasePreInitializer CLASS LOADED ***");
-    }
 
     // AtomicBoolean to ensure database initialization happens only once even if ContextRefreshedEvent fires multiple times
     private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -82,11 +74,9 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
 
     public DatabasePreInitializer() {
         // Constructor - initialization handled by onApplicationEvent
-        System.err.println("*** DatabasePreInitializer BEAN CREATED ***");
-        System.err.println("*** Thread: " + Thread.currentThread().getName() + " ***");
         log.info("DatabasePreInitializer bean created");
     }
-    
+
     /**
      * Execute Phase 1 database initialization
      *
@@ -105,20 +95,15 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
      */
     @Override
     public void onApplicationEvent(ContextRefreshedEvent event) {
-        System.err.println("*** DatabasePreInitializer.onApplicationEvent() CALLED ***");
-        System.err.println("*** Event source: " + event.getSource().getClass().getName() + " ***");
-        System.err.println("*** Thread: " + Thread.currentThread().getName() + " ***");
         log.info("*** DatabasePreInitializer.onApplicationEvent() CALLED ***");
         log.info("*** Event source: " + event.getSource().getClass().getName() + " ***");
 
         // Ensure this runs only once
         if (!initialized.compareAndSet(false, true)) {
-            System.err.println("DatabasePreInitializer already executed, skipping");
             log.info("DatabasePreInitializer already executed, skipping");
             return;
         }
 
-        System.err.println("=== DATABASE PRE-INITIALIZATION (Phase 1) STARTED ===");
         log.info("=== DATABASE PRE-INITIALIZATION (Phase 1) STARTED ===");
         log.info("Triggered by ContextRefreshedEvent - Basic infrastructure is now ready");
 

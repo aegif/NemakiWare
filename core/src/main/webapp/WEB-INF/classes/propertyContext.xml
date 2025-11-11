@@ -6,7 +6,7 @@
 	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
 		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
 		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
-
+	
 	<!-- Property Configurer -->
 	<bean id="propertyConfigurer" class="jp.aegif.nemaki.util.spring.SpringPropertiesUtil">
 		<property name="locations">
@@ -35,9 +35,11 @@
     </bean>
 
 	<!-- Enable annotation processing (@PostConstruct, @Resource, etc.) -->
-	<!-- CRITICAL: Required for ApplicationListener to work in child context after refresh -->
+	<!-- CRITICAL: Required for @PostConstruct to work in child context after refresh -->
 	<context:annotation-config />
 
-	<!-- DatabasePreInitializer moved to patchContext.xml as explicit bean definition (2025-11-10) -->
-	<!-- Component scanning removed to prevent conflicts with explicit bean definitions -->
+	<!-- Enable component scanning for database initialization (Phase 1) -->
+	<!-- DatabasePreInitializer uses @Component with @Order(1) and @PostConstruct -->
+	<!-- This scanning happens in NemakiApplicationContextLoader's child context -->
+	<context:component-scan base-package="jp.aegif.nemaki.init" />
 </beans>
