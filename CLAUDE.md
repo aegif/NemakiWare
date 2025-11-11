@@ -98,6 +98,123 @@ These deprecated classes are preserved for historical reference only and are NOT
 
 ---
 
+## Recent Major Changes (2025-12-16 - Test User Authentication Fix) ✅
+
+### Test User Password Authentication - BCrypt Hash Requirement
+
+**CRITICAL FIX (2025-12-16)**: Resolved test user authentication failure caused by plaintext password storage. NemakiWare authentication system requires BCrypt or MD5 hashed passwords.
+
+**Problem Summary**:
+- **Symptom**: Test users could not authenticate despite correct credentials (username:password)
+- **Impact**: All CMIS API access failed with HTTP 401 "Authentication failed"
+- **Root Cause**: Test user passwords stored as plaintext in CouchDB, but `AuthenticationUtil.passwordMatchesWithUpgrade()` expects BCrypt ($2a$/$2b$ prefix) or MD5 (32 hex chars) format
+
+**Investigation Process**:
+1. ✅ Verified ACL persistence works correctly (debug logging confirmed)
+2. ✅ Confirmed ACL data correctly saved to CouchDB with direct permissions
+3. ✅ Traced HTTP 401 to `CmisServiceFactory.getService()` line 160 (authentication failure)
+4. ✅ Identified authentication happens BEFORE authorization/permission checks
+5. ✅ Compared admin user (BCrypt hash) vs test user (plaintext) passwords in CouchDB
+6. ✅ Confirmed `passwordMatchesWithUpgrade()` rejects plaintext passwords
+
+**Solution Implemented**:
+
+1. **Generated BCrypt Hash** for password "test":
+   ```bash
+   # Extract BCrypt library from WAR
+   unzip -jo core/target/core.war WEB-INF/lib/jbcrypt-0.3m.jar
+
+   # Create hash generator
+   javac -cp jbcrypt-0.3m.jar GenerateBCrypt.java
+   java -cp .:jbcrypt-0.3m.jar GenerateBCrypt
+   # Output: $2a$12$WOlW7Yk7vFYz7kjFCz/GpeJ7B4kzWhnSMXH2UcN/iMAuiMcYC/Cie
+   ```
+
+2. **Updated CouchDB Document** with BCrypt hash:
+   ```bash
+   # Update test user password field
+   curl -s -u admin:password "http://localhost:5984/bedroom/USER_ID" > /tmp/testuser.json
+   jq '.password = "$2a$12$WOlW7Yk7vFYz7kjFCz/GpeJ7B4kzWhnSMXH2UcN/iMAuiMcYC/Cie"' /tmp/testuser.json > /tmp/testuser_updated.json
+   curl -s -u admin:password -X PUT -H "Content-Type: application/json" -d @/tmp/testuser_updated.json "http://localhost:5984/bedroom/USER_ID"
+   ```
+
+3. **Cleared Container Cache**:
+   ```bash
+   docker compose -f docker-compose-simple.yml restart core
+   sleep 60
+   ```
+
+**Verification Results**:
+```bash
+# Authentication success
+curl -s -u testuser:test "http://localhost:8080/core/browser/bedroom/FOLDER_ID?cmisselector=object"
+# Returns: HTTP 200 with full folder object JSON ✅
+
+# ACL access works
+curl -s -u testuser:test "http://localhost:8080/core/browser/bedroom/FOLDER_ID?cmisselector=acl"
+# Returns: HTTP 200 with ACL JSON ✅
+
+# Root folder correctly denied (no explicit permission)
+curl -s -u testuser:test "http://localhost:8080/core/browser/bedroom/root?cmisselector=children"
+# Returns: HTTP 403 permissionDenied ✅ (expected behavior)
+```
+
+**Technical Details**:
+
+**Authentication Flow** (AuthenticationServiceImpl.java):
+1. External authentication (SSO) - attempted first
+2. Token authentication - attempted second
+3. Basic authentication - falls back to username/password validation
+   - Calls `getAuthenticatedUserItem()` → `AuthenticationUtil.passwordMatchesWithUpgrade()`
+   - Expects BCrypt ($2a$12$...) or MD5 (32 hex chars) format
+   - Rejects plaintext passwords
+
+**Password Field Priority** (CouchUserItem.java Lines 162-169):
+```java
+public String getPassword() {
+    // passwordHash exists (legacy data) - use it with priority
+    if (passwordHash != null && !passwordHash.isEmpty()) {
+        return passwordHash;
+    }
+    // passwordHash doesn't exist - use new password field
+    return password;
+}
+```
+
+**Password Format Validation** (AuthenticationUtil.java Lines 64-96):
+- MD5: 32 hex characters → verifies with MD5, upgrades to BCrypt on success
+- BCrypt: starts with $2a$ or $2b$ → verifies with BCrypt.checkpw()
+- Other: attempts BCrypt verification, returns false on exception
+
+**Files Referenced**:
+- `core/src/main/java/jp/aegif/nemaki/cmis/factory/auth/impl/AuthenticationServiceImpl.java` (Lines 58-153)
+- `core/src/main/java/jp/aegif/nemaki/util/AuthenticationUtil.java` (Lines 56-104)
+- `core/src/main/java/jp/aegif/nemaki/model/UserItem.java` (Lines 9, 47-58)
+- `core/src/main/java/jp/aegif/nemaki/model/couch/CouchUserItem.java` (Lines 44-49, 162-169)
+
+**Important Notes**:
+1. **ALL test users** must have BCrypt hashed passwords in CouchDB
+2. **Field name typo** exists in UserItem.java: `passowrd` instead of `password` (but CouchUserItem correctly maps JSON `password` field)
+3. **Password field priority**: `passwordHash` takes precedence over `password` if both exist
+4. **Container restart required** after CouchDB password updates to clear caches
+5. **Security upgrade feature**: MD5 passwords automatically upgrade to BCrypt on successful authentication
+
+**User Creation Best Practices**:
+```bash
+# Generate BCrypt hash for new users
+String password = "userPassword";
+String hash = BCrypt.hashpw(password, BCrypt.gensalt(12));
+# Use $hash in CouchDB password field
+
+# Never store plaintext passwords:
+# ❌ "password": "plaintext123"
+# ✅ "password": "$2a$12$..."
+```
+
+**Status**: ✅ RESOLVED - Test user authentication now works correctly with BCrypt hashed passwords
+
+---
+
 ## 🔴 Known Issues and Limitations (2025-10-21 Code Review)
 
 **Code Review Date**: 2025-10-21

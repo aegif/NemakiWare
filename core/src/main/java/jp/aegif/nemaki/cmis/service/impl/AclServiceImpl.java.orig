@@ -140,7 +140,6 @@ public class AclServiceImpl implements AclService {
 			jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
 			//REPOSITORYDETERMINED or PROPAGATE is considered as PROPAGATE
 			boolean objectOnly = (aclPropagation == AclPropagation.OBJECTONLY)? true : false;
-	
 			for(Ace ace : acl.getAces()){
 				if(ace.isDirect()){
 					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), objectOnly);

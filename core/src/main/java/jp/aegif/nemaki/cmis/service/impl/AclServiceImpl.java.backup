@@ -48,16 +48,12 @@ import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 
 /**
  * Discovery Service implementation for CouchDB.
  *
  */
 public class AclServiceImpl implements AclService {
-
-	private static final Log log = LogFactory.getLog(AclServiceImpl.class);
 
 	private ContentService contentService;
 	private CompileService compileService;
@@ -140,7 +136,6 @@ public class AclServiceImpl implements AclService {
 			jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
 			//REPOSITORYDETERMINED or PROPAGATE is considered as PROPAGATE
 			boolean objectOnly = (aclPropagation == AclPropagation.OBJECTONLY)? true : false;
-	
 			for(Ace ace : acl.getAces()){
 				if(ace.isDirect()){
 					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), objectOnly);
