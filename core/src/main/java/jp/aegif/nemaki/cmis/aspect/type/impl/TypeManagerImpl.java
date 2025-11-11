@@ -1088,7 +1088,6 @@ public class TypeManagerImpl implements TypeManager {
 		if (log.isDebugEnabled()) {
 			log.debug("=== SYSTEM DEBUG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
 		}
-		log.error("=== ERROR LOG: addBasePropertyDefinitions called for type: " + type.getId() + " (inherited=" + isInherited + ") ===");
 		
 		String typeId = type.getId();
 		try {
@@ -1099,10 +1098,6 @@ public class TypeManagerImpl implements TypeManager {
 				log.info("DEBUG: Initial property keys: " + initialProps.keySet());
 			}
 		} catch (Exception e) {
-			log.error("*** FLOW DEBUG: Exception in initial setup: " + e.getMessage() + " ***", e);
-			if (log.isDebugEnabled()) {
-				log.debug("*** FLOW DEBUG: Exception in initial setup: " + e.getMessage() + " ***");
-			}
 			throw e;
 		}
 		
@@ -1756,7 +1751,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	private DocumentTypeDefinitionImpl buildDocumentTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
-		log.error("CRITICAL DEBUG: buildDocumentTypeDefinitionFromDB called for typeId=" + nemakiType.getTypeId() + ", repositoryId=" + repositoryId);
 
 		// CRITICAL FIX: Ensure TYPES is initialized when creating types post-startup
 		Map<String, TypeDefinitionContainer>types = TYPES != null ? TYPES.get(repositoryId) : null;
@@ -1801,18 +1795,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL FIX: All document types need CMIS properties for TCK compliance
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_DOCUMENT.value().equals(nemakiType.getTypeId());
-		log.error("CRITICAL DEBUG: About to call addBasePropertyDefinitions for typeId=" + nemakiType.getTypeId() + ", isBaseType=" + isBaseType + ", inherited=" + !isBaseType);
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
-		log.error("CRITICAL DEBUG: Finished addBasePropertyDefinitions for typeId=" + nemakiType.getTypeId());
 
 		// CRITICAL FIX: Only add document-specific properties to the base cmis:document type
 		// Custom types that inherit from cmis:document should NOT have these properties added directly
 		// They will inherit them from their parent type
 		if (isBaseType) {
 			addDocumentPropertyDefinitions(repositoryId, type, false);
-			log.error("CRITICAL DEBUG: Added document properties to base type cmis:document");
 		} else {
-			log.error("CRITICAL DEBUG: SKIPPING addDocumentPropertyDefinitions for custom type " + nemakiType.getTypeId() + " - will inherit from parent");
 		}
 
 		// Add specific attributes
@@ -1830,7 +1820,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	private FolderTypeDefinitionImpl buildFolderTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
-		log.error("CRITICAL DEBUG: buildFolderTypeDefinitionFromDB called for typeId=" + nemakiType.getTypeId() + ", repositoryId=" + repositoryId);
 
 		// CRITICAL FIX: Ensure TYPES is initialized when creating types post-startup
 		Map<String, TypeDefinitionContainer>types = TYPES != null ? TYPES.get(repositoryId) : null;
@@ -1851,9 +1840,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// CRITICAL FIX: All folder types need CMIS properties for TCK compliance
 		// Base types get them as non-inherited, derived types get them as inherited
 		boolean isBaseType = BaseTypeId.CMIS_FOLDER.value().equals(nemakiType.getTypeId());
-		log.error("CRITICAL DEBUG: About to call addBasePropertyDefinitions for typeId=" + nemakiType.getTypeId() + ", isBaseType=" + isBaseType + ", inherited=" + !isBaseType);
 		addBasePropertyDefinitions(repositoryId, type, !isBaseType);
-		log.error("CRITICAL DEBUG: Finished addBasePropertyDefinitions for typeId=" + nemakiType.getTypeId());
 
 		// CRITICAL FIX: Only add folder-specific properties to the base cmis:folder type
 		// Custom types that inherit from cmis:folder should NOT have these properties added directly
