@@ -95,8 +95,33 @@ public class CouchContent extends CouchNodeBase{
 				}
 			}
 			
-			// 複雑なオブジェクトは後で処理
-			// TODO: acl, aspects, secondaryIds の変換
+			// ACL conversion (CRITICAL FIX 2025-11-11: ACL was not being loaded from CouchDB)
+			// This is why admin/system permissions were missing - only GROUP_EVERYONE showed
+			if (properties.containsKey("acl")) {
+				Object aclValue = properties.get("acl");
+				if (aclValue instanceof Map) {
+					@SuppressWarnings("unchecked")
+					Map<String, Object> aclMap = (Map<String, Object>) aclValue;
+					Object entriesValue = aclMap.get("entries");
+					if (entriesValue instanceof List) {
+						@SuppressWarnings("unchecked")
+						List<Map<String, Object>> entriesList = (List<Map<String, Object>>) entriesValue;
+						JSONArray entries = new JSONArray();
+						for (Map<String, Object> entry : entriesList) {
+							JSONObject entryObj = new JSONObject();
+							entryObj.put("principal", entry.get("principal"));
+							entryObj.put("permissions", entry.get("permissions"));
+							entries.add(entryObj);
+						}
+						CouchAcl couchAcl = new CouchAcl();
+						couchAcl.setEntries(entries);
+						this.acl = couchAcl;
+						log.debug("ACL loaded from CouchDB: " + entries.size() + " ACEs for object");
+					}
+				}
+			}
+
+			// TODO: aspects, secondaryIds の変換 (remaining complex objects)
 		}
 	}
 

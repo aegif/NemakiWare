@@ -89,8 +89,15 @@ public class AclServiceImpl implements AclService {
 			// //////////////////
 			// Body of the method
 			// //////////////////
+			System.err.println("!!! ACL SERVICE: getAcl() called for objectId=" + objectId + ", name=" + content.getName());
 			jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
-			return compileService.compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), onlyBasicPermissions);
+			System.err.println("!!! ACL SERVICE: calculateAcl() returned: localAces=" + acl.getLocalAces().size() + ", inheritedAces=" + acl.getInheritedAces().size());
+			Acl result = compileService.compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), onlyBasicPermissions);
+			System.err.println("!!! ACL SERVICE: compileAcl() returned " + result.getAces().size() + " ACEs");
+			for (Ace ace : result.getAces()) {
+				System.err.println("!!!   ACE: principalId=" + ace.getPrincipalId() + ", direct=" + ace.isDirect() + ", permissions=" + ace.getPermissions());
+			}
+			return result;
 		}finally{
 			lock.unlock();
 		}
