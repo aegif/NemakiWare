@@ -4077,11 +4077,13 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 extractExtensionElements(request, "extension");
 
             // Create ExtensionsData if extensions exist
-            org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionsDataImpl extensionsData = null;
+            org.apache.chemistry.opencmis.commons.data.ExtensionsData extensionsData = null;
             if (!extensions.isEmpty()) {
-                extensionsData = new org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionsDataImpl();
-                extensionsData.setExtensions(extensions);
-                log.info("!!! SERVLET: Passing {} extension elements to applyAcl", extensions.size());
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionsDataImpl extDataImpl = 
+                    new org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionsDataImpl();
+                extDataImpl.setExtensions(extensions);
+                extensionsData = extDataImpl;
+                log.info("!!! SERVLET: Passing " + extensions.size() + " extension elements to applyAcl");
             }
 
             // Apply ACL using CMIS service - convert List<Ace> to Acl objects
@@ -4176,10 +4178,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                                 null, extensionName, null, extensionValue);
                         elements.add(element);
                         
-                        log.info("!!! SERVLET: Extracted extension element - name: {}, value: {}", extensionName, extensionValue);
+                        log.info("!!! SERVLET: Extracted extension element - name: " + extensionName + ", value: " + extensionValue);
                     }
                 } catch (Exception e) {
-                    log.error("!!! SERVLET: Error extracting extension element from parameter: {}", paramName, e);
+                    log.error("!!! SERVLET: Error extracting extension element from parameter: " + paramName, e);
                 }
             }
         }
