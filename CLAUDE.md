@@ -164,32 +164,229 @@ async setACL(repositoryId: string, objectId: string, acl: ACL): Promise<void> {
 
 **Implementation Requirements**:
 
-**Task 1: UI Component Enhancement** (`PermissionManagement.tsx`)
-- Add "継承を切る" (Break Inheritance) button to UI
-- Show current inheritance state (inherited vs direct)
-- Confirmation dialog before breaking inheritance
-- Estimated effort: 2-3 hours
+**Task 1: UI Component Enhancement** (`core/src/main/webapp/ui/src/components/PermissionManagement/PermissionManagement.tsx`)
 
-**Task 2: CMIS Service Extension Support** (`cmis.ts setACL method`)
+**Current State** (Lines 305-618):
+- Component displays ACL with direct/inherited flags
+- Delete button only shown for direct permissions (Line 477: `record.direct &&`)
+- No UI control to break inheritance
+
+**Required Changes**:
+1. Add state to track inheritance status:
+   ```typescript
+   const [isInherited, setIsInherited] = useState<boolean>(true);
+   ```
+
+2. Fetch inheritance status in `loadData()`:
+   ```typescript
+   // Add API call to get object's aclInherited flag
+   const inheritanceStatus = await cmisService.getAclInheritance(repositoryId, objectId);
+   setIsInherited(inheritanceStatus);
+   ```
+
+3. Add "継承を切る" button (add after line 536):
+   ```typescript
+   {isInherited && (
+     <Button
+       type="default"
+       icon={<LockOutlined />}
+       onClick={() => handleBreakInheritance()}
+       style={{ marginLeft: 8 }}
+     >
+       継承を切る
+     </Button>
+   )}
+   ```
+
+4. Implement break inheritance handler:
+   ```typescript
+   const handleBreakInheritance = async () => {
+     Modal.confirm({
+       title: 'ACL継承を切断しますか？',
+       content: '親フォルダからの権限継承を解除します。この操作は元に戻せません。',
+       onOk: async () => {
+         try {
+           await cmisService.setACL(repositoryId, objectId, acl, { breakInheritance: true });
+           message.success('ACL継承を切断しました');
+           loadData();
+         } catch (error) {
+           message.error('ACL継承の切断に失敗しました');
+         }
+       }
+     });
+   };
+   ```
+
+**Estimated effort**: 2-3 hours
+
+---
+
+**Task 2: CMIS Service Extension Support** (`core/src/main/webapp/ui/src/services/cmis.ts`)
+
+**Current Implementation** (Lines 1497-1560):
 ```typescript
-// Add extension parameter to setACL signature
-async setACL(repositoryId: string, objectId: string, acl: ACL, breakInheritance?: boolean): Promise<void> {
-  // Build form data with extension element
-  if (breakInheritance !== undefined) {
-    // CMIS Browser Binding extension format (needs investigation)
-    formData.append('extension[inherited]', String(!breakInheritance));
-  }
+async setACL(repositoryId: string, objectId: string, acl: ACL): Promise<void> {
+  // 1. Get current ACL
+  // 2. Remove all direct ACEs
+  // 3. Add new ACEs
+  // ❌ MISSING: No extension element support
 }
 ```
-- Estimated effort: 2-3 hours
 
-**Task 3: Browser Binding Extension Extraction** (`NemakiBrowserBindingServlet.java`)
-- Extract extension elements from Browser Binding POST parameters
-- Convert to CMIS extension objects
-- Pass to CmisService.applyAcl()
-- Estimated effort: 3-4 hours
+**Required Changes**:
 
-**Total Estimated Effort**: 7-10 hours
+1. Update method signature (Line 1497):
+   ```typescript
+   async setACL(repositoryId: string, objectId: string, acl: ACL, options?: { breakInheritance?: boolean }): Promise<void>
+   ```
+
+2. Add extension element to form data (after line 1550):
+   ```typescript
+   // Add extension elements if provided
+   if (options?.breakInheritance !== undefined) {
+     // CMIS Browser Binding extension format (REQUIRES INVESTIGATION)
+     // Possible formats to test:
+     // Option A: formData.append('extension[0][name]', 'inherited');
+     //           formData.append('extension[0][value]', String(!options.breakInheritance));
+     // Option B: formData.append('extension[inherited]', String(!options.breakInheritance));
+     // Option C: formData.append('extensionName[0]', 'inherited');
+     //           formData.append('extensionValue[0]', String(!options.breakInheritance));
+
+     // TODO: Test which format NemakiBrowserBindingServlet expects
+     formData.append('extension[inherited]', String(!options.breakInheritance));
+   }
+   ```
+
+3. Add new method to get inheritance status:
+   ```typescript
+   async getAclInheritance(repositoryId: string, objectId: string): Promise<boolean> {
+     // Query object's cmis:isInherited property or aclInherited flag
+     const object = await this.getObject(repositoryId, objectId);
+     return object.aclInherited ?? true; // Default to inherited if not specified
+   }
+   ```
+
+**CRITICAL**: Browser Binding extension element format requires investigation. Test with curl commands to determine correct parameter format.
+
+**Estimated effort**: 2-3 hours (+ investigation time)
+
+---
+
+**Task 3: Browser Binding Extension Extraction** (`core/src/main/java/jp/aegif/nemaki/cmis/servlet/NemakiBrowserBindingServlet.java`)
+
+**Current State**:
+- No extension element extraction in `handleApplyAclOperation()` method
+- Extension elements not passed to `cmisService.applyAcl()`
+
+**Required Changes**:
+
+1. Create extension element extraction method (add after `extractAclFromRequest()` method ~line 4280):
+   ```java
+   /**
+    * Extract extension elements from Browser Binding request parameters.
+    * @param request HTTP request
+    * @param prefix Parameter prefix (e.g., "extension")
+    * @return List of CMIS extension elements
+    */
+   private java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> extractExtensionElements(
+       HttpServletRequest request, String prefix) {
+
+       java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> elements =
+           new java.util.ArrayList<>();
+
+       java.util.Map<String, String[]> parameterMap = request.getParameterMap();
+
+       // Check for extension[name] format
+       for (java.util.Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
+           String paramName = entry.getKey();
+
+           // Match extension[inherited], extension[0][name], etc.
+           if (paramName.startsWith(prefix + "[")) {
+               // Extract extension name and value
+               // Parse parameter format and create CmisExtensionElement
+
+               // Example: extension[inherited] = "false"
+               String extensionName = extractExtensionName(paramName);
+               String extensionValue = entry.getValue()[0];
+
+               org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl element =
+                   new org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl(
+                       null, extensionName, null, extensionValue);
+               elements.add(element);
+           }
+       }
+
+       return elements;
+   }
+   ```
+
+2. Update `handleApplyAclOperation()` to extract and pass extensions (around line 4060):
+   ```java
+   // Extract extension elements
+   java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> extensions =
+       extractExtensionElements(request, "extension");
+
+   // Create ExtensionsData
+   org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionsDataImpl extensionsData = null;
+   if (!extensions.isEmpty()) {
+       extensionsData = new org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionsDataImpl();
+       extensionsData.setExtensions(extensions);
+   }
+
+   // Pass to CmisService.applyAcl()
+   return cmisService.applyAcl(repositoryId, objectId, addAcl, removeAcl, aclPropagation, extensionsData);
+   ```
+
+**Reference Files**:
+- `AclServiceImpl.java` lines 137-145: Extension element processing example
+- `CmisService.java` lines 812-859: applyAcl() method that accepts ExtensionsData
+
+**Estimated effort**: 3-4 hours
+
+---
+
+**Testing & Verification**:
+
+**Test 1: Verify current behavior** (should fail - no extension support):
+```bash
+curl -u admin:admin -X POST "http://localhost:8080/core/browser/bedroom" \
+  -d "cmisaction=applyACL" \
+  -d "objectId=<test-folder-id>" \
+  -d "extension[inherited]=false" \
+  -d "addACEPrincipal[0]=admin" \
+  -d "addACEPermission[0][0]=cmis:all"
+
+# Expected: Extension ignored, inheritance unchanged
+```
+
+**Test 2: After implementation** (should succeed):
+```bash
+# Break inheritance and set ACL
+curl -u admin:admin -X POST "http://localhost:8080/core/browser/bedroom" \
+  -d "cmisaction=applyACL" \
+  -d "objectId=<test-folder-id>" \
+  -d "extension[inherited]=false" \
+  -d "addACEPrincipal[0]=admin" \
+  -d "addACEPermission[0][0]=cmis:all"
+
+# Verify inheritance broken
+curl -u admin:admin "http://localhost:8080/core/browser/bedroom/<test-folder-id>?cmisselector=acl"
+# Expected: ACL with aclInherited=false, no inherited ACEs
+```
+
+**Test 3: UI testing**:
+1. Navigate to object with inherited permissions
+2. Click "継承を切る" button
+3. Confirm dialog
+4. Verify inherited permissions disappear from list
+5. Verify direct permissions can now be modified
+
+**Known Issues to Investigate**:
+1. Browser Binding extension element parameter format not documented in CMIS 1.1 spec
+2. May require testing multiple format variations
+3. AtomPub binding may use different extension format (XML-based)
+
+**Total Estimated Effort**: 7-10 hours (+ 1-2 hours for format investigation)
 
 **Priority**: Medium - Feature request, not a bug. Current behavior is CMIS-compliant (inherited permissions cannot be modified on child object).
 
