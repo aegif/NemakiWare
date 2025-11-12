@@ -96,6 +96,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
+        System.err.println("!!! SERVICE DEBUG: service() called - method=" + request.getMethod() + ", URI=" + request.getRequestURI());
+
         if (log.isDebugEnabled()) {
             log.debug("Browser Binding service: " + request.getMethod() + " " + request.getRequestURI());
         }
@@ -104,12 +106,15 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         if ("POST".equals(request.getMethod())) {
             String postMethodCmisaction = request.getParameter("cmisaction");
 
+            System.err.println("!!! SERVICE DEBUG: POST request with cmisaction=" + postMethodCmisaction);
+
             if (log.isDebugEnabled()) {
                 log.debug("POST request with cmisaction: " + postMethodCmisaction);
             }
 
             // CRITICAL TCK FIX: Handle versioning operations directly
             if ("checkOut".equals(postMethodCmisaction) || "checkIn".equals(postMethodCmisaction) || "cancelCheckOut".equals(postMethodCmisaction)) {
+                System.err.println("!!! SERVICE DEBUG: Routing versioning action: " + postMethodCmisaction);
                 if (log.isDebugEnabled()) {
                     log.debug("Routing versioning action: " + postMethodCmisaction);
                 }
@@ -120,6 +125,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
 
             if ("applyACL".equals(postMethodCmisaction)) {
+                System.err.println("!!! SERVICE DEBUG: Routing applyACL action");
                 if (log.isDebugEnabled()) {
                     log.debug("Routing applyACL action");
                 }
@@ -1801,21 +1807,21 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
-        
-        
+        System.err.println("!!! DOPOST DEBUG: doPost() called - URI=" + request.getRequestURI());
 
         // CRITICAL FIX: Check for applyACL action and route through our custom handler
         String postCmisaction = request.getParameter("cmisaction");
-        
+        System.err.println("!!! DOPOST DEBUG: cmisaction=" + postCmisaction);
 
         if ("applyACL".equals(postCmisaction)) {
-            
+            System.err.println("!!! DOPOST DEBUG: Matched applyACL, calling service()");
             // Force routing through our custom service method to handle applyACL
             this.service(request, response);
             return;
         }
 
         // For all other POST requests, also use our custom service method
+        System.err.println("!!! DOPOST DEBUG: Calling service() for all POST requests");
         this.service(request, response);
     }
     
@@ -2411,12 +2417,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
 
                 // CRITICAL TCK FIX: Add applyAcl action support for ACL compliance - handle both case variations
                 case "applyAcl":
-                    
-                    
+                    System.err.println("!!! ROUTE DEBUG: Matched applyAcl case, calling handleApplyAclOperation");
                     return handleApplyAclOperation(request, response, pathInfo);
                 case "applyACL":
-                    
-                    
+                    System.err.println("!!! ROUTE DEBUG: Matched applyACL case, calling handleApplyAclOperation");
                     return handleApplyAclOperation(request, response, pathInfo);
 
                 // CRITICAL TCK FIX: Add versioning actions for VersioningStateCreateTest
@@ -4069,25 +4073,41 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 cmisService = getCmisService(callContext);
 
             // Extract ACL from request parameters
+            System.err.println("!!! APPLYACL DEBUG: Extracting addACE parameters...");
             java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> addAces = extractAclFromRequest(request, "addACE");
-            java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> removeAces = extractAclFromRequest(request, "removeACE");
+            System.err.println("!!! APPLYACL DEBUG: Extracted " + (addAces != null ? addAces.size() : 0) + " addACEs");
 
-            
+            System.err.println("!!! APPLYACL DEBUG: Extracting removeACE parameters...");
+            java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> removeAces = extractAclFromRequest(request, "removeACE");
+            System.err.println("!!! APPLYACL DEBUG: Extracted " + (removeAces != null ? removeAces.size() : 0) + " removeACEs");
+
+
 
             // Apply ACL using CMIS service - convert List<Ace> to Acl objects
-            org.apache.chemistry.opencmis.commons.data.Acl addAcl = null;
-            org.apache.chemistry.opencmis.commons.data.Acl removeAcl = null;
+            // CRITICAL FIX: Always create Acl objects, even if empty, to avoid NullPointerException
+            org.apache.chemistry.opencmis.commons.data.Acl addAcl;
+            org.apache.chemistry.opencmis.commons.data.Acl removeAcl;
 
             if (addAces != null && !addAces.isEmpty()) {
                 addAcl = new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(addAces);
+                System.err.println("!!! APPLYACL DEBUG: Created addAcl with " + addAcl.getAces().size() + " ACEs");
+            } else {
+                addAcl = new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(new java.util.ArrayList<>());
+                System.err.println("!!! APPLYACL DEBUG: Created empty addAcl (no addACEs to process)");
             }
 
             if (removeAces != null && !removeAces.isEmpty()) {
                 removeAcl = new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(removeAces);
+                System.err.println("!!! APPLYACL DEBUG: Created removeAcl with " + removeAcl.getAces().size() + " ACEs");
+            } else {
+                removeAcl = new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(new java.util.ArrayList<>());
+                System.err.println("!!! APPLYACL DEBUG: Created empty removeAcl (no removeACEs to process)");
             }
 
+            System.err.println("!!! APPLYACL DEBUG: Calling cmisService.applyAcl for objectId=" + objectId);
             org.apache.chemistry.opencmis.commons.data.Acl resultAcl = cmisService.applyAcl(repositoryId, objectId, addAcl, removeAcl,
                     org.apache.chemistry.opencmis.commons.enums.AclPropagation.REPOSITORYDETERMINED, null);
+            System.err.println("!!! APPLYACL DEBUG: Result ACL has " + (resultAcl != null && resultAcl.getAces() != null ? resultAcl.getAces().size() : 0) + " ACEs");
 
             
 
@@ -4146,13 +4166,22 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             String principalParamName = paramPrefix + "Principal";
             String permissionParamName = paramPrefix + "Permission";
 
-            
+            // DEBUG: Log all incoming parameters
+            System.err.println("!!! ACL EXTRACT DEBUG: paramPrefix=" + paramPrefix);
+            System.err.println("!!! ACL EXTRACT DEBUG: Looking for principals starting with: " + principalParamName + "[");
+            System.err.println("!!! ACL EXTRACT DEBUG: Looking for permissions starting with: " + permissionParamName + "[");
 
             // Collect all principal indices by scanning parameter map
             java.util.Map<Integer, String> principals = new java.util.TreeMap<>();
             java.util.Map<Integer, java.util.List<String>> permissions = new java.util.TreeMap<>();
 
             java.util.Map<String, String[]> parameterMap = request.getParameterMap();
+
+            // DEBUG: Log all parameters in request
+            System.err.println("!!! ACL EXTRACT DEBUG: Total parameters in request: " + parameterMap.size());
+            for (java.util.Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
+                System.err.println("!!! ACL EXTRACT DEBUG: Parameter: " + entry.getKey() + " = " + java.util.Arrays.toString(entry.getValue()));
+            }
 
             for (java.util.Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
                 String paramName = entry.getKey();
@@ -4200,7 +4229,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
             }
 
-            
+            // DEBUG: Log what was collected
+            System.err.println("!!! ACL EXTRACT DEBUG: Collected principals: " + principals);
+            System.err.println("!!! ACL EXTRACT DEBUG: Collected permissions: " + permissions);
 
             // Build ACEs from collected principals and permissions
             for (java.util.Map.Entry<Integer, String> principalEntry : principals.entrySet()) {
@@ -4208,18 +4239,27 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 String principalId = principalEntry.getValue();
                 java.util.List<String> permissionList = permissions.get(index);
 
-                if (principalId != null && !principalId.trim().isEmpty() &&
-                    permissionList != null && !permissionList.isEmpty()) {
+                System.err.println("!!! ACL EXTRACT DEBUG: Processing ACE index=" + index + ", principal=" + principalId + ", permissions=" + permissionList);
 
+                // CRITICAL FIX (2025-11-12): For removeACE operations, only principal is required
+                // Permissions may be null/empty when removing ACEs (we're just specifying which principals to remove)
+                if (principalId != null && !principalId.trim().isEmpty()) {
                     org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl principal =
                         new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl(principalId.trim());
+
+                    // For removeACE: permissions may be null (we only need principal name)
+                    // For addACE: permissions should be provided (but we allow empty list for flexibility)
+                    java.util.List<String> permissionsToUse = (permissionList != null) ? permissionList : java.util.Collections.emptyList();
+
                     org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl ace =
-                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl(principal, permissionList);
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl(principal, permissionsToUse);
 
                     aces.add(ace);
+                    System.err.println("!!! ACL EXTRACT DEBUG: Added ACE: principal=" + principalId + ", permissions=" + permissionsToUse);
                 }
             }
 
+            System.err.println("!!! ACL EXTRACT DEBUG: Total ACEs extracted: " + aces.size());
 
         } catch (Exception e) {
             log.error("!!! ACL EXTRACT ERROR: ", e);
@@ -4227,7 +4267,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // Return empty list if extraction fails
         }
 
-        
+
         return aces;
     }
 

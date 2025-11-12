@@ -803,23 +803,59 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * CRITICAL TCK FIX: Apply ACL with separate add and remove ACEs.
 	 * This overload is required for OpenCMIS Browser Binding compatibility.
 	 * TCK tests use this method signature for applyACL operations.
+	 *
+	 * CRITICAL FIX (2025-11-12): Properly handle both add and remove ACEs
+	 * Previous implementation ignored removeAces causing NullPointerException
+	 * when only removeACE was specified in Browser Binding requests
 	 */
 	@Override
 	public Acl applyAcl(String repositoryId, String objectId, Acl addAces, Acl removeAces,
 			AclPropagation aclPropagation, ExtensionsData extension) {
 
-		// CRITICAL: Convert separate add/remove ACEs to single ACL for NemakiWare implementation
-		// This bridges the gap between OpenCMIS standard and NemakiWare ACL service
+		System.err.println("!!! CMIS SERVICE applyAcl: objectId=" + objectId +
+							", addAces=" + (addAces != null ? addAces.getAces().size() + " ACEs" : "null") +
+							", removeAces=" + (removeAces != null ? removeAces.getAces().size() + " ACEs" : "null"));
 
-		// For now, implement by merging addAces and ignoring removeAces
-		// TODO: Implement proper add/remove ACE logic in future versions
-		Acl mergedAces = addAces;
-		if (mergedAces == null && removeAces != null) {
-			// If only removeAces provided, treat as empty ACL
-			mergedAces = new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl();
+		// CRITICAL FIX: Get current ACL first
+		Acl currentAcl = aclService.getAcl(getCallContext(), repositoryId, objectId, false, extension);
+		System.err.println("!!! CMIS SERVICE: Current ACL has " + currentAcl.getAces().size() + " ACEs");
+
+		// Build new ACL by applying add/remove operations
+		java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> newAces = new java.util.ArrayList<>();
+
+		// Start with current ACEs (only direct ones)
+		for (org.apache.chemistry.opencmis.commons.data.Ace ace : currentAcl.getAces()) {
+			if (ace.isDirect()) {
+				newAces.add(ace);
+				System.err.println("!!! CMIS SERVICE: Keeping direct ACE: " + ace.getPrincipalId());
+			}
 		}
 
-		return aclService.applyAcl(getCallContext(), repositoryId, objectId, mergedAces, aclPropagation);
+		// Remove ACEs if removeAces is provided
+		if (removeAces != null && removeAces.getAces() != null && !removeAces.getAces().isEmpty()) {
+			for (org.apache.chemistry.opencmis.commons.data.Ace removeAce : removeAces.getAces()) {
+				String principalToRemove = removeAce.getPrincipalId();
+				newAces.removeIf(ace -> ace.getPrincipalId().equals(principalToRemove));
+				System.err.println("!!! CMIS SERVICE: Removed ACE for principal: " + principalToRemove);
+			}
+		}
+
+		// Add new ACEs if addAces is provided
+		if (addAces != null && addAces.getAces() != null && !addAces.getAces().isEmpty()) {
+			for (org.apache.chemistry.opencmis.commons.data.Ace addAce : addAces.getAces()) {
+				// Remove existing ACE for same principal first (replace operation)
+				newAces.removeIf(ace -> ace.getPrincipalId().equals(addAce.getPrincipalId()));
+				newAces.add(addAce);
+				System.err.println("!!! CMIS SERVICE: Added ACE: " + addAce.getPrincipalId() +
+								  " with permissions " + addAce.getPermissions());
+			}
+		}
+
+		// Create final ACL with merged ACEs
+		Acl finalAcl = new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(newAces);
+		System.err.println("!!! CMIS SERVICE: Final ACL has " + finalAcl.getAces().size() + " ACEs, calling aclService.applyAcl()");
+
+		return aclService.applyAcl(getCallContext(), repositoryId, objectId, finalAcl, aclPropagation);
 	}
 
 	/**

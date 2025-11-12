@@ -160,7 +160,10 @@ public class AclServiceImpl implements AclService {
 			contentService.updateInternal(repositoryId, content);
 			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
 
-			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
+			// CRITICAL FIX (2025-11-12): Clear BOTH CMIS and Content caches synchronously
+			// before calling getAcl() to return updated ACL. Without this, getAcl() returns stale cached data.
+			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
+			System.err.println("!!! ACL SERVICE: Cleared CMIS and Content caches for objectId=" + objectId);
 
 			clearCachesRecursively(Executors.newWorkStealingPool(), callContext, repositoryId, content, true);
 
