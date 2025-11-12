@@ -4072,7 +4072,17 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> addAces = extractAclFromRequest(request, "addACE");
             java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> removeAces = extractAclFromRequest(request, "removeACE");
 
-            
+            // Extract extension elements for ACL inheritance control
+            java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> extensions =
+                extractExtensionElements(request, "extension");
+
+            // Create ExtensionsData if extensions exist
+            org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionsDataImpl extensionsData = null;
+            if (!extensions.isEmpty()) {
+                extensionsData = new org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionsDataImpl();
+                extensionsData.setExtensions(extensions);
+                log.info("!!! SERVLET: Passing {} extension elements to applyAcl", extensions.size());
+            }
 
             // Apply ACL using CMIS service - convert List<Ace> to Acl objects
             org.apache.chemistry.opencmis.commons.data.Acl addAcl = null;
@@ -4087,7 +4097,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
 
             org.apache.chemistry.opencmis.commons.data.Acl resultAcl = cmisService.applyAcl(repositoryId, objectId, addAcl, removeAcl,
-                    org.apache.chemistry.opencmis.commons.enums.AclPropagation.REPOSITORYDETERMINED, null);
+                    org.apache.chemistry.opencmis.commons.enums.AclPropagation.REPOSITORYDETERMINED, extensionsData);
 
             
 
@@ -4132,6 +4142,49 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             throw e;
         }
+    }
+
+    /**
+     * Extract extension elements from Browser Binding request parameters.
+     * Supports extension[name] format for CMIS extension elements.
+     * 
+     * @param request HTTP request
+     * @param prefix Parameter prefix (e.g., "extension")
+     * @return List of CMIS extension elements
+     */
+    private java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> extractExtensionElements(
+            HttpServletRequest request, String prefix) {
+        
+        java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> elements =
+            new java.util.ArrayList<>();
+        
+        java.util.Map<String, String[]> parameterMap = request.getParameterMap();
+        
+        for (java.util.Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
+            String paramName = entry.getKey();
+            
+            if (paramName.startsWith(prefix + "[")) {
+                try {
+                    int startIdx = paramName.indexOf('[');
+                    int endIdx = paramName.indexOf(']');
+                    if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+                        String extensionName = paramName.substring(startIdx + 1, endIdx);
+                        String extensionValue = entry.getValue()[0];
+                        
+                        org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl element =
+                            new org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl(
+                                null, extensionName, null, extensionValue);
+                        elements.add(element);
+                        
+                        log.info("!!! SERVLET: Extracted extension element - name: {}, value: {}", extensionName, extensionValue);
+                    }
+                } catch (Exception e) {
+                    log.error("!!! SERVLET: Error extracting extension element from parameter: {}", paramName, e);
+                }
+            }
+        }
+        
+        return elements;
     }
 
     /**

@@ -41,6 +41,7 @@ export interface Permission {
 export interface ACL {
   permissions: Permission[];
   isExact: boolean;
+  aclInherited?: boolean;
 }
 
 export interface User {
@@ -77,6 +78,7 @@ export interface CMISObject {
   creationDate?: string;
   lastModifiedBy?: string;
   lastModificationDate?: string;
+  aclInherited?: boolean;
 }
 
 export interface SearchResult {
