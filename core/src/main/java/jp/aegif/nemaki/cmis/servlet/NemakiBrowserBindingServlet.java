@@ -4079,8 +4079,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // Create ExtensionsData if extensions exist
             org.apache.chemistry.opencmis.commons.data.ExtensionsData extensionsData = null;
             if (!extensions.isEmpty()) {
-                org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionsDataImpl extDataImpl = 
-                    new org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionsDataImpl();
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionDataImpl extDataImpl = 
+                    new org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionDataImpl();
                 extDataImpl.setExtensions(extensions);
                 extensionsData = extDataImpl;
                 log.info("!!! SERVLET: Passing " + extensions.size() + " extension elements to applyAcl");
