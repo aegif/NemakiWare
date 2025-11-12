@@ -1802,7 +1802,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// They will inherit them from their parent type
 		if (isBaseType) {
 			addDocumentPropertyDefinitions(repositoryId, type, false);
-
+		} else {
 		}
 
 		// Add specific attributes
@@ -1828,7 +1828,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			ensureInitialized();
 			types = TYPES.get(repositoryId);
 		}
-
+		
 		FolderTypeDefinitionImpl type = new FolderTypeDefinitionImpl();
 		FolderTypeDefinitionImpl parentType = (FolderTypeDefinitionImpl) types
 				.get(nemakiType.getParentId()).getTypeDefinition();
@@ -2423,31 +2423,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				} else {
 					// Log NULL property creation to track down the root cause
 									log.error("CRITICAL: NULL PropertyDefinition created for property ID: " + originalCore.getPropertyId() + ", Property Type: " + originalCore.getPropertyType() + ". Skipping addition to prevent JSON serialization errors");
-				}
-			}
-		}
-
-		// CRITICAL FIX (2025-11-10): Defensive initialization for static fields
-		// If subTypeProperties is null (bean init() not called), initialize it immediately
-		// This handles edge cases where Spring proxy prevents normal bean lifecycle execution
-		if (subTypeProperties == null) {
-			log.warn("DEFENSIVE INIT: subTypeProperties was null, initializing now");
-			synchronized (TypeManagerImpl.class) {
-				if (subTypeProperties == null) {
-					subTypeProperties = new ConcurrentHashMap<>();
-				}
-				// Also initialize other static fields if null
-				if (TYPES == null) {
-					TYPES = new ConcurrentHashMap<>();
-				}
-				if (basetypes == null) {
-					basetypes = new ConcurrentHashMap<>();
-				}
-				if (propertyDefinitionCoresByPropertyId == null) {
-					propertyDefinitionCoresByPropertyId = new ConcurrentHashMap<>();
-				}
-				if (propertyDefinitionCoresByQueryName == null) {
-					propertyDefinitionCoresByQueryName = new ConcurrentHashMap<>();
 				}
 			}
 		}

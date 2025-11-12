@@ -1,0 +1,27 @@
+@@ -137,16 +137,26 @@
+ 				if(!contentService.getAclInheritedWithDefault(repositoryId, content).equals(inherited)) content.setAclInherited(inherited);
+ 			}
+ 
++			// TEMPORARY DEBUG (2025-11-12): Trace ACL persistence
++			log.error("!!! ACL SERVICE DEBUG: applyAcl called for objectId=" + objectId);
++
+ 			jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
+ 			//REPOSITORYDETERMINED or PROPAGATE is considered as PROPAGATE
+ 			boolean objectOnly = (aclPropagation == AclPropagation.OBJECTONLY)? true : false;
++			log.error("!!! ACL SERVICE DEBUG: Received " + acl.getAces().size() + " ACEs from request, objectOnly=" + objectOnly);
++
+ 			for(Ace ace : acl.getAces()){
++				log.error("!!! ACL SERVICE DEBUG: Processing ACE - principal=" + ace.getPrincipalId() +
++						  ", isDirect=" + ace.isDirect() + ", permissions=" + ace.getPermissions());
+ 				if(ace.isDirect()){
+ 					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), objectOnly);
+ 					nemakiAcl.getLocalAces().add(nemakiAce);
++					log.error("!!! ACL SERVICE DEBUG: Added direct ACE to nemakiAcl - principal=" + ace.getPrincipalId());
+ 				}
+ 			}
+ 
++			log.error("!!! ACL SERVICE DEBUG: Total direct ACEs in nemakiAcl: " + nemakiAcl.getLocalAces().size());
+ 			convertSystemPrinciaplId(repositoryId, nemakiAcl);
+ 			content.setAcl(nemakiAcl);
+ 			contentService.updateInternal(repositoryId, content);
++			log.error("!!! ACL SERVICE DEBUG: updateInternal completed for objectId=" + objectId);

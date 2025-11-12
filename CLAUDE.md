@@ -7,6 +7,198 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## Recent Major Changes (2025-11-12 - ACL Cache Staleness Fix) ✅
+
+### ACL Permission Management - Complete Cache Staleness Resolution
+
+**CRITICAL FIX (2025-11-12)**: Resolved ACL cache staleness issue where permission add/remove operations updated database correctly but returned stale cached data.
+
+**Problem Summary**:
+- **Symptom**: ACL add/remove operations succeeded in database but UI showed stale permissions
+- **Impact**: Users saw incorrect permission state after modifications
+- **Root Cause**: AclServiceImpl.applyAcl() only cleared CMIS cache, not Content cache, before returning result
+
+**Investigation Process**:
+1. ✅ Verified ACL add/remove operations update database correctly (debug logging confirmed)
+2. ✅ Confirmed cache clearing was insufficient (only CMIS cache cleared, not Content cache)
+3. ✅ Traced code flow: database update → partial cache clear → getAcl() reads stale Content cache
+4. ✅ Identified line 163 in AclServiceImpl.applyAcl() as critical fix point
+5. ✅ Verified deployment issue - old code cached in Docker despite rebuild
+
+**Solution Implemented**:
+
+**File Modified**: `core/src/main/java/jp/aegif/nemaki/cmis/service/impl/AclServiceImpl.java` (Line 163)
+
+**Before**:
+```java
+// Only cleared CMIS cache - Content cache remained stale
+nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
+```
+
+**After**:
+```java
+// CRITICAL FIX (2025-11-12): Clear BOTH CMIS and Content caches synchronously
+// before calling getAcl() to return updated ACL. Without this, getAcl() returns stale cached data.
+nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
+System.err.println("!!! ACL SERVICE: Cleared CMIS and Content caches for objectId=" + objectId);
+```
+
+**Deployment Process** (Critical for Docker Layer Caching Issues):
+```bash
+# 1. Clean rebuild
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests
+
+# 2. Copy WAR to Docker context
+cp core/target/core.war docker/core/core.war
+
+# 3. Critical: Volume cleanup to clear cached layers
+cd docker && docker compose -f docker-compose-simple.yml down -v
+
+# 4. Force rebuild with all flags
+docker compose -f docker-compose-simple.yml up -d --build --force-recreate --remove-orphans
+
+# 5. Verify deployment with bytecode inspection
+docker exec docker-core-1 javap -c /usr/local/tomcat/webapps/core/WEB-INF/classes/jp/aegif/nemaki/cmis/service/impl/AclServiceImpl.class | grep removeCmisAndContentCache
+```
+
+**Verification Results**:
+```bash
+# Add permission test
+curl -u admin:admin -X POST "http://localhost:8080/core/browser/bedroom" \
+  -d "cmisaction=applyACL&objectId=634ce357eb45edb6a5b3471b4e03342c&addACEPrincipal[0]=testuser&addACEPermission[0][0]=cmis:write"
+
+# Logs confirm cache clearing:
+!!! ACL SERVICE: Cleared CMIS and Content caches for objectId=634ce357eb45edb6a5b3471b4e03342c
+!!! ACL SERVICE: calculateAcl() returned: localAces=4, inheritedAces=0
+!!!   ACE: principalId=testuser, direct=true, permissions=[cmis:write]
+
+# Remove permission test
+curl -u admin:admin -X POST "http://localhost:8080/core/browser/bedroom" \
+  -d "cmisaction=applyACL&objectId=b0f49535c85ebd44b45e9c42f2052dcb&removeACEPrincipal[0]=testuser"
+
+# Logs confirm fresh data:
+!!! CMIS SERVICE: Removed ACE for principal: testuser
+!!! ACL SERVICE: Cleared CMIS and Content caches for objectId=b0f49535c85ebd44b45e9c42f2052dcb
+!!! ACL SERVICE: calculateAcl() returned: localAces=3, inheritedAces=0
+```
+
+**User Feedback**: "改善はされています。適切に権限情報をみることができました" (Improvements are working - can now properly view permission information)
+
+**Technical Details**:
+
+**Dual Cache Architecture**:
+- **CMIS Cache**: Caches compiled ObjectData (CMIS API format)
+- **Content Cache**: Caches raw Content objects from database
+- **Critical**: Both must be cleared synchronously before returning updated ACL
+
+**NemakiCachePool API Used**:
+- `removeCmisCache(objectId)` - Clears only CMIS cache (OLD - insufficient)
+- `removeCmisAndContentCache(objectId)` - Clears both caches synchronously (NEW - correct)
+- `clearCachesRecursively()` - Async recursive clearing for descendants (existing)
+
+**Cache Clearing Sequence**:
+1. Line 160: Database updated with new ACL
+2. Line 163 (NEW): Both CMIS and Content caches cleared synchronously
+3. Line 165: Async recursive cache clearing started for descendants
+4. Line 171: getAcl() called → reads fresh data from database ✅
+
+**Impact**: Complete resolution of ACL cache staleness. All add/remove operations now return fresh data immediately.
+
+**Status**: ✅ RESOLVED - ACL permission management now working correctly with proper cache invalidation
+
+### Admin Permission Model - ACL-Based Management (Design Clarification)
+
+**DESIGN DECISION (2025-11-12)**: Admin operates through ACL system (Option A), not as privileged user outside ACL.
+
+**Current Implementation**:
+- Admin user has ACE in database: `{ principal: "admin", permissions: ["cmis:all"] }`
+- Admin permissions checked via ACL like any other user
+- Admin can be displayed in ACL list and managed through standard ACL operations
+
+**Alternative Considered (Rejected)**:
+- Option B: Admin as privileged user with ACL check bypass
+- Reason for rejection: Current ACL-based model is simpler and more consistent
+
+**User Clarification**: "Option Aが望ましいですね" (Option A is desirable)
+
+**Implementation Status**: No changes required - current behavior matches intended design.
+
+### Outstanding Feature Request - ACL Inheritance Breaking (TODO)
+
+**FEATURE REQUEST (2025-11-12)**: Implement ACL inheritance breaking functionality
+
+**Current Limitation**:
+- Users cannot break ACL inheritance from UI
+- Inherited permissions cannot be deleted (correct CMIS behavior)
+- No UI control to switch object from inherited to non-inherited mode
+
+**User Report**: "継承を切る操作ができないですね。継承されている権限を削除すると削除できない継承権限が表示されるようになりました"
+(Translation: Cannot break inheritance. When deleting inherited permissions, undeletable inherited permissions become visible.)
+
+**Root Cause Analysis**:
+
+**Server-Side** (AclServiceImpl.java lines 137-145): Inheritance control implemented via extension elements
+```java
+List<CmisExtensionElement> exts = acl.getExtensions();
+if(!CollectionUtils.isEmpty(exts)){
+    for(CmisExtensionElement ext : exts){
+        if(ext.getName().equals("inherited")){
+            inherited = Boolean.valueOf(ext.getValue());
+        }
+    }
+    if(!contentService.getAclInheritedWithDefault(repositoryId, content).equals(inherited))
+        content.setAclInherited(inherited);
+}
+```
+
+**Client-Side** (cmis.ts lines 1497-1560): setACL() does NOT send extension elements
+```typescript
+async setACL(repositoryId: string, objectId: string, acl: ACL): Promise<void> {
+  // Current implementation:
+  // 1. Get current ACL
+  // 2. Remove all direct ACEs
+  // 3. Add new ACEs
+  // ❌ MISSING: No extension element with name="inherited" value="false"
+}
+```
+
+**Implementation Requirements**:
+
+**Task 1: UI Component Enhancement** (`PermissionManagement.tsx`)
+- Add "継承を切る" (Break Inheritance) button to UI
+- Show current inheritance state (inherited vs direct)
+- Confirmation dialog before breaking inheritance
+- Estimated effort: 2-3 hours
+
+**Task 2: CMIS Service Extension Support** (`cmis.ts setACL method`)
+```typescript
+// Add extension parameter to setACL signature
+async setACL(repositoryId: string, objectId: string, acl: ACL, breakInheritance?: boolean): Promise<void> {
+  // Build form data with extension element
+  if (breakInheritance !== undefined) {
+    // CMIS Browser Binding extension format (needs investigation)
+    formData.append('extension[inherited]', String(!breakInheritance));
+  }
+}
+```
+- Estimated effort: 2-3 hours
+
+**Task 3: Browser Binding Extension Extraction** (`NemakiBrowserBindingServlet.java`)
+- Extract extension elements from Browser Binding POST parameters
+- Convert to CMIS extension objects
+- Pass to CmisService.applyAcl()
+- Estimated effort: 3-4 hours
+
+**Total Estimated Effort**: 7-10 hours
+
+**Priority**: Medium - Feature request, not a bug. Current behavior is CMIS-compliant (inherited permissions cannot be modified on child object).
+
+**Workaround**: Users can navigate to parent object and modify permissions there.
+
+**Status**: ⚠️ TODO - Requires implementation in 3 components (UI, Service, Servlet)
+
+---
+
 ## 🎯 LATEST TCK EVIDENCE PACKAGE (2025-10-12)
 
 **IMPORTANT**: For the most current and accurate TCK test evidence, refer to:

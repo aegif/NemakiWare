@@ -89,15 +89,8 @@ public class AclServiceImpl implements AclService {
 			// //////////////////
 			// Body of the method
 			// //////////////////
-			System.err.println("!!! ACL SERVICE: getAcl() called for objectId=" + objectId + ", name=" + content.getName());
 			jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
-			System.err.println("!!! ACL SERVICE: calculateAcl() returned: localAces=" + acl.getLocalAces().size() + ", inheritedAces=" + acl.getInheritedAces().size());
-			Acl result = compileService.compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), onlyBasicPermissions);
-			System.err.println("!!! ACL SERVICE: compileAcl() returned " + result.getAces().size() + " ACEs");
-			for (Ace ace : result.getAces()) {
-				System.err.println("!!!   ACE: principalId=" + ace.getPrincipalId() + ", direct=" + ace.isDirect() + ", permissions=" + ace.getPermissions());
-			}
-			return result;
+			return compileService.compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), onlyBasicPermissions);
 		}finally{
 			lock.unlock();
 		}
@@ -147,7 +140,6 @@ public class AclServiceImpl implements AclService {
 			jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
 			//REPOSITORYDETERMINED or PROPAGATE is considered as PROPAGATE
 			boolean objectOnly = (aclPropagation == AclPropagation.OBJECTONLY)? true : false;
-	
 			for(Ace ace : acl.getAces()){
 				if(ace.isDirect()){
 					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), objectOnly);
@@ -160,10 +152,7 @@ public class AclServiceImpl implements AclService {
 			contentService.updateInternal(repositoryId, content);
 			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
 
-			// CRITICAL FIX (2025-11-12): Clear BOTH CMIS and Content caches synchronously
-			// before calling getAcl() to return updated ACL. Without this, getAcl() returns stale cached data.
-			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
-			System.err.println("!!! ACL SERVICE: Cleared CMIS and Content caches for objectId=" + objectId);
+			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 
 			clearCachesRecursively(Executors.newWorkStealingPool(), callContext, repositoryId, content, true);
 
