@@ -860,8 +860,16 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 			}
 		}
 
-		// Create final ACL with merged ACEs
-		Acl finalAcl = new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(newAces);
+		// Create final ACL with merged ACEs and extension elements
+		org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl finalAcl = 
+			new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(newAces);
+		
+		// CRITICAL: Copy extension elements from request to final ACL so they reach AclServiceImpl
+		if (extension != null && extension.getExtensions() != null && !extension.getExtensions().isEmpty()) {
+			finalAcl.setExtensions(extension.getExtensions());
+			System.err.println("!!! CMIS SERVICE: Copied " + extension.getExtensions().size() + " extension elements to final ACL");
+		}
+		
 		System.err.println("!!! CMIS SERVICE: Final ACL has " + finalAcl.getAces().size() + " ACEs, calling aclService.applyAcl()");
 
 		return aclService.applyAcl(getCallContext(), repositoryId, objectId, finalAcl, aclPropagation);

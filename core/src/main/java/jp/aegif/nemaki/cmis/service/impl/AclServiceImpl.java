@@ -134,12 +134,14 @@ public class AclServiceImpl implements AclService {
 			// //////////////////
 			//Check ACL inheritance
 			boolean inherited = true;	//Inheritance defaults to true if nothing input
+			boolean inheritedExplicitlySet = false;  // Track if inherited was explicitly set via extension
 			boolean breakingInheritance = false;
 			List<CmisExtensionElement> exts = acl.getExtensions();
 			if(!CollectionUtils.isEmpty(exts)){
 				for(CmisExtensionElement ext : exts){
 					if(ext.getName().equals("inherited")){
 						inherited = Boolean.valueOf(ext.getValue());
+						inheritedExplicitlySet = true;
 						// If changing from inherited=true to inherited=false, we're breaking inheritance
 						if(!inherited && contentService.getAclInheritedWithDefault(repositoryId, content)){
 							breakingInheritance = true;
@@ -179,9 +181,9 @@ public class AclServiceImpl implements AclService {
 
 			convertSystemPrinciaplId(repositoryId, nemakiAcl);
 			content.setAcl(nemakiAcl);
-	
+
 			// CRITICAL: Set aclInherited flag AFTER building the ACL and BEFORE updating
-			if(!CollectionUtils.isEmpty(exts)){
+			if(inheritedExplicitlySet){
 				content.setAclInherited(inherited);
 				System.err.println("!!! ACL SERVICE: Set aclInherited=" + inherited + " for objectId=" + objectId);
 			}
