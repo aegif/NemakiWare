@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
+import { getAuthHeader } from '../utils/auth-header';
 
 /**
  * ACL Inheritance Breaking E2E Tests
@@ -29,15 +30,43 @@ import { TestHelper } from '../utils/test-helper';
  *    - Deletes folders via CMIS API
  *    - Prevents test data accumulation across test runs
  *
+ * 4. Robust UI Element Detection:
+ *    - Uses polling with retries for folder row appearance (handles indexing delays)
+ *    - Multiple selector fallbacks for permissions button
+ *    - Scroll-into-view before clicking to ensure visibility
+ *
  * Test Execution Order:
  * - Test 1: Verify break inheritance button appears for inherited permissions
  * - Test 2: Verify break inheritance confirmation dialog
  * - Test 3: Verify successful inheritance breaking operation
  * - Test 4: Verify inherited permissions become direct after breaking
  */
+
+/**
+ * Poll for folder row to appear in UI with retries
+ * Handles Solr indexing delays by retrying with page reloads
+ */
+async function waitForFolderRow(page: any, folderName: string, maxAttempts = 10): Promise<any> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const folderRow = page.locator('tr').filter({ hasText: folderName });
+    const count = await folderRow.count();
+    
+    if (count > 0) {
+      console.log(`Found folder row for "${folderName}" on attempt ${attempt}`);
+      return folderRow;
+    }
+    
+    console.log(`Folder row not found (attempt ${attempt}/${maxAttempts}), reloading...`);
+    await page.reload();
+    await page.waitForTimeout(2000);
+  }
+  
+  throw new Error(`Folder row for "${folderName}" not found after ${maxAttempts} attempts`);
+}
 test.describe('ACL Inheritance Breaking', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
+  let rootFolderId: string;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
@@ -45,6 +74,13 @@ test.describe('ACL Inheritance Breaking', () => {
 
     await authHelper.login();
     await page.waitForTimeout(2000);
+
+    const repoInfoResponse = await page.request.get(
+      'http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo',
+      { headers: getAuthHeader() }
+    );
+    const repoInfo = await repoInfoResponse.json();
+    rootFolderId = repoInfo.bedroom.rootFolderId;
 
     // MOBILE FIX: Close sidebar
     const viewportSize = page.viewportSize();
@@ -68,11 +104,7 @@ test.describe('ACL Inheritance Breaking', () => {
     try {
       const queryResponse = await page.request.get(
         `http://localhost:8080/core/browser/bedroom?cmisselector=query&q=SELECT%20cmis:objectId%20FROM%20cmis:folder%20WHERE%20cmis:name%20LIKE%20'acl-inherit-test-%25'`,
-        {
-          headers: {
-            'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
-          }
-        }
+        { headers: getAuthHeader() }
       );
 
       if (queryResponse.ok()) {
@@ -83,9 +115,7 @@ test.describe('ACL Inheritance Breaking', () => {
           const folderId = folder.properties?.['cmis:objectId']?.value;
           if (folderId) {
             await page.request.post('http://localhost:8080/core/browser/bedroom', {
-              headers: {
-                'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
-              },
+              headers: getAuthHeader(),
               form: {
                 'cmisaction': 'delete',
                 'objectId': folderId
@@ -113,11 +143,10 @@ test.describe('ACL Inheritance Breaking', () => {
     await page.waitForTimeout(2000);
 
     const createResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
-      headers: {
-        'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
-      },
+      headers: getAuthHeader(),
       form: {
         'cmisaction': 'createFolder',
+        'objectId': rootFolderId,
         'propertyId[0]': 'cmis:name',
         'propertyValue[0]': testFolderName,
         'propertyId[1]': 'cmis:objectTypeId',
@@ -128,18 +157,25 @@ test.describe('ACL Inheritance Breaking', () => {
     expect(createResponse.ok()).toBeTruthy();
     console.log(`Test: Created test folder: ${testFolderName}`);
 
-    await page.reload();
-    await page.waitForTimeout(2000);
+    const folderRow = await waitForFolderRow(page, testFolderName);
 
-    // Find the test folder row
-    const folderRow = page.locator('tr').filter({ hasText: testFolderName });
-    expect(await folderRow.count()).toBeGreaterThan(0);
-
-    const permissionsButton = folderRow.locator('button').filter({
+    let permissionsButton = folderRow.locator('button').filter({
       hasText: /権限|ACL|Permission/i
     });
 
+    if (await permissionsButton.count() === 0) {
+      const actionButton = folderRow.locator('button[aria-label*="more"], button.ant-dropdown-trigger');
+      if (await actionButton.count() > 0) {
+        await actionButton.first().click();
+        await page.waitForTimeout(500);
+        permissionsButton = page.locator('.ant-dropdown-menu button').filter({
+          hasText: /権限|ACL|Permission/i
+        });
+      }
+    }
+
     if (await permissionsButton.count() > 0) {
+      await permissionsButton.first().scrollIntoViewIfNeeded();
       await permissionsButton.first().click(isMobile ? { force: true } : {});
       await page.waitForTimeout(1000);
 
@@ -177,11 +213,10 @@ test.describe('ACL Inheritance Breaking', () => {
     await page.waitForTimeout(2000);
 
     const createResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
-      headers: {
-        'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
-      },
+      headers: getAuthHeader(),
       form: {
         'cmisaction': 'createFolder',
+        'objectId': rootFolderId,
         'propertyId[0]': 'cmis:name',
         'propertyValue[0]': testFolderName,
         'propertyId[1]': 'cmis:objectTypeId',
@@ -191,15 +226,27 @@ test.describe('ACL Inheritance Breaking', () => {
 
     expect(createResponse.ok()).toBeTruthy();
 
-    await page.reload();
-    await page.waitForTimeout(2000);
+    // Wait for folder to appear in UI (handles indexing delays)
+    const folderRow = await waitForFolderRow(page, testFolderName);
 
-    const folderRow = page.locator('tr').filter({ hasText: testFolderName });
-    const permissionsButton = folderRow.locator('button').filter({
+    // Try multiple selector strategies for permissions button
+    let permissionsButton = folderRow.locator('button').filter({
       hasText: /権限|ACL|Permission/i
     });
 
+    if (await permissionsButton.count() === 0) {
+      const actionButton = folderRow.locator('button[aria-label*="more"], button.ant-dropdown-trigger');
+      if (await actionButton.count() > 0) {
+        await actionButton.first().click();
+        await page.waitForTimeout(500);
+        permissionsButton = page.locator('.ant-dropdown-menu button').filter({
+          hasText: /権限|ACL|Permission/i
+        });
+      }
+    }
+
     if (await permissionsButton.count() > 0) {
+      await permissionsButton.first().scrollIntoViewIfNeeded();
       await permissionsButton.first().click(isMobile ? { force: true } : {});
       await page.waitForTimeout(1000);
 
@@ -254,11 +301,10 @@ test.describe('ACL Inheritance Breaking', () => {
     await page.waitForTimeout(2000);
 
     const createResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
-      headers: {
-        'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
-      },
+      headers: getAuthHeader(),
       form: {
         'cmisaction': 'createFolder',
+        'objectId': rootFolderId,
         'propertyId[0]': 'cmis:name',
         'propertyValue[0]': testFolderName,
         'propertyId[1]': 'cmis:objectTypeId',
@@ -268,29 +314,32 @@ test.describe('ACL Inheritance Breaking', () => {
 
     expect(createResponse.ok()).toBeTruthy();
 
-    const queryResponse = await page.request.get(
-      `http://localhost:8080/core/browser/bedroom?cmisselector=query&q=SELECT%20*%20FROM%20cmis:folder%20WHERE%20cmis:name%20=%20'${encodeURIComponent(testFolderName)}'`,
-      {
-        headers: {
-          'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
-        }
-      }
-    );
-
-    const queryResult = await queryResponse.json();
-    const folderId = queryResult.results?.[0]?.properties?.['cmis:objectId']?.value;
+    const createResult = await createResponse.json();
+    const folderId = createResult.succinctProperties?.['cmis:objectId'];
     expect(folderId).toBeTruthy();
     console.log(`Test: Folder ID: ${folderId}`);
 
-    await page.reload();
-    await page.waitForTimeout(2000);
+    // Wait for folder to appear in UI (handles indexing delays)
+    const folderRow = await waitForFolderRow(page, testFolderName);
 
-    const folderRow = page.locator('tr').filter({ hasText: testFolderName });
-    const permissionsButton = folderRow.locator('button').filter({
+    // Try multiple selector strategies for permissions button
+    let permissionsButton = folderRow.locator('button').filter({
       hasText: /権限|ACL|Permission/i
     });
 
+    if (await permissionsButton.count() === 0) {
+      const actionButton = folderRow.locator('button[aria-label*="more"], button.ant-dropdown-trigger');
+      if (await actionButton.count() > 0) {
+        await actionButton.first().click();
+        await page.waitForTimeout(500);
+        permissionsButton = page.locator('.ant-dropdown-menu button').filter({
+          hasText: /権限|ACL|Permission/i
+        });
+      }
+    }
+
     if (await permissionsButton.count() > 0) {
+      await permissionsButton.first().scrollIntoViewIfNeeded();
       await permissionsButton.first().click(isMobile ? { force: true } : {});
       await page.waitForTimeout(1000);
 
@@ -323,11 +372,7 @@ test.describe('ACL Inheritance Breaking', () => {
 
       const aclCheckResponse = await page.request.get(
         `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=object`,
-        {
-          headers: {
-            'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
-          }
-        }
+        { headers: getAuthHeader() }
       );
 
       if (aclCheckResponse.ok()) {
@@ -366,11 +411,10 @@ test.describe('ACL Inheritance Breaking', () => {
     await page.waitForTimeout(2000);
 
     const createResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
-      headers: {
-        'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
-      },
+      headers: getAuthHeader(),
       form: {
         'cmisaction': 'createFolder',
+        'objectId': rootFolderId,
         'propertyId[0]': 'cmis:name',
         'propertyValue[0]': testFolderName,
         'propertyId[1]': 'cmis:objectTypeId',
@@ -380,26 +424,13 @@ test.describe('ACL Inheritance Breaking', () => {
 
     expect(createResponse.ok()).toBeTruthy();
 
-    const queryResponse = await page.request.get(
-      `http://localhost:8080/core/browser/bedroom?cmisselector=query&q=SELECT%20*%20FROM%20cmis:folder%20WHERE%20cmis:name%20=%20'${encodeURIComponent(testFolderName)}'`,
-      {
-        headers: {
-          'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
-        }
-      }
-    );
-
-    const queryResult = await queryResponse.json();
-    const folderId = queryResult.results?.[0]?.properties?.['cmis:objectId']?.value;
+    const createResult = await createResponse.json();
+    const folderId = createResult.succinctProperties?.['cmis:objectId'];
     expect(folderId).toBeTruthy();
 
     const aclBeforeResponse = await page.request.get(
       `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=acl`,
-      {
-        headers: {
-          'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
-        }
-      }
+      { headers: getAuthHeader() }
     );
 
     expect(aclBeforeResponse.ok()).toBeTruthy();
@@ -407,15 +438,27 @@ test.describe('ACL Inheritance Breaking', () => {
     const inheritedPermissionsCount = aclBefore.aces?.filter((ace: any) => !ace.isDirect).length || 0;
     console.log(`Inherited permissions before breaking: ${inheritedPermissionsCount}`);
 
-    await page.reload();
-    await page.waitForTimeout(2000);
+    // Wait for folder to appear in UI (handles indexing delays)
+    const folderRow = await waitForFolderRow(page, testFolderName);
 
-    const folderRow = page.locator('tr').filter({ hasText: testFolderName });
-    const permissionsButton = folderRow.locator('button').filter({
+    // Try multiple selector strategies for permissions button
+    let permissionsButton = folderRow.locator('button').filter({
       hasText: /権限|ACL|Permission/i
     });
 
+    if (await permissionsButton.count() === 0) {
+      const actionButton = folderRow.locator('button[aria-label*="more"], button.ant-dropdown-trigger');
+      if (await actionButton.count() > 0) {
+        await actionButton.first().click();
+        await page.waitForTimeout(500);
+        permissionsButton = page.locator('.ant-dropdown-menu button').filter({
+          hasText: /権限|ACL|Permission/i
+        });
+      }
+    }
+
     if (await permissionsButton.count() > 0) {
+      await permissionsButton.first().scrollIntoViewIfNeeded();
       await permissionsButton.first().click(isMobile ? { force: true } : {});
       await page.waitForTimeout(1000);
 
@@ -436,11 +479,7 @@ test.describe('ACL Inheritance Breaking', () => {
 
       const aclAfterResponse = await page.request.get(
         `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=acl`,
-        {
-          headers: {
-            'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
-          }
-        }
+        { headers: getAuthHeader() }
       );
 
       expect(aclAfterResponse.ok()).toBeTruthy();
