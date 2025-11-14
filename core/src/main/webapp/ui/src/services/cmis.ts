@@ -1459,9 +1459,22 @@ export class CMISService {
                 direct: ace.direct !== false // Default to true if not specified
               }));
 
+              // Extract aclInherited from extension elements
+              let aclInherited = true; // Default to true if not specified
+              if (response.extensions && Array.isArray(response.extensions)) {
+                const inheritedExt = response.extensions.find((ext: any) => 
+                  ext.name === 'inherited' || ext.localName === 'inherited'
+                );
+                if (inheritedExt) {
+                  aclInherited = inheritedExt.value === 'true';
+                  console.log('CMIS DEBUG: getACL found aclInherited extension:', aclInherited);
+                }
+              }
+
               const acl: ACL = {
                 permissions: permissions,
-                isExact: response.isExact !== false // Default to true if not specified
+                isExact: response.isExact !== false, // Default to true if not specified
+                aclInherited
               };
 
               console.log('CMIS DEBUG: getACL parsed:', acl);
