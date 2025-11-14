@@ -179,15 +179,19 @@ public class AclServiceImpl implements AclService {
 
 			convertSystemPrinciaplId(repositoryId, nemakiAcl);
 			content.setAcl(nemakiAcl);
-		
+	
 			// CRITICAL: Set aclInherited flag AFTER building the ACL and BEFORE updating
 			if(!CollectionUtils.isEmpty(exts)){
-				if(!contentService.getAclInheritedWithDefault(repositoryId, content).equals(inherited)){
+				Boolean currentInherited = contentService.getAclInheritedWithDefault(repositoryId, content);
+				System.err.println("!!! ACL SERVICE: Before update - currentInherited=" + currentInherited + ", newInherited=" + inherited + " for objectId=" + objectId);
+				if(!currentInherited.equals(inherited)){
 					content.setAclInherited(inherited);
 					System.err.println("!!! ACL SERVICE: Set aclInherited=" + inherited + " for objectId=" + objectId);
+				} else {
+					System.err.println("!!! ACL SERVICE: Skipping setAclInherited because values are equal");
 				}
 			}
-		
+	
 			contentService.updateInternal(repositoryId, content);
 			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
 

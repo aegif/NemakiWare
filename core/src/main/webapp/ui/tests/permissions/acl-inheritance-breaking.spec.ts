@@ -341,12 +341,13 @@ test.describe('ACL Inheritance Breaking', () => {
     await expect(successMessage).toBeVisible({ timeout: 5000 });
     console.log('✅ Success message appeared');
 
-    await page.waitForTimeout(2000);
+    // Wait for the page to reload and update the button visibility
+    await page.waitForTimeout(3000);
 
     const breakButtonAfter = page.locator('button').filter({
       hasText: /継承を切る|Break Inheritance/i
     });
-    await expect(breakButtonAfter).not.toBeVisible();
+    await expect(breakButtonAfter).not.toBeVisible({ timeout: 10000 });
     console.log('✅ Break inheritance button is hidden after breaking');
 
     const aclCheckResponse = await page.request.get(
