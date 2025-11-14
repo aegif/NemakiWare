@@ -368,9 +368,9 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       setUsers(userList);
       setGroups(groupList);
       
-      const inheritanceStatus = obj.aclInherited ?? aclData.aclInherited ?? true;
+      const inheritanceStatus = aclData.aclInherited ?? true;
       setIsInherited(inheritanceStatus);
-      console.log('[ACL DEBUG] Inheritance status:', inheritanceStatus);
+      console.log('[ACL DEBUG] Inheritance status from aclData:', aclData.aclInherited, 'final:', inheritanceStatus);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'データの読み込みに失敗しました';
       message.error(errorMessage);
