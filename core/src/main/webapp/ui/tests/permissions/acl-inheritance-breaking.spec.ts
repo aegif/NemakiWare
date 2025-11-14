@@ -189,7 +189,8 @@ test.describe('ACL Inheritance Breaking', () => {
 
     const folderRow = await waitForTableRow(page, testFolderName);
 
-    await folderRow.click();
+    const folderNameButton = folderRow.locator('button').filter({ hasText: testFolderName });
+    await folderNameButton.click();
     await page.waitForTimeout(1000);
 
     const permissionsButton = page.locator('button').filter({ hasText: /権限管理|Permission/i });
@@ -242,7 +243,8 @@ test.describe('ACL Inheritance Breaking', () => {
 
     const folderRow = await waitForTableRow(page, testFolderName);
 
-    await folderRow.click();
+    const folderNameButton = folderRow.locator('button').filter({ hasText: testFolderName });
+    await folderNameButton.click();
     await page.waitForTimeout(1000);
 
     const permissionsButton = page.locator('button').filter({ hasText: /権限管理|Permission/i });
@@ -318,7 +320,8 @@ test.describe('ACL Inheritance Breaking', () => {
 
     const folderRow = await waitForTableRow(page, testFolderName);
 
-    await folderRow.click();
+    const folderNameButton = folderRow.locator('button').filter({ hasText: testFolderName });
+    await folderNameButton.click();
     await page.waitForTimeout(1000);
 
     const permissionsButton = page.locator('button').filter({ hasText: /権限管理|Permission/i });
@@ -420,7 +423,8 @@ test.describe('ACL Inheritance Breaking', () => {
 
     const folderRow = await waitForTableRow(page, testFolderName);
 
-    await folderRow.click();
+    const folderNameButton = folderRow.locator('button').filter({ hasText: testFolderName });
+    await folderNameButton.click();
     await page.waitForTimeout(1000);
 
     const permissionsButton = page.locator('button').filter({ hasText: /権限管理|Permission/i });
