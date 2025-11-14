@@ -189,8 +189,10 @@ test.describe('ACL Inheritance Breaking', () => {
 
     const folderRow = await waitForTableRow(page, testFolderName);
 
-    const actionButtons = folderRow.locator('button');
-    const permissionsButton = actionButtons.nth(1);
+    await folderRow.click();
+    await page.waitForTimeout(1000);
+
+    const permissionsButton = page.locator('button').filter({ hasText: /権限管理|Permission/i });
     await expect(permissionsButton).toBeVisible({ timeout: 5000 });
     await permissionsButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -240,8 +242,10 @@ test.describe('ACL Inheritance Breaking', () => {
 
     const folderRow = await waitForTableRow(page, testFolderName);
 
-    const actionButtons = folderRow.locator('button');
-    const permissionsButton = actionButtons.nth(1);
+    await folderRow.click();
+    await page.waitForTimeout(1000);
+
+    const permissionsButton = page.locator('button').filter({ hasText: /権限管理|Permission/i });
     await expect(permissionsButton).toBeVisible({ timeout: 5000 });
     await permissionsButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -314,8 +318,10 @@ test.describe('ACL Inheritance Breaking', () => {
 
     const folderRow = await waitForTableRow(page, testFolderName);
 
-    const actionButtons = folderRow.locator('button');
-    const permissionsButton = actionButtons.nth(1);
+    await folderRow.click();
+    await page.waitForTimeout(1000);
+
+    const permissionsButton = page.locator('button').filter({ hasText: /権限管理|Permission/i });
     await expect(permissionsButton).toBeVisible({ timeout: 5000 });
     await permissionsButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -414,8 +420,10 @@ test.describe('ACL Inheritance Breaking', () => {
 
     const folderRow = await waitForTableRow(page, testFolderName);
 
-    const actionButtons = folderRow.locator('button');
-    const permissionsButton = actionButtons.nth(1);
+    await folderRow.click();
+    await page.waitForTimeout(1000);
+
+    const permissionsButton = page.locator('button').filter({ hasText: /権限管理|Permission/i });
     await expect(permissionsButton).toBeVisible({ timeout: 5000 });
     await permissionsButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
