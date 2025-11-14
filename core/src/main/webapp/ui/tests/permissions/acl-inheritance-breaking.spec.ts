@@ -194,19 +194,21 @@ test.describe('ACL Inheritance Breaking', () => {
     await permissionsButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
 
-    const permissionsModal = page.locator('.ant-modal, .ant-drawer').last();
-    await expect(permissionsModal).toBeVisible({ timeout: 5000 });
+    // Wait for permissions page to load (not a modal, but a full page)
+    const permissionsHeading = page.locator('h2').filter({ hasText: /権限管理|Permission/i });
+    await expect(permissionsHeading).toBeVisible({ timeout: 5000 });
 
-    const breakInheritanceButton = permissionsModal.locator('button').filter({
+    const breakInheritanceButton = page.locator('button').filter({
       hasText: /継承を切る|Break Inheritance/i
     });
 
     await expect(breakInheritanceButton).toBeVisible({ timeout: 5000 });
     console.log('✅ Break inheritance button is visible for inherited permissions');
 
-    const closeButton = permissionsModal.locator('button.ant-modal-close, button.ant-drawer-close');
-    if (await closeButton.count() > 0) {
-      await closeButton.first().click();
+    // Navigate back to documents
+    const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
+    if (await backButton.count() > 0) {
+      await backButton.first().click();
       await page.waitForTimeout(500);
     }
   });
@@ -244,27 +246,28 @@ test.describe('ACL Inheritance Breaking', () => {
     await permissionsButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
 
-    const permissionsModal = page.locator('.ant-modal, .ant-drawer').last();
-    await expect(permissionsModal).toBeVisible({ timeout: 5000 });
+    // Wait for permissions page to load (not a modal, but a full page)
+    const permissionsHeading = page.locator('h2').filter({ hasText: /権限管理|Permission/i });
+    await expect(permissionsHeading).toBeVisible({ timeout: 5000 });
 
-    const breakInheritanceButton = permissionsModal.locator('button').filter({
+    const breakInheritanceButton = page.locator('button').filter({
       hasText: /継承を切る|Break Inheritance/i
     });
 
     await breakInheritanceButton.click();
-      await page.waitForTimeout(500);
+    await page.waitForTimeout(500);
 
-      const confirmDialog = page.locator('.ant-modal-confirm');
-      await expect(confirmDialog).toBeVisible({ timeout: 5000 });
-      console.log('✅ Confirmation dialog appeared');
+    const confirmDialog = page.locator('.ant-modal-confirm');
+    await expect(confirmDialog).toBeVisible({ timeout: 5000 });
+    console.log('✅ Confirmation dialog appeared');
 
-      const dialogTitle = confirmDialog.locator('.ant-modal-confirm-title');
-      await expect(dialogTitle).toContainText(/ACL継承を切断しますか/i);
-      console.log('✅ Dialog title is correct');
+    const dialogTitle = confirmDialog.locator('.ant-modal-confirm-title');
+    await expect(dialogTitle).toContainText(/ACL継承を切断しますか/i);
+    console.log('✅ Dialog title is correct');
 
-      const dialogContent = confirmDialog.locator('.ant-modal-confirm-content');
-      await expect(dialogContent).toContainText(/親フォルダからの権限継承を解除します/i);
-      console.log('✅ Dialog content is correct');
+    const dialogContent = confirmDialog.locator('.ant-modal-confirm-content');
+    await expect(dialogContent).toContainText(/親フォルダからの権限継承を解除します/i);
+    console.log('✅ Dialog content is correct');
 
     const cancelButton = confirmDialog.locator('button').filter({ hasText: /キャンセル|Cancel/i });
     if (await cancelButton.count() > 0) {
@@ -272,9 +275,10 @@ test.describe('ACL Inheritance Breaking', () => {
       await page.waitForTimeout(500);
     }
 
-    const closeButton = permissionsModal.locator('button.ant-modal-close, button.ant-drawer-close');
-    if (await closeButton.count() > 0) {
-      await closeButton.first().click();
+    // Navigate back to documents
+    const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
+    if (await backButton.count() > 0) {
+      await backButton.first().click();
       await page.waitForTimeout(500);
     }
   });
@@ -317,10 +321,11 @@ test.describe('ACL Inheritance Breaking', () => {
     await permissionsButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
 
-    const permissionsModal = page.locator('.ant-modal, .ant-drawer').last();
-    await expect(permissionsModal).toBeVisible({ timeout: 5000 });
+    // Wait for permissions page to load (not a modal, but a full page)
+    const permissionsHeading = page.locator('h2').filter({ hasText: /権限管理|Permission/i });
+    await expect(permissionsHeading).toBeVisible({ timeout: 5000 });
 
-    const breakInheritanceButton = permissionsModal.locator('button').filter({
+    const breakInheritanceButton = page.locator('button').filter({
       hasText: /継承を切る|Break Inheritance/i
     });
 
@@ -338,7 +343,7 @@ test.describe('ACL Inheritance Breaking', () => {
 
     await page.waitForTimeout(2000);
 
-    const breakButtonAfter = permissionsModal.locator('button').filter({
+    const breakButtonAfter = page.locator('button').filter({
       hasText: /継承を切る|Break Inheritance/i
     });
     await expect(breakButtonAfter).not.toBeVisible();
@@ -362,9 +367,10 @@ test.describe('ACL Inheritance Breaking', () => {
       }
     }
 
-    const closeButton = permissionsModal.locator('button.ant-modal-close, button.ant-drawer-close');
-    if (await closeButton.count() > 0) {
-      await closeButton.first().click();
+    // Navigate back to documents
+    const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
+    if (await backButton.count() > 0) {
+      await backButton.first().click();
       await page.waitForTimeout(500);
     }
   });
@@ -416,10 +422,11 @@ test.describe('ACL Inheritance Breaking', () => {
     await permissionsButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
 
-    const permissionsModal = page.locator('.ant-modal, .ant-drawer').last();
-    await expect(permissionsModal).toBeVisible({ timeout: 5000 });
+    // Wait for permissions page to load (not a modal, but a full page)
+    const permissionsHeading = page.locator('h2').filter({ hasText: /権限管理|Permission/i });
+    await expect(permissionsHeading).toBeVisible({ timeout: 5000 });
 
-    const breakInheritanceButton = permissionsModal.locator('button').filter({
+    const breakInheritanceButton = page.locator('button').filter({
       hasText: /継承を切る|Break Inheritance/i
     });
 
@@ -450,9 +457,10 @@ test.describe('ACL Inheritance Breaking', () => {
     expect(directPermissionsAfter).toBeGreaterThan(0);
     console.log('✅ Direct permissions exist after breaking inheritance');
 
-    const closeButton = permissionsModal.locator('button.ant-modal-close, button.ant-drawer-close');
-    if (await closeButton.count() > 0) {
-      await closeButton.first().click();
+    // Navigate back to documents
+    const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
+    if (await backButton.count() > 0) {
+      await backButton.first().click();
       await page.waitForTimeout(500);
     }
   });
