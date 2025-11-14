@@ -182,14 +182,8 @@ public class AclServiceImpl implements AclService {
 	
 			// CRITICAL: Set aclInherited flag AFTER building the ACL and BEFORE updating
 			if(!CollectionUtils.isEmpty(exts)){
-				Boolean currentInherited = contentService.getAclInheritedWithDefault(repositoryId, content);
-				System.err.println("!!! ACL SERVICE: Before update - currentInherited=" + currentInherited + ", newInherited=" + inherited + " for objectId=" + objectId);
-				if(!currentInherited.equals(inherited)){
-					content.setAclInherited(inherited);
-					System.err.println("!!! ACL SERVICE: Set aclInherited=" + inherited + " for objectId=" + objectId);
-				} else {
-					System.err.println("!!! ACL SERVICE: Skipping setAclInherited because values are equal");
-				}
+				content.setAclInherited(inherited);
+				System.err.println("!!! ACL SERVICE: Set aclInherited=" + inherited + " for objectId=" + objectId);
 			}
 	
 			contentService.updateInternal(repositoryId, content);
