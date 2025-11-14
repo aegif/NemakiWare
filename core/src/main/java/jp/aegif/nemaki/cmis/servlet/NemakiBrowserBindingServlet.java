@@ -4068,6 +4068,13 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             try {
                 cmisService = getCmisService(callContext);
 
+            // DEBUG: Log all request parameters to see what we're receiving
+            log.info("!!! SERVLET: applyAcl request parameters:");
+            java.util.Map<String, String[]> paramMap = request.getParameterMap();
+            for (java.util.Map.Entry<String, String[]> entry : paramMap.entrySet()) {
+                log.info("!!! SERVLET:   " + entry.getKey() + " = " + java.util.Arrays.toString(entry.getValue()));
+            }
+
             // Extract ACL from request parameters
             java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> addAces = extractAclFromRequest(request, "addACE");
             java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> removeAces = extractAclFromRequest(request, "removeACE");
@@ -4084,6 +4091,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 extDataImpl.setExtensions(extensions);
                 extensionsData = extDataImpl;
                 log.info("!!! SERVLET: Passing " + extensions.size() + " extension elements to applyAcl");
+            } else {
+                log.info("!!! SERVLET: No extension elements found in request");
             }
 
             // Apply ACL using CMIS service - convert List<Ace> to Acl objects
