@@ -146,7 +146,6 @@ public class AclServiceImpl implements AclService {
 						}
 					}
 				}
-				if(!contentService.getAclInheritedWithDefault(repositoryId, content).equals(inherited)) content.setAclInherited(inherited);
 			}
 
 			jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
@@ -157,12 +156,12 @@ public class AclServiceImpl implements AclService {
 				System.err.println("!!! ACL SERVICE: Breaking inheritance for objectId=" + objectId);
 				jp.aegif.nemaki.model.Acl currentAcl = contentService.calculateAcl(repositoryId, content);
 				System.err.println("!!! ACL SERVICE: Current ACL has " + currentAcl.getLocalAces().size() + " local ACEs and " + currentAcl.getInheritedAces().size() + " inherited ACEs");
-			
+		
 				for(jp.aegif.nemaki.model.Ace localAce : currentAcl.getLocalAces()){
 					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(localAce.getPrincipalId(), localAce.getPermissions(), objectOnly);
 					nemakiAcl.getLocalAces().add(nemakiAce);
 				}
-			
+		
 				for(jp.aegif.nemaki.model.Ace inheritedAce : currentAcl.getInheritedAces()){
 					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(inheritedAce.getPrincipalId(), inheritedAce.getPermissions(), objectOnly);
 					nemakiAcl.getLocalAces().add(nemakiAce);
@@ -180,6 +179,15 @@ public class AclServiceImpl implements AclService {
 
 			convertSystemPrinciaplId(repositoryId, nemakiAcl);
 			content.setAcl(nemakiAcl);
+		
+			// CRITICAL: Set aclInherited flag AFTER building the ACL and BEFORE updating
+			if(!CollectionUtils.isEmpty(exts)){
+				if(!contentService.getAclInheritedWithDefault(repositoryId, content).equals(inherited)){
+					content.setAclInherited(inherited);
+					System.err.println("!!! ACL SERVICE: Set aclInherited=" + inherited + " for objectId=" + objectId);
+				}
+			}
+		
 			contentService.updateInternal(repositoryId, content);
 			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
 
