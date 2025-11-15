@@ -477,7 +477,15 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 */
 	@Override
 	public ObjectData getFolderParent(String repositoryId, String folderId, String filter, ExtensionsData extension) {
-		return navigationService.getFolderParent(getCallContext(), repositoryId, folderId, filter, null);
+		ObjectData parent = navigationService.getFolderParent(getCallContext(), repositoryId, folderId, filter, null);
+		
+		// CRITICAL TCK FIX: Register ObjectInfo for the parent folder
+		// Without this, OpenCMIS AtomPub binding throws "Object Info not found for: null"
+		if (parent != null) {
+			setObjectInfo(repositoryId, parent);
+		}
+		
+		return parent;
 	}
 
 	/**
