@@ -481,7 +481,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		
 		// CRITICAL TCK FIX: Register ObjectInfo for the parent folder
 		// Without this, OpenCMIS AtomPub binding throws "Object Info not found for: null"
-		if (parent != null) {
+		if (parent != null && parent.getId() != null) {
 			setObjectInfo(repositoryId, parent);
 		}
 		
