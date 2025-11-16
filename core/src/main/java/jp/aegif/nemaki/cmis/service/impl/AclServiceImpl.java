@@ -134,29 +134,60 @@ public class AclServiceImpl implements AclService {
 			// //////////////////
 			//Check ACL inheritance
 			boolean inherited = true;	//Inheritance defaults to true if nothing input
+			boolean inheritedExplicitlySet = false;  // Track if inherited was explicitly set via extension
+			boolean breakingInheritance = false;
 			List<CmisExtensionElement> exts = acl.getExtensions();
 			if(!CollectionUtils.isEmpty(exts)){
 				for(CmisExtensionElement ext : exts){
 					if(ext.getName().equals("inherited")){
 						inherited = Boolean.valueOf(ext.getValue());
+						inheritedExplicitlySet = true;
+						// If changing from inherited=true to inherited=false, we're breaking inheritance
+						if(!inherited && contentService.getAclInheritedWithDefault(repositoryId, content)){
+							breakingInheritance = true;
+						}
 					}
 				}
-				if(!contentService.getAclInheritedWithDefault(repositoryId, content).equals(inherited)) content.setAclInherited(inherited);
 			}
 
 			jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
 			//REPOSITORYDETERMINED or PROPAGATE is considered as PROPAGATE
 			boolean objectOnly = (aclPropagation == AclPropagation.OBJECTONLY)? true : false;
 	
-			for(Ace ace : acl.getAces()){
-				if(ace.isDirect()){
-					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), objectOnly);
+			if(breakingInheritance){
+				System.err.println("!!! ACL SERVICE: Breaking inheritance for objectId=" + objectId);
+				jp.aegif.nemaki.model.Acl currentAcl = contentService.calculateAcl(repositoryId, content);
+				System.err.println("!!! ACL SERVICE: Current ACL has " + currentAcl.getLocalAces().size() + " local ACEs and " + currentAcl.getInheritedAces().size() + " inherited ACEs");
+		
+				for(jp.aegif.nemaki.model.Ace localAce : currentAcl.getLocalAces()){
+					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(localAce.getPrincipalId(), localAce.getPermissions(), objectOnly);
 					nemakiAcl.getLocalAces().add(nemakiAce);
+				}
+		
+				for(jp.aegif.nemaki.model.Ace inheritedAce : currentAcl.getInheritedAces()){
+					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(inheritedAce.getPrincipalId(), inheritedAce.getPermissions(), objectOnly);
+					nemakiAcl.getLocalAces().add(nemakiAce);
+					System.err.println("!!! ACL SERVICE: Converted inherited ACE to direct: principalId=" + inheritedAce.getPrincipalId() + ", permissions=" + inheritedAce.getPermissions());
+				}
+				System.err.println("!!! ACL SERVICE: After breaking inheritance, nemakiAcl has " + nemakiAcl.getLocalAces().size() + " local ACEs");
+			} else {
+				for(Ace ace : acl.getAces()){
+					if(ace.isDirect()){
+						jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), objectOnly);
+						nemakiAcl.getLocalAces().add(nemakiAce);
+					}
 				}
 			}
 
 			convertSystemPrinciaplId(repositoryId, nemakiAcl);
 			content.setAcl(nemakiAcl);
+
+			// CRITICAL: Set aclInherited flag AFTER building the ACL and BEFORE updating
+			if(inheritedExplicitlySet){
+				content.setAclInherited(inherited);
+				System.err.println("!!! ACL SERVICE: Set aclInherited=" + inherited + " for objectId=" + objectId);
+			}
+	
 			contentService.updateInternal(repositoryId, content);
 			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
 

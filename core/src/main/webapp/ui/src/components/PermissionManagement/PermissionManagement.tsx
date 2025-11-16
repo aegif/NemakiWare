@@ -311,6 +311,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
+  const [isInherited, setIsInherited] = useState<boolean>(true);
   const [form] = Form.useForm();
 
   const { handleAuthError } = useAuth();
@@ -366,6 +367,10 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       setACL(aclData);
       setUsers(userList);
       setGroups(groupList);
+      
+      const inheritanceStatus = aclData.aclInherited ?? true;
+      setIsInherited(inheritanceStatus);
+      console.log('[ACL DEBUG] Inheritance status from aclData:', aclData.aclInherited, 'final:', inheritanceStatus);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'データの読み込みに失敗しました';
       message.error(errorMessage);
@@ -415,6 +420,28 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
     } catch (error) {
       message.error('権限の削除に失敗しました');
     }
+  };
+
+  const handleBreakInheritance = async () => {
+    if (!acl || !objectId) return;
+
+    Modal.confirm({
+      title: 'ACL継承を切断しますか？',
+      content: '親フォルダからの権限継承を解除します。この操作は元に戻せません。継承されている権限は直接権限として複製されます。',
+      okText: '継承を切断',
+      cancelText: 'キャンセル',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await cmisService.setACL(repositoryId, objectId, acl, { breakInheritance: true });
+          message.success('ACL継承を切断しました');
+          loadData();
+        } catch (error) {
+          message.error('ACL継承の切断に失敗しました');
+          console.error('[ACL DEBUG] Break inheritance error:', error);
+        }
+      }
+    });
   };
 
   const columns = [
@@ -527,13 +554,25 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
             </h2>
           </Space>
           
-          <Button 
-            type="primary" 
-            icon={<PlusOutlined />}
-            onClick={() => setModalVisible(true)}
-          >
-            権限を追加
-          </Button>
+          <Space>
+            {isInherited && (
+              <Button 
+                type="default" 
+                icon={<LockOutlined />}
+                onClick={handleBreakInheritance}
+                danger
+              >
+                継承を切る
+              </Button>
+            )}
+            <Button 
+              type="primary" 
+              icon={<PlusOutlined />}
+              onClick={() => setModalVisible(true)}
+            >
+              権限を追加
+            </Button>
+          </Space>
         </div>
 
         <Card size="small" title="オブジェクト情報">

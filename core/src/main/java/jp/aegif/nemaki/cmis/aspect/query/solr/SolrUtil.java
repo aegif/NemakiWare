@@ -81,7 +81,7 @@ public class SolrUtil {
 		map.put(PropertyIds.OBJECT_TYPE_ID, "objecttype");
 		map.put(PropertyIds.NAME, "name");
 		map.put(PropertyIds.DESCRIPTION, "cmis_description");
-		map.put(PropertyIds.CREATION_DATE, "created");
+		map.put(PropertyIds.CREATION_DATE, "creation_date");
 		map.put(PropertyIds.CREATED_BY, "creator");
 		map.put(PropertyIds.LAST_MODIFICATION_DATE, "modified");
 		map.put(PropertyIds.LAST_MODIFIED_BY, "modifier");

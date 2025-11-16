@@ -477,7 +477,15 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 */
 	@Override
 	public ObjectData getFolderParent(String repositoryId, String folderId, String filter, ExtensionsData extension) {
-		return navigationService.getFolderParent(getCallContext(), repositoryId, folderId, filter, null);
+		ObjectData parent = navigationService.getFolderParent(getCallContext(), repositoryId, folderId, filter, null);
+		
+		// CRITICAL TCK FIX: Register ObjectInfo for the parent folder
+		// Without this, OpenCMIS AtomPub binding throws "Object Info not found for: null"
+		if (parent != null && parent.getId() != null) {
+			setObjectInfo(repositoryId, parent);
+		}
+		
+		return parent;
 	}
 
 	/**
@@ -815,6 +823,15 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		System.err.println("!!! CMIS SERVICE applyAcl: objectId=" + objectId +
 							", addAces=" + (addAces != null ? addAces.getAces().size() + " ACEs" : "null") +
 							", removeAces=" + (removeAces != null ? removeAces.getAces().size() + " ACEs" : "null"));
+		
+		if (extension != null && extension.getExtensions() != null && !extension.getExtensions().isEmpty()) {
+			System.err.println("!!! CMIS SERVICE: Received " + extension.getExtensions().size() + " extension elements");
+			for (org.apache.chemistry.opencmis.commons.data.CmisExtensionElement ext : extension.getExtensions()) {
+				System.err.println("!!! CMIS SERVICE:   Extension - name: " + ext.getName() + ", value: " + ext.getValue());
+			}
+		} else {
+			System.err.println("!!! CMIS SERVICE: No extension elements received");
+		}
 
 		// CRITICAL FIX: Get current ACL first
 		Acl currentAcl = aclService.getAcl(getCallContext(), repositoryId, objectId, false, extension);
@@ -851,8 +868,16 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 			}
 		}
 
-		// Create final ACL with merged ACEs
-		Acl finalAcl = new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(newAces);
+		// Create final ACL with merged ACEs and extension elements
+		org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl finalAcl = 
+			new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(newAces);
+		
+		// CRITICAL: Copy extension elements from request to final ACL so they reach AclServiceImpl
+		if (extension != null && extension.getExtensions() != null && !extension.getExtensions().isEmpty()) {
+			finalAcl.setExtensions(extension.getExtensions());
+			System.err.println("!!! CMIS SERVICE: Copied " + extension.getExtensions().size() + " extension elements to final ACL");
+		}
+		
 		System.err.println("!!! CMIS SERVICE: Final ACL has " + finalAcl.getAces().size() + " ACEs, calling aclService.applyAcl()");
 
 		return aclService.applyAcl(getCallContext(), repositoryId, objectId, finalAcl, aclPropagation);

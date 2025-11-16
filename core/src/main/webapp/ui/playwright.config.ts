@@ -48,6 +48,16 @@ export default defineConfig({
     // Base URL for tests
     baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:8080',
 
+    // HTTP Basic Authentication credentials
+    httpCredentials: {
+      username: process.env.PW_BASIC_USER || 'admin',
+      password: process.env.PW_BASIC_PASS || 'admin',
+    },
+
+    extraHTTPHeaders: {
+      Authorization: 'Basic ' + Buffer.from(`${process.env.PW_BASIC_USER || 'admin'}:${process.env.PW_BASIC_PASS || 'admin'}`).toString('base64'),
+    },
+
     // Force headless mode for Docker/CI environments
     // This prevents GTK/GStreamer dependency issues in containers
     headless: process.env.CI || process.env.DOCKER_ENV ? true : undefined,

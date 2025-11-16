@@ -1459,9 +1459,22 @@ export class CMISService {
                 direct: ace.direct !== false // Default to true if not specified
               }));
 
+              // Extract aclInherited from extension elements
+              let aclInherited = true; // Default to true if not specified
+              if (response.extensions && Array.isArray(response.extensions)) {
+                const inheritedExt = response.extensions.find((ext: any) => 
+                  ext.name === 'inherited' || ext.localName === 'inherited'
+                );
+                if (inheritedExt) {
+                  aclInherited = inheritedExt.value === 'true';
+                  console.log('CMIS DEBUG: getACL found aclInherited extension:', aclInherited);
+                }
+              }
+
               const acl: ACL = {
                 permissions: permissions,
-                isExact: response.isExact !== false // Default to true if not specified
+                isExact: response.isExact !== false, // Default to true if not specified
+                aclInherited
               };
 
               console.log('CMIS DEBUG: getACL parsed:', acl);
@@ -1493,8 +1506,9 @@ export class CMISService {
    * @param repositoryId Repository ID
    * @param objectId Object ID to set ACL for
    * @param acl ACL object containing permissions to apply
+   * @param options Optional parameters including breakInheritance flag
    */
-  async setACL(repositoryId: string, objectId: string, acl: ACL): Promise<void> {
+  async setACL(repositoryId: string, objectId: string, acl: ACL, options?: { breakInheritance?: boolean }): Promise<void> {
     try {
       // Step 1: Get current ACL to know what to remove
       const currentACL = await this.getACL(repositoryId, objectId);
@@ -1549,6 +1563,12 @@ export class CMISService {
             formData.append(`addACEPermission[${aceIndex}][${permIndex}]`, perm);
           });
         });
+
+        // Step 2c: Add extension element for inheritance control if specified
+        if (options?.breakInheritance !== undefined) {
+          formData.append('extension[inherited]', String(!options.breakInheritance));
+          console.log('CMIS DEBUG: setACL adding extension element - inherited:', !options.breakInheritance);
+        }
 
         console.log('CMIS DEBUG: setACL form data:', formData.toString());
         xhr.send(formData.toString());

@@ -244,7 +244,27 @@ export class AuthHelper {
     }
 
     // Navigate to login page
-    await this.page.goto('/core/ui/dist/index.html', { waitUntil: 'networkidle' });
+    // CRITICAL FIX (2025-11-13): Use 'domcontentloaded' instead of 'networkidle'
+    await this.page.goto('/core/ui/dist/index.html', { waitUntil: 'domcontentloaded' });
+
+    // CRITICAL FIX (2025-11-13): Check if already authenticated via BASIC auth
+    // Check for authenticated layout elements before attempting to fill login form
+    try {
+      const alreadyAuthenticated = await this.page.waitForFunction(
+        () => {
+          const hasSider = document.querySelector('.ant-layout-sider') !== null;
+          const hasLayout = document.querySelector('.ant-layout') !== null;
+          return hasSider && hasLayout;
+        },
+        { timeout: 3000 }
+      );
+      
+      if (alreadyAuthenticated) {
+        console.log('AuthHelper: Already authenticated via BASIC auth, skipping login form');
+        return;
+      }
+    } catch (e) {
+    }
 
     // CRITICAL FIX (2025-10-22): Wait for React SPA to initialize before looking for form fields
     // The React app needs time to mount and render the Login component

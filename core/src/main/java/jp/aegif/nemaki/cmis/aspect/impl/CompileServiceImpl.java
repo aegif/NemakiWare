@@ -395,6 +395,12 @@ public class CompileServiceImpl implements CompileService {
 			for (String key : properties.getProperties().keySet()) {
 				PropertyData<?> pd = properties.getProperties().get(key);
 
+				// CRITICAL TCK FIX (2025-11-16): Always include cmis:objectId and cmis:baseTypeId
+				// ObjectDataImpl extracts these values from the Properties object, not from direct fields.
+				// Without these properties, getId() returns null, causing "Object Info not found for: null" errors.
+				boolean isRequiredProperty = PropertyIds.OBJECT_ID.equals(pd.getId()) || 
+											 PropertyIds.BASE_TYPE_ID.equals(pd.getId());
+
 				// CRITICAL TCK FIX (2025-10-09): Always include content stream properties WITH VALID VALUES
 				// CMIS 1.1 specification requires content stream properties to always be present
 				// if the document has content, regardless of the property filter.
@@ -428,35 +434,100 @@ public class CompileServiceImpl implements CompileService {
 					hasValidVersioningProperty = pd.getFirstValue() != null;
 				}
 
-				if (filter.contains(pd.getQueryName()) || hasValidContentStreamProperty || hasValidVersioningProperty) {
-					// TCK CRITICAL FIX: Apply query alias if propertyAliases map is provided
-					// Check if this property's queryName matches any value in the aliases map
-					// If it does, set the property's queryName to the corresponding alias (key)
-					if (propertyAliases != null && !propertyAliases.isEmpty()) {
-						if (log.isDebugEnabled()) {
-							log.debug("TCK Alias: Checking property " + pd.getQueryName() + " (id=" + pd.getId() + ") against " + propertyAliases.size() + " aliases");
+				// CRITICAL TCK FIX (2025-11-16): Check if property should be included based on filter
+				boolean shouldInclude = isRequiredProperty || hasValidContentStreamProperty || hasValidVersioningProperty;
+			
+				// Check if the property's queryName is in the filter
+				if (!shouldInclude && filter.contains(pd.getQueryName())) {
+					shouldInclude = true;
+				}
+			
+				// Check if the property's ID matches any value in the propertyAliases map
+				if (!shouldInclude && propertyAliases != null && !propertyAliases.isEmpty()) {
+					for (Map.Entry<String, String> aliasEntry : propertyAliases.entrySet()) {
+						String propertyName = aliasEntry.getValue();
+						// Match property by queryName or id
+						if (propertyName.equals(pd.getQueryName()) || propertyName.equals(pd.getId())) {
+							shouldInclude = true;
+							break;
 						}
+					}
+				}
+			
+				if (shouldInclude) {
+					// TCK CRITICAL FIX: Apply query alias if propertyAliases map is provided
+					// IMPORTANT: Create a COPY of the PropertyData to avoid modifying cached objects
+					PropertyData<?> propertyToAdd = pd;
+				
+					if (propertyAliases != null && !propertyAliases.isEmpty()) {
 						for (Map.Entry<String, String> aliasEntry : propertyAliases.entrySet()) {
 							String alias = aliasEntry.getKey();
 							String propertyName = aliasEntry.getValue();
-							if (log.isDebugEnabled()) {
-								log.debug("TCK Alias: Comparing with alias=" + alias + " -> propertyName=" + propertyName);
-							}
 							// Match property by queryName or id
 							if (propertyName.equals(pd.getQueryName()) || propertyName.equals(pd.getId())) {
-								// Set queryName to alias (e.g., "folderName" instead of "cmis:name")
-								if (log.isDebugEnabled()) {
-									log.debug("TCK Alias: MATCH! Setting queryName from " + pd.getQueryName() + " to " + alias);
-								}
-								// PropertyData is an interface, need to cast to AbstractPropertyData to set queryName
+								// Create a COPY with the alias as queryName (e.g., "folderName" instead of "cmis:name")
+								// This prevents modifying the cached PropertyData object
 								if (pd instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData) {
-									((org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData<?>) pd).setQueryName(alias);
+									try {
+										org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData<?> originalProp = 
+											(org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData<?>) pd;
+									
+										// Create a new property with the same values but different queryName
+										if (pd instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl) {
+											org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl copy = 
+												new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl(
+													originalProp.getId(), 
+													(List<String>) originalProp.getValues());
+											copy.setDisplayName(originalProp.getDisplayName());
+											copy.setLocalName(originalProp.getLocalName());
+											copy.setQueryName(alias);
+											propertyToAdd = copy;
+										} else if (pd instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl) {
+											org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl copy = 
+												new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(
+													originalProp.getId(), 
+													(List<String>) originalProp.getValues());
+											copy.setDisplayName(originalProp.getDisplayName());
+											copy.setLocalName(originalProp.getLocalName());
+											copy.setQueryName(alias);
+											propertyToAdd = copy;
+										} else if (pd instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeImpl) {
+											org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeImpl copy = 
+												new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeImpl(
+													originalProp.getId(), 
+													(List<GregorianCalendar>) originalProp.getValues());
+											copy.setDisplayName(originalProp.getDisplayName());
+											copy.setLocalName(originalProp.getLocalName());
+											copy.setQueryName(alias);
+											propertyToAdd = copy;
+										} else if (pd instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerImpl) {
+											org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerImpl copy = 
+												new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerImpl(
+													originalProp.getId(), 
+													(List<BigInteger>) originalProp.getValues());
+											copy.setDisplayName(originalProp.getDisplayName());
+											copy.setLocalName(originalProp.getLocalName());
+											copy.setQueryName(alias);
+											propertyToAdd = copy;
+										} else if (pd instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanImpl) {
+											org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanImpl copy = 
+												new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanImpl(
+													originalProp.getId(), 
+													(List<Boolean>) originalProp.getValues());
+											copy.setDisplayName(originalProp.getDisplayName());
+											copy.setLocalName(originalProp.getLocalName());
+											copy.setQueryName(alias);
+											propertyToAdd = copy;
+										}
+									} catch (Exception e) {
+										log.warn("Failed to create property copy for alias, using original: " + e.getMessage());
+									}
 								}
 								break;
 							}
 						}
 					}
-					result.addProperty(pd);
+					result.addProperty(propertyToAdd);
 				}
 			}
 		}
