@@ -395,6 +395,12 @@ public class CompileServiceImpl implements CompileService {
 			for (String key : properties.getProperties().keySet()) {
 				PropertyData<?> pd = properties.getProperties().get(key);
 
+				// CRITICAL TCK FIX (2025-11-16): Always include cmis:objectId and cmis:baseTypeId
+				// ObjectDataImpl extracts these values from the Properties object, not from direct fields.
+				// Without these properties, getId() returns null, causing "Object Info not found for: null" errors.
+				boolean isRequiredProperty = PropertyIds.OBJECT_ID.equals(pd.getId()) || 
+											 PropertyIds.BASE_TYPE_ID.equals(pd.getId());
+
 				// CRITICAL TCK FIX (2025-10-09): Always include content stream properties WITH VALID VALUES
 				// CMIS 1.1 specification requires content stream properties to always be present
 				// if the document has content, regardless of the property filter.
@@ -428,7 +434,7 @@ public class CompileServiceImpl implements CompileService {
 					hasValidVersioningProperty = pd.getFirstValue() != null;
 				}
 
-				if (filter.contains(pd.getQueryName()) || hasValidContentStreamProperty || hasValidVersioningProperty) {
+				if (isRequiredProperty || filter.contains(pd.getQueryName()) || hasValidContentStreamProperty || hasValidVersioningProperty) {
 					// TCK CRITICAL FIX: Apply query alias if propertyAliases map is provided
 					// Check if this property's queryName matches any value in the aliases map
 					// If it does, set the property's queryName to the corresponding alias (key)
