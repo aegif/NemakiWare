@@ -201,7 +201,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
       key: propId,
       propId,
       displayName: propDef.displayName,
-      value: object.properties[propId]?.value,  // FIX: Extract value from property object
+      value: object.properties[propId],  // FIXED: Properties are stored directly, not as {value: ...}
       propertyType: propDef.propertyType,
       updatable: propDef.updatable,
       required: propDef.required,

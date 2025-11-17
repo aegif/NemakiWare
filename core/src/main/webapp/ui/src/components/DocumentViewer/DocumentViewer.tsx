@@ -663,7 +663,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             <Descriptions.Item label="ID">{object.id}</Descriptions.Item>
             <Descriptions.Item label="タイプ">{object.objectType}</Descriptions.Item>
             <Descriptions.Item label="ベースタイプ">{object.baseType}</Descriptions.Item>
-            <Descriptions.Item label="パス">{object.path || '-'}</Descriptions.Item>
+            <Descriptions.Item label="パス">
+              {object.path || object.properties?.['cmis:path'] || '-'}
+            </Descriptions.Item>
             <Descriptions.Item label="作成者">{object.createdBy}</Descriptions.Item>
             <Descriptions.Item label="作成日時">
               {object.creationDate ? new Date(object.creationDate).toLocaleString('ja-JP') : '-'}
