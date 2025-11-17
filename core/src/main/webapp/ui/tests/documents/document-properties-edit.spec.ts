@@ -138,24 +138,36 @@ test.describe('Document Properties Edit and Persistence', () => {
   let testDocId: string;
 
   test.beforeEach(async ({ page, browserName }) => {
+    console.error('!!! beforeEach STARTED !!!');
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
+    console.error('!!! Helpers initialized !!!');
 
     await page.context().clearCookies();
     await page.context().clearPermissions();
+    console.error('!!! Cookies and permissions cleared !!!');
+
     await authHelper.login();
+    console.error('!!! Login completed !!!');
+
     await testHelper.waitForAntdLoad();
+    console.error('!!! Ant Design loaded !!!');
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
+      console.error('!!! Documents menu found, clicking... !!!');
       await documentsMenuItem.click();
       await page.waitForTimeout(2000);
+      console.error('!!! Documents page loaded !!!');
+    } else {
+      console.error('!!! Documents menu NOT found !!!');
     }
 
     // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
     const viewportSize = page.viewportSize();
     const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    console.error(`!!! Viewport: ${JSON.stringify(viewportSize)}, isMobileChrome: ${isMobileChrome} !!!`);
 
     if (isMobileChrome) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
@@ -164,7 +176,9 @@ test.describe('Document Properties Edit and Persistence', () => {
         try {
           await menuToggle.first().click({ timeout: 3000 });
           await page.waitForTimeout(500);
+          console.error('!!! Sidebar closed !!!');
         } catch (error) {
+          console.error('!!! Sidebar close failed !!!');
           // Continue even if sidebar close fails
         }
       } else {
@@ -173,12 +187,16 @@ test.describe('Document Properties Edit and Persistence', () => {
           try {
             await alternativeToggle.click({ timeout: 3000 });
             await page.waitForTimeout(500);
+            console.error('!!! Alternative sidebar close succeeded !!!');
           } catch (error) {
+            console.error('!!! Alternative sidebar close failed !!!');
             // Continue even if alternative selector fails
           }
         }
       }
     }
+
+    console.error('!!! beforeEach COMPLETED SUCCESSFULLY !!!');
   });
 
   test('should upload test document for property editing', async ({ page, browserName }) => {
@@ -214,46 +232,130 @@ test.describe('Document Properties Edit and Persistence', () => {
   });
 
   test('should open and edit document properties', async ({ page, browserName }) => {
+    console.log('!!! TEST BODY STARTED - First line of test function !!!');
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    console.log('!!! Variables initialized, viewport:', viewportSize, 'isMobile:', isMobile, '!!!');
+
+    // DEBUG: Check current page
+    console.log('Current URL:', page.url());
+    console.log('Looking for document rows...');
+    const allRows = page.locator('tr');
+    console.log('Total table rows:', await allRows.count());
 
     await page.waitForTimeout(2000);
 
     // Find the test document row
     const docRow = page.locator('tr').filter({ hasText: testDocName });
+    console.log(`Rows with testDocName "${testDocName}":`, await docRow.count());
+    console.log('XXXXXXXXXX CODE PATH CHECK - Line 251 executing XXXXXXXXXX');
 
     if (await docRow.count() > 0) {
-      // Look for properties/edit button (may be gear icon, edit icon, or properties text)
-      const propertiesButton = docRow.locator('button').filter({
-        has: page.locator('[data-icon="edit"], [data-icon="setting"], [data-icon="form"]')
-      });
+      console.log('XXXXXXXXXX INSIDE IF BLOCK - Line 253 executing XXXXXXXXXX');
+      // DEBUG: Check all buttons in the document row
+      const allButtons = docRow.locator('button');
+      console.error('!!! All buttons in docRow:', await allButtons.count());
+      for (let i = 0; i < Math.min(await allButtons.count(), 10); i++) {
+        const btn = allButtons.nth(i);
+        const ariaLabel = await btn.getAttribute('aria-label');
+        const title = await btn.getAttribute('title');
+        const className = await btn.getAttribute('class');
+        console.error(`!!! Button ${i}: aria-label="${ariaLabel}", title="${title}", class="${className}"`);
 
-      if (await propertiesButton.count() > 0) {
-        await propertiesButton.first().click(isMobile ? { force: true } : {});
-      } else {
-        // Try clicking detail view button first
-        const detailButton = docRow.locator('button').filter({
-          has: page.locator('[data-icon="eye"]')
-        });
-        if (await detailButton.count() > 0) {
-          await detailButton.first().click(isMobile ? { force: true } : {});
-          await page.waitForTimeout(1000);
-
-          // Look for edit button in detail view
-          const editInDetail = page.locator('button:has-text("編集"), button').filter({
-            has: page.locator('[data-icon="edit"]')
-          });
-          if (await editInDetail.count() > 0) {
-            await editInDetail.first().click(isMobile ? { force: true } : {});
-          }
+        // Check for data-icon attribute on child elements
+        const icon = btn.locator('[data-icon]');
+        if (await icon.count() > 0) {
+          const dataIcon = await icon.getAttribute('data-icon');
+          console.error(`!!! Button ${i} has icon with data-icon="${dataIcon}"`);
         }
       }
 
-      await page.waitForTimeout(1000);
+      // Click document name to navigate to detail page
+      console.error('!!! Clicking document name to open detail page...');
+      const documentNameLink = docRow.locator('a, button').first();
+      await documentNameLink.click({ force: true });
+
+      // Wait for navigation to detail page
+      await page.waitForTimeout(2000);
+      console.error('!!! Page URL after navigation:', page.url());
+
+      // DEBUG: Enumerate all buttons on the detail page to find the edit button
+      console.error('!!! DEBUG: Enumerating all buttons on detail page...');
+      const allPageButtons = page.locator('button');
+      const buttonCount = await allPageButtons.count();
+      console.error('!!! Total buttons on page:', buttonCount);
+
+      for (let i = 0; i < Math.min(buttonCount, 20); i++) {
+        const btn = allPageButtons.nth(i);
+        try {
+          const text = await btn.textContent();
+          const innerText = await btn.innerText().catch(() => 'N/A');
+          const ariaLabel = await btn.getAttribute('aria-label');
+          console.error(`!!! Page Button ${i}: text="${text}", innerText="${innerText}", aria-label="${ariaLabel}"`);
+        } catch (e) {
+          console.error(`!!! Page Button ${i}: Error reading button - ${e.message}`);
+        }
+      }
+
+      // Try multiple locator strategies for the "編集管理" button
+      console.error('!!! Trying alternative locator strategies...');
+      const editButton1 = page.locator('button:has-text("編集管理")');
+      const editButton2 = page.getByRole('button', { name: '編集管理' });
+      const editButton3 = page.getByText('編集管理');
+      const editButton4 = page.locator('button').filter({ hasText: '編集管理' });
+
+      console.error('!!! editButton1 (has-text) count:', await editButton1.count());
+      console.error('!!! editButton2 (getByRole) count:', await editButton2.count());
+      console.error('!!! editButton3 (getByText) count:', await editButton3.count());
+      console.error('!!! editButton4 (filter) count:', await editButton4.count());
+
+      // Try to click the first one that works
+      let editButton = null;
+      if (await editButton1.count() > 0) {
+        console.error('!!! Using editButton1 (has-text)');
+        editButton = editButton1;
+      } else if (await editButton2.count() > 0) {
+        console.error('!!! Using editButton2 (getByRole)');
+        editButton = editButton2;
+      } else if (await editButton3.count() > 0) {
+        console.error('!!! Using editButton3 (getByText)');
+        editButton = editButton3;
+      } else if (await editButton4.count() > 0) {
+        console.error('!!! Using editButton4 (filter)');
+        editButton = editButton4;
+      }
+
+      if (editButton) {
+        console.error('!!! Clicking edit button...');
+        await editButton.click({ force: true });
+
+        // Wait for edit mode to activate
+        await page.waitForTimeout(1000);
+        console.error('!!! Edit mode activated');
+
+        // Take screenshot of edit mode
+        await page.screenshot({ path: 'test-results/after-edit-click.png' });
+        console.error('!!! Screenshot saved to after-edit-click.png');
+      } else {
+        console.error('!!! Edit button not found with any locator strategy!');
+      }
+
+      // DEBUG: Check all input fields
+      const allInputs = page.locator('input');
+      console.log('Total input fields:', await allInputs.count());
+      for (let i = 0; i < Math.min(await allInputs.count(), 10); i++) {
+        const input = allInputs.nth(i);
+        const id = await input.getAttribute('id');
+        const name = await input.getAttribute('name');
+        const placeholder = await input.getAttribute('placeholder');
+        console.log(`Input ${i}: id="${id}", name="${name}", placeholder="${placeholder}"`);
+      }
 
       // Look for editable fields
       // Try to find name/description field
-      const nameInput = page.locator('input[id*="name"], textarea[id*="description"]');
+      // CRITICAL FIX (2025-11-17): PropertyEditor renders cmis:description as Input, not TextArea
+      // Accept both input and textarea for description fields
+      const nameInput = page.locator('input[id*="name"], input[id*="description"], textarea[id*="description"]');
 
       if (await nameInput.count() > 0) {
         // Update description or add custom property
@@ -279,10 +381,18 @@ test.describe('Document Properties Edit and Persistence', () => {
           await page.waitForTimeout(2000);
         }
       } else {
-        test.skip('Editable properties not found');
+        // DEBUG: Show why test is skipping
+        const docRowCount = await docRow.count();
+        const nameInputCount = await nameInput.count();
+        const modalCount = await page.locator('.ant-modal').count();
+        const allInputCount = await page.locator('input').count();
+        throw new Error(`Editable properties not found! docRow=${docRowCount}, nameInput=${nameInputCount}, modal=${modalCount}, allInputs=${allInputCount}`);
       }
     } else {
-      test.skip('Test document not found');
+      // DEBUG: Show document row not found
+      const allRowsCount = await page.locator('tr').count();
+      const docRowCount = await docRow.count();
+      throw new Error(`Test document not found! testDocName="${testDocName}", allRows=${allRowsCount}, docRowWithName=${docRowCount}, URL=${page.url()}`);
     }
   });
 

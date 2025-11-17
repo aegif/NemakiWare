@@ -240,12 +240,14 @@ import {
   HistoryOutlined,
   EditOutlined,
   CheckOutlined,
-  CloseOutlined
+  CloseOutlined,
+  SettingOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
-import { CMISObject } from '../../types/cmis';
+import { CMISObject, TypeDefinition } from '../../types/cmis';
 import { FolderTree } from '../FolderTree/FolderTree';
+import { PropertyEditor } from '../PropertyEditor/PropertyEditor';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface DocumentListProps {
@@ -261,7 +263,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [folderModalVisible, setFolderModalVisible] = useState(false);
   const [checkInModalVisible, setCheckInModalVisible] = useState(false);
   const [versionHistoryModalVisible, setVersionHistoryModalVisible] = useState(false);
+  const [propertyEditorModalVisible, setPropertyEditorModalVisible] = useState(false);
   const [currentDocumentId, setCurrentDocumentId] = useState<string>('');
+  const [selectedObject, setSelectedObject] = useState<CMISObject | null>(null);
+  const [selectedTypeDefinition, setSelectedTypeDefinition] = useState<TypeDefinition | null>(null);
   const [versionHistory, setVersionHistory] = useState<CMISObject[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchMode, setIsSearchMode] = useState(false);
@@ -467,6 +472,53 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
+  const handleEditProperties = async (record: CMISObject) => {
+    try {
+      setLoading(true);
+      // Get full object details
+      const object = await cmisService.getObject(repositoryId, record.id);
+      console.log('📍 DEBUG: Loaded object:', object.id, object.name);
+      setSelectedObject(object);
+
+      // Get type definition for property metadata
+      const typeDef = await cmisService.getType(repositoryId, object.objectType);
+      console.log('📍 DEBUG: Loaded type definition:', typeDef.id);
+      console.log('📍 DEBUG: Property definitions count:', Object.keys(typeDef.propertyDefinitions || {}).length);
+      console.log('📍 DEBUG: Editable properties:',
+        Object.entries(typeDef.propertyDefinitions || {})
+          .filter(([_, pd]) => pd.updatability === 'readwrite' || pd.updatability === 'whencheckedout' || pd.updatability === 'oncreate')
+          .map(([id, _]) => id)
+      );
+      setSelectedTypeDefinition(typeDef);
+
+      setPropertyEditorModalVisible(true);
+    } catch (error) {
+      console.error('Property editor error:', error);
+      message.error('プロパティエディタの起動に失敗しました');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateProperties = async (properties: Record<string, any>) => {
+    if (!selectedObject) return;
+
+    try {
+      setLoading(true);
+      await cmisService.updateProperties(repositoryId, selectedObject.id, properties);
+      message.success('プロパティを更新しました');
+      setPropertyEditorModalVisible(false);
+
+      // Refresh object list
+      await loadObjects();
+    } catch (error) {
+      console.error('Property update error:', error);
+      message.error('プロパティの更新に失敗しました');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
       message.warning('検索キーワードを入力してください');
@@ -643,6 +695,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 />
               </Tooltip>
             )}
+            <Tooltip title="プロパティ編集">
+              <Button
+                icon={<SettingOutlined />}
+                size="small"
+                onClick={() => handleEditProperties(record)}
+              />
+            </Tooltip>
             <Tooltip title="権限管理">
               <Button
                 icon={<LockOutlined />}
@@ -940,6 +999,27 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             },
           ]}
         />
+      </Modal>
+
+      <Modal
+        title="プロパティ編集"
+        open={propertyEditorModalVisible}
+        onCancel={() => {
+          setPropertyEditorModalVisible(false);
+          setSelectedObject(null);
+          setSelectedTypeDefinition(null);
+        }}
+        footer={null}
+        width={800}
+      >
+        {selectedObject && selectedTypeDefinition && (
+          <PropertyEditor
+            object={selectedObject}
+            propertyDefinitions={selectedTypeDefinition.propertyDefinitions}
+            onSave={handleUpdateProperties}
+            readOnly={false}
+          />
+        )}
       </Modal>
     </div>
   );

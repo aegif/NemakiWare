@@ -895,14 +895,15 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
 
-      // CRITICAL FIX (2025-12-16): Use Browser Binding with cmisselector=object to get properly formatted properties
-      // Browser Binding returns JSON with succinctProperties that includes {value: ...} wrappers
-      // Previous AtomPub approach returned empty properties: {} causing all property values to show as blank
+      // CRITICAL FIX (2025-12-17): Use Browser Binding with cmisselector=object WITHOUT succinct parameter
+      // NemakiWare's Browser Binding returns full property format (not succinct) with detailed property metadata
+      // Full format: {propertyId: {id, localName, displayName, queryName, type, cardinality, value}}
+      // This provides complete property information for PropertyEditor to render all fields correctly
       console.log('CMIS DEBUG: getObject using Browser Binding for objectId:', objectId);
 
       // URL encode objectId for safe path construction
       const encodedId = encodeURIComponent(objectId);
-      xhr.open('GET', `/core/browser/${repositoryId}/${encodedId}?cmisselector=object&succinct=true`, true);
+      xhr.open('GET', `/core/browser/${repositoryId}/${encodedId}?cmisselector=object`, true);
       xhr.setRequestHeader('Accept', 'application/json');
 
       const headers = this.getAuthHeaders();

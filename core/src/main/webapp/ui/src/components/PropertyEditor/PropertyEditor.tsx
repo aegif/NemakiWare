@@ -382,7 +382,15 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
       onFinish={handleSubmit}
     >
       {Object.entries(safePropDefs)
-        .filter(([_, propDef]) => propDef.updatable || readOnly)
+        .filter(([_, propDef]) => {
+          // CRITICAL FIX (2025-12-17): CMIS spec uses "updatability" field, not "updatable"
+          // updatability values: "readonly", "readwrite", "oncreate", "whencheckedout"
+          // Only render properties that are editable or in read-only mode
+          const isUpdatable = propDef.updatability === 'readwrite' ||
+                             propDef.updatability === 'whencheckedout' ||
+                             propDef.updatability === 'oncreate';
+          return isUpdatable || readOnly;
+        })
         .map(([propId, propDef]) => (
         <Form.Item
           key={propId}
