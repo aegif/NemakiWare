@@ -502,11 +502,10 @@ export class CMISService {
 
         if (auth.username && auth.token) {
           console.log('[AUTH DEBUG] Using token-based authentication for user:', auth.username);
-          // Use Basic auth with username to provide username context
-          const credentials = btoa(`${auth.username}:dummy`);
+          // CRITICAL FIX: Use only token-based auth to prevent browser Basic auth dialog
+          // Basic auth header triggers browser authentication prompt - token is sufficient
           return {
-            'Authorization': `Basic ${credentials}`,
-            'nemaki_auth_token': auth.token
+            'AUTH_TOKEN': auth.token
           };
         } else {
           console.warn('[AUTH DEBUG] Auth data incomplete:', { username: auth.username, hasToken: !!auth.token });
@@ -895,77 +894,41 @@ export class CMISService {
   async getObject(repositoryId: string, objectId: string): Promise<CMISObject> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      
-      // Use AtomPub binding for getObject as Browser Binding doesn't have proper object endpoint
-      console.log('CMIS DEBUG: getObject using AtomPub for objectId:', objectId);
-      
-      xhr.open('GET', `/core/atom/${repositoryId}/id?id=${objectId}`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-      
+
+      // CRITICAL FIX (2025-12-16): Use Browser Binding with cmisselector=object to get properly formatted properties
+      // Browser Binding returns JSON with succinctProperties that includes {value: ...} wrappers
+      // Previous AtomPub approach returned empty properties: {} causing all property values to show as blank
+      console.log('CMIS DEBUG: getObject using Browser Binding for objectId:', objectId);
+
+      // URL encode objectId for safe path construction
+      const encodedId = encodeURIComponent(objectId);
+      xhr.open('GET', `/core/browser/${repositoryId}/${encodedId}?cmisselector=object&succinct=true`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
             try {
-              console.log('CMIS DEBUG: getObject AtomPub response:', xhr.responseText.substring(0, 1000));
-              
-              // Parse AtomPub XML response
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-              console.log('CMIS DEBUG: getObject parsed XML:', xmlDoc);
-              
-              const entry = xmlDoc.querySelector('entry, atom\\:entry');
-              console.log('CMIS DEBUG: getObject entry element:', entry);
-              
-              if (!entry) {
-                console.error('CMIS DEBUG: No entry found in AtomPub response');
-                reject(new Error('No entry found in AtomPub response'));
-                return;
-              }
-              
-              const title = entry.querySelector('title, atom\\:title')?.textContent || 'Unknown';
-              console.log('CMIS DEBUG: getObject title:', title);
-              const properties = entry.querySelector('cmis\\:properties, properties');
-              
-              let objectType = 'cmis:document';
-              let baseType = 'cmis:document';
-              let path = '';
-              
-              if (properties) {
-                const objectTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectTypeId"], propertyId[propertyDefinitionId="cmis:objectTypeId"]');
-                const baseTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:baseTypeId"], propertyId[propertyDefinitionId="cmis:baseTypeId"]');
-                const pathElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:path"], propertyString[propertyDefinitionId="cmis:path"]');
-                
-                if (objectTypeElement) {
-                  objectType = objectTypeElement.querySelector('cmis\\:value, value')?.textContent || objectType;
-                }
-                if (baseTypeElement) {
-                  baseType = baseTypeElement.querySelector('cmis\\:value, value')?.textContent || baseType;
-                }
-                if (pathElement) {
-                  path = pathElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-              }
-              
-              const cmisObject: CMISObject = {
-                id: objectId,
-                name: title,
-                objectType: objectType,
-                baseType: baseType,
-                properties: {}, // Simplified - would need full parsing for complete properties
-                allowableActions: [],
-                path: path
-              };
-              
-              console.log('CMIS DEBUG: getObject parsed object:', cmisObject);
+              console.log('CMIS DEBUG: getObject Browser Binding response:', xhr.responseText.substring(0, 1000));
+
+              // Parse Browser Binding JSON response
+              const response = JSON.parse(xhr.responseText);
+              console.log('CMIS DEBUG: getObject parsed response:', response);
+
+              // Use buildCmisObjectFromBrowserData to properly extract properties with {value: ...} structure
+              const cmisObject = this.buildCmisObjectFromBrowserData(response);
+
+              console.log('CMIS DEBUG: getObject built object:', cmisObject);
+              console.log('CMIS DEBUG: getObject properties count:', Object.keys(cmisObject.properties).length);
               resolve(cmisObject);
             } catch (e) {
               console.error('CMIS DEBUG: getObject parse error:', e);
-              reject(new Error('Failed to parse AtomPub response'));
+              reject(new Error('Failed to parse Browser Binding response'));
             }
           } else {
             console.error('CMIS DEBUG: getObject HTTP error:', xhr.status, xhr.statusText);
@@ -974,7 +937,7 @@ export class CMISService {
           }
         }
       };
-      
+
       xhr.onerror = () => {
         console.error('CMIS DEBUG: getObject network error');
         reject(new Error('Network error'));
