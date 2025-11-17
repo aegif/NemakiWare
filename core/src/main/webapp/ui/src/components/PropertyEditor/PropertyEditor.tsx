@@ -273,8 +273,10 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
   };
 
   const renderPropertyField = (propId: string, propDef: PropertyDefinition) => {
-    const value = object.properties[propId];
-    
+    // CRITICAL FIX: Extract .value from property object
+    // Properties are stored as {value: actualValue} in object.properties
+    const value = object.properties[propId]?.value;
+
     if (readOnly) {
       let displayValue = value;
       if (propDef.propertyType === 'datetime' && value) {
@@ -351,7 +353,9 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
     const initialValues: Record<string, any> = {};
 
     Object.entries(safePropDefs).forEach(([propId, propDef]: [string, PropertyDefinition]) => {
-      const value = object.properties[propId];
+      // CRITICAL FIX: Extract .value from property object
+      // Properties are stored as {value: actualValue} in object.properties
+      const value = object.properties[propId]?.value;
       if (value !== undefined && value !== null) {
         if (propDef.propertyType === 'datetime' && value) {
           initialValues[propId] = dayjs(value);
@@ -366,7 +370,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
         }
       }
     });
-    
+
     return initialValues;
   };
 
