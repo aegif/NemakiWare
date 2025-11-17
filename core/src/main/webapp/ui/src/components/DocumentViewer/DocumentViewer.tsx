@@ -416,8 +416,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     return <div>読み込み中...</div>;
   }
 
-  const isCheckedOut = object.properties['cmis:isVersionSeriesCheckedOut'];
-  const checkedOutBy = object.properties['cmis:versionSeriesCheckedOutBy'];
+  // FIX: Extract value from property object (same pattern as PropertyEditor line 198)
+  const isCheckedOut = object.properties['cmis:isVersionSeriesCheckedOut']?.value;
+  const checkedOutBy = object.properties['cmis:versionSeriesCheckedOutBy']?.value;
 
   const versionColumns = [
     {
