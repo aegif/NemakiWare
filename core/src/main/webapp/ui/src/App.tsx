@@ -229,7 +229,6 @@ function AppContent() {
   if (!isAuthenticated || !authToken) {
     return <Login onLogin={async (auth) => {
       // AuthContext will handle the authentication state update
-      console.log('AppContent: Login successful with auth:', auth);
       // The AuthContext's useEffect will detect the localStorage change and update state
     }} />;
   }

@@ -214,11 +214,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const currentAuth = authService.getCurrentAuth();
 
       if (currentAuth) {
-        console.log('AuthContext: Found auth data:', currentAuth);
         setAuthToken(currentAuth);
         setIsAuthenticated(true);
       } else {
-        console.log('AuthContext: No auth data found');
         setAuthToken(null);
         setIsAuthenticated(false);
       }
@@ -233,7 +231,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for localStorage changes (from Login component)
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'nemakiware_auth') {
-        console.log('AuthContext: localStorage changed for nemakiware_auth');
         checkAuthState();
       }
     };
@@ -242,7 +239,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listen for custom events for immediate updates
     const handleAuthUpdate = () => {
-      console.log('AuthContext: Received auth update event');
       checkAuthState();
     };
 
@@ -286,10 +282,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const message = error?.message || '';
 
     if (status === 401 || message.includes('401') || message.includes('Unauthorized')) {
-      console.log('401 Unauthorized error detected - redirecting to login');
       logout();
     } else if (status === 403 || message.includes('403') || message.includes('Forbidden')) {
-      console.log('403 Forbidden error detected - redirecting to login');
       logout();
     }
     // REMOVED: 404 handling - not an authentication error
