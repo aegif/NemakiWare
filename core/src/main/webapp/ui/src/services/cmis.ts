@@ -435,6 +435,35 @@ export class CMISService {
     };
   }
 
+  /**
+   * Map server property definitions to UI format
+   * Converts updatability string to updatable boolean
+   */
+  private mapPropertyDefinitions(rawPropertyDefs: any): Record<string, PropertyDefinition> {
+    const mapped: Record<string, PropertyDefinition> = {};
+
+    for (const [propId, rawPropDef] of Object.entries(rawPropertyDefs)) {
+      const raw = rawPropDef as any;
+      mapped[propId] = {
+        id: raw.id || propId,
+        displayName: raw.displayName || raw.id || propId,
+        description: raw.description || '',
+        propertyType: raw.propertyType || 'string',
+        cardinality: raw.cardinality || 'single',
+        required: raw.required || false,
+        queryable: raw.queryable || false,
+        updatable: raw.updatability === 'readwrite' || raw.updatability === 'oncreate',
+        defaultValue: raw.defaultValue,
+        choices: raw.choices,
+        maxLength: raw.maxLength,
+        minValue: raw.minValue,
+        maxValue: raw.maxValue
+      };
+    }
+
+    return mapped;
+  }
+
   private buildTypeDefinitionFromBrowserData(rawType: any): TypeDefinition {
     return {
       id: rawType?.id || 'unknown',
@@ -446,7 +475,7 @@ export class CMISService {
       fileable: rawType?.fileable !== false,
       queryable: rawType?.queryable !== false,
       deletable: rawType?.typeMutability?.delete !== false && rawType?.deletable !== false,
-      propertyDefinitions: rawType?.propertyDefinitions || {}
+      propertyDefinitions: this.mapPropertyDefinitions(rawType?.propertyDefinitions || {})
     };
   }
 
