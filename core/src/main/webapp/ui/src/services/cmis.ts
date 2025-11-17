@@ -471,18 +471,11 @@ export class CMISService {
   private getAuthHeaders() {
     try {
       const authData = localStorage.getItem('nemakiware_auth');
-      console.log('[AUTH DEBUG] getAuthHeaders called, localStorage data:', authData ? 'EXISTS' : 'NULL');
 
       if (authData) {
         const auth = JSON.parse(authData);
-        console.log('[AUTH DEBUG] Parsed auth:', {
-          hasUsername: !!auth.username,
-          hasToken: !!auth.token,
-          tokenLength: auth.token?.length || 0
-        });
 
         if (auth.username && auth.token) {
-          console.log('[AUTH DEBUG] Using token-based authentication for user:', auth.username);
           // Use Basic auth with username to provide username context
           const credentials = btoa(`${auth.username}:dummy`);
           return {
@@ -522,7 +515,6 @@ export class CMISService {
       console.error('[AUTH DEBUG] Current localStorage auth:', localStorage.getItem('nemakiware_auth') ? 'EXISTS' : 'NULL');
       console.warn('401 Unauthorized - token may be expired or invalid');
       if (this.onAuthError) {
-        console.log('[AUTH DEBUG] Calling onAuthError handler - will redirect to login');
         this.onAuthError(error);
       } else {
         console.warn('[AUTH DEBUG] No onAuthError handler set!');
@@ -591,8 +583,6 @@ export class CMISService {
 
 
   async getRootFolder(repositoryId: string): Promise<CMISObject> {
-    console.log('CMIS DEBUG: getRootFolder called with repositoryId:', repositoryId);
-
     return new Promise((resolve, _reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', `${this.baseUrl}/${repositoryId}/root`, true);
@@ -607,10 +597,8 @@ export class CMISService {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
             try {
-              console.log('CMIS DEBUG: getRootFolder response:', xhr.responseText);
               const response = JSON.parse(xhr.responseText);
-              console.log('CMIS DEBUG: getRootFolder parsed response:', response);
-              
+
               const props = response.succinctProperties || response.properties || {};
               const rootFolder = {
                 id: this.getSafeStringProperty(props, 'cmis:objectId', 'e02f784f8360a02cc14d1314c10038ff'),
@@ -621,8 +609,7 @@ export class CMISService {
                 allowableActions: ['canGetChildren'],
                 path: this.getSafeStringProperty(props, 'cmis:path', '/')
               };
-              
-              console.log('CMIS DEBUG: Parsed root folder:', rootFolder);
+
               resolve(rootFolder);
             } catch (error) {
               console.error('CMIS DEBUG: Error parsing getRootFolder response:', error);
@@ -674,8 +661,6 @@ export class CMISService {
   }
 
   async getChildren(repositoryId: string, folderId: string): Promise<CMISObject[]> {
-    console.log('CMIS DEBUG: getChildren called with repositoryId:', repositoryId, 'folderId:', folderId);
-    
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       
@@ -698,15 +683,11 @@ export class CMISService {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
             try {
-              console.log('CMIS DEBUG: getChildren response:', xhr.responseText.substring(0, 500));
-              
               const children: CMISObject[] = [];
 
               // Parse AtomPub XML response
               const parser = new DOMParser();
               const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-
-              console.log('CMIS DEBUG: AtomPub XML response received, parsing...');
 
               // Check for parse errors
               const parseError = xmlDoc.querySelector('parsererror');
@@ -720,8 +701,6 @@ export class CMISService {
               const entries = xmlDoc.getElementsByTagName('atom:entry').length > 0
                 ? xmlDoc.getElementsByTagName('atom:entry')
                 : xmlDoc.getElementsByTagName('entry');
-
-              console.log('CMIS DEBUG: Found', entries.length, 'entries in AtomPub response');
 
               for (let i = 0; i < entries.length; i++) {
                 const entry = entries[i];
@@ -820,7 +799,6 @@ export class CMISService {
                   children.push(cmisObject);
                 } else {
                   // プロパティが見つからない場合の簡易処理
-                  console.log('CMIS DEBUG: No properties found for entry', i, ', using fallback');
                   const fallbackObject: CMISObject = {
                     id: atomId.split('/').pop() || `entry-${i}`,
                     name: atomTitle,
@@ -835,22 +813,7 @@ export class CMISService {
                   children.push(fallbackObject);
                 }
               }
-              
-              console.log(`CMIS DEBUG: Parsed ${children.length} children:`, children);
-              
-              // 詳細ログ出力
-              children.forEach((child, index) => {
-                console.log(`Child ${index + 1}:`, {
-                  id: child.id,
-                  name: child.name,
-                  baseType: child.baseType,
-                  createdBy: child.createdBy,
-                  lastModifiedBy: child.lastModifiedBy,
-                  lastModificationDate: child.lastModificationDate,
-                  contentStreamLength: child.contentStreamLength
-                });
-              });
-              
+
               resolve(children);
             } catch (e) {
               console.error('CMIS DEBUG: getChildren parse error:', e);
@@ -876,10 +839,8 @@ export class CMISService {
   async getObject(repositoryId: string, objectId: string): Promise<CMISObject> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      
+
       // Use AtomPub binding for getObject as Browser Binding doesn't have proper object endpoint
-      console.log('CMIS DEBUG: getObject using AtomPub for objectId:', objectId);
-      
       xhr.open('GET', `/core/atom/${repositoryId}/id?id=${objectId}`, true);
       xhr.setRequestHeader('Accept', 'application/atom+xml');
       
@@ -892,24 +853,19 @@ export class CMISService {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
             try {
-              console.log('CMIS DEBUG: getObject AtomPub response:', xhr.responseText.substring(0, 1000));
-              
               // Parse AtomPub XML response
               const parser = new DOMParser();
               const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-              console.log('CMIS DEBUG: getObject parsed XML:', xmlDoc);
-              
+
               const entry = xmlDoc.querySelector('entry, atom\\:entry');
-              console.log('CMIS DEBUG: getObject entry element:', entry);
-              
+
               if (!entry) {
                 console.error('CMIS DEBUG: No entry found in AtomPub response');
                 reject(new Error('No entry found in AtomPub response'));
                 return;
               }
-              
+
               const title = entry.querySelector('title, atom\\:title')?.textContent || 'Unknown';
-              console.log('CMIS DEBUG: getObject title:', title);
               const properties = entry.querySelector('cmis\\:properties, properties');
               
               let objectType = 'cmis:document';
@@ -929,25 +885,16 @@ export class CMISService {
               // This is essential for changeToken extraction and other CMIS property access
               const propertiesMap: Record<string, any> = {};
 
-              console.error('!!! CMIS getObject: properties element exists?', !!properties);
-
               if (properties) {
                 // First, extract ALL property elements to build complete properties map
                 const allPropertyElements = properties.querySelectorAll('[propertyDefinitionId]');
-                console.error('!!! CMIS getObject: found property elements count:', allPropertyElements.length);
 
                 allPropertyElements.forEach((propElement, index) => {
                   const propertyId = propElement.getAttribute('propertyDefinitionId');
-                  if (index < 5) { // Log first 5 properties for debugging
-                    console.error(`!!! CMIS getObject: property ${index}: id=${propertyId}`);
-                  }
                   if (!propertyId) return;
 
                   // Extract value(s) from the property element
                   const valueElements = propElement.querySelectorAll('cmis\\:value, value');
-                  if (index < 5) {
-                    console.error(`!!! CMIS getObject: property ${propertyId}: found ${valueElements.length} value elements`);
-                  }
 
                   if (valueElements.length === 0) {
                     // No value - property is null or empty
@@ -956,9 +903,6 @@ export class CMISService {
                     // Single value property
                     const textValue = valueElements[0].textContent;
                     propertiesMap[propertyId] = textValue;
-                    if (index < 5) {
-                      console.error(`!!! CMIS getObject: property ${propertyId}: value="${textValue}"`);
-                    }
                   } else {
                     // Multi-value property (array)
                     const values: string[] = [];
@@ -970,14 +914,6 @@ export class CMISService {
                     propertiesMap[propertyId] = values;
                   }
                 });
-
-                console.error('!!! CMIS getObject: propertiesMap final keys count:', Object.keys(propertiesMap).length);
-                console.error('!!! CMIS getObject: propertiesMap has changeToken?', 'cmis:changeToken' in propertiesMap);
-                if ('cmis:changeToken' in propertiesMap) {
-                  console.error('!!! CMIS getObject: changeToken value:', propertiesMap['cmis:changeToken']);
-                }
-                console.error('!!! CMIS getObject: propertiesMap sample (first 3):',
-                  JSON.stringify(Object.fromEntries(Object.entries(propertiesMap).slice(0, 3)), null, 2));
 
                 // Then extract specific properties for direct field assignment (backward compatibility)
                 const objectTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectTypeId"], propertyId[propertyDefinitionId="cmis:objectTypeId"]');
@@ -1054,8 +990,7 @@ export class CMISService {
                 isLatestVersion: isLatestVersion,
                 isLatestMajorVersion: isLatestMajorVersion
               };
-              
-              console.log('CMIS DEBUG: getObject parsed object:', cmisObject);
+
               resolve(cmisObject);
             } catch (e) {
               console.error('CMIS DEBUG: getObject parse error:', e);
@@ -1449,7 +1384,6 @@ export class CMISService {
             try {
               const response = JSON.parse(xhr.responseText);
               const pwc = this.buildCmisObjectFromBrowserData(response);
-              console.log('CMIS DEBUG: checkOut successful, PWC ID:', pwc.id);
               resolve(pwc);
             } catch (e) {
               console.error('CMIS DEBUG: checkOut parse error:', e);
@@ -1505,7 +1439,6 @@ export class CMISService {
             try {
               const response = JSON.parse(xhr.responseText);
               const newVersion = this.buildCmisObjectFromBrowserData(response);
-              console.log('CMIS DEBUG: checkIn successful, new version ID:', newVersion.id);
               resolve(newVersion);
             } catch (e) {
               console.error('CMIS DEBUG: checkIn parse error:', e);
@@ -1572,7 +1505,6 @@ export class CMISService {
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200 || xhr.status === 204) {
-            console.log('CMIS DEBUG: cancelCheckOut successful for PWC:', objectId);
             resolve();
           } else {
             console.error('CMIS DEBUG: cancelCheckOut HTTP error:', xhr.status, xhr.statusText);
@@ -1619,7 +1551,6 @@ export class CMISService {
           if (xhr.status === 200) {
             try {
               const response = JSON.parse(xhr.responseText);
-              console.log('CMIS DEBUG: getACL response:', response);
 
               // CMIS Browser Binding ACL response structure
               const aces = response.aces || [];
@@ -1637,7 +1568,6 @@ export class CMISService {
                 );
                 if (inheritedExt) {
                   aclInherited = inheritedExt.value === 'true';
-                  console.log('CMIS DEBUG: getACL found aclInherited extension:', aclInherited);
                 }
               }
 
@@ -1647,7 +1577,6 @@ export class CMISService {
                 aclInherited
               };
 
-              console.log('CMIS DEBUG: getACL parsed:', acl);
               resolve(acl);
             } catch (e) {
               console.error('CMIS DEBUG: getACL parse error:', e);
@@ -1682,7 +1611,6 @@ export class CMISService {
     try {
       // Step 1: Get current ACL to know what to remove
       const currentACL = await this.getACL(repositoryId, objectId);
-      console.log('CMIS DEBUG: setACL current ACL:', currentACL);
 
       // Step 2: Build applyACL request with both remove and add operations
       return new Promise((resolve, reject) => {
@@ -1700,7 +1628,6 @@ export class CMISService {
         xhr.onreadystatechange = () => {
           if (xhr.readyState === 4) {
             if (xhr.status === 200 || xhr.status === 204) {
-              console.log('CMIS DEBUG: setACL successful for object:', objectId);
               resolve();
             } else {
               console.error('CMIS DEBUG: setACL HTTP error:', xhr.status, xhr.statusText);
@@ -1737,10 +1664,8 @@ export class CMISService {
         // Step 2c: Add extension element for inheritance control if specified
         if (options?.breakInheritance !== undefined) {
           formData.append('extension[inherited]', String(!options.breakInheritance));
-          console.log('CMIS DEBUG: setACL adding extension element - inherited:', !options.breakInheritance);
         }
 
-        console.log('CMIS DEBUG: setACL form data:', formData.toString());
         xhr.send(formData.toString());
       });
     } catch (error) {
@@ -1778,20 +1703,7 @@ export class CMISService {
                 email: user.email,
                 groups: user.groups || []
               }));
-              
-              console.log('CMIS DEBUG: getUsers raw data:', rawUsers);
-              console.log('CMIS DEBUG: getUsers transformed data:', transformedUsers);
-              
-              // 詳細ログ出力
-              transformedUsers.forEach((user: any, index: number) => {
-                console.log(`User ${index + 1}:`, {
-                  id: user.id,
-                  name: user.name,
-                  email: user.email,
-                  groups: user.groups
-                });
-              });
-              
+
               resolve(transformedUsers);
             } catch (e) {
               console.error('CMIS DEBUG: getUsers parse error:', e);
@@ -1976,10 +1888,7 @@ export class CMISService {
                 name: group.groupName || group.name || group.groupId || 'Unknown Group',
                 members: group.users || []
               }));
-              
-              console.log('CMIS DEBUG: getGroups raw data:', rawGroups);
-              console.log('CMIS DEBUG: getGroups transformed data:', transformedGroups);
-              
+
               resolve(transformedGroups);
             } catch (e) {
               reject(new Error('Invalid response format'));
@@ -2173,7 +2082,6 @@ export class CMISService {
                 propertyDefinitions: type.propertyDefinitions || {}
               }));
 
-              console.log('CMIS DEBUG: getTypes - fetched types count:', types.length);
               resolve(types);
             } catch (e) {
               console.error('CMIS DEBUG: getTypes parse error:', e);
