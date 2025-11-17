@@ -550,6 +550,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
         onCancel={handleCancel}
         footer={null}
         width={600}
+        maskClosable={false}
       >
         <Form
           form={form}

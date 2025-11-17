@@ -283,7 +283,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   };
 
   const handleLogout = () => {
-    console.log('Layout: handleLogout called - using AuthContext logout');
     logout();
   };
 

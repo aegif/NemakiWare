@@ -240,14 +240,12 @@ import {
   HistoryOutlined,
   EditOutlined,
   CheckOutlined,
-  CloseOutlined,
-  SettingOutlined
+  CloseOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
-import { CMISObject, TypeDefinition } from '../../types/cmis';
+import { CMISObject } from '../../types/cmis';
 import { FolderTree } from '../FolderTree/FolderTree';
-import { PropertyEditor } from '../PropertyEditor/PropertyEditor';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface DocumentListProps {
@@ -263,10 +261,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [folderModalVisible, setFolderModalVisible] = useState(false);
   const [checkInModalVisible, setCheckInModalVisible] = useState(false);
   const [versionHistoryModalVisible, setVersionHistoryModalVisible] = useState(false);
-  const [propertyEditorModalVisible, setPropertyEditorModalVisible] = useState(false);
   const [currentDocumentId, setCurrentDocumentId] = useState<string>('');
-  const [selectedObject, setSelectedObject] = useState<CMISObject | null>(null);
-  const [selectedTypeDefinition, setSelectedTypeDefinition] = useState<TypeDefinition | null>(null);
   const [versionHistory, setVersionHistory] = useState<CMISObject[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchMode, setIsSearchMode] = useState(false);
@@ -279,7 +274,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Initialize root folder ID immediately
   useEffect(() => {
     if (!currentFolderId) {
-      console.log('DocumentList DEBUG: Initializing with root folder ID');
       setCurrentFolderId('e02f784f8360a02cc14d1314c10038ff');
     }
   }, [repositoryId]); // Only depend on repositoryId
@@ -287,7 +281,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Load objects when currentFolderId changes
   useEffect(() => {
     if (currentFolderId) {
-      console.log('DocumentList DEBUG: currentFolderId changed, loading objects for:', currentFolderId);
       loadObjects();
     }
   }, [currentFolderId]);
@@ -298,17 +291,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       return;
     }
 
-    console.log('LOAD OBJECTS DEBUG: Loading children for repository:', repositoryId, 'folder:', currentFolderId);
     setLoading(true);
     try {
       const children = await cmisService.getChildren(repositoryId, currentFolderId);
-      console.log('LOAD OBJECTS DEBUG: Successfully received', children.length, 'children:', children);
       setObjects(children);
 
       // Update folder path for root folder
       if (currentFolderId === 'e02f784f8360a02cc14d1314c10038ff') {
         setCurrentFolderPath('/');
-        console.log('LOAD OBJECTS DEBUG: Set root folder path');
       }
     } catch (error) {
       console.error('LOAD OBJECTS DEBUG: Error loading children:', error);
@@ -472,53 +462,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
-  const handleEditProperties = async (record: CMISObject) => {
-    try {
-      setLoading(true);
-      // Get full object details
-      const object = await cmisService.getObject(repositoryId, record.id);
-      console.log('📍 DEBUG: Loaded object:', object.id, object.name);
-      setSelectedObject(object);
-
-      // Get type definition for property metadata
-      const typeDef = await cmisService.getType(repositoryId, object.objectType);
-      console.log('📍 DEBUG: Loaded type definition:', typeDef.id);
-      console.log('📍 DEBUG: Property definitions count:', Object.keys(typeDef.propertyDefinitions || {}).length);
-      console.log('📍 DEBUG: Editable properties:',
-        Object.entries(typeDef.propertyDefinitions || {})
-          .filter(([_, pd]) => pd.updatability === 'readwrite' || pd.updatability === 'whencheckedout' || pd.updatability === 'oncreate')
-          .map(([id, _]) => id)
-      );
-      setSelectedTypeDefinition(typeDef);
-
-      setPropertyEditorModalVisible(true);
-    } catch (error) {
-      console.error('Property editor error:', error);
-      message.error('プロパティエディタの起動に失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUpdateProperties = async (properties: Record<string, any>) => {
-    if (!selectedObject) return;
-
-    try {
-      setLoading(true);
-      await cmisService.updateProperties(repositoryId, selectedObject.id, properties);
-      message.success('プロパティを更新しました');
-      setPropertyEditorModalVisible(false);
-
-      // Refresh object list
-      await loadObjects();
-    } catch (error) {
-      console.error('Property update error:', error);
-      message.error('プロパティの更新に失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
       message.warning('検索キーワードを入力してください');
@@ -565,31 +508,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       render: (name: string, record: CMISObject) => {
         const isPWC = record.properties?.['cmis:isPrivateWorkingCopy'] === true ||
                       record.properties?.['cmis:isVersionSeriesCheckedOut'] === true;
-        
-        if (name && name.includes('versioning-test')) {
-          console.log('PWC DEBUG:', {
-            name,
-            isPrivateWorkingCopy: record.properties?.['cmis:isPrivateWorkingCopy'],
-            isVersionSeriesCheckedOut: record.properties?.['cmis:isVersionSeriesCheckedOut'],
-            isPWC,
-            propertyKeys: record.properties ? Object.keys(record.properties) : [],
-            allProperties: JSON.stringify(record.properties, null, 2)
-          });
-        }
 
         return (
           <Space>
             <Button
               type="link"
               onClick={() => {
-                console.log('FOLDER CLICK DEBUG:', {
-                  name: record.name,
-                  id: record.id,
-                  baseType: record.baseType,
-                  objectType: record.objectType
-                });
                 if (record.baseType === 'cmis:folder') {
-                  console.log('Setting folder ID to:', record.id);
                   setCurrentFolderId(record.id);
                 } else {
                   navigate(`/documents/${record.id}`);
@@ -612,9 +537,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       width: 100,
       render: (size: number) => {
         if (!size) return '-';
-        // Show bytes for files smaller than 1KB
-        if (size < 1024) return `${size} bytes`;
-        // Show KB for larger files
+        if (size < 1024) return `${size} B`;
         return `${Math.round(size / 1024)} KB`;
       },
     },
@@ -695,13 +618,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 />
               </Tooltip>
             )}
-            <Tooltip title="プロパティ編集">
-              <Button
-                icon={<SettingOutlined />}
-                size="small"
-                onClick={() => handleEditProperties(record)}
-              />
-            </Tooltip>
             <Tooltip title="権限管理">
               <Button
                 icon={<LockOutlined />}
@@ -799,6 +715,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         open={uploadModalVisible}
         onCancel={() => setUploadModalVisible(false)}
         footer={null}
+        maskClosable={false}
       >
         <Form form={form} onFinish={handleUpload} layout="vertical">
           <Form.Item
@@ -856,6 +773,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         open={folderModalVisible}
         onCancel={() => setFolderModalVisible(false)}
         footer={null}
+        maskClosable={false}
       >
         <Form form={form} onFinish={handleCreateFolder} layout="vertical">
           <Form.Item
@@ -887,6 +805,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         }}
         footer={null}
         width={600}
+        maskClosable={false}
       >
         <Form form={form} onFinish={handleCheckIn} layout="vertical" initialValues={{ versionType: 'minor' }}>
           <Form.Item
@@ -952,6 +871,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         onCancel={() => setVersionHistoryModalVisible(false)}
         footer={null}
         width={800}
+        maskClosable={false}
       >
         <Table
           dataSource={versionHistory}
@@ -999,27 +919,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             },
           ]}
         />
-      </Modal>
-
-      <Modal
-        title="プロパティ編集"
-        open={propertyEditorModalVisible}
-        onCancel={() => {
-          setPropertyEditorModalVisible(false);
-          setSelectedObject(null);
-          setSelectedTypeDefinition(null);
-        }}
-        footer={null}
-        width={800}
-      >
-        {selectedObject && selectedTypeDefinition && (
-          <PropertyEditor
-            object={selectedObject}
-            propertyDefinitions={selectedTypeDefinition.propertyDefinitions}
-            onSave={handleUpdateProperties}
-            readOnly={false}
-          />
-        )}
       </Modal>
     </div>
   );

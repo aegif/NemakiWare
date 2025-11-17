@@ -198,18 +198,14 @@ export class AuthService {
     if (authData) {
       try {
         this.currentAuth = JSON.parse(authData);
-        console.log('AuthService constructor loaded auth:', this.currentAuth);
       } catch (e) {
         console.error('AuthService constructor failed to parse auth data:', e);
         localStorage.removeItem('nemakiware_auth');
       }
-    } else {
-      console.log('AuthService constructor: no auth data in localStorage');
     }
-    
+
     if (typeof window !== 'undefined') {
       (window as any).authService = this;
-      console.log('AuthService constructor: exposed to window');
     }
   }
 
@@ -229,31 +225,25 @@ export class AuthService {
       
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
-          console.log('AUTH DEBUG: Status:', xhr.status, 'Response:', xhr.responseText);
           if (xhr.status === 200) {
             try {
               const response = JSON.parse(xhr.responseText);
-              console.log('AUTH DEBUG: Parsed response:', response);
               if (response.status === 'success') {
                 const token = response.value.token;
                 this.currentAuth = { token, repositoryId, username };
                 localStorage.setItem('nemakiware_auth', JSON.stringify(this.currentAuth));
-                
+
                 // Trigger custom event to notify AuthContext immediately
                 window.dispatchEvent(new CustomEvent('authStateChanged'));
-                
-                console.log('AUTH DEBUG: Login successful, token:', token);
+
                 resolve(this.currentAuth);
               } else {
-                console.log('AUTH DEBUG: Login failed - invalid status:', response.status);
                 reject(new Error('Authentication failed'));
               }
             } catch (e) {
-              console.log('AUTH DEBUG: JSON parse error:', e);
               reject(new Error('Invalid response format'));
             }
           } else {
-            console.log('AUTH DEBUG: HTTP error:', xhr.status, xhr.statusText);
             reject(new Error('Authentication failed'));
           }
         }

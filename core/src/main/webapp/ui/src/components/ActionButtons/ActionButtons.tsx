@@ -319,6 +319,7 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
         onCancel={() => setModalVisible(false)}
         footer={null}
         width={600}
+        maskClosable={false}
       >
         {selectedAction && (
           <ActionFormRenderer

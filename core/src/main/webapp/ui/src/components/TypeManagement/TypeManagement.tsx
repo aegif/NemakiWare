@@ -119,37 +119,29 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   };
 
   const handleFileUpload = async () => {
-    console.log('[TypeManagement] handleFileUpload called');
     if (uploadFileList.length === 0) {
       message.warning('ファイルを選択してください');
       return;
     }
 
     const file = uploadFileList[0];
-    console.log('[TypeManagement] File selected:', file.name);
     const reader = new FileReader();
 
     reader.onload = async (e) => {
-      console.log('[TypeManagement] FileReader onload triggered');
       try {
         const content = e.target?.result as string;
-        console.log('[TypeManagement] File content length:', content?.length);
         const typeDef = JSON.parse(content);
-        console.log('[TypeManagement] Parsed type definition:', typeDef.id);
 
         // Check for conflicts (type ID already exists)
         const existingType = types.find(t => t.id === typeDef.id);
-        console.log('[TypeManagement] Existing type found:', !!existingType);
 
         if (existingType) {
           // Show conflict modal
-          console.log('[TypeManagement] Showing conflict modal');
           setConflictTypes([typeDef.id]);
           setPendingTypeDefinition(typeDef);
           setConflictModalVisible(true);
         } else {
           // No conflict, create directly
-          console.log('[TypeManagement] No conflict, calling performTypeUpload');
           await performTypeUpload(typeDef);
         }
       } catch (error) {
@@ -163,11 +155,9 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     // In Playwright tests, file.originFileObj may not be properly initialized
     // Use file as Blob directly first, fall back to originFileObj if needed
     const fileToRead = (file as any).originFileObj || (file as any);
-    console.log('[TypeManagement] File object type:', fileToRead?.constructor?.name);
 
     try {
       reader.readAsText(fileToRead);
-      console.log('[TypeManagement] FileReader.readAsText called');
     } catch (error) {
       console.error('[TypeManagement] Failed to read file:', error);
       message.error('ファイルの読み込みに失敗しました');
@@ -175,17 +165,13 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   };
 
   const performTypeUpload = async (typeDef: any, overwrite: boolean = false) => {
-    console.log('[TypeManagement] performTypeUpload called', { typeId: typeDef.id, overwrite, repositoryId });
     try {
-      console.log('[TypeManagement] Calling cmisService.createType...');
       await cmisService.createType(repositoryId, typeDef);
-      console.log('[TypeManagement] createType completed successfully');
       message.success('型定義をインポートしました');
       setUploadModalVisible(false);
       setConflictModalVisible(false);
       setUploadFileList([]);
       setPendingTypeDefinition(null);
-      console.log('[TypeManagement] Calling loadTypes to refresh...');
       loadTypes();
     } catch (error) {
       console.error('[TypeManagement] Error in performTypeUpload:', error);
@@ -595,6 +581,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         onCancel={handleCancel}
         footer={null}
         width={800}
+        maskClosable={false}
       >
         <Form
           form={form}
@@ -624,6 +611,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         onCancel={handleUploadCancel}
         okText="インポート"
         cancelText="キャンセル"
+        maskClosable={false}
       >
         <Upload.Dragger
           accept=".json"
@@ -653,6 +641,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         onCancel={handleConflictCancel}
         okText="上書きして作成"
         cancelText="キャンセル"
+        maskClosable={false}
       >
         <Alert
           message="以下のタイプIDは既に存在します"
@@ -686,6 +675,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         okText="保存"
         cancelText="キャンセル"
         width={800}
+        maskClosable={false}
       >
         <Alert
           message="型定義をJSON形式で直接編集できます"
@@ -711,6 +701,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         okText="上書きして更新"
         cancelText="キャンセル"
         width={800}
+        maskClosable={false}
       >
         <Alert
           message="タイプIDが変更されています"

@@ -219,7 +219,6 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     return (
       <Login onLogin={() => {
         // Authentication is handled by AuthContext, just reload the page
-        console.log('ProtectedRoute: Login successful, reloading page');
         window.location.reload();
       }} />
     );
@@ -261,7 +260,6 @@ class ErrorBoundary extends React.Component<
     if (this.state.hasError) {
       return (
         <Login onLogin={() => {
-          console.log('ErrorBoundary: Login successful, reloading page');
           window.location.reload();
         }} />
       );
