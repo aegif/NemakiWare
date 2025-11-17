@@ -436,6 +436,24 @@ export class CMISService {
   }
 
   private buildTypeDefinitionFromBrowserData(rawType: any): TypeDefinition {
+    // CRITICAL FIX (2025-11-17): Map CMIS updatability field to boolean updatable field
+    // CMIS Server returns "updatability" with values: "readonly", "readwrite", "oncreate", "whencheckedout"
+    // PropertyEditor expects boolean "updatable" field to filter editable properties
+    const propertyDefinitions: Record<string, PropertyDefinition> = {};
+
+    if (rawType?.propertyDefinitions) {
+      Object.entries(rawType.propertyDefinitions).forEach(([propId, rawPropDef]: [string, any]) => {
+        // Map CMIS updatability to boolean updatable
+        const updatability = rawPropDef.updatability;
+        const updatable = updatability === 'readwrite' || updatability === 'whencheckedout';
+
+        propertyDefinitions[propId] = {
+          ...rawPropDef,
+          updatable  // Add boolean updatable field
+        };
+      });
+    }
+
     return {
       id: rawType?.id || 'unknown',
       displayName: rawType?.displayName || rawType?.id || 'Unknown Type',
@@ -446,7 +464,7 @@ export class CMISService {
       fileable: rawType?.fileable !== false,
       queryable: rawType?.queryable !== false,
       deletable: rawType?.typeMutability?.delete !== false && rawType?.deletable !== false,
-      propertyDefinitions: rawType?.propertyDefinitions || {}
+      propertyDefinitions
     };
   }
 
@@ -897,12 +915,84 @@ export class CMISService {
               let objectType = 'cmis:document';
               let baseType = 'cmis:document';
               let path = '';
-              
+              let createdBy = '';
+              let creationDate = '';
+              let lastModifiedBy = '';
+              let lastModificationDate = '';
+              let contentStreamLength: number | undefined;
+              let contentStreamMimeType = '';
+              let versionLabel = '';
+              let isLatestVersion: boolean | undefined;
+              let isLatestMajorVersion: boolean | undefined;
+
+              // CRITICAL FIX (2025-11-17): Extract ALL properties to populate properties field
+              // This is essential for changeToken extraction and other CMIS property access
+              const propertiesMap: Record<string, any> = {};
+
+              console.error('!!! CMIS getObject: properties element exists?', !!properties);
+
               if (properties) {
+                // First, extract ALL property elements to build complete properties map
+                const allPropertyElements = properties.querySelectorAll('[propertyDefinitionId]');
+                console.error('!!! CMIS getObject: found property elements count:', allPropertyElements.length);
+
+                allPropertyElements.forEach((propElement, index) => {
+                  const propertyId = propElement.getAttribute('propertyDefinitionId');
+                  if (index < 5) { // Log first 5 properties for debugging
+                    console.error(`!!! CMIS getObject: property ${index}: id=${propertyId}`);
+                  }
+                  if (!propertyId) return;
+
+                  // Extract value(s) from the property element
+                  const valueElements = propElement.querySelectorAll('cmis\\:value, value');
+                  if (index < 5) {
+                    console.error(`!!! CMIS getObject: property ${propertyId}: found ${valueElements.length} value elements`);
+                  }
+
+                  if (valueElements.length === 0) {
+                    // No value - property is null or empty
+                    propertiesMap[propertyId] = null;
+                  } else if (valueElements.length === 1) {
+                    // Single value property
+                    const textValue = valueElements[0].textContent;
+                    propertiesMap[propertyId] = textValue;
+                    if (index < 5) {
+                      console.error(`!!! CMIS getObject: property ${propertyId}: value="${textValue}"`);
+                    }
+                  } else {
+                    // Multi-value property (array)
+                    const values: string[] = [];
+                    valueElements.forEach(valueEl => {
+                      if (valueEl.textContent) {
+                        values.push(valueEl.textContent);
+                      }
+                    });
+                    propertiesMap[propertyId] = values;
+                  }
+                });
+
+                console.error('!!! CMIS getObject: propertiesMap final keys count:', Object.keys(propertiesMap).length);
+                console.error('!!! CMIS getObject: propertiesMap has changeToken?', 'cmis:changeToken' in propertiesMap);
+                if ('cmis:changeToken' in propertiesMap) {
+                  console.error('!!! CMIS getObject: changeToken value:', propertiesMap['cmis:changeToken']);
+                }
+                console.error('!!! CMIS getObject: propertiesMap sample (first 3):',
+                  JSON.stringify(Object.fromEntries(Object.entries(propertiesMap).slice(0, 3)), null, 2));
+
+                // Then extract specific properties for direct field assignment (backward compatibility)
                 const objectTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectTypeId"], propertyId[propertyDefinitionId="cmis:objectTypeId"]');
                 const baseTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:baseTypeId"], propertyId[propertyDefinitionId="cmis:baseTypeId"]');
                 const pathElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:path"], propertyString[propertyDefinitionId="cmis:path"]');
-                
+                const createdByElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:createdBy"], propertyString[propertyDefinitionId="cmis:createdBy"]');
+                const creationDateElement = properties.querySelector('cmis\\:propertyDateTime[propertyDefinitionId="cmis:creationDate"], propertyDateTime[propertyDefinitionId="cmis:creationDate"]');
+                const lastModifiedByElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:lastModifiedBy"], propertyString[propertyDefinitionId="cmis:lastModifiedBy"]');
+                const lastModificationDateElement = properties.querySelector('cmis\\:propertyDateTime[propertyDefinitionId="cmis:lastModificationDate"], propertyDateTime[propertyDefinitionId="cmis:lastModificationDate"]');
+                const contentStreamLengthElement = properties.querySelector('cmis\\:propertyInteger[propertyDefinitionId="cmis:contentStreamLength"], propertyInteger[propertyDefinitionId="cmis:contentStreamLength"]');
+                const contentStreamMimeTypeElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:contentStreamMimeType"], propertyString[propertyDefinitionId="cmis:contentStreamMimeType"]');
+                const versionLabelElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:versionLabel"], propertyString[propertyDefinitionId="cmis:versionLabel"]');
+                const isLatestVersionElement = properties.querySelector('cmis\\:propertyBoolean[propertyDefinitionId="cmis:isLatestVersion"], propertyBoolean[propertyDefinitionId="cmis:isLatestVersion"]');
+                const isLatestMajorVersionElement = properties.querySelector('cmis\\:propertyBoolean[propertyDefinitionId="cmis:isLatestMajorVersion"], propertyBoolean[propertyDefinitionId="cmis:isLatestMajorVersion"]');
+
                 if (objectTypeElement) {
                   objectType = objectTypeElement.querySelector('cmis\\:value, value')?.textContent || objectType;
                 }
@@ -912,16 +1002,57 @@ export class CMISService {
                 if (pathElement) {
                   path = pathElement.querySelector('cmis\\:value, value')?.textContent || '';
                 }
+                if (createdByElement) {
+                  createdBy = createdByElement.querySelector('cmis\\:value, value')?.textContent || '';
+                }
+                if (creationDateElement) {
+                  creationDate = creationDateElement.querySelector('cmis\\:value, value')?.textContent || '';
+                }
+                if (lastModifiedByElement) {
+                  lastModifiedBy = lastModifiedByElement.querySelector('cmis\\:value, value')?.textContent || '';
+                }
+                if (lastModificationDateElement) {
+                  lastModificationDate = lastModificationDateElement.querySelector('cmis\\:value, value')?.textContent || '';
+                }
+                if (contentStreamLengthElement) {
+                  const lengthText = contentStreamLengthElement.querySelector('cmis\\:value, value')?.textContent;
+                  if (lengthText) {
+                    contentStreamLength = parseInt(lengthText, 10);
+                  }
+                }
+                if (contentStreamMimeTypeElement) {
+                  contentStreamMimeType = contentStreamMimeTypeElement.querySelector('cmis\\:value, value')?.textContent || '';
+                }
+                if (versionLabelElement) {
+                  versionLabel = versionLabelElement.querySelector('cmis\\:value, value')?.textContent || '';
+                }
+                if (isLatestVersionElement) {
+                  const boolText = isLatestVersionElement.querySelector('cmis\\:value, value')?.textContent;
+                  isLatestVersion = boolText === 'true';
+                }
+                if (isLatestMajorVersionElement) {
+                  const boolText = isLatestMajorVersionElement.querySelector('cmis\\:value, value')?.textContent;
+                  isLatestMajorVersion = boolText === 'true';
+                }
               }
-              
+
               const cmisObject: CMISObject = {
                 id: objectId,
                 name: title,
                 objectType: objectType,
                 baseType: baseType,
-                properties: {}, // Simplified - would need full parsing for complete properties
+                properties: propertiesMap, // NOW POPULATED with all CMIS properties including changeToken!
                 allowableActions: [],
-                path: path
+                path: path,
+                createdBy: createdBy || undefined,
+                creationDate: creationDate || undefined,
+                lastModifiedBy: lastModifiedBy || undefined,
+                lastModificationDate: lastModificationDate || undefined,
+                contentStreamLength: contentStreamLength,
+                contentStreamMimeType: contentStreamMimeType || undefined,
+                versionLabel: versionLabel || undefined,
+                isLatestVersion: isLatestVersion,
+                isLatestMajorVersion: isLatestMajorVersion
               };
               
               console.log('CMIS DEBUG: getObject parsed object:', cmisObject);
@@ -1058,31 +1189,41 @@ export class CMISService {
     });
   }
 
-  async updateProperties(repositoryId: string, objectId: string, properties: Record<string, any>): Promise<CMISObject> {
+  async updateProperties(repositoryId: string, objectId: string, properties: Record<string, any>, changeToken?: string): Promise<CMISObject> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       // Use Browser Binding updateProperties action
       xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
             try {
               const response = JSON.parse(xhr.responseText);
               const props = response.succinctProperties || response.properties || {};
+
+              // CRITICAL FIX (2025-11-18): Extract all properties DocumentViewer expects
+              // Previously only extracted id/name/objectType/baseType, causing all other properties
+              // (createdBy, lastModifiedBy, dates, etc.) to be undefined, displaying as hyphens in UI
               const updatedObject: CMISObject = {
                 id: this.getSafeStringProperty(props, 'cmis:objectId', objectId),
                 name: this.getSafeStringProperty(props, 'cmis:name', 'Unknown'),
                 objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
                 baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
                 properties: props,
-                allowableActions: response.allowableActions || []
+                allowableActions: response.allowableActions || [],
+                createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
+                lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
+                creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
+                lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
+                contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
+                path: this.getSafeStringProperty(props, 'cmis:path')
               };
               resolve(updatedObject);
             } catch (e) {
@@ -1094,19 +1235,45 @@ export class CMISService {
           }
         }
       };
-      
+
       // Use FormData for Browser Binding updateProperties
       const formData = new FormData();
       formData.append('cmisaction', 'updateProperties');
       formData.append('objectId', objectId);
-      
+      formData.append('succinct', 'true'); // Request succinct format for direct property values
+
+      // CRITICAL FIX (2025-11-17): Include change token for optimistic locking
+      // The CMIS server requires the change token to prevent concurrent update conflicts (HTTP 409)
+      if (changeToken) {
+        formData.append('changeToken', changeToken);
+      }
+
       let propertyIndex = 0;
       Object.entries(properties).forEach(([key, value]) => {
         formData.append(`propertyId[${propertyIndex}]`, key);
-        formData.append(`propertyValue[${propertyIndex}]`, String(value));
+
+        // Handle multi-value properties (arrays) according to CMIS Browser Binding spec
+        if (Array.isArray(value)) {
+          if (value.length === 0) {
+            // Empty array - don't add any propertyValue entries
+            // CMIS Browser Binding: absence of propertyValue means empty multi-value property
+          } else {
+            // Non-empty array - add each value with sub-index
+            value.forEach((item, subIndex) => {
+              formData.append(`propertyValue[${propertyIndex}][${subIndex}]`, String(item));
+            });
+          }
+        } else if (value === null || value === undefined) {
+          // Null/undefined - send empty string to clear property
+          formData.append(`propertyValue[${propertyIndex}]`, '');
+        } else {
+          // Single value property - convert to string
+          formData.append(`propertyValue[${propertyIndex}]`, String(value));
+        }
+
         propertyIndex++;
       });
-      
+
       xhr.onerror = () => reject(new Error('Network error'));
       xhr.send(formData);
     });
@@ -1115,15 +1282,18 @@ export class CMISService {
   async deleteObject(repositoryId: string, objectId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      // Use Browser Binding delete action
+      // CRITICAL FIX (2025-11-18): Use application/x-www-form-urlencoded for Browser Binding
+      // Previous bug: Used FormData without Content-Type, causing multipart/form-data
+      // Browser Binding requires form-urlencoded for operations without file uploads
       xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
+      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
       xhr.setRequestHeader('Accept', 'application/json');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200 || xhr.status === 204) {
@@ -1134,14 +1304,14 @@ export class CMISService {
           }
         }
       };
-      
-      // Use FormData for Browser Binding delete
-      const formData = new FormData();
+
+      // Use URLSearchParams for application/x-www-form-urlencoded (matches checkOut pattern)
+      const formData = new URLSearchParams();
       formData.append('cmisaction', 'deleteObject');
       formData.append('objectId', objectId);
-      
+
       xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send(formData);
+      xhr.send(formData.toString());
     });
   }
 

@@ -247,7 +247,8 @@ import {
   Form,
   Input,
   Tag,
-  Popconfirm
+  Popconfirm,
+  Select
 } from 'antd';
 import {
   DownloadOutlined,
@@ -293,17 +294,35 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   }, [objectId, repositoryId]);
 
   const loadObject = async () => {
-    if (!objectId) return;
-    
+    console.error('!!! DOCUMENTVIEWER: loadObject() CALLED - START');
+
+    if (!objectId) {
+      console.error('!!! DOCUMENTVIEWER: loadObject() EARLY RETURN - objectId is falsy:', objectId);
+      return;
+    }
+
+    console.error('!!! DOCUMENTVIEWER: loadObject() proceeding with objectId:', objectId, 'repositoryId:', repositoryId);
+
     try {
+      console.error('!!! DOCUMENTVIEWER: About to call cmisService.getObject()');
       const obj = await cmisService.getObject(repositoryId, objectId);
+      console.error('!!! DOCUMENTVIEWER: getObject() SUCCESS - objectType:', obj.objectType, 'name:', obj.name);
       setObject(obj);
-      
+
+      console.error('!!! DOCUMENTVIEWER: About to call cmisService.getType() for objectType:', obj.objectType);
       const typeDef = await cmisService.getType(repositoryId, obj.objectType);
+      console.error('!!! DOCUMENTVIEWER: getType() SUCCESS - propertyDefinitions count:', Object.keys(typeDef.propertyDefinitions || {}).length);
       setTypeDefinition(typeDef);
+
+      // CRITICAL DIAGNOSTIC (2025-11-17): Expose propertyDefinitions for test verification
+      // This allows Playwright tests to verify the updatable field mapping fix
+      (window as any).__NEMAKI_PROPERTY_DEFINITIONS__ = typeDef.propertyDefinitions;
+      console.error('!!! DOCUMENTVIEWER: Set window.__NEMAKI_PROPERTY_DEFINITIONS__ with', Object.keys(typeDef.propertyDefinitions).length, 'properties');
     } catch (error) {
+      console.error('!!! DOCUMENTVIEWER: loadObject() CAUGHT ERROR:', error);
       message.error('オブジェクトの読み込みに失敗しました');
     } finally {
+      console.error('!!! DOCUMENTVIEWER: loadObject() FINALLY block - setLoading(false)');
       setLoading(false);
     }
   };
@@ -401,13 +420,32 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   };
 
   const handleUpdateProperties = async (properties: Record<string, any>) => {
-    if (!object) return;
-    
+    console.error('!!! DOCUMENTVIEWER: handleUpdateProperties CALLED with properties:', Object.keys(properties));
+
+    if (!object) {
+      console.error('!!! DOCUMENTVIEWER: handleUpdateProperties EARLY RETURN - object is falsy');
+      return;
+    }
+
+    console.error('!!! DOCUMENTVIEWER: object exists, objectId:', object.id);
+    console.error('!!! DOCUMENTVIEWER: object.properties keys:', Object.keys(object.properties));
+    console.error('!!! DOCUMENTVIEWER: object.properties content:', JSON.stringify(object.properties, null, 2));
+
+    // CRITICAL FIX (2025-11-17): Extract change token for optimistic locking
+    // The CMIS server requires the change token to prevent concurrent update conflicts (HTTP 409)
+    const changeToken = object.properties['cmis:changeToken'];
+    console.error('!!! DOCUMENTVIEWER: changeToken extracted:', changeToken);
+    console.error('!!! DOCUMENTVIEWER: About to call cmisService.updateProperties()');
+
     try {
-      const updatedObject = await cmisService.updateProperties(repositoryId, object.id, properties);
+      const updatedObject = await cmisService.updateProperties(repositoryId, object.id, properties, changeToken);
+      console.error('!!! DOCUMENTVIEWER: updateProperties SUCCESS - updated object received');
       setObject(updatedObject);
+      console.error('!!! DOCUMENTVIEWER: setObject() called, about to call message.success()');
       message.success('プロパティを更新しました');
+      console.error('!!! DOCUMENTVIEWER: message.success() called');
     } catch (error) {
+      console.error('!!! DOCUMENTVIEWER: updateProperties FAILED with error:', error);
       message.error('プロパティの更新に失敗しました');
     }
   };
@@ -418,6 +456,18 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
   const isCheckedOut = object.properties['cmis:isVersionSeriesCheckedOut'];
   const checkedOutBy = object.properties['cmis:versionSeriesCheckedOutBy'];
+
+  // DIAGNOSTIC: Log checkout status and readOnly calculation
+  console.error('!!! DocumentViewer readOnly calculation:', {
+    isCheckedOut,
+    checkedOutBy,
+    createdBy: object.createdBy,
+    checkedOutByType: typeof checkedOutBy,
+    checkedOutByEmpty: !checkedOutBy,
+    comparison: checkedOutBy !== object.createdBy,
+    originalLogic: isCheckedOut && checkedOutBy !== object.createdBy,
+    fixedLogic: isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy
+  });
 
   const versionColumns = [
     {
@@ -498,7 +548,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           object={object}
           propertyDefinitions={typeDefinition.propertyDefinitions}
           onSave={handleUpdateProperties}
-          readOnly={isCheckedOut && checkedOutBy !== object.createdBy}
+          readOnly={isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy}
         />
       ),
     },
@@ -612,7 +662,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             <Descriptions.Item label="ID">{object.id}</Descriptions.Item>
             <Descriptions.Item label="タイプ">{object.objectType}</Descriptions.Item>
             <Descriptions.Item label="ベースタイプ">{object.baseType}</Descriptions.Item>
-            <Descriptions.Item label="パス">{object.path}</Descriptions.Item>
+            <Descriptions.Item label="パス">{object.path || '-'}</Descriptions.Item>
             <Descriptions.Item label="作成者">{object.createdBy}</Descriptions.Item>
             <Descriptions.Item label="作成日時">
               {object.creationDate ? new Date(object.creationDate).toLocaleString('ja-JP') : '-'}
@@ -621,11 +671,13 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             <Descriptions.Item label="更新日時">
               {object.lastModificationDate ? new Date(object.lastModificationDate).toLocaleString('ja-JP') : '-'}
             </Descriptions.Item>
-            {object.contentStreamLength && (
-              <Descriptions.Item label="サイズ">
-                {Math.round(object.contentStreamLength / 1024)} KB
-              </Descriptions.Item>
-            )}
+            <Descriptions.Item label="サイズ">
+              {object.contentStreamLength
+                ? (object.contentStreamLength < 1024
+                    ? `${object.contentStreamLength} B`
+                    : `${Math.round(object.contentStreamLength / 1024)} KB`)
+                : '-'}
+            </Descriptions.Item>
             {object.contentStreamMimeType && (
               <Descriptions.Item label="MIMEタイプ">
                 {object.contentStreamMimeType}
@@ -643,8 +695,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         onCancel={() => setCheckoutModalVisible(false)}
         footer={null}
         width={600}
+        maskClosable={false}
       >
-        <Form form={form} onFinish={handleCheckIn} layout="vertical">
+        <Form form={form} onFinish={handleCheckIn} layout="vertical" initialValues={{ major: true }}>
           <Form.Item
             name="file"
             label="新しいファイル（オプション）"
@@ -659,14 +712,29 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               <p className="ant-upload-text">新しいバージョンのファイルをアップロード（オプション）</p>
             </Upload.Dragger>
           </Form.Item>
-          
+
           <Form.Item
-            name="cmis:checkinComment"
+            name="major"
+            label="バージョンタイプ"
+            tooltip="メジャーバージョン（1.0 → 2.0）またはマイナーバージョン（1.0 → 1.1）を選択してください"
+            rules={[{ required: true, message: 'バージョンタイプを選択してください' }]}
+          >
+            <Select
+              options={[
+                { label: 'メジャーバージョン（例: 1.0 → 2.0）', value: true },
+                { label: 'マイナーバージョン（例: 1.0 → 1.1）', value: false }
+              ]}
+              placeholder="バージョンタイプを選択"
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="checkinComment"
             label="チェックインコメント"
           >
             <Input.TextArea rows={3} placeholder="変更内容を入力してください" />
           </Form.Item>
-          
+
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">

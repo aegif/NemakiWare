@@ -274,7 +274,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Initialize root folder ID immediately
   useEffect(() => {
     if (!currentFolderId) {
-      console.log('DocumentList DEBUG: Initializing with root folder ID');
       setCurrentFolderId('e02f784f8360a02cc14d1314c10038ff');
     }
   }, [repositoryId]); // Only depend on repositoryId
@@ -282,7 +281,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Load objects when currentFolderId changes
   useEffect(() => {
     if (currentFolderId) {
-      console.log('DocumentList DEBUG: currentFolderId changed, loading objects for:', currentFolderId);
       loadObjects();
     }
   }, [currentFolderId]);
@@ -293,17 +291,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       return;
     }
 
-    console.log('LOAD OBJECTS DEBUG: Loading children for repository:', repositoryId, 'folder:', currentFolderId);
     setLoading(true);
     try {
       const children = await cmisService.getChildren(repositoryId, currentFolderId);
-      console.log('LOAD OBJECTS DEBUG: Successfully received', children.length, 'children:', children);
       setObjects(children);
 
       // Update folder path for root folder
       if (currentFolderId === 'e02f784f8360a02cc14d1314c10038ff') {
         setCurrentFolderPath('/');
-        console.log('LOAD OBJECTS DEBUG: Set root folder path');
       }
     } catch (error) {
       console.error('LOAD OBJECTS DEBUG: Error loading children:', error);
@@ -513,31 +508,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       render: (name: string, record: CMISObject) => {
         const isPWC = record.properties?.['cmis:isPrivateWorkingCopy'] === true ||
                       record.properties?.['cmis:isVersionSeriesCheckedOut'] === true;
-        
-        if (name && name.includes('versioning-test')) {
-          console.log('PWC DEBUG:', {
-            name,
-            isPrivateWorkingCopy: record.properties?.['cmis:isPrivateWorkingCopy'],
-            isVersionSeriesCheckedOut: record.properties?.['cmis:isVersionSeriesCheckedOut'],
-            isPWC,
-            propertyKeys: record.properties ? Object.keys(record.properties) : [],
-            allProperties: JSON.stringify(record.properties, null, 2)
-          });
-        }
 
         return (
           <Space>
             <Button
               type="link"
               onClick={() => {
-                console.log('FOLDER CLICK DEBUG:', {
-                  name: record.name,
-                  id: record.id,
-                  baseType: record.baseType,
-                  objectType: record.objectType
-                });
                 if (record.baseType === 'cmis:folder') {
-                  console.log('Setting folder ID to:', record.id);
                   setCurrentFolderId(record.id);
                 } else {
                   navigate(`/documents/${record.id}`);
@@ -558,7 +535,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       dataIndex: 'contentStreamLength',
       key: 'size',
       width: 100,
-      render: (size: number) => size ? `${Math.round(size / 1024)} KB` : '-',
+      render: (size: number) => {
+        if (!size) return '-';
+        if (size < 1024) return `${size} B`;
+        return `${Math.round(size / 1024)} KB`;
+      },
     },
     {
       title: '更新日時',
@@ -734,6 +715,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         open={uploadModalVisible}
         onCancel={() => setUploadModalVisible(false)}
         footer={null}
+        maskClosable={false}
       >
         <Form form={form} onFinish={handleUpload} layout="vertical">
           <Form.Item
@@ -791,6 +773,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         open={folderModalVisible}
         onCancel={() => setFolderModalVisible(false)}
         footer={null}
+        maskClosable={false}
       >
         <Form form={form} onFinish={handleCreateFolder} layout="vertical">
           <Form.Item
@@ -822,6 +805,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         }}
         footer={null}
         width={600}
+        maskClosable={false}
       >
         <Form form={form} onFinish={handleCheckIn} layout="vertical" initialValues={{ versionType: 'minor' }}>
           <Form.Item
@@ -887,6 +871,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         onCancel={() => setVersionHistoryModalVisible(false)}
         footer={null}
         width={800}
+        maskClosable={false}
       >
         <Table
           dataSource={versionHistory}

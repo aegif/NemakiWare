@@ -530,6 +530,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
         onCancel={handleCancel}
         footer={null}
         width={600}
+        maskClosable={false}
       >
         <Form
           form={form}
