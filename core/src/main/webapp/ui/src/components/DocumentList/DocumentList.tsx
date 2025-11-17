@@ -558,7 +558,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       dataIndex: 'contentStreamLength',
       key: 'size',
       width: 100,
-      render: (size: number) => size ? `${Math.round(size / 1024)} KB` : '-',
+      render: (size: number) => {
+        if (!size) return '-';
+        // Show bytes for files smaller than 1KB
+        if (size < 1024) return `${size} bytes`;
+        // Show KB for larger files
+        return `${Math.round(size / 1024)} KB`;
+      },
     },
     {
       title: '更新日時',

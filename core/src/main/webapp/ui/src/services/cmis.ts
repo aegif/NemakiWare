@@ -438,6 +438,12 @@ export class CMISService {
   /**
    * Map server property definitions to UI format
    * Converts updatability string to updatable boolean
+   *
+   * CMIS updatability values:
+   * - "readwrite": Can be updated after creation → updatable=true
+   * - "readonly": Cannot be updated → updatable=false
+   * - "oncreate": Can only be set on creation, readonly after → updatable=false
+   * - "whencheckedout": Can be updated when checked out → updatable=true
    */
   private mapPropertyDefinitions(rawPropertyDefs: any): Record<string, PropertyDefinition> {
     const mapped: Record<string, PropertyDefinition> = {};
@@ -452,7 +458,9 @@ export class CMISService {
         cardinality: raw.cardinality || 'single',
         required: raw.required || false,
         queryable: raw.queryable || false,
-        updatable: raw.updatability === 'readwrite' || raw.updatability === 'oncreate',
+        // CRITICAL FIX: Only "readwrite" and "whencheckedout" should be updatable
+        // "oncreate" properties (like cmis:objectTypeId) should NOT be editable after creation
+        updatable: raw.updatability === 'readwrite' || raw.updatability === 'whencheckedout',
         defaultValue: raw.defaultValue,
         choices: raw.choices,
         maxLength: raw.maxLength,
