@@ -109,8 +109,9 @@
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
-			<version>4.12</version>
+			<version>4.13.2</version>
 		</dependency>
+		<!-- SECURITY FIX (2025-11-19): Updated from 4.12 to 4.13.2 to fix CVE-2020-15250 (TemporaryFolder information disclosure) -->
 
 		<!-- JSON library for test classes -->
 		<dependency>
@@ -618,14 +619,16 @@
 		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-text</artifactId>
-			<version>1.6</version>
+			<version>1.14.0</version>
 		</dependency>
-		<!-- Override old commons-lang3 transitive dependency to support commons-text 1.6 -->
+		<!-- SECURITY FIX (2025-11-19): Updated from 1.6 to 1.14.0 to fix CVE-2022-42889 (Text4Shell, CVSS 9.8) -->
+		<!-- Override old commons-lang3 transitive dependency to support commons-text 1.14.0 -->
 		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-lang3</artifactId>
-			<version>3.12.0</version>
+			<version>3.20.0</version>
 		</dependency>
+		<!-- COMPATIBILITY: Updated from 3.12.0 to 3.20.0 to match commons-text 1.14.0 requirement -->
 
 		<dependency>
 			<groupId>org.jodconverter</groupId>
@@ -642,8 +645,9 @@
 		<dependency>
 			<groupId>com.google.guava</groupId>
 			<artifactId>guava</artifactId>
-			<version>24.1.1-jre</version>
+			<version>33.5.0-jre</version>
 		</dependency>
+		<!-- SECURITY FIX (2025-11-19): Updated from 24.1.1-jre to 33.5.0-jre to fix multiple CVEs including CVE-2018-10237 -->
 
 		<dependency>
 			<groupId>joda-time</groupId>

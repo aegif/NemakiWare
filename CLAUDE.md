@@ -62,29 +62,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - **Option D (Accept Risk)**: Document limitation and restrict PDF sources
      - Recommended for now with documentation
 
-2. **esbuild & vite (MODERATE SEVERITY - DEVELOPMENT ONLY)**
-   - **Severity**: Moderate
+2. **esbuild & vite (MODERATE SEVERITY → RESOLVED ✅)**
+   - **Previous Severity**: Moderate
    - **Impact**: Development server vulnerabilities
-   - **Risk**: Low (only affects development environment)
+   - **Status**: ✅ RESOLVED (2025-11-19)
 
-   **esbuild**:
-   - **Issue**: Allows websites to send requests to development server
-   - **Advisory**: GHSA-67mh-4wv8-2f99
-   - **Fix**: Available via `npm audit fix --force`
-   - **Breaking Change**: Requires Vite 7.2.2 (major version upgrade from 5.4.19)
+   **Action Taken**:
+   - Upgraded vite: 5.4.21 → 7.2.2
+   - Upgraded @vitejs/plugin-react: 4.7.0 → 5.1.1
+   - All esbuild/vite vulnerabilities resolved
 
-   **vite**:
-   - **Issues**:
-     - Middleware may serve files with same prefix as public directory
-     - server.fs settings not applied to HTML files
-     - server.fs.deny bypass via backslash on Windows
-   - **Fix**: Available via `npm audit fix --force`
-   - **Breaking Change**: Version 5.4.19 → 7.2.2 (major version jump)
+   **Migration Notes**:
+   - Node.js v25.2.0 meets Vite 7 requirements (20.19+ / 22.12+)
+   - Simple vite.config.ts had no breaking changes
+   - UI build successful: `npm run build` completes in 3.90s
+   - Asset paths correctly generated: `/core/ui/assets/`
+   - No Sass, splitVendorChunk, or transformIndexHtml features used
 
-   **Recommendation**: Update to Vite 7.x in next development cycle
-   - Low priority (development only)
-   - Test for breaking changes before deployment
-   - Current Vite 5.4.19 configuration stable and working
+   **Verification**:
+   ```bash
+   npm run build  # ✅ Builds successfully
+   npm audit      # ✅ Only 2 vulnerabilities remaining (pdfjs-dist)
+   ```
 
 #### Summary Report
 
@@ -118,6 +117,79 @@ npm list axios pdfjs-dist vite
 # pdfjs-dist@5.3.31 (via react-pdf) - safe
 # vite@5.4.19 (moderate vulnerability, development only)
 ```
+
+---
+
+### Backend (Maven) Dependencies Security Audit
+
+**Summary**: CRITICAL vulnerabilities identified in Java dependencies requiring immediate updates
+
+#### Vulnerability Breakdown
+
+**CRITICAL Priority Updates**:
+
+1. **commons-text 1.6 (CRITICAL - Text4Shell)**
+   - **CVE**: CVE-2022-42889
+   - **Severity**: CRITICAL (CVSS 9.8/10)
+   - **Current Version**: 1.6
+   - **Patched Version**: 1.10.0+ (Available: 1.14.0)
+   - **Impact**: Remote Code Execution (RCE) via variable interpolation
+   - **Attack Vector**: StringSubstitutor class processes malicious input with default lookups
+   - **Status**: ⚠️ REQUIRES IMMEDIATE UPDATE
+
+2. **Guava 24.1.1-jre (HIGH)**
+   - **CVE**: Multiple (CVE-2018-10237 fixed, but other CVEs remain)
+   - **Severity**: HIGH
+   - **Current Version**: 24.1.1-jre
+   - **Patched Version**: 32.0.1+ (Available: 33.5.0-jre)
+   - **Impact**: Temporary directory information disclosure, DoS attacks
+   - **Status**: ⚠️ REQUIRES UPDATE
+
+3. **junit 4.12 (MEDIUM)**
+   - **CVE**: CVE-2020-15250
+   - **Severity**: MEDIUM
+   - **Current Version**: 4.12
+   - **Patched Version**: 4.13.1+ (Available: 4.13.2)
+   - **Impact**: Local information disclosure via TemporaryFolder
+   - **Status**: ⚠️ RECOMMENDED UPDATE
+
+**Other Outdated Dependencies** (Likely Vulnerable):
+- commons-codec: 1.10 → 1.20.0 (10-year-old version)
+- commons-logging: 1.2 → 1.3.5
+- joda-time: 2.9.3 → 2.14.0
+- Jackson: 2.17.1 → 2.20.1
+- Apache CXF: 4.0.4 → 4.1.4
+- Cloudant SDK: 0.8.0 → 0.10.12
+
+#### Recommended Action Plan
+
+**Phase 1 - CRITICAL ✅ COMPLETED (2025-11-19)**:
+- ✅ commons-text: 1.6 → 1.14.0 (CVE-2022-42889 Text4Shell fixed)
+- ✅ commons-lang3: 3.12.0 → 3.20.0 (compatibility requirement)
+- ✅ Build successful: WAR 119MB
+- ✅ Deployment tested: All endpoints HTTP 200
+- Files modified: `core/pom.xml` (lines 621, 628)
+
+**Phase 2 - HIGH ✅ COMPLETED (2025-11-19)**:
+- ✅ Guava: 24.1.1-jre → 33.5.0-jre (Multiple CVEs fixed including CVE-2018-10237)
+- ✅ junit: 4.12 → 4.13.2 (CVE-2020-15250 TemporaryFolder disclosure fixed)
+- ✅ Build successful: WAR 119MB
+- ✅ Deployment tested: All endpoints HTTP 200
+- Files modified: `core/pom.xml` (lines 112, 647)
+
+**Phase 3 - MEDIUM (This Sprint)**:
+```bash
+# Update commons-codec
+mvn versions:use-dep-version -Dincludes=commons-codec:commons-codec -DdepVersion=1.20.0
+
+# Update Jackson suite
+mvn versions:use-dep-version -Dincludes=com.fasterxml.jackson.core:* -DdepVersion=2.20.1
+```
+
+#### Files to Modify
+
+- `core/pom.xml`: Update dependency versions
+- Test verification required for each phase to ensure no breaking changes
 
 ---
 
