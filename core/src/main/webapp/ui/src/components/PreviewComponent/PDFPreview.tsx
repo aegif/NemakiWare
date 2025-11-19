@@ -144,9 +144,10 @@
  * 8. Worker Component with CDN URL (Line 187):
  *    - Same Worker component as before for PDF.js
  *    - Offloads PDF parsing to separate thread
- *    - Implementation: <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.4.120/build/pdf.worker.min.js">
+ *    - Implementation: <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
  *    - Advantage: UI remains responsive during PDF parsing
  *    - Pattern: Web Worker integration for CPU-intensive operations
+ *    - CRITICAL (2025-11-19): Worker version must match pdfjs-dist API version (currently 3.11.174)
  *
  * 9. File Name Display (Line 185):
  *    - Same <h4> heading as before
@@ -258,7 +259,7 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ repositoryId, objectId, 
       } catch (err) {
         if (!isMounted) return;
 
-        console.error('Failed to load PDF:', err);
+        // Failed to load PDF
         setError(err instanceof Error ? err.message : 'PDFの読み込みに失敗しました');
         setLoading(false);
       }
@@ -309,7 +310,7 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ repositoryId, objectId, 
     <div>
       <h4 style={{ marginBottom: '16px' }}>{fileName}</h4>
       <div style={{ height: '600px', border: '1px solid #d9d9d9' }}>
-        <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.4.120/build/pdf.worker.min.js">
+        <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
           <Viewer fileUrl={blobUrl} />
         </Worker>
       </div>

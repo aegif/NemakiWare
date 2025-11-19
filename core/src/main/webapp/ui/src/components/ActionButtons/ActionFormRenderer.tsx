@@ -291,7 +291,7 @@ export const ActionFormRenderer: React.FC<ActionFormRendererProps> = ({
       });
       form.setFieldsValue(defaultValues);
     } catch (error) {
-      console.error('Failed to load action form:', error);
+      // Failed to load action form
       message.error('フォームの読み込みに失敗しました');
     } finally {
       setLoading(false);
@@ -309,7 +309,7 @@ export const ActionFormRenderer: React.FC<ActionFormRendererProps> = ({
         message.error(result.message || 'アクションの実行に失敗しました');
       }
     } catch (error) {
-      console.error('Action execution failed:', error);
+      // Action execution failed
       message.error('アクションの実行中にエラーが発生しました');
     } finally {
       setExecuting(false);

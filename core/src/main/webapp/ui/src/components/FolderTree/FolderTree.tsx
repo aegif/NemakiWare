@@ -243,6 +243,17 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   }, [selectedFolderId]);
 
   const loadRootFolder = async () => {
+    // CRITICAL FIX (2025-11-19): Prevent unauthenticated requests that trigger BASIC auth dialog
+    // Check if authentication data exists before calling getRootFolder()
+    // Without this check, getRootFolder() would send request with empty auth headers,
+    // server would return 401 + WWW-Authenticate, and browser would show BASIC auth dialog
+    const authData = localStorage.getItem('nemakiware_auth');
+    if (!authData) {
+      console.log('FolderTree: Skipping getRootFolder - no authentication data in localStorage');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const rootFolder = await cmisService.getRootFolder(repositoryId);
@@ -252,7 +263,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
         icon: <FolderOutlined />,
         isLeaf: false,
       };
-      
+
       setTreeData([rootNode]);
       setExpandedKeys([rootFolder.id]);
       setSelectedKeys([rootFolder.id]);
@@ -265,10 +276,17 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   };
 
   const loadChildren = async (parentId: string): Promise<TreeNode[]> => {
+    // CRITICAL FIX (2025-11-19): Prevent unauthenticated requests (defense-in-depth)
+    const authData = localStorage.getItem('nemakiware_auth');
+    if (!authData) {
+      console.log('FolderTree: Skipping loadChildren - no authentication data in localStorage');
+      return [];
+    }
+
     try {
       const children = await cmisService.getChildren(repositoryId, parentId);
       const folders = children.filter(child => child.baseType === 'cmis:folder');
-      
+
       return folders.map(folder => ({
         key: folder.id,
         title: folder.name,

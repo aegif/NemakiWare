@@ -336,25 +336,25 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       // Load each API separately with detailed error handling
       const obj = await cmisService.getObject(repositoryId, objectId)
         .catch(err => {
-          console.error('[ACL DEBUG] Failed to load object:', err);
+          // Failed to load object
           throw new Error(`オブジェクトの読み込みに失敗: ${err.message}`);
         });
 
       const aclData = await cmisService.getACL(repositoryId, objectId)
         .catch(err => {
-          console.error('[ACL DEBUG] Failed to load ACL:', err);
+          // Failed to load ACL
           throw new Error(`ACLの読み込みに失敗: ${err.message}`);
         });
 
       const userList = await cmisService.getUsers(repositoryId)
         .catch(err => {
-          console.error('[ACL DEBUG] Failed to load users:', err);
+          // Failed to load users
           throw new Error(`ユーザー一覧の読み込みに失敗: ${err.message}`);
         });
 
       const groupList = await cmisService.getGroups(repositoryId)
         .catch(err => {
-          console.error('[ACL DEBUG] Failed to load groups:', err);
+          // Failed to load groups
           throw new Error(`グループ一覧の読み込みに失敗: ${err.message}`);
         });
 
@@ -366,9 +366,9 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       const inheritanceStatus = aclData.aclInherited ?? true;
       setIsInherited(inheritanceStatus);
     } catch (error) {
+      // Failed to load permission data
       const errorMessage = error instanceof Error ? error.message : 'データの読み込みに失敗しました';
       message.error(errorMessage);
-      console.error('[ACL DEBUG] Load error:', error);
     } finally {
       setLoading(false);
     }
@@ -431,8 +431,8 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
           message.success('ACL継承を切断しました');
           loadData();
         } catch (error) {
+          // Failed to break inheritance
           message.error('ACL継承の切断に失敗しました');
-          console.error('[ACL DEBUG] Break inheritance error:', error);
         }
       }
     });

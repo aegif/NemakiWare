@@ -199,7 +199,7 @@ export class AuthService {
       try {
         this.currentAuth = JSON.parse(authData);
       } catch (e) {
-        console.error('AuthService constructor failed to parse auth data:', e);
+        // Failed to parse auth data - remove invalid data
         localStorage.removeItem('nemakiware_auth');
       }
     }

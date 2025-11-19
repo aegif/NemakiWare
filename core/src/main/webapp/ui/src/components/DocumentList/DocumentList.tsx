@@ -208,7 +208,7 @@
  * - Network timeout during loadObjects: Loading spinner shows, then error message after timeout
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Table,
   Button,
@@ -225,8 +225,12 @@ import {
   Card,
   Breadcrumb,
   Tag,
-  Radio
+  Radio,
+  DatePicker,
+  Select
 } from 'antd';
+
+const { RangePicker } = DatePicker;
 import {
   FileOutlined,
   FolderOutlined,
@@ -266,6 +270,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchMode, setIsSearchMode] = useState(false);
 
+  // ENHANCEMENT (2025-11-19): Advanced search filter states
+  const [dateRange, setDateRange] = useState<[any, any] | null>(null);
+  const [fileType, setFileType] = useState<string>('');
+  const [creator, setCreator] = useState<string>('');
+
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const { handleAuthError } = useAuth();
@@ -287,7 +296,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   const loadObjects = async () => {
     if (!currentFolderId) {
-      console.warn('LOAD OBJECTS DEBUG: No currentFolderId, skipping load');
+      // No folder selected - skip load
       return;
     }
 
@@ -301,12 +310,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         setCurrentFolderPath('/');
       }
     } catch (error) {
-      console.error('LOAD OBJECTS DEBUG: Error loading children:', error);
-      console.error('LOAD OBJECTS DEBUG: Error details:', {
-        repositoryId,
-        currentFolderId,
-        errorMessage: error instanceof Error ? error.message : 'Unknown error'
-      });
+      // Failed to load children
       message.error(`オブジェクトの読み込みに失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
       // Clear objects on error to show empty state
       setObjects([]);
@@ -346,7 +350,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
       await loadObjects();
     } catch (error) {
-      console.error('Upload error:', error);
+      // Upload failed
       message.error('ファイルのアップロードに失敗しました');
     }
   };
@@ -393,7 +397,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       message.success('チェックアウトしました');
       await loadObjects();
     } catch (error) {
-      console.error('Check-out error:', error);
+      // Check-out failed
       message.error('チェックアウトに失敗しました');
     } finally {
       setLoading(false);
@@ -427,7 +431,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       form.resetFields();
       await loadObjects();
     } catch (error) {
-      console.error('Check-in error:', error);
+      // Check-in failed
       message.error('チェックインに失敗しました');
     } finally {
       setLoading(false);
@@ -441,7 +445,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       message.success('チェックアウトをキャンセルしました');
       await loadObjects();
     } catch (error) {
-      console.error('Cancel check-out error:', error);
+      // Cancel check-out failed
       message.error('チェックアウトのキャンセルに失敗しました');
     } finally {
       setLoading(false);
@@ -455,48 +459,209 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setVersionHistory(history);
       setVersionHistoryModalVisible(true);
     } catch (error) {
-      console.error('Version history error:', error);
+      // Version history failed
       message.error('バージョン履歴の取得に失敗しました');
     } finally {
       setLoading(false);
     }
   };
 
+  /**
+   * Sanitize search query to prevent SQL injection attacks.
+   * CMIS SQL uses single quotes for string literals, so we need to escape them.
+   * Also remove potentially dangerous SQL keywords and characters.
+   */
+  const sanitizeSearchQuery = (query: string): string => {
+    // Escape single quotes by doubling them (CMIS SQL standard)
+    let sanitized = query.replace(/'/g, "''");
+
+    // Remove potentially dangerous SQL characters
+    sanitized = sanitized
+      .replace(/;/g, '')      // Remove semicolons (statement terminators)
+      .replace(/--/g, '')     // Remove SQL line comments
+      .replace(/\/\*/g, '')   // Remove multi-line comment start
+      .replace(/\*\//g, '');  // Remove multi-line comment end
+
+    // Limit length to prevent DoS via extremely long queries
+    const MAX_QUERY_LENGTH = 100;
+    if (sanitized.length > MAX_QUERY_LENGTH) {
+      sanitized = sanitized.substring(0, MAX_QUERY_LENGTH);
+    }
+
+    return sanitized;
+  };
+
   const handleSearch = async () => {
-    if (!searchQuery.trim()) {
-      message.warning('検索キーワードを入力してください');
+    if (!searchQuery.trim() && !dateRange && !fileType && !creator) {
+      message.warning('検索キーワードまたはフィルター条件を入力してください');
       return;
     }
 
     setIsSearchMode(true);
     setLoading(true);
 
+    // PERFORMANCE ENHANCEMENT (2025-11-19): Show loading feedback to user
+    const loadingMessage = message.loading('検索を実行中...', 0);
+
     try {
-      const query = `SELECT * FROM cmis:document WHERE cmis:name LIKE '%${searchQuery}%'`;
+      // ENHANCEMENT (2025-11-19): Build advanced search query with multiple filter conditions
+      // Base query with name search (if provided)
+      const conditions: string[] = [];
+
+      // SECURITY FIX (2025-11-19): Sanitize user input before building SQL query
+      if (searchQuery.trim()) {
+        const sanitizedQuery = sanitizeSearchQuery(searchQuery.trim());
+        conditions.push(`cmis:name LIKE '%${sanitizedQuery}%'`);
+      }
+
+      // Date range filter (creationDate)
+      if (dateRange && dateRange[0] && dateRange[1]) {
+        const startDate = dateRange[0].format('YYYY-MM-DD');
+        const endDate = dateRange[1].format('YYYY-MM-DD');
+        conditions.push(`cmis:creationDate >= TIMESTAMP '${startDate}T00:00:00.000Z'`);
+        conditions.push(`cmis:creationDate <= TIMESTAMP '${endDate}T23:59:59.999Z'`);
+      }
+
+      // File type filter (contentStreamMimeType)
+      if (fileType) {
+        const sanitizedMimeType = sanitizeSearchQuery(fileType);
+        conditions.push(`cmis:contentStreamMimeType = '${sanitizedMimeType}'`);
+      }
+
+      // Creator filter (createdBy)
+      if (creator.trim()) {
+        const sanitizedCreator = sanitizeSearchQuery(creator.trim());
+        conditions.push(`cmis:createdBy LIKE '%${sanitizedCreator}%'`);
+      }
+
+      // Build final query with all conditions
+      const whereClause = conditions.length > 0 ? conditions.join(' AND ') : '1=1';
+      const query = `SELECT * FROM cmis:document WHERE ${whereClause}`;
+
+      console.log('Advanced search query:', query);
+
+      // PERFORMANCE ENHANCEMENT (2025-11-19): Measure search execution time
+      const startTime = Date.now();
       const searchResult = await cmisService.search(repositoryId, query);
-      setObjects(searchResult.objects);
+      const searchTime = Date.now() - startTime;
+
+      // PERFORMANCE ENHANCEMENT (2025-11-19): Update loading message with progress
+      loadingMessage();
+      const pathMessage = message.loading(`${searchResult.objects.length}件のドキュメントが見つかりました。パス情報を取得中...`, 0);
+
+      // CRITICAL FIX (2025-11-19): Calculate paths for search results
+      // Documents don't have cmis:path property, so we compute from parent folder
+      console.log('[handleSearch] Starting path calculation for search results:', searchResult.objects);
+
+      const objectsWithPaths = await Promise.all(
+        searchResult.objects.map(async (obj, index) => {
+          // DEBUG: Log every object before condition check
+          console.log(`[handleSearch] Processing object ${index}:`, {
+            name: obj.name,
+            baseType: obj.baseType,
+            path: obj.path,
+            pathType: typeof obj.path,
+            pathValue: JSON.stringify(obj.path),
+            condition1: obj.baseType === 'cmis:document',
+            condition2: !obj.path,
+            bothConditions: obj.baseType === 'cmis:document' && !obj.path
+          });
+
+          // Only calculate path for documents without path
+          if (obj.baseType === 'cmis:document' && !obj.path) {
+            console.log(`[handleSearch] Calculating path for document ${obj.name} (${obj.id})`);
+            try {
+              const parents = await cmisService.getObjectParents(repositoryId, obj.id);
+              console.log(`[handleSearch] Got ${parents.length} parents for ${obj.name}:`, parents);
+
+              if (parents.length > 0 && parents[0].path) {
+                const parentPath = parents[0].path;
+                const documentName = obj.name;
+                obj.path = parentPath === '/' ? `/${documentName}` : `${parentPath}/${documentName}`;
+                console.log(`[handleSearch] Set path for ${obj.name}: ${obj.path}`);
+              } else {
+                console.warn(`[handleSearch] No parent path found for ${obj.name}`);
+              }
+            } catch (parentError) {
+              // Failed to get parent path - not critical, leave path undefined
+              console.warn(`Failed to calculate path for ${obj.name}:`, parentError);
+            }
+          } else {
+            console.log(`[handleSearch] Skipping path calculation for ${obj.name} (baseType: ${obj.baseType}, path exists: ${!!obj.path})`);
+          }
+          return obj;
+        })
+      );
+
+      console.log('[handleSearch] Path calculation complete, final objects:', objectsWithPaths);
+
+      pathMessage();
+      setObjects(objectsWithPaths);
+
+      // PERFORMANCE ENHANCEMENT (2025-11-19): Show success message with metrics
+      const resultCount = objectsWithPaths.length;
+      const totalTime = Date.now() - startTime;
+      message.success(`検索完了: ${resultCount}件のドキュメントを検索しました (${(totalTime / 1000).toFixed(1)}秒)`, 3);
+
     } catch (error) {
-      console.error('Search error:', error);
-      message.error(`検索に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // PERFORMANCE ENHANCEMENT (2025-11-19): Enhanced error handling with context
+      console.error('Search error details:', error);
+
+      // Check for specific error types
+      if (error instanceof Error) {
+        if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
+          message.error('検索がタイムアウトしました。条件を絞り込んで再度お試しください。', 5);
+        } else if (error.message.includes('network') || error.message.includes('ECONNREFUSED')) {
+          message.error('ネットワークエラー: サーバーに接続できませんでした。', 5);
+        } else if (error.message.includes('401') || error.message.includes('unauthorized')) {
+          message.error('認証エラー: 再度ログインしてください。', 5);
+        } else {
+          message.error(`検索エラー: ${error.message}`, 5);
+        }
+      } else {
+        message.error('検索に失敗しました。しばらくしてから再度お試しください。', 5);
+      }
+
+      // Clear search mode on error
+      setIsSearchMode(false);
+
     } finally {
+      // PERFORMANCE ENHANCEMENT (2025-11-19): Always clear loading message and state
+      loadingMessage();
       setLoading(false);
     }
   };
 
   const handleClearSearch = () => {
+    // Clear all search and filter states
     setSearchQuery('');
+    setDateRange(null);
+    setFileType('');
+    setCreator('');
     setIsSearchMode(false);
     loadObjects();
   };
 
-  const columns = [
+  // CRITICAL FIX (2025-11-19): Search results require different columns than folder browsing
+  // Search mode should show: objectType, path, createdBy, creationDate for better document discovery
+  // Folder browsing should show: size, lastModifiedBy, lastModificationDate for file management
+  // useMemo ensures columns array recalculates when isSearchMode changes
+  //
+  // ENHANCEMENT (2025-11-19): Added sortable columns for improved search result usability
+  // All text columns support alphabetical sorting, date columns support chronological sorting
+  const columns = useMemo(() => [
     {
       title: 'タイプ',
       dataIndex: 'baseType',
       key: 'type',
       width: 60,
+      sorter: (a: CMISObject, b: CMISObject) => {
+        // Sort folders before documents
+        if (a.baseType === b.baseType) return 0;
+        return a.baseType === 'cmis:folder' ? -1 : 1;
+      },
       render: (baseType: string) => (
-        baseType === 'cmis:folder' ? 
+        baseType === 'cmis:folder' ?
           <FolderOutlined style={{ color: '#1890ff', fontSize: '16px' }} /> :
           <FileOutlined style={{ color: '#52c41a', fontSize: '16px' }} />
       ),
@@ -505,6 +670,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       title: '名前',
       dataIndex: 'name',
       key: 'name',
+      sorter: (a: CMISObject, b: CMISObject) => (a.name || '').localeCompare(b.name || '', 'ja'),
       render: (name: string, record: CMISObject) => {
         const isPWC = record.properties?.['cmis:isPrivateWorkingCopy'] === true ||
                       record.properties?.['cmis:isVersionSeriesCheckedOut'] === true;
@@ -530,30 +696,80 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         );
       },
     },
-    {
-      title: 'サイズ',
-      dataIndex: 'contentStreamLength',
-      key: 'size',
-      width: 100,
-      render: (size: number) => {
-        if (!size) return '-';
-        if (size < 1024) return `${size} B`;
-        return `${Math.round(size / 1024)} KB`;
+    // Conditionally include search-specific columns
+    ...(isSearchMode ? [
+      {
+        title: 'オブジェクトタイプ',
+        dataIndex: 'objectType',
+        key: 'objectType',
+        width: 150,
+        sorter: (a: CMISObject, b: CMISObject) => (a.objectType || '').localeCompare(b.objectType || ''),
+        render: (objectType: string) => objectType || '-',
       },
-    },
-    {
-      title: '更新日時',
-      dataIndex: 'lastModificationDate',
-      key: 'modified',
-      width: 180,
-      render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
-    },
-    {
-      title: '更新者',
-      dataIndex: 'lastModifiedBy',
-      key: 'modifiedBy',
-      width: 120,
-    },
+      {
+        title: 'パス',
+        dataIndex: 'path',
+        key: 'path',
+        width: 250,
+        sorter: (a: CMISObject, b: CMISObject) => (a.path || '').localeCompare(b.path || ''),
+        render: (path: string | undefined) => path || '（計算中...）',
+      },
+      {
+        title: '作成者',
+        dataIndex: 'createdBy',
+        key: 'createdBy',
+        width: 120,
+        sorter: (a: CMISObject, b: CMISObject) => (a.createdBy || '').localeCompare(b.createdBy || '', 'ja'),
+      },
+      {
+        title: '作成日時',
+        dataIndex: 'creationDate',
+        key: 'creationDate',
+        width: 180,
+        sorter: (a: CMISObject, b: CMISObject) => {
+          const dateA = a.creationDate ? new Date(a.creationDate).getTime() : 0;
+          const dateB = b.creationDate ? new Date(b.creationDate).getTime() : 0;
+          return dateA - dateB;
+        },
+        render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+      },
+    ] : [
+      {
+        title: 'サイズ',
+        dataIndex: 'contentStreamLength',
+        key: 'size',
+        width: 100,
+        sorter: (a: CMISObject, b: CMISObject) => {
+          const sizeA = a.contentStreamLength || 0;
+          const sizeB = b.contentStreamLength || 0;
+          return sizeA - sizeB;
+        },
+        render: (size: number) => {
+          if (!size) return '-';
+          if (size < 1024) return `${size} B`;
+          return `${Math.round(size / 1024)} KB`;
+        },
+      },
+      {
+        title: '更新日時',
+        dataIndex: 'lastModificationDate',
+        key: 'modified',
+        width: 180,
+        sorter: (a: CMISObject, b: CMISObject) => {
+          const dateA = a.lastModificationDate ? new Date(a.lastModificationDate).getTime() : 0;
+          const dateB = b.lastModificationDate ? new Date(b.lastModificationDate).getTime() : 0;
+          return dateA - dateB;
+        },
+        render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+      },
+      {
+        title: '更新者',
+        dataIndex: 'lastModifiedBy',
+        key: 'modifiedBy',
+        width: 120,
+        sorter: (a: CMISObject, b: CMISObject) => (a.lastModifiedBy || '').localeCompare(b.lastModifiedBy || '', 'ja'),
+      },
+    ]),
     {
       title: 'アクション',
       key: 'actions',
@@ -645,7 +861,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         );
       },
     },
-  ];
+  ], [isSearchMode]);
 
   const breadcrumbItems = currentFolderPath.split('/').filter(Boolean).map((segment, index) => ({
     title: index === 0 ? <HomeOutlined /> : segment,
@@ -694,6 +910,42 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   >
                     フォルダ作成
                   </Button>
+                </Space>
+              </div>
+
+              {/* ENHANCEMENT (2025-11-19): Advanced search filters */}
+              <div style={{ marginTop: 16, padding: '12px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
+                <Space wrap>
+                  <RangePicker
+                    placeholder={['作成日時（開始）', '作成日時（終了）']}
+                    value={dateRange}
+                    onChange={(dates) => setDateRange(dates)}
+                    style={{ width: 280 }}
+                  />
+                  <Select
+                    placeholder="ファイルタイプ"
+                    value={fileType || undefined}
+                    onChange={(value) => setFileType(value || '')}
+                    allowClear
+                    style={{ width: 200 }}
+                    options={[
+                      { label: 'すべて', value: '' },
+                      { label: 'PDF', value: 'application/pdf' },
+                      { label: 'Word文書', value: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+                      { label: 'Excel', value: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+                      { label: 'PowerPoint', value: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
+                      { label: '画像 (JPEG)', value: 'image/jpeg' },
+                      { label: '画像 (PNG)', value: 'image/png' },
+                      { label: 'テキスト', value: 'text/plain' },
+                    ]}
+                  />
+                  <Input
+                    placeholder="作成者"
+                    value={creator}
+                    onChange={(e) => setCreator(e.target.value)}
+                    onPressEnter={handleSearch}
+                    style={{ width: 200 }}
+                  />
                 </Space>
               </div>
               

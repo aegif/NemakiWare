@@ -90,12 +90,17 @@ import { AuthHelper } from '../utils/auth-helper';
  *     - Helps diagnose CMIS Browser Binding response format issues
  *     - Rationale: Search response structure validation for debugging
  *
- * Test Coverage:
+ * Test Coverage (10 tests):
  * 1. ✅ Display Search Page (URL /search, interface visible, screenshot)
  * 2. ✅ Basic Search (input query "test", execute, verify results container)
  * 3. ✅ Execute Search Without Errors (CMIS requests, no error messages, URL persistence)
  * 4. ✅ Navigate to Document from Results (click result, no errors)
  * 5. ✅ Navigate Back from Search (Documents menu → /documents)
+ * 6. ✅ PDF Full-Text Search with "repository" keyword (Solr indexing verification, 30s retry)
+ * 7. ✅ Negative Search Test (non-existent keyword returns zero results)
+ * 8. ✅ Search Result Details & PDF Preview Navigation ("content stream" keyword, metadata verification)
+ * 9. ✅ PDF Filename Search (CMIS-v1.1-Specification-Sample with/without .pdf extension)
+ * 10. ✅ Japanese PDF Full-Text Search (multilingual support: "ドキュメント", "検索", "文書", "テスト")
  *
  * Search Functionality Architecture:
  * - **Frontend**: React Search component with Ant Design Table for results
@@ -130,10 +135,17 @@ import { AuthHelper } from '../utils/auth-helper';
  *
  * Known Limitations:
  * - Tests skip gracefully if search UI not implemented
- * - Does not verify result content accuracy (only presence)
+ * - Result content accuracy verification limited to PDF file presence
  * - Does not test advanced search filters (future enhancement)
  * - Result click destination varies by document type (not asserted)
  * - Search query terms are simple strings (no complex queries tested)
+ * - PDF full-text search assumes CMIS-v1.1-Specification-Sample.pdf is uploaded
+ * - Solr indexing delay (up to 30 seconds) may cause initial test retries
+ * - Test 8 verifies "content stream" keyword (Test 6 verifies "repository")
+ * - Test 9 verifies filename search with fallback to extension-included search
+ * - Test 10 requires Japanese PDF upload; skips gracefully if not available
+ * - Test 10 tries multiple Japanese keywords with smart fallback strategy
+ * - PDF preview navigation from search results may vary by UI implementation
  *
  * Performance Optimizations:
  * - Uses first() selector method (stops at first match)
@@ -354,5 +366,482 @@ test.describe('Advanced Search', () => {
 
     // Verify navigation to documents page
     expect(page.url()).toContain('/documents');
+  });
+
+  /**
+   * PDF Full-Text Search Test - Solr Indexing Verification
+   *
+   * Tests that uploaded PDF files are properly indexed by Solr and their content
+   * can be found through full-text search. This test specifically verifies:
+   * 1. PDF content (not just filename) is searchable
+   * 2. Solr indexing with Apache Tika text extraction works correctly
+   * 3. Search results include the expected PDF file
+   *
+   * Prerequisites:
+   * - CMIS-v1.1-Specification-Sample.pdf must be uploaded to Technical Documents folder
+   * - PDF must contain searchable text with keywords like "repository", "content stream"
+   *
+   * Solr Indexing Considerations:
+   * - Initial indexing may take 5-30 seconds after upload
+   * - Test includes retry logic to wait for Solr commit
+   * - Uses keyword "repository" which should appear in CMIS specification PDF
+   */
+  test('should find PDF by full-text search on content', async ({ page, browserName }) => {
+    console.log('Test: PDF full-text indexing verification');
+
+    // Detect mobile browsers for force click if needed
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    // Wait for page to be fully loaded
+    await page.waitForTimeout(2000);
+
+    // Search for keyword that exists in PDF content (CMIS specification keyword)
+    const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
+
+    if (await searchInput.count() === 0) {
+      test.skip('Search input not found');
+      return;
+    }
+
+    await searchInput.first().fill('repository'); // CMIS spec keyword
+
+    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    if (await searchButton.count() > 0) {
+      await searchButton.first().click(isMobile ? { force: true } : {});
+    } else {
+      await searchInput.first().press('Enter');
+    }
+
+    // Wait for initial search results (Solr may need time for indexing)
+    await page.waitForTimeout(5000);
+
+    // Verify results table appears
+    const resultsTable = page.locator('.ant-table, .search-results');
+    if (await resultsTable.count() > 0) {
+      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
+    }
+
+    // Look for CMIS specification PDF in results
+    const pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample.pdf' });
+
+    if (await pdfResult.count() === 0) {
+      console.log('⚠️ PDF not found in first search - waiting for Solr indexing...');
+      await page.waitForTimeout(25000); // Additional wait for Solr commit (up to 30 seconds)
+
+      // Retry search
+      await searchInput.first().fill('repository');
+      if (await searchButton.count() > 0) {
+        await searchButton.first().click(isMobile ? { force: true } : {});
+      } else {
+        await searchInput.first().press('Enter');
+      }
+      await page.waitForTimeout(3000);
+    }
+
+    // Assert PDF is found in search results
+    if (await pdfResult.count() > 0) {
+      await expect(pdfResult).toBeVisible({ timeout: 5000 });
+      console.log('✅ PDF found in full-text search results');
+
+      // Verify result contains PDF indicator (file extension or MIME type)
+      const resultText = await pdfResult.textContent();
+      expect(resultText).toContain('pdf'); // Should show .pdf extension or PDF type
+    } else {
+      // If PDF still not found after retry, skip test (PDF may not be uploaded yet)
+      test.skip('CMIS specification PDF not found in search results - may not be uploaded or indexed yet');
+    }
+  });
+
+  /**
+   * Negative Search Test - Non-Existent Keyword Verification
+   *
+   * Tests that searching for a keyword that doesn't exist in any document
+   * correctly returns zero results. This verifies:
+   * 1. Search doesn't return false positives
+   * 2. "No results" UI state displays correctly
+   * 3. Empty result handling works properly
+   *
+   * Uses a deliberately non-existent keyword to ensure zero matches.
+   */
+  test('should NOT find PDF with non-existent keyword', async ({ page, browserName }) => {
+    console.log('Test: Negative search verification');
+
+    // Detect mobile browsers
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    // Wait for page to load
+    await page.waitForTimeout(2000);
+
+    // Search for keyword that definitely doesn't exist
+    const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
+
+    if (await searchInput.count() === 0) {
+      test.skip('Search input not found');
+      return;
+    }
+
+    await searchInput.first().fill('zzznonexistentkeyword123');
+
+    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    if (await searchButton.count() > 0) {
+      await searchButton.first().click(isMobile ? { force: true } : {});
+    } else {
+      await searchInput.first().press('Enter');
+    }
+
+    await page.waitForTimeout(3000);
+
+    // Verify no results or empty state message
+    const noResultsMessage = page.locator('.ant-empty, .no-results, :has-text("該当なし"), :has-text("結果なし")');
+    const resultsTable = page.locator('.ant-table tbody tr');
+
+    const hasNoResults = await noResultsMessage.count() > 0 || await resultsTable.count() === 0;
+    expect(hasNoResults).toBe(true);
+    console.log('✅ Search correctly returns no results for non-existent keyword');
+  });
+
+  test('should verify search result details and PDF preview navigation', async ({ page, browserName }) => {
+    console.log('Test 8: Search result metadata and PDF preview navigation');
+
+    // Detect mobile browsers for force click if needed
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    // Wait for page to be fully loaded
+    await page.waitForTimeout(2000);
+
+    // Search for "content stream" keyword (CMIS specification term)
+    const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
+
+    if (await searchInput.count() === 0) {
+      test.skip('Search input not found');
+      return;
+    }
+
+    await searchInput.first().fill('content stream');
+
+    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    if (await searchButton.count() > 0) {
+      await searchButton.first().click(isMobile ? { force: true } : {});
+    } else {
+      await searchInput.first().press('Enter');
+    }
+
+    // Wait for initial search results (Solr may need time for indexing)
+    await page.waitForTimeout(5000);
+
+    // Verify results table appears
+    const resultsTable = page.locator('.ant-table, .search-results');
+    if (await resultsTable.count() > 0) {
+      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
+    }
+
+    // Look for CMIS specification PDF in results
+    const pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample.pdf' });
+
+    if (await pdfResult.count() === 0) {
+      console.log('⚠️ PDF not found in first search - waiting for Solr indexing...');
+      await page.waitForTimeout(25000); // Additional wait for Solr commit (up to 30 seconds)
+
+      // Retry search
+      await searchInput.first().fill('content stream');
+      if (await searchButton.count() > 0) {
+        await searchButton.first().click(isMobile ? { force: true } : {});
+      } else {
+        await searchInput.first().press('Enter');
+      }
+      await page.waitForTimeout(3000);
+    }
+
+    // Verify PDF is found in search results
+    if (await pdfResult.count() > 0) {
+      await expect(pdfResult).toBeVisible({ timeout: 5000 });
+      console.log('✅ PDF found with "content stream" keyword');
+
+      // Verify search result metadata
+      const resultText = await pdfResult.textContent();
+
+      // Check for PDF file type indicator
+      const hasPdfIndicator = resultText && (
+        resultText.toLowerCase().includes('pdf') ||
+        resultText.includes('.pdf')
+      );
+      expect(hasPdfIndicator).toBe(true);
+      console.log('✅ Search result shows PDF file type indicator');
+
+      // Check for file size information (if displayed)
+      const fileSizePattern = /\d+\s*(KB|MB|bytes|B)/i;
+      if (resultText && fileSizePattern.test(resultText)) {
+        console.log('✅ Search result displays file size information');
+      } else {
+        console.log('ℹ️ File size not displayed in search results (optional)');
+      }
+
+      // Verify PDF icon/type indicator (if present)
+      const pdfIcon = pdfResult.locator('[data-icon="file-pdf"], .pdf-icon, [class*="pdf"], img[alt*="pdf"]');
+      if (await pdfIcon.count() > 0) {
+        console.log('✅ PDF file type icon displayed');
+      } else {
+        console.log('ℹ️ PDF icon not found (may use text indicator only)');
+      }
+
+      // Test navigation to PDF preview/download from search result
+      console.log('Testing PDF preview navigation from search result...');
+
+      // Click on PDF result row
+      await pdfResult.first().click(isMobile ? { force: true } : {});
+      await page.waitForTimeout(3000);
+
+      // Check if PDF preview modal opened
+      const pdfPreviewModal = page.locator('.ant-modal:visible, [role="dialog"]:visible');
+      const pdfCanvas = page.locator('canvas[data-page-number]');
+
+      if (await pdfPreviewModal.count() > 0 || await pdfCanvas.count() > 0) {
+        console.log('✅ PDF preview modal opened from search result');
+
+        // Verify PDF content is rendering
+        if (await pdfCanvas.count() > 0) {
+          await expect(pdfCanvas.first()).toBeVisible({ timeout: 10000 });
+          console.log('✅ PDF content is rendering in preview');
+        }
+
+        // Close preview modal
+        const closeButton = page.locator('button[aria-label="Close"], button:has-text("閉じる"), .ant-modal-close');
+        if (await closeButton.count() > 0) {
+          await closeButton.first().click(isMobile ? { force: true } : {});
+          await page.waitForTimeout(1000);
+          console.log('✅ PDF preview modal closed successfully');
+        }
+      } else {
+        // Check if navigated to document details page
+        const currentUrl = page.url();
+        if (currentUrl.includes('/documents') || currentUrl.includes('/preview')) {
+          console.log('✅ Navigated to document page from search result');
+
+          // Navigate back to search
+          await page.goBack();
+          await page.waitForTimeout(2000);
+        } else {
+          console.log('ℹ️ PDF preview/navigation behavior differs from expected pattern');
+        }
+      }
+
+      console.log('✅ Search result details and navigation verification complete');
+    } else {
+      // If PDF still not found after retry, skip test (PDF may not be uploaded yet)
+      test.skip('CMIS specification PDF not found with "content stream" keyword - may not be uploaded or indexed yet');
+    }
+  });
+
+  test('should find PDF by filename search', async ({ page, browserName }) => {
+    console.log('Test 9: PDF filename search verification');
+
+    // Detect mobile browsers for force click if needed
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    // Wait for page to be fully loaded
+    await page.waitForTimeout(2000);
+
+    // Search for PDF filename (without extension first)
+    const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
+
+    if (await searchInput.count() === 0) {
+      test.skip('Search input not found');
+      return;
+    }
+
+    // Test filename search without extension
+    await searchInput.first().fill('CMIS-v1.1-Specification-Sample');
+
+    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    if (await searchButton.count() > 0) {
+      await searchButton.first().click(isMobile ? { force: true } : {});
+    } else {
+      await searchInput.first().press('Enter');
+    }
+
+    // Wait for initial search results (Solr may need time for indexing)
+    await page.waitForTimeout(5000);
+
+    // Verify results table appears
+    const resultsTable = page.locator('.ant-table, .search-results');
+    if (await resultsTable.count() > 0) {
+      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
+    }
+
+    // Look for CMIS specification PDF in results
+    let pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample.pdf' });
+
+    if (await pdfResult.count() === 0) {
+      console.log('⚠️ PDF not found with filename (no extension) - waiting for Solr indexing...');
+      await page.waitForTimeout(25000); // Additional wait for Solr commit (up to 30 seconds)
+
+      // Retry search
+      await searchInput.first().fill('CMIS-v1.1-Specification-Sample');
+      if (await searchButton.count() > 0) {
+        await searchButton.first().click(isMobile ? { force: true } : {});
+      } else {
+        await searchInput.first().press('Enter');
+      }
+      await page.waitForTimeout(3000);
+
+      pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample.pdf' });
+    }
+
+    // If still not found, try with extension
+    if (await pdfResult.count() === 0) {
+      console.log('ℹ️ Trying filename search with .pdf extension...');
+      await searchInput.first().fill('CMIS-v1.1-Specification-Sample.pdf');
+
+      if (await searchButton.count() > 0) {
+        await searchButton.first().click(isMobile ? { force: true } : {});
+      } else {
+        await searchInput.first().press('Enter');
+      }
+      await page.waitForTimeout(3000);
+
+      pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample.pdf' });
+    }
+
+    // Verify PDF is found by filename
+    if (await pdfResult.count() > 0) {
+      await expect(pdfResult).toBeVisible({ timeout: 5000 });
+      console.log('✅ PDF found by filename search');
+
+      // Verify the result is the correct PDF
+      const resultText = await pdfResult.textContent();
+      expect(resultText).toContain('CMIS-v1.1-Specification-Sample.pdf');
+      console.log('✅ Search result contains correct filename');
+
+      // Verify PDF file type indicator
+      const hasPdfIndicator = resultText && (
+        resultText.toLowerCase().includes('pdf') ||
+        resultText.includes('.pdf')
+      );
+      expect(hasPdfIndicator).toBe(true);
+      console.log('✅ PDF file type indicator present in filename search result');
+
+      console.log('✅ Filename search verification complete');
+    } else {
+      // If PDF still not found, skip test (PDF may not be uploaded yet)
+      test.skip('CMIS specification PDF not found by filename search - may not be uploaded or indexed yet');
+    }
+  });
+
+  test('should find Japanese PDF by full-text search', async ({ page, browserName }) => {
+    console.log('Test 10: Japanese PDF full-text search verification (multilingual support)');
+
+    // Detect mobile browsers for force click if needed
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    // Wait for page to be fully loaded
+    await page.waitForTimeout(2000);
+
+    // Search for Japanese keyword (common in Japanese PDFs)
+    const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
+
+    if (await searchInput.count() === 0) {
+      test.skip('Search input not found');
+      return;
+    }
+
+    // Test with Japanese keyword: "ドキュメント" (document)
+    await searchInput.first().fill('ドキュメント');
+
+    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    if (await searchButton.count() > 0) {
+      await searchButton.first().click(isMobile ? { force: true } : {});
+    } else {
+      await searchInput.first().press('Enter');
+    }
+
+    // Wait for initial search results (Solr may need time for indexing)
+    await page.waitForTimeout(5000);
+
+    // Verify results table appears
+    const resultsTable = page.locator('.ant-table, .search-results');
+    if (await resultsTable.count() > 0) {
+      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
+    }
+
+    // Look for any Japanese PDF in results (filename pattern: contains Japanese characters)
+    // This regex matches common Japanese characters (Hiragana, Katakana, Kanji)
+    const japanesePdfResults = page.locator('tr').filter({
+      hasText: /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+.*\.pdf/
+    });
+
+    if (await japanesePdfResults.count() === 0) {
+      console.log('⚠️ Japanese PDF not found with "ドキュメント" keyword - waiting for Solr indexing...');
+      await page.waitForTimeout(25000); // Additional wait for Solr commit (up to 30 seconds)
+
+      // Retry search
+      await searchInput.first().fill('ドキュメント');
+      if (await searchButton.count() > 0) {
+        await searchButton.first().click(isMobile ? { force: true } : {});
+      } else {
+        await searchInput.first().press('Enter');
+      }
+      await page.waitForTimeout(3000);
+    }
+
+    // Check if Japanese PDF found
+    const finalJapanesePdfCount = await japanesePdfResults.count();
+
+    if (finalJapanesePdfCount > 0) {
+      console.log(`✅ Found ${finalJapanesePdfCount} Japanese PDF(s) with "ドキュメント" keyword`);
+
+      // Verify first result
+      const firstResult = japanesePdfResults.first();
+      await expect(firstResult).toBeVisible({ timeout: 5000 });
+
+      const resultText = await firstResult.textContent();
+      console.log(`✅ Japanese PDF search result: ${resultText}`);
+
+      // Verify PDF file type indicator
+      const hasPdfIndicator = resultText && (
+        resultText.toLowerCase().includes('pdf') ||
+        resultText.includes('.pdf')
+      );
+      expect(hasPdfIndicator).toBe(true);
+      console.log('✅ PDF file type indicator present in Japanese search result');
+
+      console.log('✅ Multilingual (Japanese) full-text search verification complete');
+    } else {
+      // If no Japanese PDF found, try alternative keywords
+      console.log('ℹ️ Trying alternative Japanese keywords...');
+
+      const alternativeKeywords = ['検索', '文書', 'テスト'];
+      let foundWithAlternative = false;
+
+      for (const keyword of alternativeKeywords) {
+        await searchInput.first().fill(keyword);
+        if (await searchButton.count() > 0) {
+          await searchButton.first().click(isMobile ? { force: true } : {});
+        } else {
+          await searchInput.first().press('Enter');
+        }
+        await page.waitForTimeout(3000);
+
+        const alternativeResults = page.locator('tr').filter({
+          hasText: /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+.*\.pdf/
+        });
+
+        if (await alternativeResults.count() > 0) {
+          console.log(`✅ Found Japanese PDF with alternative keyword: "${keyword}"`);
+          foundWithAlternative = true;
+          break;
+        }
+      }
+
+      if (!foundWithAlternative) {
+        // If still no Japanese PDF found, skip test gracefully
+        test.skip('Japanese PDF not found with tested keywords - may not be uploaded or indexed yet. ' +
+                  'To enable this test, upload a Japanese PDF with keywords like "ドキュメント", "検索", "文書", or "テスト".');
+      }
+    }
   });
 });

@@ -152,7 +152,14 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
     const initialValues: Record<string, any> = {};
 
     Object.entries(safePropDefs).forEach(([propId, propDef]: [string, PropertyDefinition]) => {
-      const value = object.properties[propId];
+      let value = object.properties[propId];
+
+      // CRITICAL FIX (2025-11-18): Extract actual value from Browser Binding format
+      // Browser Binding returns {value: ..., id: ..., type: ...}, we need just the value
+      if (typeof value === 'object' && value !== null && !Array.isArray(value) && 'value' in value) {
+        value = value.value;
+      }
+
       if (value !== undefined && value !== null) {
         if (propDef.propertyType === 'datetime' && value) {
           initialValues[propId] = dayjs(value);
@@ -174,19 +181,29 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
   const formatDisplayValue = (value: any, propDef: PropertyDefinition): string => {
     if (value === undefined || value === null) return '-';
 
-    if (propDef.propertyType === 'datetime' && value) {
-      return dayjs(value).format('YYYY-MM-DD HH:mm:ss');
+    // CRITICAL FIX (2025-11-18): Handle both formats:
+    // 1. Direct value (from AtomPub): value = "text"
+    // 2. Browser Binding format: value = {value: "text", ...}
+    let actualValue = value;
+    if (typeof value === 'object' && value !== null && !Array.isArray(value) && 'value' in value) {
+      actualValue = value.value;
     }
 
-    if (Array.isArray(value)) {
-      return value.join(', ');
+    if (actualValue === undefined || actualValue === null) return '-';
+
+    if (propDef.propertyType === 'datetime' && actualValue) {
+      return dayjs(actualValue).format('YYYY-MM-DD HH:mm:ss');
+    }
+
+    if (Array.isArray(actualValue)) {
+      return actualValue.join(', ');
     }
 
     if (propDef.propertyType === 'boolean') {
-      return value ? 'はい' : 'いいえ';
+      return actualValue ? 'はい' : 'いいえ';
     }
 
-    return String(value);
+    return String(actualValue);
   };
 
   // Display Mode: Table view with pagination

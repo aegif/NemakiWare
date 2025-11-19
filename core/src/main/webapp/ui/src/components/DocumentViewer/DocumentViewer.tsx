@@ -300,6 +300,26 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
     try {
       const obj = await cmisService.getObject(repositoryId, objectId);
+
+      // CRITICAL FIX (2025-11-19): Calculate document path from parent folder
+      // Documents don't have cmis:path property in CMIS spec, but we can compute it
+      // from parent folder path + document name for user convenience
+      if (obj.baseType === 'cmis:document' && !obj.path) {
+        try {
+          const parents = await cmisService.getObjectParents(repositoryId, objectId);
+          if (parents.length > 0 && parents[0].path) {
+            // Use first parent's path (primary parent in case of multi-filing)
+            const parentPath = parents[0].path;
+            const documentName = obj.name;
+            // Construct full path: /parent/path/document.pdf
+            obj.path = parentPath === '/' ? `/${documentName}` : `${parentPath}/${documentName}`;
+          }
+        } catch (parentError) {
+          // Failed to get parent path - not critical, just leave path undefined
+          console.warn('Failed to calculate document path from parent:', parentError);
+        }
+      }
+
       setObject(obj);
 
       const typeDef = await cmisService.getType(repositoryId, obj.objectType);
@@ -309,7 +329,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       // This allows Playwright tests to verify the updatable field mapping fix
       (window as any).__NEMAKI_PROPERTY_DEFINITIONS__ = typeDef.propertyDefinitions;
     } catch (error) {
-      console.error('Failed to load object:', error);
+      // Failed to load object
       message.error('オブジェクトの読み込みに失敗しました');
     } finally {
       setLoading(false);
@@ -318,23 +338,23 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
   const loadVersionHistory = async () => {
     if (!objectId) return;
-    
+
     try {
       const history = await cmisService.getVersionHistory(repositoryId, objectId);
       setVersionHistory(history);
     } catch (error) {
-      console.error('バージョン履歴の読み込みに失敗しました');
+      // Failed to load version history
     }
   };
 
   const loadRelationships = async () => {
     if (!objectId) return;
-    
+
     try {
       const rels = await cmisService.getRelationships(repositoryId, objectId);
       setRelationships(rels);
     } catch (error) {
-      console.error('関係の読み込みに失敗しました');
+      // Failed to load relationships
     }
   };
 
@@ -353,7 +373,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
       } catch (error) {
-        console.error('Download error:', error);
+        // Download failed
         message.error('ダウンロードに失敗しました');
       }
     }
@@ -422,7 +442,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       setObject(updatedObject);
       message.success('プロパティを更新しました');
     } catch (error) {
-      console.error('Failed to update properties:', error);
+      // Failed to update properties
       message.error('プロパティの更新に失敗しました');
     }
   };
@@ -629,7 +649,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             <Descriptions.Item label="タイプ">{object.objectType}</Descriptions.Item>
             <Descriptions.Item label="ベースタイプ">{object.baseType}</Descriptions.Item>
             <Descriptions.Item label="パス">
-              {object.path || object.properties?.['cmis:path'] || '-'}
+              {(() => {
+                // CRITICAL FIX (2025-11-18): Handle Browser Binding format {value: ...}
+                const pathProp = object.properties?.['cmis:path'];
+                const pathValue = typeof pathProp === 'object' && pathProp !== null && 'value' in pathProp
+                  ? pathProp.value
+                  : pathProp;
+                return object.path || pathValue || (object.baseType === 'cmis:folder' ? '/' : '（ドキュメントにはパス情報がありません）');
+              })()}
             </Descriptions.Item>
             <Descriptions.Item label="作成者">{object.createdBy}</Descriptions.Item>
             <Descriptions.Item label="作成日時">

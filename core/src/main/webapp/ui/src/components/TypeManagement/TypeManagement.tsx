@@ -145,7 +145,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
           await performTypeUpload(typeDef);
         }
       } catch (error) {
-        console.error('[TypeManagement] Error parsing file:', error);
+        // Failed to parse file
         message.error('ファイルの解析に失敗しました');
       }
     };
@@ -159,7 +159,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     try {
       reader.readAsText(fileToRead);
     } catch (error) {
-      console.error('[TypeManagement] Failed to read file:', error);
+      // Failed to read file
       message.error('ファイルの読み込みに失敗しました');
     }
   };
@@ -174,7 +174,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       setPendingTypeDefinition(null);
       loadTypes();
     } catch (error) {
-      console.error('[TypeManagement] Error in performTypeUpload:', error);
+      // Failed to create type definition
       message.error('型定義の作成に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
     }
   };

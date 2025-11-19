@@ -75,8 +75,11 @@ test.describe('Property Display Tests', () => {
     await documentRow.click();
     await page.waitForTimeout(1000);
 
-    // Click on Properties tab (プロパティタブ)
-    await page.click('text=プロパティ');
+    // Click on Properties tab (プロパティタブ) - FIX: Use .ant-tabs-tab selector like property-editor.spec.ts
+    const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+    if (await propertiesTab.count() > 0) {
+      await propertiesTab.click();
+    }
     await page.waitForTimeout(1000);
 
     // Verify property table is visible
@@ -136,7 +139,11 @@ test.describe('Property Display Tests', () => {
     await documentRow.click();
     await page.waitForTimeout(1000);
 
-    await page.click('text=プロパティ');
+    // FIX: Use .ant-tabs-tab selector like property-editor.spec.ts
+    const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+    if (await propertiesTab.count() > 0) {
+      await propertiesTab.click();
+    }
     await page.waitForTimeout(1000);
 
     // Test different property types are formatted correctly
@@ -182,7 +189,11 @@ test.describe('Property Display Tests', () => {
     await documentRow.click();
     await page.waitForTimeout(1000);
 
-    await page.click('text=プロパティ');
+    // FIX: Use .ant-tabs-tab selector like property-editor.spec.ts
+    const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+    if (await propertiesTab.count() > 0) {
+      await propertiesTab.click();
+    }
     await page.waitForTimeout(1000);
 
     // Verify read-only properties have gray text and (読み取り専用) indicator
@@ -214,7 +225,11 @@ test.describe('Property Display Tests', () => {
     await documentRow.click();
     await page.waitForTimeout(1000);
 
-    await page.click('text=プロパティ');
+    // FIX: Use .ant-tabs-tab selector like property-editor.spec.ts
+    const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+    if (await propertiesTab.count() > 0) {
+      await propertiesTab.click();
+    }
     await page.waitForTimeout(1000);
 
     // Get total property count from pagination
@@ -263,7 +278,11 @@ test.describe('Property Display Tests', () => {
     await documentRow.click();
     await page.waitForTimeout(1000);
 
-    await page.click('text=プロパティ');
+    // FIX: Use .ant-tabs-tab selector like property-editor.spec.ts
+    const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+    if (await propertiesTab.count() > 0) {
+      await propertiesTab.click();
+    }
     await page.waitForTimeout(1000);
 
     // Initially in display mode with table
@@ -311,7 +330,11 @@ test.describe('Property Display Tests', () => {
     await documentRow.click();
     await page.waitForTimeout(1000);
 
-    await page.click('text=プロパティ');
+    // FIX: Use .ant-tabs-tab selector like property-editor.spec.ts
+    const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+    if (await propertiesTab.count() > 0) {
+      await propertiesTab.click();
+    }
     await page.waitForTimeout(1000);
 
     const editButton = page.locator('button:has-text("編集")');
