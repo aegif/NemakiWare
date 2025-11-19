@@ -47,7 +47,6 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.AttachmentNode;
-import jp.aegif.nemaki.businesslogic.ContentService;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -58,6 +57,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
 
 /**
  * Common utility class for Solr query
@@ -65,14 +66,17 @@ import java.util.concurrent.TimeUnit;
  * @author linzhixing
  *
  */
-public class SolrUtil {
+public class SolrUtil implements ApplicationContextAware {
 	private static final Logger log = LoggerFactory.getLogger(SolrUtil.class);
 
 	private final HashMap<String, String> map;
 
 	private PropertyManager propertyManager;
 	private TypeService typeService;
-	// private ContentService contentService; // Commented out due to circular dependency
+
+	// CRITICAL FIX (2025-11-19): Use ApplicationContext for lazy ContentService retrieval
+	// to break circular dependency between SolrUtil and ContentService
+	private ApplicationContext applicationContext;
 
 	public SolrUtil() {
 		map = new HashMap<String, String>();
@@ -304,10 +308,23 @@ public class SolrUtil {
 			doc.addField("cmis_description", content.getDescription());
 		}
 		
-		// Path field - critical for IN_TREE queries
-		// TODO: Implement path calculation without circular dependency
-		// For now, implement a basic path using parent traversal from ContentService later
-		
+		// Path field - critical for IN_TREE queries and search results
+		// CRITICAL FIX (2025-11-19): Calculate and index path field using lazy ContentService retrieval
+		ContentService contentServiceInstance = getContentServiceSafely();
+		if (contentServiceInstance != null) {
+			try {
+				String path = contentServiceInstance.calculatePath(repositoryId, content);
+				if (path != null && !path.isEmpty()) {
+					doc.addField("path", path);
+					log.debug("Added path field: {} for content: {}", path, content.getId());
+				}
+			} catch (Exception e) {
+				log.warn("Failed to calculate path for content {}: {}", content.getId(), e.getMessage());
+			}
+		} else {
+			log.debug("ContentService not yet available during Solr indexing, skipping path field for content: {}", content.getId());
+		}
+
 		// Parent ID field - required for IN_FOLDER queries
 		if (content.getParentId() != null) {
 			doc.addField("parent_id", content.getParentId());
@@ -513,9 +530,27 @@ public class SolrUtil {
 	public void setTypeService(TypeService typeService) {
 		this.typeService = typeService;
 	}
-	// public void setContentService(ContentService contentService) {
-	//	this.contentService = contentService;
-	// } // Commented out due to circular dependency
+	// CRITICAL FIX (2025-11-19): Implement ApplicationContextAware to break circular dependency
+	@Override
+	public void setApplicationContext(ApplicationContext applicationContext) {
+		this.applicationContext = applicationContext;
+	}
+
+	/**
+	 * Get ContentService lazily from ApplicationContext to avoid circular dependency.
+	 * This method returns null if ContentService is not yet available.
+	 */
+	private ContentService getContentServiceSafely() {
+		if (applicationContext == null) {
+			return null;
+		}
+		try {
+			return applicationContext.getBean("ContentService", ContentService.class);
+		} catch (Exception e) {
+			log.debug("ContentService not yet available: {}", e.getMessage());
+			return null;
+		}
+	}
 	
 	/**
 	 * Extract text content from attachment for full-text search
