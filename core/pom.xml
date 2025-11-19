@@ -45,13 +45,13 @@
 			<dependency>
 				<groupId>commons-logging</groupId>
 				<artifactId>commons-logging</artifactId>
-				<version>1.2</version>
+				<version>1.3.5</version>
 				<scope>provided</scope>
 			</dependency>
 			<dependency>
 				<groupId>joda-time</groupId>
 				<artifactId>joda-time</artifactId>
-				<version>2.9.3</version>
+				<version>2.14.0</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
@@ -117,7 +117,7 @@
 		<dependency>
 			<groupId>org.json</groupId>
 			<artifactId>json</artifactId>
-			<version>20230227</version>
+			<version>20250517</version>
 			<scope>test</scope>
 		</dependency>
 
@@ -284,7 +284,7 @@
 		<dependency>
 			<groupId>org.antlr</groupId>
 			<artifactId>antlr-runtime</artifactId>
-			<version>3.5.2</version>
+			<version>3.5.3</version>
 		</dependency>
 
 		<!-- Metro JAX-WS RI 4.x Jakarta EE 10 compatible dependencies -->
@@ -299,7 +299,7 @@
 		<dependency>
 			<groupId>com.ibm.cloud</groupId>
 			<artifactId>cloudant</artifactId>
-			<version>0.8.0</version>
+			<version>0.10.12</version>
 		</dependency>
 		<dependency>
 			<groupId>am.ik.ltsv4j</groupId>
@@ -361,13 +361,13 @@
 		<dependency>
 			<groupId>org.aspectj</groupId>
 			<artifactId>aspectjweaver</artifactId>
-			<version>1.9.19</version>
+			<version>1.9.25</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.mindrot</groupId>
 			<artifactId>jbcrypt</artifactId>
-			<version>0.3m</version>
+			<version>0.4</version>
 		</dependency>
 
 		<dependency>
@@ -458,7 +458,7 @@
 		<dependency>
 			<groupId>jakarta.xml.ws</groupId>
 			<artifactId>jakarta.xml.ws-api</artifactId>
-			<version>4.0.1</version>
+			<version>4.0.2</version>
 		</dependency>
 		
 		<!-- Jakarta XML Web Services Implementation (Metro) for SOAP support -->
@@ -479,11 +479,11 @@
 
 		<!-- Removed Jersey 1.x test framework - conflicts with Jersey 3.x -->
 
-		<!-- Solr 9.8.0 - Unified version across all modules -->
+		<!-- Solr 9.10.0 - Unified version across all modules -->
 		<dependency>
 			<groupId>org.apache.solr</groupId>
 			<artifactId>solr-solrj</artifactId>
-			<version>9.8.0</version>
+			<version>9.10.0</version>
 			<exclusions>
 				<exclusion>
 					<groupId>org.apache.httpcomponents</groupId>
@@ -603,7 +603,7 @@
 		<dependency>
 			<groupId>org.dom4j</groupId>
 			<artifactId>dom4j</artifactId>
-			<version>2.1.3</version>
+			<version>2.2.0</version>
 			<exclusions>
 				<exclusion>
 					<groupId>xml-apis</groupId>
@@ -674,7 +674,7 @@
 		<dependency>
 			<groupId>jakarta.xml.bind</groupId>
 			<artifactId>jakarta.xml.bind-api</artifactId>
-			<version>4.0.1</version>
+			<version>4.0.4</version>
 		</dependency>
 		<dependency>
 			<groupId>org.glassfish.jaxb</groupId>
@@ -694,22 +694,22 @@
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-rt-frontend-jaxws</artifactId>
-			<version>4.0.4</version>
+			<version>4.1.4</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-rt-transports-http</artifactId>
-			<version>4.0.4</version>
+			<version>4.1.4</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-rt-frontend-simple</artifactId>
-			<version>4.0.4</version>
+			<version>4.1.4</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-core</artifactId>
-			<version>4.0.4</version>
+			<version>4.1.4</version>
 		</dependency>
 		
 		<!-- Jakarta EE Web Services Runtime Implementation - version 4.0.1 used above -->
