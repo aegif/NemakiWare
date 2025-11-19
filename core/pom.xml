@@ -172,18 +172,20 @@
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-core</artifactId>
-			<version>2.17.1</version>
+			<version>2.20.1</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
-			<version>2.17.1</version>
+			<version>2.20.1</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-annotations</artifactId>
-			<version>2.17.1</version>
+			<version>2.20</version>
 		</dependency>
+		<!-- SECURITY UPDATE (2025-11-19): Updated Jackson from 2.17.1 to 2.20.x for security fixes -->
+		<!-- NOTE: jackson-annotations 2.20+ uses major.minor versioning only (no patch version) -->
 
 
 		<dependency>
@@ -613,8 +615,9 @@
 		<dependency>
 			<groupId>commons-codec</groupId>
 			<artifactId>commons-codec</artifactId>
-			<version>1.10</version>
+			<version>1.20.0</version>
 		</dependency>
+		<!-- SECURITY UPDATE (2025-11-19): Updated from 1.10 to 1.20.0 (10-year-old version upgraded) -->
 
 		<dependency>
 			<groupId>org.apache.commons</groupId>
