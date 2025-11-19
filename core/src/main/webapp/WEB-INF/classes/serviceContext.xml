@@ -612,13 +612,16 @@
     </bean>
 
     <!-- SolrUtil bean - Use original SolrUtil for now -->
+    <!-- CRITICAL FIX (2025-11-19): ApplicationContextAware for lazy ContentService retrieval -->
+    <!-- No direct ContentService injection to avoid circular dependency -->
+    <!-- Spring will automatically call setApplicationContext() -->
     <bean id="solrUtil" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil">
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
         <property name="typeService">
             <ref bean="typeService" />
-        </property>      
+        </property>
     </bean>
 
     <!-- Extra Rest API implemented by Jersey -->

@@ -747,9 +747,22 @@
 						ui/vite.config.ts,
 						ui/playwright.config.ts,
 						ui/.gitignore,
-						ui/README.md
+						ui/README.md,
+						ui/index.html
 						<!-- No OpenCMIS exclusions needed - using only 1.2.0-nemakiware Jakarta EE 10 compatible versions -->
-				</packagingExcludes>
+					</packagingExcludes>
+					<!-- CRITICAL FIX (2025-11-19): Copy built UI files from dist/ to ui/ -->
+					<!-- This allows accessing UI at /core/ui/ instead of /core/ui/dist/ -->
+					<webResources>
+						<resource>
+							<directory>${project.basedir}/src/main/webapp/ui/dist</directory>
+							<targetPath>ui</targetPath>
+							<includes>
+								<include>index.html</include>
+								<include>assets/**</include>
+							</includes>
+						</resource>
+					</webResources>
 				</configuration>
 			</plugin>
 			<plugin>
@@ -1007,6 +1020,7 @@
 								</copy>
 								<echo message="Copied Jakarta EE 10 compatible OpenCMIS 1.1.0-nemakiware JARs from fixed MultipartParser locations"/>
 								<!-- jaxws-rt-4.0.2-jakarta.jar copy removed - files moved to suspended-modules -->
+								<!-- UI file copying moved to maven-war-plugin webResources configuration -->
 							</target>
 						</configuration>
 					</execution>
