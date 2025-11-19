@@ -7,6 +7,120 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## Security Vulnerability Status (2025-11-19) ⚠️
+
+### UI Dependencies Security Audit
+
+**Summary**: 4 npm vulnerabilities identified in React UI dependencies (axios fixed, pdfjs-dist requires attention)
+
+#### Vulnerability Breakdown
+
+**Total Vulnerabilities**: 4 (down from 5 after axios update)
+- **High Severity**: 2 (pdfjs-dist, @react-pdf-viewer/core)
+- **Moderate Severity**: 2 (esbuild, vite)
+
+#### Actions Taken ✅
+
+1. **axios (High → Fixed)**
+   - **Issue**: DoS attack through lack of data size check
+   - **Action**: Updated from 1.11.0 → 1.13.2
+   - **Status**: ✅ RESOLVED
+   - **Verification**: `npm audit` shows axios no longer vulnerable
+
+#### Remaining Vulnerabilities ⚠️
+
+1. **pdfjs-dist (HIGH SEVERITY - REQUIRES ATTENTION)**
+   - **CVE**: CVE-2024-4367 (GHSA-wgrm-67xf-hhpq)
+   - **Severity**: HIGH (CVSS 8.8/10)
+   - **Current Version**: 3.11.174 (via @react-pdf-viewer/core)
+   - **Patched Version**: 4.2.67+
+   - **Impact**: Arbitrary JavaScript execution upon opening malicious PDF
+   - **EPSS Score**: 35.9% probability of exploitation within 30 days
+   - **Used In**: `core/src/main/webapp/ui/src/components/PreviewComponent/PDFPreview.tsx`
+   - **Advisory**: https://github.com/advisories/GHSA-wgrm-67xf-hhpq
+
+   **Root Cause**:
+   - @react-pdf-viewer/core@3.12.0 only supports pdfjs-dist ^2.16.105 || ^3.0.279
+   - Cannot upgrade to patched version 4.2.67 without breaking PDF preview functionality
+   - Library maintainer has not released update supporting pdfjs-dist 4.x
+
+   **Risk Assessment**:
+   - **Production Impact**: HIGH - PDF preview feature actively used
+   - **Attack Vector**: Requires user to open malicious PDF
+   - **Mitigation**: Only allow trusted PDFs in preview
+   - **Default Config**: `isEvalSupported: true` (vulnerable)
+
+   **Mitigation Options**:
+   - **Option A (Workaround)**: Configure `isEvalSupported: false` in PDF.js
+     - Requires research on @react-pdf-viewer/core API
+     - May reduce PDF rendering capabilities
+   - **Option B (Replace Library)**: Switch to react-pdf@10.0.1
+     - Already installed, uses pdfjs-dist@5.3.31 (safe)
+     - Requires UI component rewrite
+   - **Option C (Wait)**: Monitor @react-pdf-viewer/core for updates
+     - No timeline for fix from library maintainer
+   - **Option D (Accept Risk)**: Document limitation and restrict PDF sources
+     - Recommended for now with documentation
+
+2. **esbuild & vite (MODERATE SEVERITY - DEVELOPMENT ONLY)**
+   - **Severity**: Moderate
+   - **Impact**: Development server vulnerabilities
+   - **Risk**: Low (only affects development environment)
+
+   **esbuild**:
+   - **Issue**: Allows websites to send requests to development server
+   - **Advisory**: GHSA-67mh-4wv8-2f99
+   - **Fix**: Available via `npm audit fix --force`
+   - **Breaking Change**: Requires Vite 7.2.2 (major version upgrade from 5.4.19)
+
+   **vite**:
+   - **Issues**:
+     - Middleware may serve files with same prefix as public directory
+     - server.fs settings not applied to HTML files
+     - server.fs.deny bypass via backslash on Windows
+   - **Fix**: Available via `npm audit fix --force`
+   - **Breaking Change**: Version 5.4.19 → 7.2.2 (major version jump)
+
+   **Recommendation**: Update to Vite 7.x in next development cycle
+   - Low priority (development only)
+   - Test for breaking changes before deployment
+   - Current Vite 5.4.19 configuration stable and working
+
+#### Summary Report
+
+**Fixed**:
+- ✅ axios 1.11.0 → 1.13.2 (DoS vulnerability resolved)
+
+**Requires Action**:
+- ⚠️ pdfjs-dist 3.11.174 (HIGH) - Library compatibility blocker
+- ⚠️ esbuild/vite (MODERATE) - Defer to next development cycle
+
+**Recommended Next Steps**:
+1. **Immediate**: Document pdfjs-dist vulnerability and PDF preview risk
+2. **Short-term**: Research @react-pdf-viewer/core `isEvalSupported` configuration
+3. **Medium-term**: Evaluate react-pdf as replacement for @react-pdf-viewer/core
+4. **Long-term**: Update Vite 5 → 7 when development resources available
+
+**Files Modified**:
+- `core/src/main/webapp/ui/package.json`: axios updated
+- `core/src/main/webapp/ui/package-lock.json`: dependencies updated
+
+**Verification Commands**:
+```bash
+cd core/src/main/webapp/ui
+npm audit
+# Expected: 4 vulnerabilities (2 moderate, 2 high)
+
+npm list axios pdfjs-dist vite
+# Expected:
+# axios@1.13.2 (updated)
+# pdfjs-dist@3.11.174 (via @react-pdf-viewer/core) - vulnerable
+# pdfjs-dist@5.3.31 (via react-pdf) - safe
+# vite@5.4.19 (moderate vulnerability, development only)
+```
+
+---
+
 ## Recent Major Changes (2025-11-12 - ACL Cache Staleness Fix) ✅
 
 ### ACL Permission Management - Complete Cache Staleness Resolution
