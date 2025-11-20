@@ -242,7 +242,7 @@ import {
   CheckOutlined,
   CloseOutlined
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
 import { CMISObject } from '../../types/cmis';
 import { FolderTree } from '../FolderTree/FolderTree';
@@ -268,13 +268,20 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   const [form] = Form.useForm();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
 
-  // Initialize root folder ID immediately
+  // Initialize folder ID from URL parameter or default to root
   useEffect(() => {
-    if (!currentFolderId) {
-      setCurrentFolderId('e02f784f8360a02cc14d1314c10038ff');
+    const folderIdFromUrl = searchParams.get('folderId');
+    if (folderIdFromUrl) {
+      setCurrentFolderId(folderIdFromUrl);
+    } else if (!currentFolderId) {
+      // Default to root folder if no URL parameter and no current folder
+      const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
+      setCurrentFolderId(rootFolderId);
+      setSearchParams({ folderId: rootFolderId });
     }
   }, [repositoryId]); // Only depend on repositoryId
 
@@ -318,6 +325,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const handleFolderSelect = (folderId: string, folderPath: string) => {
     setCurrentFolderId(folderId);
     setCurrentFolderPath(folderPath);
+    // Update URL parameter to enable deep linking
+    setSearchParams({ folderId });
   };
 
 
@@ -530,6 +539,80 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         );
       },
     },
+    // Path column - only visible in search mode
+    ...(isSearchMode ? [{
+      title: 'パス',
+      dataIndex: 'path',
+      key: 'path',
+      width: 250,
+      render: (path: string) => {
+        if (!path || path === '/') {
+          return '/';
+        }
+
+        const segments = path.split('/').filter(Boolean);
+        return (
+          <span>
+            <span
+              style={{ color: '#1890ff', cursor: 'pointer', textDecoration: 'underline' }}
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
+                  setCurrentFolderId(rootFolderId);
+                  setCurrentFolderPath('/');
+                  setSearchParams({ folderId: rootFolderId });
+                  setIsSearchMode(false);
+                  setSearchQuery('');
+                } catch (error) {
+                  console.error('Navigation error:', error);
+                  message.error('ナビゲーションに失敗しました');
+                }
+              }}
+            >
+              /
+            </span>
+            {segments.map((segment, index) => {
+              const segmentPath = '/' + segments.slice(0, index + 1).join('/');
+              const isLast = index === segments.length - 1;
+
+              return (
+                <span key={index}>
+                  <span
+                    style={{
+                      color: isLast ? 'inherit' : '#1890ff',
+                      cursor: isLast ? 'default' : 'pointer',
+                      textDecoration: isLast ? 'none' : 'underline'
+                    }}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!isLast) {
+                        try {
+                          const folderObject = await cmisService.getObjectByPath(repositoryId, segmentPath);
+                          if (folderObject && folderObject.id) {
+                            setCurrentFolderId(folderObject.id);
+                            setCurrentFolderPath(segmentPath);
+                            setSearchParams({ folderId: folderObject.id });
+                            setIsSearchMode(false);
+                            setSearchQuery('');
+                          }
+                        } catch (error) {
+                          console.error('Path navigation error:', error);
+                          message.error('フォルダへのナビゲーションに失敗しました');
+                        }
+                      }
+                    }}
+                  >
+                    {segment}
+                  </span>
+                  {!isLast && <span>/</span>}
+                </span>
+              );
+            })}
+          </span>
+        );
+      },
+    }] : []),
     {
       title: 'サイズ',
       dataIndex: 'contentStreamLength',
@@ -647,8 +730,40 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     },
   ];
 
+  // Handle breadcrumb click - navigate to clicked folder segment
+  const handleBreadcrumbClick = async (index: number) => {
+    try {
+      // Reconstruct path up to clicked segment
+      const pathSegments = currentFolderPath.split('/').filter(Boolean);
+
+      if (index === 0) {
+        // Click on home icon - navigate to root
+        const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
+        setCurrentFolderId(rootFolderId);
+        setCurrentFolderPath('/');
+        setSearchParams({ folderId: rootFolderId });
+      } else {
+        // Click on folder segment - resolve path to folder ID
+        const targetPath = '/' + pathSegments.slice(0, index).join('/');
+
+        // Use CMIS getObjectByPath to resolve folder ID
+        const folderObject = await cmisService.getObjectByPath(repositoryId, targetPath);
+        if (folderObject && folderObject.id) {
+          setCurrentFolderId(folderObject.id);
+          setCurrentFolderPath(targetPath);
+          setSearchParams({ folderId: folderObject.id });
+        }
+      }
+    } catch (error) {
+      console.error('Breadcrumb navigation error:', error);
+      message.error('フォルダへのナビゲーションに失敗しました');
+    }
+  };
+
   const breadcrumbItems = currentFolderPath.split('/').filter(Boolean).map((segment, index) => ({
     title: index === 0 ? <HomeOutlined /> : segment,
+    onClick: () => handleBreadcrumbClick(index),
+    className: 'breadcrumb-clickable',
   }));
 
   return (

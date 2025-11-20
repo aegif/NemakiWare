@@ -540,6 +540,68 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     },
   ];
 
+  // Render path as clickable hierarchical links
+  const renderClickablePath = (path: string) => {
+    if (!path || path === '/') {
+      return '/';
+    }
+
+    const segments = path.split('/').filter(Boolean);
+
+    return (
+      <span>
+        <span
+          style={{ color: '#1890ff', cursor: 'pointer' }}
+          onClick={async () => {
+            // Navigate to root
+            try {
+              const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
+              navigate(`/documents?folderId=${rootFolderId}`);
+            } catch (error) {
+              console.error('Navigation error:', error);
+              message.error('ナビゲーションに失敗しました');
+            }
+          }}
+        >
+          /
+        </span>
+        {segments.map((segment, index) => {
+          const segmentPath = '/' + segments.slice(0, index + 1).join('/');
+          const isLast = index === segments.length - 1;
+
+          return (
+            <span key={index}>
+              <span
+                style={{
+                  color: isLast ? 'inherit' : '#1890ff',
+                  cursor: isLast ? 'default' : 'pointer',
+                  textDecoration: isLast ? 'none' : 'underline'
+                }}
+                onClick={async () => {
+                  if (!isLast) {
+                    try {
+                      // Resolve path to folder ID using CMIS getObjectByPath
+                      const folderObject = await cmisService.getObjectByPath(repositoryId, segmentPath);
+                      if (folderObject && folderObject.id) {
+                        navigate(`/documents?folderId=${folderObject.id}`);
+                      }
+                    } catch (error) {
+                      console.error('Path navigation error:', error);
+                      message.error('フォルダへのナビゲーションに失敗しました');
+                    }
+                  }
+                }}
+              >
+                {segment}
+              </span>
+              {!isLast && <span>/</span>}
+            </span>
+          );
+        })}
+      </span>
+    );
+  };
+
   const tabItems = [
     {
       key: 'properties',
@@ -663,7 +725,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             <Descriptions.Item label="ID">{object.id}</Descriptions.Item>
             <Descriptions.Item label="タイプ">{object.objectType}</Descriptions.Item>
             <Descriptions.Item label="ベースタイプ">{object.baseType}</Descriptions.Item>
-            <Descriptions.Item label="パス">{object.path || '-'}</Descriptions.Item>
+            <Descriptions.Item label="パス">
+              {object.path ? renderClickablePath(object.path) : '-'}
+            </Descriptions.Item>
             <Descriptions.Item label="作成者">{object.createdBy}</Descriptions.Item>
             <Descriptions.Item label="作成日時">
               {object.creationDate ? new Date(object.creationDate).toLocaleString('ja-JP') : '-'}
