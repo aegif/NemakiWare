@@ -52,7 +52,6 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
   const safePropDefs = propertyDefinitions || {};
 
   const handleSubmit = async (values: Record<string, any>) => {
-    console.error('!!! PROPERTYEDITOR: handleSubmit CALLED with values:', Object.keys(values));
     setLoading(true);
     try {
       const processedValues: Record<string, any> = {};
@@ -70,10 +69,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
         }
       });
 
-      console.error('!!! PROPERTYEDITOR: Processed values:', processedValues);
-      console.error('!!! PROPERTYEDITOR: About to call onSave()');
       await onSave(processedValues);
-      console.error('!!! PROPERTYEDITOR: onSave() completed');
       setEditMode(false);
       form.resetFields();
     } finally {
@@ -82,8 +78,6 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
   };
 
   const handleCancel = () => {
-    console.error('!!! PROPERTYEDITOR: handleCancel CALLED');
-    console.error('!!! PROPERTYEDITOR: Stack trace:', new Error().stack);
     setEditMode(false);
     form.resetFields();
   };
@@ -158,7 +152,14 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
     const initialValues: Record<string, any> = {};
 
     Object.entries(safePropDefs).forEach(([propId, propDef]: [string, PropertyDefinition]) => {
-      const value = object.properties[propId];
+      let value = object.properties[propId];
+
+      // CRITICAL FIX (2025-11-18): Extract actual value from Browser Binding format
+      // Browser Binding returns {value: ..., id: ..., type: ...}, we need just the value
+      if (typeof value === 'object' && value !== null && !Array.isArray(value) && 'value' in value) {
+        value = value.value;
+      }
+
       if (value !== undefined && value !== null) {
         if (propDef.propertyType === 'datetime' && value) {
           initialValues[propId] = dayjs(value);
@@ -180,19 +181,29 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
   const formatDisplayValue = (value: any, propDef: PropertyDefinition): string => {
     if (value === undefined || value === null) return '-';
 
-    if (propDef.propertyType === 'datetime' && value) {
-      return dayjs(value).format('YYYY-MM-DD HH:mm:ss');
+    // CRITICAL FIX (2025-11-18): Handle both formats:
+    // 1. Direct value (from AtomPub): value = "text"
+    // 2. Browser Binding format: value = {value: "text", ...}
+    let actualValue = value;
+    if (typeof value === 'object' && value !== null && !Array.isArray(value) && 'value' in value) {
+      actualValue = value.value;
     }
 
-    if (Array.isArray(value)) {
-      return value.join(', ');
+    if (actualValue === undefined || actualValue === null) return '-';
+
+    if (propDef.propertyType === 'datetime' && actualValue) {
+      return dayjs(actualValue).format('YYYY-MM-DD HH:mm:ss');
+    }
+
+    if (Array.isArray(actualValue)) {
+      return actualValue.join(', ');
     }
 
     if (propDef.propertyType === 'boolean') {
-      return value ? 'はい' : 'いいえ';
+      return actualValue ? 'はい' : 'いいえ';
     }
 
-    return String(value);
+    return String(actualValue);
   };
 
   // Display Mode: Table view with pagination
@@ -201,7 +212,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
       key: propId,
       propId,
       displayName: propDef.displayName,
-      value: object.properties[propId]?.value,  // FIX: Extract value from property object
+      value: object.properties[propId],  // FIXED: Properties are stored directly, not as {value: ...}
       propertyType: propDef.propertyType,
       updatable: propDef.updatable,
       required: propDef.required,
@@ -275,43 +286,9 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
 
   // Edit Mode: Form view with only updatable properties
   const renderEditMode = () => {
-    // CRITICAL DIAGNOSTIC (2025-11-17): Log propertyDefinitions to verify updatable field mapping
-    console.error('!!! === PROPERTYEDITOR EDIT MODE DIAGNOSTIC ===');
-    console.error('!!! Total properties:', Object.keys(safePropDefs).length);
-    console.error('!!! Property sample (first 3):', Object.entries(safePropDefs).slice(0, 3).map(([id, def]) => ({
-      id,
-      updatable: def.updatable,
-      updatability: (def as any).updatability,
-      propertyType: def.propertyType
-    })));
-
     const editableProps = Object.entries(safePropDefs).filter(
       ([_, propDef]) => propDef.updatable
     );
-
-    console.error('!!! Editable props count:', editableProps.length);
-    console.error('!!! Editable props:', editableProps.map(([id, def]) => ({
-      id,
-      updatable: def.updatable,
-      propertyType: def.propertyType
-    })));
-
-    // DIAGNOSTIC: Log form field values and errors when Edit Mode renders
-    setTimeout(() => {
-      const fieldValues = form.getFieldsValue();
-      const fieldErrors = form.getFieldsError();
-      console.error('!!! PROPERTYEDITOR FORM STATE DIAGNOSTIC:');
-      console.error('!!! - Field values:', fieldValues);
-      console.error('!!! - Field errors:', fieldErrors);
-      console.error('!!! - Is validating:', form.isFieldsValidating());
-    }, 100);
-
-    const handleFinishFailed = (errorInfo: any) => {
-      console.error('!!! PROPERTYEDITOR: Form validation FAILED');
-      console.error('!!! - Error info:', errorInfo);
-      console.error('!!! - Failed fields:', errorInfo.errorFields);
-      console.error('!!! - Values:', errorInfo.values);
-    };
 
     return (
       <Form
@@ -319,7 +296,6 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
         layout="vertical"
         initialValues={getInitialValues()}
         onFinish={handleSubmit}
-        onFinishFailed={handleFinishFailed}
       >
         {editableProps.map(([propId, propDef]) => (
           <Form.Item

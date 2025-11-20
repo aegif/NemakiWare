@@ -287,7 +287,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       const typeList = await cmisService.getTypes(repositoryId);
       setTypes(typeList);
     } catch (error) {
-      console.error('タイプの読み込みに失敗しました');
+      // Failed to load types
     }
   };
 

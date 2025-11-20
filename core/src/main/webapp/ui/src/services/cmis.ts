@@ -222,10 +222,9 @@
  * - getTypes(): ~2-5s (parallel fetching of base types + child types)
  * - getContentStream(): ~500ms-30s (depends on file size, network speed)
  *
- * Debugging Features:
- * - Comprehensive console.log() for all CMIS operations with "CMIS DEBUG:" prefix
- * - Authentication debug logging with "[AUTH DEBUG]" prefix for header inspection
- * - Request/response logging for troubleshooting CMIS server issues
+ * Error Handling Features:
+ * - Error logging for failed CMIS operations and authentication issues
+ * - Request/response error logging for troubleshooting server issues
  * - XML parsing error detection with parsererror element checking
  * - Property extraction logging showing raw vs transformed data
  * - User/Group data transformation logging with before/after comparison
@@ -482,17 +481,12 @@ export class CMISService {
             'Authorization': `Basic ${credentials}`,
             'nemaki_auth_token': auth.token
           };
-        } else {
-          console.warn('[AUTH DEBUG] Auth data incomplete:', { username: auth.username, hasToken: !!auth.token });
         }
-      } else {
-        console.warn('[AUTH DEBUG] No auth data in localStorage');
       }
     } catch (e) {
-      console.error('[AUTH DEBUG] Failed to get auth from localStorage:', e);
+      // localStorage access failed - return empty headers
     }
 
-    console.warn('[AUTH DEBUG] No authentication available - returning empty headers');
     return {};
   }
 
@@ -504,23 +498,14 @@ export class CMISService {
       message: `HTTP ${status}: ${statusText}`
     };
 
-    console.error('[AUTH DEBUG] CMIS HTTP Error:', error);
-
     // CRITICAL FIX (2025-10-22): Only handle authentication errors (401, 403)
     // DO NOT handle 404 Not Found errors - these are not authentication failures
     // 404 errors should be handled by components as normal API failures
     if (status === 401) {
-      console.error('[AUTH DEBUG] 401 Unauthorized detected!');
-      console.error('[AUTH DEBUG] URL that failed:', url);
-      console.error('[AUTH DEBUG] Current localStorage auth:', localStorage.getItem('nemakiware_auth') ? 'EXISTS' : 'NULL');
-      console.warn('401 Unauthorized - token may be expired or invalid');
       if (this.onAuthError) {
         this.onAuthError(error);
-      } else {
-        console.warn('[AUTH DEBUG] No onAuthError handler set!');
       }
     } else if (status === 403) {
-      console.warn('403 Forbidden - insufficient permissions');
       if (this.onAuthError) {
         this.onAuthError(error);
       }
@@ -555,11 +540,11 @@ export class CMISService {
                   resolve([]);
                 }
               } catch (e) {
-                console.error('Failed to parse repositories response:', e);
+                // Failed to parse response - return empty array
                 resolve([]);
               }
             } else {
-              console.error('Failed to fetch repositories:', xhr.status);
+              // Failed to fetch repositories
               if (xhr.status === 401) {
                 this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
               }
@@ -569,14 +554,14 @@ export class CMISService {
         };
         
         xhr.onerror = () => {
-          console.error('Network error fetching repositories');
+          // Network error - return empty array
           resolve([]);
         };
-        
+
         xhr.send();
       });
     } catch (error) {
-      console.error('Failed to fetch repositories:', error);
+      // Exception during repository fetch
       return [];
     }
   }
@@ -612,7 +597,7 @@ export class CMISService {
 
               resolve(rootFolder);
             } catch (error) {
-              console.error('CMIS DEBUG: Error parsing getRootFolder response:', error);
+              // Failed to parse response - use fallback
               const fallbackFolder = {
                 id: 'e02f784f8360a02cc14d1314c10038ff',
                 name: 'Root Folder',
@@ -625,7 +610,7 @@ export class CMISService {
               resolve(fallbackFolder);
             }
           } else {
-            console.error('CMIS DEBUG: getRootFolder failed with status:', xhr.status);
+            // Request failed - handle authentication errors
             this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             // For now, still provide fallback but notify about auth error
             const fallbackFolder = {
@@ -643,7 +628,7 @@ export class CMISService {
       };
       
       xhr.onerror = () => {
-        console.error('CMIS DEBUG: Network error in getRootFolder');
+        // Network error - use fallback folder
         const fallbackFolder = {
           id: 'e02f784f8360a02cc14d1314c10038ff',
           name: 'Root Folder',
@@ -692,7 +677,7 @@ export class CMISService {
               // Check for parse errors
               const parseError = xmlDoc.querySelector('parsererror');
               if (parseError) {
-                console.error('CMIS DEBUG: XML parse error:', parseError.textContent);
+                // XML parsing failed
                 reject(new Error('Invalid XML response'));
                 return;
               }
@@ -816,19 +801,19 @@ export class CMISService {
 
               resolve(children);
             } catch (e) {
-              console.error('CMIS DEBUG: getChildren parse error:', e);
+              // Failed to parse response
               reject(new Error('Failed to parse AtomPub response'));
             }
           } else {
-            console.error('CMIS DEBUG: getChildren HTTP error:', xhr.status, xhr.statusText);
+            // Request failed - handle errors
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             reject(error);
           }
         }
       };
-      
+
       xhr.onerror = () => {
-        console.error('CMIS DEBUG: getChildren network error');
+        // Network error occurred
         reject(new Error('Network error'));
       };
       
@@ -841,7 +826,10 @@ export class CMISService {
       const xhr = new XMLHttpRequest();
 
       // Use AtomPub binding for getObject as Browser Binding doesn't have proper object endpoint
-      xhr.open('GET', `/core/atom/${repositoryId}/id?id=${objectId}`, true);
+      // CRITICAL FIX (2025-11-19): Add includeAllowableActions=true to get inline allowableActions
+      // Without this parameter, allowableActions are only available via separate linked resource,
+      // causing preview tab to never appear because canPreview() expects allowableActions array
+      xhr.open('GET', `/core/atom/${repositoryId}/id?id=${objectId}&includeAllowableActions=true`, true);
       xhr.setRequestHeader('Accept', 'application/atom+xml');
       
       const headers = this.getAuthHeaders();
@@ -860,7 +848,7 @@ export class CMISService {
               const entry = xmlDoc.querySelector('entry, atom\\:entry');
 
               if (!entry) {
-                console.error('CMIS DEBUG: No entry found in AtomPub response');
+                // No entry element found in response
                 reject(new Error('No entry found in AtomPub response'));
                 return;
               }
@@ -972,13 +960,34 @@ export class CMISService {
                 }
               }
 
+              // CRITICAL FIX (2025-11-19): Extract allowableActions from AtomPub response
+              // This is required for canPreview() utility to work correctly
+              const allowableActions: string[] = [];
+              const allowableActionsElement = entry.querySelector('cmis\\:allowableActions, allowableActions');
+              if (allowableActionsElement) {
+                // CRITICAL FIX: Cannot use attribute selector [localName^="can"] because localName is a property, not an attribute
+                // Must iterate through all child elements and check localName property
+                const children = allowableActionsElement.children;
+                for (let i = 0; i < children.length; i++) {
+                  const actionEl = children[i];
+                  const actionName = actionEl.localName;
+                  // Check if element name starts with "can" (canGetContentStream, canDeleteObject, etc.)
+                  if (actionName && actionName.startsWith('can')) {
+                    const actionValue = actionEl.textContent?.trim();
+                    if (actionValue === 'true') {
+                      allowableActions.push(actionName);
+                    }
+                  }
+                }
+              }
+
               const cmisObject: CMISObject = {
                 id: objectId,
                 name: title,
                 objectType: objectType,
                 baseType: baseType,
                 properties: propertiesMap, // NOW POPULATED with all CMIS properties including changeToken!
-                allowableActions: [],
+                allowableActions: allowableActions,
                 path: path,
                 createdBy: createdBy || undefined,
                 creationDate: creationDate || undefined,
@@ -993,19 +1002,19 @@ export class CMISService {
 
               resolve(cmisObject);
             } catch (e) {
-              console.error('CMIS DEBUG: getObject parse error:', e);
+              // Failed to parse response
               reject(new Error('Failed to parse AtomPub response'));
             }
           } else {
-            console.error('CMIS DEBUG: getObject HTTP error:', xhr.status, xhr.statusText);
+            // Request failed - handle errors
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             reject(error);
           }
         }
       };
-      
+
       xhr.onerror = () => {
-        console.error('CMIS DEBUG: getObject network error');
+        // Network error occurred
         reject(new Error('Network error'));
       };
       xhr.send();
@@ -1266,8 +1275,33 @@ export class CMISService {
           if (xhr.status === 200) {
             try {
               const response = JSON.parse(xhr.responseText);
+
+              // CRITICAL FIX (2025-11-19): Transform search results to extract CMIS properties
+              // The CMIS Browser Binding returns properties in format: {"cmis:name": {"value": "x"}}
+              // The UI expects flat format: {name: "x", objectType: "y", ...}
+              // This transformation is required for search result cells to display data correctly
+              const transformedResults = (response.results || []).map((result: any) => {
+                const props = result.properties || {};
+
+                return {
+                  id: this.getSafeStringProperty(props, 'cmis:objectId', ''),
+                  name: this.getSafeStringProperty(props, 'cmis:name', 'Unknown'),
+                  objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
+                  baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
+                  properties: props,
+                  allowableActions: result.allowableActions || [],
+                  createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
+                  lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
+                  creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
+                  lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
+                  contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
+                  contentStreamMimeType: this.getSafeStringProperty(props, 'cmis:contentStreamMimeType'),
+                  path: this.getSafeStringProperty(props, 'cmis:path')
+                };
+              });
+
               resolve({
-                objects: response.results || [],
+                objects: transformedResults,
                 hasMoreItems: response.hasMoreItems || false,
                 numItems: response.numItems || 0
               });
@@ -1386,11 +1420,11 @@ export class CMISService {
               const pwc = this.buildCmisObjectFromBrowserData(response);
               resolve(pwc);
             } catch (e) {
-              console.error('CMIS DEBUG: checkOut parse error:', e);
+              // Failed to parse response
               reject(new Error('Invalid response format'));
             }
           } else {
-            console.error('CMIS DEBUG: checkOut HTTP error:', xhr.status, xhr.statusText);
+            // Request failed - handle errors
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             reject(error);
           }
@@ -1441,11 +1475,11 @@ export class CMISService {
               const newVersion = this.buildCmisObjectFromBrowserData(response);
               resolve(newVersion);
             } catch (e) {
-              console.error('CMIS DEBUG: checkIn parse error:', e);
+              // Failed to parse response
               reject(new Error('Invalid response format'));
             }
           } else {
-            console.error('CMIS DEBUG: checkIn HTTP error:', xhr.status, xhr.statusText);
+            // Request failed - handle errors
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             reject(error);
           }
@@ -1507,7 +1541,7 @@ export class CMISService {
           if (xhr.status === 200 || xhr.status === 204) {
             resolve();
           } else {
-            console.error('CMIS DEBUG: cancelCheckOut HTTP error:', xhr.status, xhr.statusText);
+            // Request failed - handle errors
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             reject(error);
           }
@@ -1579,11 +1613,11 @@ export class CMISService {
 
               resolve(acl);
             } catch (e) {
-              console.error('CMIS DEBUG: getACL parse error:', e);
+              // Failed to parse response
               reject(new Error('Invalid response format'));
             }
           } else {
-            console.error('CMIS DEBUG: getACL HTTP error:', xhr.status, xhr.statusText);
+            // Request failed - handle errors
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             reject(error);
           }
@@ -1630,7 +1664,7 @@ export class CMISService {
             if (xhr.status === 200 || xhr.status === 204) {
               resolve();
             } else {
-              console.error('CMIS DEBUG: setACL HTTP error:', xhr.status, xhr.statusText);
+              // Request failed - handle errors
               const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
               reject(error);
             }
@@ -1669,7 +1703,7 @@ export class CMISService {
         xhr.send(formData.toString());
       });
     } catch (error) {
-      console.error('CMIS DEBUG: setACL error getting current ACL:', error);
+      // Error getting current ACL
       throw error;
     }
   }
@@ -1706,7 +1740,7 @@ export class CMISService {
 
               resolve(transformedUsers);
             } catch (e) {
-              console.error('CMIS DEBUG: getUsers parse error:', e);
+              // Failed to parse response
               reject(new Error('Invalid response format'));
             }
           } else if (xhr.status === 500) {
@@ -2064,7 +2098,7 @@ export class CMISService {
 
               // Response format: { types: [...] }
               if (!response.types || !Array.isArray(response.types)) {
-                console.warn('CMIS DEBUG: getTypes - invalid response format, returning empty array');
+                // Invalid response format - return empty array
                 resolve([]);
                 return;
               }
@@ -2084,11 +2118,11 @@ export class CMISService {
 
               resolve(types);
             } catch (e) {
-              console.error('CMIS DEBUG: getTypes parse error:', e);
+              // Failed to parse response
               reject(new Error('Failed to parse type list response'));
             }
           } else {
-            console.error('CMIS DEBUG: getTypes HTTP error:', xhr.status, xhr.statusText);
+            // Request failed - handle errors
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             reject(error);
           }
@@ -2096,7 +2130,7 @@ export class CMISService {
       };
 
       xhr.onerror = () => {
-        console.error('CMIS DEBUG: getTypes network error');
+        // Network error occurred
         reject(new Error('Network error during type list fetch'));
       };
 
@@ -2154,11 +2188,11 @@ export class CMISService {
 
               resolve(types);
             } catch (e) {
-              console.error('CMIS DEBUG: fetchTypeChildren parse error:', e);
+              // Failed to parse response
               reject(new Error('Failed to parse type definitions JSON'));
             }
           } else {
-            console.error('CMIS DEBUG: fetchTypeChildren HTTP error:', xhr.status, xhr.statusText);
+            // Request failed - handle errors
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             reject(error);
           }
@@ -2166,7 +2200,7 @@ export class CMISService {
       };
 
       xhr.onerror = () => {
-        console.error('CMIS DEBUG: fetchTypeChildren network error');
+        // Network error occurred
         reject(new Error('Network error'));
       };
 
@@ -2598,6 +2632,98 @@ export class CMISService {
     });
   }
 
+  /**
+   * Get parent folders for an object (document or folder)
+   * Returns array of parent folder objects (typically 1 parent, but CMIS supports multi-filing)
+   * Used to calculate document paths from parent folder paths
+   *
+   * @param repositoryId - Repository ID
+   * @param objectId - Object ID
+   * @returns Promise resolving to array of parent folder objects with id, name, and path
+   */
+  async getObjectParents(repositoryId: string, objectId: string): Promise<CMISObject[]> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      // Use AtomPub binding for getObjectParents
+      xhr.open('GET', `/core/atom/${repositoryId}/parents?id=${objectId}`, true);
+      xhr.setRequestHeader('Accept', 'application/atom+xml;type=feed');
+
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              // Parse AtomPub feed response
+              const parser = new DOMParser();
+              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
+
+              const parents: CMISObject[] = [];
+              const entries = xmlDoc.querySelectorAll('entry');
+
+              entries.forEach(entry => {
+                // Extract folder ID
+                const objectIdElement = entry.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectId"] cmis\\:value, propertyId[propertyDefinitionId="cmis:objectId"] value');
+                const folderId = objectIdElement?.textContent?.trim() || '';
+
+                // Extract folder name
+                const nameElement = entry.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:name"] cmis\\:value, propertyString[propertyDefinitionId="cmis:name"] value');
+                const folderName = nameElement?.textContent?.trim() || '';
+
+                // Extract folder path
+                const pathElement = entry.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:path"] cmis\\:value, propertyString[propertyDefinitionId="cmis:path"] value');
+                const folderPath = pathElement?.textContent?.trim() || '';
+
+                // DEBUG (2025-11-19): Log path extraction for troubleshooting
+                console.log('[getObjectParents] Extracted parent folder:', {
+                  folderId,
+                  folderName,
+                  folderPath,
+                  pathElementFound: !!pathElement,
+                  pathElementText: pathElement?.textContent
+                });
+
+                if (folderId && folderName) {
+                  parents.push({
+                    id: folderId,
+                    name: folderName,
+                    path: folderPath,
+                    baseType: 'cmis:folder',
+                    objectType: 'cmis:folder',
+                    properties: {}
+                  } as CMISObject);
+                }
+              });
+
+              // DEBUG (2025-11-19): Log final parents array
+              console.log('[getObjectParents] Returning parents:', parents);
+
+              resolve(parents);
+            } catch (e) {
+              // Failed to parse response
+              reject(new Error('Failed to parse AtomPub parents response'));
+            }
+          } else {
+            // Request failed - handle errors
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
+          }
+        }
+      };
+
+      xhr.onerror = () => {
+        // Network error occurred
+        reject(new Error('Network error during getObjectParents'));
+      };
+
+      xhr.send();
+    });
+  }
+
   getDownloadUrl(repositoryId: string, objectId: string): string {
     const token = this.authService.getAuthToken();
     return `${this.baseUrl}/${repositoryId}/node/${objectId}/content?token=${token}`;
@@ -2622,7 +2748,7 @@ export class CMISService {
           if (xhr.status === 200) {
             resolve(xhr.response);
           } else {
-            console.error('CMIS DEBUG: getContentStream HTTP error:', xhr.status, xhr.statusText);
+            // Request failed - handle errors
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             reject(error);
           }
@@ -2630,7 +2756,7 @@ export class CMISService {
       };
       
       xhr.onerror = () => {
-        console.error('CMIS DEBUG: getContentStream network error');
+        // Network error occurred
         reject(new Error('Network error'));
       };
       

@@ -246,8 +246,8 @@ class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
-    
+    // ErrorBoundary caught an error - handle authentication errors
+
     // Check if this is an authentication-related error
     if (error.message.includes('401') || error.message.includes('Unauthorized')) {
       // Clear authentication and redirect to login

@@ -300,8 +300,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       const groupList = await cmisService.getGroups(repositoryId);
       setGroups(groupList);
     } catch (error: any) {
-      console.error('GroupManagement: loadGroups error:', error);
-      
+      // Failed to load groups
       let errorMessage = 'グループの読み込みに失敗しました';
       
       if (error.status === 500) {
@@ -309,11 +308,6 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
         if (error.details) {
           errorMessage += `\n詳細: ${error.details}`;
         }
-        console.error('Server error details:', {
-          message: error.message,
-          details: error.details,
-          status: error.status
-        });
       } else if (error.status === 401) {
         errorMessage = '認証エラー: ログインし直してください';
       } else if (error.status === 403) {
@@ -333,9 +327,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       const userList = await cmisService.getUsers(repositoryId);
       setUsers(userList);
     } catch (error: any) {
-      console.error('GroupManagement: loadUsers error:', error);
-      // ユーザー読み込み失敗はグループ管理では警告レベル
-      console.warn('ユーザーの読み込みに失敗しました。メンバー選択が制限される可能性があります。');
+      // User loading failed - group management can continue without user list
     }
   };
 
@@ -354,8 +346,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       form.resetFields();
       loadGroups();
     } catch (error: any) {
-      console.error('GroupManagement: handleSubmit error:', error);
-      
+      // Failed to create/update group
       let errorMessage = editingGroup ? 'グループの更新に失敗しました' : 'グループの作成に失敗しました';
       
       if (error.status === 500) {
@@ -387,8 +378,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       message.success('グループを削除しました');
       loadGroups();
     } catch (error: any) {
-      console.error('GroupManagement: handleDelete error:', error);
-      
+      // Failed to delete group
       let errorMessage = 'グループの削除に失敗しました';
       
       if (error.status === 500) {

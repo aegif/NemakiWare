@@ -190,7 +190,7 @@ export class ActionService {
       );
       return response.data;
     } catch (error) {
-      console.error('Error discovering actions:', error);
+      // Failed to discover actions
       throw error;
     }
   }
@@ -207,7 +207,7 @@ export class ActionService {
       );
       return response.data;
     } catch (error) {
-      console.error('Error getting action form:', error);
+      // Failed to get action form
       throw error;
     }
   }
@@ -231,7 +231,7 @@ export class ActionService {
       );
       return response.data;
     } catch (error) {
-      console.error('Error executing action:', error);
+      // Failed to execute action
       throw error;
     }
   }

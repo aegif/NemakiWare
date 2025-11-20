@@ -300,7 +300,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         await oidcService.signinRedirect();
       }
     } catch (error) {
-      console.error('OIDC login error:', error);
+      // OIDC login failed
       setError('OIDC認証に失敗しました。');
     } finally {
       setLoading(false);
@@ -317,7 +317,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       const repositoryId = repositories.length > 0 ? repositories[0] : 'bedroom';
       samlService.initiateLogin(repositoryId);
     } catch (error) {
-      console.error('SAML login error:', error);
+      // SAML login failed
       setError('SAML認証に失敗しました。');
       setLoading(false);
     }
@@ -341,7 +341,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         setError('SAML認証レスポンスが見つかりません。');
       }
     } catch (error) {
-      console.error('SAML callback error:', error);
+      // SAML callback failed
       setError('SAML認証の処理に失敗しました。');
     } finally {
       setLoading(false);

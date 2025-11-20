@@ -167,6 +167,13 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   }, [selectedFolderId]);
 
   const loadRootFolder = async () => {
+    const authData = localStorage.getItem('nemakiware_auth');
+    if (!authData) {
+      console.log('FolderTree: Skipping getRootFolder - no authentication data in localStorage');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const rootFolder = await cmisService.getRootFolder(repositoryId);

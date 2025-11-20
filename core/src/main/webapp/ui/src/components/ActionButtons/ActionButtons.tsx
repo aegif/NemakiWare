@@ -276,7 +276,7 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
       );
       setActions(filteredActions);
     } catch (error) {
-      console.error('Failed to load actions:', error);
+      // Failed to load actions
       message.error('アクションの読み込みに失敗しました');
     } finally {
       setLoading(false);

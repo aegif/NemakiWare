@@ -1193,7 +1193,33 @@ public class CompileServiceImpl implements CompileService {
 			Policy policy = (Policy) content;
 			properties = compilePolicyProperties(repositoryId, policy, properties, tdf);
 		} else if (content.isItem()) {
-			Item item = (Item) content;
+			// CRITICAL FIX (2025-11-19): Handle CouchItem instances
+			// CouchItem (CouchUserItem, CouchGroupItem) does NOT extend Item class
+			// Must convert via convert() method before casting
+			// Use Object type to allow instanceof check at runtime
+			Item item;
+			log.error("!!! ITEM CAST DEBUG: content class = " + content.getClass().getName());
+			log.error("!!! ITEM CAST DEBUG: content type = " + content.getType());
+			try {
+				// Try to get convert() method from CouchItem class hierarchy
+				java.lang.reflect.Method convertMethod = content.getClass().getMethod("convert");
+				log.error("!!! ITEM CAST DEBUG: Found convert() method, invoking...");
+				item = (Item) convertMethod.invoke(content);
+				log.error("!!! ITEM CAST DEBUG: convert() succeeded, result class = " + item.getClass().getName());
+			} catch (NoSuchMethodException e) {
+				log.error("!!! ITEM CAST DEBUG: NoSuchMethodException - no convert() method found", e);
+				// No convert() method - direct cast
+				item = (Item) content;
+			} catch (IllegalAccessException e) {
+				log.error("!!! ITEM CAST DEBUG: IllegalAccessException during convert() invocation", e);
+				// Invocation failed - direct cast
+				item = (Item) content;
+			} catch (java.lang.reflect.InvocationTargetException e) {
+				log.error("!!! ITEM CAST DEBUG: InvocationTargetException during convert() invocation", e);
+				log.error("!!! ITEM CAST DEBUG: Target exception was: " + e.getTargetException());
+				// Invocation failed - direct cast
+				item = (Item) content;
+			}
 			properties = compileItemProperties(repositoryId, item, properties, tdf);
 		}
 

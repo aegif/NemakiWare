@@ -886,6 +886,35 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				content.setObjectType(actualType);
 				log.info("Final Document Content - ObjectType: " + content.getObjectType());
 				return content;
+			} else if ("cmis:item".equals(actualType)) {
+				// CRITICAL FIX (2025-11-19): Handle cmis:item by checking objectType
+				// Users and groups are cmis:item base type but need specific conversion
+				log.info("Converting cmis:item - checking objectType");
+				String objectTypeValue = (String) actualDocMap.get("objectType");
+
+				if ("nemaki:user".equals(objectTypeValue)) {
+					log.info("Converting to CouchUserItem for objectType: " + objectTypeValue);
+					CouchUserItem cui = mapper.convertValue(actualDocMap, CouchUserItem.class);
+					Content content = cui.convert();  // Returns UserItem (extends Item)
+					content.setObjectType(objectTypeValue);
+					log.info("Final UserItem - ObjectType: " + content.getObjectType());
+					return content;
+				} else if ("nemaki:group".equals(objectTypeValue)) {
+					log.info("Converting to CouchGroupItem for objectType: " + objectTypeValue);
+					CouchGroupItem cgi = mapper.convertValue(actualDocMap, CouchGroupItem.class);
+					Content content = cgi.convert();  // Returns GroupItem (extends Item)
+					content.setObjectType(objectTypeValue);
+					log.info("Final GroupItem - ObjectType: " + content.getObjectType());
+					return content;
+				} else {
+					log.info("Converting to generic CouchItem for objectType: " + objectTypeValue);
+					// Generic item (fallback)
+					CouchItem ci = mapper.convertValue(actualDocMap, CouchItem.class);
+					Content content = ci.convert();
+					content.setObjectType(actualType);
+					log.info("Final Item - ObjectType: " + content.getObjectType());
+					return content;
+				}
 			} else {
 				log.info("Converting to generic CouchContent for type: " + actualType);
 				// Generic content - try to convert to CouchContent
@@ -964,8 +993,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					CouchRelationship cr = mapper.convertValue(jn, CouchRelationship.class);
 					return cr.convert();
 				} else if (BaseTypeId.CMIS_ITEM.value().equals(baseType)) {
+				// CRITICAL FIX (2025-11-19): Check objectType to convert to specific item subclass
+				// Users and groups are cmis:item base type but need specific conversion
+				String objectType = jn.path("objectType").textValue();
+
+				if ("nemaki:user".equals(objectType)) {
+					// Convert to CouchUserItem for proper UserItem conversion
+					CouchUserItem cui = mapper.convertValue(jn, CouchUserItem.class);
+					return cui.convert();  // Returns UserItem (extends Item)
+				} else if ("nemaki:group".equals(objectType)) {
+					// Convert to CouchGroupItem for proper GroupItem conversion
+					CouchGroupItem cgi = mapper.convertValue(jn, CouchGroupItem.class);
+					return cgi.convert();  // Returns GroupItem (extends Item)
+				} else {
+					// Generic item (fallback)
 					CouchItem ci = mapper.convertValue(jn, CouchItem.class);
 					return ci.convert();
+				}
 				}
 			}
 		}

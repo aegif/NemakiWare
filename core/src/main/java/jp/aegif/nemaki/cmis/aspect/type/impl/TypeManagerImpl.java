@@ -2763,9 +2763,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		}
 
 		for (Entry<String, TypeDefinitionContainer> entry : types.entrySet()) {
-			if (entry.getValue().getTypeDefinition().getQueryName()
-					.equals(typeQueryName))
-				return entry.getValue().getTypeDefinition();
+		// CRITICAL FIX (2025-11-19): Add null check for queryName before calling equals()
+		// Previous bug: getQueryName() returns null for some type definitions, causing NullPointerException
+		// This prevented ALL search queries from working (user report: "検索機能が何もヒットしない")
+		String queryName = entry.getValue().getTypeDefinition().getQueryName();
+		if (queryName != null && queryName.equals(typeQueryName))
+			return entry.getValue().getTypeDefinition();
 		}
 		return null;
 	}
