@@ -355,7 +355,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 					continue;
 			}
 			String table = descendant.getQueryName();
-			tables.add(table.replaceAll(":", "\\\\:"));
+			if (table != null) {
+				tables.add(table.replaceAll(":", "\\\\:"));
+			}
 		}
 		
 //		Term t = new Term(
