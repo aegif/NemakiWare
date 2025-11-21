@@ -28,7 +28,7 @@ services:
       - SOLR_HOME=/var/solr/data
       - SOLR_HEAP=512m
     volumes:
-      - ./solr/solr:/var/solr/data
+      - solr_data:/var/solr/data
 
   # Core CMIS Server
   core:
@@ -69,6 +69,7 @@ services:
 
 volumes:
   couchdb_data:
+  solr_data:
 
 networks:
   default:
