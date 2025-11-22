@@ -214,14 +214,48 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/dist/index.
 - Check status: `docker compose -f docker/docker-compose-simple.yml ps`
 - View logs: `docker compose -f docker/docker-compose-simple.yml logs core`
 
+### E2E Test Environment Setup and Prevention (2025-11-22) ⚠️
+
+**IMPORTANT**: Before running Playwright tests, always ensure a clean test environment to prevent failures.
+
+**Quick Reference**:
+- 📖 **Full Documentation**: See `docs/e2e-test-environment.md` for comprehensive guide
+- 🛠️ **Quick Reset**: `make reset-test-env` (one-command environment reset)
+- ✅ **Validation**: `make validate-env` or `scripts/validate-test-env.sh`
+- 🧪 **Run Tests**: `make test-e2e` (reset + validate + test)
+
+**Common Issue - Initial Content Setup Failures**:
+
+**Symptom**: Tests fail claiming "Sites" or "Technical Documents" folders are missing
+
+**Root Cause**: Stale Docker volumes, incomplete initialization, or outdated images
+
+**Solution**: Complete environment reset (see `docs/e2e-test-environment.md`)
+```bash
+make reset-test-env  # One-command solution
+# OR manually:
+mvn clean package -DskipTests
+cd docker && docker-compose -f docker-compose-simple.yml build core
+docker-compose -f docker-compose-simple.yml down -v  # IMPORTANT: -v wipes volumes
+docker-compose -f docker-compose-simple.yml up -d    # Healthchecks enforce startup order
+```
+
+**Prevention Measures Implemented** (2025-11-22):
+1. ✅ Docker Compose healthchecks (automatic startup order: CouchDB → Solr → Core)
+2. ✅ Makefile targets for easy environment management
+3. ✅ Pre-test validation script (`scripts/validate-test-env.sh`)
+4. ✅ Comprehensive documentation (`docs/e2e-test-environment.md`)
+
+**WebKit Browser Support**:
+```bash
+export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1  # Required for Linux
+```
+
 ### Playwright UI Tests
 
-**Latest Test Results** (2025-11-09):
-- **Core Tests**: 25/25 PASS (100%) ✅
-  - Basic Connectivity: 4/4 PASS
-  - Authentication: 7/7 PASS
-  - Document Management: 9/9 PASS
-  - Initial Content Setup: 5/5 PASS
+**Latest Test Results** (2025-11-22):
+- **After Clean Rebuild**: Initial content setup tests now passing (5/5) ✅
+- **Previous Results** (2025-11-09): 25/25 core tests PASS
 - **Known Issues**: Group management timeout, custom type UI not implemented
 - See "Playwright UI Test Status (2025-11-09)" section below for details
 
