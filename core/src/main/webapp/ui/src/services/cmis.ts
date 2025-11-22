@@ -1560,8 +1560,13 @@ export class CMISService {
   }
 
   /**
-   * Get ACL for an object (CMIS Browser Binding standard)
+   * Get ACL for an object (REST API endpoint)
    * Retrieves the Access Control List (permissions) for a CMIS object
+   *
+   * CRITICAL FIX (2025-11-22): Switched from Browser Binding to REST API endpoint
+   * - Old: /core/browser/{repositoryId}/{objectId}?cmisselector=acl
+   * - New: /core/rest/repo/{repositoryId}/node/{objectId}/acl
+   * - Reason: Tests expect REST API, Browser Binding causes root folder 500 errors
    *
    * @param repositoryId Repository ID
    * @param objectId Object ID to get ACL for
@@ -1570,9 +1575,7 @@ export class CMISService {
   async getACL(repositoryId: string, objectId: string): Promise<ACL> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      // CMIS Browser Binding ACL: GET with cmisselector=acl
-      // CRITICAL FIX (2025-11-11): ObjectId must be in URL path, not query parameter
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/${objectId}?cmisselector=acl`, true);
+      xhr.open('GET', `/core/rest/repo/${repositoryId}/node/${objectId}/acl`, true);
       xhr.setRequestHeader('Accept', 'application/json');
 
       const headers = this.getAuthHeaders();
@@ -1586,28 +1589,19 @@ export class CMISService {
             try {
               const response = JSON.parse(xhr.responseText);
 
-              // CMIS Browser Binding ACL response structure
-              const aces = response.aces || [];
-              const permissions = aces.map((ace: any) => ({
-                principalId: ace.principal?.id || ace.principalId,
-                permissions: ace.permissions || [],
-                direct: ace.direct !== false // Default to true if not specified
+              const aclData = response.result?.acl || response.acl || {};
+              const permissions = (aclData.permissions || []).map((perm: any) => ({
+                principalId: perm.principalId,
+                permissions: perm.permissions || [],
+                direct: perm.direct !== false // Default to true if not specified
               }));
 
-              // Extract aclInherited from extension elements
-              let aclInherited = true; // Default to true if not specified
-              if (response.extensions && Array.isArray(response.extensions)) {
-                const inheritedExt = response.extensions.find((ext: any) => 
-                  ext.name === 'inherited' || ext.localName === 'inherited'
-                );
-                if (inheritedExt) {
-                  aclInherited = inheritedExt.value === 'true';
-                }
-              }
+              // Extract aclInherited (default to true if not specified)
+              const aclInherited = aclData.aclInherited !== false;
 
               const acl: ACL = {
                 permissions: permissions,
-                isExact: response.isExact !== false, // Default to true if not specified
+                isExact: aclData.isExact !== false, // Default to true if not specified
                 aclInherited
               };
 
@@ -1630,11 +1624,13 @@ export class CMISService {
   }
 
   /**
-   * Set ACL for an object (CMIS Browser Binding standard)
-   * Sets the Access Control List (permissions) for a CMIS object using applyACL action
+   * Set ACL for an object (REST API endpoint)
+   * Sets the Access Control List (permissions) for a CMIS object
    *
-   * Strategy: First get current ACL, remove all direct ACEs, then add new ACEs
-   * This ensures we replace the ACL completely rather than just adding to it
+   * CRITICAL FIX (2025-11-22): Switched from Browser Binding to REST API endpoint
+   * - Old: /core/browser/{repositoryId} with cmisaction=applyACL
+   * - New: /core/rest/repo/{repositoryId}/node/{objectId}/acl
+   * - Reason: Tests expect REST API, simpler JSON payload format
    *
    * @param repositoryId Repository ID
    * @param objectId Object ID to set ACL for
@@ -1642,70 +1638,46 @@ export class CMISService {
    * @param options Optional parameters including breakInheritance flag
    */
   async setACL(repositoryId: string, objectId: string, acl: ACL, options?: { breakInheritance?: boolean }): Promise<void> {
-    try {
-      // Step 1: Get current ACL to know what to remove
-      const currentACL = await this.getACL(repositoryId, objectId);
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `/core/rest/repo/${repositoryId}/node/${objectId}/acl`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
 
-      // Step 2: Build applyACL request with both remove and add operations
-      return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        // CMIS Browser Binding ACL: POST with cmisaction=applyACL
-        xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-        xhr.setRequestHeader('Accept', 'application/json');
-
-        const headers = this.getAuthHeaders();
-        Object.entries(headers).forEach(([key, value]) => {
-          xhr.setRequestHeader(key, value);
-        });
-
-        xhr.onreadystatechange = () => {
-          if (xhr.readyState === 4) {
-            if (xhr.status === 200 || xhr.status === 204) {
-              resolve();
-            } else {
-              // Request failed - handle errors
-              const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-              reject(error);
-            }
-          }
-        };
-
-        xhr.onerror = () => reject(new Error('Network error'));
-
-        // Build form data for Browser Binding applyACL
-        const formData = new URLSearchParams();
-        formData.append('cmisaction', 'applyACL');
-        formData.append('objectId', objectId);
-
-        // Step 2a: Remove all current direct ACEs (only remove direct permissions, keep inherited)
-        const directACEs = currentACL.permissions.filter(p => p.direct);
-        directACEs.forEach((permission, index) => {
-          formData.append(`removeACEPrincipal[${index}]`, permission.principalId);
-        });
-
-        // Step 2b: Add new ACEs using CMIS Browser Binding format
-        // addACEPrincipal[0], addACEPermission[0][0], addACEPermission[0][1], etc.
-        acl.permissions.forEach((permission, aceIndex) => {
-          formData.append(`addACEPrincipal[${aceIndex}]`, permission.principalId);
-
-          // Add each permission for this principal
-          permission.permissions.forEach((perm, permIndex) => {
-            formData.append(`addACEPermission[${aceIndex}][${permIndex}]`, perm);
-          });
-        });
-
-        // Step 2c: Add extension element for inheritance control if specified
-        if (options?.breakInheritance !== undefined) {
-          formData.append('extension[inherited]', String(!options.breakInheritance));
-        }
-
-        xhr.send(formData.toString());
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
       });
-    } catch (error) {
-      // Error getting current ACL
-      throw error;
-    }
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve();
+          } else {
+            // Request failed - handle errors
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
+          }
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Network error'));
+
+      const payload = {
+        permissions: acl.permissions.map(perm => ({
+          principalId: perm.principalId,
+          permissions: perm.permissions,
+          direct: perm.direct !== false
+        }))
+      };
+
+      // Add breakInheritance option if specified
+      if (options?.breakInheritance !== undefined) {
+        payload['breakInheritance'] = options.breakInheritance;
+      }
+
+      xhr.send(JSON.stringify(payload));
+    });
   }
 
   async getUsers(repositoryId: string): Promise<User[]> {
