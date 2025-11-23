@@ -38,8 +38,9 @@ export default defineConfig({
 
   // Reporter configuration
   reporter: [
-    ['html', { outputFolder: './playwright-report' }],
-    ['json', { outputFile: './test-results.json' }],
+    ['html', { outputFolder: './playwright-report', open: 'never' }],
+    ['json', { outputFile: './playwright-report/results.json' }],
+    ['junit', { outputFile: './playwright-report/results.xml' }],
     ['list'], // Console output
   ],
 
