@@ -363,8 +363,8 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       setUsers(userList);
       setGroups(groupList);
 
-      const hasInheritedPermissions = aclData.permissions.some(p => !p.direct);
-      setIsInherited(hasInheritedPermissions);
+      const inheritanceEnabled = aclData.aclInherited !== false;
+      setIsInherited(inheritanceEnabled);
     } catch (error) {
       // Failed to load permission data
       const errorMessage = error instanceof Error ? error.message : 'データの読み込みに失敗しました';
