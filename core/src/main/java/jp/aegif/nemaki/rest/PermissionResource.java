@@ -42,10 +42,12 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.spring.SpringContext;
 
 import org.apache.chemistry.opencmis.commons.data.Ace;
+import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONArray;
@@ -137,16 +139,19 @@ public class PermissionResource extends ResourceBase {
 				status = false;
 				addErrMsg(errMsg, "object", ErrorCode.ERR_NOTFOUND);
 			} else {
+				boolean aclInherited = getContentServiceSafe().getAclInheritedWithDefault(repositoryId, content);
+				
 				jp.aegif.nemaki.model.Acl acl = content.getAcl();
+				JSONObject aclJson;
 				if (acl != null) {
-					JSONObject aclJson = convertAclToJson(acl);
-					result.put("acl", aclJson);
+					aclJson = convertAclToJson(acl);
 				} else {
-					// Return empty ACL if none exists
-					JSONObject emptyAcl = new JSONObject();
-					emptyAcl.put("permissions", new JSONArray());
-					result.put("acl", emptyAcl);
+					aclJson = new JSONObject();
+					aclJson.put("permissions", new JSONArray());
 				}
+				
+				aclJson.put("aclInherited", aclInherited);
+				result.put("acl", aclJson);
 			}
 		} catch (Exception e) {
 			log.error("Error getting ACL for object " + objectId + ": " + e.getMessage(), e);
@@ -172,13 +177,32 @@ public class PermissionResource extends ResourceBase {
 		try {
 			// Parse JSON input
 			JSONParser parser = new JSONParser();
-			JSONObject aclJson = (JSONObject) parser.parse(jsonInput);
+			JSONObject inputJson = (JSONObject) parser.parse(jsonInput);
+			
+			Boolean breakInheritance = (Boolean) inputJson.get("breakInheritance");
+			if (breakInheritance == null) {
+				breakInheritance = false;
+			}
+			
+			String aclPropagationStr = (String) inputJson.get("aclPropagation");
+			AclPropagation aclPropagation = AclPropagation.REPOSITORYDETERMINED;
+			if (aclPropagationStr != null) {
+				try {
+					aclPropagation = AclPropagation.valueOf(aclPropagationStr);
+				} catch (IllegalArgumentException e) {
+					log.warn("Invalid aclPropagation value: " + aclPropagationStr + ", using REPOSITORYDETERMINED");
+				}
+			}
+			
+			if (breakInheritance) {
+				aclPropagation = AclPropagation.OBJECTONLY;
+			}
 			
 			// Convert JSON to CMIS ACL
-			org.apache.chemistry.opencmis.commons.data.Acl cmisAcl = convertJsonToCmisAcl(aclJson);
+			org.apache.chemistry.opencmis.commons.data.Acl cmisAcl = convertJsonToCmisAcl(inputJson, breakInheritance);
 			
 			// Apply ACL to the object using AclService
-			getAclServiceSafe().applyAcl(new SystemCallContext(repositoryId), repositoryId, objectId, cmisAcl, AclPropagation.REPOSITORYDETERMINED);
+			getAclServiceSafe().applyAcl(new SystemCallContext(repositoryId), repositoryId, objectId, cmisAcl, aclPropagation);
 			
 			result.put("status", "success");
 		} catch (ParseException e) {
@@ -221,8 +245,13 @@ public class PermissionResource extends ResourceBase {
 	}
 
 	@SuppressWarnings("unchecked")
-	private org.apache.chemistry.opencmis.commons.data.Acl convertJsonToCmisAcl(JSONObject aclJson) {
+	private org.apache.chemistry.opencmis.commons.data.Acl convertJsonToCmisAcl(JSONObject inputJson, boolean breakInheritance) {
 		List<Ace> aces = new ArrayList<>();
+
+		JSONObject aclJson = (JSONObject) inputJson.get("acl");
+		if (aclJson == null) {
+			aclJson = inputJson;
+		}
 
 		JSONArray permissions = (JSONArray) aclJson.get("permissions");
 		if (permissions != null) {
@@ -248,6 +277,16 @@ public class PermissionResource extends ResourceBase {
 			}
 		}
 
-		return new AccessControlListImpl(aces);
+		AccessControlListImpl aclImpl = new AccessControlListImpl(aces);
+		
+		if (breakInheritance) {
+			List<CmisExtensionElement> extensions = new ArrayList<>();
+			CmisExtensionElementImpl inheritedExt = new CmisExtensionElementImpl(
+				null, "inherited", null, "false");
+			extensions.add(inheritedExt);
+			aclImpl.setExtensions(extensions);
+		}
+
+		return aclImpl;
 	}
 }
