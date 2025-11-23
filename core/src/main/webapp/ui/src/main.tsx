@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import { AuthService } from './services/auth'
 import 'antd/dist/reset.css'
+import './index.css'
 
 const authService = AuthService.getInstance();
 (window as any).authService = authService;

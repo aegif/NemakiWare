@@ -1,0 +1,20 @@
+/**
+ * Global styles for NemakiWare React UI
+ */
+
+/**
+ * Screen reader only utility class
+ * Hides content visually but keeps it accessible to screen readers and automated tests
+ * Used for providing English accessible names while displaying localized text
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}

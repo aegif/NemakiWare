@@ -239,10 +239,13 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   }
 
   return (
-    <div style={{ background: '#fafafa', padding: '12px', borderRadius: '4px' }}>
+    <div role="tree" style={{ background: '#fafafa', padding: '12px', borderRadius: '4px' }}>
       {/* Parent folder navigation */}
       {parentFolder && (
         <div
+          role="treeitem"
+          aria-label={`Parent Folder: ${parentFolder.name}`}
+          tabIndex={0}
           style={{
             padding: '8px 12px',
             marginBottom: '8px',
@@ -255,6 +258,12 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
             border: '1px solid #91d5ff'
           }}
           onClick={() => handleFolderClick(parentFolder.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleFolderClick(parentFolder.id);
+            }
+          }}
         >
           <UpOutlined style={{ color: '#1890ff' }} />
           <Text strong style={{ color: '#1890ff' }}>
@@ -265,6 +274,9 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
       
       {/* Current folder */}
       <div
+        role="treeitem"
+        aria-label="Root Folder"
+        tabIndex={0}
         style={{
           padding: '8px 12px',
           marginBottom: '8px',
@@ -273,12 +285,21 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
           border: '2px solid #1890ff',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px'
+          gap: '8px',
+          cursor: 'pointer'
+        }}
+        onClick={() => handleFolderClick(currentFolderId)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleFolderClick(currentFolderId);
+          }
         }}
       >
         <FolderOpenOutlined style={{ color: '#1890ff', fontSize: '16px' }} />
         <Text strong style={{ color: '#1890ff' }}>
-          {currentFolder?.name || 'Current Folder'}
+          <span className="sr-only">Root Folder</span>
+          {currentFolder?.name || 'Repository Root'}
         </Text>
       </div>
       
@@ -289,6 +310,9 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
           dataSource={childFolders}
           renderItem={(folder) => (
             <List.Item
+              role="treeitem"
+              aria-label={folder.name}
+              tabIndex={0}
               style={{
                 padding: '8px 12px',
                 cursor: 'pointer',
@@ -298,6 +322,12 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
                 border: '1px solid #d9d9d9'
               }}
               onClick={() => handleFolderClick(folder.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleFolderClick(folder.id);
+                }
+              }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = '#f0f0f0';
               }}
