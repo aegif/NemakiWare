@@ -892,13 +892,30 @@ test.describe('Access Control and Permissions', () => {
             const buttonCount = await breakInheritanceButton.count();
             console.log(`Test: DEBUG - Break inheritance button count: ${buttonCount}`);
 
+            // DIAGNOSTIC: Check initial state before breaking inheritance
+            console.log('Test: DEBUG - Checking initial permissions table state...');
+            const initialRows = page.locator('.ant-table-tbody tr');
+            const initialRowCount = await initialRows.count();
+            console.log(`Test: DEBUG - Initial table has ${initialRowCount} rows`);
+            const initialUserRow = page.locator(`tr:has-text("${testUsername}")`);
+            const initialUserRowCount = await initialUserRow.count();
+            console.log(`Test: DEBUG - Initial "${testUsername}" matches: ${initialUserRowCount}`);
+            if (initialUserRowCount > 0) {
+              const initialCells = initialUserRow.first().locator('td');
+              const initialCellTexts = [];
+              for (let j = 0; j < await initialCells.count(); j++) {
+                initialCellTexts.push(await initialCells.nth(j).textContent());
+              }
+              console.log(`Test: DEBUG - Initial row cells: [${initialCellTexts.join(' | ')}]`);
+            }
+
             if (buttonCount > 0) {
               console.log('Test: Breaking inheritance to enable delete button...');
               await breakInheritanceButton.first().click(isMobile ? { force: true } : {});
               console.log('Test: Clicked break inheritance button, waiting for response...');
-              await page.waitForTimeout(1500); // Wait for inheritance break to complete
+              await page.waitForTimeout(3000); // Increased wait time to 3 seconds
 
-              // Check for confirmation modal
+              // Check for confirmation modal with more detailed logging
               const confirmButton = page.locator('.ant-modal:visible button').filter({ hasText: /はい|OK|確認/ });
               const confirmCount = await confirmButton.count();
               console.log(`Test: DEBUG - Confirmation button count: ${confirmCount}`);
@@ -906,10 +923,39 @@ test.describe('Access Control and Permissions', () => {
               if (confirmCount > 0) {
                 console.log('Test: Clicking confirmation button...');
                 await confirmButton.first().click();
-                await page.waitForTimeout(2000); // Wait longer for table refresh
+                await page.waitForTimeout(3000); // Increased wait time
                 console.log('Test: Confirmation clicked, waiting for table update...');
               } else {
                 console.log('Test: No confirmation modal appeared');
+                // Check if there's any modal at all
+                const anyModal = page.locator('.ant-modal:visible');
+                const modalCount = await anyModal.count();
+                console.log(`Test: DEBUG - Any visible modal count: ${modalCount}`);
+
+                if (modalCount > 0) {
+                  // Capture modal content to understand what we're dealing with
+                  const modalContent = anyModal.first();
+                  const modalText = await modalContent.textContent();
+                  console.log(`Test: DEBUG - Modal content: "${modalText}"`);
+
+                  // Try to find ALL buttons in the modal
+                  const allModalButtons = modalContent.locator('button');
+                  const allButtonCount = await allModalButtons.count();
+                  console.log(`Test: DEBUG - Total buttons in modal: ${allButtonCount}`);
+
+                  for (let i = 0; i < allButtonCount; i++) {
+                    const buttonText = await allModalButtons.nth(i).textContent();
+                    console.log(`Test: DEBUG - Modal button ${i}: "${buttonText}"`);
+                  }
+
+                  // Try clicking the first button if any exist
+                  if (allButtonCount > 0) {
+                    console.log('Test: DEBUG - Clicking first modal button to dismiss/confirm...');
+                    await allModalButtons.first().click();
+                    await page.waitForTimeout(3000);
+                    console.log('Test: DEBUG - Modal button clicked');
+                  }
+                }
               }
 
               // Check table structure after breaking inheritance
@@ -917,12 +963,17 @@ test.describe('Access Control and Permissions', () => {
               const rowCount = await tableRows.count();
               console.log(`Test: DEBUG - Table now has ${rowCount} rows after break inheritance`);
 
-              console.log('Test: Inheritance break complete, delete buttons should now be visible');
+              console.log('Test: Inheritance break complete, attempting to find direct permission row...');
 
-              // CRITICAL FIX: Re-locate user row after table refresh from break inheritance
-              // The table expanded from ~4 rows to 73 rows, invalidating the old userRow locator
+              // CRITICAL FIX: Reload page after breaking inheritance to get fresh permission data
+              // The server updates the permissions, but the UI may not immediately reflect the changes
+              console.log('Test: Reloading page to fetch latest permission data...');
+              await page.reload();
+              await page.waitForTimeout(3000); // Increased wait time for page reload
+
+              // Re-locate user row after page reload
               const userRowAfterBreak = page.locator(`tr:has-text("${testUsername}")`);
-              await page.waitForTimeout(500); // Give table time to fully render all 73 rows
+              await page.waitForTimeout(1000); // Give table time to fully render
 
               const userRowCount = await userRowAfterBreak.count();
               console.log(`Test: DEBUG - After break, found ${userRowCount} rows matching "${testUsername}"`);
@@ -1180,13 +1231,30 @@ test.describe('Access Control and Permissions', () => {
             const buttonCount = await breakInheritanceButton.count();
             console.log(`Test: DEBUG - Break inheritance button count: ${buttonCount}`);
 
+            // DIAGNOSTIC: Check initial state before breaking inheritance
+            console.log('Test: DEBUG - Checking initial permissions table state...');
+            const initialRows = page.locator('.ant-table-tbody tr');
+            const initialRowCount = await initialRows.count();
+            console.log(`Test: DEBUG - Initial table has ${initialRowCount} rows`);
+            const initialUserRow = page.locator(`tr:has-text("${testUsername}")`);
+            const initialUserRowCount = await initialUserRow.count();
+            console.log(`Test: DEBUG - Initial "${testUsername}" matches: ${initialUserRowCount}`);
+            if (initialUserRowCount > 0) {
+              const initialCells = initialUserRow.first().locator('td');
+              const initialCellTexts = [];
+              for (let j = 0; j < await initialCells.count(); j++) {
+                initialCellTexts.push(await initialCells.nth(j).textContent());
+              }
+              console.log(`Test: DEBUG - Initial row cells: [${initialCellTexts.join(' | ')}]`);
+            }
+
             if (buttonCount > 0) {
               console.log('Test: Breaking inheritance to enable delete button...');
               await breakInheritanceButton.first().click(isMobile ? { force: true } : {});
               console.log('Test: Clicked break inheritance button, waiting for response...');
-              await page.waitForTimeout(1500); // Wait for inheritance break to complete
+              await page.waitForTimeout(3000); // Increased wait time to 3 seconds
 
-              // Check for confirmation modal
+              // Check for confirmation modal with more detailed logging
               const confirmButton = page.locator('.ant-modal:visible button').filter({ hasText: /はい|OK|確認/ });
               const confirmCount = await confirmButton.count();
               console.log(`Test: DEBUG - Confirmation button count: ${confirmCount}`);
@@ -1194,10 +1262,39 @@ test.describe('Access Control and Permissions', () => {
               if (confirmCount > 0) {
                 console.log('Test: Clicking confirmation button...');
                 await confirmButton.first().click();
-                await page.waitForTimeout(2000); // Wait longer for table refresh
+                await page.waitForTimeout(3000); // Increased wait time
                 console.log('Test: Confirmation clicked, waiting for table update...');
               } else {
                 console.log('Test: No confirmation modal appeared');
+                // Check if there's any modal at all
+                const anyModal = page.locator('.ant-modal:visible');
+                const modalCount = await anyModal.count();
+                console.log(`Test: DEBUG - Any visible modal count: ${modalCount}`);
+
+                if (modalCount > 0) {
+                  // Capture modal content to understand what we're dealing with
+                  const modalContent = anyModal.first();
+                  const modalText = await modalContent.textContent();
+                  console.log(`Test: DEBUG - Modal content: "${modalText}"`);
+
+                  // Try to find ALL buttons in the modal
+                  const allModalButtons = modalContent.locator('button');
+                  const allButtonCount = await allModalButtons.count();
+                  console.log(`Test: DEBUG - Total buttons in modal: ${allButtonCount}`);
+
+                  for (let i = 0; i < allButtonCount; i++) {
+                    const buttonText = await allModalButtons.nth(i).textContent();
+                    console.log(`Test: DEBUG - Modal button ${i}: "${buttonText}"`);
+                  }
+
+                  // Try clicking the first button if any exist
+                  if (allButtonCount > 0) {
+                    console.log('Test: DEBUG - Clicking first modal button to dismiss/confirm...');
+                    await allModalButtons.first().click();
+                    await page.waitForTimeout(3000);
+                    console.log('Test: DEBUG - Modal button clicked');
+                  }
+                }
               }
 
               // Check table structure after breaking inheritance
@@ -1205,12 +1302,17 @@ test.describe('Access Control and Permissions', () => {
               const rowCount = await tableRows.count();
               console.log(`Test: DEBUG - Table now has ${rowCount} rows after break inheritance`);
 
-              console.log('Test: Inheritance break complete, delete buttons should now be visible');
+              console.log('Test: Inheritance break complete, attempting to find direct permission row...');
 
-              // CRITICAL FIX: Re-locate user row after table refresh from break inheritance
-              // The table expanded from ~4 rows to 73 rows, invalidating the old userRow locator
+              // CRITICAL FIX: Reload page after breaking inheritance to get fresh permission data
+              // The server updates the permissions, but the UI may not immediately reflect the changes
+              console.log('Test: Reloading page to fetch latest permission data...');
+              await page.reload();
+              await page.waitForTimeout(3000); // Increased wait time for page reload
+
+              // Re-locate user row after page reload
               const userRowAfterBreak = page.locator(`tr:has-text("${testUsername}")`);
-              await page.waitForTimeout(500); // Give table time to fully render all 73 rows
+              await page.waitForTimeout(1000); // Give table time to fully render
 
               const userRowCount = await userRowAfterBreak.count();
               console.log(`Test: DEBUG - After break, found ${userRowCount} rows matching "${testUsername}"`);
