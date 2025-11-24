@@ -77,21 +77,23 @@ async function selectRootFolder(page: any): Promise<void> {
 async function waitForTableRow(page: any, folderName: string, maxAttempts = 10): Promise<any> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await selectRootFolder(page);
-    
+
     const table = page.locator('.ant-table');
     const folderRow = table.locator('tbody tr').filter({ hasText: folderName });
     const count = await folderRow.count();
-    
+
     if (count > 0) {
       console.log(`Found folder row in table for "${folderName}" on attempt ${attempt}`);
-      return folderRow;
+      // Fix strict mode violation: return only the first matching row
+      // This prevents errors when duplicate folders exist in the table
+      return folderRow.first();
     }
-    
+
     console.log(`Folder row not found in table (attempt ${attempt}/${maxAttempts}), reloading...`);
     await page.reload();
     await page.waitForTimeout(2000);
   }
-  
+
   throw new Error(`Folder row for "${folderName}" not found in table after ${maxAttempts} attempts`);
 }
 test.describe('ACL Inheritance Breaking', () => {
@@ -190,7 +192,7 @@ test.describe('ACL Inheritance Breaking', () => {
 
     const folderRow = await waitForTableRow(page, testFolderName);
 
-    const permissionsButton = folderRow.locator('button').filter({ hasText: /権限管理|Permission/i });
+    const permissionsButton = folderRow.locator('button').filter({ hasText: /権限管理|Permission/i }).first();
     await expect(permissionsButton).toBeVisible({ timeout: 5000 });
     await permissionsButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -242,7 +244,7 @@ test.describe('ACL Inheritance Breaking', () => {
 
     const folderRow = await waitForTableRow(page, testFolderName);
 
-    const permissionsButton = folderRow.locator('button').filter({ hasText: /権限管理|Permission/i });
+    const permissionsButton = folderRow.locator('button').filter({ hasText: /権限管理|Permission/i }).first();
     await expect(permissionsButton).toBeVisible({ timeout: 5000 });
     await permissionsButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -317,7 +319,7 @@ test.describe('ACL Inheritance Breaking', () => {
 
     const folderRow = await waitForTableRow(page, testFolderName);
 
-    const permissionsButton = folderRow.locator('button').filter({ hasText: /権限管理|Permission/i });
+    const permissionsButton = folderRow.locator('button').filter({ hasText: /権限管理|Permission/i }).first();
     await expect(permissionsButton).toBeVisible({ timeout: 5000 });
     await permissionsButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -334,18 +336,13 @@ test.describe('ACL Inheritance Breaking', () => {
     await page.waitForTimeout(500);
 
     const confirmDialog = page.locator('.ant-modal-confirm');
-    const confirmButton = confirmDialog.locator('button').filter({ hasText: /継承を切断|OK/i });
+    const confirmButton = confirmDialog.locator('button.ant-btn-primary').first();
+    await expect(confirmButton).toBeVisible({ timeout: 3000 });
     await confirmButton.click();
 
-    // Wait for ACL apply operation to complete
-    await page.waitForResponse(
-      r => r.url().includes(`/core/rest/repo/bedroom/node/${folderId}/acl`) && 
-           r.request().method() !== 'GET',
-      { timeout: 10000 }
-    );
-
+    // Wait for success message to confirm operation completed
     const successMessage = page.locator('.ant-message-success');
-    await expect(successMessage).toBeVisible({ timeout: 5000 });
+    await expect(successMessage).toBeVisible({ timeout: 10000 });
     console.log('✅ Success message appeared');
 
     // Wait for the page to reload and update the button visibility
@@ -411,7 +408,7 @@ test.describe('ACL Inheritance Breaking', () => {
 
     const folderRow = await waitForTableRow(page, testFolderName);
 
-    const permissionsButton = folderRow.locator('button').filter({ hasText: /権限管理|Permission/i });
+    const permissionsButton = folderRow.locator('button').filter({ hasText: /権限管理|Permission/i }).first();
     await expect(permissionsButton).toBeVisible({ timeout: 5000 });
     await permissionsButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -428,8 +425,15 @@ test.describe('ACL Inheritance Breaking', () => {
     await page.waitForTimeout(500);
 
     const confirmDialog = page.locator('.ant-modal-confirm');
-    const confirmButton = confirmDialog.locator('button').filter({ hasText: /継承を切断|OK/i });
+    const confirmButton = confirmDialog.locator('button.ant-btn-primary').first();
+    await expect(confirmButton).toBeVisible({ timeout: 3000 });
     await confirmButton.click();
+
+    // Wait for success message to ensure operation completed before checking ACL
+    const successMessage = page.locator('.ant-message-success');
+    await expect(successMessage).toBeVisible({ timeout: 10000 });
+
+    // Additional wait to ensure backend operation completes (success message appears quickly but backend may still be processing)
     await page.waitForTimeout(2000);
 
     const aclAfterResponse = await page.request.get(

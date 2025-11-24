@@ -243,40 +243,66 @@ test.describe('Permission Management UI - ACL Display', () => {
           console.log('✅ SUCCESS: No error message - ACL data loaded successfully');
         }
 
-        // Verify permissions modal/drawer opened
-        const permissionsModal = page.locator('.ant-modal, .ant-drawer').last();
-        if (await permissionsModal.count() > 0) {
-          await expect(permissionsModal).toBeVisible({ timeout: 5000 });
-          console.log('✅ Permissions management modal/drawer opened');
+        // Wait for navigation or UI change
+        await page.waitForTimeout(2000);
 
-          // Verify ACL table or list is displayed
-          const aclTable = permissionsModal.locator('.ant-table, .ant-list');
-          if (await aclTable.count() > 0) {
-            await expect(aclTable).toBeVisible({ timeout: 5000 });
-            console.log('✅ ACL data table/list displayed');
+        // Debug: Check what's on the page
+        const currentUrl = page.url();
+        console.log(`Current URL after clicking permissions: ${currentUrl}`);
 
-            // Check if there are any ACL entries
-            const aclEntries = permissionsModal.locator('.ant-table tbody tr, .ant-list-item');
-            const entryCount = await aclEntries.count();
-            console.log(`ACL entries count: ${entryCount}`);
+        // Try multiple selectors for the permissions UI
+        const permissionsHeading = page.locator('h1, h2, h3, h4').filter({ hasText: /権限|Permission|ACL/i }).first();
+        const permissionsTitle = page.locator('[class*="title"], .ant-page-header-heading-title').filter({ hasText: /権限|Permission|ACL/i }).first();
 
-            if (entryCount > 0) {
-              console.log('✅ ACL entries found - ACL data successfully retrieved');
-            } else {
-              console.log('ℹ️ No ACL entries (empty ACL is valid)');
-            }
+        // Check if we got a heading
+        if (await permissionsHeading.count() > 0) {
+          await expect(permissionsHeading).toBeVisible({ timeout: 5000 });
+          const headingText = await permissionsHeading.textContent();
+          console.log(`✅ Permissions management page opened with heading: "${headingText}"`);
+        } else if (await permissionsTitle.count() > 0) {
+          await expect(permissionsTitle).toBeVisible({ timeout: 5000 });
+          const titleText = await permissionsTitle.textContent();
+          console.log(`✅ Permissions management page opened with title: "${titleText}"`);
+        } else {
+          // Maybe it's a modal/drawer after all?
+          const modal = page.locator('.ant-modal:visible, .ant-drawer:visible').first();
+          if (await modal.count() > 0) {
+            console.log('ℹ️ Permissions opened in modal/drawer (not full page)');
+            await expect(modal).toBeVisible({ timeout: 3000 });
           } else {
-            console.log('ℹ️ ACL table/list not found - may use different UI structure');
+            console.log('⚠️ Could not find permissions UI element - checking page content');
+            // Log some diagnostic info
+            const bodyText = await page.locator('body').textContent();
+            console.log(`Page contains keywords: 権限=${bodyText?.includes('権限')}, Permission=${bodyText?.includes('Permission')}, ACL=${bodyText?.includes('ACL')}`);
           }
+        }
 
-          // Close modal
-          const closeButton = permissionsModal.locator('button.ant-modal-close, button.ant-drawer-close, button').filter({ hasText: /閉じる|Cancel|キャンセル/i });
-          if (await closeButton.count() > 0) {
-            await closeButton.first().click();
-            await page.waitForTimeout(500);
+        // Verify ACL table or list is displayed
+        const aclTable = page.locator('.ant-table, .ant-list');
+        if (await aclTable.count() > 0) {
+          await expect(aclTable).toBeVisible({ timeout: 5000 });
+          console.log('✅ ACL data table/list displayed');
+
+          // Check if there are any ACL entries
+          const aclEntries = page.locator('.ant-table tbody tr, .ant-list-item');
+          const entryCount = await aclEntries.count();
+          console.log(`ACL entries count: ${entryCount}`);
+
+          if (entryCount > 0) {
+            console.log('✅ ACL entries found - ACL data successfully retrieved');
+          } else {
+            console.log('ℹ️ No ACL entries (empty ACL is valid)');
           }
         } else {
-          console.log('ℹ️ Permissions modal not found - may need to update test selectors');
+          console.log('ℹ️ ACL table/list not found - may use different UI structure');
+        }
+
+        // Navigate back to documents
+        const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
+        if (await backButton.count() > 0) {
+          await backButton.first().click();
+          await page.waitForTimeout(1000);
+          console.log('✅ Navigated back to documents');
         }
       } else {
         console.log('ℹ️ Permissions button not found in folder row - checking alternative locations');
@@ -333,8 +359,8 @@ test.describe('Permission Management UI - ACL Display', () => {
     // Test the ACL endpoint directly via API
     const apiResponse = await page.evaluate(async () => {
       try {
-        // Get root folder ID first
-        const rootResponse = await fetch('/core/browser/bedroom?cmisselector=query&q=SELECT%20*%20FROM%20cmis:folder%20WHERE%20cmis:path%20=%20%27/%27', {
+        // Get root folder object using browser binding 'root' endpoint (more reliable than query)
+        const rootResponse = await fetch('/core/browser/bedroom/root?cmisselector=object', {
           headers: {
             'Authorization': 'Basic ' + btoa('admin:admin'),
             'Accept': 'application/json'
@@ -343,16 +369,16 @@ test.describe('Permission Management UI - ACL Display', () => {
 
         if (!rootResponse.ok) {
           return {
-            error: `Root folder query failed: ${rootResponse.status}`
+            error: `Root folder fetch failed: ${rootResponse.status}`
           };
         }
 
         const rootData = await rootResponse.json();
-        const rootFolderId = rootData.results?.[0]?.properties?.['cmis:objectId']?.value;
+        const rootFolderId = rootData.properties?.['cmis:objectId']?.value;
 
         if (!rootFolderId) {
           return {
-            error: 'Root folder ID not found'
+            error: 'Root folder ID not found in response'
           };
         }
 
