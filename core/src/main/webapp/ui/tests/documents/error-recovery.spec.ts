@@ -118,8 +118,8 @@ test.describe('Error Recovery Tests', () => {
     const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary').first();
     await submitButton.click();
 
-    // Verify error message appears
-    const errorMessage = page.locator('.ant-message-error, .ant-notification-error, .ant-modal .ant-alert-error');
+    // Verify error message appears (AntD v5 compatible selectors)
+    const errorMessage = page.locator('.ant-message-notice, .ant-notification-notice, .ant-alert-error, [role="alert"]');
     await expect(errorMessage.first()).toBeVisible({ timeout: 10000 });
 
     // Verify error message contains relevant information
@@ -179,8 +179,8 @@ test.describe('Error Recovery Tests', () => {
 
     // Wait for either timeout error or eventual success (max 35 seconds)
     await Promise.race([
-      page.waitForSelector('.ant-message-error, .ant-notification-error', { timeout: 35000 }),
-      page.waitForSelector('.ant-message-success', { timeout: 35000 })
+      page.waitForSelector('.ant-message-notice, .ant-notification-notice, [role="alert"]', { timeout: 35000 }),
+      page.waitForSelector('.ant-message-success, .ant-message-notice', { timeout: 35000 })
     ]).catch(() => {
       // Timeout expected - test passes if no crash occurred
     });
@@ -213,8 +213,8 @@ test.describe('Error Recovery Tests', () => {
       const folderLink = folderRow.locator('a, td').first();
       await folderLink.click(isMobile ? { force: true } : {});
 
-      // Verify error notification appears
-      const errorNotification = page.locator('.ant-message-error, .ant-notification-error, .ant-alert-error');
+      // Verify error notification appears (AntD v5 compatible selectors)
+      const errorNotification = page.locator('.ant-message-notice, .ant-notification-notice, .ant-alert-error, [role="alert"]');
       await expect(errorNotification.first()).toBeVisible({ timeout: 10000 });
 
       // Verify error message is user-friendly
@@ -274,8 +274,8 @@ test.describe('Error Recovery Tests', () => {
     const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary').first();
     await submitButton.click();
 
-    // Verify error message appears
-    const errorMessage = page.locator('.ant-message-error, .ant-notification-error');
+    // Verify error message appears (AntD v5 compatible selectors)
+    const errorMessage = page.locator('.ant-message-notice, .ant-notification-notice, [role="alert"]');
     await expect(errorMessage.first()).toBeVisible({ timeout: 10000 });
 
     // Look for retry button or option
@@ -310,8 +310,8 @@ test.describe('Error Recovery Tests', () => {
 
       await submitButton.click();
 
-      // Second attempt should succeed
-      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+      // Second attempt should succeed (AntD v5 compatible selector)
+      await page.waitForSelector('.ant-message-success, .ant-message-notice', { timeout: 10000 });
     }
 
     // Unroute
@@ -343,8 +343,8 @@ test.describe('Error Recovery Tests', () => {
     if (await uploadButton.count() > 0) {
       await uploadButton.click(isMobile ? { force: true } : {});
 
-      // Should show error
-      const errorMessage = page.locator('.ant-message-error, .ant-notification-error');
+      // Should show error (AntD v5 compatible selectors)
+      const errorMessage = page.locator('.ant-message-notice, .ant-notification-notice, [role="alert"]');
       await expect(errorMessage.first()).toBeVisible({ timeout: 10000 });
     }
 
@@ -401,8 +401,8 @@ test.describe('Error Recovery Tests', () => {
         if (await confirmButton.count() > 0) {
           await confirmButton.first().click();
 
-          // Verify permission denied error message
-          const errorMessage = page.locator('.ant-message-error, .ant-notification-error');
+          // Verify permission denied error message (AntD v5 compatible selectors)
+          const errorMessage = page.locator('.ant-message-notice, .ant-notification-notice, [role="alert"]');
           await expect(errorMessage.first()).toBeVisible({ timeout: 10000 });
 
           const errorText = await errorMessage.first().textContent();
@@ -456,8 +456,8 @@ test.describe('Error Recovery Tests', () => {
     const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary').first();
     await submitButton.click();
 
-    // Verify error is handled (not crashing the app)
-    const errorMessage = page.locator('.ant-message-error, .ant-notification-error');
+    // Verify error is handled (not crashing the app) - AntD v5 compatible selectors
+    const errorMessage = page.locator('.ant-message-notice, .ant-notification-notice, [role="alert"]');
     await expect(errorMessage.first()).toBeVisible({ timeout: 10000 });
 
     // Verify app is still functional (not in error state)
