@@ -164,7 +164,8 @@ import { TestHelper } from '../utils/test-helper';
 test.describe('Permission Management UI - ACL Display', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
-  const testFolderName = `permissions-test-${Date.now()}`;
+  // FIX: Enhanced uniqueness for parallel execution - timestamp + random value
+  const testFolderName = `permissions-test-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);

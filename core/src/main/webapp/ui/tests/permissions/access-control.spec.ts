@@ -1104,12 +1104,12 @@ test.describe('Access Control and Permissions', () => {
         console.log(`Test: Row ${i}: ${rowText?.substring(0, 50)}`);
       }
 
-      // Try multiple selectors to find the folder
+      // Try multiple selectors to find the folder IN TABLE (not in folder tree)
+      // FIX: Strict mode violation - folder name appears in both tree and table
       const folderSelectors = [
-        `text=${restrictedFolderName}`,
-        `tr:has-text("${restrictedFolderName}")`,
-        `a:has-text("${restrictedFolderName}")`,
-        `span:has-text("${restrictedFolderName}")`
+        `.ant-table-tbody tr:has-text("${restrictedFolderName}") span`,
+        `.ant-table-tbody a:has-text("${restrictedFolderName}")`,
+        `.ant-table-tbody button:has-text("${restrictedFolderName}")`
       ];
 
       let folderFound = false;
@@ -1129,7 +1129,7 @@ test.describe('Access Control and Permissions', () => {
 
       if (folderFound && folderLink) {
         console.log(`Test: Folder ${restrictedFolderName} found - proceeding with visibility test`);
-        await expect(folderLink).toBeVisible({ timeout: 5000 });
+        await expect(folderLink.first()).toBeVisible({ timeout: 5000 });
 
         // Navigate into folder
         await folderLink.first().click(isMobile ? { force: true } : {});

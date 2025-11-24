@@ -22,9 +22,9 @@ import { getAclInheritedViaRest } from '../utils/acl';
  *    - UI testing focuses on the break inheritance button and dialog
  *
  * 2. Unique Test Data per Instance:
- *    - Uses Date.now() timestamps for unique folder names
- *    - Format: acl-inherit-test-${timestamp}
- *    - Prevents conflicts between parallel test executions
+ *    - Uses Date.now() timestamps + random value for unique folder names
+ *    - Format: acl-inherit-test-${timestamp}-${random}
+ *    - Prevents conflicts between parallel test executions (multiple workers)
  *
  * 3. Comprehensive Cleanup Strategy:
  *    - afterEach hook queries for all test folders matching pattern
@@ -164,7 +164,7 @@ test.describe('ACL Inheritance Breaking', () => {
   });
 
   test('should show break inheritance button when permissions are inherited', async ({ page, browserName }) => {
-    const testFolderName = `acl-inherit-test-${Date.now()}`;
+    const testFolderName = `acl-inherit-test-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
@@ -217,7 +217,7 @@ test.describe('ACL Inheritance Breaking', () => {
   });
 
   test('should show confirmation dialog when breaking inheritance', async ({ page, browserName }) => {
-    const testFolderName = `acl-inherit-test-${Date.now()}`;
+    const testFolderName = `acl-inherit-test-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
@@ -287,7 +287,7 @@ test.describe('ACL Inheritance Breaking', () => {
   });
 
   test('should successfully break inheritance and show success message', async ({ page, browserName }) => {
-    const testFolderName = `acl-inherit-test-${Date.now()}`;
+    const testFolderName = `acl-inherit-test-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
@@ -367,7 +367,7 @@ test.describe('ACL Inheritance Breaking', () => {
   });
 
   test('should convert inherited permissions to direct permissions after breaking', async ({ page, browserName }) => {
-    const testFolderName = `acl-inherit-test-${Date.now()}`;
+    const testFolderName = `acl-inherit-test-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 

@@ -73,9 +73,10 @@ import { TestHelper } from '../utils/test-helper';
 test.describe('Advanced ACL Management', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
-  const testGroupName = `testgroup-${Date.now()}`;
-  const testFolderName = `acl-test-folder-${Date.now()}`;
-  const childFolderName = `child-folder-${Date.now()}`;
+  // FIX: Enhanced uniqueness for parallel execution - timestamp + random value
+  const testGroupName = `testgroup-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const testFolderName = `acl-test-folder-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const childFolderName = `child-folder-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
