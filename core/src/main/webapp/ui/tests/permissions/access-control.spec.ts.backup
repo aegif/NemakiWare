@@ -965,21 +965,7 @@ test.describe('Access Control and Permissions', () => {
 
         if (response.ok()) {
           const responseJson = await response.json();
-          console.log(`Setup: CMIS API response:`, JSON.stringify(responseJson, null, 2));
-
-          // Check response structure and extract folder ID
-          let folderId: string | undefined;
-          if (responseJson.properties && responseJson.properties['cmis:objectId']) {
-            folderId = responseJson.properties['cmis:objectId'].value;
-          } else if (responseJson.succinctProperties && responseJson.succinctProperties['cmis:objectId']) {
-            folderId = responseJson.succinctProperties['cmis:objectId'];
-          }
-
-          if (!folderId) {
-            console.log(`Setup: Failed to extract folder ID from response`);
-            return;
-          }
-
+          const folderId = responseJson.properties['cmis:objectId'].value;
           console.log(`Setup: Created restricted folder ${restrictedFolderName} with ID ${folderId}`);
 
           // Apply ACL to grant test user read-only access
@@ -1000,30 +986,6 @@ test.describe('Access Control and Permissions', () => {
             console.log(`Setup: Applied ACL for ${testUsername} to folder ${restrictedFolderName}`);
           } else {
             console.log(`Setup: ACL application failed: ${await aclResponse.text()}`);
-          }
-
-          // Create a test document inside the restricted folder
-          console.log(`Setup: Creating document ${testDocName} in folder ${restrictedFolderName}`);
-          const createDocUrl = `http://localhost:8080/core/browser/bedroom`;
-          const docResponse = await page.request.post(createDocUrl, {
-            multipart: {
-              'cmisaction': 'createDocument',
-              'folderId': folderId,
-              'propertyId[0]': 'cmis:objectTypeId',
-              'propertyValue[0]': 'cmis:document',
-              'propertyId[1]': 'cmis:name',
-              'propertyValue[1]': testDocName,
-              'content': 'Test document for permission verification'
-            },
-            headers: {
-              'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`
-            }
-          });
-
-          if (docResponse.ok()) {
-            console.log(`Setup: Document ${testDocName} created successfully in ${restrictedFolderName}`);
-          } else {
-            console.log(`Setup: Document creation failed: ${await docResponse.text()}`);
           }
         } else {
           console.log(`Setup: Folder creation failed: ${await response.text()}`);
@@ -1206,12 +1168,10 @@ test.describe('Access Control and Permissions', () => {
 
       // Try multiple selectors to find the folder IN TABLE (not in folder tree)
       // FIX: Strict mode violation - folder name appears in both tree and table
-      // FIX (2025-11-24): Prioritize <a> tags to click folder name link, not icon
       const folderSelectors = [
-        `.ant-table-tbody tr:has-text("${restrictedFolderName}") a`,  // Folder name link (prioritize)
+        `.ant-table-tbody tr:has-text("${restrictedFolderName}") span`,
         `.ant-table-tbody a:has-text("${restrictedFolderName}")`,
-        `.ant-table-tbody tr:has-text("${restrictedFolderName}") .ant-table-cell:first-child a`, // First cell link
-        `.ant-table-tbody tr:has-text("${restrictedFolderName}") span`  // Fallback to span (may be icon)
+        `.ant-table-tbody button:has-text("${restrictedFolderName}")`
       ];
 
       let folderFound = false;
@@ -1231,67 +1191,15 @@ test.describe('Access Control and Permissions', () => {
 
       if (folderFound && folderLink) {
         console.log(`Test: Folder ${restrictedFolderName} found - proceeding with visibility test`);
-
-        // DIAGNOSTIC: Check element state before visibility assertion
-        const firstElement = folderLink.first();
-        const elementCount = await folderLink.count();
-        console.log(`Test: DEBUG - folderLink count: ${elementCount}`);
-
-        try {
-          const boundingBox = await firstElement.boundingBox();
-          console.log(`Test: DEBUG - folderLink bounding box:`, boundingBox);
-        } catch (e) {
-          console.log(`Test: DEBUG - Could not get bounding box:`, e);
-        }
-
-        // Try scrolling into view before visibility check
-        try {
-          await firstElement.scrollIntoViewIfNeeded({ timeout: 3000 });
-          console.log(`Test: DEBUG - Scrolled folder link into view`);
-        } catch (e) {
-          console.log(`Test: DEBUG - Could not scroll into view:`, e);
-        }
-
-        console.log(`Test: DEBUG - Attempting visibility check...`);
         await expect(folderLink.first()).toBeVisible({ timeout: 5000 });
-        console.log(`Test: DEBUG - Visibility check PASSED`);
 
         // Navigate into folder
-        console.log(`Test: DEBUG - Attempting to click folder link...`);
         await folderLink.first().click(isMobile ? { force: true } : {});
-        console.log(`Test: DEBUG - Folder link clicked successfully`);
-
-        // Wait longer for folder content to load
-        await page.waitForTimeout(5000);
-
-        // DIAGNOSTIC: Check page state after folder click
-        const currentUrl = page.url();
-        console.log(`Test: DEBUG - Current URL after folder click: ${currentUrl}`);
-
-        // Check if document table is visible
-        const tableBody = page.locator('.ant-table-tbody');
-        const tableVisible = await tableBody.isVisible().catch(() => false);
-        console.log(`Test: DEBUG - Document table visible: ${tableVisible}`);
-
-        if (tableVisible) {
-          const rowCount = await tableBody.locator('tr').count();
-          console.log(`Test: DEBUG - Document table has ${rowCount} rows`);
-
-          // Log first few rows to see what's there
-          for (let i = 0; i < Math.min(3, rowCount); i++) {
-            const rowText = await tableBody.locator('tr').nth(i).textContent();
-            console.log(`Test: DEBUG - Row ${i}: ${rowText}`);
-          }
-        }
-
-        // Try to find document with text selector
-        console.log(`Test: DEBUG - Looking for document with name: ${testDocName}`);
-        const document = page.locator(`text=${testDocName}`);
-        const docCount = await document.count();
-        console.log(`Test: DEBUG - Found ${docCount} elements matching document name`);
+        await page.waitForTimeout(2000);
 
         // Verify can see the document
-        await expect(document).toBeVisible({ timeout: 10000 });
+        const document = page.locator(`text=${testDocName}`);
+        await expect(document).toBeVisible({ timeout: 5000 });
         console.log(`Test: Document ${testDocName} visible in folder`);
       } else {
         console.log(`Test: Folder ${restrictedFolderName} NOT FOUND - skipping test`);
