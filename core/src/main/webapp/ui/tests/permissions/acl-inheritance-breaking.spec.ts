@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { getAuthHeader } from '../utils/auth-header';
+import { getAclInheritedViaRest } from '../utils/acl';
 
 /**
  * ACL Inheritance Breaking E2E Tests
@@ -335,7 +336,13 @@ test.describe('ACL Inheritance Breaking', () => {
     const confirmDialog = page.locator('.ant-modal-confirm');
     const confirmButton = confirmDialog.locator('button').filter({ hasText: /継承を切断|OK/i });
     await confirmButton.click();
-    await page.waitForTimeout(1000);
+
+    // Wait for ACL apply operation to complete
+    await page.waitForResponse(
+      r => r.url().includes(`/core/rest/repo/bedroom/node/${folderId}/acl`) && 
+           r.request().method() !== 'GET',
+      { timeout: 10000 }
+    );
 
     const successMessage = page.locator('.ant-message-success');
     await expect(successMessage).toBeVisible({ timeout: 5000 });
@@ -350,23 +357,9 @@ test.describe('ACL Inheritance Breaking', () => {
     await expect(breakButtonAfter).not.toBeVisible({ timeout: 10000 });
     console.log('✅ Break inheritance button is hidden after breaking');
 
-    const aclCheckResponse = await page.request.get(
-      `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=object`,
-      { headers: getAuthHeader() }
-    );
-
-    if (aclCheckResponse.ok()) {
-      const objectData = await aclCheckResponse.json();
-      const aclInherited = objectData.properties?.['cmis:aclInherited']?.value;
-      console.log(`ACL inherited status: ${aclInherited}`);
-      
-      if (aclInherited !== undefined) {
-        expect(aclInherited).toBe(false);
-        console.log('✅ ACL inheritance is broken (verified via API)');
-      } else {
-        console.log('ℹ️ ACL inherited field not found in object properties');
-      }
-    }
+    const aclInherited = await getAclInheritedViaRest(page, 'bedroom', folderId);
+    expect(aclInherited).toBe(false);
+    console.log('✅ ACL inheritance is broken (verified via REST API)');
 
     // Navigate back to documents
     const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
