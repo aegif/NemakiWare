@@ -874,7 +874,8 @@ test.describe('Access Control and Permissions', () => {
           await page.waitForTimeout(1000);
 
           // Now we're on the dedicated permissions page - find the test user's row
-          const userRow = page.locator(`tr:has-text("${testUsername}")`);
+          // Use 'let' to allow reassignment after break inheritance (table reconstruction invalidates original locator)
+          let userRow = page.locator(`tr:has-text("${testUsername}")`);
 
           if (await userRow.count() > 0) {
             console.log(`Test: Found ${testUsername} in permissions table`);
@@ -882,11 +883,122 @@ test.describe('Access Control and Permissions', () => {
             // Based on actual PermissionManagement component:
             // - Each row has a delete button in the "actions" column
             // - Delete button only appears for direct (non-inherited) permissions
-            // - Need to find the delete button within the specific user's row
+            // - Inherited permissions need "継承を切る" (Break Inheritance) first
 
-            // Strategy: Delete existing permission, then add new permission with cmis:write
+            // Strategy: Break inheritance first, then delete existing permission, then add new permission with cmis:write
 
-            // Step 1: Find the delete button within the user's row
+            // Step 0: Break inheritance to convert inherited permissions to direct permissions
+            const breakInheritanceButton = page.locator('button').filter({ hasText: /継承を切る|Break/ });
+            const buttonCount = await breakInheritanceButton.count();
+            console.log(`Test: DEBUG - Break inheritance button count: ${buttonCount}`);
+
+            if (buttonCount > 0) {
+              console.log('Test: Breaking inheritance to enable delete button...');
+              await breakInheritanceButton.first().click(isMobile ? { force: true } : {});
+              console.log('Test: Clicked break inheritance button, waiting for response...');
+              await page.waitForTimeout(1500); // Wait for inheritance break to complete
+
+              // Check for confirmation modal
+              const confirmButton = page.locator('.ant-modal:visible button').filter({ hasText: /はい|OK|確認/ });
+              const confirmCount = await confirmButton.count();
+              console.log(`Test: DEBUG - Confirmation button count: ${confirmCount}`);
+
+              if (confirmCount > 0) {
+                console.log('Test: Clicking confirmation button...');
+                await confirmButton.first().click();
+                await page.waitForTimeout(2000); // Wait longer for table refresh
+                console.log('Test: Confirmation clicked, waiting for table update...');
+              } else {
+                console.log('Test: No confirmation modal appeared');
+              }
+
+              // Check table structure after breaking inheritance
+              const tableRows = page.locator('.ant-table-tbody tr');
+              const rowCount = await tableRows.count();
+              console.log(`Test: DEBUG - Table now has ${rowCount} rows after break inheritance`);
+
+              console.log('Test: Inheritance break complete, delete buttons should now be visible');
+
+              // CRITICAL FIX: Re-locate user row after table refresh from break inheritance
+              // The table expanded from ~4 rows to 73 rows, invalidating the old userRow locator
+              const userRowAfterBreak = page.locator(`tr:has-text("${testUsername}")`);
+              await page.waitForTimeout(500); // Give table time to fully render all 73 rows
+
+              const userRowCount = await userRowAfterBreak.count();
+              console.log(`Test: DEBUG - After break, found ${userRowCount} rows matching "${testUsername}"`);
+
+              if (userRowCount === 0) {
+                console.log(`Test: ERROR - User row for ${testUsername} not found after breaking inheritance (table has ${await page.locator('.ant-table-tbody tr').count()} rows)`);
+                // Log first 10 rows to see what's in the table
+                const allRows = page.locator('.ant-table-tbody tr');
+                const totalRows = await allRows.count();
+                console.log(`Test: DEBUG - Logging first 10 of ${totalRows} rows after break:`);
+                for (let i = 0; i < Math.min(10, totalRows); i++) {
+                  const rowText = await allRows.nth(i).textContent();
+                  console.log(`Test: DEBUG - Row ${i}: ${rowText}`);
+                }
+              } else {
+                console.log(`Test: Re-located user row for ${testUsername} after break inheritance`);
+              }
+
+              // Update userRow reference to use the new locator (reassignment, not new declaration)
+              userRow = userRowAfterBreak;
+
+              // DIAGNOSTIC: Check if there are multiple rows with the same username
+              try {
+                const allMatchingRows = page.locator(`tr:has-text("${testUsername}")`);
+                const matchingRowCount = await allMatchingRows.count();
+                console.log(`Test: DEBUG - Found ${matchingRowCount} rows matching "${testUsername}" after break inheritance`);
+
+                // Examine each matching row
+                for (let i = 0; i < matchingRowCount; i++) {
+                  const row = allMatchingRows.nth(i);
+                  const cells = row.locator('td');
+                  const cellCount = await cells.count();
+                  const cellTexts = [];
+                  for (let j = 0; j < cellCount; j++) {
+                    cellTexts.push(await cells.nth(j).textContent());
+                  }
+                  const buttonCount = await row.locator('button').count();
+                  console.log(`Test: DEBUG - Row ${i}: cells=[${cellTexts.join(' | ')}], buttons=${buttonCount}`);
+
+                  // Check if this row has inheritance status "継承"
+                  const hasInheritedStatus = cellTexts.some(text => text.includes('継承'));
+                  console.log(`Test: DEBUG - Row ${i} inheritance status: ${hasInheritedStatus ? 'inherited (継承)' : 'direct'}`);
+                }
+
+                // Find the row that is NOT inherited (should have action buttons)
+                let directPermissionRow = null;
+                for (let i = 0; i < matchingRowCount; i++) {
+                  const row = allMatchingRows.nth(i);
+                  const cells = row.locator('td');
+                  const cellCount = await cells.count();
+                  const cellTexts = [];
+                  for (let j = 0; j < cellCount; j++) {
+                    cellTexts.push(await cells.nth(j).textContent());
+                  }
+                  const hasInheritedStatus = cellTexts.some(text => text.includes('継承'));
+                  if (!hasInheritedStatus) {
+                    directPermissionRow = row;
+                    console.log(`Test: Found direct permission row at index ${i}`);
+                    break;
+                  }
+                }
+
+                if (directPermissionRow) {
+                  userRow = directPermissionRow;
+                  console.log(`Test: Using direct permission row instead of inherited row`);
+                } else {
+                  console.log(`Test: WARNING - No direct permission row found, using first match`);
+                }
+              } catch (diagError) {
+                console.log(`Test: ERROR - Multiple row diagnostic failed: ${diagError}`);
+              }
+            } else {
+              console.log('Test: ERROR - Break inheritance button not found on page');
+            }
+
+            // Step 1: Find the delete button within the user's row (now should be visible)
             const deleteButton = userRow.locator('button').filter({ hasText: /削除|Delete/ });
             if (await deleteButton.count() > 0) {
               await deleteButton.first().click(isMobile ? { force: true } : {});
@@ -1061,9 +1173,120 @@ test.describe('Access Control and Permissions', () => {
             // Based on actual PermissionManagement component:
             // - Each row has a delete button in the "actions" column
             // - Delete button only appears for direct (non-inherited) permissions
-            // - Need to find the delete button within the specific user's row
+            // - Inherited permissions need "継承を切る" (Break Inheritance) first
 
-            // Step 1: Find the delete button within the user's row
+            // Step 0: Break inheritance to convert inherited permissions to direct permissions
+            const breakInheritanceButton = page.locator('button').filter({ hasText: /継承を切る|Break/ });
+            const buttonCount = await breakInheritanceButton.count();
+            console.log(`Test: DEBUG - Break inheritance button count: ${buttonCount}`);
+
+            if (buttonCount > 0) {
+              console.log('Test: Breaking inheritance to enable delete button...');
+              await breakInheritanceButton.first().click(isMobile ? { force: true } : {});
+              console.log('Test: Clicked break inheritance button, waiting for response...');
+              await page.waitForTimeout(1500); // Wait for inheritance break to complete
+
+              // Check for confirmation modal
+              const confirmButton = page.locator('.ant-modal:visible button').filter({ hasText: /はい|OK|確認/ });
+              const confirmCount = await confirmButton.count();
+              console.log(`Test: DEBUG - Confirmation button count: ${confirmCount}`);
+
+              if (confirmCount > 0) {
+                console.log('Test: Clicking confirmation button...');
+                await confirmButton.first().click();
+                await page.waitForTimeout(2000); // Wait longer for table refresh
+                console.log('Test: Confirmation clicked, waiting for table update...');
+              } else {
+                console.log('Test: No confirmation modal appeared');
+              }
+
+              // Check table structure after breaking inheritance
+              const tableRows = page.locator('.ant-table-tbody tr');
+              const rowCount = await tableRows.count();
+              console.log(`Test: DEBUG - Table now has ${rowCount} rows after break inheritance`);
+
+              console.log('Test: Inheritance break complete, delete buttons should now be visible');
+
+              // CRITICAL FIX: Re-locate user row after table refresh from break inheritance
+              // The table expanded from ~4 rows to 73 rows, invalidating the old userRow locator
+              const userRowAfterBreak = page.locator(`tr:has-text("${testUsername}")`);
+              await page.waitForTimeout(500); // Give table time to fully render all 73 rows
+
+              const userRowCount = await userRowAfterBreak.count();
+              console.log(`Test: DEBUG - After break, found ${userRowCount} rows matching "${testUsername}"`);
+
+              if (userRowCount === 0) {
+                console.log(`Test: ERROR - User row for ${testUsername} not found after breaking inheritance (table has ${await page.locator('.ant-table-tbody tr').count()} rows)`);
+                // Log first 10 rows to see what's in the table
+                const allRows = page.locator('.ant-table-tbody tr');
+                const totalRows = await allRows.count();
+                console.log(`Test: DEBUG - Logging first 10 of ${totalRows} rows after break:`);
+                for (let i = 0; i < Math.min(10, totalRows); i++) {
+                  const rowText = await allRows.nth(i).textContent();
+                  console.log(`Test: DEBUG - Row ${i}: ${rowText}`);
+                }
+              } else {
+                console.log(`Test: Re-located user row for ${testUsername} after break inheritance`);
+              }
+
+              // Update userRow reference to use the new locator (reassignment, not new declaration)
+              userRow = userRowAfterBreak;
+
+              // DIAGNOSTIC: Check if there are multiple rows with the same username
+              try {
+                const allMatchingRows = page.locator(`tr:has-text("${testUsername}")`);
+                const matchingRowCount = await allMatchingRows.count();
+                console.log(`Test: DEBUG - Found ${matchingRowCount} rows matching "${testUsername}" after break inheritance`);
+
+                // Examine each matching row
+                for (let i = 0; i < matchingRowCount; i++) {
+                  const row = allMatchingRows.nth(i);
+                  const cells = row.locator('td');
+                  const cellCount = await cells.count();
+                  const cellTexts = [];
+                  for (let j = 0; j < cellCount; j++) {
+                    cellTexts.push(await cells.nth(j).textContent());
+                  }
+                  const buttonCount = await row.locator('button').count();
+                  console.log(`Test: DEBUG - Row ${i}: cells=[${cellTexts.join(' | ')}], buttons=${buttonCount}`);
+
+                  // Check if this row has inheritance status "継承"
+                  const hasInheritedStatus = cellTexts.some(text => text.includes('継承'));
+                  console.log(`Test: DEBUG - Row ${i} inheritance status: ${hasInheritedStatus ? 'inherited (継承)' : 'direct'}`);
+                }
+
+                // Find the row that is NOT inherited (should have action buttons)
+                let directPermissionRow = null;
+                for (let i = 0; i < matchingRowCount; i++) {
+                  const row = allMatchingRows.nth(i);
+                  const cells = row.locator('td');
+                  const cellCount = await cells.count();
+                  const cellTexts = [];
+                  for (let j = 0; j < cellCount; j++) {
+                    cellTexts.push(await cells.nth(j).textContent());
+                  }
+                  const hasInheritedStatus = cellTexts.some(text => text.includes('継承'));
+                  if (!hasInheritedStatus) {
+                    directPermissionRow = row;
+                    console.log(`Test: Found direct permission row at index ${i}`);
+                    break;
+                  }
+                }
+
+                if (directPermissionRow) {
+                  userRow = directPermissionRow;
+                  console.log(`Test: Using direct permission row instead of inherited row`);
+                } else {
+                  console.log(`Test: WARNING - No direct permission row found, using first match`);
+                }
+              } catch (diagError) {
+                console.log(`Test: ERROR - Multiple row diagnostic failed: ${diagError}`);
+              }
+            } else {
+              console.log('Test: ERROR - Break inheritance button not found on page');
+            }
+
+            // Step 1: Find the delete button within the user's row (now should be visible)
             const deleteButton = userRow.locator('button').filter({ hasText: /削除|Delete/ });
 
             if (await deleteButton.count() > 0) {
