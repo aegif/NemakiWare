@@ -933,27 +933,23 @@ test.describe('Access Control and Permissions', () => {
                 console.log(`Test: DEBUG - Any visible modal count: ${modalCount}`);
 
                 if (modalCount > 0) {
-                  // Capture modal content to understand what we're dealing with
+                  // CRITICAL FIX: Modal has 2 buttons - button 0: "キャンセル", button 1: "継承を切断"
+                  // We need to click button 1 to confirm the operation
                   const modalContent = anyModal.first();
-                  const modalText = await modalContent.textContent();
-                  console.log(`Test: DEBUG - Modal content: "${modalText}"`);
-
-                  // Try to find ALL buttons in the modal
                   const allModalButtons = modalContent.locator('button');
                   const allButtonCount = await allModalButtons.count();
-                  console.log(`Test: DEBUG - Total buttons in modal: ${allButtonCount}`);
+                  console.log(`Test: Found ${allButtonCount} buttons in modal`);
 
-                  for (let i = 0; i < allButtonCount; i++) {
-                    const buttonText = await allModalButtons.nth(i).textContent();
-                    console.log(`Test: DEBUG - Modal button ${i}: "${buttonText}"`);
-                  }
-
-                  // Try clicking the first button if any exist
-                  if (allButtonCount > 0) {
-                    console.log('Test: DEBUG - Clicking first modal button to dismiss/confirm...');
-                    await allModalButtons.first().click();
+                  // Click the SECOND button (index 1) which is the "継承を切断" (Break Inheritance) button
+                  // Button 0 is "キャンセル" (Cancel) which would cancel the operation
+                  if (allButtonCount >= 2) {
+                    const confirmButtonText = await allModalButtons.nth(1).textContent();
+                    console.log(`Test: Clicking confirm button: "${confirmButtonText}"`);
+                    await allModalButtons.nth(1).click();
                     await page.waitForTimeout(3000);
-                    console.log('Test: DEBUG - Modal button clicked');
+                    console.log('Test: Confirmation button clicked');
+                  } else {
+                    console.log('Test: WARNING - Expected 2 buttons but found ' + allButtonCount);
                   }
                 }
               }
@@ -1272,27 +1268,23 @@ test.describe('Access Control and Permissions', () => {
                 console.log(`Test: DEBUG - Any visible modal count: ${modalCount}`);
 
                 if (modalCount > 0) {
-                  // Capture modal content to understand what we're dealing with
+                  // CRITICAL FIX: Modal has 2 buttons - button 0: "キャンセル", button 1: "継承を切断"
+                  // We need to click button 1 to confirm the operation
                   const modalContent = anyModal.first();
-                  const modalText = await modalContent.textContent();
-                  console.log(`Test: DEBUG - Modal content: "${modalText}"`);
-
-                  // Try to find ALL buttons in the modal
                   const allModalButtons = modalContent.locator('button');
                   const allButtonCount = await allModalButtons.count();
-                  console.log(`Test: DEBUG - Total buttons in modal: ${allButtonCount}`);
+                  console.log(`Test: Found ${allButtonCount} buttons in modal`);
 
-                  for (let i = 0; i < allButtonCount; i++) {
-                    const buttonText = await allModalButtons.nth(i).textContent();
-                    console.log(`Test: DEBUG - Modal button ${i}: "${buttonText}"`);
-                  }
-
-                  // Try clicking the first button if any exist
-                  if (allButtonCount > 0) {
-                    console.log('Test: DEBUG - Clicking first modal button to dismiss/confirm...');
-                    await allModalButtons.first().click();
+                  // Click the SECOND button (index 1) which is the "継承を切断" (Break Inheritance) button
+                  // Button 0 is "キャンセル" (Cancel) which would cancel the operation
+                  if (allButtonCount >= 2) {
+                    const confirmButtonText = await allModalButtons.nth(1).textContent();
+                    console.log(`Test: Clicking confirm button: "${confirmButtonText}"`);
+                    await allModalButtons.nth(1).click();
                     await page.waitForTimeout(3000);
-                    console.log('Test: DEBUG - Modal button clicked');
+                    console.log('Test: Confirmation button clicked');
+                  } else {
+                    console.log('Test: WARNING - Expected 2 buttons but found ' + allButtonCount);
                   }
                 }
               }
