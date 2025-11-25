@@ -1902,41 +1902,32 @@ test.describe('Access Control and Permissions', () => {
 
                 console.log('Test: Direct component call result:', JSON.stringify(directCallResult, null, 2));
 
-                // Since we cannot call function component methods directly, we must use React's event system
-                // Try triggering the confirmation through a native click event
-                console.log('Test: Attempting native click event dispatch on confirm button...');
-                const nativeClickResult = await page.evaluate(() => {
-                  try {
-                    // Find the confirm button in the Popconfirm
-                    const confirmButton = document.querySelector('.ant-popconfirm:not([style*="display: none"]) .ant-popconfirm-buttons .ant-btn-primary') as HTMLElement;
+                // Use Playwright's built-in click() method which operates from Playwright context
+                // This may preserve React's closure context better than browser context event dispatch
+                console.log('Test: Attempting Playwright built-in click on confirm button...');
 
-                    if (!confirmButton) {
-                      return { success: false, error: 'Confirm button not found or not visible' };
-                    }
+                try {
+                  const confirmButton = page.locator('.ant-popconfirm:not([style*="display: none"]) .ant-popconfirm-buttons .ant-btn-primary');
 
-                    console.log('[NATIVE_CLICK] Found confirm button:', confirmButton.textContent);
+                  // Verify button is visible
+                  const isVisible = await confirmButton.isVisible();
+                  console.log('Test: Confirm button visible:', isVisible);
 
-                    // Dispatch native MouseEvent to trigger React's event handlers
-                    const clickEvent = new MouseEvent('click', {
-                      view: window,
-                      bubbles: true,
-                      cancelable: true,
-                      buttons: 1
-                    });
-
-                    const dispatched = confirmButton.dispatchEvent(clickEvent);
-                    console.log('[NATIVE_CLICK] Event dispatched:', dispatched);
-
-                    return {
-                      success: true,
-                      buttonText: confirmButton.textContent,
-                      eventDispatched: dispatched
-                    };
-                  } catch (e: any) {
-                    return { success: false, error: `Native click failed: ${e.message}` };
+                  if (!isVisible) {
+                    throw new Error('Confirm button not visible');
                   }
-                });
-                console.log('Test: Native click dispatch result:', JSON.stringify(nativeClickResult, null, 2));
+
+                  const buttonText = await confirmButton.textContent();
+                  console.log('Test: Confirm button text:', buttonText);
+
+                  // Click using Playwright's method (not browser context)
+                  await confirmButton.click();
+                  console.log('Test: Playwright click executed');
+
+                } catch (e: any) {
+                  console.log('Test: Playwright click failed:', e.message);
+                  throw e;
+                }
 
                 // DIAGNOSTIC: Check if ACL state is still populated after clicking confirm button
                 await page.waitForTimeout(500);
