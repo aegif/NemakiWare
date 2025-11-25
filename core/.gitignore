@@ -13,3 +13,9 @@ src/main/resources/META-INF/
 !src/main/resources/initialization/
 src/main/resources/initialization/*.tmp
 logs/*
+
+# Eclipse IDE specific files (IDE-dependent paths should not be committed)
+.factorypath
+.settings/
+.classpath
+.project

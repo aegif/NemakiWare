@@ -225,7 +225,8 @@ import {
   Card,
   Breadcrumb,
   Tag,
-  Radio
+  Radio,
+  Alert
 } from 'antd';
 import {
   FileOutlined,
@@ -265,6 +266,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [versionHistory, setVersionHistory] = useState<CMISObject[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchMode, setIsSearchMode] = useState(false);
+
+  // Error states for inline Alert components (Error Recovery test fix)
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [folderError, setFolderError] = useState<string | null>(null);
 
   const [form] = Form.useForm();
   const navigate = useNavigate();
@@ -333,16 +338,23 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const handleUpload = async (values: any) => {
     const { file, name } = values;
 
+    // Clear previous error
+    setUploadError(null);
+
     try {
       const actualFile = file?.[0]?.originFileObj || file?.[0] || file?.fileList?.[0]?.originFileObj;
 
       if (!actualFile) {
-        message.error('ファイルが選択されていません');
+        const errorMsg = 'ファイルが選択されていません';
+        setUploadError(errorMsg);
+        message.error(errorMsg);
         return;
       }
 
       if (!currentFolderId) {
-        message.error('アップロード先フォルダが選択されていません');
+        const errorMsg = 'アップロード先フォルダが選択されていません';
+        setUploadError(errorMsg);
+        message.error(errorMsg);
         return;
       }
 
@@ -350,26 +362,36 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       message.success('ファイルをアップロードしました');
       setUploadModalVisible(false);
+      setUploadError(null);
       form.resetFields();
 
       // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
       await loadObjects();
     } catch (error) {
       console.error('Upload error:', error);
-      message.error('ファイルのアップロードに失敗しました');
+      const errorMsg = 'ファイルのアップロードに失敗しました';
+      setUploadError(errorMsg);
+      message.error(errorMsg);
     }
   };
 
   const handleCreateFolder = async (values: any) => {
+    // Clear previous error
+    setFolderError(null);
+
     try {
       await cmisService.createFolder(repositoryId, currentFolderId, values.name);
       message.success('フォルダを作成しました');
       setFolderModalVisible(false);
+      setFolderError(null);
       form.resetFields();
       // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
       await loadObjects();
     } catch (error) {
-      message.error('フォルダの作成に失敗しました');
+      console.error('Folder creation error:', error);
+      const errorMsg = 'フォルダの作成に失敗しました';
+      setFolderError(errorMsg);
+      message.error(errorMsg);
     }
   };
 
@@ -828,11 +850,24 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       <Modal
         title="ファイルアップロード"
         open={uploadModalVisible}
-        onCancel={() => setUploadModalVisible(false)}
+        onCancel={() => {
+          setUploadModalVisible(false);
+          setUploadError(null);
+        }}
         footer={null}
         maskClosable={false}
       >
         <Form form={form} onFinish={handleUpload} layout="vertical">
+          {uploadError && (
+            <Alert
+              message={uploadError}
+              type="error"
+              closable
+              onClose={() => setUploadError(null)}
+              style={{ marginBottom: 16 }}
+              className="upload-error-alert"
+            />
+          )}
           <Form.Item
             name="file"
             label="ファイル"
@@ -886,11 +921,24 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       <Modal
         title="フォルダ作成"
         open={folderModalVisible}
-        onCancel={() => setFolderModalVisible(false)}
+        onCancel={() => {
+          setFolderModalVisible(false);
+          setFolderError(null);  // Clear error on cancel
+        }}
         footer={null}
         maskClosable={false}
       >
         <Form form={form} onFinish={handleCreateFolder} layout="vertical">
+          {folderError && (  // Inline Alert component
+            <Alert
+              message={folderError}
+              type="error"
+              closable
+              onClose={() => setFolderError(null)}
+              style={{ marginBottom: 16 }}
+              className="folder-error-alert"
+            />
+          )}
           <Form.Item
             name="name"
             label="フォルダ名"

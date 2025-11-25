@@ -474,7 +474,12 @@ export class AuthHelper {
       await this.page.waitForURL('**/documents', { timeout: 5000 });
     } catch (e) {
       // If redirect didn't happen automatically, navigate manually
-      await this.page.goto('/core/ui/dist/index.html', { waitUntil: 'networkidle' });
+      // Mobile browsers use 'load' instead of 'networkidle' to avoid timeout issues after route handler tests
+      const isMobile = this.page.viewportSize() && this.page.viewportSize()!.width <= 414;
+      await this.page.goto('/core/ui/dist/index.html', {
+        waitUntil: isMobile ? 'load' : 'networkidle',
+        timeout: isMobile ? 45000 : 30000  // Extra timeout for mobile
+      });
       // Click documents menu item to navigate
       const documentsMenuItem = this.page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
       if (await documentsMenuItem.count() > 0) {
