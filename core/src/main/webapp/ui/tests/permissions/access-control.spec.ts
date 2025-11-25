@@ -840,6 +840,11 @@ test.describe('Access Control and Permissions', () => {
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
+      // Capture browser console output for debugging
+      page.on('console', msg => {
+        console.log(`Browser Console [${msg.type()}]: ${msg.text()}`);
+      });
+
       // Wait for document table to fully render with action buttons
       await page.waitForTimeout(2000);
 
@@ -964,8 +969,25 @@ test.describe('Access Control and Permissions', () => {
               // CRITICAL FIX: Reload page after breaking inheritance to get fresh permission data
               // The server updates the permissions, but the UI may not immediately reflect the changes
               console.log('Test: Reloading page to fetch latest permission data...');
+
+              // RACE CONDITION FIX: Set up response listener BEFORE reload to catch the GET ACL request
+              // page.waitForResponse() only catches future responses, not past ones
+              const aclResponsePromise = page.waitForResponse(
+                (response) => {
+                  const url = response.url();
+                  return url.includes('cmisselector=acl') && response.request().method() === 'GET';
+                },
+                { timeout: 10000 }
+              );
+
               await page.reload();
-              await page.waitForTimeout(3000); // Increased wait time for page reload
+
+              // Wait for the GET ACL request to complete (triggered by React's loadData())
+              await aclResponsePromise;
+              console.log('Test: ACL data loaded successfully');
+
+              // Additional wait to ensure React state is updated
+              await page.waitForTimeout(500);
 
               // Re-locate user row after page reload
               const userRowAfterBreak = page.locator(`tr:has-text("${testUsername}")`);
@@ -1045,6 +1067,22 @@ test.describe('Access Control and Permissions', () => {
               console.log('Test: ERROR - Break inheritance button not found on page');
             }
 
+            // NETWORK MONITORING: Track API responses to verify deletion
+            const apiResponses: any[] = [];
+            page.on('response', (response) => {
+              const url = response.url();
+              // Track permission-related API calls
+              if (url.includes('permission') || url.includes('acl') || url.includes('applyAcl')) {
+                apiResponses.push({
+                  url,
+                  status: response.status(),
+                  method: response.request().method(),
+                  timestamp: new Date().toISOString()
+                });
+                console.log(`Test: API Response - ${response.request().method()} ${url} - Status: ${response.status()}`);
+              }
+            });
+
             // Step 1: Find the delete button within the user's row (now should be visible)
             const deleteButton = userRow.locator('button').filter({ hasText: /削除|Delete/ });
             if (await deleteButton.count() > 0) {
@@ -1081,19 +1119,28 @@ test.describe('Access Control and Permissions', () => {
                 await confirmButton.first().click();
                 console.log('Test: Clicked confirm button, waiting for deletion to complete...');
 
-                // Wait for the row to actually disappear (up to 10 seconds)
-                const userRowToDelete = page.locator(`tr:has-text("${testUsername}")`);
-                try {
-                  await userRowToDelete.waitFor({ state: 'detached', timeout: 10000 });
-                  console.log('Test: Permission entry removed from table');
-                } catch (e) {
-                  console.log('Test: Timeout waiting for row to disappear after 10s, checking count...');
+                // Wait longer for the deletion request to be sent and processed (increased from 2s to 5s)
+                await page.waitForTimeout(5000);
+
+                // Log API responses captured during deletion
+                console.log(`Test: API responses captured: ${apiResponses.length}`);
+                if (apiResponses.length > 0) {
+                  console.log('Test: API Response Summary:', JSON.stringify(apiResponses, null, 2));
+                } else {
+                  console.log('Test: WARNING - No permission/ACL API calls detected!');
                 }
+
+                console.log('Test: Reloading page to fetch latest permission data after deletion...');
+
+                // Reload the page to get the latest data from server
+                await page.reload();
+                await page.waitForTimeout(3000);
+                console.log('Test: Page reloaded, checking if permission was deleted...');
               } else {
                 console.log('Test: No confirm button found - deletion may not require confirmation');
               }
 
-              // Verify entry is removed
+              // Verify entry is removed after page reload
               const userRowAfterDelete = page.locator(`tr:has-text("${testUsername}")`);
               if (await userRowAfterDelete.count() === 0) {
                 console.log('Test: Old permission entry removed successfully');
@@ -1186,6 +1233,11 @@ test.describe('Access Control and Permissions', () => {
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
+      // Capture browser console output for debugging
+      page.on('console', msg => {
+        console.log(`Browser Console [${msg.type()}]: ${msg.text()}`);
+      });
+
       // Wait for document table to fully render with action buttons
       await page.waitForTimeout(2000);
 
@@ -1209,12 +1261,39 @@ test.describe('Access Control and Permissions', () => {
           // Wait for navigation to permissions page
           await page.waitForURL(/.*#\/permissions\/.*/, { timeout: 5000 });
           console.log(`Test: Navigated to permissions page: ${page.url()}`);
-          await page.waitForTimeout(1000);
+
+          // CRITICAL FIX: Wait for permissions table to render before checking for data
+          // React PermissionManagement component needs time to mount, call loadData(), and render table
+          console.log('Test: Waiting for permissions table to render...');
+          await page.waitForSelector('.ant-table-tbody tr', { timeout: 10000 });
+          console.log('Test: Permissions table rendered successfully');
+
+          // DIAGNOSTIC: Log what's actually on the permissions page BEFORE checking for user row
+          console.log(`Test: DEBUG - Looking for test username: "${testUsername}"`);
+
+          // Check if permissions table exists and has loaded
+          const permissionsTable = page.locator('.ant-table-tbody');
+          const tableExists = await permissionsTable.count() > 0;
+          console.log(`Test: DEBUG - Permissions table exists: ${tableExists}`);
+
+          if (tableExists) {
+            const allRows = permissionsTable.locator('tr');
+            const rowCount = await allRows.count();
+            console.log(`Test: DEBUG - Total rows in permissions table: ${rowCount}`);
+
+            // Log first 5 rows to see what data is present
+            for (let i = 0; i < Math.min(rowCount, 5); i++) {
+              const rowText = await allRows.nth(i).innerText();
+              console.log(`Test: DEBUG - Row ${i}: ${rowText.replace(/\n/g, ' | ')}`);
+            }
+          }
 
           // Find test user's row on the permissions page
-          const userRow = page.locator(`tr:has-text("${testUsername}")`);
+          let userRow = page.locator(`tr:has-text("${testUsername}")`);
+          const userRowCount = await userRow.count();
+          console.log(`Test: DEBUG - User rows matching "${testUsername}": ${userRowCount}`);
 
-          if (await userRow.count() > 0) {
+          if (userRowCount > 0) {
             console.log('Test: Found test user ACL entry - attempting deletion');
 
             // Based on actual PermissionManagement component:
@@ -1299,8 +1378,170 @@ test.describe('Access Control and Permissions', () => {
               // CRITICAL FIX: Reload page after breaking inheritance to get fresh permission data
               // The server updates the permissions, but the UI may not immediately reflect the changes
               console.log('Test: Reloading page to fetch latest permission data...');
+
+              // RACE CONDITION FIX (FINAL): Wait for GET ACL API response, then allow React setState to complete
+              // The PermissionManagement component calls loadData() which fetches 4 APIs sequentially:
+              // 1. getObject, 2. getACL, 3. getUsers, 4. getGroups
+              // Then setACL(aclData) is called, but setState is ASYNCHRONOUS
+              // Problem: Loading indicator disappears before setState completes
+              // Solution: Wait for the GET ACL API response, then add timeout for setState
+              const aclResponsePromise = page.waitForResponse(
+                response => response.url().includes('cmisselector=acl') && response.request().method() === 'GET',
+                { timeout: 15000 }
+              );
+
               await page.reload();
-              await page.waitForTimeout(3000); // Increased wait time for page reload
+
+              try {
+                await aclResponsePromise;
+                console.log('Test: GET ACL API response received');
+              } catch (e) {
+                console.log('Test: WARNING - GET ACL response timeout, proceeding anyway');
+              }
+
+              // CRITICAL FIX: Wait for table to render FIRST before polling React state
+              // The React app needs time to render the permissions table before we can inspect its state
+              await page.waitForSelector('.ant-table-tbody tr', { timeout: 5000 });
+              console.log('Test: Permission table is visible and populated');
+
+              // NOW poll React state to verify ACL is actually populated
+              // React setState is asynchronous and batched - we need to check when acl state becomes non-null
+              console.log('Test: Polling for ACL state to be populated in React component...');
+
+              // First, do comprehensive fiber tree inspection to understand component structure
+              const fiberTreeDiagnostics = await page.evaluate(() => {
+                try {
+                  // Find PermissionManagement component element - try table wrapper first
+                  const container = document.querySelector('.ant-table-wrapper') ||
+                                  document.querySelector('main') ||
+                                  document.querySelector('.ant-layout-content');
+
+                  if (!container) return { error: 'container not found' };
+
+                  // Get React fiber
+                  const fiberKey = Object.keys(container).find(key => key.startsWith('__reactFiber'));
+                  if (!fiberKey) return { error: 'fiber key not found' };
+
+                  const fiber = (container as any)[fiberKey];
+                  if (!fiber) return { error: 'fiber not found' };
+
+                  // Traverse fiber tree and log all components we encounter
+                  const componentPath = [];
+                  let currentFiber = fiber;
+                  let traverseCount = 0;
+
+                  while (currentFiber && traverseCount < 50) {
+                    const componentInfo: any = {
+                      level: traverseCount,
+                      hasType: !!currentFiber.type,
+                      typeIsFunction: typeof currentFiber.type === 'function',
+                      typeIsString: typeof currentFiber.type === 'string',
+                      hasState: !!currentFiber.memoizedState
+                    };
+
+                    if (currentFiber.type) {
+                      if (typeof currentFiber.type === 'function') {
+                        componentInfo.typeName = currentFiber.type.name || 'Anonymous';
+                        componentInfo.displayName = currentFiber.type.displayName;
+                      } else if (typeof currentFiber.type === 'string') {
+                        componentInfo.typeName = currentFiber.type;
+                      } else if (typeof currentFiber.type === 'object' && currentFiber.type !== null) {
+                        componentInfo.typeName = 'Object';
+                        componentInfo.typeKeys = Object.keys(currentFiber.type).slice(0, 5);
+                      }
+                    }
+
+                    componentPath.push(componentInfo);
+                    currentFiber = currentFiber.return;
+                    traverseCount++;
+                  }
+
+                  return { success: true, componentPath, totalLevels: traverseCount };
+                } catch (err: any) {
+                  return { error: 'exception: ' + err.message, stack: err.stack };
+                }
+              });
+
+              console.log('[FIBER TREE] Component path:', JSON.stringify(fiberTreeDiagnostics, null, 2));
+
+              let aclFound = false;
+              for (let attempt = 0; attempt < 20; attempt++) {
+                await page.waitForTimeout(500);
+
+                const stateCheck = await page.evaluate(() => {
+                  try {
+                    // Find PermissionManagement component element - try table wrapper first
+                    const container = document.querySelector('.ant-table-wrapper') ||
+                                    document.querySelector('main') ||
+                                    document.querySelector('.ant-layout-content');
+
+                    if (!container) return { found: false, reason: 'container not found' };
+
+                    // Get React fiber
+                    const fiberKey = Object.keys(container).find(key => key.startsWith('__reactFiber'));
+                    if (!fiberKey) return { found: false, reason: 'fiber key not found' };
+
+                    const fiber = (container as any)[fiberKey];
+                    if (!fiber) return { found: false, reason: 'fiber not found' };
+
+                    // NEW STRATEGY: Traverse fiber tree and check hooks in ALL components with state
+                    // Look for a component that has a hook with a 'permissions' array
+                    // This works with minified component names in production builds
+                    let currentFiber = fiber;
+                    let componentLevel = 0;
+
+                    while (currentFiber && componentLevel < 50) {
+                      // Check if this fiber has memoizedState (hooks)
+                      if (currentFiber.memoizedState) {
+                        // Traverse hooks in this component
+                        let currentHook = currentFiber.memoizedState;
+                        let hookIndex = 0;
+
+                        while (currentHook && hookIndex < 20) {
+                          const hookValue = currentHook.memoizedState;
+
+                          // Check if this hook contains ACL data (has permissions array)
+                          if (hookValue &&
+                              typeof hookValue === 'object' &&
+                              hookValue !== null &&
+                              'permissions' in hookValue &&
+                              Array.isArray(hookValue.permissions)) {
+                            return {
+                              found: true,
+                              permissionsCount: hookValue.permissions.length,
+                              hookIndex: hookIndex,
+                              componentLevel: componentLevel,
+                              componentName: (currentFiber.type && typeof currentFiber.type === 'function') ? currentFiber.type.name : 'unknown'
+                            };
+                          }
+
+                          currentHook = currentHook.next;
+                          hookIndex++;
+                        }
+                      }
+
+                      currentFiber = currentFiber.return;
+                      componentLevel++;
+                    }
+
+                    return { found: false, reason: 'No component with permissions hook found', levelsChecked: componentLevel };
+                  } catch (err: any) {
+                    return { found: false, reason: 'error: ' + err.message };
+                  }
+                });
+
+                if (stateCheck.found) {
+                  aclFound = true;
+                  console.log(`Test: ACL state populated after ${(attempt + 1) * 0.5} seconds - component level ${stateCheck.componentLevel}, component name "${stateCheck.componentName}", hook index ${stateCheck.hookIndex}, ${stateCheck.permissionsCount} permissions`);
+                  break;
+                } else if (attempt % 4 === 0) {
+                  console.log(`Test: Attempt ${attempt + 1}/20 - ACL not found yet (${stateCheck.reason})`);
+                }
+              }
+
+              if (!aclFound) {
+                console.log('Test: WARNING - ACL state still not populated after 10 seconds of polling');
+              }
 
               // Re-locate user row after page reload
               const userRowAfterBreak = page.locator(`tr:has-text("${testUsername}")`);
@@ -1380,13 +1621,174 @@ test.describe('Access Control and Permissions', () => {
               console.log('Test: ERROR - Break inheritance button not found on page');
             }
 
+            // NETWORK MONITORING: Track API responses to verify deletion
+            const apiResponses: any[] = [];
+            page.on('response', (response) => {
+              const url = response.url();
+              // Track permission-related API calls
+              if (url.includes('permission') || url.includes('acl') || url.includes('applyAcl')) {
+                apiResponses.push({
+                  url,
+                  status: response.status(),
+                  method: response.request().method(),
+                  timestamp: new Date().toISOString()
+                });
+                console.log(`Test: API Response - ${response.request().method()} ${url} - Status: ${response.status()}`);
+              }
+            });
+
             // Step 1: Find the delete button within the user's row (now should be visible)
             const deleteButton = userRow.locator('button').filter({ hasText: /削除|Delete/ });
 
             if (await deleteButton.count() > 0) {
+              // CRITICAL: Inspect React state BEFORE clicking delete button
+              // This verifies if the 2000ms wait was sufficient for React's setState to complete
+              // If hasAcl is false here, then setState hasn't completed yet (need longer wait)
+              // If hasAcl is true here but deletion still fails, then the bug is in handleRemovePermission
+              const componentState = await page.evaluate(() => {
+                try {
+                  // VERIFICATION LOG: Confirm this code version is executing (not cached old code)
+                  console.log('[VERIFICATION] State inspection code version: 2025-11-25-hook-pattern-search');
+
+                  // CRITICAL FIX: Use same traversal strategy as hook pattern search
+                  // Start from permission table area and search entire fiber tree for ACL hook
+                  // SELECTOR FIX: Use .ant-table-wrapper (same as polling code) instead of .ant-table
+                  const permissionArea = document.querySelector('.ant-table-wrapper') || document.querySelector('main') || document.querySelector('.ant-layout-content');
+                  if (!permissionArea) {
+                    return { error: 'No DOM element found to start fiber search' };
+                  }
+
+                  // Get fiber from any element in the area
+                  const reactFiber = Object.keys(permissionArea).find(key => key.startsWith('__reactFiber'));
+                  if (!reactFiber) {
+                    return { error: 'React fiber not found on element' };
+                  }
+
+                  let startFiber = (permissionArea as any)[reactFiber];
+
+                  // NEW STRATEGY: Traverse fiber tree and check hooks in ALL components
+                  // Look for a component that has a hook with a 'permissions' array
+                  // This works with minified component names in production builds
+                  let currentFiber = startFiber;
+                  let componentLevel = 0;
+                  let aclValue = null;
+                  let foundAt = null;
+
+                  while (currentFiber && componentLevel < 50) {
+                    // Check if this fiber has memoizedState (hooks)
+                    if (currentFiber.memoizedState) {
+                      // Traverse hooks in this component
+                      let currentHook = currentFiber.memoizedState;
+                      let hookIndex = 0;
+
+                      while (currentHook && hookIndex < 20) {
+                        const hookValue = currentHook.memoizedState;
+
+                        // Check if this hook contains ACL data (has permissions array)
+                        if (hookValue &&
+                            typeof hookValue === 'object' &&
+                            hookValue !== null &&
+                            'permissions' in hookValue &&
+                            Array.isArray(hookValue.permissions)) {
+                          aclValue = hookValue;
+                          foundAt = {
+                            componentLevel: componentLevel,
+                            componentName: (currentFiber.type && typeof currentFiber.type === 'function') ? currentFiber.type.name : 'unknown',
+                            hookIndex: hookIndex,
+                            permissionsCount: hookValue.permissions.length
+                          };
+                          break;
+                        }
+
+                        currentHook = currentHook.next;
+                        hookIndex++;
+                      }
+
+                      if (aclValue) break; // Found ACL, stop searching
+                    }
+
+                    currentFiber = currentFiber.return;
+                    componentLevel++;
+                  }
+
+                  if (!aclValue) {
+                    return {
+                      error: 'No component with ACL hook found',
+                      levelsChecked: componentLevel
+                    };
+                  }
+
+                  // ENHANCED DIAGNOSTIC: Inspect ACL structure in detail
+                  const aclStructure = {
+                    hasPermissionsProperty: 'permissions' in aclValue,
+                    permissionsType: typeof aclValue.permissions,
+                    permissionsIsArray: Array.isArray(aclValue.permissions),
+                    permissionsLength: aclValue.permissions?.length,
+                    aclKeys: Object.keys(aclValue),
+                    // Sample first permission if exists
+                    firstPermission: aclValue.permissions?.[0] ? {
+                      principalId: aclValue.permissions[0].principalId,
+                      permissions: aclValue.permissions[0].permissions,
+                      direct: aclValue.permissions[0].direct
+                    } : null
+                  };
+
+                  return {
+                    hasState: true,
+                    hasAcl: true,
+                    aclLength: aclValue.permissions.length,
+                    aclInherited: aclValue.aclInherited,
+                    aclStructure: aclStructure,
+                    foundAt: foundAt
+                  };
+                } catch (e: any) {
+                  return { error: `State inspection failed: ${e.message}` };
+                }
+              });
+              console.log('Test: Component state BEFORE delete click:', JSON.stringify(componentState, null, 2));
+
+              // DIAGNOSTIC: Verify which row the delete button belongs to
+              const deleteButtonRowContext = await page.evaluate(() => {
+                // Find all delete buttons
+                const deleteButtons = Array.from(document.querySelectorAll('button')).filter(btn =>
+                  btn.textContent?.includes('削除') || btn.textContent?.includes('Delete')
+                );
+
+                console.log(`[Browser Console] Found ${deleteButtons.length} delete buttons total`);
+
+                // For each delete button, find its row and log the principal
+                const buttonContexts = [];
+                for (let i = 0; i < deleteButtons.length; i++) {
+                  const button = deleteButtons[i];
+                  // Find nearest table row
+                  const row = button.closest('tr');
+                  if (row) {
+                    const cellTexts = Array.from(row.querySelectorAll('td')).map(td => td.textContent?.trim() || '');
+                    buttonContexts.push({
+                      buttonIndex: i,
+                      rowText: cellTexts.join(' | '),
+                      isVisible: button.offsetParent !== null
+                    });
+                  }
+                }
+
+                return {
+                  totalDeleteButtons: deleteButtons.length,
+                  buttonContexts: buttonContexts.slice(0, 5) // Log first 5 to avoid overwhelming output
+                };
+              });
+              console.log('Test: Delete button context analysis:', JSON.stringify(deleteButtonRowContext, null, 2));
+
+              // Log info about the userRow locator's first delete button
+              const userRowText = await userRow.textContent();
+              console.log(`Test: userRow text content: "${userRowText?.substring(0, 100)}..."`);
+              const deleteButtonCount = await deleteButton.count();
+              console.log(`Test: Found ${deleteButtonCount} delete buttons in userRow`);
+
+              // Now click the delete button
               await deleteButton.first().click(isMobile ? { force: true } : {});
               await page.waitForTimeout(500);
-              console.log('Test: Clicked delete button');
+              console.log('Test: Clicked delete button (first button from userRow locator)');
 
               // DIAGNOSTIC: Log all visible buttons after delete click
               await page.waitForTimeout(300);
@@ -1407,32 +1809,228 @@ test.describe('Access Control and Permissions', () => {
               console.log(`Test: Popconfirm visible: ${popconfirmVisible}, Modal visible: ${modalVisible}`);
 
               // Confirm deletion if popup appears
-              const confirmButton = page.locator('.ant-popconfirm:visible button, .ant-modal:visible button').filter({ hasText: /はい|OK|確認|Confirm/ });
+              // CRITICAL FIX: Use specific Ant Design Popconfirm OK button selector
+              // The primary button in .ant-popconfirm-buttons is the OK button that triggers onConfirm
+              const confirmButton = page.locator('.ant-popconfirm:visible .ant-popconfirm-buttons .ant-btn-primary');
               const confirmButtonCount = await confirmButton.count();
-              console.log(`Test: Confirm button candidates: ${confirmButtonCount}`);
+              console.log(`Test: Confirm button candidates (primary): ${confirmButtonCount}`);
 
               if (confirmButtonCount > 0) {
                 const confirmText = await confirmButton.first().textContent();
-                console.log(`Test: Clicking confirm button with text: "${confirmText}"`);
-                await confirmButton.first().click();
+                console.log(`Test: Found confirm button with text: "${confirmText}"`);
+
+                // APPROACH: Try calling handleRemovePermission directly via component instance
+                // Find the PermissionManagement component instance and call its method with the correct principalId
+                const directCallResult = await page.evaluate((principalIdToDelete: string) => {
+                  try {
+                    // Find the permission table area
+                    const permissionArea = document.querySelector('.ant-table-wrapper') ||
+                                          document.querySelector('main') ||
+                                          document.querySelector('.ant-layout-content');
+
+                    if (!permissionArea) {
+                      return { success: false, error: 'Permission area not found' };
+                    }
+
+                    // Get React fiber
+                    const fiberKey = Object.keys(permissionArea).find(key => key.startsWith('__reactFiber'));
+                    if (!fiberKey) {
+                      return { success: false, error: 'React fiber key not found' };
+                    }
+
+                    let fiber = (permissionArea as any)[fiberKey];
+
+                    // Traverse fiber tree to find PermissionManagement component (has ACL state)
+                    let currentFiber = fiber;
+                    let componentLevel = 0;
+                    const maxLevels = 50;
+
+                    while (currentFiber && componentLevel < maxLevels) {
+                      // Check if this fiber has the ACL hook
+                      if (currentFiber.memoizedState) {
+                        let hook = currentFiber.memoizedState;
+                        let hookIndex = 0;
+
+                        while (hook && hookIndex < 20) {
+                          const hookValue = hook.memoizedState;
+
+                          // Found the ACL hook
+                          if (hookValue &&
+                              typeof hookValue === 'object' &&
+                              hookValue !== null &&
+                              'permissions' in hookValue &&
+                              Array.isArray(hookValue.permissions)) {
+
+                            // This is the PermissionManagement component
+                            // Now we need to find handleRemovePermission in the component's props or stateNode
+                            console.log('[COMPONENT] Found PermissionManagement component at level', componentLevel);
+                            console.log('[COMPONENT] Component type:', currentFiber.type?.name || 'Anonymous');
+                            console.log('[COMPONENT] ACL has', hookValue.permissions.length, 'permissions');
+
+                            // Try to find and call handleRemovePermission
+                            // React function components don't have instance methods accessible this way
+                            // We need to trigger the callback through React's event system instead
+
+                            return {
+                              success: false,
+                              error: 'Cannot call function component methods directly - need React event system',
+                              foundComponent: true,
+                              componentLevel,
+                              permissionsCount: hookValue.permissions.length,
+                              principalToDelete: principalIdToDelete
+                            };
+                          }
+
+                          hook = hook.next;
+                          hookIndex++;
+                        }
+                      }
+
+                      currentFiber = currentFiber.return;
+                      componentLevel++;
+                    }
+
+                    return {
+                      success: false,
+                      error: 'PermissionManagement component not found',
+                      levelsSearched: componentLevel
+                    };
+                  } catch (e: any) {
+                    return { success: false, error: `Exception: ${e.message}` };
+                  }
+                }, testUsername);  // Pass the testUsername as principalId
+
+                console.log('Test: Direct component call result:', JSON.stringify(directCallResult, null, 2));
+
+                // Since we cannot call function component methods directly, we must use React's event system
+                // Try triggering the confirmation through a native click event
+                console.log('Test: Attempting native click event dispatch on confirm button...');
+                const nativeClickResult = await page.evaluate(() => {
+                  try {
+                    // Find the confirm button in the Popconfirm
+                    const confirmButton = document.querySelector('.ant-popconfirm:not([style*="display: none"]) .ant-popconfirm-buttons .ant-btn-primary') as HTMLElement;
+
+                    if (!confirmButton) {
+                      return { success: false, error: 'Confirm button not found or not visible' };
+                    }
+
+                    console.log('[NATIVE_CLICK] Found confirm button:', confirmButton.textContent);
+
+                    // Dispatch native MouseEvent to trigger React's event handlers
+                    const clickEvent = new MouseEvent('click', {
+                      view: window,
+                      bubbles: true,
+                      cancelable: true,
+                      buttons: 1
+                    });
+
+                    const dispatched = confirmButton.dispatchEvent(clickEvent);
+                    console.log('[NATIVE_CLICK] Event dispatched:', dispatched);
+
+                    return {
+                      success: true,
+                      buttonText: confirmButton.textContent,
+                      eventDispatched: dispatched
+                    };
+                  } catch (e: any) {
+                    return { success: false, error: `Native click failed: ${e.message}` };
+                  }
+                });
+                console.log('Test: Native click dispatch result:', JSON.stringify(nativeClickResult, null, 2));
+
+                // DIAGNOSTIC: Check if ACL state is still populated after clicking confirm button
+                await page.waitForTimeout(500);
+                const stateAfterConfirm = await page.evaluate(() => {
+                  try {
+                    const permissionArea = document.querySelector('.ant-table-wrapper') || document.querySelector('main') || document.querySelector('.ant-layout-content');
+                    if (!permissionArea) {
+                      return { error: 'No permission area found' };
+                    }
+
+                    let fiber = (permissionArea as any).__reactFiber$;
+                    if (!fiber) {
+                      fiber = Object.keys(permissionArea as any).find(key => key.startsWith('__reactFiber$'));
+                      if (fiber) fiber = (permissionArea as any)[fiber];
+                    }
+
+                    if (!fiber) {
+                      return { error: 'React fiber not found' };
+                    }
+
+                    let currentFiber = fiber;
+                    let traversed = 0;
+                    const maxDepth = 50;
+
+                    while (currentFiber && traversed < maxDepth) {
+                      traversed++;
+
+                      if (currentFiber.memoizedState) {
+                        let hook = currentFiber.memoizedState;
+                        let hookIndex = 0;
+
+                        while (hook && hookIndex < 20) {
+                          if (hook.memoizedState &&
+                              typeof hook.memoizedState === 'object' &&
+                              hook.memoizedState !== null &&
+                              'permissions' in hook.memoizedState &&
+                              Array.isArray(hook.memoizedState.permissions)) {
+
+                            const acl = hook.memoizedState;
+                            return {
+                              hasAcl: true,
+                              aclLength: acl.permissions.length,
+                              aclInherited: acl.aclInherited,
+                              componentName: currentFiber.type?.name || 'Anonymous',
+                              hookIndex: hookIndex
+                            };
+                          }
+                          hook = hook.next;
+                          hookIndex++;
+                        }
+                      }
+
+                      currentFiber = currentFiber.return;
+                    }
+
+                    return { error: 'ACL hook not found in fiber tree', traversed };
+                  } catch (e: any) {
+                    return { error: `State check failed: ${e.message}` };
+                  }
+                });
+                console.log('Test: ACL state AFTER clicking confirm button:', JSON.stringify(stateAfterConfirm, null, 2));
+
                 console.log('Test: Clicked confirm button, waiting for deletion to complete...');
 
-                // Wait for the row to actually disappear (up to 10 seconds)
-                const userRowToDelete = page.locator(`tr:has-text("${testUsername}")`);
-                try {
-                  await userRowToDelete.waitFor({ state: 'detached', timeout: 10000 });
-                  console.log('Test: Permission entry removed from table');
-                } catch (e) {
-                  console.log('Test: Timeout waiting for row to disappear after 10s, checking count...');
+                // Wait longer for the deletion request to be sent and processed (increased from 2s to 5s)
+                await page.waitForTimeout(5000);
+
+                // Log API responses captured during deletion
+                console.log(`Test: API responses captured: ${apiResponses.length}`);
+                if (apiResponses.length > 0) {
+                  console.log('Test: API Response Summary:', JSON.stringify(apiResponses, null, 2));
+                } else {
+                  console.log('Test: WARNING - No permission/ACL API calls detected!');
                 }
+
+                console.log('Test: Reloading page to fetch latest permission data after deletion...');
+
+                // Reload the page to get the latest data from server
+                await page.reload();
+                await page.waitForTimeout(3000);
+                console.log('Test: Page reloaded, checking if permission was deleted...');
               } else {
                 console.log('Test: No confirm button found - deletion may not require confirmation');
               }
 
-              // Verify entry is gone
+              // Verify entry is gone after page reload
               const userRowAfterDelete = page.locator(`tr:has-text("${testUsername}")`);
               const countAfterDelete = await userRowAfterDelete.count();
               console.log(`Test: User row count after deletion: ${countAfterDelete}`);
+
+              if (countAfterDelete > 0) {
+                console.log('Test: Old permission entry still exists after deletion');
+              }
+
               expect(countAfterDelete).toBe(0);
               console.log('Test: Verified ACL entry removal');
 
