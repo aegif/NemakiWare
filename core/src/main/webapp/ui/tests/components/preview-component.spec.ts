@@ -178,11 +178,19 @@ test.describe('PreviewComponent Image Preview', () => {
 
     try {
       // Look for upload button
-      const uploadButton = page.locator('button').filter({ hasText: /アップロード|Upload/ }).first();
+      const uploadButton = page.locator('button').filter({ hasText: /ファイルアップロード|アップロード|Upload/ }).first();
 
       if (await uploadButton.count() > 0) {
-        // Set up file input for upload
-        const fileInput = page.locator('input[type="file"]').first();
+        // Click upload button to open modal
+        await uploadButton.click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(500);
+
+        // Wait for upload modal to be visible
+        const uploadModal = page.locator('.ant-modal').filter({ hasText: /ファイルアップロード|Upload/ });
+        await expect(uploadModal).toBeVisible({ timeout: 5000 });
+
+        // Set up file input for upload (inside modal)
+        const fileInput = page.locator('.ant-modal input[type="file"]').first();
         await fileInput.setInputFiles(testImagePath);
         await page.waitForTimeout(2000);
 
@@ -267,11 +275,19 @@ test.describe('PreviewComponent Text Preview', () => {
 
     try {
       // Look for upload button
-      const uploadButton = page.locator('button').filter({ hasText: /アップロード|Upload/ }).first();
+      const uploadButton = page.locator('button').filter({ hasText: /ファイルアップロード|アップロード|Upload/ }).first();
 
       if (await uploadButton.count() > 0) {
-        // Set up file input for upload
-        const fileInput = page.locator('input[type="file"]').first();
+        // Click upload button to open modal
+        await uploadButton.click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(500);
+
+        // Wait for upload modal to be visible
+        const uploadModal = page.locator('.ant-modal').filter({ hasText: /ファイルアップロード|Upload/ });
+        await expect(uploadModal).toBeVisible({ timeout: 5000 });
+
+        // Set up file input for upload (inside modal)
+        const fileInput = page.locator('.ant-modal input[type="file"]').first();
         await fileInput.setInputFiles(testTextPath);
         await page.waitForTimeout(2000);
 
@@ -365,11 +381,19 @@ test.describe('PreviewComponent Error Handling', () => {
 
     try {
       // Look for upload button
-      const uploadButton = page.locator('button').filter({ hasText: /アップロード|Upload/ }).first();
+      const uploadButton = page.locator('button').filter({ hasText: /ファイルアップロード|アップロード|Upload/ }).first();
 
       if (await uploadButton.count() > 0) {
-        // Set up file input for upload
-        const fileInput = page.locator('input[type="file"]').first();
+        // Click upload button to open modal
+        await uploadButton.click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(500);
+
+        // Wait for upload modal to be visible
+        const uploadModal = page.locator('.ant-modal').filter({ hasText: /ファイルアップロード|Upload/ });
+        await expect(uploadModal).toBeVisible({ timeout: 5000 });
+
+        // Set up file input for upload (inside modal)
+        const fileInput = page.locator('.ant-modal input[type="file"]').first();
         await fileInput.setInputFiles(testFilePath);
         await page.waitForTimeout(2000);
 

@@ -267,6 +267,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [types, setTypes] = useState<TypeDefinition[]>([]);
+  const [lastExecutedQuery, setLastExecutedQuery] = useState<string>('');
   const [form] = Form.useForm();
   const navigate = useNavigate();
 
@@ -277,7 +278,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
     loadTypes();
     const query = searchParams.get('q');
     if (query) {
-      form.setFieldsValue({ query });
+      // Don't set the CMIS query to the form - it would confuse users
+      // The form is for entering search keywords, not raw CMIS SQL
       performSearch(query);
     }
   }, [repositoryId]);
@@ -297,6 +299,10 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       const result = await cmisService.search(repositoryId, query);
       setSearchResult(result);
       setSearchParams({ q: query });
+      setLastExecutedQuery(query);
+      // Clear the query input field after search to prevent users from
+      // accidentally searching with the CMIS query string as a keyword
+      form.setFieldsValue({ query: '' });
     } catch (error) {
       message.error('検索に失敗しました');
     } finally {
@@ -511,11 +517,30 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
               <Button type="primary" htmlType="submit" loading={loading}>
                 検索
               </Button>
-              <Button onClick={() => form.resetFields()}>
+              <Button onClick={() => {
+                form.resetFields();
+                setLastExecutedQuery('');
+              }}>
                 クリア
               </Button>
             </Space>
           </Form.Item>
+
+          {lastExecutedQuery && (
+            <div style={{
+              marginTop: 8,
+              padding: '8px 12px',
+              background: '#f5f5f5',
+              borderRadius: 4,
+              fontSize: '12px',
+              color: '#666',
+              fontFamily: 'monospace',
+              wordBreak: 'break-all'
+            }}>
+              <span style={{ fontWeight: 'bold', marginRight: 8 }}>実行したCMISクエリ:</span>
+              {lastExecutedQuery}
+            </div>
+          )}
         </Form>
       </Card>
 
