@@ -227,7 +227,7 @@ function AppContent() {
   const { isAuthenticated, authToken } = useAuth();
 
   if (!isAuthenticated || !authToken) {
-    return <Login onLogin={async (auth) => {
+    return <Login onLogin={async (_auth) => {
       // AuthContext will handle the authentication state update
       // The AuthContext's useEffect will detect the localStorage change and update state
     }} />;

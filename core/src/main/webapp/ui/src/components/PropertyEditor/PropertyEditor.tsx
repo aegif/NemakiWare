@@ -82,7 +82,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
     form.resetFields();
   };
 
-  const renderPropertyField = (propId: string, propDef: PropertyDefinition) => {
+  const renderPropertyField = (_propId: string, propDef: PropertyDefinition) => {
     switch (propDef.propertyType) {
       case 'string':
         if (propDef.choices && propDef.choices.length > 0) {

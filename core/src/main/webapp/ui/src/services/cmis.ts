@@ -274,7 +274,7 @@
  */
 
 import { AuthService } from './auth';
-import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, User, Group, ACL } from '../types/cmis';
+import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL } from '../types/cmis';
 
 export class CMISService {
   private baseUrl = '/core/browser';
@@ -877,7 +877,7 @@ export class CMISService {
                 // First, extract ALL property elements to build complete properties map
                 const allPropertyElements = properties.querySelectorAll('[propertyDefinitionId]');
 
-                allPropertyElements.forEach((propElement, index) => {
+                allPropertyElements.forEach((propElement, _index) => {
                   const propertyId = propElement.getAttribute('propertyDefinitionId');
                   if (!propertyId) return;
 
@@ -1015,6 +1015,129 @@ export class CMISService {
 
       xhr.onerror = () => {
         // Network error occurred
+        reject(new Error('Network error'));
+      };
+      xhr.send();
+    });
+  }
+
+  /**
+   * Get a CMIS object by its path
+   * Uses AtomPub binding's path endpoint
+   */
+  async getObjectByPath(repositoryId: string, path: string): Promise<CMISObject> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      // Use AtomPub binding for getObjectByPath - encode the path parameter
+      const encodedPath = encodeURIComponent(path);
+      xhr.open('GET', `/core/atom/${repositoryId}/path?path=${encodedPath}&includeAllowableActions=true`, true);
+      xhr.setRequestHeader('Accept', 'application/atom+xml');
+
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              // Parse AtomPub XML response (same format as getObject)
+              const parser = new DOMParser();
+              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
+
+              const entry = xmlDoc.querySelector('entry, atom\\:entry');
+
+              if (!entry) {
+                reject(new Error('No entry found in AtomPub response'));
+                return;
+              }
+
+              const title = entry.querySelector('title, atom\\:title')?.textContent || 'Unknown';
+              const properties = entry.querySelector('cmis\\:properties, properties');
+
+              let id = '';
+              let objectType = 'cmis:folder';
+              let baseType = 'cmis:folder';
+              let objectPath = path;
+              let createdBy = '';
+              let creationDate = '';
+              let lastModifiedBy = '';
+              let lastModificationDate = '';
+
+              const propertiesMap: Record<string, any> = {};
+
+              if (properties) {
+                const allPropertyElements = properties.querySelectorAll('[propertyDefinitionId]');
+
+                allPropertyElements.forEach((propElement) => {
+                  const propertyId = propElement.getAttribute('propertyDefinitionId');
+                  if (!propertyId) return;
+
+                  const valueElements = propElement.querySelectorAll('cmis\\:value, value');
+
+                  if (valueElements.length === 0) {
+                    propertiesMap[propertyId] = null;
+                  } else if (valueElements.length === 1) {
+                    propertiesMap[propertyId] = valueElements[0].textContent;
+                  } else {
+                    const values: string[] = [];
+                    valueElements.forEach(valueEl => {
+                      if (valueEl.textContent) {
+                        values.push(valueEl.textContent);
+                      }
+                    });
+                    propertiesMap[propertyId] = values;
+                  }
+                });
+
+                // Extract specific properties
+                const objectIdElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectId"], propertyId[propertyDefinitionId="cmis:objectId"]');
+                const objectTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectTypeId"], propertyId[propertyDefinitionId="cmis:objectTypeId"]');
+                const baseTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:baseTypeId"], propertyId[propertyDefinitionId="cmis:baseTypeId"]');
+                const pathElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:path"], propertyString[propertyDefinitionId="cmis:path"]');
+                const createdByElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:createdBy"], propertyString[propertyDefinitionId="cmis:createdBy"]');
+                const creationDateElement = properties.querySelector('cmis\\:propertyDateTime[propertyDefinitionId="cmis:creationDate"], propertyDateTime[propertyDefinitionId="cmis:creationDate"]');
+                const lastModifiedByElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:lastModifiedBy"], propertyString[propertyDefinitionId="cmis:lastModifiedBy"]');
+                const lastModificationDateElement = properties.querySelector('cmis\\:propertyDateTime[propertyDefinitionId="cmis:lastModificationDate"], propertyDateTime[propertyDefinitionId="cmis:lastModificationDate"]');
+
+                id = objectIdElement?.querySelector('cmis\\:value, value')?.textContent || '';
+                objectType = objectTypeElement?.querySelector('cmis\\:value, value')?.textContent || 'cmis:folder';
+                baseType = baseTypeElement?.querySelector('cmis\\:value, value')?.textContent || 'cmis:folder';
+                objectPath = pathElement?.querySelector('cmis\\:value, value')?.textContent || path;
+                createdBy = createdByElement?.querySelector('cmis\\:value, value')?.textContent || '';
+                creationDate = creationDateElement?.querySelector('cmis\\:value, value')?.textContent || '';
+                lastModifiedBy = lastModifiedByElement?.querySelector('cmis\\:value, value')?.textContent || '';
+                lastModificationDate = lastModificationDateElement?.querySelector('cmis\\:value, value')?.textContent || '';
+              }
+
+              const cmisObject: CMISObject = {
+                id: id,
+                name: title,
+                objectType: objectType,
+                baseType: baseType,
+                path: objectPath,
+                createdBy: createdBy,
+                creationDate: creationDate,
+                lastModifiedBy: lastModifiedBy,
+                lastModificationDate: lastModificationDate,
+                properties: propertiesMap,
+                allowableActions: []
+              };
+
+              resolve(cmisObject);
+            } catch (e) {
+              reject(new Error('Failed to parse AtomPub response'));
+            }
+          } else {
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
+          }
+        }
+      };
+
+      xhr.onerror = () => {
         reject(new Error('Network error'));
       };
       xhr.send();
@@ -1663,7 +1786,10 @@ export class CMISService {
 
       xhr.onerror = () => reject(new Error('Network error'));
 
-      const payload = {
+      const payload: {
+        permissions: { principalId: string; permissions: string[]; direct: boolean }[];
+        breakInheritance?: boolean;
+      } = {
         permissions: acl.permissions.map(perm => ({
           principalId: perm.principalId,
           permissions: perm.permissions,
@@ -1673,7 +1799,7 @@ export class CMISService {
 
       // Add breakInheritance option if specified
       if (options?.breakInheritance !== undefined) {
-        payload['breakInheritance'] = options.breakInheritance;
+        payload.breakInheritance = options.breakInheritance;
       }
 
       xhr.send(JSON.stringify(payload));
@@ -2104,76 +2230,6 @@ export class CMISService {
       xhr.onerror = () => {
         // Network error occurred
         reject(new Error('Network error during type list fetch'));
-      };
-
-      xhr.send();
-    });
-  }
-
-  private async fetchTypeChildren(repositoryId: string, typeId: string | null): Promise<TypeDefinition[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
-      // Build URL with optional typeId parameter
-      const url = typeId
-        ? `/core/browser/${repositoryId}?cmisselector=typeChildren&typeId=${encodeURIComponent(typeId)}`
-        : `/core/browser/${repositoryId}?cmisselector=typeChildren`;
-
-      xhr.open('GET', url, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const jsonResponse = JSON.parse(xhr.responseText);
-
-              if (!jsonResponse.types || !Array.isArray(jsonResponse.types)) {
-                // Empty child types array is OK (not all base types have children)
-                resolve([]);
-                return;
-              }
-
-              const types: TypeDefinition[] = jsonResponse.types.map((type: any) => {
-                // Determine if type is deletable (standard CMIS types should not be deletable)
-                const isStandardType = type.id.startsWith('cmis:');
-                const deletable = !isStandardType && (type.typeMutability?.delete !== false);
-
-                return {
-                  id: type.id || 'unknown',
-                  displayName: type.displayName || type.id || 'Unknown Type',
-                  description: type.description || (type.displayName || type.id) + ' type definition',
-                  baseTypeId: type.baseId || type.id,
-                  parentTypeId: type.parentTypeId || type.parentId,
-                  creatable: type.creatable !== false,
-                  fileable: type.fileable !== false,
-                  queryable: type.queryable !== false,
-                  deletable: deletable,
-                  propertyDefinitions: {}
-                };
-              });
-
-              resolve(types);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Failed to parse type definitions JSON'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => {
-        // Network error occurred
-        reject(new Error('Network error'));
       };
 
       xhr.send();

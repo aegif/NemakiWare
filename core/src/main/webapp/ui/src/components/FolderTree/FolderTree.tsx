@@ -1,175 +1,122 @@
 /**
- * FolderTree Component for NemakiWare React UI - Current Folder Model
+ * FolderTree Component for NemakiWare React UI - Ancestor-Aware Navigation Model
  *
- * Focused folder navigation component providing a "current folder" view:
- * - Shows current folder, its parent (for upward navigation), and immediate children
- * - Optimized for large repositories with wide/deep folder structures
- * - CMISService integration for folder traversal and metadata retrieval
- * - Parent-child callback pattern (onSelect) for DocumentList integration
- * - Automatic folder focus when selectedFolderId changes
- * - Folder-only filtering (excludes documents from tree view)
- * - Path retrieval via getObject for breadcrumb navigation
- * - Error handling with user-friendly Japanese messages
- * - Loading spinner during folder data fetch
+ * Enhanced folder navigation component with configurable ancestor display:
+ * - Shows ancestors up to N generations based on config (or all up to ROOT if -1)
+ * - Current folder is the "pivot" point for tree construction
+ * - Selected folder (highlighted in tree) can differ from current folder
+ * - Single click: Select folder (shows its contents in main pane)
+ * - Double click on selected folder: Makes it the current folder (redraws tree)
+ * - Main pane subfolder clicks: Updates selected folder
+ * - Supports drill-down into descendants within tree view
  *
- * Current Folder Model Architecture:
- * Instead of showing the full tree from root, this component shows a "focused view":
- * - Current folder (highlighted)
- * - Parent folder (if not root) with "↑ 親フォルダ" indicator for upward navigation
- * - Immediate child folders (expandable for downward navigation)
+ * Key Concepts:
+ * - Current Folder: The pivot point for tree construction. Ancestors are loaded relative to this.
+ * - Selected Folder: The folder whose contents are displayed in main pane. Highlighted in tree.
+ * - When selected folder is clicked again, it becomes the current folder and tree redraws.
  *
- * When user navigates to a folder (clicks parent or child), the tree rebuilds around
- * that folder, making it the new "current folder" with its own parent and children visible.
- *
- * Benefits for Large Repositories:
- * - No need to maintain full tree structure from root
- * - Reduced memory footprint (only current folder context in memory)
- * - Faster navigation (no recursive tree updates)
- * - Better UX for repositories with hundreds of folders at each level
- * - Scales to arbitrary depth without performance degradation
- *
- * Component Architecture:
- * {loading ? <Spin /> : <Tree treeData={focusedTreeData} onSelect={handleSelect} />}
- *
- * Tree Data Structure (Focused View):
+ * Tree Structure (with ancestorGenerations=2):
  * [
- *   { key: 'parent-id', title: '↑ 親フォルダ: ParentName', icon: <UpOutlined /> },  // If not root
- *   { key: 'current-id', title: 'CurrentFolder', icon: <FolderOpenOutlined />, children: [...] },
+ *   GrandparentFolder (expandable)
+ *     └─ ParentFolder (expandable)
+ *         └─ CurrentFolder (highlighted as current, children visible)
+ *             ├─ ChildFolder1 (expandable/clickable)
+ *             └─ ChildFolder2 (expandable/clickable)
  * ]
  *
- * State Management:
- * - currentFolderId: string - The folder currently in focus
- * - treeData: TreeNode[] - Focused tree structure (parent + current + children)
- * - loading: boolean - Loading spinner visibility
- * - selectedKeys: string[] - Currently selected folder ID (single selection)
+ * Navigation Flows:
+ * 1. Click child folder → Child becomes selected → Main pane shows child's contents
+ * 2. Click selected folder again → Selected folder becomes current → Tree redraws around it
+ * 3. Click ancestor folder → Ancestor becomes selected → Main pane shows ancestor's contents
+ * 4. Click selected ancestor again → Ancestor becomes current → Tree redraws around it
  *
- * Usage Examples:
- * ```typescript
- * // DocumentList.tsx - Sidebar integration
- * <Card title="フォルダツリー" style={{ height: 'calc(100vh - 200px)', overflow: 'auto' }}>
- *   <FolderTree
- *     repositoryId={repositoryId}
- *     onSelect={handleFolderSelect}
- *     selectedFolderId={currentFolderId}
- *   />
- * </Card>
- *
- * // Navigation Flow:
- * // 1. User clicks child folder → handleSelect called with child folder ID
- * // 2. onSelect callback to DocumentList updates currentFolderId
- * // 3. useEffect detects selectedFolderId change, calls loadFocusedView(childId)
- * // 4. loadFocusedView fetches child's parent and children, rebuilds tree around child
- * // 5. Tree re-renders with child as new current folder, showing its parent and children
- *
- * // Upward Navigation Flow:
- * // 1. User clicks "↑ 親フォルダ" node → handleSelect called with parent folder ID
- * // 2. onSelect callback to DocumentList updates currentFolderId
- * // 3. useEffect detects change, calls loadFocusedView(parentId)
- * // 4. Tree rebuilds around parent folder
- * ```
- *
- * IMPORTANT DESIGN DECISIONS:
- *
- * 1. Current Folder Model (Lines 245-320):
- *    - Shows only current folder context (parent + current + children) instead of full tree
- *    - Rationale: Scales to large repositories without performance degradation
- *    - Implementation: loadFocusedView() fetches parent and children, builds focused tree
- *    - Advantage: Constant memory usage regardless of repository size
- *    - Pattern: Focused view with local context instead of global tree structure
- *
- * 2. Parent Folder Navigation (Lines 270-280):
- *    - Special "↑ 親フォルダ" node at top of tree for upward navigation
- *    - Rationale: Clear visual indicator for moving up the folder hierarchy
- *    - Implementation: Fetch parent via getParent, add as first tree node with UpOutlined icon
- *    - Advantage: Intuitive navigation, no need to maintain breadcrumb state in tree
- *    - Pattern: Explicit parent reference instead of implicit tree hierarchy
- *
- * 3. Automatic Focus on Selection Change (Lines 239-243):
- *    - useEffect watches selectedFolderId prop, rebuilds tree when it changes
- *    - Rationale: Keep tree synchronized with DocumentList's current folder
- *    - Implementation: useEffect dependency on selectedFolderId triggers loadFocusedView
- *    - Advantage: Tree always shows context for currently viewed folder
- *    - Pattern: Controlled component with external state synchronization
- *
- * 4. Simplified Tree Structure (Lines 285-310):
- *    - Flat tree with parent + current + children (max 2 levels visible)
- *    - Rationale: Eliminates need for recursive tree updates and complex state management
- *    - Implementation: Build tree array directly from parent/current/children data
- *    - Advantage: Predictable rendering, easier debugging, better performance
- *    - Pattern: Flat data structure instead of nested hierarchy
- *
- * 5. Lazy Loading Children (Lines 290-300):
- *    - Children loaded on demand when current folder changes
- *    - Rationale: Only fetch data for folders user is actively viewing
- *    - Implementation: loadFocusedView fetches children via getChildren
- *    - Advantage: Reduced API calls, faster navigation
- *    - Pattern: Just-in-time data fetching
- *
- * Performance Characteristics:
- * - Initial render: <50ms (single folder context)
- * - Focus change: 300-500ms (fetch parent + children via CMIS API)
- * - Tree rebuild: <20ms (flat structure, no recursion)
- * - Selection handling: 150-300ms (getObject API call for path retrieval)
- * - Memory usage: O(n) where n = number of children in current folder (not total folders)
- *
- * Known Limitations:
- * - No multi-level tree expansion (by design - focused view only)
- * - No search functionality within folder tree
- * - No drag-and-drop for moving folders
- * - No right-click context menu
- * - No caching of previously viewed folders
- *
- * Relationships to Other Components:
- * - Used by: DocumentList.tsx (sidebar folder navigation)
- * - Depends on: CMISService for folder operations (getObject, getChildren, getParent)
- * - Depends on: AuthContext via useAuth hook for handleAuthError callback
- * - Renders: Ant Design Tree, Spin, FolderOutlined/FolderOpenOutlined/UpOutlined icons
- * - Notifies: DocumentList via onSelect callback for folder navigation
+ * Props:
+ * - repositoryId: CMIS repository identifier
+ * - onSelect: Callback when a folder is selected (for main pane content update)
+ * - onCurrentFolderChange: Callback when current folder changes (optional, for tree redraw coordination)
+ * - selectedFolderId: Externally controlled selected folder (from main pane clicks)
+ * - currentFolderId: Externally controlled current folder (optional, for initial state)
  */
 
-import React, { useState, useEffect } from 'react';
-import { Spin, message, List, Typography } from 'antd';
-import { FolderOutlined, FolderOpenOutlined, UpOutlined } from '@ant-design/icons';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Tree, Spin, message } from 'antd';
+import type { TreeDataNode, TreeProps } from 'antd';
+import { FolderOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
 import { CMISObject } from '../../types/cmis';
 import { useAuth } from '../../contexts/AuthContext';
-
-const { Text } = Typography;
+import { getCurrentFolderTreeConfig } from '../../config/folderTree';
 
 interface FolderTreeProps {
   repositoryId: string;
   onSelect: (folderId: string, folderPath: string) => void;
+  onCurrentFolderChange?: (folderId: string) => void;
   selectedFolderId?: string;
+  currentFolderId?: string;
 }
+
+/*
+ * Future use: Represents a folder node with hierarchical structure
+ * interface FolderNode {
+ *   id: string;
+ *   name: string;
+ *   path: string;
+ *   parentId?: string;
+ *   children?: FolderNode[];
+ *   isLoaded?: boolean;
+ * }
+ */
+
 export const FolderTree: React.FC<FolderTreeProps> = ({
   repositoryId,
   onSelect,
-  selectedFolderId
+  onCurrentFolderChange,
+  selectedFolderId: externalSelectedFolderId,
+  currentFolderId: externalCurrentFolderId
 }) => {
-  const [currentFolderId, setCurrentFolderId] = useState<string>('');
-  const [currentFolder, setCurrentFolder] = useState<CMISObject | null>(null);
-  const [parentFolder, setParentFolder] = useState<CMISObject | null>(null);
-  const [childFolders, setChildFolders] = useState<CMISObject[]>([]);
+  // State
+  const [treeData, setTreeData] = useState<TreeDataNode[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentFolderId, setCurrentFolderId] = useState<string>('');
+  const [selectedFolderId, setSelectedFolderId] = useState<string>('');
+  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+  const [folderCache, setFolderCache] = useState<Map<string, CMISObject>>(new Map());
+
+  // Refs for click handling
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastClickedIdRef = useRef<string>('');
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
+  const config = getCurrentFolderTreeConfig();
 
+  // Sync with external selected folder
+  useEffect(() => {
+    if (externalSelectedFolderId && externalSelectedFolderId !== selectedFolderId) {
+      setSelectedFolderId(externalSelectedFolderId);
+    }
+  }, [externalSelectedFolderId]);
+
+  // Sync with external current folder
+  useEffect(() => {
+    if (externalCurrentFolderId && externalCurrentFolderId !== currentFolderId) {
+      setCurrentFolderId(externalCurrentFolderId);
+      loadTreeFromFolder(externalCurrentFolderId);
+    }
+  }, [externalCurrentFolderId]);
+
+  // Initial load - get root folder and build tree
   useEffect(() => {
     loadRootFolder();
   }, [repositoryId]);
 
-  // Load focused view when selectedFolderId changes
-  useEffect(() => {
-    if (selectedFolderId && selectedFolderId !== currentFolderId) {
-      loadFocusedView(selectedFolderId);
-    }
-  }, [selectedFolderId]);
-
+  /**
+   * Load root folder and initialize tree
+   */
   const loadRootFolder = async () => {
     const authData = localStorage.getItem('nemakiware_auth');
     if (!authData) {
-      console.log('FolderTree: Skipping getRootFolder - no authentication data in localStorage');
+      console.log('FolderTree: Skipping - no authentication data');
       setLoading(false);
       return;
     }
@@ -177,56 +124,271 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
     try {
       setLoading(true);
       const rootFolder = await cmisService.getRootFolder(repositoryId);
+
+      // Cache the root folder
+      const newCache = new Map(folderCache);
+      newCache.set(rootFolder.id, rootFolder);
+      setFolderCache(newCache);
+
       setCurrentFolderId(rootFolder.id);
-      await loadFocusedView(rootFolder.id);
+      setSelectedFolderId(rootFolder.id);
+
+      await loadTreeFromFolder(rootFolder.id);
       onSelect(rootFolder.id, rootFolder.path || '/');
     } catch (error) {
+      console.error('Failed to load root folder:', error);
       message.error('ルートフォルダの読み込みに失敗しました');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadFocusedView = async (folderId: string) => {
+  /**
+   * Build tree data starting from a folder (current folder becomes the pivot)
+   */
+  const loadTreeFromFolder = async (folderId: string) => {
     try {
       setLoading(true);
-      
-      const folder = await cmisService.getObject(repositoryId, folderId);
-      setCurrentFolder(folder);
-      setCurrentFolderId(folderId);
-      
-      // Fetch parent folder if not root
-      let parent: CMISObject | null = null;
-      if (folder.parentId) {
-        try {
-          parent = await cmisService.getObject(repositoryId, folder.parentId);
-          setParentFolder(parent);
-        } catch (error) {
-          console.error('Failed to load parent folder:', error);
-          setParentFolder(null);
-        }
-      } else {
-        setParentFolder(null);
+
+      // Get the folder object
+      let folder = folderCache.get(folderId);
+      if (!folder) {
+        folder = await cmisService.getObject(repositoryId, folderId);
+        const newCache = new Map(folderCache);
+        newCache.set(folderId, folder);
+        setFolderCache(newCache);
       }
-      
-      const children = await cmisService.getChildren(repositoryId, folderId);
-      const folders = children.filter(child => child.baseType === 'cmis:folder');
-      setChildFolders(folders);
-      
+
+      // Build ancestor chain
+      const ancestors = await buildAncestorChain(folder, config.ancestorGenerations);
+
+      // Get children of current folder
+      const children = await loadFolderChildren(folderId);
+
+      // Build tree structure
+      const tree = buildTreeStructure(ancestors, folder, children);
+      setTreeData(tree);
+
+      // Expand all ancestors and current folder
+      const keysToExpand = [...ancestors.map(a => a.id), folderId];
+      setExpandedKeys(keysToExpand);
+
     } catch (error) {
-      console.error('Failed to load focused view:', error);
-      message.error('フォルダの読み込みに失敗しました');
+      console.error('Failed to load tree from folder:', error);
+      message.error('フォルダツリーの読み込みに失敗しました');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFolderClick = async (folderId: string) => {
+  /**
+   * Build ancestor chain up to specified generations or root
+   */
+  const buildAncestorChain = async (
+    folder: CMISObject,
+    generations: number
+  ): Promise<CMISObject[]> => {
+    const ancestors: CMISObject[] = [];
+    let currentFolder = folder;
+    let gen = 0;
+
+    while (currentFolder.parentId && (generations === -1 || gen < generations)) {
+      try {
+        let parent = folderCache.get(currentFolder.parentId);
+        if (!parent) {
+          parent = await cmisService.getObject(repositoryId, currentFolder.parentId);
+          const newCache = new Map(folderCache);
+          newCache.set(parent.id, parent);
+          setFolderCache(newCache);
+        }
+        ancestors.unshift(parent); // Add to front to maintain order (oldest ancestor first)
+        currentFolder = parent;
+        gen++;
+      } catch (error) {
+        console.error('Failed to load ancestor:', error);
+        break;
+      }
+    }
+
+    return ancestors;
+  };
+
+  /**
+   * Load children folders of a given folder
+   */
+  const loadFolderChildren = async (folderId: string): Promise<CMISObject[]> => {
     try {
-      const folder = await cmisService.getObject(repositoryId, folderId);
-      onSelect(folderId, folder.path || folder.name);
+      const children = await cmisService.getChildren(repositoryId, folderId);
+      const folders = children.filter(child => child.baseType === 'cmis:folder');
+
+      // Cache children
+      const newCache = new Map(folderCache);
+      folders.forEach(f => newCache.set(f.id, f));
+      setFolderCache(newCache);
+
+      return folders;
     } catch (error) {
-      message.error('フォルダ情報の取得に失敗しました');
+      console.error('Failed to load children:', error);
+      return [];
+    }
+  };
+
+  /**
+   * Build tree structure from ancestors, current folder, and children
+   */
+  const buildTreeStructure = (
+    ancestors: CMISObject[],
+    currentFolder: CMISObject,
+    children: CMISObject[]
+  ): TreeDataNode[] => {
+    // Build current folder node with children
+    const currentNode: TreeDataNode = {
+      key: currentFolder.id,
+      title: (
+        <span style={{ fontWeight: currentFolder.id === currentFolderId ? 'bold' : 'normal' }}>
+          {currentFolder.name || 'Repository Root'}
+        </span>
+      ),
+      icon: <FolderOpenOutlined style={{ color: '#1890ff' }} />,
+      children: children.map(child => ({
+        key: child.id,
+        title: child.name,
+        icon: <FolderOutlined style={{ color: '#faad14' }} />,
+        isLeaf: false, // Allow expansion for drill-down
+      })),
+    };
+
+    // If no ancestors, return just current folder
+    if (ancestors.length === 0) {
+      return [currentNode];
+    }
+
+    // Build nested structure from oldest ancestor down
+    let rootNode: TreeDataNode | null = null;
+    let parentNode: TreeDataNode | null = null;
+
+    for (const ancestor of ancestors) {
+      const node: TreeDataNode = {
+        key: ancestor.id,
+        title: ancestor.name,
+        icon: <FolderOutlined style={{ color: '#faad14' }} />,
+        children: [],
+      };
+
+      if (!rootNode) {
+        rootNode = node;
+      }
+
+      if (parentNode && parentNode.children) {
+        parentNode.children.push(node);
+      }
+
+      parentNode = node;
+    }
+
+    // Attach current folder node to last ancestor
+    if (parentNode && parentNode.children) {
+      parentNode.children.push(currentNode);
+    }
+
+    return rootNode ? [rootNode] : [currentNode];
+  };
+
+  /**
+   * Handle folder click - single click selects, double click makes current
+   */
+  const handleFolderClick = useCallback(async (folderId: string) => {
+    // Clear any pending timer
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+
+    // Check if this is a double click (same folder clicked twice quickly)
+    if (lastClickedIdRef.current === folderId && selectedFolderId === folderId) {
+      // Double click detected - make this folder the current folder
+      setCurrentFolderId(folderId);
+      if (onCurrentFolderChange) {
+        onCurrentFolderChange(folderId);
+      }
+      await loadTreeFromFolder(folderId);
+      lastClickedIdRef.current = '';
+      return;
+    }
+
+    // First click - start timer for single click
+    lastClickedIdRef.current = folderId;
+    clickTimerRef.current = setTimeout(async () => {
+      // Single click - select this folder
+      setSelectedFolderId(folderId);
+
+      // Get folder path for callback
+      let folder = folderCache.get(folderId);
+      if (!folder) {
+        try {
+          folder = await cmisService.getObject(repositoryId, folderId);
+          const newCache = new Map(folderCache);
+          newCache.set(folderId, folder);
+          setFolderCache(newCache);
+        } catch (error) {
+          console.error('Failed to get folder:', error);
+          return;
+        }
+      }
+
+      onSelect(folderId, folder.path || folder.name);
+      clickTimerRef.current = null;
+    }, config.clickDelay);
+  }, [selectedFolderId, folderCache, repositoryId, onSelect, onCurrentFolderChange, config.clickDelay]);
+
+  /**
+   * Handle tree node selection
+   */
+  const handleSelect: TreeProps['onSelect'] = (selectedKeys, _info) => {
+    if (selectedKeys.length > 0) {
+      const folderId = selectedKeys[0] as string;
+      handleFolderClick(folderId);
+    }
+  };
+
+  /**
+   * Handle tree expansion - load children on demand
+   */
+  const handleExpand: TreeProps['onExpand'] = async (keys, { node, expanded }) => {
+    setExpandedKeys(keys);
+
+    // If expanding and node doesn't have loaded children, load them
+    if (expanded && node && !node.children?.length) {
+      const folderId = node.key as string;
+      const children = await loadFolderChildren(folderId);
+
+      if (children.length > 0) {
+        // Update tree data with new children
+        const updateTreeData = (nodes: TreeDataNode[]): TreeDataNode[] => {
+          return nodes.map(n => {
+            if (n.key === folderId) {
+              return {
+                ...n,
+                children: children.map(child => ({
+                  key: child.id,
+                  title: child.name,
+                  icon: <FolderOutlined style={{ color: '#faad14' }} />,
+                  isLeaf: false,
+                })),
+              };
+            }
+            if (n.children) {
+              return {
+                ...n,
+                children: updateTreeData(n.children as TreeDataNode[]),
+              };
+            }
+            return n;
+          });
+        };
+
+        setTreeData(prev => updateTreeData(prev));
+      }
     }
   };
 
@@ -239,114 +401,66 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   }
 
   return (
-    <div role="tree" style={{ background: '#fafafa', padding: '12px', borderRadius: '4px' }}>
-      {/* Parent folder navigation */}
-      {parentFolder && (
-        <div
-          role="treeitem"
-          aria-label={`Parent Folder: ${parentFolder.name}`}
-          tabIndex={0}
-          style={{
-            padding: '8px 12px',
-            marginBottom: '8px',
-            background: '#e6f7ff',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            border: '1px solid #91d5ff'
-          }}
-          onClick={() => handleFolderClick(parentFolder.id)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              handleFolderClick(parentFolder.id);
-            }
-          }}
-        >
-          <UpOutlined style={{ color: '#1890ff' }} />
-          <Text strong style={{ color: '#1890ff' }}>
-            ↑ 親フォルダ: {parentFolder.name}
-          </Text>
-        </div>
-      )}
-      
-      {/* Current folder */}
-      <div
-        role="treeitem"
-        aria-label="Root Folder"
-        tabIndex={0}
-        style={{
-          padding: '8px 12px',
-          marginBottom: '8px',
-          background: '#fff',
-          borderRadius: '4px',
-          border: '2px solid #1890ff',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          cursor: 'pointer'
-        }}
-        onClick={() => handleFolderClick(currentFolderId)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            handleFolderClick(currentFolderId);
-          }
-        }}
-      >
-        <FolderOpenOutlined style={{ color: '#1890ff', fontSize: '16px' }} />
-        <Text strong style={{ color: '#1890ff' }}>
-          <span className="sr-only">Root Folder</span>
-          {currentFolder?.name || 'Repository Root'}
-        </Text>
+    <div style={{ background: '#fafafa', padding: '8px', borderRadius: '4px' }}>
+      <div style={{ marginBottom: '8px', fontSize: '12px', color: '#666' }}>
+        シングルクリック: フォルダを選択 | ダブルクリック: ツリーを再描画
       </div>
-      
-      {/* Child folders */}
-      {childFolders.length > 0 ? (
-        <List
-          size="small"
-          dataSource={childFolders}
-          renderItem={(folder) => (
-            <List.Item
-              role="treeitem"
-              aria-label={folder.name}
-              tabIndex={0}
-              style={{
-                padding: '8px 12px',
-                cursor: 'pointer',
-                background: '#fff',
-                marginBottom: '4px',
-                borderRadius: '4px',
-                border: '1px solid #d9d9d9'
-              }}
-              onClick={() => handleFolderClick(folder.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  handleFolderClick(folder.id);
-                }
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#f0f0f0';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = '#fff';
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FolderOutlined style={{ color: '#faad14' }} />
-                <Text>{folder.name}</Text>
-              </div>
-            </List.Item>
-          )}
-        />
-      ) : (
-        <div style={{ padding: '12px', textAlign: 'center', color: '#999' }}>
-          <Text type="secondary">サブフォルダはありません</Text>
-        </div>
-      )}
+      <Tree
+        treeData={treeData}
+        selectedKeys={[selectedFolderId]}
+        expandedKeys={expandedKeys}
+        onSelect={handleSelect}
+        onExpand={handleExpand}
+        showIcon
+        blockNode
+        style={{ background: 'transparent' }}
+        titleRender={(nodeData) => (
+          <span
+            style={{
+              padding: '2px 8px',
+              borderRadius: '4px',
+              backgroundColor:
+                nodeData.key === selectedFolderId
+                  ? '#e6f7ff'
+                  : nodeData.key === currentFolderId
+                  ? '#f0f0f0'
+                  : 'transparent',
+              border:
+                nodeData.key === currentFolderId
+                  ? '1px solid #1890ff'
+                  : nodeData.key === selectedFolderId
+                  ? '1px solid #91d5ff'
+                  : '1px solid transparent',
+              display: 'inline-block',
+            }}
+          >
+            {nodeData.title as React.ReactNode}
+          </span>
+        )}
+      />
+      <div style={{ marginTop: '8px', fontSize: '11px', color: '#999' }}>
+        <span style={{
+          display: 'inline-block',
+          width: '12px',
+          height: '12px',
+          border: '1px solid #1890ff',
+          borderRadius: '2px',
+          marginRight: '4px',
+          backgroundColor: '#f0f0f0'
+        }} />
+        カレントフォルダ
+        <span style={{
+          display: 'inline-block',
+          width: '12px',
+          height: '12px',
+          border: '1px solid #91d5ff',
+          borderRadius: '2px',
+          marginLeft: '12px',
+          marginRight: '4px',
+          backgroundColor: '#e6f7ff'
+        }} />
+        選択中
+      </div>
     </div>
   );
 };

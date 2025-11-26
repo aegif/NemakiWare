@@ -245,7 +245,7 @@ class ErrorBoundary extends React.Component<
     return { hasError: true };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+  componentDidCatch(error: Error, _errorInfo: React.ErrorInfo) {
     // ErrorBoundary caught an error - handle authentication errors
 
     // Check if this is an authentication-related error
