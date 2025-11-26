@@ -1678,13 +1678,34 @@ export class CMISService {
               for (let i = 0; i < entries.length; i++) {
                 const entry = entries[i];
                 const id = entry.querySelector('id')?.textContent || '';
-                const title = entry.querySelector('title')?.textContent || '';
+                
+                // Helper function to get property value from CMIS XML
+                const getPropertyValue = (propName: string, propType: string = 'propertyId') => {
+                  const properties = entry.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'properties')[0] ||
+                                   entry.querySelector('cmis\\:properties, properties');
+                  if (!properties) return '';
+                  
+                  const propElements = properties.getElementsByTagName(`cmis:${propType}`);
+                  for (let j = 0; j < propElements.length; j++) {
+                    const elem = propElements[j];
+                    if (elem.getAttribute('propertyDefinitionId') === propName) {
+                      const valueElem = elem.querySelector('cmis\\:value, value');
+                      return valueElem?.textContent || '';
+                    }
+                  }
+                  return '';
+                };
+                
+                const sourceId = getPropertyValue('cmis:sourceId', 'propertyId');
+                const targetId = getPropertyValue('cmis:targetId', 'propertyId');
+                const objectTypeId = getPropertyValue('cmis:objectTypeId', 'propertyId') || 'cmis:relationship';
                 
                 relationships.push({
                   id: id.split('/').pop() || id,
-                  sourceId: '', // Would need to parse from CMIS properties
-                  targetId: '', // Would need to parse from CMIS properties
-                  type: 'cmis:relationship'
+                  sourceId: sourceId,
+                  targetId: targetId,
+                  relationshipType: objectTypeId,
+                  properties: {}
                 });
               }
               

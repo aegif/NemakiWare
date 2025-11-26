@@ -20,7 +20,9 @@ import {
   LockOutlined, 
   UnlockOutlined,
   UploadOutlined,
-  ArrowLeftOutlined
+  ArrowLeftOutlined,
+  PlusOutlined,
+  DeleteOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
@@ -42,7 +44,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [relationships, setRelationships] = useState<Relationship[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
+  const [relationshipModalVisible, setRelationshipModalVisible] = useState(false);
   const [form] = Form.useForm();
+  const [relationshipForm] = Form.useForm();
 
   const cmisService = new CMISService();
 
@@ -165,6 +169,34 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     }
   };
 
+  const handleCreateRelationship = async (values: any) => {
+    if (!object) return;
+    
+    try {
+      await cmisService.createRelationship(repositoryId, {
+        sourceId: object.id,
+        targetId: values.targetId,
+        relationshipType: values.relationshipType || 'cmis:relationship',
+      });
+      message.success('関係を作成しました');
+      setRelationshipModalVisible(false);
+      relationshipForm.resetFields();
+      loadRelationships();
+    } catch (error) {
+      message.error('関係の作成に失敗しました');
+    }
+  };
+
+  const handleDeleteRelationship = async (relationshipId: string) => {
+    try {
+      await cmisService.deleteRelationship(repositoryId, relationshipId);
+      message.success('関係を削除しました');
+      loadRelationships();
+    } catch (error) {
+      message.error('関係の削除に失敗しました');
+    }
+  };
+
   if (loading || !object || !typeDefinition) {
     return <div>読み込み中...</div>;
   }
@@ -240,6 +272,26 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       dataIndex: 'targetId',
       key: 'target',
     },
+    {
+      title: 'アクション',
+      key: 'actions',
+      render: (_: any, record: Relationship) => (
+        <Popconfirm
+          title="この関係を削除しますか？"
+          onConfirm={() => handleDeleteRelationship(record.id)}
+          okText="はい"
+          cancelText="いいえ"
+        >
+          <Button 
+            size="small" 
+            danger 
+            icon={<DeleteOutlined />}
+          >
+            削除
+          </Button>
+        </Popconfirm>
+      ),
+    },
   ];
 
   const tabItems = [
@@ -282,13 +334,25 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       key: 'relationships',
       label: '関係',
       children: (
-        <Table
-          columns={relationshipColumns}
-          dataSource={relationships}
-          rowKey="id"
-          size="small"
-          pagination={false}
-        />
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <div style={{ marginBottom: 16 }}>
+            <Button 
+              type="primary" 
+              icon={<PlusOutlined />}
+              onClick={() => setRelationshipModalVisible(true)}
+            >
+              関係を追加
+            </Button>
+          </div>
+          <Table
+            columns={relationshipColumns}
+            dataSource={relationships}
+            rowKey="id"
+            size="small"
+            pagination={false}
+            locale={{ emptyText: '関係がありません' }}
+          />
+        </Space>
       ),
     },
   ];
@@ -426,6 +490,49 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 チェックイン
               </Button>
               <Button onClick={() => setCheckoutModalVisible(false)}>
+                キャンセル
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="関係を追加"
+        open={relationshipModalVisible}
+        onCancel={() => {
+          setRelationshipModalVisible(false);
+          relationshipForm.resetFields();
+        }}
+        footer={null}
+        width={500}
+      >
+        <Form form={relationshipForm} onFinish={handleCreateRelationship} layout="vertical">
+          <Form.Item
+            name="relationshipType"
+            label="関係タイプ"
+            initialValue="cmis:relationship"
+          >
+            <Input placeholder="cmis:relationship" />
+          </Form.Item>
+          
+          <Form.Item
+            name="targetId"
+            label="ターゲットオブジェクトID"
+            rules={[{ required: true, message: 'ターゲットオブジェクトIDを入力してください' }]}
+          >
+            <Input placeholder="ターゲットオブジェクトのIDを入力" />
+          </Form.Item>
+          
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                作成
+              </Button>
+              <Button onClick={() => {
+                setRelationshipModalVisible(false);
+                relationshipForm.resetFields();
+              }}>
                 キャンセル
               </Button>
             </Space>

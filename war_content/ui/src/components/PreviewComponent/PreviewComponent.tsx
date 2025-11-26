@@ -31,8 +31,8 @@ export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId
           return <ImagePreview url={contentUrl} fileName={object.name} />;
         case 'video':
           return <VideoPreview url={contentUrl} fileName={object.name} />;
-        case 'pdf':
-          return <PDFPreview url={contentUrl} fileName={object.name} />;
+          case 'pdf':
+            return <PDFPreview url={contentUrl} fileName={object.name} repositoryId={repositoryId} objectId={object.id} />;
         case 'text':
           return <TextPreview url={contentUrl} fileName={object.name} />;
         case 'office':
