@@ -90,12 +90,8 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     }
   };
 
-  // TODO: Implement type editing feature
-  // const handleEdit = (type: TypeDefinition) => {
-  //   setEditingType(type);
-  //   form.setFieldsValue(type);
-  //   setModalVisible(true);
-  // };
+  // Type editing is implemented via JSON editor (handleJsonEdit)
+  // Form-based editing was replaced with JSON editing for flexibility
 
   const handleDelete = async (typeId: string) => {
     try {
