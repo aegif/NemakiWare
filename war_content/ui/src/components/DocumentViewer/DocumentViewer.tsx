@@ -29,6 +29,7 @@ import { CMISService } from '../../services/cmis';
 import { CMISObject, VersionHistory, TypeDefinition, Relationship } from '../../types/cmis';
 import { PropertyEditor } from '../PropertyEditor/PropertyEditor';
 import { PreviewComponent } from '../PreviewComponent/PreviewComponent';
+import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
 import { canPreview } from '../../utils/previewUtils';
 
 interface DocumentViewerProps {
@@ -45,6 +46,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [loading, setLoading] = useState(true);
   const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
   const [relationshipModalVisible, setRelationshipModalVisible] = useState(false);
+  const [objectPickerVisible, setObjectPickerVisible] = useState(false);
+  const [selectedTargetObject, setSelectedTargetObject] = useState<CMISObject | null>(null);
   const [form] = Form.useForm();
   const [relationshipForm] = Form.useForm();
 
@@ -170,17 +173,18 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   };
 
   const handleCreateRelationship = async (values: any) => {
-    if (!object) return;
+    if (!object || !selectedTargetObject) return;
     
     try {
       await cmisService.createRelationship(repositoryId, {
         sourceId: object.id,
-        targetId: values.targetId,
+        targetId: selectedTargetObject.id,
         relationshipType: values.relationshipType || 'cmis:relationship',
       });
       message.success('関係を作成しました');
       setRelationshipModalVisible(false);
       relationshipForm.resetFields();
+      setSelectedTargetObject(null);
       loadRelationships();
     } catch (error) {
       message.error('関係の作成に失敗しました');
@@ -503,6 +507,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         onCancel={() => {
           setRelationshipModalVisible(false);
           relationshipForm.resetFields();
+          setSelectedTargetObject(null);
         }}
         footer={null}
         width={500}
@@ -517,21 +522,35 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           </Form.Item>
           
           <Form.Item
-            name="targetId"
-            label="ターゲットオブジェクトID"
-            rules={[{ required: true, message: 'ターゲットオブジェクトIDを入力してください' }]}
+            label="ターゲットオブジェクト"
+            required
           >
-            <Input placeholder="ターゲットオブジェクトのIDを入力" />
+            <Space direction="vertical" style={{ width: '100%' }}>
+              {selectedTargetObject ? (
+                <div style={{ padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px', marginBottom: '8px' }}>
+                  <strong>{selectedTargetObject.name}</strong>
+                  <div style={{ fontSize: '12px', color: '#666' }}>ID: {selectedTargetObject.id}</div>
+                </div>
+              ) : null}
+              <Button onClick={() => setObjectPickerVisible(true)}>
+                {selectedTargetObject ? 'ターゲットを変更' : 'ターゲットを選択'}
+              </Button>
+            </Space>
           </Form.Item>
           
           <Form.Item>
             <Space>
-              <Button type="primary" htmlType="submit">
+              <Button 
+                type="primary" 
+                htmlType="submit"
+                disabled={!selectedTargetObject}
+              >
                 作成
               </Button>
               <Button onClick={() => {
                 setRelationshipModalVisible(false);
                 relationshipForm.resetFields();
+                setSelectedTargetObject(null);
               }}>
                 キャンセル
               </Button>
@@ -539,6 +558,17 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           </Form.Item>
         </Form>
       </Modal>
+
+      <ObjectPicker
+        repositoryId={repositoryId}
+        visible={objectPickerVisible}
+        onSelect={(obj) => {
+          setSelectedTargetObject(obj);
+          setObjectPickerVisible(false);
+        }}
+        onCancel={() => setObjectPickerVisible(false)}
+        title="ターゲットオブジェクトを選択"
+      />
     </div>
   );
 };
