@@ -252,6 +252,22 @@ interface DocumentListProps {
   repositoryId: string;
 }
 
+// Root folder ID constant - extracted to avoid hard-coded values throughout the component
+const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
+
+/**
+ * Escape special characters in CMIS SQL LIKE clause to prevent SQL injection.
+ * CMIS SQL uses single quotes for strings and % for wildcards.
+ */
+const escapeForCmisSql = (input: string): string => {
+  // Escape single quotes by doubling them (CMIS SQL standard)
+  // Escape % and _ which are LIKE wildcards
+  return input
+    .replace(/'/g, "''")
+    .replace(/%/g, '\\%')
+    .replace(/_/g, '\\_');
+};
+
 export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [objects, setObjects] = useState<CMISObject[]>([]);
   const [loading, setLoading] = useState(false);
@@ -279,9 +295,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setCurrentFolderId(folderIdFromUrl);
     } else if (!currentFolderId) {
       // Default to root folder if no URL parameter and no current folder
-      const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
-      setCurrentFolderId(rootFolderId);
-      setSearchParams({ folderId: rootFolderId });
+      setCurrentFolderId(ROOT_FOLDER_ID);
+      setSearchParams({ folderId: ROOT_FOLDER_ID });
     }
   }, [repositoryId]); // Only depend on repositoryId
 
@@ -303,16 +318,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setObjects(children);
 
       // Update folder path for root folder
-      if (currentFolderId === 'e02f784f8360a02cc14d1314c10038ff') {
+      if (currentFolderId === ROOT_FOLDER_ID) {
         setCurrentFolderPath('/');
       }
     } catch (error) {
-      console.error('LOAD OBJECTS DEBUG: Error loading children:', error);
-      console.error('LOAD OBJECTS DEBUG: Error details:', {
-        repositoryId,
-        currentFolderId,
-        errorMessage: error instanceof Error ? error.message : 'Unknown error'
-      });
       message.error(`オブジェクトの読み込みに失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
       // Clear objects on error to show empty state
       setObjects([]);
@@ -480,7 +489,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setLoading(true);
 
     try {
-      const query = `SELECT * FROM cmis:document WHERE cmis:name LIKE '%${searchQuery}%'`;
+      // SECURITY FIX: Escape user input to prevent SQL injection
+      const escapedQuery = escapeForCmisSql(searchQuery);
+      const query = `SELECT * FROM cmis:document WHERE cmis:name LIKE '%${escapedQuery}%'`;
       const searchResult = await cmisService.search(repositoryId, query);
       setObjects(searchResult.objects);
     } catch (error) {
@@ -557,10 +568,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               onClick={async (e) => {
                 e.stopPropagation();
                 try {
-                  const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
-                  setCurrentFolderId(rootFolderId);
+                  setCurrentFolderId(ROOT_FOLDER_ID);
                   setCurrentFolderPath('/');
-                  setSearchParams({ folderId: rootFolderId });
+                  setSearchParams({ folderId: ROOT_FOLDER_ID });
                   setIsSearchMode(false);
                   setSearchQuery('');
                 } catch (error) {
@@ -737,10 +747,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       if (index === 0) {
         // Click on home icon - navigate to root
-        const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
-        setCurrentFolderId(rootFolderId);
+        setCurrentFolderId(ROOT_FOLDER_ID);
         setCurrentFolderPath('/');
-        setSearchParams({ folderId: rootFolderId });
+        setSearchParams({ folderId: ROOT_FOLDER_ID });
       } else {
         // Click on folder segment - resolve path to folder ID
         const targetPath = '/' + pathSegments.slice(0, index).join('/');
