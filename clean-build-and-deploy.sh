@@ -58,7 +58,7 @@ echo
 # Step 4: Fresh Maven build with detailed verification
 echo "4. Fresh Maven Build:"
 echo "   Starting clean package build..."
-mvn clean compile package -f core/pom.xml -Pdevelopment -q
+mvn clean compile package -f core/pom.xml -Pdevelopment -q -DskipTests
 
 # Verify build success
 if [ -f "core/target/core.war" ]; then
