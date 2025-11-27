@@ -102,12 +102,13 @@
  * - ✅ Reduced attack surface: Simpler implementation with fewer features = fewer vulnerabilities
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Button, Spin, Alert } from 'antd';
 
 // SECURITY: Configure worker with patched pdfjs-dist@5.3.31 (CVE-2024-4367 fixed)
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+// Use jsdelivr CDN with explicit https to avoid mixed-content and fetch issues
+pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface PDFPreviewProps {
   url: string;
