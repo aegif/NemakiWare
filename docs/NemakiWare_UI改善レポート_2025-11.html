@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NemakiWare UI改善レポート - 2025年11月</title>
+    <style>
+        @media print {
+            body { font-size: 11pt; }
+            h1 { page-break-before: avoid; }
+            table { page-break-inside: avoid; }
+        }
+        body {
+            font-family: "Hiragino Kaku Gothic Pro", "Yu Gothic", "Meiryo", sans-serif;
+            line-height: 1.8;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            color: #333;
+        }
+        h1 {
+            color: #1a5f7a;
+            border-bottom: 3px solid #1a5f7a;
+            padding-bottom: 10px;
+            font-size: 28pt;
+        }
+        h2 {
+            color: #2d8bba;
+            border-left: 5px solid #2d8bba;
+            padding-left: 15px;
+            margin-top: 40px;
+            font-size: 18pt;
+        }
+        h3 {
+            color: #444;
+            font-size: 14pt;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+        }
+        .success { color: #28a745; }
+        .warning { color: #ffc107; }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Consolas", "Monaco", monospace;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .header-info {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            font-size: 10pt;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>NemakiWare UI改善レポート</h1>
+
+    <div class="header-info">
+        <p><strong>日付</strong>: 2025年11月</p>
+        <p><strong>対象</strong>: NemakiWare React SPA UI</p>
+        <p><strong>バージョン</strong>: 2.4.2</p>
+    </div>
+
+    <h2>1. 全文検索機能の実装</h2>
+
+    <h3>1.1 実装内容</h3>
+    <p>NemakiWareに全文検索（フルテキストサーチ）機能を実装しました。</p>
+
+    <h4>技術スタック</h4>
+    <ul>
+        <li><strong>Apache Tika 2.9.2</strong>: ドキュメントコンテンツ抽出</li>
+        <li><strong>Apache POI 5.2.5</strong>: Microsoft Office形式対応</li>
+        <li><strong>Apache Solr 9.8</strong>: 全文検索エンジン</li>
+    </ul>
+
+    <h4>対応フォーマット</h4>
+    <table>
+        <tr>
+            <th>フォーマット</th>
+            <th>拡張子</th>
+            <th>状態</th>
+        </tr>
+        <tr>
+            <td>Microsoft Word</td>
+            <td>.docx</td>
+            <td class="success">✅ 対応済み</td>
+        </tr>
+        <tr>
+            <td>Microsoft Excel</td>
+            <td>.xlsx</td>
+            <td class="success">✅ 対応済み</td>
+        </tr>
+        <tr>
+            <td>Microsoft PowerPoint</td>
+            <td>.pptx</td>
+            <td class="success">✅ 対応済み</td>
+        </tr>
+        <tr>
+            <td>PDF</td>
+            <td>.pdf</td>
+            <td class="success">✅ 対応済み</td>
+        </tr>
+        <tr>
+            <td>プレーンテキスト</td>
+            <td>.txt</td>
+            <td class="success">✅ 対応済み</td>
+        </tr>
+    </table>
+
+    <h3>1.2 検索機能の使用方法</h3>
+    <ol>
+        <li>UI上部の検索バーにキーワードを入力</li>
+        <li>ドキュメントの内容（本文テキスト）を検索</li>
+        <li>検索結果にはマッチしたドキュメントが表示される</li>
+    </ol>
+
+    <h2>2. デバッグログのクリーンアップ</h2>
+
+    <h3>2.1 削除されたデバッグログ</h3>
+    <p>本番環境向けにデバッグ用の<code>console.log</code>/<code>console.warn</code>を削除しました。</p>
+
+    <table>
+        <tr>
+            <th>ファイル</th>
+            <th>内容</th>
+            <th>削除行数</th>
+        </tr>
+        <tr>
+            <td>cmis.ts</td>
+            <td>getObjectParents関数内のパス抽出ログ</td>
+            <td>12行</td>
+        </tr>
+        <tr>
+            <td>PermissionManagement.tsx</td>
+            <td>handleRemovePermission関数内のデバッグログ</td>
+            <td>13行</td>
+        </tr>
+        <tr>
+            <td>FolderTree.tsx</td>
+            <td>loadRootFolder関数内の認証チェックログ</td>
+            <td>1行</td>
+        </tr>
+        <tr>
+            <td>DocumentList.tsx</td>
+            <td>loadObjects関数内のデバッグログ</td>
+            <td>1行</td>
+        </tr>
+    </table>
+
+    <h3>2.2 残存するconsole出力</h3>
+    <p>以下は意図的に残しています：</p>
+    <ul>
+        <li><strong>console.error</strong>: エラー処理用（本番環境でも有用）</li>
+        <li><strong>JSDocコメント内の参照</strong>: ドキュメント目的</li>
+    </ul>
+
+    <h2>3. 品質保証</h2>
+
+    <h3>3.1 テスト結果</h3>
+    <table>
+        <tr>
+            <th>テストカテゴリ</th>
+            <th>結果</th>
+        </tr>
+        <tr>
+            <td>TypeScriptコンパイル</td>
+            <td class="success">✅ エラーなし</td>
+        </tr>
+        <tr>
+            <td>UIビルド</td>
+            <td class="success">✅ 成功 (3.74秒)</td>
+        </tr>
+        <tr>
+            <td>QAテスト</td>
+            <td class="success">✅ 56/56 合格 (100%)</td>
+        </tr>
+    </table>
+
+    <h3>3.2 Dockerコンテナ状態</h3>
+    <pre>
+NAMES              STATUS
+docker-core-1      Up (healthy)
+docker-solr-1      Up (healthy)
+docker-couchdb-1   Up (healthy)</pre>
+
+    <h2>4. コミット履歴</h2>
+    <table>
+        <tr>
+            <th>コミット</th>
+            <th>内容</th>
+        </tr>
+        <tr>
+            <td><code>852362778</code></td>
+            <td>デバッグログクリーンアップ完了</td>
+        </tr>
+        <tr>
+            <td><code>c5dfc0750</code></td>
+            <td>全文検索機能 - 実装完了</td>
+        </tr>
+        <tr>
+            <td><code>32eccd721</code></td>
+            <td>DocumentList.tsxのデバッグログ削除</td>
+        </tr>
+    </table>
+
+    <h2>5. 今後の改善候補</h2>
+    <ol>
+        <li><strong>コード分割</strong>: 大きなチャンク（500KB超）の分割</li>
+        <li><strong>アクセシビリティ</strong>: ARIA属性の追加</li>
+        <li><strong>パフォーマンス</strong>: React.memo/useCallbackの最適化</li>
+    </ol>
+
+    <h2>6. 付録：変更ファイル一覧</h2>
+    <pre>
+core/src/main/webapp/ui/src/
+├── services/
+│   └── cmis.ts (デバッグログ削除)
+├── components/
+│   ├── DocumentList/
+│   │   └── DocumentList.tsx (デバッグログ削除)
+│   ├── FolderTree/
+│   │   └── FolderTree.tsx (デバッグログ削除)
+│   └── PermissionManagement/
+│       └── PermissionManagement.tsx (デバッグログ削除)</pre>
+
+    <div class="footer">
+        <p>このレポートは Claude Code によって自動生成されました。</p>
+        <p>© 2025 NemakiWare Project</p>
+    </div>
+</body>
+</html>
