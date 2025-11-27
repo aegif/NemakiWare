@@ -2766,15 +2766,6 @@ export class CMISService {
                 const pathElement = entry.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:path"] cmis\\:value, propertyString[propertyDefinitionId="cmis:path"] value');
                 const folderPath = pathElement?.textContent?.trim() || '';
 
-                // DEBUG (2025-11-19): Log path extraction for troubleshooting
-                console.log('[getObjectParents] Extracted parent folder:', {
-                  folderId,
-                  folderName,
-                  folderPath,
-                  pathElementFound: !!pathElement,
-                  pathElementText: pathElement?.textContent
-                });
-
                 if (folderId && folderName) {
                   parents.push({
                     id: folderId,
@@ -2786,9 +2777,6 @@ export class CMISService {
                   } as CMISObject);
                 }
               });
-
-              // DEBUG (2025-11-19): Log final parents array
-              console.log('[getObjectParents] Returning parents:', parents);
 
               resolve(parents);
             } catch (e) {

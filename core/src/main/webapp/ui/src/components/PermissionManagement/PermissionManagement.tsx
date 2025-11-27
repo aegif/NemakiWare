@@ -400,11 +400,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
   };
 
   const handleRemovePermission = async (principalId: string) => {
-    console.log('[DEBUG] handleRemovePermission called with principalId:', principalId);
-    console.log('[DEBUG] Current state - acl:', acl, 'objectId:', objectId, 'repositoryId:', repositoryId);
-
     if (!acl || !objectId) {
-      console.log('[DEBUG] Early return - missing acl or objectId');
       return;
     }
 
@@ -414,16 +410,12 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
         permissions: acl.permissions.filter(p => p.principalId !== principalId)
       };
 
-      console.log('[DEBUG] Filtered ACL - before:', acl.permissions.length, 'after:', updatedACL.permissions.length);
-      console.log('[DEBUG] Calling cmisService.setACL with:', { repositoryId, objectId, permissionsCount: updatedACL.permissions.length });
-
       await cmisService.setACL(repositoryId, objectId, updatedACL);
 
-      console.log('[DEBUG] setACL completed successfully');
       message.success('権限を削除しました');
       loadData();
     } catch (error) {
-      console.error('[DEBUG] setACL failed with error:', error);
+      console.error('[ACL] Permission removal failed:', error);
       message.error('権限の削除に失敗しました');
     }
   };
@@ -510,10 +502,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
         record.direct && (
           <Popconfirm
             title="この権限を削除しますか？"
-            onConfirm={() => {
-              console.log('[POPCONFIRM] onConfirm callback triggered for principalId:', record.principalId);
-              handleRemovePermission(record.principalId);
-            }}
+            onConfirm={() => handleRemovePermission(record.principalId)}
             okText="はい"
             cancelText="いいえ"
           >
