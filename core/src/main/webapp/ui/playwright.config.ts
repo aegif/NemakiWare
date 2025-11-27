@@ -83,6 +83,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      timeout: 90000, // 90 seconds for complex tests with folder creation/cleanup
       use: {
         ...devices['Desktop Chrome'],
         // NemakiWare UI viewport settings
@@ -92,6 +93,7 @@ export default defineConfig({
 
     {
       name: 'firefox',
+      timeout: 90000, // 90 seconds for complex tests with folder creation/cleanup
       use: {
         ...devices['Desktop Firefox'],
         viewport: { width: 1280, height: 720 },
@@ -100,6 +102,7 @@ export default defineConfig({
 
     {
       name: 'webkit',
+      timeout: 90000, // 90 seconds for complex tests with folder creation/cleanup
       use: {
         ...devices['Desktop Safari'],
         viewport: { width: 1280, height: 720 },
@@ -109,12 +112,14 @@ export default defineConfig({
     // Mobile testing
     {
       name: 'Mobile Chrome',
+      timeout: 90000, // 90 seconds for complex tests with folder creation/cleanup
       use: {
         ...devices['Pixel 5'],
       },
     },
     {
       name: 'Mobile Safari',
+      timeout: 90000, // 90 seconds for complex tests with folder creation/cleanup
       use: {
         ...devices['iPhone 12'],
       },
@@ -123,6 +128,7 @@ export default defineConfig({
     // Tablet testing for document management interface
     {
       name: 'Tablet',
+      timeout: 90000, // 90 seconds for complex tests with folder creation/cleanup
       use: {
         ...devices['iPad Pro'],
         viewport: { width: 1024, height: 768 },

@@ -241,7 +241,8 @@ import {
   HistoryOutlined,
   EditOutlined,
   CheckOutlined,
-  CloseOutlined
+  CloseOutlined,
+  UpOutlined
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
@@ -278,17 +279,20 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const cmisService = new CMISService(handleAuthError);
 
   // Initialize folder ID from URL parameter or default to root
+  // CRITICAL FIX (2025-11-26): Include searchParams in dependency array to prevent stale closure
+  // When folder onClick calls setSearchParams, this useEffect must re-run to sync state
   useEffect(() => {
     const folderIdFromUrl = searchParams.get('folderId');
     if (folderIdFromUrl) {
+      // URL has folderId parameter - sync state with URL
       setCurrentFolderId(folderIdFromUrl);
-    } else if (!currentFolderId) {
-      // Default to root folder if no URL parameter and no current folder
+    } else {
+      // No URL parameter - initialize to root folder
       const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
       setCurrentFolderId(rootFolderId);
-      setSearchParams({ folderId: rootFolderId });
+      setSearchParams({ folderId: rootFolderId }, { replace: true });
     }
-  }, [repositoryId]); // Only depend on repositoryId
+  }, [repositoryId, searchParams, setSearchParams]); // Include searchParams to react to URL changes
 
   // Load objects when currentFolderId changes
   useEffect(() => {
@@ -308,10 +312,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       const children = await cmisService.getChildren(repositoryId, currentFolderId);
       setObjects(children);
 
-      // Update folder path for root folder
-      if (currentFolderId === 'e02f784f8360a02cc14d1314c10038ff') {
-        setCurrentFolderPath('/');
-      }
+      // CRITICAL FIX (2025-11-26): Get current folder's path from CMIS properties
+      // This ensures currentFolderPath is always accurate, not just for root folder
+      // Previous bug: Only root folder path was set, causing Up button to be disabled
+      // when navigating via table clicks (currentFolderPath stuck at "/")
+      const folder = await cmisService.getObject(repositoryId, currentFolderId);
+      const folderPath = folder.path || '/';
+      setCurrentFolderPath(folderPath);
+
+      console.log('[CMIS DEBUG] Updated currentFolderPath:', folderPath);
     } catch (error) {
       console.error('LOAD OBJECTS DEBUG: Error loading children:', error);
       console.error('LOAD OBJECTS DEBUG: Error details:', {
@@ -546,7 +555,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               type="link"
               onClick={() => {
                 if (record.baseType === 'cmis:folder') {
+                  // CRITICAL FIX (2025-11-26): Do NOT construct path here - let loadObjects() fetch real path from CMIS
+                  // Previous bug: Constructed path was wrong because currentFolderPath stuck at "/"
+                  // Example: clicking TestChild when currentFolderPath="/" gave "/TestChild" instead of "/TestParent/TestChild"
+                  // Solution: Only set currentFolderId, useEffect triggers loadObjects() which fetches correct path
                   setCurrentFolderId(record.id);
+                  setSearchParams({ folderId: record.id });
+                  // Path will be set by loadObjects() after fetching from CMIS - no manual construction
                 } else {
                   navigate(`/documents/${record.id}`);
                 }
@@ -782,11 +797,77 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
-  const breadcrumbItems = currentFolderPath.split('/').filter(Boolean).map((segment, index) => ({
-    title: index === 0 ? <HomeOutlined /> : segment,
-    onClick: () => handleBreadcrumbClick(index),
-    className: 'breadcrumb-clickable',
-  }));
+  // Handle "Up to Parent Folder" button click
+  // Feature Request (2025-11-26): "親フォルダへのナビゲーションがないと元にもどっていけません"
+  const handleGoToParent = async () => {
+    console.log('[PARENT NAV DEBUG] handleGoToParent called');
+    console.log('[PARENT NAV DEBUG] currentFolderPath:', currentFolderPath);
+    try {
+      const pathSegments = currentFolderPath.split('/').filter(Boolean);
+      console.log('[PARENT NAV DEBUG] pathSegments:', pathSegments);
+      console.log('[PARENT NAV DEBUG] pathSegments.length:', pathSegments.length);
+
+      if (pathSegments.length === 0) {
+        // Already in root, nothing to do
+        console.log('[PARENT NAV DEBUG] Already in root, returning');
+        return;
+      }
+
+      if (pathSegments.length === 1) {
+        // Parent is root folder
+        console.log('[PARENT NAV DEBUG] Navigating to root folder (single segment path)');
+        const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
+        setCurrentFolderId(rootFolderId);
+        setCurrentFolderPath('/');
+        setSearchParams({ folderId: rootFolderId });
+        console.log('[PARENT NAV DEBUG] Navigation to root complete');
+      } else {
+        // Parent is another subfolder - navigate up one level
+        const parentPath = '/' + pathSegments.slice(0, -1).join('/');
+        console.log('[PARENT NAV DEBUG] Navigating to parent path:', parentPath);
+        const parentObject = await cmisService.getObjectByPath(repositoryId, parentPath);
+        console.log('[PARENT NAV DEBUG] getObjectByPath result:', parentObject);
+        if (parentObject && parentObject.id) {
+          console.log('[PARENT NAV DEBUG] Setting parent folder ID:', parentObject.id);
+          setCurrentFolderId(parentObject.id);
+          setCurrentFolderPath(parentPath);
+          setSearchParams({ folderId: parentObject.id });
+          console.log('[PARENT NAV DEBUG] Navigation to parent complete');
+        } else {
+          console.log('[PARENT NAV DEBUG] getObjectByPath returned no valid object');
+        }
+      }
+    } catch (error) {
+      console.error('[PARENT NAV DEBUG] Navigate to parent error:', error);
+      message.error('親フォルダへのナビゲーションに失敗しました');
+    }
+  };
+
+  // Always show root item first, then folder segments
+  const breadcrumbItems = [
+    {
+      title: <HomeOutlined />,
+      onClick: () => handleBreadcrumbClick(0),
+      className: 'breadcrumb-clickable',
+    },
+    ...currentFolderPath.split('/').filter(Boolean).map((segment, index) => ({
+      title: segment,
+      onClick: () => handleBreadcrumbClick(index + 1),
+      className: 'breadcrumb-clickable',
+    }))
+  ];
+
+  // Check if we're in root folder (disable Up button if so)
+  const isInRootFolder = currentFolderPath === '/' || currentFolderPath.split('/').filter(Boolean).length === 0;
+
+  // DEBUG: Log breadcrumb state for debugging
+  console.log('[BREADCRUMB DEBUG] currentFolderPath:', currentFolderPath);
+  console.log('[BREADCRUMB DEBUG] currentFolderId:', currentFolderId);
+  console.log('[BREADCRUMB DEBUG] breadcrumbItems:', JSON.stringify(breadcrumbItems.map(item => ({
+    title: typeof item.title === 'string' ? item.title : 'ReactComponent',
+    className: item.className
+  })), null, 2));
+  console.log('[BREADCRUMB DEBUG] isInRootFolder:', isInRootFolder);
 
   return (
     <div>
@@ -804,7 +885,17 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
           <Card>
             <Space direction="vertical" style={{ width: '100%' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Breadcrumb items={breadcrumbItems} />
+                <Space>
+                  <Button
+                    icon={<UpOutlined />}
+                    onClick={handleGoToParent}
+                    disabled={isInRootFolder}
+                    title="親フォルダへ"
+                  >
+                    上へ
+                  </Button>
+                  <Breadcrumb items={breadcrumbItems} />
+                </Space>
                 <Space>
                   <Input
                     placeholder="ドキュメント検索"

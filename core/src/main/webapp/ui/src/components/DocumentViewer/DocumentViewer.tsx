@@ -256,13 +256,16 @@ import {
   LockOutlined,
   UnlockOutlined,
   UploadOutlined,
-  ArrowLeftOutlined
+  ArrowLeftOutlined,
+  PlusOutlined,
+  DeleteOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, VersionHistory, TypeDefinition, Relationship } from '../../types/cmis';
 import { PropertyEditor } from '../PropertyEditor/PropertyEditor';
 import { PreviewComponent } from '../PreviewComponent/PreviewComponent';
+import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -280,7 +283,12 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [relationships, setRelationships] = useState<Relationship[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
+  const [relationshipModalVisible, setRelationshipModalVisible] = useState(false);
+  const [objectPickerVisible, setObjectPickerVisible] = useState(false);
+  const [selectedTargetObject, setSelectedTargetObject] = useState<CMISObject | null>(null);
+  const [relationshipType, setRelationshipType] = useState<string>('nemaki:bidirectionalRelationship');
   const [form] = Form.useForm();
+  const [relationshipForm] = Form.useForm();
 
   // CRITICAL FIX: Pass handleAuthError to CMISService to handle 401/403/404 errors
   const cmisService = new CMISService(handleAuthError);
@@ -419,6 +427,40 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     }
   };
 
+  const handleCreateRelationship = async () => {
+    if (!object || !selectedTargetObject) {
+      message.warning('ターゲットオブジェクトを選択してください');
+      return;
+    }
+
+    try {
+      await cmisService.createRelationship(repositoryId, {
+        sourceId: object.id,
+        targetId: selectedTargetObject.id,
+        relationshipType: relationshipType
+      });
+      message.success('関係を作成しました');
+      setRelationshipModalVisible(false);
+      setSelectedTargetObject(null);
+      relationshipForm.resetFields();
+      await loadRelationships();
+    } catch (error) {
+      console.error('Relationship creation error:', error);
+      message.error('関係の作成に失敗しました');
+    }
+  };
+
+  const handleDeleteRelationship = async (relationshipId: string) => {
+    try {
+      await cmisService.deleteRelationship(repositoryId, relationshipId);
+      message.success('関係を削除しました');
+      await loadRelationships();
+    } catch (error) {
+      console.error('Relationship deletion error:', error);
+      message.error('関係の削除に失敗しました');
+    }
+  };
+
   const handleUpdateProperties = async (properties: Record<string, any>) => {
     console.error('!!! DOCUMENTVIEWER: handleUpdateProperties CALLED with properties:', Object.keys(properties));
 
@@ -538,6 +580,26 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       dataIndex: 'targetId',
       key: 'target',
     },
+    {
+      title: 'アクション',
+      key: 'actions',
+      render: (_: any, record: Relationship) => (
+        <Popconfirm
+          title="この関係を削除しますか？"
+          onConfirm={() => handleDeleteRelationship(record.id)}
+          okText="はい"
+          cancelText="いいえ"
+        >
+          <Button
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+          >
+            削除
+          </Button>
+        </Popconfirm>
+      ),
+    },
   ];
 
   // Render path as clickable hierarchical links
@@ -642,13 +704,25 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       key: 'relationships',
       label: '関係',
       children: (
-        <Table
-          columns={relationshipColumns}
-          dataSource={relationships}
-          rowKey="id"
-          size="small"
-          pagination={false}
-        />
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <div style={{ marginBottom: 16 }}>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setRelationshipModalVisible(true)}
+            >
+              関係を追加
+            </Button>
+          </div>
+          <Table
+            columns={relationshipColumns}
+            dataSource={relationships}
+            rowKey="id"
+            size="small"
+            pagination={false}
+            locale={{ emptyText: '関係がありません' }}
+          />
+        </Space>
       ),
     },
   ];
@@ -812,6 +886,90 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           </Form.Item>
         </Form>
       </Modal>
+
+      <Modal
+        title="関係を追加"
+        open={relationshipModalVisible}
+        onCancel={() => {
+          setRelationshipModalVisible(false);
+          setSelectedTargetObject(null);
+          relationshipForm.resetFields();
+        }}
+        footer={null}
+        width={600}
+      >
+        <Form
+          form={relationshipForm}
+          layout="vertical"
+          onFinish={handleCreateRelationship}
+        >
+          <Form.Item
+            label="関係タイプ"
+            required
+          >
+            <Select
+              value={relationshipType}
+              onChange={setRelationshipType}
+              options={[
+                { label: '双方向関係 (nemaki:bidirectionalRelationship)', value: 'nemaki:bidirectionalRelationship' },
+                { label: '親子関係 (nemaki:parentChildRelationship)', value: 'nemaki:parentChildRelationship' },
+              ]}
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="ターゲットオブジェクト"
+            required
+          >
+            <Space direction="vertical" style={{ width: '100%' }}>
+              {selectedTargetObject ? (
+                <div style={{ padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
+                  <strong>選択中: </strong>
+                  {selectedTargetObject.name} (ID: {selectedTargetObject.id})
+                </div>
+              ) : (
+                <div style={{ padding: '8px', backgroundColor: '#fafafa', borderRadius: '4px', color: '#999' }}>
+                  オブジェクトを選択してください
+                </div>
+              )}
+              <Button onClick={() => setObjectPickerVisible(true)}>
+                オブジェクトを選択
+              </Button>
+            </Space>
+          </Form.Item>
+
+          <Form.Item>
+            <Space>
+              <Button
+                type="primary"
+                htmlType="submit"
+                disabled={!selectedTargetObject}
+              >
+                作成
+              </Button>
+              <Button onClick={() => {
+                setRelationshipModalVisible(false);
+                setSelectedTargetObject(null);
+                relationshipForm.resetFields();
+              }}>
+                キャンセル
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <ObjectPicker
+        repositoryId={repositoryId}
+        visible={objectPickerVisible}
+        onSelect={(obj) => {
+          setSelectedTargetObject(obj);
+          setObjectPickerVisible(false);
+        }}
+        onCancel={() => setObjectPickerVisible(false)}
+        title="ターゲットオブジェクトを選択"
+        filterType="all"
+      />
     </div>
   );
 };

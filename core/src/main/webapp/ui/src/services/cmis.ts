@@ -446,9 +446,32 @@ export class CMISService {
         const updatability = rawPropDef.updatability;
         const updatable = updatability === 'readwrite' || updatability === 'whencheckedout';
 
+        // Map CMIS propertyType to our expected format
+        const propertyTypeMap: Record<string, PropertyDefinition['propertyType']> = {
+          'string': 'string',
+          'integer': 'integer',
+          'decimal': 'decimal',
+          'boolean': 'boolean',
+          'datetime': 'datetime',
+          'id': 'string',
+          'uri': 'string',
+          'html': 'string'
+        };
+
         propertyDefinitions[propId] = {
-          ...rawPropDef,
-          updatable  // Add boolean updatable field
+          id: rawPropDef.id || propId,
+          displayName: rawPropDef.displayName || rawPropDef.localName || propId,
+          description: rawPropDef.description || '',
+          propertyType: propertyTypeMap[rawPropDef.propertyType?.toLowerCase()] || 'string',
+          cardinality: rawPropDef.cardinality?.toLowerCase() === 'multi' ? 'multi' : 'single',
+          required: rawPropDef.required === true,
+          queryable: rawPropDef.queryable !== false,
+          updatable,
+          defaultValue: rawPropDef.defaultValue,
+          choices: rawPropDef.choices,
+          maxLength: rawPropDef.maxLength,
+          minValue: rawPropDef.minValue,
+          maxValue: rawPropDef.maxValue
         };
       });
     }
@@ -753,7 +776,8 @@ export class CMISService {
                       const elem = propElements[j];
                       const propName = elem.getAttribute('propertyDefinitionId');
                       if (propName && !allProperties[propName]) {
-                        const valueElem = elem.querySelector('cmis\\:value, value');
+                        // Use getElementsByTagName for XML namespace compatibility (querySelector doesn't work reliably in XML)
+                        const valueElem = elem.getElementsByTagName('cmis:value')[0] || elem.getElementsByTagName('value')[0];
                         if (valueElem) {
                           let value: any = valueElem.textContent || '';
                           // Convert boolean strings to actual booleans
@@ -768,6 +792,15 @@ export class CMISService {
                     }
                   }
 
+                  // DEBUG: Log allProperties structure to understand why path extraction fails
+                  console.log('[CMIS DEBUG] allProperties keys:', Object.keys(allProperties));
+                  console.log('[CMIS DEBUG] cmis:path raw value:', allProperties['cmis:path']);
+                  console.log('[CMIS DEBUG] All properties:', allProperties);
+
+                  // Extract path from allProperties if available
+                  const path = allProperties['cmis:path'] as string | undefined;
+                  console.log('[CMIS DEBUG] Extracted path:', path);
+
                   const cmisObject: CMISObject = {
                     id: id,
                     name: name,
@@ -775,6 +808,7 @@ export class CMISService {
                     baseType: objectType.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
                     properties: allProperties,
                     allowableActions: [],
+                    path: path,  // Add path property from XML response
                     createdBy: createdBy,
                     lastModifiedBy: lastModifiedBy,
                     creationDate: creationDate,
@@ -1024,6 +1058,10 @@ export class CMISService {
   /**
    * Get a CMIS object by its path
    * Uses AtomPub binding's path endpoint
+   *
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @param path Full path to the object (e.g., '/Sites/Documents')
+   * @returns CMISObject with id, name, and basic properties
    */
   async getObjectByPath(repositoryId: string, path: string): Promise<CMISObject> {
     return new Promise((resolve, reject) => {
@@ -2432,11 +2470,33 @@ export class CMISService {
                 const entry = entries[i];
                 const id = entry.querySelector('id')?.textContent || '';
 
+                // Helper function to get property value from CMIS XML
+                // CMIS XML structure: <cmis:properties><cmis:propertyId propertyDefinitionId="cmis:sourceId"><cmis:value>...</cmis:value></cmis:propertyId></cmis:properties>
+                const getPropertyValue = (propName: string, propType: string = 'propertyId'): string => {
+                  const properties = entry.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'properties')[0] ||
+                                   entry.querySelector('cmis\\:properties, properties');
+                  if (!properties) return '';
+
+                  const propElements = properties.getElementsByTagName(`cmis:${propType}`);
+                  for (let j = 0; j < propElements.length; j++) {
+                    const elem = propElements[j];
+                    if (elem.getAttribute('propertyDefinitionId') === propName) {
+                      const valueElem = elem.querySelector('cmis\\:value, value');
+                      return valueElem?.textContent || '';
+                    }
+                  }
+                  return '';
+                };
+
+                const sourceId = getPropertyValue('cmis:sourceId', 'propertyId');
+                const targetId = getPropertyValue('cmis:targetId', 'propertyId');
+                const objectTypeId = getPropertyValue('cmis:objectTypeId', 'propertyId') || 'cmis:relationship';
+
                 relationships.push({
                   id: id.split('/').pop() || id,
-                  sourceId: '', // Would need to parse from CMIS properties
-                  targetId: '', // Would need to parse from CMIS properties
-                  relationshipType: 'cmis:relationship',
+                  sourceId: sourceId,
+                  targetId: targetId,
+                  relationshipType: objectTypeId,
                   properties: {}
                 });
               }
