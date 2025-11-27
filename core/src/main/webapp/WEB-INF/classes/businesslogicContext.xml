@@ -89,6 +89,20 @@
 		</property>
 	</bean>
 
+	<!-- Text Extraction Service for full-text search (NemakiWare 3.0) -->
+	<bean id="TextExtractionService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.businesslogic.TextExtractionService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="textExtractionService" />
+		</property>
+	</bean>
+	<bean id="textExtractionService" class="jp.aegif.nemaki.businesslogic.impl.TextExtractionServiceImpl">
+	</bean>
+
 	<!-- Rendition builder -->
 	<bean id="RenditionManager" class="org.springframework.aop.framework.ProxyFactoryBean">
 		<property name="proxyInterfaces">
