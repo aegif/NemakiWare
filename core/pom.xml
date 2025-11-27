@@ -662,6 +662,14 @@
 			<version>4.4</version>
 		</dependency>
 
+		<!-- Override commons-io version for POI 5.2.5 compatibility -->
+		<!-- POI 5.2.5 requires commons-io 2.13.0+ for UnsynchronizedByteArrayOutputStream.builder() -->
+		<dependency>
+			<groupId>commons-io</groupId>
+			<artifactId>commons-io</artifactId>
+			<version>2.15.0</version>
+		</dependency>
+
 		<!-- Apache Tika for full-text content extraction (PDF, Office, etc.) -->
 		<!-- FEATURE: Full-text search support for NemakiWare 3.0 (2025-11-27) -->
 		<dependency>

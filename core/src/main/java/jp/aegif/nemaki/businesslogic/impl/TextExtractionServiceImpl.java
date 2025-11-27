@@ -27,6 +27,13 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -63,6 +70,9 @@ public class TextExtractionServiceImpl implements TextExtractionService {
 
     /** Default maximum length for extracted text (10MB) - increased to handle large documents like PDFs */
     private static final int DEFAULT_MAX_LENGTH = 10 * 1024 * 1024;
+
+    /** Timeout for text extraction in seconds (60 seconds to handle large Office documents) */
+    private static final int EXTRACTION_TIMEOUT_SECONDS = 60;
 
     /** Tika instance for simple text extraction */
     private final Tika tika;
@@ -139,59 +149,108 @@ public class TextExtractionServiceImpl implements TextExtractionService {
 
     @Override
     public String extractText(InputStream inputStream, String mimeType, String fileName, int maxLength) {
-        if (log.isDebugEnabled()) {
-            log.debug("extractText called - mimeType: " + mimeType + ", fileName: " + fileName + ", maxLength: " + maxLength);
-        }
+        log.info("[TEXT EXTRACTION] Starting extraction - mimeType: " + mimeType + ", fileName: " + fileName + ", maxLength: " + maxLength);
 
         if (inputStream == null) {
-            log.warn("Cannot extract text: input stream is null");
+            log.warn("[TEXT EXTRACTION] Cannot extract text: input stream is null");
             return null;
         }
 
         // Use WriteOutContentHandler to get partial text even when limit is reached
-        StringWriter stringWriter = new StringWriter();
-        WriteOutContentHandler writeHandler = new WriteOutContentHandler(stringWriter, maxLength);
-        BodyContentHandler handler = new BodyContentHandler(writeHandler);
+        final StringWriter stringWriter = new StringWriter();
+        final WriteOutContentHandler writeHandler = new WriteOutContentHandler(stringWriter, maxLength);
+        final BodyContentHandler handler = new BodyContentHandler(writeHandler);
+
+        // Set up metadata for better parsing
+        final Metadata metadata = new Metadata();
+        if (mimeType != null && !mimeType.isEmpty()) {
+            metadata.set(Metadata.CONTENT_TYPE, mimeType);
+        }
+        if (fileName != null && !fileName.isEmpty()) {
+            metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, fileName);
+        }
+
+        final ParseContext context = new ParseContext();
+
+        // Use ExecutorService with timeout to prevent hanging on problematic documents
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        final InputStream finalInputStream = inputStream;
 
         try {
-            // Set up metadata for better parsing
-            Metadata metadata = new Metadata();
-            if (mimeType != null && !mimeType.isEmpty()) {
-                metadata.set(Metadata.CONTENT_TYPE, mimeType);
-            }
-            if (fileName != null && !fileName.isEmpty()) {
-                metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, fileName);
-            }
+            log.info("[TEXT EXTRACTION] Starting Tika parse with " + EXTRACTION_TIMEOUT_SECONDS + " second timeout...");
 
-            ParseContext context = new ParseContext();
+            Future<Void> future = executor.submit(new Callable<Void>() {
+                @Override
+                public Void call() throws Exception {
+                    log.info("[TEXT EXTRACTION] Tika parser.parse() starting...");
+                    parser.parse(finalInputStream, handler, metadata, context);
+                    log.info("[TEXT EXTRACTION] Tika parser.parse() completed successfully");
+                    return null;
+                }
+            });
 
-            // Parse the document
-            parser.parse(inputStream, handler, metadata, context);
+            // Wait for completion with timeout
+            future.get(EXTRACTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
             String extractedText = stringWriter.toString();
+            log.info("[TEXT EXTRACTION] Extraction successful, extracted " + (extractedText != null ? extractedText.length() : 0) + " characters");
             return cleanupAndReturn(extractedText, mimeType, fileName, false);
 
-        } catch (WriteLimitReachedException e) {
-            // This exception is thrown when the character limit is reached
-            // We can still get the partial text that was extracted
-            log.info("Text extraction limit reached for " +
-                    (fileName != null ? fileName : "document") + " (" + mimeType + ") - returning partial text");
+        } catch (TimeoutException e) {
+            log.error("[TEXT EXTRACTION] TIMEOUT after " + EXTRACTION_TIMEOUT_SECONDS + " seconds for " +
+                    (fileName != null ? fileName : "document") + " (" + mimeType + ")");
+            // Try to return any partial text that was extracted
             String partialText = stringWriter.toString();
-            return cleanupAndReturn(partialText, mimeType, fileName, true);
+            if (partialText != null && !partialText.trim().isEmpty()) {
+                log.info("[TEXT EXTRACTION] Returning partial text (" + partialText.length() + " chars) after timeout");
+                return cleanupAndReturn(partialText, mimeType, fileName, true);
+            }
+            return null;
 
-        } catch (Exception e) {
-            log.warn("Failed to extract text from " +
-                    (fileName != null ? fileName : "document") + " (" + mimeType + "): " + e.getMessage());
-            if (log.isDebugEnabled()) {
-                log.debug("Text extraction exception details:", e);
+        } catch (ExecutionException e) {
+            // Unwrap the actual exception from the Callable
+            Throwable cause = e.getCause();
+            if (cause instanceof WriteLimitReachedException) {
+                log.info("[TEXT EXTRACTION] Text extraction limit reached for " +
+                        (fileName != null ? fileName : "document") + " (" + mimeType + ") - returning partial text");
+                String partialText = stringWriter.toString();
+                return cleanupAndReturn(partialText, mimeType, fileName, true);
+            }
+            log.warn("[TEXT EXTRACTION] Failed to extract text from " +
+                    (fileName != null ? fileName : "document") + " (" + mimeType + "): " + (cause != null ? cause.getMessage() : e.getMessage()));
+            // Log the full exception for Office documents to help diagnose issues
+            if (mimeType != null && (mimeType.contains("officedocument") || mimeType.contains("ms-"))) {
+                log.error("[TEXT EXTRACTION] Office document extraction error - full stack trace:", cause != null ? cause : e);
             }
             // Try to return any partial text that was extracted before the error
             String partialText = stringWriter.toString();
             if (partialText != null && !partialText.trim().isEmpty()) {
-                log.info("Returning partial text (" + partialText.length() + " chars) despite extraction error");
+                log.info("[TEXT EXTRACTION] Returning partial text (" + partialText.length() + " chars) despite extraction error");
                 return cleanupAndReturn(partialText, mimeType, fileName, true);
             }
             return null;
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[TEXT EXTRACTION] Text extraction interrupted for " +
+                    (fileName != null ? fileName : "document") + " (" + mimeType + ")");
+            return null;
+
+        } catch (Exception e) {
+            log.warn("[TEXT EXTRACTION] Unexpected error extracting text from " +
+                    (fileName != null ? fileName : "document") + " (" + mimeType + "): " + e.getMessage());
+            if (log.isDebugEnabled()) {
+                log.debug("[TEXT EXTRACTION] Exception details:", e);
+            }
+            // Try to return any partial text that was extracted before the error
+            String partialText = stringWriter.toString();
+            if (partialText != null && !partialText.trim().isEmpty()) {
+                log.info("[TEXT EXTRACTION] Returning partial text (" + partialText.length() + " chars) despite extraction error");
+                return cleanupAndReturn(partialText, mimeType, fileName, true);
+            }
+            return null;
+        } finally {
+            executor.shutdownNow();
         }
     }
 
