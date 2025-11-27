@@ -268,13 +268,12 @@ public class SolrUtil implements ApplicationContextAware {
 	 * Create SolrInputDocument from NemakiWare Content
 	 */
 	private SolrInputDocument createSolrDocument(String repositoryId, Content content) {
-		log.info("[DEBUG] createSolrDocument START for content: {} in repository: {}", content.getId(), repositoryId);
-		log.info("[DEBUG] Content type: {}, class: {}", content.getType(), content.getClass().getName());
-		log.info("[DEBUG] textExtractionService is null? {}", (textExtractionService == null));
+		if (log.isDebugEnabled()) {
+			log.debug("Creating Solr document for content: {} (type: {}) in repository: {}",
+				content.getId(), content.getType(), repositoryId);
+		}
 
 		SolrInputDocument doc = new SolrInputDocument();
-
-		log.debug("Creating Solr document for content ID: {} in repository: {}", content.getId(), repositoryId);
 		
 		// Core system fields
 		doc.addField("id", content.getId());
@@ -339,27 +338,24 @@ public class SolrUtil implements ApplicationContextAware {
 		
 		// Type-specific fields
 		if (content instanceof Document) {
-			log.info("[DEBUG] Content is Document type, attachmentNodeId: {}", ((Document) content).getAttachmentNodeId());
 			Document document = (Document) content;
 
 			// Basic document fields available
 			if (document.getAttachmentNodeId() != null) {
-				log.info("[DEBUG] Processing document with attachment: {}", document.getAttachmentNodeId());
 				doc.addField("content_id", document.getAttachmentNodeId());
 
 				// Extract text content for full-text search
 				try {
-					log.info("[DEBUG] About to call extractTextContent for attachment: {}", document.getAttachmentNodeId());
 					String textContent = extractTextContent(repositoryId, document.getAttachmentNodeId());
-					log.info("[DEBUG] extractTextContent returned, textContent is null? {}, length: {}",
-						(textContent == null), (textContent != null ? textContent.length() : 0));
 					if (textContent != null && !textContent.trim().isEmpty()) {
 						doc.addField("content", textContent);
 						doc.addField("text", textContent);  // Add text field for CONTAINS queries
-						log.info("[DEBUG] Added text content ({} chars) for document: {}", textContent.length(), content.getId());
+						if (log.isDebugEnabled()) {
+							log.debug("Added text content ({} chars) for document: {}", textContent.length(), content.getId());
+						}
 					}
 				} catch (Exception e) {
-					log.error("[DEBUG] Exception in extractTextContent: {} - {}", e.getClass().getName(), e.getMessage(), e);
+					log.warn("Failed to extract text content for document {}: {}", content.getId(), e.getMessage());
 				}
 				
 				// Add content_length field for numeric range queries
@@ -412,7 +408,9 @@ public class SolrUtil implements ApplicationContextAware {
 			doc.addField("change_token", content.getChangeToken());
 		}
 
-		log.info("[DEBUG] createSolrDocument COMPLETE for content: {}, fields: {}", content.getId(), doc.size());
+		if (log.isDebugEnabled()) {
+			log.debug("Created Solr document for content: {} with {} fields", content.getId(), doc.size());
+		}
 		return doc;
 	}
 
@@ -577,15 +575,11 @@ public class SolrUtil implements ApplicationContextAware {
 	 * @return Extracted text content or null if extraction fails
 	 */
 	private String extractTextContent(String repositoryId, String attachmentId) {
-		log.info("[DEBUG] extractTextContent START - repositoryId: {}, attachmentId: {}", repositoryId, attachmentId);
-
 		if (attachmentId == null || attachmentId.isEmpty()) {
-			log.info("[DEBUG] extractTextContent: No attachment ID provided");
 			return null;
 		}
 
 		// Check if TextExtractionService is available
-		log.info("[DEBUG] extractTextContent: Checking textExtractionService, is null? {}", (textExtractionService == null));
 		if (textExtractionService == null) {
 			log.warn("TextExtractionService not available - full-text search may not work properly");
 			return null;
@@ -593,44 +587,38 @@ public class SolrUtil implements ApplicationContextAware {
 
 		try {
 			// Get ContentService to retrieve the attachment
-			log.info("[DEBUG] extractTextContent: Getting ContentService...");
 			ContentService contentService = getContentServiceSafely();
-			log.info("[DEBUG] extractTextContent: ContentService is null? {}", (contentService == null));
 			if (contentService == null) {
-				log.info("[DEBUG] extractTextContent: ContentService not yet available for text extraction");
 				return null;
 			}
 
 			// Retrieve the attachment node
-			log.info("[DEBUG] extractTextContent: Getting attachment from ContentService...");
 			AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
-			log.info("[DEBUG] extractTextContent: Attachment is null? {}", (attachment == null));
 			if (attachment == null) {
-				log.info("[DEBUG] Attachment not found: {}", attachmentId);
+				if (log.isDebugEnabled()) {
+					log.debug("Attachment not found: {}", attachmentId);
+				}
 				return null;
 			}
 
 			// Get the content stream from the AttachmentNode
-			// getAttachment() already populates the InputStream via setStream()
-			log.info("[DEBUG] extractTextContent: Getting InputStream from attachment...");
 			java.io.InputStream contentStream = attachment.getInputStream();
-			log.info("[DEBUG] extractTextContent: ContentStream is null? {}", (contentStream == null));
 			if (contentStream == null) {
-				log.info("[DEBUG] No content stream available for attachment: {}", attachmentId);
+				if (log.isDebugEnabled()) {
+					log.debug("No content stream available for attachment: {}", attachmentId);
+				}
 				return null;
 			}
 
 			// Get MIME type and filename for better parsing
 			String mimeType = attachment.getMimeType();
 			String fileName = attachment.getName();
-			log.info("[DEBUG] extractTextContent: mimeType: {}, fileName: {}", mimeType, fileName);
 
 			// Check if the MIME type is supported for text extraction
-			boolean isSupported = (mimeType == null) || textExtractionService.isSupported(mimeType);
-			log.info("[DEBUG] extractTextContent: MIME type supported? {}", isSupported);
 			if (mimeType != null && !textExtractionService.isSupported(mimeType)) {
-				log.info("[DEBUG] MIME type {} not supported for text extraction", mimeType);
-				// Close the stream since we won't use it
+				if (log.isDebugEnabled()) {
+					log.debug("MIME type {} not supported for text extraction", mimeType);
+				}
 				try {
 					contentStream.close();
 				} catch (Exception e) {
@@ -641,17 +629,15 @@ public class SolrUtil implements ApplicationContextAware {
 
 			try {
 				// Extract text using Tika via TextExtractionService
-				log.info("[DEBUG] extractTextContent: Calling textExtractionService.extractText...");
 				String extractedText = textExtractionService.extractText(contentStream, mimeType, fileName);
-				log.info("[DEBUG] extractTextContent: extractText returned, result is null? {}, length: {}",
-					(extractedText == null), (extractedText != null ? extractedText.length() : 0));
 
 				if (extractedText != null && !extractedText.isEmpty()) {
-					log.info("Successfully extracted {} characters from {} ({})",
-							extractedText.length(), fileName, mimeType);
+					if (log.isDebugEnabled()) {
+						log.debug("Successfully extracted {} characters from {} ({})",
+								extractedText.length(), fileName, mimeType);
+					}
 					return extractedText;
 				} else {
-					log.info("[DEBUG] No text content extracted from {} ({})", fileName, mimeType);
 					return null;
 				}
 			} finally {
@@ -664,7 +650,7 @@ public class SolrUtil implements ApplicationContextAware {
 			}
 
 		} catch (Exception e) {
-			log.error("[DEBUG] extractTextContent EXCEPTION: {} - {}", e.getClass().getName(), e.getMessage(), e);
+			log.warn("Failed to extract text content for attachment {}: {}", attachmentId, e.getMessage());
 			return null;
 		}
 	}

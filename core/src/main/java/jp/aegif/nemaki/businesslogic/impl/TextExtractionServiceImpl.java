@@ -31,12 +31,14 @@ import java.util.Set;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.tika.Tika;
+import org.apache.tika.exception.WriteLimitReachedException;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.metadata.TikaCoreProperties;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
 import org.apache.tika.sax.BodyContentHandler;
+import org.apache.tika.sax.WriteOutContentHandler;
 
 import jp.aegif.nemaki.businesslogic.TextExtractionService;
 
@@ -59,8 +61,8 @@ public class TextExtractionServiceImpl implements TextExtractionService {
 
     private static final Log log = LogFactory.getLog(TextExtractionServiceImpl.class);
 
-    /** Default maximum length for extracted text (100KB) */
-    private static final int DEFAULT_MAX_LENGTH = 100 * 1024;
+    /** Default maximum length for extracted text (10MB) - increased to handle large documents like PDFs */
+    private static final int DEFAULT_MAX_LENGTH = 10 * 1024 * 1024;
 
     /** Tika instance for simple text extraction */
     private final Tika tika;
@@ -137,18 +139,22 @@ public class TextExtractionServiceImpl implements TextExtractionService {
 
     @Override
     public String extractText(InputStream inputStream, String mimeType, String fileName, int maxLength) {
-        log.info("[TIKA DEBUG] extractText ENTRY - mimeType: " + mimeType + ", fileName: " + fileName + ", maxLength: " + maxLength);
+        if (log.isDebugEnabled()) {
+            log.debug("extractText called - mimeType: " + mimeType + ", fileName: " + fileName + ", maxLength: " + maxLength);
+        }
 
         if (inputStream == null) {
             log.warn("Cannot extract text: input stream is null");
             return null;
         }
 
-        log.info("[TIKA DEBUG] InputStream class: " + inputStream.getClass().getName() + ", available: " + tryGetAvailable(inputStream));
+        // Use WriteOutContentHandler to get partial text even when limit is reached
+        StringWriter stringWriter = new StringWriter();
+        WriteOutContentHandler writeHandler = new WriteOutContentHandler(stringWriter, maxLength);
+        BodyContentHandler handler = new BodyContentHandler(writeHandler);
 
         try {
             // Set up metadata for better parsing
-            log.info("[TIKA DEBUG] Setting up metadata...");
             Metadata metadata = new Metadata();
             if (mimeType != null && !mimeType.isEmpty()) {
                 metadata.set(Metadata.CONTENT_TYPE, mimeType);
@@ -157,54 +163,62 @@ public class TextExtractionServiceImpl implements TextExtractionService {
                 metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, fileName);
             }
 
-            // Use BodyContentHandler with character limit to prevent memory issues
-            log.info("[TIKA DEBUG] Creating BodyContentHandler...");
-            BodyContentHandler handler = new BodyContentHandler(maxLength);
             ParseContext context = new ParseContext();
 
             // Parse the document
-            log.info("[TIKA DEBUG] Calling parser.parse()...");
             parser.parse(inputStream, handler, metadata, context);
-            log.info("[TIKA DEBUG] parser.parse() completed");
 
-            String extractedText = handler.toString();
-            log.info("[TIKA DEBUG] Handler returned text length: " + (extractedText != null ? extractedText.length() : 0));
+            String extractedText = stringWriter.toString();
+            return cleanupAndReturn(extractedText, mimeType, fileName, false);
 
-            // Clean up the extracted text
-            if (extractedText != null) {
-                extractedText = extractedText.trim();
-                // Remove excessive whitespace
-                extractedText = extractedText.replaceAll("\\s+", " ");
-            }
-
-            if (extractedText != null && !extractedText.isEmpty()) {
-                log.debug("Successfully extracted " + extractedText.length() + " characters from " +
-                        (fileName != null ? fileName : "document") + " (" + mimeType + ")");
-                return extractedText;
-            } else {
-                log.debug("No text content extracted from " +
-                        (fileName != null ? fileName : "document") + " (" + mimeType + ")");
-                return null;
-            }
+        } catch (WriteLimitReachedException e) {
+            // This exception is thrown when the character limit is reached
+            // We can still get the partial text that was extracted
+            log.info("Text extraction limit reached for " +
+                    (fileName != null ? fileName : "document") + " (" + mimeType + ") - returning partial text");
+            String partialText = stringWriter.toString();
+            return cleanupAndReturn(partialText, mimeType, fileName, true);
 
         } catch (Exception e) {
-            log.error("[TIKA DEBUG] EXCEPTION in extractText: " + e.getClass().getName() + " - " + e.getMessage());
-            log.error("[TIKA DEBUG] Exception stack trace:", e);
             log.warn("Failed to extract text from " +
                     (fileName != null ? fileName : "document") + " (" + mimeType + "): " + e.getMessage());
-            return null;
-        } catch (Throwable t) {
-            log.error("[TIKA DEBUG] THROWABLE in extractText: " + t.getClass().getName() + " - " + t.getMessage());
-            log.error("[TIKA DEBUG] Throwable stack trace:", t);
+            if (log.isDebugEnabled()) {
+                log.debug("Text extraction exception details:", e);
+            }
+            // Try to return any partial text that was extracted before the error
+            String partialText = stringWriter.toString();
+            if (partialText != null && !partialText.trim().isEmpty()) {
+                log.info("Returning partial text (" + partialText.length() + " chars) despite extraction error");
+                return cleanupAndReturn(partialText, mimeType, fileName, true);
+            }
             return null;
         }
     }
 
-    private int tryGetAvailable(InputStream inputStream) {
-        try {
-            return inputStream.available();
-        } catch (Exception e) {
-            return -1;
+    /**
+     * Clean up extracted text and log the result.
+     */
+    private String cleanupAndReturn(String extractedText, String mimeType, String fileName, boolean isPartial) {
+        if (extractedText == null) {
+            return null;
+        }
+
+        // Clean up the extracted text
+        extractedText = extractedText.trim();
+        // Remove excessive whitespace
+        extractedText = extractedText.replaceAll("\\s+", " ");
+
+        if (!extractedText.isEmpty()) {
+            if (log.isDebugEnabled()) {
+                log.debug("Successfully extracted " + extractedText.length() + " characters" +
+                        (isPartial ? " (partial)" : "") + " from " +
+                        (fileName != null ? fileName : "document") + " (" + mimeType + ")");
+            }
+            return extractedText;
+        } else {
+            log.debug("No text content extracted from " +
+                    (fileName != null ? fileName : "document") + " (" + mimeType + ")");
+            return null;
         }
     }
 
