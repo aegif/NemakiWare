@@ -5,15 +5,16 @@
  * - Shows ancestors up to N generations based on config (or all up to ROOT if -1)
  * - Current folder is the "pivot" point for tree construction
  * - Selected folder (highlighted in tree) can differ from current folder
- * - Single click: Select folder (shows its contents in main pane)
- * - Double click on selected folder: Makes it the current folder (redraws tree)
+ * - Click behavior (simple, no double-click needed):
+ *   - Click non-selected folder: Select it → Main pane shows its contents
+ *   - Click already-selected folder: Make it current → Tree redraws around it
  * - Main pane subfolder clicks: Updates selected folder
  * - Supports drill-down into descendants within tree view
  *
  * Key Concepts:
  * - Current Folder: The pivot point for tree construction. Ancestors are loaded relative to this.
  * - Selected Folder: The folder whose contents are displayed in main pane. Highlighted in tree.
- * - When selected folder is clicked again, it becomes the current folder and tree redraws.
+ * - Clicking an already-selected folder promotes it to current folder and redraws tree.
  *
  * Tree Structure (with ancestorGenerations=2):
  * [
@@ -25,10 +26,8 @@
  * ]
  *
  * Navigation Flows:
- * 1. Click child folder → Child becomes selected → Main pane shows child's contents
- * 2. Click selected folder again → Selected folder becomes current → Tree redraws around it
- * 3. Click ancestor folder → Ancestor becomes selected → Main pane shows ancestor's contents
- * 4. Click selected ancestor again → Ancestor becomes current → Tree redraws around it
+ * 1. Click non-selected folder → Folder becomes selected → Main pane shows folder's contents
+ * 2. Click already-selected folder → Selected folder becomes current → Tree redraws around it
  *
  * Props:
  * - repositoryId: CMIS repository identifier
@@ -38,7 +37,7 @@
  * - currentFolderId: Externally controlled current folder (optional, for initial state)
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Tree, Spin, message } from 'antd';
 import type { TreeDataNode, TreeProps } from 'antd';
 import { FolderOutlined, FolderOpenOutlined } from '@ant-design/icons';
@@ -81,10 +80,6 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   const [selectedFolderId, setSelectedFolderId] = useState<string>('');
   const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
   const [folderCache, setFolderCache] = useState<Map<string, CMISObject>>(new Map());
-
-  // Refs for click handling
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastClickedIdRef = useRef<string>('');
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
@@ -294,51 +289,40 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   };
 
   /**
-   * Handle folder click - single click selects, double click makes current
+   * Handle folder click:
+   * - Click non-selected folder: Select it and show its contents in main pane
+   * - Click already-selected folder: Make it current folder and redraw tree around it
    */
   const handleFolderClick = useCallback(async (folderId: string) => {
-    // Clear any pending timer
-    if (clickTimerRef.current) {
-      clearTimeout(clickTimerRef.current);
-      clickTimerRef.current = null;
-    }
-
-    // Check if this is a double click (same folder clicked twice quickly)
-    if (lastClickedIdRef.current === folderId && selectedFolderId === folderId) {
-      // Double click detected - make this folder the current folder
+    // If clicking already-selected folder, make it the current folder
+    if (folderId === selectedFolderId) {
       setCurrentFolderId(folderId);
       if (onCurrentFolderChange) {
         onCurrentFolderChange(folderId);
       }
       await loadTreeFromFolder(folderId);
-      lastClickedIdRef.current = '';
       return;
     }
 
-    // First click - start timer for single click
-    lastClickedIdRef.current = folderId;
-    clickTimerRef.current = setTimeout(async () => {
-      // Single click - select this folder
-      setSelectedFolderId(folderId);
+    // Clicking non-selected folder: select it and show its contents
+    setSelectedFolderId(folderId);
 
-      // Get folder path for callback
-      let folder = folderCache.get(folderId);
-      if (!folder) {
-        try {
-          folder = await cmisService.getObject(repositoryId, folderId);
-          const newCache = new Map(folderCache);
-          newCache.set(folderId, folder);
-          setFolderCache(newCache);
-        } catch (error) {
-          console.error('Failed to get folder:', error);
-          return;
-        }
+    // Get folder path for callback
+    let folder = folderCache.get(folderId);
+    if (!folder) {
+      try {
+        folder = await cmisService.getObject(repositoryId, folderId);
+        const newCache = new Map(folderCache);
+        newCache.set(folderId, folder);
+        setFolderCache(newCache);
+      } catch (error) {
+        console.error('Failed to get folder:', error);
+        return;
       }
+    }
 
-      onSelect(folderId, folder.path || folder.name);
-      clickTimerRef.current = null;
-    }, config.clickDelay);
-  }, [selectedFolderId, folderCache, repositoryId, onSelect, onCurrentFolderChange, config.clickDelay]);
+    onSelect(folderId, folder.path || folder.name);
+  }, [selectedFolderId, folderCache, repositoryId, onSelect, onCurrentFolderChange]);
 
   /**
    * Handle tree node selection
@@ -402,7 +386,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   return (
     <div style={{ background: '#fafafa', padding: '8px', borderRadius: '4px' }}>
       <div style={{ marginBottom: '8px', fontSize: '12px', color: '#666' }}>
-        シングルクリック: フォルダを選択 | ダブルクリック: ツリーを再描画
+        クリック: フォルダを選択 | 選択中のフォルダをクリック: カレントに設定
       </div>
       <Tree
         treeData={treeData}
