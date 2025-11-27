@@ -783,6 +783,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               repositoryId={repositoryId}
               onSelect={handleFolderSelect}
               selectedFolderId={currentFolderId}
+              currentFolderId={currentFolderId}
             />
           </Card>
         </Col>

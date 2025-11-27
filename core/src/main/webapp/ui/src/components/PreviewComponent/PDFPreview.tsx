@@ -102,9 +102,13 @@
  * - ✅ Reduced attack surface: Simpler implementation with fewer features = fewer vulnerabilities
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Button, Spin, Alert } from 'antd';
+
+// Required CSS for react-pdf text and annotation layers
+import 'react-pdf/dist/Page/TextLayer.css';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
 
 // SECURITY: Configure worker with patched pdfjs-dist@5.3.31 (CVE-2024-4367 fixed)
 // Use jsdelivr CDN with explicit https to avoid mixed-content and fetch issues
