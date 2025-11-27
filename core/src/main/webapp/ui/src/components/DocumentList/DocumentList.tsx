@@ -294,7 +294,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   const loadObjects = async () => {
     if (!currentFolderId) {
-      console.warn('LOAD OBJECTS DEBUG: No currentFolderId, skipping load');
       return;
     }
 
