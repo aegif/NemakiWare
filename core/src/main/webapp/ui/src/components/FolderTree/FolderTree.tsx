@@ -116,7 +116,6 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   const loadRootFolder = async () => {
     const authData = localStorage.getItem('nemakiware_auth');
     if (!authData) {
-      console.log('FolderTree: Skipping - no authentication data');
       setLoading(false);
       return;
     }
