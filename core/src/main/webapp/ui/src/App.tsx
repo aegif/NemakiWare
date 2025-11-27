@@ -196,7 +196,7 @@
  * - HashRouter not supported: Use polyfill for older browsers (rare)
  * - Theme not applied: ConfigProvider missing or theme object malformed
  * - Repository ID null: Component crashes if authToken.repositoryId is null
- * - Route component throws: React error boundary needed (not implemented)
+ * - Route component throws: ErrorBoundary implemented in ProtectedRoute (catches 401 errors)
  */
 
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
@@ -227,7 +227,7 @@ function AppContent() {
   const { isAuthenticated, authToken } = useAuth();
 
   if (!isAuthenticated || !authToken) {
-    return <Login onLogin={async (auth) => {
+    return <Login onLogin={async (_auth) => {
       // AuthContext will handle the authentication state update
       // The AuthContext's useEffect will detect the localStorage change and update state
     }} />;

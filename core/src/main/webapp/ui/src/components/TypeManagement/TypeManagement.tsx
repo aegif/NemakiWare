@@ -90,11 +90,8 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     }
   };
 
-  const handleEdit = (type: TypeDefinition) => {
-    setEditingType(type);
-    form.setFieldsValue(type);
-    setModalVisible(true);
-  };
+  // Type editing is implemented via JSON editor (handleJsonEdit)
+  // Form-based editing was replaced with JSON editing for flexibility
 
   const handleDelete = async (typeId: string) => {
     try {
@@ -164,7 +161,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     }
   };
 
-  const performTypeUpload = async (typeDef: any, overwrite: boolean = false) => {
+  const performTypeUpload = async (typeDef: any, _overwrite: boolean = false) => {
     try {
       await cmisService.createType(repositoryId, typeDef);
       message.success('型定義をインポートしました');

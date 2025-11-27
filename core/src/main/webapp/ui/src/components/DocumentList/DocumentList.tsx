@@ -483,7 +483,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     try {
       setLoading(true);
       const history = await cmisService.getVersionHistory(repositoryId, objectId);
-      setVersionHistory(history);
+      setVersionHistory(history.versions);
       setVersionHistoryModalVisible(true);
     } catch (error) {
       console.error('Version history error:', error);

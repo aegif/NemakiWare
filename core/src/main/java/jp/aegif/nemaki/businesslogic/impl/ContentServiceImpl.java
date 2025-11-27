@@ -2880,10 +2880,10 @@ public class ContentServiceImpl implements ContentService {
 			return false;
 		} else {
 			if (isTopLevel(repositoryId, content) && !inheritedAtTopLevel) {
-				// default to TRUE
-				return (content.isAclInherited() == null) ? false : content.isAclInherited();
+				// default to TRUE (top-level folders inherit by default even when inheritedAtTopLevel is false)
+				return (content.isAclInherited() == null) ? true : content.isAclInherited();
 			} else {
-				// default to FALSE
+				// default to TRUE (normal folders inherit by default)
 				return (content.isAclInherited() == null) ? true : content.isAclInherited();
 			}
 		}

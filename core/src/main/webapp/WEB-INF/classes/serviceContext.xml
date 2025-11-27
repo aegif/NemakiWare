@@ -622,6 +622,9 @@
         <property name="typeService">
             <ref bean="typeService" />
         </property>
+        <property name="textExtractionService">
+            <ref bean="TextExtractionService" />
+        </property>
     </bean>
 
     <!-- Extra Rest API implemented by Jersey -->

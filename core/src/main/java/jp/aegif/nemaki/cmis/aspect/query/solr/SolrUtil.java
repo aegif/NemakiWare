@@ -23,6 +23,7 @@ package jp.aegif.nemaki.cmis.aspect.query.solr;
 
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.TextExtractionService;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -73,6 +74,7 @@ public class SolrUtil implements ApplicationContextAware {
 
 	private PropertyManager propertyManager;
 	private TypeService typeService;
+	private TextExtractionService textExtractionService;
 
 	// CRITICAL FIX (2025-11-19): Use ApplicationContext for lazy ContentService retrieval
 	// to break circular dependency between SolrUtil and ContentService
@@ -266,9 +268,12 @@ public class SolrUtil implements ApplicationContextAware {
 	 * Create SolrInputDocument from NemakiWare Content
 	 */
 	private SolrInputDocument createSolrDocument(String repositoryId, Content content) {
+		if (log.isDebugEnabled()) {
+			log.debug("Creating Solr document for content: {} (type: {}) in repository: {}",
+				content.getId(), content.getType(), repositoryId);
+		}
+
 		SolrInputDocument doc = new SolrInputDocument();
-		
-		log.debug("Creating Solr document for content ID: {} in repository: {}", content.getId(), repositoryId);
 		
 		// Core system fields
 		doc.addField("id", content.getId());
@@ -334,18 +339,20 @@ public class SolrUtil implements ApplicationContextAware {
 		// Type-specific fields
 		if (content instanceof Document) {
 			Document document = (Document) content;
-			
+
 			// Basic document fields available
 			if (document.getAttachmentNodeId() != null) {
 				doc.addField("content_id", document.getAttachmentNodeId());
-				
+
 				// Extract text content for full-text search
 				try {
 					String textContent = extractTextContent(repositoryId, document.getAttachmentNodeId());
 					if (textContent != null && !textContent.trim().isEmpty()) {
 						doc.addField("content", textContent);
 						doc.addField("text", textContent);  // Add text field for CONTAINS queries
-						log.debug("Added text content ({} chars) for document: {}", textContent.length(), content.getId());
+						if (log.isDebugEnabled()) {
+							log.debug("Added text content ({} chars) for document: {}", textContent.length(), content.getId());
+						}
 					}
 				} catch (Exception e) {
 					log.warn("Failed to extract text content for document {}: {}", content.getId(), e.getMessage());
@@ -400,7 +407,10 @@ public class SolrUtil implements ApplicationContextAware {
 		if (content.getChangeToken() != null) {
 			doc.addField("change_token", content.getChangeToken());
 		}
-		
+
+		if (log.isDebugEnabled()) {
+			log.debug("Created Solr document for content: {} with {} fields", content.getId(), doc.size());
+		}
 		return doc;
 	}
 
@@ -530,6 +540,9 @@ public class SolrUtil implements ApplicationContextAware {
 	public void setTypeService(TypeService typeService) {
 		this.typeService = typeService;
 	}
+	public void setTextExtractionService(TextExtractionService textExtractionService) {
+		this.textExtractionService = textExtractionService;
+	}
 	// CRITICAL FIX (2025-11-19): Implement ApplicationContextAware to break circular dependency
 	@Override
 	public void setApplicationContext(ApplicationContext applicationContext) {
@@ -553,30 +566,89 @@ public class SolrUtil implements ApplicationContextAware {
 	}
 	
 	/**
-	 * Extract text content from attachment for full-text search
+	 * Extract text content from attachment for full-text search.
+	 * Uses Apache Tika via TextExtractionService to extract text from various document formats
+	 * including PDF, Word, Excel, PowerPoint, and plain text files.
+	 *
+	 * @param repositoryId Repository ID
+	 * @param attachmentId Attachment node ID
+	 * @return Extracted text content or null if extraction fails
 	 */
 	private String extractTextContent(String repositoryId, String attachmentId) {
+		if (attachmentId == null || attachmentId.isEmpty()) {
+			return null;
+		}
+
+		// Check if TextExtractionService is available
+		if (textExtractionService == null) {
+			log.warn("TextExtractionService not available - full-text search may not work properly");
+			return null;
+		}
+
 		try {
-			// For now, provide text content based on document name/description for CONTAINS queries
-			// This is a temporary solution to enable CONTAINS functionality
-			
-			// Generate searchable text based on available metadata
-			StringBuilder textContent = new StringBuilder();
-			
-			// Add common searchable keywords for PDF documents
-			if (attachmentId != null) {
-				textContent.append("CMIS document content management interoperability services ");
-				textContent.append("specification standard protocol repository ");
-				textContent.append("enterprise content management ECM ");
-				textContent.append("document management system DMS ");
-				textContent.append("business process workflow ");
+			// Get ContentService to retrieve the attachment
+			ContentService contentService = getContentServiceSafely();
+			if (contentService == null) {
+				return null;
 			}
-			
-			String result = textContent.toString().trim();
-			log.debug("Generated text content for CONTAINS queries: {}", result);
-			
-			return result.isEmpty() ? null : result;
-			
+
+			// Retrieve the attachment node
+			AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
+			if (attachment == null) {
+				if (log.isDebugEnabled()) {
+					log.debug("Attachment not found: {}", attachmentId);
+				}
+				return null;
+			}
+
+			// Get the content stream from the AttachmentNode
+			java.io.InputStream contentStream = attachment.getInputStream();
+			if (contentStream == null) {
+				if (log.isDebugEnabled()) {
+					log.debug("No content stream available for attachment: {}", attachmentId);
+				}
+				return null;
+			}
+
+			// Get MIME type and filename for better parsing
+			String mimeType = attachment.getMimeType();
+			String fileName = attachment.getName();
+
+			// Check if the MIME type is supported for text extraction
+			if (mimeType != null && !textExtractionService.isSupported(mimeType)) {
+				if (log.isDebugEnabled()) {
+					log.debug("MIME type {} not supported for text extraction", mimeType);
+				}
+				try {
+					contentStream.close();
+				} catch (Exception e) {
+					// Ignore close errors
+				}
+				return null;
+			}
+
+			try {
+				// Extract text using Tika via TextExtractionService
+				String extractedText = textExtractionService.extractText(contentStream, mimeType, fileName);
+
+				if (extractedText != null && !extractedText.isEmpty()) {
+					if (log.isDebugEnabled()) {
+						log.debug("Successfully extracted {} characters from {} ({})",
+								extractedText.length(), fileName, mimeType);
+					}
+					return extractedText;
+				} else {
+					return null;
+				}
+			} finally {
+				// Ensure the content stream is closed
+				try {
+					contentStream.close();
+				} catch (Exception e) {
+					// Ignore close errors
+				}
+			}
+
 		} catch (Exception e) {
 			log.warn("Failed to extract text content for attachment {}: {}", attachmentId, e.getMessage());
 			return null;
