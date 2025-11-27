@@ -197,29 +197,25 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName }) => {
             maxHeight: '800px',
             overflowY: 'auto'
           }}>
-            {!numPages ? (
-              <div style={{ textAlign: 'center', padding: '40px' }}>
-                <Spin size="large" tip="PDFを読み込んでいます..." />
-              </div>
-            ) : (
-              <Document
-                file={url}
-                onLoadSuccess={onDocumentLoadSuccess}
-                onLoadError={onDocumentLoadError}
-                loading={
-                  <div style={{ textAlign: 'center', padding: '40px' }}>
-                    <Spin size="large" />
-                  </div>
-                }
-              >
+            <Document
+              file={url}
+              onLoadSuccess={onDocumentLoadSuccess}
+              onLoadError={onDocumentLoadError}
+              loading={
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <Spin size="large" tip="PDFを読み込んでいます..." />
+                </div>
+              }
+            >
+              {numPages && (
                 <Page
                   pageNumber={pageNumber}
                   scale={scale}
                   renderTextLayer={true}
                   renderAnnotationLayer={true}
                 />
-              </Document>
-            )}
+              )}
+            </Document>
           </div>
         </>
       )}
