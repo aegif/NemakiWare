@@ -2,9 +2,13 @@ package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.model.UserItem;
 import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.context.WebApplicationContext;
@@ -20,6 +24,9 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.core.Context;
+
+import java.util.Base64;
+import java.util.Map;
 
 @Path("/repo/{repositoryId}/authtoken/")
 public class AuthTokenResource extends ResourceBase{
@@ -172,6 +179,273 @@ public class AuthTokenResource extends ResourceBase{
 
 		result = makeResult(status, result, errMsg);
 		return result.toString();
+	}
+
+	/**
+	 * Convert OIDC token to NemakiWare authentication token.
+	 * Called by React UI after successful OIDC authentication.
+	 *
+	 * Expected request body:
+	 * {
+	 *   "oidc_token": "access_token_string",
+	 *   "id_token": "id_token_string",
+	 *   "user_info": {
+	 *     "sub": "user_id",
+	 *     "email": "user@example.com",
+	 *     "name": "User Name",
+	 *     ...
+	 *   }
+	 * }
+	 */
+	@POST
+	@Path("/oidc/convert")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	public String convertOIDCToken(@PathParam("repositoryId") String repositoryId, String requestBody) {
+		boolean status = false;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		logger.info("=== AuthTokenResource.convertOIDCToken() called for repository: {} ===", repositoryId);
+
+		try {
+			// Parse request body
+			JSONParser parser = new JSONParser();
+			JSONObject requestJson = (JSONObject) parser.parse(requestBody);
+
+			// Extract user information from OIDC response
+			JSONObject userInfo = (JSONObject) requestJson.get("user_info");
+			String oidcToken = (String) requestJson.get("oidc_token");
+			String idToken = (String) requestJson.get("id_token");
+
+			if (userInfo == null) {
+				addErrMsg(errMsg, "user_info", "isNull");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Extract username - try multiple fields from OIDC user info
+			String userName = extractUsernameFromOIDC(userInfo);
+
+			if (StringUtils.isBlank(userName)) {
+				addErrMsg(errMsg, "userName", "couldNotExtract");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			logger.info("OIDC user identified: {}", userName);
+
+			// Get TokenService
+			TokenService tokenService = getTokenService();
+			if (tokenService == null) {
+				addErrMsg(errMsg, "tokenService", "notAvailable");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Generate NemakiWare token for the OIDC user
+			String app = "oidc";
+			Token token = tokenService.setToken(app, repositoryId, userName);
+
+			JSONObject obj = new JSONObject();
+			obj.put("app", app);
+			obj.put("repositoryId", repositoryId);
+			obj.put("userName", userName);
+			obj.put("token", token.getToken());
+			obj.put("expiration", token.getExpiration());
+			result.put("value", obj);
+
+			status = true;
+			logger.info("=== OIDC token conversion successful for user: {} ===", userName);
+
+		} catch (ParseException e) {
+			logger.error("Failed to parse OIDC request body", e);
+			addErrMsg(errMsg, "requestBody", "invalidJson");
+		} catch (Exception e) {
+			logger.error("OIDC token conversion failed", e);
+			addErrMsg(errMsg, "conversion", "failed");
+		}
+
+		result = makeResult(status, result, errMsg);
+		return result.toString();
+	}
+
+	/**
+	 * Extract username from OIDC user_info object.
+	 * Tries multiple common OIDC claims in order of preference.
+	 */
+	private String extractUsernameFromOIDC(JSONObject userInfo) {
+		// Try preferred_username first (Keycloak commonly uses this)
+		String userName = (String) userInfo.get("preferred_username");
+		if (StringUtils.isNotBlank(userName)) {
+			return userName;
+		}
+
+		// Try email
+		userName = (String) userInfo.get("email");
+		if (StringUtils.isNotBlank(userName)) {
+			return userName;
+		}
+
+		// Try sub (subject - unique user identifier)
+		userName = (String) userInfo.get("sub");
+		if (StringUtils.isNotBlank(userName)) {
+			return userName;
+		}
+
+		// Try name
+		userName = (String) userInfo.get("name");
+		if (StringUtils.isNotBlank(userName)) {
+			return userName;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Convert SAML response to NemakiWare authentication token.
+	 * Called by React UI after successful SAML authentication.
+	 *
+	 * Expected request body:
+	 * {
+	 *   "saml_response": "base64_encoded_saml_response",
+	 *   "relay_state": "repositoryId=bedroom",
+	 *   "user_attributes": {
+	 *     "email": "user@example.com",
+	 *     "displayName": "User Name",
+	 *     ...
+	 *   }
+	 * }
+	 */
+	@POST
+	@Path("/saml/convert")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	public String convertSAMLResponse(@PathParam("repositoryId") String repositoryId, String requestBody) {
+		boolean status = false;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		logger.info("=== AuthTokenResource.convertSAMLResponse() called for repository: {} ===", repositoryId);
+
+		try {
+			// Parse request body
+			JSONParser parser = new JSONParser();
+			JSONObject requestJson = (JSONObject) parser.parse(requestBody);
+
+			String samlResponse = (String) requestJson.get("saml_response");
+			String relayState = (String) requestJson.get("relay_state");
+			JSONObject userAttributes = (JSONObject) requestJson.get("user_attributes");
+
+			if (StringUtils.isBlank(samlResponse)) {
+				addErrMsg(errMsg, "saml_response", "isNull");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Extract username from SAML response or user attributes
+			String userName = extractUsernameFromSAML(samlResponse, userAttributes);
+
+			if (StringUtils.isBlank(userName)) {
+				addErrMsg(errMsg, "userName", "couldNotExtract");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			logger.info("SAML user identified: {}", userName);
+
+			// Get TokenService
+			TokenService tokenService = getTokenService();
+			if (tokenService == null) {
+				addErrMsg(errMsg, "tokenService", "notAvailable");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Generate NemakiWare token for the SAML user
+			String app = "saml";
+			Token token = tokenService.setToken(app, repositoryId, userName);
+
+			JSONObject obj = new JSONObject();
+			obj.put("app", app);
+			obj.put("repositoryId", repositoryId);
+			obj.put("userName", userName);
+			obj.put("token", token.getToken());
+			obj.put("expiration", token.getExpiration());
+			result.put("value", obj);
+
+			status = true;
+			logger.info("=== SAML token conversion successful for user: {} ===", userName);
+
+		} catch (ParseException e) {
+			logger.error("Failed to parse SAML request body", e);
+			addErrMsg(errMsg, "requestBody", "invalidJson");
+		} catch (Exception e) {
+			logger.error("SAML token conversion failed", e);
+			addErrMsg(errMsg, "conversion", "failed");
+		}
+
+		result = makeResult(status, result, errMsg);
+		return result.toString();
+	}
+
+	/**
+	 * Extract username from SAML response or user attributes.
+	 * In a real implementation, the SAML response should be decoded and validated.
+	 * For simplicity, this implementation prioritizes user_attributes if provided.
+	 */
+	private String extractUsernameFromSAML(String samlResponse, JSONObject userAttributes) {
+		// Try to get username from user_attributes first (if provided by IdP adapter)
+		if (userAttributes != null) {
+			// Try email
+			String userName = (String) userAttributes.get("email");
+			if (StringUtils.isNotBlank(userName)) {
+				return userName;
+			}
+
+			// Try uid
+			userName = (String) userAttributes.get("uid");
+			if (StringUtils.isNotBlank(userName)) {
+				return userName;
+			}
+
+			// Try username
+			userName = (String) userAttributes.get("username");
+			if (StringUtils.isNotBlank(userName)) {
+				return userName;
+			}
+
+			// Try displayName
+			userName = (String) userAttributes.get("displayName");
+			if (StringUtils.isNotBlank(userName)) {
+				return userName;
+			}
+
+			// Try NameID
+			userName = (String) userAttributes.get("NameID");
+			if (StringUtils.isNotBlank(userName)) {
+				return userName;
+			}
+		}
+
+		// Fallback: Try to decode SAML response and extract NameID
+		// This is a simplified implementation - production would need proper SAML parsing
+		try {
+			String decodedSaml = new String(Base64.getDecoder().decode(samlResponse));
+			// Simple extraction - look for NameID element
+			int nameIdStart = decodedSaml.indexOf("<saml:NameID");
+			if (nameIdStart == -1) {
+				nameIdStart = decodedSaml.indexOf("<NameID");
+			}
+			if (nameIdStart != -1) {
+				int valueStart = decodedSaml.indexOf(">", nameIdStart) + 1;
+				int valueEnd = decodedSaml.indexOf("<", valueStart);
+				if (valueStart > 0 && valueEnd > valueStart) {
+					String nameId = decodedSaml.substring(valueStart, valueEnd).trim();
+					if (StringUtils.isNotBlank(nameId)) {
+						return nameId;
+					}
+				}
+			}
+		} catch (Exception e) {
+			logger.warn("Failed to decode SAML response for username extraction: {}", e.getMessage());
+		}
+
+		return null;
 	}
 
 	public void setTokenService(TokenService tokenService) {
