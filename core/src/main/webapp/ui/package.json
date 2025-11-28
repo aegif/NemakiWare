@@ -2,6 +2,9 @@
   "name": "nemakiware-spa",
   "version": "2.4.2",
   "private": true,
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@types/react": "^18.2.0",
