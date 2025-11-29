@@ -9,7 +9,7 @@ export const defaultSAMLConfig: SAMLConfig = {
 
 export const getSAMLConfig = (): SAMLConfig => {
   return {
-    sso_url: '/core/samlLogin', // Use existing Play Framework SAML endpoint
+    sso_url: 'http://localhost:8088/realms/nemakiware/protocol/saml',
     entity_id: 'nemakiware-spa',
     callback_url: `${window.location.origin}/core/ui/saml-callback`,
     logout_url: `${window.location.origin}/core/ui/`
