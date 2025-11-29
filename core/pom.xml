@@ -773,7 +773,7 @@
 					<packagingExcludes>
 						**/custom-nemakiware.properties,
 						**/custom-repository.yml,
-						ui/node_modules/**,
+						**/node_modules/**,
 						ui/node/**,
 						ui/src/**,
 						ui/tests/**,
