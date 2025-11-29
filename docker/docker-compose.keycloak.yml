@@ -2,12 +2,10 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:latest
     container_name: keycloak
-    command: start
+    command: start-dev
     environment:
       - KEYCLOAK_ADMIN=admin
       - KEYCLOAK_ADMIN_PASSWORD=admin
-      - KC_HTTP_ENABLED=true
-      - KC_HOSTNAME=localhost
     ports:
       - "8088:8080"
     volumes:
