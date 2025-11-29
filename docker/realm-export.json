@@ -12,7 +12,7 @@
         "http://localhost:8080/core/ui/silent-callback.html"
       ],
       "webOrigins": [
-        "http://localhost:8080"
+        "*"
       ]
     },
     {
@@ -21,10 +21,7 @@
       "adminUrl": "http://localhost:8080/core/ui/saml-callback.html",
       "redirectUris": [
         "http://localhost:8080/core/ui/saml-callback.html"
-      ],
-      "attributes": {
-        "saml.force.post.binding": "true"
-      }
+      ]
     }
   ],
   "users": [
