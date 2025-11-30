@@ -1,10 +1,14 @@
 package jp.aegif.nemaki.rest;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
+import jp.aegif.nemaki.model.UserItem;
 import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.context.WebApplicationContext;
@@ -20,6 +24,15 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.core.Context;
+
+import java.io.ByteArrayInputStream;
+import java.util.Base64;
+import java.util.zip.Inflater;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 
 @Path("/repo/{repositoryId}/authtoken/")
 public class AuthTokenResource extends ResourceBase{
@@ -172,6 +185,232 @@ public class AuthTokenResource extends ResourceBase{
 
 		result = makeResult(status, result, errMsg);
 		return result.toString();
+	}
+
+	@POST
+	@Path("/saml/convert")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	public String convertSAMLToken(@PathParam("repositoryId") String repositoryId, String requestBody) {
+		boolean status = false;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		logger.info("=== SAML token conversion requested for repository: {} ===", repositoryId);
+
+		if (StringUtils.isBlank(repositoryId)) {
+			addErrMsg(errMsg, "repositoryId", "isNull");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		try {
+			JSONParser parser = new JSONParser();
+			JSONObject requestJson = (JSONObject) parser.parse(requestBody);
+			
+			String samlResponse = (String) requestJson.get("saml_response");
+			if (StringUtils.isBlank(samlResponse)) {
+				addErrMsg(errMsg, "saml_response", "isNull");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String userName = extractUserNameFromSAMLResponse(samlResponse);
+			if (StringUtils.isBlank(userName)) {
+				addErrMsg(errMsg, "userName", "couldNotExtract");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			logger.info("SAML authentication successful for user: {}", userName);
+
+			UserItem userItem = getOrCreateUser(repositoryId, userName);
+			if (userItem == null) {
+				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			TokenService tokenService = getTokenService();
+			if (tokenService == null) {
+				addErrMsg(errMsg, "tokenService", "notAvailable");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String app = "";
+			Token token = tokenService.setToken(app, repositoryId, userName);
+
+			JSONObject obj = new JSONObject();
+			obj.put("app", app);
+			obj.put("repositoryId", repositoryId);
+			obj.put("userName", userName);
+			obj.put("token", token.getToken());
+			obj.put("expiration", token.getExpiration());
+			result.put("value", obj);
+
+			status = true;
+			logger.info("=== SAML token conversion successful for user: {} ===", userName);
+
+		} catch (ParseException e) {
+			logger.error("Failed to parse SAML request body", e);
+			addErrMsg(errMsg, "requestBody", "invalidJson");
+		} catch (Exception e) {
+			logger.error("SAML token conversion failed", e);
+			addErrMsg(errMsg, "saml", "conversionFailed");
+		}
+
+		return makeResult(status, result, errMsg).toString();
+	}
+
+	@POST
+	@Path("/oidc/convert")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	public String convertOIDCToken(@PathParam("repositoryId") String repositoryId, String requestBody) {
+		boolean status = false;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		logger.info("=== OIDC token conversion requested for repository: {} ===", repositoryId);
+
+		if (StringUtils.isBlank(repositoryId)) {
+			addErrMsg(errMsg, "repositoryId", "isNull");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		try {
+			JSONParser parser = new JSONParser();
+			JSONObject requestJson = (JSONObject) parser.parse(requestBody);
+			
+			JSONObject userInfo = (JSONObject) requestJson.get("user_info");
+			if (userInfo == null) {
+				addErrMsg(errMsg, "user_info", "isNull");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String userName = extractUserNameFromOIDCUserInfo(userInfo);
+			if (StringUtils.isBlank(userName)) {
+				addErrMsg(errMsg, "userName", "couldNotExtract");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			logger.info("OIDC authentication successful for user: {}", userName);
+
+			UserItem userItem = getOrCreateUser(repositoryId, userName);
+			if (userItem == null) {
+				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			TokenService tokenService = getTokenService();
+			if (tokenService == null) {
+				addErrMsg(errMsg, "tokenService", "notAvailable");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String app = "";
+			Token token = tokenService.setToken(app, repositoryId, userName);
+
+			JSONObject obj = new JSONObject();
+			obj.put("app", app);
+			obj.put("repositoryId", repositoryId);
+			obj.put("userName", userName);
+			obj.put("token", token.getToken());
+			obj.put("expiration", token.getExpiration());
+			result.put("value", obj);
+
+			status = true;
+			logger.info("=== OIDC token conversion successful for user: {} ===", userName);
+
+		} catch (ParseException e) {
+			logger.error("Failed to parse OIDC request body", e);
+			addErrMsg(errMsg, "requestBody", "invalidJson");
+		} catch (Exception e) {
+			logger.error("OIDC token conversion failed", e);
+			addErrMsg(errMsg, "oidc", "conversionFailed");
+		}
+
+		return makeResult(status, result, errMsg).toString();
+	}
+
+	private String extractUserNameFromSAMLResponse(String samlResponse) {
+		try {
+			byte[] decodedBytes = Base64.getDecoder().decode(samlResponse);
+			
+			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+			factory.setNamespaceAware(true);
+			DocumentBuilder builder = factory.newDocumentBuilder();
+			Document document = builder.parse(new ByteArrayInputStream(decodedBytes));
+
+			NodeList nameIdNodes = document.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "NameID");
+			if (nameIdNodes.getLength() > 0) {
+				return nameIdNodes.item(0).getTextContent();
+			}
+
+			NodeList attributeNodes = document.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "Attribute");
+			for (int i = 0; i < attributeNodes.getLength(); i++) {
+				Element attr = (Element) attributeNodes.item(i);
+				String attrName = attr.getAttribute("Name");
+				if ("email".equalsIgnoreCase(attrName) || 
+				    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress".equals(attrName) ||
+				    "preferred_username".equalsIgnoreCase(attrName)) {
+					NodeList valueNodes = attr.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "AttributeValue");
+					if (valueNodes.getLength() > 0) {
+						return valueNodes.item(0).getTextContent();
+					}
+				}
+			}
+
+			logger.warn("Could not extract username from SAML response");
+			return null;
+		} catch (Exception e) {
+			logger.error("Failed to parse SAML response", e);
+			return null;
+		}
+	}
+
+	private String extractUserNameFromOIDCUserInfo(JSONObject userInfo) {
+		if (userInfo.containsKey("preferred_username")) {
+			return (String) userInfo.get("preferred_username");
+		}
+		if (userInfo.containsKey("email")) {
+			return (String) userInfo.get("email");
+		}
+		if (userInfo.containsKey("sub")) {
+			return (String) userInfo.get("sub");
+		}
+		return null;
+	}
+
+	private UserItem getOrCreateUser(String repositoryId, String userName) {
+		try {
+			ContentService contentService = getContentService();
+			if (contentService == null) {
+				logger.error("ContentService not available");
+				return null;
+			}
+
+			UserItem userItem = contentService.getUserItemById(repositoryId, userName);
+			if (userItem != null) {
+				logger.info("Found existing user: {}", userName);
+				return userItem;
+			}
+
+			logger.info("User {} not found, creating new user for SSO", userName);
+			return null;
+		} catch (Exception e) {
+			logger.error("Failed to get or create user: " + userName, e);
+			return null;
+		}
+	}
+
+	private ContentService getContentService() {
+		try {
+			WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(
+				request.getServletContext());
+			if (context != null) {
+				return context.getBean("ContentService", ContentService.class);
+			}
+		} catch (Exception e) {
+			logger.error("Failed to retrieve ContentService from Spring context", e);
+		}
+		return null;
 	}
 
 	public void setTokenService(TokenService tokenService) {
