@@ -791,19 +791,6 @@
 						<!-- ui/dist/ directory is kept for backward compatibility -->
 						<!-- No OpenCMIS exclusions needed - using only 1.2.0-nemakiware Jakarta EE 10 compatible versions -->
 					</packagingExcludes>
-					<!-- CRITICAL FIX (2025-11-19): Copy built UI files from dist/ to ui/ -->
-					<!-- This allows accessing UI at /core/ui/ instead of /core/ui/dist/ -->
-					<!-- The ui/dist/index.html will be excluded by not copying it from webapp -->
-					<webResources>
-						<resource>
-							<directory>${project.basedir}/src/main/webapp/ui/dist</directory>
-							<targetPath>ui</targetPath>
-							<includes>
-								<include>index.html</include>
-								<include>assets/**</include>
-							</includes>
-						</resource>
-					</webResources>
 				</configuration>
 			</plugin>
 			<plugin>
@@ -999,6 +986,20 @@
 				<artifactId>maven-antrun-plugin</artifactId>
 				<version>3.0.0</version>
 				<executions>
+					<!-- This execution forcefully deletes the node_modules directory from the staging area before the WAR is created -->
+					<execution>
+						<id>remove-node-modules-from-war</id>
+						<phase>prepare-package</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<target>
+								<delete dir="${project.build.directory}/${project.build.finalName}/ui/node_modules" />
+								<echo message="Forcefully deleted node_modules from staging directory to prevent Playwright conflicts."/>
+							</target>
+						</configuration>
+					</execution>
 					<execution>
 						<id>copy-jakarta-converted</id>
 						<phase>prepare-package</phase>
