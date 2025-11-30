@@ -192,6 +192,7 @@
  */
 
 import { AuthToken } from './auth';
+import pako from 'pako';
 
 export interface SAMLConfig {
   sso_url: string;
@@ -225,13 +226,37 @@ export class SAMLService {
   }
 
   private generateSAMLRequest(): string {
-    const request = {
-      issuer: this.config.entity_id,
-      callback: this.config.callback_url,
-      timestamp: new Date().toISOString()
-    };
+    const id = '_' + this.generateUUID();
+    const issueInstant = new Date().toISOString();
     
-    return btoa(JSON.stringify(request));
+    const samlRequest = `<?xml version="1.0" encoding="UTF-8"?>
+<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
+                    xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
+                    ID="${id}"
+                    Version="2.0"
+                    IssueInstant="${issueInstant}"
+                    Destination="${this.config.sso_url}"
+                    AssertionConsumerServiceURL="${this.config.callback_url}"
+                    ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST">
+    <saml:Issuer>${this.config.entity_id}</saml:Issuer>
+</samlp:AuthnRequest>`;
+
+    return this.deflateAndEncode(samlRequest);
+  }
+
+  private generateUUID(): string {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  private deflateAndEncode(xml: string): string {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(xml);
+    const deflated = pako.deflateRaw(data);
+    return btoa(String.fromCharCode(...deflated));
   }
 
   async handleSAMLResponse(samlResponse: string, relayState?: string): Promise<AuthToken> {
