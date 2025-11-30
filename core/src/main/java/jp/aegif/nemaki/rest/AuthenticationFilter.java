@@ -118,6 +118,13 @@ public class AuthenticationFilter implements Filter {
 			return;
 		}
 
+		// Bypass authentication for SSO token conversion endpoints (SAML and OIDC)
+		if (requestURI != null && (requestURI.contains("/authtoken/saml/convert") || requestURI.contains("/authtoken/oidc/convert"))) {
+			log.info("Bypassing authentication for SSO token conversion endpoint: " + requestURI);
+			chain.doFilter(req, res);
+			return;
+		}
+
 		boolean auth = login(hreq, hres);
 		if(auth){
 			chain.doFilter(req, res);

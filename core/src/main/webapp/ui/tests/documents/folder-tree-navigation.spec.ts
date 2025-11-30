@@ -338,8 +338,9 @@ test.describe('FolderTree Navigation', () => {
     }
 
     // Look for legend indicators showing current vs selected folder colors
-    const currentFolderLegend = page.locator('text=カレントフォルダ');
-    const selectedFolderLegend = page.locator('text=選択中');
+    // Use more specific selectors to avoid strict mode violations
+    const currentFolderLegend = page.locator('text=カレントフォルダ').first();
+    const selectedFolderLegend = page.locator('text=選択中').first();
 
     const hasCurrentLegend = await currentFolderLegend.count() > 0;
     const hasSelectedLegend = await selectedFolderLegend.count() > 0;

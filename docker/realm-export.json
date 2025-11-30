@@ -1,0 +1,40 @@
+{
+  "realm": "nemakiware",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "nemakiware-oidc-client",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "http://localhost:8080/core/ui/*",
+        "http://localhost:8080/core/ui/silent-callback.html"
+      ],
+      "webOrigins": [
+        "*"
+      ]
+    },
+    {
+      "clientId": "nemakiware-saml-client",
+      "protocol": "saml",
+      "adminUrl": "http://localhost:8080/core/ui/saml-callback.html",
+      "redirectUris": [
+        "http://localhost:8080/core/ui/saml-callback.html"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "testuser",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

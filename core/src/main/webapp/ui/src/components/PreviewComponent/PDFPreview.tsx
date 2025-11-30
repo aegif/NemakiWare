@@ -124,6 +124,51 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName }) => {
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [scale, setScale] = useState<number>(1.0);
   const [error, setError] = useState<string | null>(null);
+  const [pdfData, setPdfData] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Fetch PDF content with authentication and convert to Blob URL
+  useEffect(() => {
+    const fetchPdfContent = async () => {
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+        // Fetch PDF with credentials included for authentication
+        const response = await fetch(url, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/pdf',
+          },
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        setPdfData(blobUrl);
+      } catch (err) {
+        console.error('PDF fetch error:', err);
+        setError(`PDFの取得に失敗しました: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (url) {
+      fetchPdfContent();
+    }
+
+    // Cleanup: revoke blob URL when component unmounts or URL changes
+    return () => {
+      if (pdfData) {
+        URL.revokeObjectURL(pdfData);
+      }
+    };
+  }, [url]);
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -165,7 +210,13 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName }) => {
         />
       )}
 
-      {!error && (
+      {!error && isLoading && (
+        <div style={{ textAlign: 'center', padding: '40px' }}>
+          <Spin size="large" tip="PDFを取得しています..." />
+        </div>
+      )}
+
+      {!error && !isLoading && pdfData && (
         <>
           <div style={{
             marginBottom: '16px',
@@ -203,7 +254,7 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName }) => {
             overflowY: 'auto'
           }}>
             <Document
-              file={url}
+              file={pdfData}
               onLoadSuccess={onDocumentLoadSuccess}
               onLoadError={onDocumentLoadError}
               loading={

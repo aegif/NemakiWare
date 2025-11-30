@@ -98,7 +98,7 @@ run_http_test() {
 
 echo "=== 1. ENVIRONMENT VERIFICATION ==="
 run_test "Java 17 Environment" "java -version 2>&1 | grep 'version \"17'" ""
-run_test "Docker Containers Running" "docker compose -f docker/docker-compose-simple.yml ps --filter 'status=running' | tail -n +2 | wc -l | tr -d ' '" "3"
+run_test "Docker Containers Running" "docker compose -f docker/docker-compose-simple.yml ps --filter 'status=running' | tail -n +2 | wc -l | tr -d ' '" "4"
 
 echo
 echo "=== 2. DATABASE INITIALIZATION TESTS ==="

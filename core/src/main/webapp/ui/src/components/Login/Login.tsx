@@ -360,7 +360,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         title={
           <div style={{ textAlign: 'center' }}>
             <img 
-              src="/core/ui/dist/logo1.png" 
+              src="/core/ui/logo1.png" 
               alt="NemakiWare" 
               style={{ 
                 height: '80px', 
