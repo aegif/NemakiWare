@@ -300,8 +300,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         await oidcService.signinRedirect();
       }
     } catch (error) {
-      // OIDC login failed
-      setError('OIDC認証に失敗しました。');
+      // OIDC login failed - log actual error for debugging
+      console.error('OIDC login error:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setError(`OIDC認証に失敗しました: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -317,15 +319,17 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       const repositoryId = repositories.length > 0 ? repositories[0] : 'bedroom';
       samlService.initiateLogin(repositoryId);
     } catch (error) {
-      // SAML login failed
-      setError('SAML認証に失敗しました。');
+      // SAML login failed - log actual error for debugging
+      console.error('SAML login error:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setError(`SAML認証に失敗しました: ${errorMessage}`);
       setLoading(false);
     }
   };
 
   const handleSAMLCallback = async () => {
     if (!samlService) return;
-    
+
     setLoading(true);
     setError(null);
 
@@ -333,7 +337,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       const urlParams = new URLSearchParams(window.location.search);
       const samlResponse = urlParams.get('SAMLResponse');
       const relayState = urlParams.get('RelayState');
-      
+
       if (samlResponse) {
         const auth = await samlService.handleSAMLResponse(samlResponse, relayState || undefined);
         onLogin(auth);
@@ -341,8 +345,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         setError('SAML認証レスポンスが見つかりません。');
       }
     } catch (error) {
-      // SAML callback failed
-      setError('SAML認証の処理に失敗しました。');
+      // SAML callback failed - log actual error for debugging
+      console.error('SAML callback error:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setError(`SAML認証の処理に失敗しました: ${errorMessage}`);
     } finally {
       setLoading(false);
     }

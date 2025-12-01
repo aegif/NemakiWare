@@ -1,4 +1,4 @@
-import{R as N}from"./index-SNZQGrHG.js";const O="https://open.spotify.com",$=/open\.spotify\.com\/(\w+)\/(\w+)/i,B="https://open.spotify.com/embed-podcast/iframe-api/v1",j="SpotifyIframeApi",W="onSpotifyIframeApiReady";function L(e,t={}){const i={src:C(e,t),scrolling:"no",frameborder:0,width:"100%",height:"100%",allow:"accelerometer; fullscreen; autoplay; encrypted-media; gyroscope; picture-in-picture"};return`
+import{R as N}from"./index-BXMmouFQ.js";const O="https://open.spotify.com",$=/open\.spotify\.com\/(\w+)\/(\w+)/i,B="https://open.spotify.com/embed-podcast/iframe-api/v1",j="SpotifyIframeApi",W="onSpotifyIframeApiReady";function L(e,t={}){const i={src:C(e,t),scrolling:"no",frameborder:0,width:"100%",height:"100%",allow:"accelerometer; fullscreen; autoplay; encrypted-media; gyroscope; picture-in-picture"};return`
     <style>
       :host {
         display: inline-block;

@@ -237,7 +237,7 @@ export class SAMLService {
                     IssueInstant="${issueInstant}"
                     Destination="${this.config.sso_url}"
                     AssertionConsumerServiceURL="${this.config.callback_url}"
-                    ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST">
+                    ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect">
     <saml:Issuer>${this.config.entity_id}</saml:Issuer>
 </samlp:AuthnRequest>`;
 
