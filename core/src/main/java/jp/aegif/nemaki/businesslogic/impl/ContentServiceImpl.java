@@ -1674,6 +1674,12 @@ public class ContentServiceImpl implements ContentService {
 		final String groupId = properties.getProperties().get("nemaki:groupId").getFirstValue().toString();
 		groupItem.setGroupId(groupId);
 
+		// FIX: Set name to groupId if cmis:name was not provided
+		// This ensures group items are displayed with their groupId in document list instead of "Unknown"
+		if (groupItem.getName() == null || groupItem.getName().trim().isEmpty()) {
+			groupItem.setName(groupId);
+		}
+
 		validateGroupItem(repositoryId, groupItem);
 
 		GroupItem created = contentDaoService.create(repositoryId, groupItem);
@@ -1718,6 +1724,12 @@ public class ContentServiceImpl implements ContentService {
 		UserItem userItem = new UserItem(i);
 		final String userId = properties.getProperties().get("nemaki:userId").getFirstValue().toString();
 		userItem.setUserId(userId);
+
+		// FIX: Set name to userId if cmis:name was not provided
+		// This ensures user items are displayed with their userId in document list instead of "Unknown"
+		if (userItem.getName() == null || userItem.getName().trim().isEmpty()) {
+			userItem.setName(userId);
+		}
 
 		// ACL
 		final String ANYONE = repositoryInfoMap.get(repositoryId).getPrincipalIdAnyone();
