@@ -112,10 +112,40 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
 test.describe('NemakiWare Authentication', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, context }) => {
     // Start with a clean session
-    await page.context().clearCookies();
-    await page.context().clearPermissions();
+    await context.clearCookies();
+    await context.clearPermissions();
+
+    // CRITICAL FIX (2025-12-02): Clear localStorage and all storage to remove cached auth
+    // Navigate to page first, then clear all storage types
+    await page.goto('/core/ui/dist/index.html');
+    await page.evaluate(() => {
+      // Clear all storage mechanisms
+      localStorage.clear();
+      sessionStorage.clear();
+
+      // Also clear IndexedDB if present
+      if (indexedDB && indexedDB.databases) {
+        indexedDB.databases().then(dbs => {
+          dbs.forEach(db => {
+            if (db.name) indexedDB.deleteDatabase(db.name);
+          });
+        }).catch(() => {});
+      }
+    });
+
+    // FIX FOR BASIC AUTH CACHING: Navigate away from domain to clear HTTP auth cache
+    // Playwright browser context caches HTTP Basic Auth credentials per-origin
+    // Navigating to about:blank and back forces credential cache to be cleared
+    await page.goto('about:blank');
+    await page.goto('/core/ui/dist/index.html');
+
+    // Clear storage again after fresh navigation
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+    });
   });
 
   test('should display login page correctly', async ({ page }) => {
@@ -192,47 +222,62 @@ test.describe('NemakiWare Authentication', () => {
     await expect(repoDisplay).toBeVisible({ timeout: 5000 });
   });
 
-  test('should fail login with invalid credentials', async ({ page }) => {
-    await page.goto('/core/ui/dist/index.html');
+  test('should fail login with invalid credentials', async ({ browser }) => {
+    // CRITICAL FIX (2025-12-02): Use a fresh browser context WITHOUT httpCredentials
+    // The global playwright.config.ts sets httpCredentials to admin:admin which overrides
+    // any Authorization header set by JavaScript. This caused the test to always succeed
+    // because the server received admin:admin credentials instead of invalid:invalid.
+    const context = await browser.newContext({
+      // Explicitly disable httpCredentials to test actual invalid credentials
+      httpCredentials: undefined,
+      extraHTTPHeaders: {},
+    });
+    const page = await context.newPage();
 
-    // Wait for login form
-    await page.waitForSelector('input[type="password"]', { timeout: 10000 });
+    try {
+      await page.goto('/core/ui/dist/index.html');
 
-    // Fill username field
-    const usernameField = page.locator('input[type="text"], input[name="username"]').first();
-    await usernameField.fill('invalid');
+      // Wait for login form
+      await page.waitForSelector('input[type="password"]', { timeout: 10000 });
 
-    // Fill password field
-    await page.locator('input[type="password"]').fill('invalid');
+      // Fill username field
+      const usernameField = page.locator('input[type="text"], input[name="username"]').first();
+      await usernameField.fill('invalid');
 
-    // Select repository if dropdown exists
-    const repositorySelect = page.locator('.ant-select').first();
-    if (await repositorySelect.count() > 0) {
-      await repositorySelect.click();
-      await page.waitForSelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)', { timeout: 5000 });
+      // Fill password field
+      await page.locator('input[type="password"]').fill('invalid');
 
-      const option = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'bedroom' }).first();
-      await option.waitFor({ state: 'attached', timeout: 3000 });
-      await option.scrollIntoViewIfNeeded();
-      await page.waitForTimeout(300);
-      await option.click();
+      // Select repository if dropdown exists
+      const repositorySelect = page.locator('.ant-select').first();
+      if (await repositorySelect.count() > 0) {
+        await repositorySelect.click();
+        await page.waitForSelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)', { timeout: 5000 });
+
+        const option = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'bedroom' }).first();
+        await option.waitFor({ state: 'attached', timeout: 3000 });
+        await option.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(300);
+        await option.click();
+      }
+
+      // Click login button
+      const loginButton = page.locator('button:has-text("ログイン")').first();
+      await loginButton.click();
+
+      // Wait for potential error message
+      await page.waitForTimeout(3000);
+
+      // Verify we're still on login page
+      await expect(page.locator('input[type="password"]')).toBeVisible();
+
+      // Look for error message using Ant Design alert
+      const stillOnLoginPage = await page.locator('input[type="password"]').isVisible();
+
+      // Either error message should be shown or we should still be on login page
+      expect(stillOnLoginPage).toBe(true);
+    } finally {
+      await context.close();
     }
-
-    // Click login button
-    const loginButton = page.locator('button:has-text("ログイン")').first();
-    await loginButton.click();
-
-    // Wait for potential error message
-    await page.waitForTimeout(3000);
-
-    // Verify we're still on login page
-    await expect(page.locator('input[type="password"]')).toBeVisible();
-
-    // Look for error message using Ant Design alert
-    const stillOnLoginPage = await page.locator('input[type="password"]').isVisible();
-
-    // Either error message should be shown or we should still be on login page
-    expect(stillOnLoginPage).toBe(true);
   });
 
   test('should handle empty credentials', async ({ page }) => {
