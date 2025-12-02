@@ -219,7 +219,23 @@ interface LoginProps {
   onLogin: (auth: AuthToken) => void;
 }
 
+// Debug: Log immediately when module loads (before React renders)
+console.log('[Login Module] Loaded at:', new Date().toISOString());
+console.log('[Login Module] window.location.pathname:', window.location.pathname);
+console.log('[Login Module] window.location.search:', window.location.search);
+console.log('[Login Module] window.location.hash:', window.location.hash);
+console.log('[Login Module] localStorage keys:', Object.keys(localStorage));
+
+// Check OIDC state in localStorage
+const oidcStateKeys = Object.keys(localStorage).filter(k => k.startsWith('oidc.'));
+console.log('[Login Module] OIDC localStorage keys:', oidcStateKeys);
+oidcStateKeys.forEach(key => {
+  console.log(`[Login Module] ${key}:`, localStorage.getItem(key)?.substring(0, 100) + '...');
+});
+
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
+  console.log('[Login Component] Rendering, pathname:', window.location.pathname);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [repositories, setRepositories] = useState<string[]>([]);
@@ -251,10 +267,21 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   }, []);
 
   useEffect(() => {
+    // Debug logging for callback detection
+    console.log('[Login] Callback detection useEffect running');
+    console.log('[Login] pathname:', window.location.pathname);
+    console.log('[Login] search:', window.location.search);
+    console.log('[Login] oidcService:', oidcService ? 'initialized' : 'null');
+    console.log('[Login] samlService:', samlService ? 'initialized' : 'null');
+
     if (window.location.pathname.includes('oidc-callback') && oidcService) {
+      console.log('[Login] OIDC callback detected, calling handleOIDCLogin()');
       handleOIDCLogin();
     } else if (window.location.pathname.includes('saml-callback') && samlService) {
+      console.log('[Login] SAML callback detected, calling handleSAMLCallback()');
       handleSAMLCallback();
+    } else {
+      console.log('[Login] No callback detected or service not ready');
     }
   }, [oidcService, samlService]);
 
@@ -285,25 +312,60 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   const handleOIDCLogin = async () => {
-    if (!oidcService) return;
-    
+    console.log('[handleOIDCLogin] Called');
+    if (!oidcService) {
+      console.log('[handleOIDCLogin] oidcService is null, returning');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
       if (window.location.pathname.includes('oidc-callback')) {
+        console.log('[handleOIDCLogin] Processing callback...');
+        console.log('[handleOIDCLogin] URL search params:', window.location.search);
+        console.log('[handleOIDCLogin] URL hash:', window.location.hash);
+
+        // Check localStorage state before callback processing
+        const oidcKeys = Object.keys(localStorage).filter(k => k.startsWith('oidc.'));
+        console.log('[handleOIDCLogin] OIDC localStorage keys before callback:', oidcKeys);
+        oidcKeys.forEach(key => {
+          console.log(`[handleOIDCLogin] ${key}:`, localStorage.getItem(key)?.substring(0, 200));
+        });
+
+        console.log('[handleOIDCLogin] Calling signinRedirectCallback()');
         const oidcUser = await oidcService.signinRedirectCallback();
+        console.log('[handleOIDCLogin] signinRedirectCallback() succeeded, user:', oidcUser?.profile?.email);
         const repositoryId = repositories.length > 0 ? repositories[0] : 'bedroom';
+        console.log('[handleOIDCLogin] Converting OIDC token for repository:', repositoryId);
         const auth = await oidcService.convertOIDCToken(oidcUser, repositoryId);
+        console.log('[handleOIDCLogin] Token conversion succeeded, calling onLogin');
         onLogin(auth);
       } else {
+        console.log('[handleOIDCLogin] Initiating redirect to OIDC provider');
+        // Log localStorage state before redirect
+        console.log('[handleOIDCLogin] localStorage keys before redirect:', Object.keys(localStorage));
         await oidcService.signinRedirect();
       }
     } catch (error) {
       // OIDC login failed - log actual error for debugging
-      console.error('OIDC login error:', error);
+      console.error('[handleOIDCLogin] OIDC login error:', error);
+      console.error('[handleOIDCLogin] Error name:', (error as Error)?.name);
+      console.error('[handleOIDCLogin] Error message:', (error as Error)?.message);
+      console.error('[handleOIDCLogin] Error stack:', (error as Error)?.stack);
+
+      // Check localStorage state after error
+      const oidcKeysAfter = Object.keys(localStorage).filter(k => k.startsWith('oidc.'));
+      console.log('[handleOIDCLogin] OIDC localStorage keys after error:', oidcKeysAfter);
+
       const errorMessage = error instanceof Error ? error.message : String(error);
-      setError(`OIDC認証に失敗しました: ${errorMessage}`);
+      // Check for privacy mode related error
+      if (errorMessage.includes('No matching state') || errorMessage.includes('state')) {
+        setError(`OIDC認証に失敗しました: ${errorMessage}\n\n【重要】プライバシーモード（シークレットウィンドウ）では認証状態が保存されないため、OIDC認証が失敗する場合があります。通常モードでお試しください。`);
+      } else {
+        setError(`OIDC認証に失敗しました: ${errorMessage}`);
+      }
     } finally {
       setLoading(false);
     }

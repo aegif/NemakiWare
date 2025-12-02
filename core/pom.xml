@@ -806,6 +806,22 @@
 								<include>*.png</include>
 							</includes>
 						</resource>
+						<!-- OpenCMIS 1.1.0-nemakiware Jakarta EE 10 JARs -->
+						<!-- CRITICAL: These must be added via webResources to prevent maven-war-plugin from deleting them -->
+						<resource>
+							<directory>${basedir}/../lib/built-jars</directory>
+							<targetPath>WEB-INF/lib</targetPath>
+							<includes>
+								<include>chemistry-opencmis-server-bindings-1.1.0-nemakiware.jar</include>
+								<include>chemistry-opencmis-commons-impl-1.1.0-nemakiware.jar</include>
+								<include>chemistry-opencmis-commons-api-1.1.0-nemakiware.jar</include>
+								<include>chemistry-opencmis-server-support-1.1.0-nemakiware.jar</include>
+								<include>chemistry-opencmis-client-impl-1.1.0-nemakiware.jar</include>
+								<include>chemistry-opencmis-client-api-1.1.0-nemakiware.jar</include>
+								<include>chemistry-opencmis-client-bindings-1.1.0-nemakiware.jar</include>
+								<include>chemistry-opencmis-test-tck-1.1.0-nemakiware.jar</include>
+							</includes>
+						</resource>
 					</webResources>
 				</configuration>
 			</plugin>
