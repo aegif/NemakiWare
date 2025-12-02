@@ -582,13 +582,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               type="link"
               onClick={() => {
                 if (record.baseType === 'cmis:folder') {
-                  // CRITICAL FIX (2025-11-26): Do NOT construct path here - let loadObjects() fetch real path from CMIS
-                  // Previous bug: Constructed path was wrong because currentFolderPath stuck at "/"
-                  // Example: clicking TestChild when currentFolderPath="/" gave "/TestChild" instead of "/TestParent/TestChild"
-                  // Solution: Set selectedFolderId, useEffect triggers loadObjects() which fetches correct path
-                  // Note: When navigating via table (not tree), update both selected and current folder IDs
+                  // CRITICAL FIX (2025-12-03): Only update selectedFolderId, NOT currentFolderId
+                  // Previous bug: Every table folder click changed currentFolderId, causing tree to redraw
+                  // User expectation: Table clicks should only change which folder is displayed (selectedFolderId)
+                  // The tree pivot (currentFolderId) should only change when user explicitly requests it
+                  // (by clicking an already-selected folder in the tree)
                   setSelectedFolderId(record.id);
-                  setCurrentFolderId(record.id);
+                  // DO NOT: setCurrentFolderId(record.id); - this would redraw the tree
                   setSearchParams({ folderId: record.id });
                   // Path will be set by loadObjects() after fetching from CMIS - no manual construction
                 } else {
