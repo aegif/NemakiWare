@@ -54,7 +54,7 @@
  * // 4. ErrorBoundary catches error via componentDidCatch (Line 59)
  * // 5. Detects authentication error (error.message.includes('401'))
  * // 6. Clears localStorage.removeItem('nemakiware_auth')
- * // 7. Redirects window.location.href = '/core/ui/dist/index.html'
+ * // 7. Redirects window.location.href = '/core/ui/'
  * // 8. User sees Login screen with clean authentication state
  * ```
  *
@@ -128,7 +128,7 @@
  * 10. Full Page Redirect on Auth Failure (Line 66):
  *     - Uses window.location.href instead of React Router navigate
  *     - Rationale: Hard redirect clears all React state, ensures clean login screen
- *     - Implementation: window.location.href = '/core/ui/dist/index.html'
+ *     - Implementation: window.location.href = '/core/ui/'
  *     - Advantage: Foolproof authentication reset, no lingering state
  *     - Trade-off: Slower than client-side routing, but more reliable for auth failures
  *
@@ -138,7 +138,7 @@
  * - Not authenticated: Renders Login component, blocks access to protected route
  * - Authenticated: Renders children wrapped in ErrorBoundary
  * - Login success: Page reloads, auth state re-initialized, children render
- * - 401 error: localStorage cleared, redirects to /core/ui/dist/index.html
+ * - 401 error: localStorage cleared, redirects to /core/ui/
  * - Other errors: Renders Login component with reload handler
  *
  * Performance Characteristics:
@@ -165,7 +165,7 @@
  * - ErrorBoundary must be class component (React limitation, hooks not supported)
  * - No retry mechanism for failed authentication checks
  * - No loading timeout (could hang indefinitely if AuthContext fails)
- * - Hard-coded redirect path (/core/ui/dist/index.html)
+ * - Hard-coded redirect path (/core/ui/)
  * - No differentiation between 401 and 403 errors
  * - No error reporting/telemetry integration
  *
@@ -252,7 +252,7 @@ class ErrorBoundary extends React.Component<
     if (error.message.includes('401') || error.message.includes('Unauthorized')) {
       // Clear authentication and redirect to login
       localStorage.removeItem('nemakiware_auth');
-      window.location.href = '/core/ui/dist/index.html';
+      window.location.href = '/core/ui/';
     }
   }
 

@@ -88,7 +88,7 @@
  *    - Rationale: Servlet context deployment requires hash-based routing
  *    - Implementation: import { HashRouter as Router } from 'react-router-dom'
  *    - Advantage: Works without server-side route configuration
- *    - Deployment URL: http://localhost:8080/core/ui/dist/#/documents
+ *    - Deployment URL: http://localhost:8080/core/ui/#/documents
  *    - Trade-off: Ugly # in URLs but no servlet rewrite rules required
  *
  * 3. AuthProvider Wrapping Strategy (Lines 94-96):
@@ -117,7 +117,7 @@
  *    - Rationale: Default landing page after login
  *    - Implementation: <Route path="/" element={<Navigate to="/documents" replace />} />
  *    - Advantage: Consistent entry point, replaces history for clean back button
- *    - HashRouter URL: http://localhost:8080/core/ui/dist/#/
+ *    - HashRouter URL: http://localhost:8080/core/ui/#/
  *
  * 7. Ant Design ConfigProvider Theme Customization (Lines 16-23, 94):
  *    - Custom theme object with brand colors

@@ -108,7 +108,7 @@
  *    - Previous bug: 404 errors triggered logout (incorrect behavior)
  *
  * 7. Logout Redirect Behavior (Lines 85-86):
- *    - Redirects to /core/ui/dist/index.html after logout
+ *    - Redirects to /core/ui/ after logout
  *    - Rationale: Full page reload clears all React state
  *    - Implementation: window.location.href assignment
  *    - Advantage: Clean slate, no stale state from previous session
@@ -269,7 +269,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(false);
 
     // Clear any error states and redirect to login
-    window.location.href = '/core/ui/dist/index.html';
+    window.location.href = '/core/ui/';
   }, []);
 
   const handleAuthError = useCallback((error: any) => {

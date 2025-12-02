@@ -68,7 +68,7 @@
  * // 6. Redirects to Login component
  *
  * // Logo Switching:
- * // - Expanded: Full logo image "/core/ui/dist/logo2.png?v=20250802" (Lines 111-121)
+ * // - Expanded: Full logo image "/core/ui/logo2.png?v=20250802" (Lines 111-121)
  * // - Collapsed: Single "N" character in serif font (Lines 122-131)
  * // - Controlled by collapsed state (Line 26)
  * ```
@@ -175,7 +175,7 @@
  * - Network tab: Logo image request visible (logo2.png?v=20250802)
  *
  * Known Limitations:
- * - Logo image requires /core/ui/dist/logo2.png file (hardcoded path)
+ * - Logo image requires /core/ui/logo2.png file (hardcoded path)
  * - User dropdown has only logout action (no profile/settings)
  * - Sidebar width fixed by Ant Design defaults (not customizable by user)
  * - No breadcrumb navigation in header
@@ -191,7 +191,7 @@
  * - Uses: React Router via useNavigate and useLocation hooks
  * - Wraps: All page components via {children} prop (DocumentList, SearchResults, UserManagement, etc.)
  * - Icon Dependency: @ant-design/icons for menu, user, and UI icons
- * - Logo Dependency: /core/ui/dist/logo2.png static asset
+ * - Logo Dependency: /core/ui/logo2.png static asset
  * - Ant Design: Layout, Menu, Button, Dropdown, Avatar, Space components
  *
  * Common Failure Scenarios:
@@ -317,7 +317,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
         }}>
           {!collapsed && (
             <img 
-              src="/core/ui/dist/logo2.png?v=20250802" 
+              src="/core/ui/logo2.png?v=20250802" 
               alt="NemakiWare" 
               style={{ 
                 height: '45px', 

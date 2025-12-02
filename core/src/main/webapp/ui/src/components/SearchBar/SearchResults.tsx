@@ -63,7 +63,7 @@
  * <Route path="/search" element={<SearchResults repositoryId={repositoryId} />} />
  *
  * // Example URL with search parameter
- * // http://localhost:8080/core/ui/dist/#/search?q=SELECT+*+FROM+cmis:document+WHERE+CONTAINS('report')
+ * // http://localhost:8080/core/ui/#/search?q=SELECT+*+FROM+cmis:document+WHERE+CONTAINS('report')
  *
  * <SearchResults
  *   repositoryId="bedroom"
