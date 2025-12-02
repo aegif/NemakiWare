@@ -266,6 +266,26 @@ export class AuthService {
     }
     this.currentAuth = null;
     localStorage.removeItem('nemakiware_auth');
+
+    // COMPREHENSIVE LOGOUT FIX (2025-12-02):
+    // Clear all OIDC session data from localStorage
+    // oidc-client-ts stores user/state with keys like: oidc.user:*, oidc.*
+    const oidcKeys = Object.keys(localStorage).filter(key => key.startsWith('oidc.'));
+    oidcKeys.forEach(key => {
+      localStorage.removeItem(key);
+      console.log('[AuthService] Cleared OIDC key:', key);
+    });
+
+    // Clear any SAML-related localStorage data if present
+    const samlKeys = Object.keys(localStorage).filter(key =>
+      key.startsWith('saml.') || key.includes('saml') || key.includes('SAML')
+    );
+    samlKeys.forEach(key => {
+      localStorage.removeItem(key);
+      console.log('[AuthService] Cleared SAML key:', key);
+    });
+
+    console.log('[AuthService] Comprehensive logout completed - cleared NemakiWare, OIDC, and SAML auth data');
   }
 
   getAuthToken(): string | null {

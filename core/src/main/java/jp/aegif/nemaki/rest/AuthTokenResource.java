@@ -332,11 +332,30 @@ public class AuthTokenResource extends ResourceBase{
 	private String extractUserNameFromSAMLResponse(String samlResponse) {
 		try {
 			byte[] decodedBytes = Base64.getDecoder().decode(samlResponse);
-			
+			byte[] xmlBytes;
+
+			// Try to inflate (decompress) the SAML response
+			// HTTP-Redirect binding uses DEFLATE compression, HTTP-POST does not
+			try {
+				Inflater inflater = new Inflater(true); // true = nowrap (raw deflate)
+				inflater.setInput(decodedBytes);
+				byte[] result = new byte[decodedBytes.length * 10]; // Estimate 10x expansion
+				int resultLength = inflater.inflate(result);
+				inflater.end();
+				xmlBytes = new byte[resultLength];
+				System.arraycopy(result, 0, xmlBytes, 0, resultLength);
+				logger.debug("SAML response was deflate-compressed, inflated {} bytes to {} bytes",
+				            decodedBytes.length, resultLength);
+			} catch (Exception e) {
+				// Not compressed, use decoded bytes directly (HTTP-POST binding)
+				xmlBytes = decodedBytes;
+				logger.debug("SAML response was not deflate-compressed, using raw bytes");
+			}
+
 			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
 			factory.setNamespaceAware(true);
 			DocumentBuilder builder = factory.newDocumentBuilder();
-			Document document = builder.parse(new ByteArrayInputStream(decodedBytes));
+			Document document = builder.parse(new ByteArrayInputStream(xmlBytes));
 
 			NodeList nameIdNodes = document.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "NameID");
 			if (nameIdNodes.getLength() > 0) {
