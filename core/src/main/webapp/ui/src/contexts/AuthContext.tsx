@@ -190,13 +190,17 @@
 
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { AuthService, AuthToken } from '../services/auth';
+import { OIDCService } from '../services/oidc';
+import { isOIDCEnabled, getOIDCConfig } from '../config/oidc';
+import { SAMLService } from '../services/saml';
+import { isSAMLEnabled, getSAMLConfig } from '../config/saml';
 
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   authToken: AuthToken | null;
   login: (username: string, password: string, repositoryId: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   handleAuthError: (error: any) => void;
 }
 
@@ -262,13 +266,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     const authService = AuthService.getInstance();
+
+    // CRITICAL FIX (2025-12-02): IdP-side logout support
+    // Check authMethod before clearing to call appropriate IdP logout
+    // This ensures Keycloak session is cleared, preventing auto-re-login on next SSO attempt
+    const currentAuth = authService.getCurrentAuth();
+    const authMethod = currentAuth?.authMethod;
+
+    console.log('[AuthContext] Logout initiated, authMethod:', authMethod);
+
+    // Clear local auth state first
     authService.logout();
     setAuthToken(null);
     setIsAuthenticated(false);
 
-    // Clear any error states and redirect to login
+    // Call IdP-side logout based on authentication method
+    if (authMethod === 'oidc' && isOIDCEnabled()) {
+      try {
+        console.log('[AuthContext] Calling OIDC signoutRedirect for IdP-side logout');
+        const oidcService = new OIDCService(getOIDCConfig());
+        await oidcService.signoutRedirect();
+        // signoutRedirect will redirect to IdP logout, so no further action needed
+        return;
+      } catch (error) {
+        console.error('[AuthContext] OIDC signoutRedirect failed:', error);
+        // Fall through to local redirect
+      }
+    } else if (authMethod === 'saml' && isSAMLEnabled()) {
+      try {
+        console.log('[AuthContext] Calling SAML initiateLogout for IdP-side logout');
+        const samlService = new SAMLService(getSAMLConfig());
+        samlService.initiateLogout();
+        // initiateLogout will redirect to IdP logout if configured, so no further action needed
+        return;
+      } catch (error) {
+        console.error('[AuthContext] SAML initiateLogout failed:', error);
+        // Fall through to local redirect
+      }
+    }
+
+    // For basic auth or if IdP logout fails/not configured, redirect to login page
     window.location.href = '/core/ui/';
   }, []);
 

@@ -344,6 +344,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
         // CRITICAL FIX: Save auth to localStorage before redirect
         // The onLogin callback in App.tsx is a no-op, so we must explicitly save here
+        // Set authMethod for IdP-side logout support
+        auth.authMethod = 'oidc';
         authService.saveAuth(auth);
         console.log('[handleOIDCLogin] Auth saved to localStorage, calling onLogin');
         onLogin(auth);
@@ -418,6 +420,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
         // CRITICAL FIX: Save auth to localStorage before redirect
         // The onLogin callback in App.tsx is a no-op, so we must explicitly save here
+        // Set authMethod for IdP-side logout support
+        auth.authMethod = 'saml';
         authService.saveAuth(auth);
         console.log('[handleSAMLCallback] Auth saved to localStorage, calling onLogin');
         onLogin(auth);

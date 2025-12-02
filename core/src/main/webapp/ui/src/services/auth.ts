@@ -180,6 +180,8 @@ export interface AuthToken {
   token: string;
   repositoryId: string;
   username: string;
+  /** Authentication method used: 'basic' for username/password, 'oidc' for OpenID Connect, 'saml' for SAML 2.0 */
+  authMethod?: 'basic' | 'oidc' | 'saml';
 }
 
 export class AuthService {
@@ -230,7 +232,7 @@ export class AuthService {
               const response = JSON.parse(xhr.responseText);
               if (response.status === 'success') {
                 const token = response.value.token;
-                this.currentAuth = { token, repositoryId, username };
+                this.currentAuth = { token, repositoryId, username, authMethod: 'basic' };
                 localStorage.setItem('nemakiware_auth', JSON.stringify(this.currentAuth));
 
                 // Trigger custom event to notify AuthContext immediately
