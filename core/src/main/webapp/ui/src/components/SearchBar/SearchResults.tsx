@@ -234,17 +234,18 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Card, 
-  Input, 
-  Button, 
-  Table, 
-  Space, 
-  Form, 
-  Select, 
-  DatePicker, 
+import {
+  Card,
+  Input,
+  Button,
+  Table,
+  Space,
+  Form,
+  Select,
+  DatePicker,
   message,
-  Tooltip
+  Tooltip,
+  Checkbox
 } from 'antd';
 import { 
   SearchOutlined, 
@@ -312,9 +313,25 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
   const handleSearch = (values: any) => {
     let query = '';
-    
+
     if (values.query) {
-      query = `SELECT * FROM cmis:document WHERE CONTAINS('${values.query}')`;
+      // Full-text search mode
+      const keyword = values.query;
+      const excludeMetadata = values.excludeMetadata;
+
+      if (excludeMetadata) {
+        // When checkbox is checked: search only full-text content
+        query = `SELECT * FROM cmis:document WHERE CONTAINS('${keyword}')`;
+      } else {
+        // Default behavior: search both full-text AND standard metadata properties
+        // Combine CONTAINS with LIKE conditions using OR for broader search
+        const searchConditions = [
+          `CONTAINS('${keyword}')`,
+          `cmis:name LIKE '%${keyword}%'`,
+          `cmis:description LIKE '%${keyword}%'`
+        ];
+        query = `SELECT * FROM cmis:document WHERE ${searchConditions.join(' OR ')}`;
+      }
     } else {
       const conditions: string[] = [];
       
@@ -455,10 +472,20 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
             <Input.Search
               placeholder="検索キーワードを入力"
               enterButton={<SearchOutlined />}
-              onSearch={(value) => handleSearch({ query: value })}
+              onSearch={(value) => handleSearch({ query: value, excludeMetadata: form.getFieldValue('excludeMetadata') })}
             />
           </Form.Item>
-          
+
+          <Form.Item
+            name="excludeMetadata"
+            valuePropName="checked"
+            style={{ marginBottom: 8 }}
+          >
+            <Checkbox>
+              標準メタデータを検索対象から外す（ファイル名・説明などを除く）
+            </Checkbox>
+          </Form.Item>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
             <Form.Item
               name="baseType"
