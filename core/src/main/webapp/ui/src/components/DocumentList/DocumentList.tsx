@@ -300,14 +300,20 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const cmisService = new CMISService(handleAuthError);
 
   // Initialize folder ID from URL parameter or default to root
-  // CRITICAL FIX (2025-11-26): Include searchParams in dependency array to prevent stale closure
-  // When folder onClick calls setSearchParams, this useEffect must re-run to sync state
+  // CRITICAL FIX (2025-12-03): Separate initialization from navigation
+  // - Only set currentFolderId on INITIAL load (when currentFolderId is empty)
+  // - For subsequent navigation, only update selectedFolderId
+  // This prevents tree redraw when user clicks folders in the table
   useEffect(() => {
     const folderIdFromUrl = searchParams.get('folderId');
     if (folderIdFromUrl) {
-      // URL has folderId parameter - sync both selected and current folder IDs
+      // Always update selectedFolderId to show correct folder contents
       setSelectedFolderId(folderIdFromUrl);
-      setCurrentFolderId(folderIdFromUrl);
+      // Only set currentFolderId if it hasn't been set yet (initial load)
+      // This prevents tree redraw on every folder navigation
+      if (!currentFolderId) {
+        setCurrentFolderId(folderIdFromUrl);
+      }
     } else if (!selectedFolderId) {
       // Default to root folder if no URL parameter and no selected folder
       setSelectedFolderId(ROOT_FOLDER_ID);
