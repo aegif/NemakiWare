@@ -273,6 +273,11 @@ const escapeForCmisSql = (input: string): string => {
 export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [objects, setObjects] = useState<CMISObject[]>([]);
   const [loading, setLoading] = useState(false);
+  // selectedFolderId: The folder whose contents are displayed in the list pane
+  // Changes on any folder click in tree
+  const [selectedFolderId, setSelectedFolderId] = useState<string>('');
+  // currentFolderId: The tree pivot point - ancestors are calculated from this folder
+  // Only changes when clicking an already-selected folder (second click)
   const [currentFolderId, setCurrentFolderId] = useState<string>('');
   const [currentFolderPath, setCurrentFolderPath] = useState<string>('/');
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
@@ -300,37 +305,40 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   useEffect(() => {
     const folderIdFromUrl = searchParams.get('folderId');
     if (folderIdFromUrl) {
-      // URL has folderId parameter - sync state with URL
+      // URL has folderId parameter - sync both selected and current folder IDs
+      setSelectedFolderId(folderIdFromUrl);
       setCurrentFolderId(folderIdFromUrl);
-    } else if (!currentFolderId) {
-      // Default to root folder if no URL parameter and no current folder
+    } else if (!selectedFolderId) {
+      // Default to root folder if no URL parameter and no selected folder
+      setSelectedFolderId(ROOT_FOLDER_ID);
       setCurrentFolderId(ROOT_FOLDER_ID);
       setSearchParams({ folderId: ROOT_FOLDER_ID });
     }
   }, [repositoryId, searchParams, setSearchParams]); // Include searchParams to react to URL changes
 
-  // Load objects when currentFolderId changes
+  // Load objects when selectedFolderId changes (the folder displayed in list pane)
   useEffect(() => {
-    if (currentFolderId) {
+    if (selectedFolderId) {
       loadObjects();
     }
-  }, [currentFolderId]);
+  }, [selectedFolderId]);
 
   const loadObjects = async () => {
-    if (!currentFolderId) {
+    // Load objects for the selected folder (the one displayed in list pane)
+    if (!selectedFolderId) {
       return;
     }
 
     setLoading(true);
     try {
-      const children = await cmisService.getChildren(repositoryId, currentFolderId);
+      const children = await cmisService.getChildren(repositoryId, selectedFolderId);
       setObjects(children);
 
-      // CRITICAL FIX (2025-11-26): Get current folder's path from CMIS properties
+      // CRITICAL FIX (2025-11-26): Get selected folder's path from CMIS properties
       // This ensures currentFolderPath is always accurate, not just for root folder
       // Previous bug: Only root folder path was set, causing Up button to be disabled
       // when navigating via table clicks (currentFolderPath stuck at "/")
-      const folder = await cmisService.getObject(repositoryId, currentFolderId);
+      const folder = await cmisService.getObject(repositoryId, selectedFolderId);
       const folderPath = folder.path || '/';
       setCurrentFolderPath(folderPath);
     } catch (error) {
@@ -342,10 +350,21 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
+  // Called when user clicks a folder in the tree (single click)
+  // This only changes which folder's contents are displayed, not the tree pivot
   const handleFolderSelect = (folderId: string, folderPath: string) => {
-    setCurrentFolderId(folderId);
+    setSelectedFolderId(folderId);
     setCurrentFolderPath(folderPath);
     // Update URL parameter to enable deep linking
+    setSearchParams({ folderId });
+  };
+
+  // Called when user clicks an already-selected folder (second click)
+  // This changes the tree pivot point and redraws the tree around the clicked folder
+  const handleCurrentFolderChange = (folderId: string) => {
+    setCurrentFolderId(folderId);
+    // Also update selected folder to keep them in sync after tree redraw
+    setSelectedFolderId(folderId);
     setSearchParams({ folderId });
   };
 
@@ -366,14 +385,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         return;
       }
 
-      if (!currentFolderId) {
+      if (!selectedFolderId) {
         const errorMsg = 'アップロード先フォルダが選択されていません';
         setUploadError(errorMsg);
         message.error(errorMsg);
         return;
       }
 
-      await cmisService.createDocument(repositoryId, currentFolderId, actualFile, { 'cmis:name': name });
+      await cmisService.createDocument(repositoryId, selectedFolderId, actualFile, { 'cmis:name': name });
 
       message.success('ファイルをアップロードしました');
       setUploadModalVisible(false);
@@ -395,7 +414,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setFolderError(null);
 
     try {
-      await cmisService.createFolder(repositoryId, currentFolderId, values.name);
+      await cmisService.createFolder(repositoryId, selectedFolderId, values.name);
       message.success('フォルダを作成しました');
       setFolderModalVisible(false);
       setFolderError(null);
@@ -566,7 +585,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   // CRITICAL FIX (2025-11-26): Do NOT construct path here - let loadObjects() fetch real path from CMIS
                   // Previous bug: Constructed path was wrong because currentFolderPath stuck at "/"
                   // Example: clicking TestChild when currentFolderPath="/" gave "/TestChild" instead of "/TestParent/TestChild"
-                  // Solution: Only set currentFolderId, useEffect triggers loadObjects() which fetches correct path
+                  // Solution: Set selectedFolderId, useEffect triggers loadObjects() which fetches correct path
+                  // Note: When navigating via table (not tree), update both selected and current folder IDs
+                  setSelectedFolderId(record.id);
                   setCurrentFolderId(record.id);
                   setSearchParams({ folderId: record.id });
                   // Path will be set by loadObjects() after fetching from CMIS - no manual construction
@@ -603,6 +624,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               onClick={async (e) => {
                 e.stopPropagation();
                 try {
+                  setSelectedFolderId(ROOT_FOLDER_ID);
                   setCurrentFolderId(ROOT_FOLDER_ID);
                   setCurrentFolderPath('/');
                   setSearchParams({ folderId: ROOT_FOLDER_ID });
@@ -634,6 +656,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                         try {
                           const folderObject = await cmisService.getObjectByPath(repositoryId, segmentPath);
                           if (folderObject && folderObject.id) {
+                            // Note: Path segment navigation updates both selected and current folder IDs
+                            setSelectedFolderId(folderObject.id);
                             setCurrentFolderId(folderObject.id);
                             setCurrentFolderPath(segmentPath);
                             setSearchParams({ folderId: folderObject.id });
@@ -782,6 +806,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       if (index === 0) {
         // Click on home icon - navigate to root
+        // Note: Breadcrumb navigation updates both selected and current folder IDs
+        setSelectedFolderId(ROOT_FOLDER_ID);
         setCurrentFolderId(ROOT_FOLDER_ID);
         setCurrentFolderPath('/');
         setSearchParams({ folderId: ROOT_FOLDER_ID });
@@ -792,6 +818,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         // Use CMIS getObjectByPath to resolve folder ID
         const folderObject = await cmisService.getObjectByPath(repositoryId, targetPath);
         if (folderObject && folderObject.id) {
+          // Note: Breadcrumb navigation updates both selected and current folder IDs
+          setSelectedFolderId(folderObject.id);
           setCurrentFolderId(folderObject.id);
           setCurrentFolderPath(targetPath);
           setSearchParams({ folderId: folderObject.id });
@@ -823,6 +851,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         // Parent is root folder
         console.log('[PARENT NAV DEBUG] Navigating to root folder (single segment path)');
         const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
+        // Note: Parent navigation updates both selected and current folder IDs
+        setSelectedFolderId(rootFolderId);
         setCurrentFolderId(rootFolderId);
         setCurrentFolderPath('/');
         setSearchParams({ folderId: rootFolderId });
@@ -835,6 +865,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         console.log('[PARENT NAV DEBUG] getObjectByPath result:', parentObject);
         if (parentObject && parentObject.id) {
           console.log('[PARENT NAV DEBUG] Setting parent folder ID:', parentObject.id);
+          // Note: Parent navigation updates both selected and current folder IDs
+          setSelectedFolderId(parentObject.id);
           setCurrentFolderId(parentObject.id);
           setCurrentFolderPath(parentPath);
           setSearchParams({ folderId: parentObject.id });
@@ -883,7 +915,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             <FolderTree
               repositoryId={repositoryId}
               onSelect={handleFolderSelect}
-              selectedFolderId={currentFolderId}
+              onCurrentFolderChange={handleCurrentFolderChange}
+              selectedFolderId={selectedFolderId}
               currentFolderId={currentFolderId}
             />
           </Card>
