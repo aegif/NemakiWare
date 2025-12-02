@@ -770,7 +770,8 @@
 				<artifactId>maven-war-plugin</artifactId>
 				<version>3.3.1</version>
 				<configuration>
-					<packagingExcludes>
+					<!-- Exclude development files from webapp source BEFORE webResources copy -->
+					<warSourceExcludes>
 						**/custom-nemakiware.properties,
 						**/custom-repository.yml,
 						**/node_modules/**,
@@ -786,11 +787,26 @@
 						ui/vite.config.ts,
 						ui/playwright.config.ts,
 						ui/.gitignore,
-						ui/README.md
-						<!-- CRITICAL: ui/index.html exclusion removed to allow webResources copy -->
-						<!-- ui/dist/ directory is kept for backward compatibility -->
-						<!-- No OpenCMIS exclusions needed - using only 1.2.0-nemakiware Jakarta EE 10 compatible versions -->
-					</packagingExcludes>
+						ui/README.md,
+						ui/index.html,
+						ui/assets/**
+					</warSourceExcludes>
+					<!-- Copy production build files to ui/ directory -->
+					<!-- webResources runs AFTER warSourceExcludes, so production index.html will be included -->
+					<webResources>
+						<resource>
+							<directory>${basedir}/src/main/webapp/ui/dist</directory>
+							<targetPath>ui</targetPath>
+							<includes>
+								<include>index.html</include>
+								<include>oidc-callback.html</include>
+								<include>saml-callback.html</include>
+								<include>silent-callback.html</include>
+								<include>assets/**</include>
+								<include>*.png</include>
+							</includes>
+						</resource>
+					</webResources>
 				</configuration>
 			</plugin>
 			<plugin>
