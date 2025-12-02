@@ -190,7 +190,7 @@
  * - Network error during token exchange: Fetch fails → Promise rejection → component error boundary
  */
 
-import { UserManager, UserManagerSettings, User } from 'oidc-client-ts';
+import { UserManager, UserManagerSettings, User, WebStorageStateStore } from 'oidc-client-ts';
 import { AuthToken } from './auth';
 
 export interface OIDCConfig {
@@ -206,6 +206,11 @@ export class OIDCService {
   private userManager: UserManager;
 
   constructor(config: OIDCConfig) {
+    // Use localStorage for state and user storage to persist across page reloads
+    // and avoid "No matching state found in storage" errors
+    const stateStore = new WebStorageStateStore({ store: window.localStorage });
+    const userStore = new WebStorageStateStore({ store: window.localStorage });
+
     const settings: UserManagerSettings = {
       authority: config.authority,
       client_id: config.client_id,
@@ -214,7 +219,14 @@ export class OIDCService {
       response_type: config.response_type,
       scope: config.scope,
       automaticSilentRenew: true,
-      silent_redirect_uri: `${window.location.origin}/core/ui/silent-callback.html`
+      silent_redirect_uri: `${window.location.origin}/core/ui/silent-callback.html`,
+      // Use localStorage instead of sessionStorage for better persistence
+      stateStore: stateStore,
+      userStore: userStore,
+      // Additional settings to prevent state mismatch errors
+      monitorSession: false,
+      // Enable logging for debugging
+      // Log.setLogger(console)
     };
 
     this.userManager = new UserManager(settings);
