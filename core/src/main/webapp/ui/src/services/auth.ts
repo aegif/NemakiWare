@@ -289,4 +289,17 @@ export class AuthService {
   isAuthenticated(): boolean {
     return !!this.currentAuth;
   }
+
+  /**
+   * Save authentication token from external sources (OIDC, SAML).
+   * Used when authentication is performed outside of the normal login flow.
+   * Saves to localStorage and dispatches authStateChanged event.
+   */
+  saveAuth(auth: AuthToken): void {
+    this.currentAuth = auth;
+    localStorage.setItem('nemakiware_auth', JSON.stringify(this.currentAuth));
+
+    // Trigger custom event to notify AuthContext immediately
+    window.dispatchEvent(new CustomEvent('authStateChanged'));
+  }
 }

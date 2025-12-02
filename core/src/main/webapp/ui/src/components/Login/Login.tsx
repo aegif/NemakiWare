@@ -340,7 +340,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         const repositoryId = repositories.length > 0 ? repositories[0] : 'bedroom';
         console.log('[handleOIDCLogin] Converting OIDC token for repository:', repositoryId);
         const auth = await oidcService.convertOIDCToken(oidcUser, repositoryId);
-        console.log('[handleOIDCLogin] Token conversion succeeded, calling onLogin');
+        console.log('[handleOIDCLogin] Token conversion succeeded, saving to localStorage');
+
+        // CRITICAL FIX: Save auth to localStorage before redirect
+        // The onLogin callback in App.tsx is a no-op, so we must explicitly save here
+        authService.saveAuth(auth);
+        console.log('[handleOIDCLogin] Auth saved to localStorage, calling onLogin');
         onLogin(auth);
 
         // IMPORTANT: Redirect to main app after successful OIDC authentication
@@ -409,7 +414,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
       if (samlResponse) {
         const auth = await samlService.handleSAMLResponse(samlResponse, relayState || undefined);
-        console.log('[handleSAMLCallback] SAML response processed, calling onLogin');
+        console.log('[handleSAMLCallback] SAML response processed, saving to localStorage');
+
+        // CRITICAL FIX: Save auth to localStorage before redirect
+        // The onLogin callback in App.tsx is a no-op, so we must explicitly save here
+        authService.saveAuth(auth);
+        console.log('[handleSAMLCallback] Auth saved to localStorage, calling onLogin');
         onLogin(auth);
 
         // IMPORTANT: Redirect to main app after successful SAML authentication
