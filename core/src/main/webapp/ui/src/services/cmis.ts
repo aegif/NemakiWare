@@ -2808,17 +2808,17 @@ export class CMISService {
   async getContentStream(repositoryId: string, objectId: string): Promise<ArrayBuffer> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      
+
       // Use AtomPub binding for content stream download
       xhr.open('GET', `/core/atom/${repositoryId}/content?id=${objectId}`, true);
       xhr.responseType = 'arraybuffer';
       xhr.setRequestHeader('Accept', 'application/octet-stream');
-      
+
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-      
+
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
@@ -2830,12 +2830,60 @@ export class CMISService {
           }
         }
       };
-      
+
       xhr.onerror = () => {
         // Network error occurred
         reject(new Error('Network error'));
       };
-      
+
+      xhr.send();
+    });
+  }
+
+  /**
+   * Get a Blob URL for content stream that can be used in <img>, <video>, <iframe> tags.
+   * This method fetches the content with proper authentication headers and creates a Blob URL.
+   *
+   * IMPORTANT: The returned Blob URL should be revoked with URL.revokeObjectURL() when no longer needed
+   * to prevent memory leaks.
+   *
+   * @param repositoryId The repository ID
+   * @param objectId The object ID
+   * @param mimeType The MIME type of the content (e.g., 'image/jpeg', 'video/mp4')
+   * @returns Promise<string> A Blob URL that can be used in HTML elements
+   */
+  async getContentBlobUrl(repositoryId: string, objectId: string, mimeType: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      // Use AtomPub binding for content stream download with authentication
+      xhr.open('GET', `/core/atom/${repositoryId}/content?id=${objectId}`, true);
+      xhr.responseType = 'blob';
+
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            // Create a Blob with the correct MIME type and generate a URL
+            const blob = new Blob([xhr.response], { type: mimeType });
+            const blobUrl = URL.createObjectURL(blob);
+            resolve(blobUrl);
+          } else {
+            // Request failed - handle errors
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
+          }
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error while fetching content'));
+      };
+
       xhr.send();
     });
   }

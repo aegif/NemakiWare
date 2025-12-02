@@ -409,7 +409,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
       if (samlResponse) {
         const auth = await samlService.handleSAMLResponse(samlResponse, relayState || undefined);
+        console.log('[handleSAMLCallback] SAML response processed, calling onLogin');
         onLogin(auth);
+
+        // IMPORTANT: Redirect to main app after successful SAML authentication
+        // The saml-callback.html is a separate HTML file, so we need to navigate
+        // to the main app. The auth token is saved to localStorage by onLogin,
+        // and App.tsx will load it on the main page.
+        console.log('[handleSAMLCallback] Redirecting to main app...');
+        window.location.href = '/core/ui/';
       } else {
         setError('SAML認証レスポンスが見つかりません。');
       }
