@@ -326,11 +326,23 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
 
   /**
    * Handle tree node selection
+   * CRITICAL FIX (2025-12-02): Use info.node.key instead of selectedKeys
+   *
+   * Ant Design Tree behavior:
+   * - When clicking an already-selected node, selectedKeys becomes [] (empty)
+   * - This caused the previous code to do nothing when clicking already-selected folder
+   * - We need to use info.node.key to always get the clicked folder ID
+   *
+   * Expected behavior:
+   * - Click non-selected folder → folder becomes selected (current unchanged)
+   * - Click already-selected folder → folder becomes current, tree redraws
    */
-  const handleSelect: TreeProps['onSelect'] = (selectedKeys, _info) => {
-    if (selectedKeys.length > 0) {
-      const folderId = selectedKeys[0] as string;
-      handleFolderClick(folderId);
+  const handleSelect: TreeProps['onSelect'] = (_selectedKeys, info) => {
+    // Always use info.node.key to get the clicked folder ID
+    // selectedKeys can be empty when clicking already-selected node (Ant Design deselects it)
+    const clickedFolderId = info.node.key as string;
+    if (clickedFolderId) {
+      handleFolderClick(clickedFolderId);
     }
   };
 
