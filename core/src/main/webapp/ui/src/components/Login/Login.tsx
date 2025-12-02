@@ -342,6 +342,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         const auth = await oidcService.convertOIDCToken(oidcUser, repositoryId);
         console.log('[handleOIDCLogin] Token conversion succeeded, calling onLogin');
         onLogin(auth);
+
+        // IMPORTANT: Redirect to main app after successful OIDC authentication
+        // The oidc-callback.html is a separate HTML file, so we need to navigate
+        // to the main app. The auth token is saved to localStorage by onLogin,
+        // and App.tsx will load it on the main page.
+        console.log('[handleOIDCLogin] Redirecting to main app...');
+        window.location.href = '/core/ui/';
       } else {
         console.log('[handleOIDCLogin] Initiating redirect to OIDC provider');
         // Log localStorage state before redirect
