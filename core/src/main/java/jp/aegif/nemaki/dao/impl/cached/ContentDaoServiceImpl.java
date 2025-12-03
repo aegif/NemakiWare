@@ -1273,6 +1273,81 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		nonCachedContentDaoService.delete(repositoryId, objectId);
 	}
 
+	@Override
+	public void delete(String repositoryId, String objectId, boolean verifyDeletion) {
+		//Check if cache enabled
+		boolean treeCacheEnabled = nemakiCachePool.get(repositoryId).getTreeCache().isCacheEnabled();
+
+		NodeBase nb = nonCachedContentDaoService.getNodeBase(repositoryId, objectId);
+
+		if(nb == null){
+			return;
+		}
+
+		//read document in advance
+		Document doc = null;
+		Document previous = null;
+		if(nb.isDocument()){
+			doc = (Document)getDocument(repositoryId, objectId);
+			try {
+				previous = getPreviousVersion(repositoryId, doc);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+
+		//read tree in advance
+		Tree tree = null;
+		if(treeCacheEnabled && (nb.isDocument() || nb.isFolder() || nb.isItem())){
+			Content _c = getContent(repositoryId, objectId);
+			tree = getOrCreateTreeCache(repositoryId, _c.getParentId());
+		}
+
+		// CRITICAL FIX: Remove from cache BEFORE database deletion
+		// This prevents read-through cache population during deletion process
+
+		//delete user/group from cache
+		if(nb.isUser()){
+			UserItem item = getUserItem(repositoryId, objectId);
+			nemakiCachePool.get(repositoryId).getUserItemCache().remove(item.getUserId());
+		}else if(nb.isGroup()){
+			GroupItem item = getGroupItem(repositoryId, objectId);
+			nemakiCachePool.get(repositoryId).getGroupItemCache().remove(item.getGroupId());
+		}
+
+		// remove from cache FIRST
+		if(doc == null){
+			if (nb.isAttachment()) {
+				nemakiCachePool.get(repositoryId).getAttachmentCache().remove(objectId);
+			}else{
+				nemakiCachePool.get(repositoryId).getContentCache().remove(objectId);
+				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(objectId);
+				nemakiCachePool.get(repositoryId).getAclCache().remove(objectId);
+				if(tree != null)tree.remove(objectId);
+			}
+		}else{
+			//DOCUMENT case - remove from cache first
+			if(doc.isPrivateWorkingCopy()){
+				//delete just pwc-related  cache
+				nemakiCachePool.get(repositoryId).getAttachmentCache().remove(doc.getAttachmentNodeId());
+				nemakiCachePool.get(repositoryId).getContentCache().remove(doc.getId());
+				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(doc.getId());
+				nemakiCachePool.get(repositoryId).getAclCache().remove(doc.getId());
+				nemakiCachePool.get(repositoryId).getVersionSeriesCache().remove(doc.getVersionSeriesId());
+			}else{
+				nemakiCachePool.get(repositoryId).getAttachmentCache().remove(doc.getAttachmentNodeId());
+				nemakiCachePool.get(repositoryId).getContentCache().remove(doc.getId());
+				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(doc.getId());
+				nemakiCachePool.get(repositoryId).getAclCache().remove(doc.getId());
+				if(tree != null)tree.remove(doc.getId());
+				nemakiCachePool.get(repositoryId).getVersionSeriesCache().remove(doc.getVersionSeriesId());
+			}
+		}
+
+		// remove from database AFTER cache removal - pass verifyDeletion parameter
+		nonCachedContentDaoService.delete(repositoryId, objectId, verifyDeletion);
+	}
+
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////

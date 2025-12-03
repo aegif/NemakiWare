@@ -568,6 +568,14 @@ public interface ContentDaoService {
 	 */
 	void delete(String repositoryId, String objectId);
 
+	/**
+	 * Delete a content with optional verification
+	 * @param repositoryId repository identifier
+	 * @param objectId object identifier
+	 * @param verifyDeletion if true, verify deletion after CouchDB delete (adds ~50ms per object)
+	 */
+	void delete(String repositoryId, String objectId, boolean verifyDeletion);
+
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////

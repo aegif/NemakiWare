@@ -2255,7 +2255,8 @@ public class ContentServiceImpl implements ContentService {
 		boolean archiveCreateEnabled = propertyManager.readBoolean(PropertyKey.ARCHIVE_CREATE_ENABLED);
 		if (archiveCreateEnabled) {
 			log.debug("Creating archive for object: {}", objectId);
-			createArchive(callContext, repositoryId, objectId, deletedWithParent);
+			// OPTIMIZATION: Pass Content directly to avoid duplicate getContent() call
+			createArchiveInternal(callContext, repositoryId, content, deletedWithParent);
 		} else {
 			log.debug("Archive creation disabled - skipping archive for object: {}", objectId);
 		}
@@ -2285,9 +2286,12 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Delete item
-		
+		// OPTIMIZATION: Allow skipping deletion verification for faster deletions
+		// When verification is disabled, ~50ms per object is saved but deletion may not be confirmed
+		boolean verifyDeletion = propertyManager.readBoolean(PropertyKey.DELETION_VERIFY_ENABLED);
+
 		try {
-			contentDaoService.delete(repositoryId, objectId);
+			contentDaoService.delete(repositoryId, objectId, verifyDeletion);
 		} catch (Exception e) {
 			log.error("ERROR in contentDaoService.delete() for object {}: {}", objectId, e.getMessage(), e);
 			throw e; // Re-throw to maintain original error handling
@@ -2998,7 +3002,15 @@ public class ContentServiceImpl implements ContentService {
 	public Archive createArchive(CallContext callContext, String repositoryId, String objectId,
 			Boolean deletedWithParent) {
 		Content content = getContent(repositoryId, objectId);
+		return createArchiveInternal(callContext, repositoryId, content, deletedWithParent);
+	}
 
+	/**
+	 * OPTIMIZATION: Internal method that accepts Content directly to avoid duplicate getContent() calls
+	 * Used by delete() method which already has Content fetched
+	 */
+	private Archive createArchiveInternal(CallContext callContext, String repositoryId, Content content,
+			Boolean deletedWithParent) {
 		// Set base info
 		Archive a = new Archive();
 

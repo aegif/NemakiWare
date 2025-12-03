@@ -275,4 +275,7 @@ public interface PropertyKey {
 
 	//Archive
 	final String ARCHIVE_CREATE_ENABLED = "archive.create.enabled";
+
+	//Deletion
+	final String DELETION_VERIFY_ENABLED = "deletion.verify.enabled";
 }

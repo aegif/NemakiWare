@@ -2333,41 +2333,53 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public void delete(String repositoryId, String objectId) {
-				log.debug("=== DELETION FLOW TRACE START ===");
-		log.debug("DELETE METHOD CALLED FOR OBJECT: " + objectId + " in repository: " + repositoryId);
+		// Default behavior: verify deletion for data integrity
+		delete(repositoryId, objectId, true);
+	}
+
+	@Override
+	public void delete(String repositoryId, String objectId, boolean verifyDeletion) {
+		log.debug("=== DELETION FLOW TRACE START ===");
+		log.debug("DELETE METHOD CALLED FOR OBJECT: " + objectId + " in repository: " + repositoryId + " (verifyDeletion=" + verifyDeletion + ")");
 		log.debug("Thread: " + Thread.currentThread().getName());
 		if (log.isTraceEnabled()) {
 			log.trace("Stack trace: ", new Exception("Stack trace"));
 		}
-		
-		final int maxRetries = 3;
+
+		final int maxRetries = verifyDeletion ? 3 : 1;
 		final long retryDelayMs = 100;
-		
+
 		for (int attempt = 1; attempt <= maxRetries; attempt++) {
 			try {
 				log.debug("DELETION ATTEMPT " + attempt + ": Attempting to delete object: " + objectId + " from repository: " + repositoryId);
-				
+
 				// CRITICAL: Always get fresh object with latest revision before deletion
 				CouchNodeBase cnb = connectorPool.getClient(repositoryId).get(CouchNodeBase.class, objectId);
 				if (cnb == null) {
 					log.info("Object " + objectId + " not found in repository " + repositoryId + ", already deleted or does not exist");
 					return;
 				}
-				
+
 				// Ensure we have the latest revision
 				String currentRevision = cnb.getRevision();
 				if (currentRevision == null || currentRevision.isEmpty()) {
 					log.warn("Object " + objectId + " has no revision - this may cause deletion failure");
 				}
-				
-					log.debug("Deleting object " + objectId + " with revision: " + currentRevision);
-				
+
+				log.debug("Deleting object " + objectId + " with revision: " + currentRevision);
+
 				// Perform the deletion
-					connectorPool.getClient(repositoryId).delete(cnb);
-					
+				connectorPool.getClient(repositoryId).delete(cnb);
+
+				// OPTIMIZATION: Skip verification when disabled for faster deletion
+				if (!verifyDeletion) {
+					log.debug("DELETION COMPLETE (verification skipped): Successfully deleted object: " + objectId + " from repository: " + repositoryId);
+					return; // Success without verification
+				}
+
 				// Verify deletion with proper exception handling
-					boolean deletionVerified = verifyDeletion(repositoryId, objectId, attempt);
-					if (!deletionVerified && attempt < maxRetries) {
+				boolean deletionVerified = verifyDeletionInternal(repositoryId, objectId, attempt);
+				if (!deletionVerified && attempt < maxRetries) {
 					log.warn("Object " + objectId + " still exists after deletion attempt " + attempt + ", retrying...");
 					Thread.sleep(retryDelayMs);
 					continue; // Retry
@@ -2380,13 +2392,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						throw new RuntimeException("Object deletion failed after " + maxRetries + " attempts - object still exists: " + objectId);
 					}
 				}
-				
-					log.debug("DELETION SUCCESS: Successfully deleted object: " + objectId + " from repository: " + repositoryId + " on attempt " + attempt);
+
+				log.debug("DELETION SUCCESS: Successfully deleted object: " + objectId + " from repository: " + repositoryId + " on attempt " + attempt);
 				return; // Success
-				
+
 			} catch (Exception e) {
-					if (attempt < maxRetries) {
-						log.warn("Deletion attempt " + attempt + " failed for object " + objectId + ", retrying: " + e.getMessage());
+				if (attempt < maxRetries) {
+					log.warn("Deletion attempt " + attempt + " failed for object " + objectId + ", retrying: " + e.getMessage());
 					try {
 						Thread.sleep(retryDelayMs);
 					} catch (InterruptedException ie) {
@@ -2408,7 +2420,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * @param attempt current attempt number for logging
 	 * @return true if deletion is verified, false if object still exists
 	 */
-	private boolean verifyDeletion(String repositoryId, String objectId, int attempt) {
+	private boolean verifyDeletionInternal(String repositoryId, String objectId, int attempt) {
 		try {
 			Thread.sleep(50); // Brief wait for CouchDB consistency
 			CouchNodeBase verification = connectorPool.getClient(repositoryId).get(CouchNodeBase.class, objectId);
