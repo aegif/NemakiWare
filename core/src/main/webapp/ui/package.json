@@ -25,7 +25,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/sync-callback-assets.js",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
     "test": "playwright test",
