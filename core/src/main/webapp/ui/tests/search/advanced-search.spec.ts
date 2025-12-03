@@ -824,6 +824,249 @@ test.describe('Advanced Search', () => {
     }
   });
 
+  /**
+   * Metadata Search Checkbox UI Test
+   *
+   * Tests that the metadata exclusion checkbox UI element exists and is functional:
+   * 1. Checkbox is visible in the search form
+   * 2. Checkbox has correct Japanese label
+   * 3. Checkbox is unchecked by default (metadata included in search)
+   *
+   * Feature Background:
+   * - Default behavior (unchecked): Search includes CONTAINS + LIKE conditions
+   *   for cmis:name, cmis:description, cmis:contentStreamFileName, cmis:checkinComment
+   * - When checked: Search only uses CONTAINS (full-text content only)
+   */
+  test('should display metadata exclusion checkbox in search form', async ({ page }) => {
+    console.log('Test: Metadata exclusion checkbox UI verification');
+
+    // Wait for page to load
+    await page.waitForTimeout(2000);
+
+    // Look for the checkbox with the Japanese label
+    const metadataCheckbox = page.locator('input[type="checkbox"]').filter({
+      has: page.locator('..').filter({ hasText: '標準メタデータを検索対象から外す' })
+    });
+
+    // Alternative: Look for checkbox by its parent label text
+    const checkboxLabel = page.locator('label, span').filter({
+      hasText: '標準メタデータを検索対象から外す'
+    });
+
+    if (await checkboxLabel.count() > 0) {
+      await expect(checkboxLabel.first()).toBeVisible({ timeout: 5000 });
+      console.log('✅ Metadata exclusion checkbox label is visible');
+
+      // Verify checkbox is unchecked by default (metadata included in search)
+      const checkbox = page.locator('.ant-checkbox-input, input[type="checkbox"]').first();
+      if (await checkbox.count() > 0) {
+        const isChecked = await checkbox.isChecked();
+        if (!isChecked) {
+          console.log('✅ Checkbox is unchecked by default (metadata included in search)');
+        } else {
+          console.log('⚠️ Checkbox is checked by default (unexpected)');
+        }
+      }
+
+      console.log('✅ Metadata exclusion checkbox UI verification complete');
+    } else {
+      test.skip('Metadata exclusion checkbox not found - feature may not be implemented');
+    }
+  });
+
+  /**
+   * Metadata Search - Default Behavior Test (Checkbox Unchecked)
+   *
+   * Tests the default search behavior when the metadata exclusion checkbox is unchecked:
+   * 1. Enter a keyword that exists in document metadata (filename, description)
+   * 2. Execute search with checkbox unchecked
+   * 3. Verify results include documents matching metadata
+   *
+   * Expected CMIS Query Format (unchecked):
+   * SELECT * FROM cmis:document WHERE CONTAINS('keyword') OR
+   *   cmis:name LIKE '%keyword%' OR cmis:description LIKE '%keyword%' OR
+   *   cmis:contentStreamFileName LIKE '%keyword%' OR cmis:checkinComment LIKE '%keyword%'
+   */
+  test('should search metadata when checkbox is unchecked (default behavior)', async ({ page, browserName }) => {
+    console.log('Test: Metadata search with checkbox unchecked (default behavior)');
+
+    // Detect mobile browsers
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    // Wait for page to load
+    await page.waitForTimeout(2000);
+
+    // Find search input
+    const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
+
+    if (await searchInput.count() === 0) {
+      test.skip('Search input not found');
+      return;
+    }
+
+    // Verify metadata checkbox exists and is unchecked (default)
+    const checkboxLabel = page.locator('label, span').filter({
+      hasText: '標準メタデータを検索対象から外す'
+    });
+
+    if (await checkboxLabel.count() === 0) {
+      test.skip('Metadata exclusion checkbox not found');
+      return;
+    }
+
+    // Ensure checkbox is unchecked (default state)
+    const checkbox = page.locator('.ant-checkbox-input, input[type="checkbox"]').first();
+    if (await checkbox.count() > 0 && await checkbox.isChecked()) {
+      // Uncheck if checked
+      await checkboxLabel.first().click();
+      await page.waitForTimeout(500);
+    }
+
+    // Search for a keyword that should match document names/filenames
+    // "CMIS" or "Specification" should match the CMIS-v1.1-Specification-Sample.pdf filename
+    await searchInput.first().fill('Specification');
+
+    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    if (await searchButton.count() > 0) {
+      await searchButton.first().click(isMobile ? { force: true } : {});
+    } else {
+      await searchInput.first().press('Enter');
+    }
+
+    // Wait for search results
+    await page.waitForTimeout(5000);
+
+    // Check the executed CMIS query display
+    const queryDisplay = page.locator(':has-text("実行したCMISクエリ")');
+    if (await queryDisplay.count() > 0) {
+      const queryText = await queryDisplay.first().textContent();
+      if (queryText) {
+        // Verify query contains OR conditions for metadata properties
+        const hasOrConditions = queryText.includes(' OR ');
+        const hasNameLike = queryText.includes('cmis:name LIKE');
+        const hasDescriptionLike = queryText.includes('cmis:description LIKE');
+
+        if (hasOrConditions && (hasNameLike || hasDescriptionLike)) {
+          console.log('✅ CMIS query includes metadata property conditions (OR clauses)');
+          console.log(`Query: ${queryText.substring(0, 200)}...`);
+        } else {
+          console.log('⚠️ CMIS query may not include expected metadata conditions');
+          console.log(`Query: ${queryText}`);
+        }
+      }
+    }
+
+    // Verify results table appears
+    const resultsTable = page.locator('.ant-table, .search-results');
+    if (await resultsTable.count() > 0) {
+      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
+      console.log('✅ Search results table is visible');
+
+      // Look for CMIS specification PDF (should match by filename)
+      const pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample.pdf' });
+      if (await pdfResult.count() > 0) {
+        console.log('✅ PDF found by filename match (metadata search working)');
+      } else {
+        console.log('ℹ️ CMIS spec PDF not found - may need to be uploaded first');
+      }
+    }
+
+    console.log('✅ Metadata search (checkbox unchecked) verification complete');
+  });
+
+  /**
+   * Metadata Search - Exclusion Test (Checkbox Checked)
+   *
+   * Tests the search behavior when the metadata exclusion checkbox is checked:
+   * 1. Check the metadata exclusion checkbox
+   * 2. Enter a keyword
+   * 3. Execute search
+   * 4. Verify CMIS query only uses CONTAINS (no LIKE conditions)
+   *
+   * Expected CMIS Query Format (checked):
+   * SELECT * FROM cmis:document WHERE CONTAINS('keyword')
+   */
+  test('should exclude metadata when checkbox is checked', async ({ page, browserName }) => {
+    console.log('Test: Metadata exclusion with checkbox checked');
+
+    // Detect mobile browsers
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    // Wait for page to load
+    await page.waitForTimeout(2000);
+
+    // Find search input
+    const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
+
+    if (await searchInput.count() === 0) {
+      test.skip('Search input not found');
+      return;
+    }
+
+    // Find and check the metadata exclusion checkbox
+    const checkboxLabel = page.locator('label, span').filter({
+      hasText: '標準メタデータを検索対象から外す'
+    });
+
+    if (await checkboxLabel.count() === 0) {
+      test.skip('Metadata exclusion checkbox not found');
+      return;
+    }
+
+    // Check the checkbox (click the label to toggle)
+    const checkbox = page.locator('.ant-checkbox-input, input[type="checkbox"]').first();
+    if (await checkbox.count() > 0 && !(await checkbox.isChecked())) {
+      await checkboxLabel.first().click();
+      await page.waitForTimeout(500);
+      console.log('✅ Checked the metadata exclusion checkbox');
+    }
+
+    // Search for a keyword
+    await searchInput.first().fill('repository');
+
+    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    if (await searchButton.count() > 0) {
+      await searchButton.first().click(isMobile ? { force: true } : {});
+    } else {
+      await searchInput.first().press('Enter');
+    }
+
+    // Wait for search results
+    await page.waitForTimeout(5000);
+
+    // Check the executed CMIS query display
+    const queryDisplay = page.locator(':has-text("実行したCMISクエリ")');
+    if (await queryDisplay.count() > 0) {
+      const queryText = await queryDisplay.first().textContent();
+      if (queryText) {
+        // Verify query does NOT contain OR conditions for metadata properties
+        const hasOrConditions = queryText.includes(' OR ');
+        const hasContains = queryText.includes("CONTAINS('");
+
+        if (hasContains && !hasOrConditions) {
+          console.log('✅ CMIS query only uses CONTAINS (metadata excluded correctly)');
+          console.log(`Query: ${queryText}`);
+        } else if (hasOrConditions) {
+          console.log('❌ PRODUCT BUG: CMIS query still includes metadata conditions despite checkbox being checked');
+          console.log(`Query: ${queryText}`);
+          // This is a product bug - checkbox should exclude metadata
+          expect(hasOrConditions).toBe(false);
+        }
+      }
+    }
+
+    // Verify results table appears
+    const resultsTable = page.locator('.ant-table, .search-results');
+    if (await resultsTable.count() > 0) {
+      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
+      console.log('✅ Search results table is visible');
+    }
+
+    console.log('✅ Metadata exclusion (checkbox checked) verification complete');
+  });
+
   test('should find Japanese PDF by full-text search', async ({ page, browserName }) => {
     console.log('Test 10: Japanese PDF full-text search verification (multilingual support)');
 

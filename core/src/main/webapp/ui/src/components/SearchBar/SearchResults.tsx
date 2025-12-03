@@ -325,10 +325,17 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       } else {
         // Default behavior: search both full-text AND standard metadata properties
         // Combine CONTAINS with LIKE conditions using OR for broader search
+        // Standard string properties included:
+        // - cmis:name: Display name of the document
+        // - cmis:description: Document description
+        // - cmis:contentStreamFileName: Actual filename of the content stream
+        // - cmis:checkinComment: Version check-in comment
         const searchConditions = [
           `CONTAINS('${keyword}')`,
           `cmis:name LIKE '%${keyword}%'`,
-          `cmis:description LIKE '%${keyword}%'`
+          `cmis:description LIKE '%${keyword}%'`,
+          `cmis:contentStreamFileName LIKE '%${keyword}%'`,
+          `cmis:checkinComment LIKE '%${keyword}%'`
         ];
         query = `SELECT * FROM cmis:document WHERE ${searchConditions.join(' OR ')}`;
       }
