@@ -2082,9 +2082,16 @@ public class ContentServiceImpl implements ContentService {
 				result = contentDaoService.update(repositoryId, (Item) content);
 			}
 		}
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+
+		// Call Solr indexing to update search index after property changes
+		try {
+			if (solrUtil != null && result != null) {
+				solrUtil.indexDocument(repositoryId, result);
+			}
+		} catch (Exception e) {
+			log.warn("Solr indexing failed for updated content {} (non-critical): {}",
+					content.getId(), e.getMessage());
+		}
 
 		return result;
 	}
