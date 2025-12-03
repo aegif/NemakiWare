@@ -256,7 +256,8 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
-import { CMISObject, SearchResult, TypeDefinition } from '../../types/cmis';
+import { CMISObject, SearchResult, TypeDefinition, PropertyDefinition } from '../../types/cmis';
+import { InputNumber } from 'antd';
 
 interface SearchResultsProps {
   repositoryId: string;
@@ -269,6 +270,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
   const [loading, setLoading] = useState(false);
   const [types, setTypes] = useState<TypeDefinition[]>([]);
   const [lastExecutedQuery, setLastExecutedQuery] = useState<string>('');
+  const [selectedTypeProperties, setSelectedTypeProperties] = useState<PropertyDefinition[]>([]);
+  const [loadingProperties, setLoadingProperties] = useState(false);
   const [form] = Form.useForm();
   const navigate = useNavigate();
 
@@ -291,6 +294,50 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       setTypes(typeList);
     } catch (error) {
       // Failed to load types
+    }
+  };
+
+  // Handle type selection and load custom property definitions
+  const handleTypeSelect = async (typeId: string | undefined) => {
+    // Clear previous property values when type changes
+    const currentValues = form.getFieldsValue();
+    const newValues = { ...currentValues };
+    // Remove all custom property values (keys starting with 'customProp_')
+    Object.keys(newValues).forEach(key => {
+      if (key.startsWith('customProp_')) {
+        delete newValues[key];
+      }
+    });
+    form.setFieldsValue(newValues);
+
+    if (!typeId) {
+      setSelectedTypeProperties([]);
+      return;
+    }
+
+    setLoadingProperties(true);
+    try {
+      const typeDefinition = await cmisService.getType(repositoryId, typeId);
+
+      // Filter to get only custom queryable properties (exclude cmis:* standard properties)
+      const customProperties: PropertyDefinition[] = [];
+      if (typeDefinition.propertyDefinitions) {
+        Object.values(typeDefinition.propertyDefinitions).forEach(propDef => {
+          // Exclude standard CMIS properties and only include queryable properties
+          if (!propDef.id.startsWith('cmis:') && propDef.queryable) {
+            customProperties.push(propDef);
+          }
+        });
+      }
+
+      // Sort by displayName for consistent ordering
+      customProperties.sort((a, b) => a.displayName.localeCompare(b.displayName));
+      setSelectedTypeProperties(customProperties);
+    } catch (error) {
+      console.error('Failed to load type properties:', error);
+      setSelectedTypeProperties([]);
+    } finally {
+      setLoadingProperties(false);
     }
   };
 
@@ -341,30 +388,63 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       }
     } else {
       const conditions: string[] = [];
-      
+
       if (values.objectType) {
         conditions.push(`cmis:objectTypeId = '${values.objectType}'`);
       }
-      
+
       if (values.name) {
         conditions.push(`cmis:name LIKE '%${values.name}%'`);
       }
-      
+
       if (values.createdFrom) {
         conditions.push(`cmis:creationDate >= TIMESTAMP '${values.createdFrom.toISOString()}'`);
       }
-      
+
       if (values.createdTo) {
         conditions.push(`cmis:creationDate <= TIMESTAMP '${values.createdTo.toISOString()}'`);
       }
-      
+
       if (values.createdBy) {
         conditions.push(`cmis:createdBy = '${values.createdBy}'`);
       }
-      
+
+      // Add custom property conditions
+      selectedTypeProperties.forEach(propDef => {
+        const fieldName = `customProp_${propDef.id}`;
+        const value = values[fieldName];
+
+        if (value !== undefined && value !== null && value !== '') {
+          const propId = propDef.id;
+
+          switch (propDef.propertyType) {
+            case 'string':
+              // Use LIKE for string properties to support partial matching
+              conditions.push(`${propId} LIKE '%${value}%'`);
+              break;
+            case 'integer':
+            case 'decimal':
+              // Use exact match for numeric properties
+              conditions.push(`${propId} = ${value}`);
+              break;
+            case 'boolean':
+              // Boolean value (true/false)
+              conditions.push(`${propId} = ${value}`);
+              break;
+            case 'datetime':
+              // DateTime with TIMESTAMP keyword
+              conditions.push(`${propId} = TIMESTAMP '${value.toISOString()}'`);
+              break;
+            default:
+              // Default to string-like comparison
+              conditions.push(`${propId} LIKE '%${value}%'`);
+          }
+        }
+      });
+
       const baseType = values.baseType || 'cmis:document';
       query = `SELECT * FROM ${baseType}`;
-      
+
       if (conditions.length > 0) {
         query += ` WHERE ${conditions.join(' AND ')}`;
       }
@@ -508,7 +588,12 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
               name="objectType"
               label="オブジェクトタイプ"
             >
-              <Select placeholder="オブジェクトタイプを選択" allowClear>
+              <Select
+                placeholder="オブジェクトタイプを選択"
+                allowClear
+                onChange={(value) => handleTypeSelect(value)}
+                loading={loadingProperties}
+              >
                 {types.map(type => (
                   <Select.Option key={type.id} value={type.id}>
                     {type.displayName}
@@ -545,7 +630,92 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
               <DatePicker style={{ width: '100%' }} />
             </Form.Item>
           </div>
-          
+
+          {/* Dynamic Custom Property Search Fields */}
+          {selectedTypeProperties.length > 0 && (
+            <Card
+              size="small"
+              title="カスタムプロパティで検索"
+              style={{ marginTop: 16, marginBottom: 16 }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+                {selectedTypeProperties.map(propDef => {
+                  const fieldName = `customProp_${propDef.id}`;
+
+                  // Render different input types based on property type
+                  const renderInput = () => {
+                    switch (propDef.propertyType) {
+                      case 'string':
+                        if (propDef.choices && propDef.choices.length > 0) {
+                          // If property has choices, show Select dropdown
+                          return (
+                            <Select
+                              placeholder={`${propDef.displayName}を選択`}
+                              allowClear
+                            >
+                              {propDef.choices.map((choice, index) => (
+                                <Select.Option key={index} value={choice.value[0]}>
+                                  {choice.displayName}
+                                </Select.Option>
+                              ))}
+                            </Select>
+                          );
+                        }
+                        return <Input placeholder={`${propDef.displayName}を入力`} />;
+
+                      case 'integer':
+                        return (
+                          <InputNumber
+                            style={{ width: '100%' }}
+                            placeholder={`${propDef.displayName}を入力`}
+                            precision={0}
+                            min={propDef.minValue}
+                            max={propDef.maxValue}
+                          />
+                        );
+
+                      case 'decimal':
+                        return (
+                          <InputNumber
+                            style={{ width: '100%' }}
+                            placeholder={`${propDef.displayName}を入力`}
+                            step={0.01}
+                            min={propDef.minValue}
+                            max={propDef.maxValue}
+                          />
+                        );
+
+                      case 'boolean':
+                        return (
+                          <Select placeholder={`${propDef.displayName}を選択`} allowClear>
+                            <Select.Option value="true">はい (true)</Select.Option>
+                            <Select.Option value="false">いいえ (false)</Select.Option>
+                          </Select>
+                        );
+
+                      case 'datetime':
+                        return <DatePicker style={{ width: '100%' }} showTime />;
+
+                      default:
+                        return <Input placeholder={`${propDef.displayName}を入力`} />;
+                    }
+                  };
+
+                  return (
+                    <Form.Item
+                      key={propDef.id}
+                      name={fieldName}
+                      label={propDef.displayName}
+                      tooltip={propDef.description || undefined}
+                    >
+                      {renderInput()}
+                    </Form.Item>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit" loading={loading}>
