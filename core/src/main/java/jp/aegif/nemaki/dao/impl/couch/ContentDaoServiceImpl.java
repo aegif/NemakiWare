@@ -3191,7 +3191,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Archive getArchiveByOriginalId(String repositoryId, String originalId) {
 		try {
 			// Query archiveByOriginalId view with originalId
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			// CRITICAL FIX: Use archive repository, not main repository
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
 			List<CouchArchive> couchArchives = client.queryView("_repo", "archiveByOriginalId", originalId, CouchArchive.class);
 			
 			if (!couchArchives.isEmpty()) {
@@ -3210,7 +3212,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Archive getAttachmentArchive(String repositoryId, Archive archive) {
 		try {
 			// Query attachmentArchive view with archive ID
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			// CRITICAL FIX: Use archive repository, not main repository
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
 			List<CouchArchive> couchArchives = client.queryView("_repo", "attachmentArchive", archive.getId(), CouchArchive.class);
 			
 			if (!couchArchives.isEmpty()) {
@@ -3229,7 +3233,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<Archive> getChildArchives(String repositoryId, Archive archive) {
 		try {
 			// Query childArchives view with archive ID
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			// CRITICAL FIX: Use archive repository, not main repository
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
 			List<CouchArchive> couchArchives = client.queryView("_repo", "childArchives", archive.getId(), CouchArchive.class);
 			
 			List<Archive> archives = new ArrayList<Archive>();
@@ -3248,7 +3254,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<Archive> getArchivesOfVersionSeries(String repositoryId, String versionSeriesId) {
 		try {
 			// Query archivesOfVersionSeries view with versionSeriesId
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			// CRITICAL FIX: Use archive repository, not main repository
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
 			List<CouchArchive> couchArchives = client.queryView("_repo", "archivesOfVersionSeries", versionSeriesId, CouchArchive.class);
 			
 			List<Archive> archives = new ArrayList<Archive>();
@@ -3267,7 +3275,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<Archive> getAllArchives(String repositoryId) {
 		try {
 			// Query allArchives view to get all archives
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			// CRITICAL FIX: Use archive repository, not main repository
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
 			List<CouchArchive> couchArchives = client.queryView("_repo", "allArchives", null, CouchArchive.class);
 			
 			List<Archive> archives = new ArrayList<Archive>();
@@ -3286,7 +3296,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
 		try {
 			// Query archives view with pagination parameters
-			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			// CRITICAL FIX: Use archive repository, not main repository
+			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
+			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			
 			if (skip != null && skip > 0) {
@@ -3301,13 +3313,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			
 			ViewResult result = client.queryView("_repo", "archives", queryParams);
 			List<Archive> archives = new ArrayList<Archive>();
-			
+
 			if (result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
+					// The 'archives' view emits: emit(doc.created, doc)
+					// So the document data is in getValue(), not getDoc() (which requires include_docs=true)
+					Object docValue = row.getValue();
+					if (docValue != null) {
 						try {
 							ObjectMapper mapper = createConfiguredObjectMapper();
-							CouchArchive ca = mapper.convertValue(row.getDoc(), CouchArchive.class);
+							CouchArchive ca = mapper.convertValue(docValue, CouchArchive.class);
 							if (ca != null) {
 								archives.add(ca.convert());
 							}

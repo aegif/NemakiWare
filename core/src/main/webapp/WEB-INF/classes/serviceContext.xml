@@ -631,7 +631,7 @@
     <!-- restAuthenticationFilter is now auto-configured via @Component annotation -->
 
     <bean id="archiveResource" class="jp.aegif.nemaki.rest.ArchiveResource">
-        <property name="ContentService">
+        <property name="contentService">
             <ref bean="ContentService" />
         </property>
     </bean>

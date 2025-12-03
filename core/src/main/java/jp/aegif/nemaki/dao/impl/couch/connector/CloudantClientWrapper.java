@@ -674,6 +674,12 @@ public class CloudantClientWrapper {
 						builder.group((Boolean) group);
 					}
 				}
+				if (queryParams.containsKey("descending")) {
+					Object descending = queryParams.get("descending");
+					if (descending instanceof Boolean) {
+						builder.descending((Boolean) descending);
+					}
+				}
 			}
 
 			ViewResult result = client.postView(builder.build()).execute().getResult();

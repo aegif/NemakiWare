@@ -46,6 +46,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 @Path("/repo/{repositoryId}/archive")
 public class ArchiveResource extends ResourceBase {
@@ -57,6 +58,30 @@ public class ArchiveResource extends ResourceBase {
 
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
+	}
+
+	/**
+	 * Get ContentService with fallback to SpringContext lookup.
+	 * Jersey creates its own instance, bypassing Spring DI, so we need this fallback.
+	 */
+	private ContentService getContentService() {
+		if (contentService != null) {
+			return contentService;
+		}
+		// Fallback to manual Spring context lookup
+		try {
+			ContentService service = SpringContext.getApplicationContext()
+					.getBean("ContentService", ContentService.class);
+			if (service != null) {
+				log.debug("ContentService retrieved from SpringContext successfully");
+				return service;
+			}
+		} catch (Exception e) {
+			log.error("Failed to get ContentService from SpringContext: " + e.getMessage(), e);
+		}
+
+		log.error("ContentService is null and SpringContext fallback failed");
+		return null;
 	}
 
 	//FIXME Attachment should always be got out of the output on this layer
@@ -75,7 +100,7 @@ public class ArchiveResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		try{
-			List<Archive> archives = contentService.getArchives(repositoryId, skip, limit, desc);
+			List<Archive> archives = getContentService().getArchives(repositoryId, skip, limit, desc);
 			for(Archive a : archives){
 				//Filter out Attachment & old Versions
 				if (NodeType.ATTACHMENT.value().equals(a.getType())){
@@ -113,7 +138,7 @@ public class ArchiveResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		try {
-			Archive archive = contentService.getArchive(repositoryId, id);
+			Archive archive = getContentService().getArchive(repositoryId, id);
 			if (archive == null) {
 				status = false;
 				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
@@ -143,7 +168,7 @@ public class ArchiveResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		try{
-			contentService.restoreArchive(repositoryId, id);
+			getContentService().restoreArchive(repositoryId, id);
 		}catch(ParentNoLongerExistException e){
 			log.error(e, e);
 			status = false;
@@ -162,7 +187,7 @@ public class ArchiveResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		try{
-			contentService.destroyArchive(repositoryId, id);
+			getContentService().destroyArchive(repositoryId, id);
 		}catch(Exception e){
 			log.error(e, e);
 			status = false;
