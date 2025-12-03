@@ -219,22 +219,7 @@ interface LoginProps {
   onLogin: (auth: AuthToken) => void;
 }
 
-// Debug: Log immediately when module loads (before React renders)
-console.log('[Login Module] Loaded at:', new Date().toISOString());
-console.log('[Login Module] window.location.pathname:', window.location.pathname);
-console.log('[Login Module] window.location.search:', window.location.search);
-console.log('[Login Module] window.location.hash:', window.location.hash);
-console.log('[Login Module] localStorage keys:', Object.keys(localStorage));
-
-// Check OIDC state in localStorage
-const oidcStateKeys = Object.keys(localStorage).filter(k => k.startsWith('oidc.'));
-console.log('[Login Module] OIDC localStorage keys:', oidcStateKeys);
-oidcStateKeys.forEach(key => {
-  console.log(`[Login Module] ${key}:`, localStorage.getItem(key)?.substring(0, 100) + '...');
-});
-
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
-  console.log('[Login Component] Rendering, pathname:', window.location.pathname);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -267,21 +252,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   }, []);
 
   useEffect(() => {
-    // Debug logging for callback detection
-    console.log('[Login] Callback detection useEffect running');
-    console.log('[Login] pathname:', window.location.pathname);
-    console.log('[Login] search:', window.location.search);
-    console.log('[Login] oidcService:', oidcService ? 'initialized' : 'null');
-    console.log('[Login] samlService:', samlService ? 'initialized' : 'null');
-
+    // Process OIDC/SAML callback if detected in URL
     if (window.location.pathname.includes('oidc-callback') && oidcService) {
-      console.log('[Login] OIDC callback detected, calling handleOIDCLogin()');
       handleOIDCLogin();
     } else if (window.location.pathname.includes('saml-callback') && samlService) {
-      console.log('[Login] SAML callback detected, calling handleSAMLCallback()');
       handleSAMLCallback();
-    } else {
-      console.log('[Login] No callback detected or service not ready');
     }
   }, [oidcService, samlService]);
 
@@ -312,67 +287,32 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   const handleOIDCLogin = async () => {
-    console.log('[handleOIDCLogin] Called');
-    if (!oidcService) {
-      console.log('[handleOIDCLogin] oidcService is null, returning');
-      return;
-    }
+    if (!oidcService) return;
 
     setLoading(true);
     setError(null);
 
     try {
       if (window.location.pathname.includes('oidc-callback')) {
-        console.log('[handleOIDCLogin] Processing callback...');
-        console.log('[handleOIDCLogin] URL search params:', window.location.search);
-        console.log('[handleOIDCLogin] URL hash:', window.location.hash);
-
-        // Check localStorage state before callback processing
-        const oidcKeys = Object.keys(localStorage).filter(k => k.startsWith('oidc.'));
-        console.log('[handleOIDCLogin] OIDC localStorage keys before callback:', oidcKeys);
-        oidcKeys.forEach(key => {
-          console.log(`[handleOIDCLogin] ${key}:`, localStorage.getItem(key)?.substring(0, 200));
-        });
-
-        console.log('[handleOIDCLogin] Calling signinRedirectCallback()');
+        // Process OIDC callback
         const oidcUser = await oidcService.signinRedirectCallback();
-        console.log('[handleOIDCLogin] signinRedirectCallback() succeeded, user:', oidcUser?.profile?.email);
         const repositoryId = repositories.length > 0 ? repositories[0] : 'bedroom';
-        console.log('[handleOIDCLogin] Converting OIDC token for repository:', repositoryId);
         const auth = await oidcService.convertOIDCToken(oidcUser, repositoryId);
-        console.log('[handleOIDCLogin] Token conversion succeeded, saving to localStorage');
 
-        // CRITICAL FIX: Save auth to localStorage before redirect
-        // The onLogin callback in App.tsx is a no-op, so we must explicitly save here
+        // Save auth to localStorage before redirect
         // Set authMethod for IdP-side logout support
         auth.authMethod = 'oidc';
         authService.saveAuth(auth);
-        console.log('[handleOIDCLogin] Auth saved to localStorage, calling onLogin');
         onLogin(auth);
 
-        // IMPORTANT: Redirect to main app after successful OIDC authentication
-        // The oidc-callback.html is a separate HTML file, so we need to navigate
-        // to the main app. The auth token is saved to localStorage by onLogin,
-        // and App.tsx will load it on the main page.
-        console.log('[handleOIDCLogin] Redirecting to main app...');
+        // Redirect to main app after successful OIDC authentication
         window.location.href = '/core/ui/';
       } else {
-        console.log('[handleOIDCLogin] Initiating redirect to OIDC provider');
-        // Log localStorage state before redirect
-        console.log('[handleOIDCLogin] localStorage keys before redirect:', Object.keys(localStorage));
+        // Initiate OIDC redirect
         await oidcService.signinRedirect();
       }
     } catch (error) {
-      // OIDC login failed - log actual error for debugging
-      console.error('[handleOIDCLogin] OIDC login error:', error);
-      console.error('[handleOIDCLogin] Error name:', (error as Error)?.name);
-      console.error('[handleOIDCLogin] Error message:', (error as Error)?.message);
-      console.error('[handleOIDCLogin] Error stack:', (error as Error)?.stack);
-
-      // Check localStorage state after error
-      const oidcKeysAfter = Object.keys(localStorage).filter(k => k.startsWith('oidc.'));
-      console.log('[handleOIDCLogin] OIDC localStorage keys after error:', oidcKeysAfter);
-
+      console.error('OIDC login error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       // Check for privacy mode related error
       if (errorMessage.includes('No matching state') || errorMessage.includes('state')) {
@@ -416,27 +356,19 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
       if (samlResponse) {
         const auth = await samlService.handleSAMLResponse(samlResponse, relayState || undefined);
-        console.log('[handleSAMLCallback] SAML response processed, saving to localStorage');
 
-        // CRITICAL FIX: Save auth to localStorage before redirect
-        // The onLogin callback in App.tsx is a no-op, so we must explicitly save here
+        // Save auth to localStorage before redirect
         // Set authMethod for IdP-side logout support
         auth.authMethod = 'saml';
         authService.saveAuth(auth);
-        console.log('[handleSAMLCallback] Auth saved to localStorage, calling onLogin');
         onLogin(auth);
 
-        // IMPORTANT: Redirect to main app after successful SAML authentication
-        // The saml-callback.html is a separate HTML file, so we need to navigate
-        // to the main app. The auth token is saved to localStorage by onLogin,
-        // and App.tsx will load it on the main page.
-        console.log('[handleSAMLCallback] Redirecting to main app...');
+        // Redirect to main app after successful SAML authentication
         window.location.href = '/core/ui/';
       } else {
         setError('SAML認証レスポンスが見つかりません。');
       }
     } catch (error) {
-      // SAML callback failed - log actual error for debugging
       console.error('SAML callback error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       setError(`SAML認証の処理に失敗しました: ${errorMessage}`);

@@ -792,14 +792,8 @@ export class CMISService {
                     }
                   }
 
-                  // DEBUG: Log allProperties structure to understand why path extraction fails
-                  console.log('[CMIS DEBUG] allProperties keys:', Object.keys(allProperties));
-                  console.log('[CMIS DEBUG] cmis:path raw value:', allProperties['cmis:path']);
-                  console.log('[CMIS DEBUG] All properties:', allProperties);
-
                   // Extract path from allProperties if available
                   const path = allProperties['cmis:path'] as string | undefined;
-                  console.log('[CMIS DEBUG] Extracted path:', path);
 
                   const cmisObject: CMISObject = {
                     id: id,

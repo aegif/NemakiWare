@@ -275,8 +275,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const currentAuth = authService.getCurrentAuth();
     const authMethod = currentAuth?.authMethod;
 
-    console.log('[AuthContext] Logout initiated, authMethod:', authMethod);
-
     // Clear local auth state first
     authService.logout();
     setAuthToken(null);
@@ -285,24 +283,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Call IdP-side logout based on authentication method
     if (authMethod === 'oidc' && isOIDCEnabled()) {
       try {
-        console.log('[AuthContext] Calling OIDC signoutRedirect for IdP-side logout');
         const oidcService = new OIDCService(getOIDCConfig());
         await oidcService.signoutRedirect();
         // signoutRedirect will redirect to IdP logout, so no further action needed
         return;
       } catch (error) {
-        console.error('[AuthContext] OIDC signoutRedirect failed:', error);
+        console.error('OIDC signoutRedirect failed:', error);
         // Fall through to local redirect
       }
     } else if (authMethod === 'saml' && isSAMLEnabled()) {
       try {
-        console.log('[AuthContext] Calling SAML initiateLogout for IdP-side logout');
         const samlService = new SAMLService(getSAMLConfig());
         samlService.initiateLogout();
         // initiateLogout will redirect to IdP logout if configured, so no further action needed
         return;
       } catch (error) {
-        console.error('[AuthContext] SAML initiateLogout failed:', error);
+        console.error('SAML initiateLogout failed:', error);
         // Fall through to local redirect
       }
     }

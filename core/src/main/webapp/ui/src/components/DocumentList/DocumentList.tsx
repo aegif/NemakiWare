@@ -130,13 +130,12 @@
  *    - Implementation: Conditional rendering {isSearchMode && <Button onClick={handleClearSearch}>}
  *    - Advantage: Clear UX - user knows they're viewing search results not folder contents
  *
- * 8. Debug Logging Strategy (Lines 67, 75, 86, 90, 94, 100, 307, 323):
- *    - Extensive console.log calls with "DEBUG" prefixes
- *    - Logs folder navigation, API calls, PWC status, error details
- *    - Rationale: Complex state management benefits from detailed runtime logging
- *    - Implementation: Descriptive messages with context objects (repositoryId, currentFolderId, etc.)
- *    - Advantage: Easy debugging in production, clear audit trail of user actions
- *    - Note: Production builds should remove or gate behind feature flag
+ * 8. Error Logging Strategy:
+ *    - console.error() calls for error conditions only
+ *    - Debug logs removed (2025-12-03) for production readiness
+ *    - Rationale: Clean console output in production, errors still logged for debugging
+ *    - Implementation: Errors logged with descriptive context for troubleshooting
+ *    - Advantage: Professional production experience without console noise
  *
  * 9. Error Handling and Message Display (Lines 98-110, 143-146, 157-159, etc.):
  *    - Try/catch blocks on all async operations
@@ -840,49 +839,36 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Handle "Up to Parent Folder" button click
   // Feature Request (2025-11-26): "親フォルダへのナビゲーションがないと元にもどっていけません"
   const handleGoToParent = async () => {
-    console.log('[PARENT NAV DEBUG] handleGoToParent called');
-    console.log('[PARENT NAV DEBUG] currentFolderPath:', currentFolderPath);
     try {
       const pathSegments = currentFolderPath.split('/').filter(Boolean);
-      console.log('[PARENT NAV DEBUG] pathSegments:', pathSegments);
-      console.log('[PARENT NAV DEBUG] pathSegments.length:', pathSegments.length);
 
       if (pathSegments.length === 0) {
         // Already in root, nothing to do
-        console.log('[PARENT NAV DEBUG] Already in root, returning');
         return;
       }
 
       if (pathSegments.length === 1) {
         // Parent is root folder
-        console.log('[PARENT NAV DEBUG] Navigating to root folder (single segment path)');
         const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
         // Note: Parent navigation updates both selected and current folder IDs
         setSelectedFolderId(rootFolderId);
         setCurrentFolderId(rootFolderId);
         setCurrentFolderPath('/');
         setSearchParams({ folderId: rootFolderId });
-        console.log('[PARENT NAV DEBUG] Navigation to root complete');
       } else {
         // Parent is another subfolder - navigate up one level
         const parentPath = '/' + pathSegments.slice(0, -1).join('/');
-        console.log('[PARENT NAV DEBUG] Navigating to parent path:', parentPath);
         const parentObject = await cmisService.getObjectByPath(repositoryId, parentPath);
-        console.log('[PARENT NAV DEBUG] getObjectByPath result:', parentObject);
         if (parentObject && parentObject.id) {
-          console.log('[PARENT NAV DEBUG] Setting parent folder ID:', parentObject.id);
           // Note: Parent navigation updates both selected and current folder IDs
           setSelectedFolderId(parentObject.id);
           setCurrentFolderId(parentObject.id);
           setCurrentFolderPath(parentPath);
           setSearchParams({ folderId: parentObject.id });
-          console.log('[PARENT NAV DEBUG] Navigation to parent complete');
-        } else {
-          console.log('[PARENT NAV DEBUG] getObjectByPath returned no valid object');
         }
       }
     } catch (error) {
-      console.error('[PARENT NAV DEBUG] Navigate to parent error:', error);
+      console.error('Navigate to parent error:', error);
       message.error('親フォルダへのナビゲーションに失敗しました');
     }
   };
@@ -903,15 +889,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   // Check if we're in root folder (disable Up button if so)
   const isInRootFolder = currentFolderPath === '/' || currentFolderPath.split('/').filter(Boolean).length === 0;
-
-  // DEBUG: Log breadcrumb state for debugging
-  console.log('[BREADCRUMB DEBUG] currentFolderPath:', currentFolderPath);
-  console.log('[BREADCRUMB DEBUG] currentFolderId:', currentFolderId);
-  console.log('[BREADCRUMB DEBUG] breadcrumbItems:', JSON.stringify(breadcrumbItems.map(item => ({
-    title: typeof item.title === 'string' ? item.title : 'ReactComponent',
-    className: item.className
-  })), null, 2));
-  console.log('[BREADCRUMB DEBUG] isInRootFolder:', isInRootFolder);
 
   return (
     <div>
