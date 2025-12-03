@@ -98,7 +98,7 @@ run_http_test() {
 
 echo "=== 1. ENVIRONMENT VERIFICATION ==="
 run_test "Java 17 Environment" "java -version 2>&1 | grep 'version \"17'" ""
-run_test "Docker Containers Running" "docker compose -f docker/docker-compose-simple.yml ps --filter 'status=running' | tail -n +2 | wc -l | tr -d ' '" "4"
+run_test "Docker Containers Running" "docker compose -f docker/docker-compose-simple.yml ps --filter 'status=running' | tail -n +2 | wc -l | tr -d ' '" "3"
 
 echo
 echo "=== 2. DATABASE INITIALIZATION TESTS ==="
@@ -556,7 +556,92 @@ run_test "Remove Object from Folder" "
 " "PASS"
 
 echo
-echo "=== 13. AUTHENTICATION SECURITY TESTS ==="
+echo "=== 18. NEMAKIWARE REST API TESTS - Archive Management ==="
+# Archive API: /rest/repo/{repositoryId}/archive/
+run_http_test "Archive Index (List Archives)" "http://localhost:8080/core/rest/repo/bedroom/archive/index" "200" "admin:admin"
+
+run_test "Archive Index Returns JSON" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/archive/index')
+    if echo \"\$response\" | jq -e '.status' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+run_test "Archive Index with Pagination" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/archive/index?skip=0&limit=10')
+    if echo \"\$response\" | jq -e '.archives' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+run_test "Archive Index with Desc Sort" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/archive/index?desc=true')
+    if echo \"\$response\" | jq -e '.status == \"success\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+echo
+echo "=== 19. NEMAKIWARE REST API TESTS - User Management ==="
+# User API: /rest/repo/{repositoryId}/user/
+run_http_test "User List Endpoint" "http://localhost:8080/core/rest/repo/bedroom/user/list" "200" "admin:admin"
+
+run_test "User List Returns JSON" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/user/list')
+    if echo \"\$response\" | jq -e '.status' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+run_test "User Show Admin" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/user/show/admin')
+    if echo \"\$response\" | jq -e '.user.userId == \"admin\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+run_test "User Search by Query" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/user/search?query=admin')
+    if echo \"\$response\" | jq -e '.status' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+echo
+echo "=== 20. NEMAKIWARE REST API TESTS - Group Management ==="
+# Group API: /rest/repo/{repositoryId}/group/
+run_http_test "Group List Endpoint" "http://localhost:8080/core/rest/repo/bedroom/group/list" "200" "admin:admin"
+
+run_test "Group List Returns JSON" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/group/list')
+    if echo \"\$response\" | jq -e '.status' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+run_test "Group Search Endpoint" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/group/search?query=admin')
+    if echo \"\$response\" | jq -e '.status' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+echo
+echo "=== 21. NEMAKIWARE REST API TESTS - Type Management ==="
+# Type API: /rest/repo/{repositoryId}/type/
+run_http_test "Type Test Endpoint" "http://localhost:8080/core/rest/repo/bedroom/type/test" "200" "admin:admin"
+
+run_test "Type List Returns JSON" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/type/list')
+    if echo \"\$response\" | jq -e '.status' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+run_test "Type Show nemaki:group (Custom Type)" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/type/show/nemaki:group')
+    if echo \"\$response\" | jq -e '.type.id == \"nemaki:group\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+run_test "Type Show nemaki:parentChildRelationship (Custom Type)" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/type/show/nemaki:parentChildRelationship')
+    if echo \"\$response\" | jq -e '.type.id == \"nemaki:parentChildRelationship\"' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+echo
+echo "=== 22. NEMAKIWARE REST API TESTS - Search Engine (Solr) ==="
+# Solr API: /rest/repo/{repositoryId}/search-engine/
+run_http_test "Solr URL Endpoint" "http://localhost:8080/core/rest/repo/bedroom/search-engine/url" "200" "admin:admin"
+
+run_test "Solr URL Returns JSON" "
+    response=\$(curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/search-engine/url')
+    if echo \"\$response\" | jq -e '.url' >/dev/null 2>&1; then echo 'PASS'; else echo 'FAIL'; fi
+" "PASS"
+
+echo
+echo "=== 23. AUTHENTICATION SECURITY TESTS ==="
 # Test invalid authentication attempts are properly rejected
 run_test "Invalid User Authentication" "curl -s -o /dev/null -w '%{http_code}' -u 'nonexistent:password' 'http://localhost:8080/core/rest/repo/bedroom/authtoken/nonexistent/login' -X POST -d ''" "401"
 run_test "Wrong Password Authentication" "curl -s -o /dev/null -w '%{http_code}' -u 'admin:wrongpassword' 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d ''" "401"

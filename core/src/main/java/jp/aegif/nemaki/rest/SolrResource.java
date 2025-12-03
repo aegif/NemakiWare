@@ -1,6 +1,9 @@
 package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
+import jp.aegif.nemaki.util.spring.SpringContext;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hc.client5.http.classic.HttpClient;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
@@ -28,7 +31,37 @@ import java.nio.charset.StandardCharsets;
 @Path("/repo/{repositoryId}/search-engine")
 public class SolrResource extends ResourceBase {
 
+	private static final Log log = LogFactory.getLog(SolrResource.class);
+
 	private SolrUtil solrUtil;
+
+	public void setSolrUtil(SolrUtil solrUtil) {
+		this.solrUtil = solrUtil;
+	}
+
+	/**
+	 * Get SolrUtil with fallback to SpringContext lookup.
+	 * Jersey may create its own instances instead of using Spring beans,
+	 * so we need this fallback for dependency injection.
+	 */
+	private SolrUtil getSolrUtil() {
+		if (solrUtil != null) {
+			return solrUtil;
+		}
+		// Fallback to manual Spring context lookup
+		try {
+			SolrUtil util = SpringContext.getApplicationContext()
+					.getBean("solrUtil", SolrUtil.class);
+			if (util != null) {
+				log.debug("SolrUtil retrieved from SpringContext successfully");
+				return util;
+			}
+		} catch (Exception e) {
+			log.error("Failed to get SolrUtil from SpringContext: " + e.getMessage(), e);
+		}
+		log.error("SolrUtil is null and SpringContext fallback failed - dependency injection issue");
+		return null;
+	}
 
 	@GET
 	@Path("/url")
@@ -38,7 +71,7 @@ public class SolrResource extends ResourceBase {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		String solrUrl = solrUtil.getSolrUrl();
+		String solrUrl = getSolrUtil().getSolrUrl();
 
 		result.put("url", solrUrl);
 
@@ -62,7 +95,7 @@ public class SolrResource extends ResourceBase {
 
 		// Call Solr
 		HttpClient httpClient = HttpClientBuilder.create().build();
-		String solrUrl = solrUtil.getSolrUrl();
+		String solrUrl = getSolrUtil().getSolrUrl();
 		String url = solrUrl + "admin/cores?core=nemaki&action=init&repositoryId=" + repositoryId;
 		HttpGet httpGet = new HttpGet(url);
 		try {
@@ -101,7 +134,7 @@ public class SolrResource extends ResourceBase {
 
 		// Call Solr
 		HttpClient httpClient = HttpClientBuilder.create().build();
-		String solrUrl = solrUtil.getSolrUrl();
+		String solrUrl = getSolrUtil().getSolrUrl();
 		String url = solrUrl + "admin/cores?core=nemaki&action=index&tracking=FULL&repositoryId=" + repositoryId;
 		HttpGet httpGet = new HttpGet(url);
 		try {
@@ -148,7 +181,7 @@ public class SolrResource extends ResourceBase {
 
 		// Call Solr
 		HttpClient httpClient = HttpClientBuilder.create().build();
-		String solrUrl = solrUtil.getSolrUrl();
+		String solrUrl = getSolrUtil().getSolrUrl();
 		String url = solrUrl + "admin/cores?core=nemaki&action=CHANGE_PASSWORD&tracking=FULL&repositoryId="
 				+ repositoryId + "&password=" + password + "&currentPassword=" + currentPassword;
 		HttpGet httpAction = new HttpGet(url);
@@ -199,10 +232,6 @@ public class SolrResource extends ResourceBase {
 
 		// check
 		return "0".equals(status.getTextContent());
-	}
-
-	public void setSolrUtil(SolrUtil solrUtil) {
-		this.solrUtil = solrUtil;
 	}
 
 }
