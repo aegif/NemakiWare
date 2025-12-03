@@ -953,9 +953,15 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, originalPwc, ChangeType.UPDATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing
-		// solrUtil.indexDocument(repositoryId, content);
+		// Call Solr indexing for updated PWC
+		try {
+			if (solrUtil != null && originalPwc != null) {
+				solrUtil.indexDocument(repositoryId, originalPwc);
+			}
+		} catch (Exception e) {
+			log.warn("Solr indexing failed for PWC update, repositoryId={}, documentId={}: {}",
+				repositoryId, originalPwc != null ? originalPwc.getId() : "null", e.getMessage());
+		}
 
 		return originalPwc;
 	}
@@ -1113,9 +1119,15 @@ public class ContentServiceImpl implements ContentService {
 		// Write change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Call Solr indexing for checked out document
+		try {
+			if (solrUtil != null && result != null) {
+				solrUtil.indexDocument(repositoryId, result);
+			}
+		} catch (Exception e) {
+			log.warn("Solr indexing failed for checkOut, repositoryId={}, documentId={}: {}",
+				repositoryId, result != null ? result.getId() : "null", e.getMessage());
+		}
 
 		return result;
 	}
@@ -1225,9 +1237,15 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		writeChangeEvent(callContext, repositoryId, latest, ChangeType.UPDATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Call Solr indexing for checked in document
+		try {
+			if (solrUtil != null && result != null) {
+				solrUtil.indexDocument(repositoryId, result);
+			}
+		} catch (Exception e) {
+			log.warn("Solr indexing failed for checkIn, repositoryId={}, documentId={}: {}",
+				repositoryId, result != null ? result.getId() : "null", e.getMessage());
+		}
 
 		return result;
 	}
@@ -1259,9 +1277,15 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		writeChangeEvent(callContext, repositoryId, previousDoc, ChangeType.UPDATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Call Solr indexing for updated document
+		try {
+			if (solrUtil != null && result != null) {
+				solrUtil.indexDocument(repositoryId, result);
+			}
+		} catch (Exception e) {
+			log.warn("Solr indexing failed for updateWithoutCheckInOut, repositoryId={}, documentId={}: {}",
+				repositoryId, result != null ? result.getId() : "null", e.getMessage());
+		}
 
 		return result;
 	}
@@ -2159,9 +2183,15 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, source, ChangeType.UPDATED);
 		writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Call Solr indexing for moved content
+		try {
+			if (solrUtil != null && content != null) {
+				solrUtil.indexDocument(repositoryId, content);
+			}
+		} catch (Exception e) {
+			log.warn("Solr indexing failed for move, repositoryId={}, contentId={}: {}",
+				repositoryId, content != null ? content.getId() : "null", e.getMessage());
+		}
 	}
 
 	private Content move(String repositoryId, Content content, String sourceId) {
@@ -2385,6 +2415,16 @@ public class ContentServiceImpl implements ContentService {
 
 			// Delete a document
 			delete(callContext, repositoryId, version.getId(), deleteWithParent);
+
+			// Remove document from Solr index
+			try {
+				if (solrUtil != null && version.getId() != null) {
+					solrUtil.deleteDocument(repositoryId, version.getId());
+				}
+			} catch (Exception e) {
+				log.warn("Solr delete failed for document, repositoryId={}, documentId={}: {}",
+					repositoryId, version.getId(), e.getMessage());
+			}
 		}
 
 		// Move up the latest version OR delete VersionSeries
@@ -2407,10 +2447,6 @@ public class ContentServiceImpl implements ContentService {
 			// Continue even if VersionSeries deletion fails - documents are already deleted
 		}
 	}
-
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
 	}
 
 	// deletedWithParent flag controls whether it's deleted with the parent all
@@ -3019,18 +3055,32 @@ public class ContentServiceImpl implements ContentService {
 		if (archive.isFolder()) {
 			Folder restored = restoreFolder(repositoryId, archive);
 			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
+			// Index restored folder in Solr
+			try {
+				if (solrUtil != null && restored != null) {
+					solrUtil.indexDocument(repositoryId, restored);
+				}
+			} catch (Exception e) {
+				log.warn("Solr indexing failed for restored folder, repositoryId={}, folderId={}: {}",
+					repositoryId, restored != null ? restored.getId() : "null", e.getMessage());
+			}
 		} else if (archive.isDocument()) {
 			Document restored = restoreDocument(repositoryId, archive);
 			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
+			// Index restored document in Solr
+			try {
+				if (solrUtil != null && restored != null) {
+					solrUtil.indexDocument(repositoryId, restored);
+				}
+			} catch (Exception e) {
+				log.warn("Solr indexing failed for restored document, repositoryId={}, documentId={}: {}",
+					repositoryId, restored != null ? restored.getId() : "null", e.getMessage());
+			}
 		} else if (archive.isAttachment()) {
 			log.error("Attachment can't be restored alone");
 		} else {
 			log.error("Only document or folder is supported for restoration");
 		}
-
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
 	}
 
 	private Document restoreDocument(String repositoryId, Archive archive) {
