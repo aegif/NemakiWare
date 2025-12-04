@@ -2739,6 +2739,91 @@ public class ContentServiceImpl implements ContentService {
 		return renditions;
 	}
 
+	@Override
+	public String generateRendition(CallContext callContext, String repositoryId, String objectId, boolean force) {
+		Document document = getDocument(repositoryId, objectId);
+		if (document == null) {
+			log.warn("Document not found for rendition generation: " + objectId);
+			return null;
+		}
+
+		// Check if rendition generation is enabled
+		if (!renditionManager.isRenditionEnabled()) {
+			log.debug("Rendition generation is disabled");
+			return null;
+		}
+
+		// Check if rendition already exists (unless force=true)
+		if (!force && CollectionUtils.isNotEmpty(document.getRenditionIds())) {
+			log.debug("Document already has renditions, skipping: " + objectId);
+			return null;
+		}
+
+		// Get attachment content
+		String attachmentId = document.getAttachmentNodeId();
+		if (attachmentId == null) {
+			log.debug("Document has no content stream, skipping: " + objectId);
+			return null;
+		}
+
+		AttachmentNode attachment = getAttachment(repositoryId, attachmentId);
+		if (attachment == null) {
+			log.warn("Attachment not found for document: " + objectId);
+			return null;
+		}
+
+		// Check if mimetype is convertible
+		String mimeType = attachment.getMimeType();
+		if (!renditionManager.checkConvertible(mimeType)) {
+			log.debug("Mimetype not convertible: " + mimeType);
+			return null;
+		}
+
+		// Create content stream and generate rendition
+		ContentStream contentStream = new ContentStreamImpl(
+			document.getName(),
+			BigInteger.valueOf(attachment.getLength()),
+			mimeType,
+			attachment.getInputStream()
+		);
+
+		String renditionId = createPreview(callContext, repositoryId, contentStream, document);
+
+		// Update document with new rendition ID
+		if (renditionId != null) {
+			contentDaoService.update(repositoryId, document);
+			log.info("Generated rendition for document: " + objectId + ", renditionId: " + renditionId);
+		}
+
+		return renditionId;
+	}
+
+	@Override
+	public List<String> generateRenditionsBatch(CallContext callContext, String repositoryId, 
+			List<String> objectIds, boolean force, int maxItems) {
+		List<String> generatedIds = new ArrayList<>();
+		int count = 0;
+
+		for (String objectId : objectIds) {
+			if (maxItems > 0 && count >= maxItems) {
+				break;
+			}
+
+			try {
+				String renditionId = generateRendition(callContext, repositoryId, objectId, force);
+				if (renditionId != null) {
+					generatedIds.add(renditionId);
+					count++;
+				}
+			} catch (Exception e) {
+				log.warn("Failed to generate rendition for document: " + objectId, e);
+			}
+		}
+
+		log.info("Batch rendition generation completed: " + generatedIds.size() + " renditions generated");
+		return generatedIds;
+	}
+
 	// ///////////////////////////////////////
 	// Acl
 	// ///////////////////////////////////////

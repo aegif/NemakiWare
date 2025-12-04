@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.businesslogic.rendition.impl;
 
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
+import jp.aegif.nemaki.businesslogic.rendition.RenditionMapping;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -26,6 +27,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -36,6 +39,17 @@ public class JodRenditionManagerImpl implements RenditionManager {
 	private DefaultDocumentFormatRegistry registry;
 	private static final Log log = LogFactory
 			.getLog(JodRenditionManagerImpl.class);
+
+	// Rendition mapping configuration
+	private List<RenditionMapping> renditionMappings;
+	private boolean renditionEnabled;
+	private String defaultKind;
+
+	// Default values for centralized management
+	private static final boolean DEFAULT_RENDITION_ENABLED = true;
+	private static final String DEFAULT_RENDITION_KIND = "cmis:preview";
+	private static final String DEFAULT_MAPPING_FILE = "rendition-mapping.yml";
+	private static final boolean DEFAULT_LAZY_CREATE = false;
 
 	@PostConstruct
 	public void init() {
@@ -59,7 +73,6 @@ public class JodRenditionManagerImpl implements RenditionManager {
 		} else {
 			log.warn("YAML result is not a List, skipping rendition format initialization. Result type: " + 
 			        (yamlResult != null ? yamlResult.getClass().getName() : "null"));
-			return;
 		}
 
 		if (CollectionUtils.isNotEmpty(yml)) {
@@ -72,8 +85,133 @@ public class JodRenditionManagerImpl implements RenditionManager {
 						mediaType);
 				registry.addFormat(df);
 			}
-
 		}
+
+		// NEW: Load rendition enabled flag with default
+		String enabledStr = propertyManager.readValue(PropertyKey.RENDITION_ENABLED);
+		renditionEnabled = (enabledStr != null) ? Boolean.parseBoolean(enabledStr) : DEFAULT_RENDITION_ENABLED;
+		log.info("Rendition feature enabled: " + renditionEnabled);
+
+		// NEW: Load default kind with normalization
+		String configuredKind = propertyManager.readValue(PropertyKey.RENDITION_DEFAULT_KIND);
+		defaultKind = normalizeRenditionKind(configuredKind);
+		log.info("Default rendition kind: " + defaultKind);
+
+		// NEW: Load rendition mapping
+		loadRenditionMapping();
+	}
+
+	/**
+	 * Normalize rendition kind to CMIS-compliant format.
+	 * Accepts both 'preview' and 'cmis:preview', normalizes to 'cmis:preview'.
+	 * This addresses the requirement for 'preview' as default while maintaining CMIS compliance.
+	 */
+	private String normalizeRenditionKind(String kind) {
+		if (kind == null || kind.isEmpty()) {
+			return DEFAULT_RENDITION_KIND;
+		}
+
+		// If already has cmis: prefix, return as-is
+		if (kind.startsWith("cmis:")) {
+			return kind;
+		}
+
+		// Normalize short form to CMIS form
+		String cmisKind = "cmis:" + kind;
+		log.debug("Normalized rendition kind from '" + kind + "' to '" + cmisKind + "'");
+		return cmisKind;
+	}
+
+	@SuppressWarnings("unchecked")
+	private void loadRenditionMapping() {
+		renditionMappings = new ArrayList<>();
+		String mappingFile = propertyManager.readValue(PropertyKey.RENDITION_MAPPING_DEFINITION);
+		if (mappingFile == null || mappingFile.isEmpty()) {
+			mappingFile = DEFAULT_MAPPING_FILE;
+		}
+
+		try {
+			YamlManager yamlManager = new YamlManager(mappingFile);
+			Object yamlResult = yamlManager.loadYml();
+			
+			if (yamlResult instanceof Map) {
+				Map<String, Object> ymlMap = (Map<String, Object>) yamlResult;
+				List<Map<String, Object>> mappings = (List<Map<String, Object>>) ymlMap.get("mappings");
+
+				if (mappings != null) {
+					for (Map<String, Object> mapping : mappings) {
+						RenditionMapping rm = new RenditionMapping();
+						rm.setSourceMediaTypes((List<String>) mapping.get("sourceMediaTypes"));
+						rm.setConverter((String) mapping.get("converter"));
+						rm.setTargetMediaType((String) mapping.get("targetMediaType"));
+						String kind = (String) mapping.get("kind");
+						rm.setKind(normalizeRenditionKind(kind));
+						renditionMappings.add(rm);
+					}
+					log.info("Loaded " + renditionMappings.size() + " rendition mappings from " + mappingFile);
+				}
+			} else {
+				log.warn("Rendition mapping YAML is not a Map, using defaults");
+				addDefaultMappings();
+			}
+		} catch (Exception e) {
+			log.warn("Failed to load rendition mapping from " + mappingFile + ", using defaults", e);
+			addDefaultMappings();
+		}
+
+		if (renditionMappings.isEmpty()) {
+			log.info("No rendition mappings loaded, adding defaults");
+			addDefaultMappings();
+		}
+	}
+
+	private void addDefaultMappings() {
+		// Word
+		RenditionMapping word = new RenditionMapping();
+		word.setSourceMediaTypes(Arrays.asList(
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			"application/msword"
+		));
+		word.setConverter("jod");
+		word.setTargetMediaType("application/pdf");
+		word.setKind(defaultKind);
+		renditionMappings.add(word);
+
+		// Excel
+		RenditionMapping excel = new RenditionMapping();
+		excel.setSourceMediaTypes(Arrays.asList(
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			"application/vnd.ms-excel"
+		));
+		excel.setConverter("jod");
+		excel.setTargetMediaType("application/pdf");
+		excel.setKind(defaultKind);
+		renditionMappings.add(excel);
+
+		// PowerPoint
+		RenditionMapping ppt = new RenditionMapping();
+		ppt.setSourceMediaTypes(Arrays.asList(
+			"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+			"application/vnd.ms-powerpoint"
+		));
+		ppt.setConverter("jod");
+		ppt.setTargetMediaType("application/pdf");
+		ppt.setKind(defaultKind);
+		renditionMappings.add(ppt);
+
+		// OpenDocument formats
+		RenditionMapping odf = new RenditionMapping();
+		odf.setSourceMediaTypes(Arrays.asList(
+			"application/vnd.oasis.opendocument.text",
+			"application/vnd.oasis.opendocument.spreadsheet",
+			"application/vnd.oasis.opendocument.presentation"
+		));
+		odf.setConverter("jod");
+		odf.setTargetMediaType("application/pdf");
+		odf.setKind(defaultKind);
+		renditionMappings.add(odf);
+
+		log.info("Added " + renditionMappings.size() + " default rendition mappings");
 	}
 
 	public ContentStream convertToPdf(ContentStream contentStream,
@@ -194,6 +332,44 @@ public class JodRenditionManagerImpl implements RenditionManager {
 	public boolean checkConvertible(String mediatype) {
 		DocumentFormat df = registry.getFormatByMediaType(mediatype);
 		return df != null;
+	}
+
+	@Override
+	public String getTargetMimeType(String sourceMimeType) {
+		for (RenditionMapping mapping : renditionMappings) {
+			if (mapping.getSourceMediaTypes() != null && 
+				mapping.getSourceMediaTypes().contains(sourceMimeType)) {
+				return mapping.getTargetMediaType();
+			}
+		}
+		return null;
+	}
+
+	@Override
+	public String getRenditionKind(String sourceMimeType) {
+		for (RenditionMapping mapping : renditionMappings) {
+			if (mapping.getSourceMediaTypes() != null && 
+				mapping.getSourceMediaTypes().contains(sourceMimeType)) {
+				return mapping.getKind();
+			}
+		}
+		return defaultKind;
+	}
+
+	@Override
+	public boolean isRenditionEnabled() {
+		return renditionEnabled;
+	}
+
+	@Override
+	public List<String> getSupportedSourceMimeTypes() {
+		List<String> result = new ArrayList<>();
+		for (RenditionMapping mapping : renditionMappings) {
+			if (mapping.getSourceMediaTypes() != null) {
+				result.addAll(mapping.getSourceMediaTypes());
+			}
+		}
+		return result;
 	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {
