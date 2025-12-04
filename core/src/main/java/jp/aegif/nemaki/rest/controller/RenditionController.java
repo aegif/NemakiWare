@@ -45,7 +45,8 @@ import org.springframework.web.bind.annotation.RestController;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
-import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.cmis.aspect.PermissionService;
+import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Rendition;
 
 /**
@@ -62,6 +63,7 @@ public class RenditionController {
     private ContentService contentService;
     private RenditionManager renditionManager;
     private PrincipalService principalService;
+    private PermissionService permissionService;
 
     private ContentService getContentService() {
         if (contentService != null) {
@@ -87,17 +89,61 @@ public class RenditionController {
                 .getBean("PrincipalService", PrincipalService.class);
     }
 
+    private PermissionService getPermissionService() {
+        if (permissionService != null) {
+            return permissionService;
+        }
+        return jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+                .getBean("PermissionService", PermissionService.class);
+    }
+
+    /**
+     * Check if user has read permission on the document
+     */
+    private boolean hasReadPermission(CallContext callContext, String repositoryId, String objectId) {
+        try {
+            Content content = getContentService().getContent(repositoryId, objectId);
+            if (content == null) {
+                return false;
+            }
+            // Use PermissionService to check read permission
+            Boolean hasPermission = getPermissionService().checkPermission(
+                    callContext, repositoryId, "cmis:read", content.getAcl(), content.getType(), content);
+            return hasPermission != null && hasPermission;
+        } catch (Exception e) {
+            log.warn("Error checking read permission for object: " + objectId, e);
+            return false;
+        }
+    }
+
     /**
      * Get renditions for a document
+     * Requires authentication and read permission on the document
      */
     @GetMapping("/{objectId}")
     public ResponseEntity<Map<String, Object>> getRenditions(
             @PathVariable String repositoryId,
-            @PathVariable String objectId) {
+            @PathVariable String objectId,
+            HttpServletRequest request) {
 
         Map<String, Object> response = new HashMap<>();
 
         try {
+            // SECURITY: Require authenticated CallContext
+            CallContext callContext = (CallContext) request.getAttribute("CallContext");
+            if (callContext == null) {
+                response.put("status", "error");
+                response.put("message", "Authentication required");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+            }
+
+            // SECURITY: Check read permission on the document
+            if (!hasReadPermission(callContext, repositoryId, objectId)) {
+                response.put("status", "error");
+                response.put("message", "Access denied: insufficient permissions");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+            }
+
             List<Rendition> renditions = getContentService().getRenditions(repositoryId, objectId);
             List<Map<String, Object>> renditionList = new ArrayList<>();
 
@@ -124,6 +170,7 @@ public class RenditionController {
 
     /**
      * Generate rendition for a single document
+     * Requires authentication and read permission on the document
      */
     @PostMapping("/generate")
     public ResponseEntity<Map<String, Object>> generateRendition(
@@ -142,11 +189,19 @@ public class RenditionController {
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
             }
 
-            // Get CallContext from request (set by AuthenticationFilter)
+            // SECURITY: Require authenticated CallContext (no SystemCallContext fallback)
             CallContext callContext = (CallContext) request.getAttribute("CallContext");
             if (callContext == null) {
-                callContext = new SystemCallContext(repositoryId);
-                log.warn("No CallContext found in request, using SystemCallContext for rendition generation");
+                response.put("status", "error");
+                response.put("message", "Authentication required");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+            }
+
+            // SECURITY: Check read permission on the document
+            if (!hasReadPermission(callContext, repositoryId, objectId)) {
+                response.put("status", "error");
+                response.put("message", "Access denied: insufficient permissions");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
             }
 
             String renditionId = getContentService().generateRendition(callContext, repositoryId, objectId, force);
@@ -240,12 +295,23 @@ public class RenditionController {
 
     /**
      * Get supported source mimetypes for rendition generation
+     * Requires authentication
      */
     @GetMapping("/supported-types")
-    public ResponseEntity<Map<String, Object>> getSupportedTypes(@PathVariable String repositoryId) {
+    public ResponseEntity<Map<String, Object>> getSupportedTypes(
+            @PathVariable String repositoryId,
+            HttpServletRequest request) {
         Map<String, Object> response = new HashMap<>();
 
         try {
+            // SECURITY: Require authenticated CallContext
+            CallContext callContext = (CallContext) request.getAttribute("CallContext");
+            if (callContext == null) {
+                response.put("status", "error");
+                response.put("message", "Authentication required");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+            }
+
             List<String> supportedTypes = getRenditionManager().getSupportedSourceMimeTypes();
 
             response.put("status", "success");

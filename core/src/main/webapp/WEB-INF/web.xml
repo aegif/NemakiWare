@@ -190,6 +190,12 @@
 		<url-pattern>/rest/solr/*</url-pattern>
 	</filter-mapping>
 	<!-- Note: /rest/all/* paths bypass authentication by not having filter mapping -->
+	
+	<!-- Apply authentication to /api/* endpoints (Spring MVC controllers) -->
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/api/*</url-pattern>
+	</filter-mapping>
 
 
 	<!-- <servlet>
