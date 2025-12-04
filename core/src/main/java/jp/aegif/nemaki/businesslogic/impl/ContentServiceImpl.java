@@ -2317,8 +2317,7 @@ public class ContentServiceImpl implements ContentService {
 		for (String relationshipId : relationshipIds) {
 			try {
 				contentDaoService.delete(repositoryId, relationshipId);
-				// Brief pause to prevent overwhelming CouchDB
-				Thread.sleep(5);
+				// PERFORMANCE FIX: Removed Thread.sleep(5) - unnecessary delay that slowed deletions
 			} catch (Exception e) {
 				log.warn("Failed to delete relationship " + relationshipId + ": " + e.getMessage());
 				// Continue with other deletions
@@ -2418,17 +2417,9 @@ public class ContentServiceImpl implements ContentService {
 			}
 
 			// Delete a document
+			// PERFORMANCE FIX: delete() already handles Solr index removal internally
+			// Removed duplicate solrUtil.deleteDocument() call that was causing unnecessary overhead
 			delete(callContext, repositoryId, version.getId(), deleteWithParent);
-
-			// Remove document from Solr index
-			try {
-				if (solrUtil != null && version.getId() != null) {
-					solrUtil.deleteDocument(repositoryId, version.getId());
-				}
-			} catch (Exception e) {
-				log.warn("Solr delete failed for document, repositoryId={}, documentId={}: {}",
-					repositoryId, version.getId(), e.getMessage());
-			}
 		}
 
 		// Move up the latest version OR delete VersionSeries

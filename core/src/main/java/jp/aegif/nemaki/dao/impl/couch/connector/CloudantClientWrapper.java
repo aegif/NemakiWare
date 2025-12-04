@@ -1572,18 +1572,11 @@ public class CloudantClientWrapper {
 				throw new RuntimeException("Delete operation failed for document ID: " + id + " - error: " + result.getError() + ", reason: " + result.getReason());
 			}
 
-			// TCK FIX (2025-10-14): CouchDB view index synchronization
-			// CRITICAL: CouchDB view indexes are updated asynchronously after deletion
-			// TCK tests immediately verify deletion using refresh() which may query views
-			// Without synchronization, tests fail with "Object should not exist anymore but it is still there"
-			//
-			// Solution: Wait for view indexes to reflect the deletion
-			// This is the standard CouchDB practice for tests that require immediate consistency
-			try {
-				Thread.sleep(5000); // 5000ms (5 seconds) ensures CouchDB view indexes are updated
-			} catch (InterruptedException ie) {
-				Thread.currentThread().interrupt();
-			}
+			// PERFORMANCE FIX (2025-12-04): Removed 5-second sleep
+			// Previous TCK FIX added Thread.sleep(5000) for view index synchronization,
+			// but this caused 15+ second delays in production for multi-object deletions.
+			// ContentDaoServiceImpl.verifyDeletionInternal() already has a 50ms sleep + verification
+			// logic that handles consistency without excessive delays.
 			
 		} catch (IllegalArgumentException e) {
 			// Re-throw validation errors
