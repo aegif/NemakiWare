@@ -2899,4 +2899,205 @@ export class CMISService {
       xhr.send();
     });
   }
+
+  // ==========================================
+  // Rendition Operations
+  // ==========================================
+
+  /**
+   * Base URL for rendition REST API
+   * Separate from restBaseUrl to support different path structure
+   */
+  private renditionBaseUrl = '/api/v1/repo';
+
+  /**
+   * Get renditions for a document
+   * @param repositoryId The repository ID
+   * @param objectId The document object ID
+   * @returns Promise<Rendition[]> Array of renditions for the document
+   */
+  async getRenditions(repositoryId: string, objectId: string): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const url = `${this.renditionBaseUrl}/${repositoryId}/renditions/${objectId}`;
+      xhr.open('GET', url, true);
+
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              if (response.status === 'success') {
+                resolve(response.renditions || []);
+              } else {
+                reject(new Error(response.message || 'Failed to get renditions'));
+              }
+            } catch (e) {
+              reject(new Error('Failed to parse renditions response'));
+            }
+          } else {
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
+          }
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error while fetching renditions'));
+      };
+
+      xhr.send();
+    });
+  }
+
+  /**
+   * Generate rendition for a document
+   * @param repositoryId The repository ID
+   * @param objectId The document object ID
+   * @param force If true, regenerate even if rendition exists
+   * @returns Promise<string | null> Rendition ID if generated, null otherwise
+   */
+  async generateRendition(repositoryId: string, objectId: string, force: boolean = false): Promise<string | null> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const url = `${this.renditionBaseUrl}/${repositoryId}/renditions/generate?objectId=${encodeURIComponent(objectId)}&force=${force}`;
+      xhr.open('POST', url, true);
+
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              if (response.status === 'success') {
+                resolve(response.renditionId || null);
+              } else {
+                reject(new Error(response.message || 'Failed to generate rendition'));
+              }
+            } catch (e) {
+              reject(new Error('Failed to parse generate rendition response'));
+            }
+          } else {
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
+          }
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error while generating rendition'));
+      };
+
+      xhr.send();
+    });
+  }
+
+  /**
+   * Get supported source mimetypes for rendition generation
+   * @param repositoryId The repository ID
+   * @returns Promise<{supportedTypes: string[], enabled: boolean}>
+   */
+  async getRenditionSupportedTypes(repositoryId: string): Promise<{supportedTypes: string[], enabled: boolean}> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const url = `${this.renditionBaseUrl}/${repositoryId}/renditions/supported-types`;
+      xhr.open('GET', url, true);
+
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              if (response.status === 'success') {
+                resolve({
+                  supportedTypes: response.supportedTypes || [],
+                  enabled: response.enabled || false
+                });
+              } else {
+                reject(new Error(response.message || 'Failed to get supported types'));
+              }
+            } catch (e) {
+              reject(new Error('Failed to parse supported types response'));
+            }
+          } else {
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
+          }
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error while fetching supported types'));
+      };
+
+      xhr.send();
+    });
+  }
+
+  /**
+   * Get rendition content stream URL with authentication
+   * Uses CMIS Browser Binding streamId parameter
+   * @param repositoryId The repository ID
+   * @param objectId The document object ID
+   * @param streamId The rendition stream ID
+   * @returns URL string for rendition content
+   */
+  getRenditionStreamUrl(repositoryId: string, objectId: string, streamId: string): string {
+    return `${this.baseUrl}/${repositoryId}/root?objectId=${encodeURIComponent(objectId)}&cmisselector=content&streamId=${encodeURIComponent(streamId)}`;
+  }
+
+  /**
+   * Get rendition content as Blob URL for display in iframe/embed
+   * @param repositoryId The repository ID
+   * @param objectId The document object ID
+   * @param streamId The rendition stream ID
+   * @param mimeType The MIME type of the rendition (e.g., 'application/pdf')
+   * @returns Promise<string> A Blob URL that can be used in HTML elements
+   */
+  async getRenditionBlobUrl(repositoryId: string, objectId: string, streamId: string, mimeType: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const url = this.getRenditionStreamUrl(repositoryId, objectId, streamId);
+      xhr.open('GET', url, true);
+      xhr.responseType = 'blob';
+
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            const blob = new Blob([xhr.response], { type: mimeType });
+            const blobUrl = URL.createObjectURL(blob);
+            resolve(blobUrl);
+          } else {
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
+          }
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error while fetching rendition content'));
+      };
+
+      xhr.send();
+    });
+  }
 }

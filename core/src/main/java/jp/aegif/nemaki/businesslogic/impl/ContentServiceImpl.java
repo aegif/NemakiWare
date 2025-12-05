@@ -2628,27 +2628,41 @@ public class ContentServiceImpl implements ContentService {
 		return totalBytes;
 	}
 
-	private String createPreview(CallContext callContext, String repositoryId, ContentStream contentStream,
-			Document document) {
+        private String createPreview(CallContext callContext, String repositoryId, ContentStream contentStream,
+                        Document document) {
 
-		Rendition rendition = new Rendition();
-		rendition.setTitle("PDF Preview");
-		rendition.setKind(RenditionKind.CMIS_PREVIEW.value());
-		rendition.setMimetype(contentStream.getMimeType());
-		rendition.setLength(contentStream.getLength());
+                if (!renditionManager.isRenditionEnabled()) {
+                        log.debug("Rendition generation is disabled - skipping preview creation for {}", document.getId());
+                        return null;
+                }
 
-		ContentStream converted = renditionManager.convertToPdf(contentStream, document.getName());
+                Rendition rendition = new Rendition();
+                rendition.setTitle("PDF Preview");
 
-		setSignature(callContext, rendition);
-		if (converted == null) {
-			// TODO logging
-			return null;
-		} else {
-			String renditionId = contentDaoService.createRendition(repositoryId, rendition, converted);
-			List<String> renditionIds = document.getRenditionIds();
-			if (renditionIds == null) {
-				document.setRenditionIds(new ArrayList<String>());
-			}
+                String configuredKind = renditionManager.getRenditionKind(contentStream.getMimeType());
+                rendition.setKind(configuredKind != null ? configuredKind : RenditionKind.CMIS_PREVIEW.value());
+                rendition.setRenditionDocumentId(document.getId());
+
+                ContentStream converted = renditionManager.convertToPdf(contentStream, document.getName());
+
+                setSignature(callContext, rendition);
+                if (converted == null) {
+                        // TODO logging
+                        return null;
+                } else {
+                        // Persist converted rendition metadata
+                        rendition.setMimetype(converted.getMimeType());
+                        BigInteger convertedLength = converted.getBigLength();
+                        if (convertedLength == null && converted.getLength() != null) {
+                                convertedLength = BigInteger.valueOf(converted.getLength());
+                        }
+                        rendition.setLength(convertedLength != null ? convertedLength.longValue() : -1L);
+
+                        String renditionId = contentDaoService.createRendition(repositoryId, rendition, converted);
+                        List<String> renditionIds = document.getRenditionIds();
+                        if (renditionIds == null) {
+                                document.setRenditionIds(new ArrayList<String>());
+                        }
 
 			document.getRenditionIds().add(renditionId);
 
@@ -2737,6 +2751,91 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		return renditions;
+	}
+
+	@Override
+	public String generateRendition(CallContext callContext, String repositoryId, String objectId, boolean force) {
+		Document document = getDocument(repositoryId, objectId);
+		if (document == null) {
+			log.warn("Document not found for rendition generation: " + objectId);
+			return null;
+		}
+
+		// Check if rendition generation is enabled
+		if (!renditionManager.isRenditionEnabled()) {
+			log.debug("Rendition generation is disabled");
+			return null;
+		}
+
+		// Check if rendition already exists (unless force=true)
+		if (!force && CollectionUtils.isNotEmpty(document.getRenditionIds())) {
+			log.debug("Document already has renditions, skipping: " + objectId);
+			return null;
+		}
+
+		// Get attachment content
+		String attachmentId = document.getAttachmentNodeId();
+		if (attachmentId == null) {
+			log.debug("Document has no content stream, skipping: " + objectId);
+			return null;
+		}
+
+		AttachmentNode attachment = getAttachment(repositoryId, attachmentId);
+		if (attachment == null) {
+			log.warn("Attachment not found for document: " + objectId);
+			return null;
+		}
+
+		// Check if mimetype is convertible
+		String mimeType = attachment.getMimeType();
+		if (!renditionManager.checkConvertible(mimeType)) {
+			log.debug("Mimetype not convertible: " + mimeType);
+			return null;
+		}
+
+		// Create content stream and generate rendition
+		ContentStream contentStream = new ContentStreamImpl(
+			document.getName(),
+			BigInteger.valueOf(attachment.getLength()),
+			mimeType,
+			attachment.getInputStream()
+		);
+
+		String renditionId = createPreview(callContext, repositoryId, contentStream, document);
+
+		// Update document with new rendition ID
+		if (renditionId != null) {
+			contentDaoService.update(repositoryId, document);
+			log.info("Generated rendition for document: " + objectId + ", renditionId: " + renditionId);
+		}
+
+		return renditionId;
+	}
+
+	@Override
+	public List<String> generateRenditionsBatch(CallContext callContext, String repositoryId, 
+			List<String> objectIds, boolean force, int maxItems) {
+		List<String> generatedIds = new ArrayList<>();
+		int count = 0;
+
+		for (String objectId : objectIds) {
+			if (maxItems > 0 && count >= maxItems) {
+				break;
+			}
+
+			try {
+				String renditionId = generateRendition(callContext, repositoryId, objectId, force);
+				if (renditionId != null) {
+					generatedIds.add(renditionId);
+					count++;
+				}
+			} catch (Exception e) {
+				log.warn("Failed to generate rendition for document: " + objectId, e);
+			}
+		}
+
+		log.info("Batch rendition generation completed: " + generatedIds.size() + " renditions generated");
+		return generatedIds;
 	}
 
 	// ///////////////////////////////////////
@@ -3335,13 +3434,18 @@ public class ContentServiceImpl implements ContentService {
 	/**
 	 * Create preview with atomic attachment reference
 	 */
-	private void createPreviewAtomic(CallContext callContext, String repositoryId, ContentStream contentStream, 
-			Document document, String attachmentId) {
-		log.debug("Creating preview atomically for attachment: {}", attachmentId);
-		
-		// Use the already-created and verified attachment
-		AttachmentNode an = getAttachment(repositoryId, attachmentId);
-		if (an == null) {
+        private void createPreviewAtomic(CallContext callContext, String repositoryId, ContentStream contentStream,
+                        Document document, String attachmentId) {
+                log.debug("Creating preview atomically for attachment: {}", attachmentId);
+
+                if (!renditionManager.isRenditionEnabled()) {
+                        log.debug("Rendition generation is disabled - skipping atomic preview creation for {}", document.getId());
+                        return;
+                }
+
+                // Use the already-created and verified attachment
+                AttachmentNode an = getAttachment(repositoryId, attachmentId);
+                if (an == null) {
 			throw new CmisRuntimeException("Atomic preview creation failed - attachment not found: " + attachmentId);
 		}
 		

@@ -247,6 +247,22 @@ public interface PropertyKey {
 	final String JODCONVERTER_REGISTRY_DATAFORMATS = "jodconverter.registry.dataformats";
 	final String JODCONVERTER_OFFICEHOME = "jodconverter.officehome";
 
+	// Rendition configuration
+	/** Enable/disable rendition feature. Default: true */
+	final String RENDITION_ENABLED = "rendition.enabled";
+	/** Default rendition kind. Default: cmis:preview (accepts 'preview' which is normalized) */
+	final String RENDITION_DEFAULT_KIND = "rendition.default.kind";
+	/** Path to rendition mapping YAML file. Default: rendition-mapping.yml */
+	final String RENDITION_MAPPING_DEFINITION = "rendition.mapping.definition";
+	/** Enable lazy rendition creation on preview request. Default: false (recommended) */
+	final String RENDITION_LAZY_CREATE_ON_PREVIEW = "rendition.lazy.createOnPreview";
+	/** Converter type: 'jod' (JODConverter) or 'external' (future). Default: jod */
+	final String RENDITION_CONVERTER_TYPE = "rendition.converter.type";
+	/** Path to external converter command (future use). Default: null */
+	final String RENDITION_EXTERNAL_COMMAND = "rendition.external.command";
+	/** URL of external converter service (future use). Default: null */
+	final String RENDITION_EXTERNAL_URL = "rendition.external.url";
+
 	//Log
 	final String LOG_ASPECT_DEFAULT = "log.aspect.default";
 	final String LOG_ASPECT_EXPRESSION = "log.aspect.expression";
