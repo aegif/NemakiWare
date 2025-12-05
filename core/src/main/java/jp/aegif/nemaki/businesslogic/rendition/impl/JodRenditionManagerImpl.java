@@ -220,59 +220,68 @@ public class JodRenditionManagerImpl implements RenditionManager {
 		if(contentStream.getMimeType().equals("application/pdf")){
 			return contentStream;
 		}
-		
-		OutputStream outputStream = null;
+
+		File inputFile = null;
+		File outputFile = null;
+		OfficeManager officeManager = null;
 		try {
 			String prefix = getPrefix(documentName);
 			String suffix = getSuffix(documentName);
-			File inputFile = convertInputStreamToFile(prefix, "." + suffix,
+			inputFile = convertInputStreamToFile(prefix, "." + suffix,
 					contentStream.getStream());
 			inputFile.deleteOnExit();
-			File outputFile = File.createTempFile("output", ".pdf");
+			outputFile = File.createTempFile("output", ".pdf");
 			outputFile.deleteOnExit();
 
 			String officehome = propertyManager
 					.readValue(PropertyKey.JODCONVERTER_OFFICEHOME);
-/*
-			OfficeManager officeManager = new DefaultOfficeManagerConfiguration()
-					.setPortNumber(8100).setOfficeHome(officehome)
-					.buildOfficeManager();
-*/
 			//TODO: retrieve port number from conf
-			OfficeManager officeManager = new DefaultOfficeManagerBuilder().setOfficeHome(officehome).setPortNumber(8100).build();
+			officeManager = new DefaultOfficeManagerBuilder().setOfficeHome(officehome).setPortNumber(8100).build();
 			officeManager.start();
 
 			OfficeDocumentConverter converter = new OfficeDocumentConverter(
 					officeManager);
 			converter.convert(inputFile, outputFile);
 
-			officeManager.stop();
+			// Read file into byte array to avoid FileInputStream leak
+			// (FileInputStream would remain open if returned directly)
+			byte[] pdfBytes;
+			try (InputStream fis = new FileInputStream(outputFile);
+				 ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+				byte[] buffer = new byte[8192];
+				int read;
+				while ((read = fis.read(buffer)) != -1) {
+					baos.write(buffer, 0, read);
+				}
+				pdfBytes = baos.toByteArray();
+			}
 
-			// convert back
-			FileInputStream fis = new FileInputStream(outputFile);
 			ContentStreamImpl result = new ContentStreamImpl();
-			result.setStream(fis);
+			result.setStream(new ByteArrayInputStream(pdfBytes));
 			result.setFileName(contentStream.getFileName());
 			result.setMimeType("application/pdf");
-			result.setLength(BigInteger.valueOf(outputFile.length()));
+			result.setLength(BigInteger.valueOf(pdfBytes.length));
 
 			return result;
 
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			// log.debug(e);
-		} catch (OfficeException e) {
-			log.warn(e);
+		} catch (OfficeException | IOException e) {
+			log.error("Failed to convert to PDF", e);
 		} finally {
-
-			if (outputStream != null) {
+			// Always stop OfficeManager to prevent resource leak
+			if (officeManager != null) {
 				try {
-					// outputStream.flush();
-					outputStream.close();
-				} catch (IOException e) {
-					e.printStackTrace();
+					officeManager.stop();
+				} catch (Exception e) {
+					log.warn("Failed to stop OfficeManager cleanly", e);
 				}
+			}
 
+			// Clean up temp files
+			if (inputFile != null && inputFile.exists()) {
+				inputFile.delete();
+			}
+			if (outputFile != null && outputFile.exists()) {
+				outputFile.delete();
 			}
 		}
 
@@ -330,8 +339,27 @@ public class JodRenditionManagerImpl implements RenditionManager {
 	}
 
 	public boolean checkConvertible(String mediatype) {
+		// First check if the mimetype is configured in our rendition mappings
+		boolean configured = false;
+		for (RenditionMapping mapping : renditionMappings) {
+			if (mapping.getSourceMediaTypes() != null && mapping.getSourceMediaTypes().contains(mediatype)) {
+				configured = true;
+				break;
+			}
+		}
+
+		if (!configured) {
+			log.debug("Mimetype not configured for rendition: {}", mediatype);
+			return false;
+		}
+
+		// Then verify the JODConverter registry supports this format
 		DocumentFormat df = registry.getFormatByMediaType(mediatype);
-		return df != null;
+		boolean supportedByConverter = df != null;
+		if (!supportedByConverter) {
+			log.debug("Mimetype configured but not supported by JODConverter registry: {}", mediatype);
+		}
+		return supportedByConverter;
 	}
 
 	@Override

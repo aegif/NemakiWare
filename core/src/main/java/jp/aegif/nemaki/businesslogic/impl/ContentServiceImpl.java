@@ -2631,9 +2631,18 @@ public class ContentServiceImpl implements ContentService {
 	private String createPreview(CallContext callContext, String repositoryId, ContentStream contentStream,
 			Document document) {
 
+		// Check if rendition generation is enabled before proceeding
+		if (!renditionManager.isRenditionEnabled()) {
+			log.debug("Rendition generation is disabled - skipping preview creation for {}", document.getId());
+			return null;
+		}
+
 		Rendition rendition = new Rendition();
 		rendition.setTitle("PDF Preview");
-		rendition.setKind(RenditionKind.CMIS_PREVIEW.value());
+
+		// Use configured kind from rendition manager, with fallback to CMIS_PREVIEW
+		String configuredKind = renditionManager.getRenditionKind(contentStream.getMimeType());
+		rendition.setKind(configuredKind != null ? configuredKind : RenditionKind.CMIS_PREVIEW.value());
 		rendition.setMimetype(contentStream.getMimeType());
 		rendition.setLength(contentStream.getLength());
 
@@ -3423,6 +3432,12 @@ public class ContentServiceImpl implements ContentService {
 	private void createPreviewAtomic(CallContext callContext, String repositoryId, ContentStream contentStream, 
 			Document document, String attachmentId) {
 		log.debug("Creating preview atomically for attachment: {}", attachmentId);
+
+		// Check if rendition generation is enabled before proceeding
+		if (!renditionManager.isRenditionEnabled()) {
+			log.debug("Rendition generation is disabled - skipping atomic preview creation for {}", document.getId());
+			return;
+		}
 		
 		// Use the already-created and verified attachment
 		AttachmentNode an = getAttachment(repositoryId, attachmentId);
