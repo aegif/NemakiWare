@@ -2641,21 +2641,28 @@ public class ContentServiceImpl implements ContentService {
 
                 String configuredKind = renditionManager.getRenditionKind(contentStream.getMimeType());
                 rendition.setKind(configuredKind != null ? configuredKind : RenditionKind.CMIS_PREVIEW.value());
-                rendition.setMimetype(contentStream.getMimeType());
-                rendition.setLength(contentStream.getLength());
+                rendition.setRenditionDocumentId(document.getId());
 
-		ContentStream converted = renditionManager.convertToPdf(contentStream, document.getName());
+                ContentStream converted = renditionManager.convertToPdf(contentStream, document.getName());
 
-		setSignature(callContext, rendition);
-		if (converted == null) {
-			// TODO logging
-			return null;
-		} else {
-			String renditionId = contentDaoService.createRendition(repositoryId, rendition, converted);
-			List<String> renditionIds = document.getRenditionIds();
-			if (renditionIds == null) {
-				document.setRenditionIds(new ArrayList<String>());
-			}
+                setSignature(callContext, rendition);
+                if (converted == null) {
+                        // TODO logging
+                        return null;
+                } else {
+                        // Persist converted rendition metadata
+                        rendition.setMimetype(converted.getMimeType());
+                        BigInteger convertedLength = converted.getBigLength();
+                        if (convertedLength == null && converted.getLength() != null) {
+                                convertedLength = BigInteger.valueOf(converted.getLength());
+                        }
+                        rendition.setLength(convertedLength != null ? convertedLength.longValue() : -1L);
+
+                        String renditionId = contentDaoService.createRendition(repositoryId, rendition, converted);
+                        List<String> renditionIds = document.getRenditionIds();
+                        if (renditionIds == null) {
+                                document.setRenditionIds(new ArrayList<String>());
+                        }
 
 			document.getRenditionIds().add(renditionId);
 
