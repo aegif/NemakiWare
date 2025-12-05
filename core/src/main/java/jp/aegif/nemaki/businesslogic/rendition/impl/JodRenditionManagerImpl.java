@@ -235,8 +235,9 @@ public class JodRenditionManagerImpl implements RenditionManager {
 
 			String officehome = propertyManager
 					.readValue(PropertyKey.JODCONVERTER_OFFICEHOME);
-			//TODO: retrieve port number from conf
-			officeManager = new DefaultOfficeManagerBuilder().setOfficeHome(officehome).setPortNumber(8100).build();
+			// Read port from configuration with default fallback
+			int portNumber = getJodConverterPort();
+			officeManager = new DefaultOfficeManagerBuilder().setOfficeHome(officehome).setPortNumber(portNumber).build();
 			officeManager.start();
 
 			OfficeDocumentConverter converter = new OfficeDocumentConverter(
@@ -286,6 +287,31 @@ public class JodRenditionManagerImpl implements RenditionManager {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Get JODConverter port from configuration with default fallback.
+	 * Default port is 8100, which is the standard LibreOffice/OpenOffice headless port.
+	 *
+	 * @return configured port number, or 8100 if not configured
+	 */
+	private int getJodConverterPort() {
+		final int DEFAULT_PORT = 8100;
+		try {
+			String portStr = propertyManager.readValue(PropertyKey.JODCONVERTER_PORT);
+			if (portStr != null && !portStr.trim().isEmpty()) {
+				int port = Integer.parseInt(portStr.trim());
+				if (port > 0 && port < 65536) {
+					log.debug("Using configured JODConverter port: " + port);
+					return port;
+				} else {
+					log.warn("Invalid JODConverter port number: " + port + ", using default: " + DEFAULT_PORT);
+				}
+			}
+		} catch (NumberFormatException e) {
+			log.warn("Invalid JODConverter port configuration, using default: " + DEFAULT_PORT);
+		}
+		return DEFAULT_PORT;
 	}
 
 	/**
@@ -349,7 +375,7 @@ public class JodRenditionManagerImpl implements RenditionManager {
 		}
 
 		if (!configured) {
-			log.debug("Mimetype not configured for rendition: {}", mediatype);
+			log.debug("Mimetype not configured for rendition: " + mediatype);
 			return false;
 		}
 
@@ -357,7 +383,7 @@ public class JodRenditionManagerImpl implements RenditionManager {
 		DocumentFormat df = registry.getFormatByMediaType(mediatype);
 		boolean supportedByConverter = df != null;
 		if (!supportedByConverter) {
-			log.debug("Mimetype configured but not supported by JODConverter registry: {}", mediatype);
+			log.debug("Mimetype configured but not supported by JODConverter registry: " + mediatype);
 		}
 		return supportedByConverter;
 	}

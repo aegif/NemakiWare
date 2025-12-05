@@ -246,6 +246,8 @@ public interface PropertyKey {
 	//Rendition service
 	final String JODCONVERTER_REGISTRY_DATAFORMATS = "jodconverter.registry.dataformats";
 	final String JODCONVERTER_OFFICEHOME = "jodconverter.officehome";
+	/** Port number for LibreOffice/OpenOffice headless process. Default: 8100 */
+	final String JODCONVERTER_PORT = "jodconverter.port";
 
 	// Rendition configuration
 	/** Enable/disable rendition feature. Default: true */

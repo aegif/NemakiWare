@@ -2657,8 +2657,13 @@ public class ContentServiceImpl implements ContentService {
 			// Set mimetype/length from CONVERTED stream (PDF), not original document
 			rendition.setMimetype(converted.getMimeType());
 			BigInteger convertedLength = converted.getBigLength();
-			if (convertedLength == null && converted.getLength() != null) {
-				convertedLength = BigInteger.valueOf(converted.getLength());
+			// getLength() returns primitive long (not Long), so cannot be null
+			// Use it as fallback when getBigLength() returns null
+			if (convertedLength == null) {
+				long length = converted.getLength();
+				if (length >= 0) {
+					convertedLength = BigInteger.valueOf(length);
+				}
 			}
 			rendition.setLength(convertedLength != null ? convertedLength.longValue() : -1L);
 

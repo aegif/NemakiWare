@@ -26,7 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.slf4j.Logger;
@@ -49,6 +49,7 @@ import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.User;
 
 /**
  * Spring @RestController for Rendition Management API
@@ -126,8 +127,16 @@ public class RenditionController {
             return false;
         }
         String userId = callContext.getUsername();
-        List<String> admins = getPrincipalService().getAdmins(repositoryId);
-        return admins != null && admins.contains(userId);
+        List<User> admins = getPrincipalService().getAdmins(repositoryId);
+        if (admins == null || admins.isEmpty()) {
+            return false;
+        }
+        for (User admin : admins) {
+            if (admin != null && userId.equals(admin.getUserId())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
