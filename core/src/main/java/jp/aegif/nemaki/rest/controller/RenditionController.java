@@ -107,8 +107,10 @@ public class RenditionController {
                 return false;
             }
             // Use PermissionService to check read permission
+            // Use objectType if available, fallback to type for better CMIS compliance
+            String baseObjectType = content.getObjectType() != null ? content.getObjectType() : content.getType();
             Boolean hasPermission = getPermissionService().checkPermission(
-                    callContext, repositoryId, "cmis:read", content.getAcl(), content.getType(), content);
+                    callContext, repositoryId, "cmis:read", content.getAcl(), baseObjectType, content);
             return hasPermission != null && hasPermission;
         } catch (Exception e) {
             log.warn("Error checking read permission for object: " + objectId, e);

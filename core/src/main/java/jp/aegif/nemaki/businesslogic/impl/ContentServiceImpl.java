@@ -2643,8 +2643,9 @@ public class ContentServiceImpl implements ContentService {
 		// Use configured kind from rendition manager, with fallback to CMIS_PREVIEW
 		String configuredKind = renditionManager.getRenditionKind(contentStream.getMimeType());
 		rendition.setKind(configuredKind != null ? configuredKind : RenditionKind.CMIS_PREVIEW.value());
-		rendition.setMimetype(contentStream.getMimeType());
-		rendition.setLength(contentStream.getLength());
+		
+		// CRITICAL: Set the document ID reference for CouchDB view queries
+		rendition.setRenditionDocumentId(document.getId());
 
 		ContentStream converted = renditionManager.convertToPdf(contentStream, document.getName());
 
@@ -2653,6 +2654,14 @@ public class ContentServiceImpl implements ContentService {
 			// TODO logging
 			return null;
 		} else {
+			// Set mimetype/length from CONVERTED stream (PDF), not original document
+			rendition.setMimetype(converted.getMimeType());
+			BigInteger convertedLength = converted.getBigLength();
+			if (convertedLength == null && converted.getLength() != null) {
+				convertedLength = BigInteger.valueOf(converted.getLength());
+			}
+			rendition.setLength(convertedLength != null ? convertedLength.longValue() : -1L);
+
 			String renditionId = contentDaoService.createRendition(repositoryId, rendition, converted);
 			List<String> renditionIds = document.getRenditionIds();
 			if (renditionIds == null) {
