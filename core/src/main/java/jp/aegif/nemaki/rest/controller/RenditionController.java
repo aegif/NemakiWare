@@ -47,6 +47,7 @@ import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Rendition;
 
 /**
@@ -98,24 +99,35 @@ public class RenditionController {
     }
 
     /**
-     * Check if user has read permission on the document
+     * Check if user has read permission on the content
+     * Refactored to accept Content directly to avoid double lookups
      */
-    private boolean hasReadPermission(CallContext callContext, String repositoryId, String objectId) {
+    private boolean hasReadPermission(CallContext callContext, String repositoryId, Content content) {
         try {
-            Content content = getContentService().getContent(repositoryId, objectId);
             if (content == null) {
                 return false;
             }
-            // Use PermissionService to check read permission
             // Use objectType if available, fallback to type for better CMIS compliance
             String baseObjectType = content.getObjectType() != null ? content.getObjectType() : content.getType();
             Boolean hasPermission = getPermissionService().checkPermission(
                     callContext, repositoryId, "cmis:read", content.getAcl(), baseObjectType, content);
             return hasPermission != null && hasPermission;
         } catch (Exception e) {
-            log.warn("Error checking read permission for object: " + objectId, e);
+            log.warn("Error checking read permission for object: " + (content != null ? content.getId() : "unknown"), e);
             return false;
         }
+    }
+
+    /**
+     * Check if current user is repository admin
+     */
+    private boolean isAdmin(CallContext callContext, String repositoryId) {
+        if (callContext == null) {
+            return false;
+        }
+        String userId = callContext.getUsername();
+        List<String> admins = getPrincipalService().getAdmins(repositoryId);
+        return admins != null && admins.contains(userId);
     }
 
     /**
@@ -139,11 +151,26 @@ public class RenditionController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
             }
 
+            // Fetch content once to avoid double lookups
+            Content content = getContentService().getContent(repositoryId, objectId);
+            if (content == null) {
+                response.put("status", "error");
+                response.put("message", "Document not found");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+            }
+
             // SECURITY: Check read permission on the document
-            if (!hasReadPermission(callContext, repositoryId, objectId)) {
+            if (!hasReadPermission(callContext, repositoryId, content)) {
                 response.put("status", "error");
                 response.put("message", "Access denied: insufficient permissions");
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+            }
+
+            // Only documents support renditions in current implementation
+            if (!(content instanceof Document)) {
+                response.put("status", "error");
+                response.put("message", "Renditions are only supported for documents");
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
             }
 
             List<Rendition> renditions = getContentService().getRenditions(repositoryId, objectId);
@@ -199,10 +226,25 @@ public class RenditionController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
             }
 
+            // Fetch content once to avoid double lookups
+            Content content = getContentService().getContent(repositoryId, objectId);
+            if (content == null || !(content instanceof Document)) {
+                response.put("status", "error");
+                response.put("message", "Document not found or not a document");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+            }
+
             // SECURITY: Check read permission on the document
-            if (!hasReadPermission(callContext, repositoryId, objectId)) {
+            if (!hasReadPermission(callContext, repositoryId, content)) {
                 response.put("status", "error");
                 response.put("message", "Access denied: insufficient permissions");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+            }
+
+            // Only admins can force regeneration to avoid abuse
+            if (force && !isAdmin(callContext, repositoryId)) {
+                response.put("status", "error");
+                response.put("message", "Admin privileges required for force regeneration");
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
             }
 
@@ -257,9 +299,7 @@ public class RenditionController {
             }
 
             // Check if user is admin for batch operations
-            String userId = callContext.getUsername();
-            List<String> admins = getPrincipalService().getAdmins(repositoryId);
-            if (admins == null || !admins.contains(userId)) {
+            if (!isAdmin(callContext, repositoryId)) {
                 response.put("status", "error");
                 response.put("message", "Admin privileges required for batch operations");
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
@@ -267,7 +307,16 @@ public class RenditionController {
 
             List<String> objectIds = batchRequest.getObjectIds();
             boolean force = batchRequest.isForce();
-            int maxItems = batchRequest.getMaxItems() > 0 ? batchRequest.getMaxItems() : 100;
+            int requestedMaxItems = batchRequest.getMaxItems() > 0 ? batchRequest.getMaxItems() : 100;
+
+            // Hard cap on maxItems to prevent overloading the converter
+            final int MAX_BATCH_ITEMS = 500;
+            if (requestedMaxItems > MAX_BATCH_ITEMS) {
+                response.put("status", "error");
+                response.put("message", "maxItems cannot exceed " + MAX_BATCH_ITEMS);
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            }
+            int maxItems = requestedMaxItems;
 
             if (objectIds == null || objectIds.isEmpty()) {
                 response.put("status", "error");
