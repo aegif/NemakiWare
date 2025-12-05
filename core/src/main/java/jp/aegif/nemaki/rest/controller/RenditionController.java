@@ -324,14 +324,56 @@ public class RenditionController {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
             }
 
-            List<String> generatedIds = getContentService().generateRenditionsBatch(
-                    callContext, repositoryId, objectIds, force, maxItems);
+            // Filter objects by permission and document type before batch processing
+            List<String> permittedObjectIds = new ArrayList<>();
+            List<Map<String, String>> skippedObjects = new ArrayList<>();
+
+            for (String oid : objectIds) {
+                Content content = getContentService().getContent(repositoryId, oid);
+                if (content == null) {
+                    Map<String, String> skip = new HashMap<>();
+                    skip.put("objectId", oid);
+                    skip.put("reason", "Object not found");
+                    skippedObjects.add(skip);
+                    continue;
+                }
+                if (!(content instanceof Document)) {
+                    Map<String, String> skip = new HashMap<>();
+                    skip.put("objectId", oid);
+                    skip.put("reason", "Not a document");
+                    skippedObjects.add(skip);
+                    continue;
+                }
+                if (!hasReadPermission(callContext, repositoryId, content)) {
+                    Map<String, String> skip = new HashMap<>();
+                    skip.put("objectId", oid);
+                    skip.put("reason", "Insufficient permissions");
+                    skippedObjects.add(skip);
+                    continue;
+                }
+                permittedObjectIds.add(oid);
+            }
+
+            // Apply maxItems limit to permitted objects
+            if (permittedObjectIds.size() > maxItems) {
+                permittedObjectIds = permittedObjectIds.subList(0, maxItems);
+            }
+
+            List<String> generatedIds = new ArrayList<>();
+            if (!permittedObjectIds.isEmpty()) {
+                generatedIds = getContentService().generateRenditionsBatch(
+                        callContext, repositoryId, permittedObjectIds, force, permittedObjectIds.size());
+            }
 
             response.put("status", "success");
             response.put("message", "Batch rendition generation completed");
             response.put("generatedCount", generatedIds.size());
             response.put("requestedCount", objectIds.size());
+            response.put("permittedCount", permittedObjectIds.size());
             response.put("generatedIds", generatedIds);
+            if (!skippedObjects.isEmpty()) {
+                response.put("skipped", skippedObjects);
+            }
 
             return ResponseEntity.ok(response);
 
