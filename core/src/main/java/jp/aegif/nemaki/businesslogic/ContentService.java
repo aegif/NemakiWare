@@ -607,6 +607,28 @@ public interface ContentService {
 	 */
 	List<Rendition> getRenditions(String repositoryId, String objectId);
 
+	/**
+	 * Generate rendition for an existing document
+	 * @param callContext Call context
+	 * @param repositoryId Repository ID
+	 * @param objectId Document object ID
+	 * @param force If true, regenerate even if rendition exists
+	 * @return Rendition ID if generated, null otherwise
+	 */
+	String generateRendition(CallContext callContext, String repositoryId, String objectId, boolean force);
+
+	/**
+	 * Generate renditions for multiple documents (batch)
+	 * @param callContext Call context
+	 * @param repositoryId Repository ID
+	 * @param objectIds List of document object IDs
+	 * @param force If true, regenerate even if renditions exist
+	 * @param maxItems Maximum number of renditions to generate
+	 * @return List of generated rendition IDs
+	 */
+	List<String> generateRenditionsBatch(CallContext callContext, String repositoryId, 
+		List<String> objectIds, boolean force, int maxItems);
+
 	// ///////////////////////////////////////
 	// Acl
 	// ///////////////////////////////////////

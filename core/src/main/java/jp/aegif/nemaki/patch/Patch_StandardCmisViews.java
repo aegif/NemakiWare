@@ -110,6 +110,12 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
 
             addViewIfMissing(views, "renditions", "function(doc) { if (doc.type == 'rendition')  emit(doc._id, doc) }", null, repositoryId);
 
+            // Rendition views for querying by document ID and kind (added for rendition feature)
+            // CRITICAL FIX: Use renditionDocumentId field (not documentId) to match Rendition.java model
+            addViewIfMissing(views, "renditionsByDocumentId", "function(doc) { if (doc.type == 'rendition' && doc.renditionDocumentId)  emit(doc.renditionDocumentId, doc) }", null, repositoryId);
+
+            addViewIfMissing(views, "renditionsByKind", "function(doc) { if (doc.type == 'rendition' && doc.renditionDocumentId && doc.kind)  emit([doc.renditionDocumentId, doc.kind], doc) }", null, repositoryId);
+
             addViewIfMissing(views, "latestVersions", "function(doc) { if (doc.type == 'cmis:document' && doc.latestVersion)  emit(doc.versionSeriesId, doc) }", null, repositoryId);
 
             addViewIfMissing(views, "changesByToken", "function(doc) { if (doc.type == 'change')  emit(doc.token, doc) }", null, repositoryId);
