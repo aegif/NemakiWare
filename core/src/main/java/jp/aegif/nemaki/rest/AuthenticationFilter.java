@@ -132,8 +132,8 @@ public class AuthenticationFilter implements Filter {
 			log.warn("REST API Unauthorized! : " + hreq.getRequestURI());
 
 			// Check if this is an API v1 endpoint - return JSON response instead of HTML error page
-			// Reuse pathInfo variable from earlier in the method
-			if (pathInfo != null && pathInfo.startsWith("/v1/")) {
+			// Use requestURI instead of pathInfo because pathInfo may be null for filter URL patterns
+			if (requestURI != null && requestURI.contains("/api/v1/")) {
 				// Return JSON 401 response for API v1 endpoints
 				hres.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 				hres.setContentType("application/json");

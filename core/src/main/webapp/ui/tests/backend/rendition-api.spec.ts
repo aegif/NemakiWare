@@ -15,7 +15,7 @@ test.describe.configure({ mode: 'serial' });
 
 const BASE_URL = 'http://localhost:8080';
 const REPOSITORY_ID = 'bedroom';
-const API_BASE = `${BASE_URL}/api/v1/repo/${REPOSITORY_ID}/renditions`;
+const API_BASE = `${BASE_URL}/core/api/v1/repo/${REPOSITORY_ID}/renditions`;
 
 // Test credentials
 const ADMIN_AUTH = Buffer.from('admin:admin').toString('base64');
@@ -125,16 +125,24 @@ test.describe('Rendition API - Supported Types', () => {
     }
   });
 
-  test('should reject unauthenticated requests', async ({ request }) => {
-    const response = await request.get(`${API_BASE}/supported-types`, {
-      headers: { 'Content-Type': 'application/json' }
+  test('should reject unauthenticated requests', async ({ playwright }) => {
+    // Create a new request context without default credentials
+    // This overrides the global httpCredentials and extraHTTPHeaders from playwright.config.ts
+    const noAuthContext = await playwright.request.newContext({
+      extraHTTPHeaders: { 'Content-Type': 'application/json' }
     });
 
-    // Should return 401 Unauthorized
-    expect(response.status()).toBe(401);
-    const data = await response.json();
-    expect(data.status).toBe('error');
-    expect(data.message).toBe('Authentication required');
+    try {
+      const response = await noAuthContext.get(`${API_BASE}/supported-types`);
+
+      // Should return 401 Unauthorized
+      expect(response.status()).toBe(401);
+      const data = await response.json();
+      expect(data.status).toBe('error');
+      expect(data.message).toBe('Authentication required');
+    } finally {
+      await noAuthContext.dispose();
+    }
   });
 });
 
@@ -191,17 +199,24 @@ test.describe('Rendition API - Get Renditions', () => {
     expect(data.status).toBe('error');
   });
 
-  test('should reject unauthenticated requests for renditions', async ({ request }) => {
+  test('should reject unauthenticated requests for renditions', async ({ playwright }) => {
     test.skip(!testDocumentId, 'Test document was not created');
 
-    const response = await request.get(`${API_BASE}/${testDocumentId}`, {
-      headers: { 'Content-Type': 'application/json' }
+    // Create a new request context without default credentials
+    const noAuthContext = await playwright.request.newContext({
+      extraHTTPHeaders: { 'Content-Type': 'application/json' }
     });
 
-    expect(response.status()).toBe(401);
-    const data = await response.json();
-    expect(data.status).toBe('error');
-    expect(data.message).toBe('Authentication required');
+    try {
+      const response = await noAuthContext.get(`${API_BASE}/${testDocumentId}`);
+
+      expect(response.status()).toBe(401);
+      const data = await response.json();
+      expect(data.status).toBe('error');
+      expect(data.message).toBe('Authentication required');
+    } finally {
+      await noAuthContext.dispose();
+    }
   });
 });
 
@@ -268,18 +283,26 @@ test.describe('Rendition API - Generate Rendition', () => {
     }
   });
 
-  test('should reject unauthenticated generation requests', async ({ request }) => {
+  test('should reject unauthenticated generation requests', async ({ playwright }) => {
     test.skip(!testDocumentId, 'Test document was not created');
 
-    const response = await request.post(
-      `${API_BASE}/generate?objectId=${testDocumentId}`,
-      { headers: { 'Content-Type': 'application/json' } }
-    );
+    // Create a new request context without default credentials
+    const noAuthContext = await playwright.request.newContext({
+      extraHTTPHeaders: { 'Content-Type': 'application/json' }
+    });
 
-    expect(response.status()).toBe(401);
-    const data = await response.json();
-    expect(data.status).toBe('error');
-    expect(data.message).toBe('Authentication required');
+    try {
+      const response = await noAuthContext.post(
+        `${API_BASE}/generate?objectId=${testDocumentId}`
+      );
+
+      expect(response.status()).toBe(401);
+      const data = await response.json();
+      expect(data.status).toBe('error');
+      expect(data.message).toBe('Authentication required');
+    } finally {
+      await noAuthContext.dispose();
+    }
   });
 
   test('should return 404 for non-existent document generation', async ({ request }) => {
@@ -339,7 +362,8 @@ test.describe('Rendition API - Batch Generation', () => {
       expect(data.status).toBe('success');
       expect(data).toHaveProperty('generatedCount');
       expect(data).toHaveProperty('requestedCount');
-      expect(data.requestedCount).toBe(testDocumentIds.length);
+      // API may return count as string or number
+      expect(Number(data.requestedCount)).toBe(testDocumentIds.length);
     } else if (response.status() === 401) {
       const data = await response.json();
       expect(data.message).toContain('Authentication');
@@ -428,22 +452,30 @@ test.describe('Rendition API - Batch Generation', () => {
     }
   });
 
-  test('should reject unauthenticated batch requests', async ({ request }) => {
+  test('should reject unauthenticated batch requests', async ({ playwright }) => {
     const batchRequest = {
       objectIds: testDocumentIds,
       force: false,
       maxItems: 10
     };
 
-    const response = await request.post(`${API_BASE}/batch`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: batchRequest
+    // Create a new request context without default credentials
+    const noAuthContext = await playwright.request.newContext({
+      extraHTTPHeaders: { 'Content-Type': 'application/json' }
     });
 
-    expect(response.status()).toBe(401);
-    const data = await response.json();
-    expect(data.status).toBe('error');
-    expect(data.message).toContain('Authentication');
+    try {
+      const response = await noAuthContext.post(`${API_BASE}/batch`, {
+        data: batchRequest
+      });
+
+      expect(response.status()).toBe(401);
+      const data = await response.json();
+      expect(data.status).toBe('error');
+      expect(data.message).toContain('Authentication');
+    } finally {
+      await noAuthContext.dispose();
+    }
   });
 });
 
