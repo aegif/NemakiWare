@@ -130,7 +130,20 @@ public class AuthenticationFilter implements Filter {
 			chain.doFilter(req, res);
 		}else{
 			log.warn("REST API Unauthorized! : " + hreq.getRequestURI());
-			hres.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+
+			// Check if this is an API v1 endpoint - return JSON response instead of HTML error page
+			// Reuse pathInfo variable from earlier in the method
+			if (pathInfo != null && pathInfo.startsWith("/v1/")) {
+				// Return JSON 401 response for API v1 endpoints
+				hres.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+				hres.setContentType("application/json");
+				hres.setCharacterEncoding("UTF-8");
+				hres.getWriter().write("{\"status\":\"error\",\"message\":\"Authentication required\"}");
+				hres.getWriter().flush();
+			} else {
+				// For legacy endpoints, use standard error response
+				hres.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+			}
 		}
 	}
 
@@ -213,12 +226,12 @@ public class AuthenticationFilter implements Filter {
 		// Extract path and split manually
 		String pathInfo = request.getPathInfo();
 		log.info("=== AUTH: getRepositoryId - pathInfo=" + pathInfo + " ===");
-		
+
 		if (pathInfo == null || pathInfo.isEmpty()) {
 			log.warn("PathInfo is null or empty");
 			return null;
 		}
-		
+
 		// Remove leading slash and split
 		if (pathInfo.startsWith("/")) {
 			pathInfo = pathInfo.substring(1);
@@ -227,7 +240,17 @@ public class AuthenticationFilter implements Filter {
 		log.info("=== AUTH: pathFragments=" + java.util.Arrays.toString(pathFragments) + " ===");
 
         if(pathFragments.length > 0){
-        	if(ApiType.REPO.equals(pathFragments[0])){
+        	// Handle API v1 path pattern: /v1/repo/{repositoryId}/...
+        	// pathFragments = ["v1", "repo", "bedroom", "renditions", ...]
+        	if("v1".equals(pathFragments[0])){
+        		if(pathFragments.length > 2 && ApiType.REPO.equals(pathFragments[1]) && StringUtils.isNotBlank(pathFragments[2])){
+        			String repositoryId = pathFragments[2];
+        			log.info("=== AUTH: Found repositoryId from API v1 path=" + repositoryId + " ===");
+        			return repositoryId;
+        		}else{
+        			log.warn("Could not extract repositoryId from API v1 path: " + java.util.Arrays.toString(pathFragments));
+        		}
+        	}else if(ApiType.REPO.equals(pathFragments[0])){
         		if(pathFragments.length > 1 && StringUtils.isNotBlank(pathFragments[1])){
         			String repositoryId = pathFragments[1];
         			log.info("=== AUTH: Found repositoryId from repo path=" + repositoryId + " ===");

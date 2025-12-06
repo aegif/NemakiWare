@@ -51,12 +51,14 @@ import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.User;
 
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
+
 /**
  * Spring @RestController for Rendition Management API
  * Provides endpoints for rendition generation and retrieval
  */
 @RestController
-@RequestMapping("/api/v1/repo/{repositoryId}/renditions")
+@RequestMapping("/v1/repo/{repositoryId}/renditions")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class RenditionController {
 
@@ -80,7 +82,7 @@ public class RenditionController {
             return renditionManager;
         }
         return jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
-                .getBean("renditionManager", RenditionManager.class);
+                .getBean("RenditionManager", RenditionManager.class);
     }
 
     private PrincipalService getPrincipalService() {
@@ -106,12 +108,17 @@ public class RenditionController {
     private boolean hasReadPermission(CallContext callContext, String repositoryId, Content content) {
         try {
             if (content == null) {
+                log.warn("hasReadPermission: content is null");
                 return false;
             }
             // Use objectType if available, fallback to type for better CMIS compliance
             String baseObjectType = content.getObjectType() != null ? content.getObjectType() : content.getType();
+            String username = callContext != null ? callContext.getUsername() : "null";
+            log.info("hasReadPermission: user={}, objectId={}, baseObjectType={}, acl={}",
+                    username, content.getId(), baseObjectType, content.getAcl());
             Boolean hasPermission = getPermissionService().checkPermission(
-                    callContext, repositoryId, "cmis:read", content.getAcl(), baseObjectType, content);
+                    callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content.getAcl(), baseObjectType, content);
+            log.info("hasReadPermission: checkPermission returned {}", hasPermission);
             return hasPermission != null && hasPermission;
         } catch (Exception e) {
             log.warn("Error checking read permission for object: " + (content != null ? content.getId() : "unknown"), e);
@@ -145,8 +152,8 @@ public class RenditionController {
      */
     @GetMapping("/{objectId}")
     public ResponseEntity<Map<String, Object>> getRenditions(
-            @PathVariable String repositoryId,
-            @PathVariable String objectId,
+            @PathVariable("repositoryId") String repositoryId,
+            @PathVariable("objectId") String objectId,
             HttpServletRequest request) {
 
         Map<String, Object> response = new HashMap<>();
@@ -212,9 +219,9 @@ public class RenditionController {
      */
     @PostMapping("/generate")
     public ResponseEntity<Map<String, Object>> generateRendition(
-            @PathVariable String repositoryId,
-            @RequestParam String objectId,
-            @RequestParam(required = false, defaultValue = "false") boolean force,
+            @PathVariable("repositoryId") String repositoryId,
+            @RequestParam("objectId") String objectId,
+            @RequestParam(name = "force", required = false, defaultValue = "false") boolean force,
             HttpServletRequest request) {
 
         Map<String, Object> response = new HashMap<>();
@@ -285,7 +292,7 @@ public class RenditionController {
      */
     @PostMapping("/batch")
     public ResponseEntity<Map<String, Object>> generateRenditionsBatch(
-            @PathVariable String repositoryId,
+            @PathVariable("repositoryId") String repositoryId,
             @RequestBody BatchRequest batchRequest,
             HttpServletRequest request) {
 
@@ -401,7 +408,7 @@ public class RenditionController {
      */
     @GetMapping("/supported-types")
     public ResponseEntity<Map<String, Object>> getSupportedTypes(
-            @PathVariable String repositoryId,
+            @PathVariable("repositoryId") String repositoryId,
             HttpServletRequest request) {
         Map<String, Object> response = new HashMap<>();
 
