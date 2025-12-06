@@ -1,7 +1,15 @@
 FROM tomcat:10-jdk17-openjdk-slim
 
-# Install curl for health checks and connectivity testing
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Install curl for health checks and LibreOffice for Office document preview
+RUN apt-get update && apt-get install -y \
+    curl \
+    libreoffice-writer \
+    libreoffice-calc \
+    libreoffice-impress \
+    libreoffice-common \
+    fonts-dejavu \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
 
 # Remove default Tomcat applications
 RUN rm -rf /usr/local/tomcat/webapps/*

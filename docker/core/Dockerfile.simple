@@ -1,7 +1,16 @@
 FROM tomcat:10.1-jre17
 
-# Install curl and openjdk for jar command
-RUN apt-get update && apt-get install -y curl openjdk-17-jdk-headless && rm -rf /var/lib/apt/lists/*
+# Install curl, openjdk for jar command, and LibreOffice for Office document preview
+RUN apt-get update && apt-get install -y \
+    curl \
+    openjdk-17-jdk-headless \
+    libreoffice-writer \
+    libreoffice-calc \
+    libreoffice-impress \
+    libreoffice-common \
+    fonts-dejavu \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
 
 # Remove default Tomcat applications
 RUN rm -rf /usr/local/tomcat/webapps/*
