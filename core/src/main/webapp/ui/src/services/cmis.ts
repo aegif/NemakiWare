@@ -3146,6 +3146,14 @@ export class CMISService {
               expectedMimeType: mimeType
             });
 
+            // DEBUG: Check first bytes to verify it's actually a PDF
+            responseBlob.slice(0, 20).text().then(header => {
+              console.log('[CMISService.getRenditionBlobUrl] First 20 bytes:', header);
+              if (!header.startsWith('%PDF')) {
+                console.error('[CMISService.getRenditionBlobUrl] WARNING: Response is not a valid PDF! Header:', header);
+              }
+            });
+
             // Use the response blob directly, or re-create with correct MIME type if needed
             const blob = responseBlob.type === mimeType ? responseBlob : new Blob([responseBlob], { type: mimeType });
             const blobUrl = URL.createObjectURL(blob);
