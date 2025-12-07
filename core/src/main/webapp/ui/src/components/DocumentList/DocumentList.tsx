@@ -578,8 +578,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       dataIndex: 'name',
       key: 'name',
       render: (name: string, record: CMISObject) => {
-        const isPWC = record.properties?.['cmis:isPrivateWorkingCopy'] === true ||
-                      record.properties?.['cmis:isVersionSeriesCheckedOut'] === true;
+        // Handle both boolean and string values (AtomPub returns strings, Browser binding returns booleans)
+        const isPrivateWorkingCopy = record.properties?.['cmis:isPrivateWorkingCopy'];
+        const isVersionSeriesCheckedOut = record.properties?.['cmis:isVersionSeriesCheckedOut'];
+        const isPWC = isPrivateWorkingCopy === true || isPrivateWorkingCopy === 'true' ||
+                      isVersionSeriesCheckedOut === true || isVersionSeriesCheckedOut === 'true';
 
         return (
           <Space>
@@ -715,8 +718,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       key: 'actions',
       width: 300,
       render: (_: any, record: CMISObject) => {
-        const isPWC = record.properties?.['cmis:isPrivateWorkingCopy'] === true ||
-                      record.properties?.['cmis:isVersionSeriesCheckedOut'] === true;
+        // Handle both boolean and string values (AtomPub returns strings, Browser binding returns booleans)
+        const isPrivateWorkingCopy = record.properties?.['cmis:isPrivateWorkingCopy'];
+        const isVersionSeriesCheckedOut = record.properties?.['cmis:isVersionSeriesCheckedOut'];
+        const isPWC = isPrivateWorkingCopy === true || isPrivateWorkingCopy === 'true' ||
+                      isVersionSeriesCheckedOut === true || isVersionSeriesCheckedOut === 'true';
         const isVersionable = record.baseType === 'cmis:document';
 
         return (

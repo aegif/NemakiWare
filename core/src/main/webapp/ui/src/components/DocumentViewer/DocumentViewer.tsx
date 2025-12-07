@@ -465,11 +465,12 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     return <div>読み込み中...</div>;
   }
 
-  // Check-out status detection - use same pattern as DocumentList for consistency
-  // Check BOTH cmis:isPrivateWorkingCopy AND cmis:isVersionSeriesCheckedOut for maximum compatibility
+  // Check-out status detection - handle both boolean and string values
+  // AtomPub binding returns string "true"/"false", Browser binding returns boolean true/false
   const isPrivateWorkingCopy = object.properties?.['cmis:isPrivateWorkingCopy'];
   const isVersionSeriesCheckedOut = object.properties?.['cmis:isVersionSeriesCheckedOut'];
-  const isCheckedOut = isPrivateWorkingCopy === true || isVersionSeriesCheckedOut === true;
+  const isCheckedOut = isPrivateWorkingCopy === true || isPrivateWorkingCopy === 'true' ||
+                       isVersionSeriesCheckedOut === true || isVersionSeriesCheckedOut === 'true';
   const checkedOutBy = object.properties?.['cmis:versionSeriesCheckedOutBy'] || '';
 
   const versionColumns = [
