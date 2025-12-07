@@ -206,8 +206,8 @@
  * - Admin submenu click: No navigation (expected behavior, only children navigate)
  */
 
-import React, { useState } from 'react';
-import { Layout as AntLayout, Menu, Button, Dropdown, Avatar, Space } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Layout as AntLayout, Menu, Button, Dropdown, Avatar, Space, Tooltip } from 'antd';
 import {
   FileOutlined,
   SearchOutlined,
@@ -218,10 +218,21 @@ import {
   FolderOutlined,
   InboxOutlined,
   MenuFoldOutlined,
-  MenuUnfoldOutlined
+  MenuUnfoldOutlined,
+  InfoCircleOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+
+// Build-time constants from vite.config.ts
+declare const __UI_BUILD_TIME__: string;
+declare const __UI_VERSION__: string;
+
+interface CoreBuildInfo {
+  version: string;
+  buildTime: string;
+  gitCommit?: string;
+}
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -232,9 +243,32 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   const [collapsed, setCollapsed] = useState(false);
+  const [coreBuildInfo, setCoreBuildInfo] = useState<CoreBuildInfo | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, authToken } = useAuth();
+
+  // Fetch Core build info on mount
+  useEffect(() => {
+    const fetchCoreBuildInfo = async () => {
+      try {
+        const response = await fetch('/core/rest/all/build-info');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.core) {
+            setCoreBuildInfo(data.core);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch core build info:', error);
+      }
+    };
+    fetchCoreBuildInfo();
+  }, []);
+
+  // UI build info from vite.config.ts
+  const uiBuildTime = typeof __UI_BUILD_TIME__ !== 'undefined' ? __UI_BUILD_TIME__ : 'dev';
+  const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '3.0.0';
 
   const menuItems = [
     {
@@ -297,39 +331,41 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
 
   return (
     <AntLayout style={{ minHeight: '100vh' }}>
-      <Sider 
-        trigger={null} 
-        collapsible 
+      <Sider
+        trigger={null}
+        collapsible
         collapsed={collapsed}
         style={{
           background: '#fff',
-          borderRight: '1px solid #f0f0f0'
+          borderRight: '1px solid #f0f0f0',
+          display: 'flex',
+          flexDirection: 'column'
         }}
       >
-        <div style={{ 
-          height: 64, 
-          display: 'flex', 
-          alignItems: 'center', 
+        <div style={{
+          height: 64,
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
           borderBottom: '1px solid #f0f0f0',
           background: '#f0f8ff',
           padding: '8px'
         }}>
           {!collapsed && (
-            <img 
-              src="/core/ui/logo2.png?v=20250802" 
-              alt="NemakiWare" 
-              style={{ 
-                height: '45px', 
+            <img
+              src="/core/ui/logo2.png?v=20250802"
+              alt="NemakiWare"
+              style={{
+                height: '45px',
                 width: 'auto',
                 objectFit: 'contain'
-              }} 
+              }}
             />
           )}
           {collapsed && (
-            <div style={{ 
-              color: '#1890ff', 
-              fontSize: '20px', 
+            <div style={{
+              color: '#1890ff',
+              fontSize: '20px',
               fontWeight: 'bold',
               fontFamily: 'serif'
             }}>
@@ -337,14 +373,58 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
             </div>
           )}
         </div>
-        
+
         <Menu
           mode="inline"
           selectedKeys={[location.pathname]}
           items={menuItems}
           onClick={handleMenuClick}
-          style={{ borderRight: 0 }}
+          style={{ borderRight: 0, flex: 1 }}
         />
+
+        {/* Version Info at bottom of sidebar */}
+        <div style={{
+          padding: collapsed ? '8px 4px' : '12px',
+          borderTop: '1px solid #f0f0f0',
+          background: '#fafafa',
+          fontSize: '11px',
+          color: '#888',
+          textAlign: 'center'
+        }}>
+          {collapsed ? (
+            <Tooltip
+              title={
+                <div style={{ fontSize: '11px' }}>
+                  <div>Core: {coreBuildInfo?.version || '...'}</div>
+                  <div style={{ fontSize: '10px', color: '#ccc' }}>{coreBuildInfo?.buildTime || ''}</div>
+                  <div style={{ marginTop: 4 }}>UI: {uiVersion}</div>
+                  <div style={{ fontSize: '10px', color: '#ccc' }}>{uiBuildTime}</div>
+                </div>
+              }
+              placement="right"
+            >
+              <InfoCircleOutlined style={{ cursor: 'pointer' }} />
+            </Tooltip>
+          ) : (
+            <>
+              <div style={{ marginBottom: 4 }}>
+                <span style={{ fontWeight: 500 }}>Core:</span> {coreBuildInfo?.version || '...'}
+                {coreBuildInfo?.gitCommit && (
+                  <span style={{ marginLeft: 4, color: '#aaa' }}>({coreBuildInfo.gitCommit})</span>
+                )}
+              </div>
+              <div style={{ fontSize: '10px', color: '#aaa', marginBottom: 6 }}>
+                {coreBuildInfo?.buildTime || 'loading...'}
+              </div>
+              <div>
+                <span style={{ fontWeight: 500 }}>UI:</span> {uiVersion}
+              </div>
+              <div style={{ fontSize: '10px', color: '#aaa' }}>
+                {uiBuildTime}
+              </div>
+            </>
+          )}
+        </div>
       </Sider>
       
       <AntLayout>
