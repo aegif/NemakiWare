@@ -2908,7 +2908,7 @@ export class CMISService {
    * Base URL for rendition REST API
    * Separate from restBaseUrl to support different path structure
    */
-  private renditionBaseUrl = '/api/v1/repo';
+  private renditionBaseUrl = '/core/api/v1/repo';
 
   /**
    * Get renditions for a document using AtomPub binding
