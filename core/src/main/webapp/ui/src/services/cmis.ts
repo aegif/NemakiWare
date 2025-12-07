@@ -2911,7 +2911,7 @@ export class CMISService {
   private renditionBaseUrl = '/api/v1/repo';
 
   /**
-   * Get renditions for a document
+   * Get renditions for a document using AtomPub binding
    * @param repositoryId The repository ID
    * @param objectId The document object ID
    * @returns Promise<Rendition[]> Array of renditions for the document
@@ -2919,8 +2919,10 @@ export class CMISService {
   async getRenditions(repositoryId: string, objectId: string): Promise<any[]> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      const url = `${this.renditionBaseUrl}/${repositoryId}/renditions/${objectId}`;
+      // Use AtomPub binding with renditionFilter=* to get rendition information
+      const url = `/core/atom/${repositoryId}/id?id=${encodeURIComponent(objectId)}&renditionFilter=*`;
       xhr.open('GET', url, true);
+      xhr.setRequestHeader('Accept', 'application/atom+xml');
 
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
@@ -2931,13 +2933,66 @@ export class CMISService {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
             try {
-              const response = JSON.parse(xhr.responseText);
-              if (response.status === 'success') {
-                resolve(response.renditions || []);
-              } else {
-                reject(new Error(response.message || 'Failed to get renditions'));
+              // Parse AtomPub XML response
+              const parser = new DOMParser();
+              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
+
+              // Extract rendition elements using getElementsByTagName for reliable namespace handling
+              const renditions: any[] = [];
+
+              // Helper function to get element text by tag name (handles namespaced elements)
+              const getElementText = (parent: Element, localName: string): string => {
+                // Try with cmis: prefix first
+                let elements = parent.getElementsByTagName(`cmis:${localName}`);
+                if (elements.length > 0) {
+                  return elements[0].textContent || '';
+                }
+                // Fallback to local name without namespace
+                elements = parent.getElementsByTagName(localName);
+                if (elements.length > 0) {
+                  return elements[0].textContent || '';
+                }
+                return '';
+              };
+
+              // Get all rendition elements (try both with and without namespace prefix)
+              let renditionElements = xmlDoc.getElementsByTagName('cmis:rendition');
+              if (renditionElements.length === 0) {
+                renditionElements = xmlDoc.getElementsByTagName('rendition');
               }
+
+              console.log('[CMISService.getRenditions] Found', renditionElements.length, 'rendition elements');
+
+              for (let i = 0; i < renditionElements.length; i++) {
+                const renditionEl = renditionElements[i];
+                const streamId = getElementText(renditionEl, 'streamId');
+                const mimetype = getElementText(renditionEl, 'mimetype');
+                const length = parseInt(getElementText(renditionEl, 'length') || '0', 10);
+                const kind = getElementText(renditionEl, 'kind');
+                const title = getElementText(renditionEl, 'title');
+                const height = parseInt(getElementText(renditionEl, 'height') || '0', 10);
+                const width = parseInt(getElementText(renditionEl, 'width') || '0', 10);
+
+                console.log('[CMISService.getRenditions] Rendition:', { streamId, mimetype, kind, length });
+
+                if (streamId) {
+                  renditions.push({
+                    id: streamId,
+                    streamId: streamId,
+                    mimetype: mimetype,
+                    length: length,
+                    kind: kind,
+                    title: title,
+                    height: height,
+                    width: width
+                  });
+                }
+              }
+
+              console.log('[CMISService.getRenditions] Returning', renditions.length, 'renditions');
+              resolve(renditions);
             } catch (e) {
+              console.error('Failed to parse renditions from AtomPub response:', e);
               reject(new Error('Failed to parse renditions response'));
             }
           } else {
