@@ -3138,10 +3138,21 @@ export class CMISService {
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
-            const blob = new Blob([xhr.response], { type: mimeType });
+            // xhr.response is already a Blob when responseType is 'blob'
+            const responseBlob = xhr.response as Blob;
+            console.log('[CMISService.getRenditionBlobUrl] Response blob:', {
+              size: responseBlob.size,
+              type: responseBlob.type,
+              expectedMimeType: mimeType
+            });
+
+            // Use the response blob directly, or re-create with correct MIME type if needed
+            const blob = responseBlob.type === mimeType ? responseBlob : new Blob([responseBlob], { type: mimeType });
             const blobUrl = URL.createObjectURL(blob);
+            console.log('[CMISService.getRenditionBlobUrl] Created blob URL:', blobUrl);
             resolve(blobUrl);
           } else {
+            console.error('[CMISService.getRenditionBlobUrl] HTTP error:', xhr.status, xhr.statusText);
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             reject(error);
           }
