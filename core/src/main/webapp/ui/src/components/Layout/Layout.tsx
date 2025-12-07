@@ -338,92 +338,104 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
         style={{
           background: '#fff',
           borderRight: '1px solid #f0f0f0',
-          display: 'flex',
-          flexDirection: 'column'
+          overflow: 'hidden'
         }}
       >
+        {/* Flexbox wrapper to push version info to bottom */}
         <div style={{
-          height: 64,
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderBottom: '1px solid #f0f0f0',
-          background: '#f0f8ff',
-          padding: '8px'
+          flexDirection: 'column',
+          height: '100%'
         }}>
-          {!collapsed && (
-            <img
-              src="/core/ui/logo2.png?v=20250802"
-              alt="NemakiWare"
-              style={{
-                height: '45px',
-                width: 'auto',
-                objectFit: 'contain'
-              }}
+          {/* Logo */}
+          <div style={{
+            height: 64,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderBottom: '1px solid #f0f0f0',
+            background: '#f0f8ff',
+            padding: '8px',
+            flexShrink: 0
+          }}>
+            {!collapsed && (
+              <img
+                src="/core/ui/logo2.png?v=20250802"
+                alt="NemakiWare"
+                style={{
+                  height: '45px',
+                  width: 'auto',
+                  objectFit: 'contain'
+                }}
+              />
+            )}
+            {collapsed && (
+              <div style={{
+                color: '#1890ff',
+                fontSize: '20px',
+                fontWeight: 'bold',
+                fontFamily: 'serif'
+              }}>
+                N
+              </div>
+            )}
+          </div>
+
+          {/* Menu - takes remaining space */}
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            <Menu
+              mode="inline"
+              selectedKeys={[location.pathname]}
+              items={menuItems}
+              onClick={handleMenuClick}
+              style={{ borderRight: 0 }}
             />
-          )}
-          {collapsed && (
-            <div style={{
-              color: '#1890ff',
-              fontSize: '20px',
-              fontWeight: 'bold',
-              fontFamily: 'serif'
-            }}>
-              N
-            </div>
-          )}
-        </div>
+          </div>
 
-        <Menu
-          mode="inline"
-          selectedKeys={[location.pathname]}
-          items={menuItems}
-          onClick={handleMenuClick}
-          style={{ borderRight: 0, flex: 1 }}
-        />
-
-        {/* Version Info at bottom of sidebar */}
-        <div style={{
-          padding: collapsed ? '8px 4px' : '12px',
-          borderTop: '1px solid #f0f0f0',
-          background: '#fafafa',
-          fontSize: '11px',
-          color: '#888',
-          textAlign: 'center'
-        }}>
-          {collapsed ? (
-            <Tooltip
-              title={
-                <div style={{ fontSize: '11px' }}>
-                  <div>Core: {coreBuildInfo?.version || '...'}</div>
-                  <div style={{ fontSize: '10px', color: '#ccc' }}>{coreBuildInfo?.buildTime || ''}</div>
-                  <div style={{ marginTop: 4 }}>UI: {uiVersion}</div>
-                  <div style={{ fontSize: '10px', color: '#ccc' }}>{uiBuildTime}</div>
+          {/* Version Info - fixed at bottom */}
+          <div style={{
+            padding: collapsed ? '8px 4px' : '12px',
+            borderTop: '1px solid #f0f0f0',
+            background: '#fafafa',
+            fontSize: '11px',
+            color: '#888',
+            textAlign: 'center',
+            flexShrink: 0
+          }}>
+            {collapsed ? (
+              <Tooltip
+                title={
+                  <div style={{ fontSize: '11px' }}>
+                    <div>Core: {coreBuildInfo?.version || '...'}</div>
+                    <div style={{ fontSize: '10px', color: '#ccc' }}>{coreBuildInfo?.buildTime || ''}</div>
+                    <div style={{ marginTop: 4 }}>UI: {uiVersion}</div>
+                    <div style={{ fontSize: '10px', color: '#ccc' }}>{uiBuildTime}</div>
+                  </div>
+                }
+                placement="right"
+              >
+                <InfoCircleOutlined style={{ cursor: 'pointer' }} />
+              </Tooltip>
+            ) : (
+              <>
+                <div style={{ marginBottom: 4 }}>
+                  <span style={{ fontWeight: 500 }}>Core:</span> {coreBuildInfo?.version || '...'}
+                  {coreBuildInfo?.gitCommit && (
+                    <span style={{ marginLeft: 4, color: '#aaa' }}>({coreBuildInfo.gitCommit})</span>
+                  )}
                 </div>
-              }
-              placement="right"
-            >
-              <InfoCircleOutlined style={{ cursor: 'pointer' }} />
-            </Tooltip>
-          ) : (
-            <>
-              <div style={{ marginBottom: 4 }}>
-                <span style={{ fontWeight: 500 }}>Core:</span> {coreBuildInfo?.version || '...'}
-                {coreBuildInfo?.gitCommit && (
-                  <span style={{ marginLeft: 4, color: '#aaa' }}>({coreBuildInfo.gitCommit})</span>
-                )}
-              </div>
-              <div style={{ fontSize: '10px', color: '#aaa', marginBottom: 6 }}>
-                {coreBuildInfo?.buildTime || 'loading...'}
-              </div>
-              <div>
-                <span style={{ fontWeight: 500 }}>UI:</span> {uiVersion}
-              </div>
-              <div style={{ fontSize: '10px', color: '#aaa' }}>
-                {uiBuildTime}
-              </div>
-            </>
-          )}
+                <div style={{ fontSize: '10px', color: '#aaa', marginBottom: 6 }}>
+                  {coreBuildInfo?.buildTime || 'loading...'}
+                </div>
+                <div>
+                  <span style={{ fontWeight: 500 }}>UI:</span> {uiVersion}
+                </div>
+                <div style={{ fontSize: '10px', color: '#aaa' }}>
+                  {uiBuildTime}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </Sider>
       
