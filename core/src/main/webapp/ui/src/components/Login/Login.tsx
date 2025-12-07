@@ -225,6 +225,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [error, setError] = useState<string | null>(null);
   const [repositories, setRepositories] = useState<string[]>([]);
   const [form] = Form.useForm();
+  const [coreBuildInfo, setCoreBuildInfo] = useState<{ version: string; buildTime: string } | null>(null);
 
   const authService = AuthService.getInstance();
   const cmisService = new CMISService();
@@ -249,6 +250,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   useEffect(() => {
     loadRepositories();
+    // Load Core build info
+    fetch('/core/rest/all/build-info')
+      .then(res => res.json())
+      .then(data => {
+        if (data.core) {
+          setCoreBuildInfo(data.core);
+        }
+      })
+      .catch(err => console.error('Failed to load build info:', err));
   }, []);
 
   useEffect(() => {
@@ -498,6 +508,23 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </>
           )}
         </Form>
+
+        {/* Version Information */}
+        <div style={{
+          marginTop: 16,
+          paddingTop: 12,
+          borderTop: '1px solid #f0f0f0',
+          fontSize: 11,
+          color: '#999',
+          textAlign: 'center'
+        }}>
+          <div>
+            Core: {coreBuildInfo ? `v${coreBuildInfo.version} (${coreBuildInfo.buildTime})` : 'Loading...'}
+          </div>
+          <div>
+            UI: v{typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '?'} ({typeof __UI_BUILD_TIME__ !== 'undefined' ? __UI_BUILD_TIME__ : '?'})
+          </div>
+        </div>
       </Card>
     </div>
   );
