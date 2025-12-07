@@ -1837,6 +1837,73 @@ curl -u admin:admin http://localhost:8080/core/atom/bedroom
 # Expected: HTTP 200
 ```
 
+## NemakiWare REST API エンドポイント構造 (2025-12-08)
+
+### 重要: APIベースパスの理解
+
+NemakiWareは複数のサーブレットを使用しており、各エンドポイントには正しいベースパスが必要です。
+
+**コンテキストパス**: `/core` (Tomcatデプロイ時)
+
+### サーブレットマッピング一覧
+
+| サーブレット | URLパターン | 用途 | UIベースURL |
+|-------------|------------|------|------------|
+| **cmisbrowser** | `/browser/*` | CMIS Browser Binding | `/core/browser` |
+| **cmisatom** | `/atom/*` | CMIS AtomPub Binding | `/core/atom` |
+| **cmisws** | `/services/*` | CMIS Web Services | `/core/services` |
+| **spring-mvc** | `/api/*` | Spring REST Controllers | `/core/api` |
+| **jersey-app** | `/rest/*` | Jersey REST (レガシー) | `/core/rest` |
+
+### よくある間違いと正しいパターン
+
+```bash
+# ❌ 間違い: /core/ プレフィックスがない
+/api/v1/repo/bedroom/renditions/generate  → 404 Not Found
+
+# ✅ 正しい: /core/ プレフィックスを含める
+/core/api/v1/repo/bedroom/renditions/generate  → 200 OK
+```
+
+### Rendition API (Spring MVC)
+
+**ベースURL**: `/core/api/v1/repo/{repositoryId}/renditions`
+
+| エンドポイント | メソッド | 説明 |
+|---------------|---------|------|
+| `/{objectId}` | GET | ドキュメントのレンディション一覧取得 |
+| `/generate?objectId={id}&force={bool}` | POST | レンディション生成 |
+| `/batch` | POST | バッチレンディション生成 (管理者のみ) |
+| `/supported-types` | GET | サポートされるMIMEタイプ一覧 |
+
+**レンディションコンテンツ取得** (Browser Binding経由):
+```bash
+# ✅ 正しい方法: objectIdとstreamIdの両方を指定
+curl -u admin:admin "http://localhost:8080/core/browser/bedroom?cmisselector=content&objectId={documentId}&streamId={renditionId}"
+
+# ❌ 間違い: renditionIdをobjectIdとして使用
+curl -u admin:admin "http://localhost:8080/core/browser/bedroom?cmisselector=content&objectId={renditionId}"
+# → HTTP 409 Conflict
+```
+
+### UI開発時のAPIパス設定
+
+**cmis.ts内のベースURL定義**:
+```typescript
+// CMIS Browser Binding
+private baseUrl = '/core/browser';
+
+// Spring MVC REST API (Rendition等)
+private renditionBaseUrl = '/core/api/v1/repo';  // ✅ /core/ 必須
+
+// Legacy Jersey REST
+private restBaseUrl = '/core/rest';
+```
+
+**注意**: Vite開発サーバーはプロキシを使用するため、開発時も本番と同じパスを使用します。
+
+---
+
 ## CMIS API Reference
 
 ### Browser Binding (Recommended for file uploads)
