@@ -465,9 +465,12 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     return <div>読み込み中...</div>;
   }
 
-  // Extract value from property object (same pattern as PropertyEditor)
-  const isCheckedOut = object.properties['cmis:isVersionSeriesCheckedOut']?.value;
-  const checkedOutBy = object.properties['cmis:versionSeriesCheckedOutBy']?.value;
+  // Check-out status detection - use same pattern as DocumentList for consistency
+  // Check BOTH cmis:isPrivateWorkingCopy AND cmis:isVersionSeriesCheckedOut for maximum compatibility
+  const isPrivateWorkingCopy = object.properties?.['cmis:isPrivateWorkingCopy'];
+  const isVersionSeriesCheckedOut = object.properties?.['cmis:isVersionSeriesCheckedOut'];
+  const isCheckedOut = isPrivateWorkingCopy === true || isVersionSeriesCheckedOut === true;
+  const checkedOutBy = object.properties?.['cmis:versionSeriesCheckedOutBy'] || '';
 
   const versionColumns = [
     {
