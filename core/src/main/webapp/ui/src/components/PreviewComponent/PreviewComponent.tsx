@@ -329,7 +329,7 @@ export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId
         case 'text':
           return <TextPreview url={contentUrl} fileName={object.name} />;
         case 'office':
-          return <OfficePreview url={contentUrl} fileName={object.name} mimeType={mimeType} />;
+          return <OfficePreview url={contentUrl} fileName={object.name} mimeType={mimeType} repositoryId={repositoryId} objectId={object.id} />;
         default:
           return <Alert message="プレビューできません" description={`${mimeType} はサポートされていません`} type="warning" />;
       }
