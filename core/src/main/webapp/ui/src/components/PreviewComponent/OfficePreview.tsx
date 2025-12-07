@@ -3,6 +3,7 @@
  *
  * Office document preview component with PDF rendition support:
  * - Attempts to load PDF rendition for Office documents (Word, Excel, PowerPoint, OpenDocument)
+ * - Uses react-pdf (PDF.js) for reliable PDF rendering (avoids iframe issues)
  * - Falls back to download-only UI if no rendition is available
  * - Retry button to regenerate rendition if initial load fails
  * - Error handling with user-friendly messages
@@ -11,7 +12,7 @@
  * Component Architecture:
  * OfficePreview (rendition-aware preview)
  *   ├─ Loading state: <Spin> while fetching renditions
- *   ├─ PDF Preview state: <iframe> with PDF rendition blob URL
+ *   ├─ PDF Preview state: react-pdf Document/Page with blob URL
  *   └─ Fallback state: Download-only UI with retry option
  *
  * Supported Office File Types (via MIME Type Detection):
@@ -27,6 +28,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Alert, Button, Space, Spin, message } from 'antd';
 import { DownloadOutlined, FileTextOutlined, ReloadOutlined } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
+import { Document, Page, pdfjs } from 'react-pdf';
+
+// Required CSS for react-pdf text and annotation layers
+import 'react-pdf/dist/Page/TextLayer.css';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+
+// SECURITY: Configure worker with patched pdfjs-dist@5.3.31 (CVE-2024-4367 fixed)
+// Use local worker file from public directory to avoid CORS issues with CDN
+pdfjs.GlobalWorkerOptions.workerSrc = '/core/ui/dist/pdf-worker/pdf.worker.min.mjs';
 
 interface OfficePreviewProps {
   url: string;
@@ -44,9 +54,9 @@ interface Rendition {
   length: number;
 }
 
-export const OfficePreview: React.FC<OfficePreviewProps> = ({ 
-  url, 
-  fileName, 
+export const OfficePreview: React.FC<OfficePreviewProps> = ({
+  url,
+  fileName,
   mimeType,
   repositoryId,
   objectId
@@ -57,6 +67,12 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 3;
 
+  // react-pdf state
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pageNumber, setPageNumber] = useState<number>(1);
+  const [scale, setScale] = useState<number>(1.0);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
   const getFileTypeDescription = (mimeType: string) => {
     if (mimeType.includes('wordprocessingml')) return 'Word文書';
     if (mimeType.includes('spreadsheetml')) return 'Excel文書';
@@ -66,6 +82,23 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
     if (mimeType.includes('opendocument.presentation')) return 'OpenDocument プレゼンテーション';
     return 'オフィス文書';
   };
+
+  // react-pdf callbacks
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setNumPages(numPages);
+    setPdfError(null);
+  };
+
+  const onDocumentLoadError = (err: Error) => {
+    console.error('PDF load error:', err);
+    setPdfError(`PDF読み込みに失敗しました: ${err.message}`);
+  };
+
+  // Navigation and zoom handlers
+  const goToPrevPage = () => setPageNumber((prev) => Math.max(prev - 1, 1));
+  const goToNextPage = () => setPageNumber((prev) => Math.min(prev + 1, numPages || 1));
+  const zoomIn = () => setScale((prev) => Math.min(prev + 0.25, 3.0));
+  const zoomOut = () => setScale((prev) => Math.max(prev - 0.25, 0.5));
 
   const loadRendition = useCallback(async () => {
     if (!repositoryId || !objectId) {
@@ -158,15 +191,87 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
     );
   }
 
-  // PDF rendition available - show in iframe
+  // PDF rendition available - show with react-pdf
   if (pdfBlobUrl) {
     return (
-      <div style={{ width: '100%', height: '100%', minHeight: '600px' }}>
-        <iframe
-          src={pdfBlobUrl}
-          style={{ width: '100%', height: '100%', minHeight: '600px', border: 'none' }}
-          title={`PDF Preview: ${fileName}`}
-        />
+      <div>
+        {pdfError && (
+          <Alert
+            message="エラー"
+            description={pdfError}
+            type="error"
+            showIcon
+            style={{ marginBottom: '16px' }}
+          />
+        )}
+
+        {!pdfError && (
+          <>
+            {/* Toolbar */}
+            <div style={{
+              marginBottom: '16px',
+              display: 'flex',
+              gap: '8px',
+              alignItems: 'center',
+              flexWrap: 'wrap'
+            }}>
+              <Button onClick={goToPrevPage} disabled={pageNumber <= 1}>
+                前へ
+              </Button>
+              <span>
+                {numPages ? `${pageNumber} / ${numPages}` : 'ページ読み込み中...'}
+              </span>
+              <Button onClick={goToNextPage} disabled={!numPages || pageNumber >= numPages}>
+                次へ
+              </Button>
+              <Button onClick={zoomOut} disabled={scale <= 0.5}>
+                縮小
+              </Button>
+              <span>{Math.round(scale * 100)}%</span>
+              <Button onClick={zoomIn} disabled={scale >= 3.0}>
+                拡大
+              </Button>
+              <Button
+                type="primary"
+                icon={<DownloadOutlined />}
+                onClick={() => window.open(url, '_blank')}
+                style={{ marginLeft: 'auto' }}
+              >
+                ダウンロード
+              </Button>
+            </div>
+
+            {/* PDF Document */}
+            <div style={{
+              border: '1px solid #d9d9d9',
+              padding: '16px',
+              overflowX: 'auto',
+              maxHeight: '800px',
+              overflowY: 'auto'
+            }}>
+              <Document
+                file={pdfBlobUrl}
+                onLoadSuccess={onDocumentLoadSuccess}
+                onLoadError={onDocumentLoadError}
+                loading={
+                  <div style={{ textAlign: 'center', padding: '40px' }}>
+                    <Spin size="large" />
+                    <p style={{ marginTop: '16px' }}>PDFを読み込んでいます...</p>
+                  </div>
+                }
+              >
+                {numPages && (
+                  <Page
+                    pageNumber={pageNumber}
+                    scale={scale}
+                    renderTextLayer={true}
+                    renderAnnotationLayer={true}
+                  />
+                )}
+              </Document>
+            </div>
+          </>
+        )}
       </div>
     );
   }
