@@ -2706,10 +2706,64 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Rendition getRendition(String repositoryId, String objectId) {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			CouchRendition cr = client.get(CouchRendition.class, objectId);
-			
+
+			// Use regular get() - it includes _attachments as stubs with length metadata
+			// NOTE: Do NOT use getWithAttachments() with attachments=true as it downloads
+			// the actual content which causes the Cloudant SDK to not parse length properly
+			com.ibm.cloud.cloudant.v1.model.Document doc = client.get(objectId);
+			if (doc == null) {
+				return null;
+			}
+
+			// Convert Document to CouchRendition with _attachments metadata
+			ObjectMapper mapper = createConfiguredObjectMapper();
+			Map<String, Object> properties = doc.getProperties();
+			if (properties == null) {
+				return null;
+			}
+
+			// Build complete map including _attachments
+			Map<String, Object> completeMap = new HashMap<>(properties);
+			completeMap.put("_id", doc.getId());
+			completeMap.put("_rev", doc.getRev());
+
+			// The Cloudant SDK extracts _attachments into doc.getAttachments()
+			// For stubs, the length field is populated correctly
+			Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> sdkAttachments = doc.getAttachments();
+			if (sdkAttachments != null && !sdkAttachments.isEmpty()) {
+				Map<String, Object> attachmentsMap = new HashMap<>();
+				for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> entry : sdkAttachments.entrySet()) {
+					com.ibm.cloud.cloudant.v1.model.Attachment att = entry.getValue();
+					Map<String, Object> attMap = new HashMap<>();
+					attMap.put("content_type", att.contentType());
+					attMap.put("length", att.length());
+					attMap.put("digest", att.digest());
+					attMap.put("revpos", att.revpos());
+					attMap.put("stub", att.stub());
+					attachmentsMap.put(entry.getKey(), attMap);
+				}
+				completeMap.put("_attachments", attachmentsMap);
+			}
+
+			CouchRendition cr = mapper.convertValue(completeMap, CouchRendition.class);
 			if (cr != null) {
-				return cr.convert();
+				Rendition rendition = cr.convert();
+
+				// Fetch binary attachment stream for the rendition content
+				try {
+					Object attachmentObj = client.getAttachment(objectId, "content");
+					if (attachmentObj != null && attachmentObj instanceof InputStream) {
+						InputStream attachmentStream = (InputStream) attachmentObj;
+						rendition.setInputStream(attachmentStream);
+						log.debug("Successfully set rendition binary stream for: " + objectId);
+					} else {
+						log.warn("No binary attachment found for rendition: " + objectId);
+					}
+				} catch (Exception streamEx) {
+					log.error("Error retrieving rendition binary stream for: " + objectId, streamEx);
+				}
+
+				return rendition;
 			}
 			return null;
 		} catch (Exception e) {
