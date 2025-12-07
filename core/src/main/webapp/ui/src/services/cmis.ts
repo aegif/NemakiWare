@@ -2707,7 +2707,9 @@ export class CMISService {
   async restoreObject(repositoryId: string, objectId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/archive/${objectId}/restore`, true);
+      // Use REST API endpoint for archive restore (PUT method, matches ArchiveResource.java)
+      // ArchiveResource: @PUT @Path("/restore/{id}")
+      xhr.open('PUT', `/core/rest/repo/${repositoryId}/archive/restore/${objectId}`, true);
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.setRequestHeader('Accept', 'application/json');
 

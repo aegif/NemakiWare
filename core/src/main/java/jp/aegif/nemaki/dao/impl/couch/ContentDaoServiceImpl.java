@@ -2749,6 +2749,25 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			if (cr != null) {
 				Rendition rendition = cr.convert();
 
+				// CRITICAL FIX: Get accurate decompressed attachment size
+				// CouchDB stores attachments gzip-compressed, so _attachments.length returns compressed size
+				// This causes Content-Length mismatch when streaming decompressed content (PDF EOF issue)
+				// Use getAttachmentSize() which downloads and counts actual decompressed bytes
+				try {
+					Long actualSize = client.getAttachmentSize(objectId, "content");
+					if (actualSize != null && actualSize > 0) {
+						long metadataLength = rendition.getLength();
+						if (metadataLength != actualSize) {
+							log.debug("Rendition length correction for " + objectId + 
+								": metadata=" + metadataLength + " -> actual=" + actualSize);
+						}
+						rendition.setLength(actualSize);
+					}
+				} catch (Exception sizeEx) {
+					log.warn("Could not get actual attachment size for rendition: " + objectId + 
+						", using metadata length: " + rendition.getLength(), sizeEx);
+				}
+
 				// Fetch binary attachment stream for the rendition content
 				try {
 					Object attachmentObj = client.getAttachment(objectId, "content");
