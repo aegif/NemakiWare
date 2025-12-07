@@ -39,6 +39,7 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.spring.SpringContext;
 import jp.aegif.nemaki.util.constant.NodeType;
 import jp.aegif.nemaki.util.constant.SystemConst;
 
@@ -46,7 +47,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
-import jp.aegif.nemaki.util.spring.SpringContext;
 
 @Path("/repo/{repositoryId}/archive")
 public class ArchiveResource extends ResourceBase {
@@ -62,7 +62,8 @@ public class ArchiveResource extends ResourceBase {
 
 	/**
 	 * Get ContentService with fallback to SpringContext lookup.
-	 * Jersey creates its own instance, bypassing Spring DI, so we need this fallback.
+	 * Jersey may create its own instances instead of using Spring beans,
+	 * so we need this fallback for dependency injection.
 	 */
 	private ContentService getContentService() {
 		if (contentService != null) {
@@ -79,8 +80,18 @@ public class ArchiveResource extends ResourceBase {
 		} catch (Exception e) {
 			log.error("Failed to get ContentService from SpringContext: " + e.getMessage(), e);
 		}
-
-		log.error("ContentService is null and SpringContext fallback failed");
+		// Final fallback - try different bean name patterns
+		try {
+			ContentService service = SpringContext.getApplicationContext()
+					.getBean("contentService", ContentService.class);
+			if (service != null) {
+				log.debug("ContentService retrieved from SpringContext with lowercase name");
+				return service;
+			}
+		} catch (Exception e) {
+			log.debug("Could not find contentService with lowercase name: " + e.getMessage());
+		}
+		log.error("ContentService is null and SpringContext fallback failed - dependency injection issue");
 		return null;
 	}
 
