@@ -40,6 +40,21 @@ jobs:
         cache: 'npm'
         cache-dependency-path: 'core/src/main/webapp/ui/package-lock.json'
 
+    - name: Build React UI
+      working-directory: core/src/main/webapp/ui
+      run: |
+        # Install dependencies and build the React UI
+        echo "Installing UI dependencies..."
+        npm ci
+        
+        echo "Building React UI..."
+        npm run build
+        
+        # Verify the build output
+        echo "Verifying UI build output..."
+        ls -la dist/
+        test -f dist/index.html || (echo "ERROR: index.html not found in dist/" && exit 1)
+
     - name: Build NemakiWare Dependencies
       run: |
         # Build parent POM first
@@ -99,10 +114,10 @@ jobs:
           exit 1
         fi
 
-    - name: Install UI dependencies
+    - name: Install Playwright
       working-directory: core/src/main/webapp/ui
       run: |
-        npm ci
+        # npm ci was already run in "Build React UI" step
         npx playwright install --with-deps
 
     - name: Run Playwright tests
