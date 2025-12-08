@@ -75,14 +75,29 @@ jobs:
 
         # Wait for server to start
         echo "Waiting for NemakiWare server to start..."
+        SERVER_READY=false
         for i in {1..60}; do
           if curl -f http://localhost:8080/core/ui/dist/; then
             echo "NemakiWare server is ready"
+            SERVER_READY=true
             break
           fi
           echo "Waiting for server... ($i/60)"
           sleep 5
         done
+
+        # If server didn't start, dump logs for debugging
+        if [ "$SERVER_READY" = "false" ]; then
+          echo "=== Server failed to start, dumping Docker logs ==="
+          docker compose -f docker-compose-simple.yml ps
+          echo "=== Core container logs ==="
+          docker compose -f docker-compose-simple.yml logs core --tail=500 || true
+          echo "=== CouchDB container logs ==="
+          docker compose -f docker-compose-simple.yml logs couchdb --tail=100 || true
+          echo "=== Solr container logs ==="
+          docker compose -f docker-compose-simple.yml logs solr --tail=100 || true
+          exit 1
+        fi
 
     - name: Install UI dependencies
       working-directory: core/src/main/webapp/ui
