@@ -325,6 +325,14 @@
  <url-pattern>/ui/dist/*</url-pattern>
 </servlet-mapping>
 
+<!-- CRITICAL FIX: Exact mapping for index.html to prevent SPA fallback loop -->
+<!-- Without this, forwarding to /ui/dist/index.html re-enters ReactSpaFallbackServlet -->
+<!-- causing a StackOverflowError from recursive ApplicationHttpRequest.getAttribute calls -->
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/dist/index.html</url-pattern>
+</servlet-mapping>
+
  <!-- Map default servlet to handle static resources -->
  <servlet-mapping>
   <servlet-name>default</servlet-name>
