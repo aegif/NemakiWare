@@ -318,7 +318,11 @@ private ContentService getContentServiceSafe() {
 		JSONArray queriedUsers = new JSONArray();
 		users = getContentService().getUserItems(repositoryId);
 		for (UserItem user : users) {
-			if (user.getUserId().contains(query) || user.getName().contains(query)) {
+			String userId = user.getUserId();
+			String userName = user.getName();
+			boolean matches = (userId != null && userId.contains(query)) ||
+			                  (userName != null && userName.contains(query));
+			if (matches) {
 				JSONObject userJSON = convertUserToJson(user, repositoryId);
 				if(queriedUsers.size() < 50){
 					queriedUsers.add(userJSON);
