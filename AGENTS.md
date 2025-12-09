@@ -1,6 +1,6 @@
 # NemakiWare エージェント間連携ガイド
 
-**最終更新**: 2025-11-01
+**最終更新**: 2025-12-09
 **対象**: Claude Code、Devin、Cursor、その他のAIエージェント
 **目的**: エージェント間でスムーズにタスクを委譲できる体制を構築
 
@@ -54,6 +54,56 @@ CLAUDE.mdはClaude Code固有の技術詳細を記録していますが、この
 
 ---
 
+## 🔒 UI パス統一ルール（CRITICAL - 2025-12-09）
+
+**重要**: NemakiWare UI の全パスは `/core/ui/` を使用します。`/core/ui/dist/` は**禁止**です。
+
+### パス規約
+
+| 正しいパス | 禁止パス |
+|-----------|---------|
+| `/core/ui/index.html` | `/core/ui/dist/index.html` ❌ |
+| `/core/ui/oidc-callback.html` | `/core/ui/dist/oidc-callback.html` ❌ |
+| `/core/ui/logo1.png` | `/core/ui/dist/logo1.png` ❌ |
+| `/core/ui/assets/` | `/core/ui/dist/assets/` ❌ |
+
+### 影響を受けるファイル
+
+| カテゴリ | ファイル | チェック項目 |
+|---------|---------|-------------|
+| **認証コンテキスト** | `AuthContext.tsx` | ログアウトリダイレクト |
+| **保護ルート** | `ProtectedRoute.tsx` | 認証エラーリダイレクト |
+| **ログイン** | `login/index.html` | リダイレクト URL |
+| **レイアウト** | `Layout.tsx` | ロゴパス |
+| **ログイン画面** | `Login.tsx` | ロゴパス |
+| **コールバック** | `oidc-callback.html`, `saml-callback.html` | アセット参照 |
+| **テストファイル** | `tests/**/*.spec.ts` | 全URL参照 |
+
+### パス問題の検出コマンド
+
+```bash
+# UI ソースコードで /ui/dist/ を検索（ゼロ件が正常）
+grep -r "/ui/dist/" core/src/main/webapp/ui/src/ --include="*.ts" --include="*.tsx"
+
+# テストファイルで /ui/dist/ を検索（ゼロ件が正常）
+grep -r "/ui/dist/" core/src/main/webapp/ui/tests/ --include="*.ts"
+
+# ログイン関連HTMLで /ui/dist/ を検索（ゼロ件が正常）
+grep -r "/ui/dist/" core/src/main/webapp/ui/login/
+grep -r "/ui/dist/" core/src/main/webapp/ui/public/
+```
+
+### 修正コマンド（問題発見時）
+
+```bash
+# テストファイル一括修正
+find core/src/main/webapp/ui/tests -name "*.ts" -exec sed -i '' 's|/ui/dist/|/ui/|g' {} \;
+
+# ソースファイルは個別に確認して修正
+```
+
+---
+
 ## 🧪 テスト委譲のプロセス
 
 ### ステップ1: 委譲前の準備（委譲元エージェント）
@@ -64,12 +114,16 @@ docker ps                       # 全コンテナ起動確認
 ./qa-test.sh                    # QAテスト全通過確認（56/56）
 git status                      # クリーンな状態確認
 
-# 2. ベースライン結果の記録
+# 2. 外部認証テスト実行（CRITICAL - 必須）
 cd core/src/main/webapp/ui
+npx playwright test tests/auth/ --project=chromium
+# 認証テスト通過確認（6/7以上）
+
+# 3. ベースライン結果の記録
 npx playwright test > baseline_results.txt
 # 現在の通過率を記録
 
-# 3. 委譲内容をHANDOFF.mdに記載
+# 4. 委譲内容をHANDOFF.mdに記載
 ```
 
 **委譲内容の明確化**:
@@ -126,6 +180,8 @@ git push origin <branch-name>
 **環境準備**:
 - [ ] Dockerコンテナ全て起動済み（`docker ps`で確認）
 - [ ] QAテスト全通過（`./qa-test.sh` → 56/56）
+- [ ] **外部認証テスト通過**（`npx playwright test tests/auth/` → 6/7以上）⚠️ **必須**
+- [ ] **UIパス統一確認**（`grep -r "/ui/dist/"` → ゼロ件）⚠️ **必須**
 - [ ] Gitブランチがクリーン（`git status`）
 - [ ] 最新のコミットがプッシュ済み
 

@@ -509,6 +509,47 @@ npx playwright test tests/auth/ --project=chromium
 
 **Note**: SSO users must pre-exist in NemakiWare. Auto-provisioning is not yet implemented.
 
+### UI パス統一 再発防止策 ⚠️ CRITICAL
+
+**問題の再発** (2025-12-09): Git worktree で `/ui/dist/` パスが統一されておらず、外部認証が動作しなかった
+
+**根本原因**:
+- メインブランチでのパス統一が worktree に適用されていなかった
+- 回帰テストに外部認証テストが含まれていなかった
+
+**再発防止チェックリスト** (必須):
+
+```bash
+# 1. UIパス統一確認（ゼロ件が正常）
+grep -r "/ui/dist/" core/src/main/webapp/ui/src/ --include="*.ts" --include="*.tsx"
+grep -r "/ui/dist/" core/src/main/webapp/ui/tests/ --include="*.ts"
+grep -r "/ui/dist/" core/src/main/webapp/ui/login/
+grep -r "/ui/dist/" core/src/main/webapp/ui/public/
+
+# 2. 外部認証テスト実行（6/7以上が正常）
+cd core/src/main/webapp/ui
+npx playwright test tests/auth/ --project=chromium
+
+# 3. コールバックファイル確認
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/oidc-callback.html  # 200
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/saml-callback.html  # 200
+```
+
+**パス規約** (厳守):
+
+| 正しいパス | 禁止パス |
+|-----------|---------|
+| `/core/ui/index.html` | `/core/ui/dist/index.html` ❌ |
+| `/core/ui/oidc-callback.html` | `/core/ui/dist/oidc-callback.html` ❌ |
+| `/core/ui/assets/` | `/core/ui/dist/assets/` ❌ |
+
+**影響ファイル一覧**:
+- `AuthContext.tsx` - ログアウトリダイレクト
+- `ProtectedRoute.tsx` - 認証エラーリダイレクト
+- `login/index.html` - リダイレクト URL
+- `Layout.tsx`, `Login.tsx` - ロゴパス
+- `tests/**/*.spec.ts` - 全テストURL
+
 ---
 
 ## Recent Major Changes (2025-11-12 - ACL Cache Staleness Fix) ✅
