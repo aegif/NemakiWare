@@ -1348,6 +1348,40 @@ The following modules are currently suspended from active maintenance but are pr
 </profile>
 ```
 
+### Build Requirements and Limitations
+
+**IMPORTANT**: NemakiWare uses custom local dependencies that are NOT available in Maven Central.
+
+**Why single-module builds fail**:
+```bash
+# ❌ This will FAIL - artifacts not in Maven Central
+mvn -pl core -DskipTests compile -q
+
+# Error: Could not find artifact jp.aegif.nemaki:common:jar:X.X.X
+```
+
+**Root Cause**:
+- NemakiWare modules (`common`, `solr`, etc.) are not published to Maven Central
+- Self-built Jakarta EE converted JARs are stored locally in `/lib/jakarta-converted/`
+- Custom OpenCMIS 1.1.0-nemakiware JARs are stored in `/lib/built-jars/`
+
+**✅ Correct Build Commands**:
+```bash
+# Always use -f core/pom.xml from project root
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests
+
+# Or build from project root (builds all modules)
+mvn clean package -Pdevelopment -DskipTests
+
+# For quick compile-only verification
+mvn clean compile -f core/pom.xml -Pdevelopment
+```
+
+**Why this works**:
+- The `core/pom.xml` includes `<systemPath>` references to local JARs
+- Parent POM defines all module dependencies with correct versions
+- Build must be invoked from project root or with `-f` flag
+
 ### Test Configuration Status
 
 **Current Test Execution Status**:
