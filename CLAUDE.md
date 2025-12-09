@@ -412,52 +412,6 @@ npx playwright test --reporter=list
 **Test Log**:
 - `/tmp/playwright-tests.log`: Complete Playwright test execution output with detailed browser console logs
 
-#### OIDC/SAML Authentication Tests (2025-12-09) ✅
-
-**Status**: All external authentication tests passing with Keycloak IdP
-
-**Test Results**:
-| Test Suite | Tests | Status |
-|------------|-------|--------|
-| login.spec.ts | 7 | ✅ 7/7 PASS |
-| oidc-login.spec.ts | 5 | ✅ 5/5 PASS |
-| saml-login.spec.ts | 7 | ✅ 7/7 PASS |
-| **Total** | **19** | **✅ 19/19 PASS** |
-
-**Prerequisites**:
-- Keycloak container running at `localhost:8088`
-- Realm `nemakiware` with OIDC/SAML clients configured
-- Test user: `testuser:password`
-
-**Keycloak Setup**:
-```bash
-cd docker
-docker compose -f docker-compose.keycloak.yml up -d
-# Wait ~60 seconds for Keycloak to start
-curl -s http://localhost:8088/realms/nemakiware/.well-known/openid-configuration
-```
-
-**Test Execution**:
-```bash
-cd core/src/main/webapp/ui
-npx playwright test tests/auth/ --project=chromium
-```
-
-**Keycloak Configuration** (`docker/realm-export.json`):
-- **OIDC Client**: `nemakiware-oidc-client` (Authorization Code flow)
-- **SAML Client**: `nemakiware-saml-client` (SAML 2.0)
-- **Redirect URIs**: `http://localhost:8080/core/ui/*`
-
-**Test Coverage**:
-- ✅ OIDC/SAML login button visibility
-- ✅ Redirect to Keycloak IdP
-- ✅ Complete login flow (Keycloak → NemakiWare)
-- ✅ Token conversion endpoints (`/core/rest/repo/{repositoryId}/authtoken/oidc/convert`, `/core/rest/repo/{repositoryId}/authtoken/saml/convert`)
-- ✅ Invalid request rejection
-- ✅ Non-existent user rejection (auto-provisioning not implemented)
-
-**Note**: SSO users must pre-exist in NemakiWare. Auto-provisioning is not yet implemented.
-
 #### Verification Summary
 
 **Test Coverage Analysis**:
@@ -487,6 +441,73 @@ npx playwright test tests/auth/ --project=chromium
 - All dependency updates verified with comprehensive test coverage
 - No source code modifications required
 - No configuration changes required
+
+---
+
+## Recent Major Changes (2025-12-09 - UI Path Unification & External Auth) ✅
+
+### UI Path Unification - `/core/ui/dist/` → `/core/ui/`
+
+**CRITICAL FIX (2025-12-09)**: Unified all UI paths to remove `/dist/` from URLs for consistency and OIDC/SAML callback compatibility.
+
+**Problem Summary**:
+- **Symptom**: OIDC/SAML authentication callbacks failing with asset loading errors
+- **Root Cause**: Inconsistent UI paths - some code used `/core/ui/dist/`, others used `/core/ui/`
+- **Impact**: External authentication (OIDC/SAML) was broken
+
+**Files Modified**:
+| Category | Files | Changes |
+|----------|-------|---------|
+| Config | `repositories-default.yml` | thinClientUri path |
+| UI Components | `PDFPreview.tsx` | pdf-worker path |
+| Auth Callbacks | `oidc-callback.html`, `saml-callback.html` | Asset references (auto-updated by Vite plugin) |
+| Login | `login/index.html` | Redirect URL |
+| Tests | 17 Playwright test files | All test URLs |
+| Docs | CLAUDE.md, AGENTS.md, etc. | Path references |
+
+**Vite Plugin Added** (`vite.config.ts`):
+- `updateCallbackHtmlPlugin()` automatically updates OIDC/SAML callback HTML files with correct asset hashes after each build
+
+### PDF Worker Deployment Fix
+
+**CRITICAL FIX (2025-12-09)**: Fixed PDF preview "Failed to fetch dynamically imported module" error.
+
+**Problem Summary**:
+- **Symptom**: PDF preview failed with worker loading error after path unification
+- **Root Cause**: `pdf-worker/` directory not included in WAR deployment, `.mjs` files not served by Tomcat
+
+**Solution**:
+| File | Change |
+|------|--------|
+| `pom.xml` | Added `pdf-worker/**` to Maven webResources includes |
+| `web.xml` | Added `.mjs` MIME type mapping (`text/javascript`) |
+| `web.xml` | Added `*.mjs` servlet mapping for default servlet |
+
+### OIDC/SAML Authentication - Fully Verified ✅
+
+**Test Results**: All external authentication tests passing with Keycloak IdP
+
+| Test Suite | Tests | Status |
+|------------|-------|--------|
+| login.spec.ts | 7 | ✅ PASS |
+| oidc-login.spec.ts | 5 | ✅ PASS |
+| saml-login.spec.ts | 7 | ✅ PASS |
+| **Total** | **19** | **✅ 19/19 PASS** |
+
+**Keycloak Setup**:
+```bash
+cd docker
+docker compose -f docker-compose.keycloak.yml up -d
+# Wait ~60 seconds for Keycloak to start
+```
+
+**Test Execution**:
+```bash
+cd core/src/main/webapp/ui
+npx playwright test tests/auth/ --project=chromium
+```
+
+**Note**: SSO users must pre-exist in NemakiWare. Auto-provisioning is not yet implemented.
 
 ---
 
