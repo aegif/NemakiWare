@@ -180,8 +180,9 @@ git push origin <branch-name>
 **環境準備**:
 - [ ] Dockerコンテナ全て起動済み（`docker ps`で確認）
 - [ ] QAテスト全通過（`./qa-test.sh` → 56/56）
-- [ ] **外部認証テスト通過**（`npx playwright test tests/auth/` → 6/7以上）⚠️ **必須**
+- [ ] **外部認証テスト通過**（`npx playwright test tests/auth/` → 19/19）⚠️ **必須**
 - [ ] **UIパス統一確認**（`grep -r "/ui/dist/"` → ゼロ件）⚠️ **必須**
+- [ ] **OIDC設定確認**（デプロイ済みJSに`localhost:8088`が含まれること）⚠️ **必須**
 - [ ] Gitブランチがクリーン（`git status`）
 - [ ] 最新のコミットがプッシュ済み
 

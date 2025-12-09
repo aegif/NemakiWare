@@ -550,6 +550,39 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/saml-callba
 - `Layout.tsx`, `Login.tsx` - ロゴパス
 - `tests/**/*.spec.ts` - 全テストURL
 
+### UI ビルドの古い設定問題 ⚠️ CRITICAL
+
+**問題** (2025-12-09): ビルド済み JS に古い OIDC 設定 (`demo.duendesoftware.com`) が残っていた
+
+**症状**: OIDC ボタンクリック → Keycloak ではなく `demo.duendesoftware.com` にリダイレクト
+
+**根本原因**:
+- ソースファイル (`config/oidc.ts`) は正しい設定 (`localhost:8088`)
+- しかし `dist/assets/*.js` のビルド結果が古かった
+
+**解決方法**:
+```bash
+# 1. UI 再ビルド
+cd core/src/main/webapp/ui && npm run build
+
+# 2. ビルド結果確認
+grep -o "duendesoftware\|localhost:8088" dist/assets/*.js
+# 期待: localhost:8088 のみ表示
+
+# 3. WAR 再ビルド & デプロイ
+cd /path/to/NemakiWare
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests
+cp core/target/core.war docker/core/core.war
+cd docker && docker compose -f docker-compose-simple.yml restart core
+```
+
+**再発防止**: デプロイ前に以下を確認
+```bash
+# デプロイ済み JS で OIDC 設定確認
+curl -s http://localhost:8080/core/ui/assets/index-*.js 2>/dev/null | grep -o "localhost:8088\|duendesoftware" | head -5
+# 期待: localhost:8088 のみ
+```
+
 ---
 
 ## Recent Major Changes (2025-11-12 - ACL Cache Staleness Fix) ✅
