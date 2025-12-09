@@ -8,15 +8,15 @@
 		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
 		http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc.xsd">
 
-	<!-- Enable Spring MVC configuration -->
-	<mvc:annotation-driven>
-		<mvc:message-converters>
-			<!-- JSON message converter with unified ObjectMapper -->
-			<bean class="org.springframework.http.converter.json.MappingJackson2HttpMessageConverter">
-				<property name="objectMapper" ref="nemakiObjectMapper" />
-			</bean>
-		</mvc:message-converters>
-	</mvc:annotation-driven>
+	<!-- Enable Spring MVC configuration with default JSON converter -->
+	<mvc:annotation-driven />
+
+	<!-- Optional: Custom ObjectMapper configuration for JSON handling -->
+	<!-- Uncomment and customize if needed:
+	<bean id="jacksonObjectMapper" class="com.fasterxml.jackson.databind.ObjectMapper">
+		<property name="serializationInclusion" value="NON_NULL"/>
+	</bean>
+	-->
 
 	<!-- Enable CORS for API endpoints -->
 	<mvc:cors>

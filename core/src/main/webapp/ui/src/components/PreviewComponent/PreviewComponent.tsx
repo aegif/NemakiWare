@@ -212,8 +212,8 @@
  * - Unsupported codec: Video/Office previews may show error from specialized component
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Alert, Card, Spin } from 'antd';
+import React from 'react';
+import { Alert, Card } from 'antd';
 import { CMISService } from '../../services/cmis';
 import { CMISObject } from '../../types/cmis';
 import { getFileType } from '../../utils/previewUtils';
@@ -222,102 +222,25 @@ import { VideoPreview } from './VideoPreview';
 import { PDFPreview } from './PDFPreview';
 import { TextPreview } from './TextPreview';
 import { OfficePreview } from './OfficePreview';
-import { useAuth } from '../../contexts/AuthContext';
 
 interface PreviewComponentProps {
   repositoryId: string;
   object: CMISObject;
 }
 
+import { useAuth } from '../../contexts/AuthContext';
 export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId, object }) => {
   const { handleAuthError } = useAuth();
-  const cmisService = useMemo(() => new CMISService(handleAuthError), [handleAuthError]);
+  const cmisService = new CMISService(handleAuthError);
 
-  const [contentUrl, setContentUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Track the current blob URL for cleanup
-  const blobUrlRef = useRef<string | null>(null);
-
-  // Get file type and mime type (may be null if no content)
-  const mimeType = object.contentStreamMimeType;
-  const fileType = mimeType ? getFileType(mimeType) : 'unknown';
-
-  // Fetch content as blob URL with authentication
-  useEffect(() => {
-    // Skip fetch if no content stream
-    if (!mimeType) {
-      setLoading(false);
-      return;
-    }
-
-    let isMounted = true;
-
-    const fetchContent = async () => {
-      setLoading(true);
-      setError(null);
-
-      // Revoke previous blob URL to prevent memory leak
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
-
-      try {
-        const blobUrl = await cmisService.getContentBlobUrl(repositoryId, object.id, mimeType);
-
-        if (isMounted) {
-          blobUrlRef.current = blobUrl;
-          setContentUrl(blobUrl);
-          setLoading(false);
-        } else {
-          // Component unmounted, revoke the URL
-          URL.revokeObjectURL(blobUrl);
-        }
-      } catch (err) {
-        if (isMounted) {
-          console.error('[PreviewComponent] Failed to fetch content:', err);
-          setError(err instanceof Error ? err.message : 'コンテンツの取得に失敗しました');
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchContent();
-
-    // Cleanup function
-    return () => {
-      isMounted = false;
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
-    };
-  }, [repositoryId, object.id, mimeType, cmisService]);
-
-  // Check for content stream after hooks
-  if (!mimeType) {
+  if (!object.contentStreamMimeType) {
     return <Alert message="プレビューできません" description="ファイルにコンテンツがありません" type="info" />;
   }
 
+  const fileType = getFileType(object.contentStreamMimeType);
+  const contentUrl = cmisService.getDownloadUrl(repositoryId, object.id);
+
   const renderPreview = () => {
-    if (loading) {
-      return (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Spin tip="コンテンツを読み込み中..." />
-        </div>
-      );
-    }
-
-    if (error) {
-      return <Alert message="プレビューエラー" description={error} type="error" />;
-    }
-
-    if (!contentUrl) {
-      return <Alert message="プレビューエラー" description="コンテンツURLを取得できませんでした" type="error" />;
-    }
-
     try {
       switch (fileType) {
         case 'image':
@@ -329,9 +252,9 @@ export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId
         case 'text':
           return <TextPreview url={contentUrl} fileName={object.name} />;
         case 'office':
-          return <OfficePreview url={contentUrl} fileName={object.name} mimeType={mimeType} repositoryId={repositoryId} objectId={object.id} />;
+          return <OfficePreview url={contentUrl} fileName={object.name} mimeType={object.contentStreamMimeType!} repositoryId={repositoryId} objectId={object.id} />;
         default:
-          return <Alert message="プレビューできません" description={`${mimeType} はサポートされていません`} type="warning" />;
+          return <Alert message="プレビューできません" description={`${object.contentStreamMimeType} はサポートされていません`} type="warning" />;
       }
     } catch (err) {
       return <Alert message="プレビューエラー" description="プレビューの表示中にエラーが発生しました" type="error" />;

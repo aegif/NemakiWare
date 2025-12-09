@@ -1,7 +1,6 @@
 package jp.aegif.nemaki.businesslogic.rendition.impl;
 
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
-import jp.aegif.nemaki.businesslogic.rendition.RenditionMapping;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -27,8 +26,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -40,16 +37,10 @@ public class JodRenditionManagerImpl implements RenditionManager {
 	private static final Log log = LogFactory
 			.getLog(JodRenditionManagerImpl.class);
 
-	// Rendition mapping configuration
-	private List<RenditionMapping> renditionMappings;
-	private boolean renditionEnabled;
-	private String defaultKind;
-
-	// Default values for centralized management
-	private static final boolean DEFAULT_RENDITION_ENABLED = true;
-	private static final String DEFAULT_RENDITION_KIND = "cmis:preview";
-	private static final String DEFAULT_MAPPING_FILE = "rendition-mapping.yml";
-	private static final boolean DEFAULT_LAZY_CREATE = false;
+	// Singleton OfficeManager to handle concurrent requests
+	private OfficeManager officeManager;
+	private final Object officeManagerLock = new Object();
+	private volatile boolean officeManagerStarted = false;
 
 	@PostConstruct
 	public void init() {
@@ -73,6 +64,7 @@ public class JodRenditionManagerImpl implements RenditionManager {
 		} else {
 			log.warn("YAML result is not a List, skipping rendition format initialization. Result type: " + 
 			        (yamlResult != null ? yamlResult.getClass().getName() : "null"));
+			return;
 		}
 
 		if (CollectionUtils.isNotEmpty(yml)) {
@@ -85,233 +77,119 @@ public class JodRenditionManagerImpl implements RenditionManager {
 						mediaType);
 				registry.addFormat(df);
 			}
+
 		}
-
-		// NEW: Load rendition enabled flag with default
-		String enabledStr = propertyManager.readValue(PropertyKey.RENDITION_ENABLED);
-		renditionEnabled = (enabledStr != null) ? Boolean.parseBoolean(enabledStr) : DEFAULT_RENDITION_ENABLED;
-		log.info("Rendition feature enabled: " + renditionEnabled);
-
-		// NEW: Load default kind with normalization
-		String configuredKind = propertyManager.readValue(PropertyKey.RENDITION_DEFAULT_KIND);
-		defaultKind = normalizeRenditionKind(configuredKind);
-		log.info("Default rendition kind: " + defaultKind);
-
-		// NEW: Load rendition mapping
-		loadRenditionMapping();
 	}
 
 	/**
-	 * Normalize rendition kind to CMIS-compliant format.
-	 * Accepts both 'preview' and 'cmis:preview', normalizes to 'cmis:preview'.
-	 * This addresses the requirement for 'preview' as default while maintaining CMIS compliance.
+	 * Ensure the singleton OfficeManager is started.
+	 * Uses double-checked locking for thread safety.
 	 */
-	private String normalizeRenditionKind(String kind) {
-		if (kind == null || kind.isEmpty()) {
-			return DEFAULT_RENDITION_KIND;
-		}
+	private void ensureOfficeManagerStarted() throws OfficeException {
+		if (!officeManagerStarted) {
+			synchronized (officeManagerLock) {
+				if (!officeManagerStarted) {
+					String officehome = propertyManager.readValue(PropertyKey.JODCONVERTER_OFFICEHOME);
+					log.info("[JodRendition] Initializing singleton OfficeManager with office home: " + officehome);
 
-		// If already has cmis: prefix, return as-is
-		if (kind.startsWith("cmis:")) {
-			return kind;
-		}
-
-		// Normalize short form to CMIS form
-		String cmisKind = "cmis:" + kind;
-		log.debug("Normalized rendition kind from '" + kind + "' to '" + cmisKind + "'");
-		return cmisKind;
-	}
-
-	@SuppressWarnings("unchecked")
-	private void loadRenditionMapping() {
-		renditionMappings = new ArrayList<>();
-		String mappingFile = propertyManager.readValue(PropertyKey.RENDITION_MAPPING_DEFINITION);
-		if (mappingFile == null || mappingFile.isEmpty()) {
-			mappingFile = DEFAULT_MAPPING_FILE;
-		}
-
-		try {
-			YamlManager yamlManager = new YamlManager(mappingFile);
-			Object yamlResult = yamlManager.loadYml();
-			
-			if (yamlResult instanceof Map) {
-				Map<String, Object> ymlMap = (Map<String, Object>) yamlResult;
-				List<Map<String, Object>> mappings = (List<Map<String, Object>>) ymlMap.get("mappings");
-
-				if (mappings != null) {
-					for (Map<String, Object> mapping : mappings) {
-						RenditionMapping rm = new RenditionMapping();
-						rm.setSourceMediaTypes((List<String>) mapping.get("sourceMediaTypes"));
-						rm.setConverter((String) mapping.get("converter"));
-						rm.setTargetMediaType((String) mapping.get("targetMediaType"));
-						String kind = (String) mapping.get("kind");
-						rm.setKind(normalizeRenditionKind(kind));
-						renditionMappings.add(rm);
+					// Check if office home exists
+					File officeHomeDir = new File(officehome);
+					if (!officeHomeDir.exists()) {
+						throw new OfficeException("Office home directory does not exist: " + officehome);
 					}
-					log.info("Loaded " + renditionMappings.size() + " rendition mappings from " + mappingFile);
+
+					officeManager = new DefaultOfficeManagerBuilder()
+							.setOfficeHome(officehome)
+							.setPortNumber(8100)
+							.build();
+					officeManager.start();
+					officeManagerStarted = true;
+					log.info("[JodRendition] Singleton OfficeManager started successfully on port 8100");
 				}
-			} else {
-				log.warn("Rendition mapping YAML is not a Map, using defaults");
-				addDefaultMappings();
 			}
-		} catch (Exception e) {
-			log.warn("Failed to load rendition mapping from " + mappingFile + ", using defaults", e);
-			addDefaultMappings();
 		}
-
-		if (renditionMappings.isEmpty()) {
-			log.info("No rendition mappings loaded, adding defaults");
-			addDefaultMappings();
-		}
-	}
-
-	private void addDefaultMappings() {
-		// Word
-		RenditionMapping word = new RenditionMapping();
-		word.setSourceMediaTypes(Arrays.asList(
-			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-			"application/msword"
-		));
-		word.setConverter("jod");
-		word.setTargetMediaType("application/pdf");
-		word.setKind(defaultKind);
-		renditionMappings.add(word);
-
-		// Excel
-		RenditionMapping excel = new RenditionMapping();
-		excel.setSourceMediaTypes(Arrays.asList(
-			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-			"application/vnd.ms-excel"
-		));
-		excel.setConverter("jod");
-		excel.setTargetMediaType("application/pdf");
-		excel.setKind(defaultKind);
-		renditionMappings.add(excel);
-
-		// PowerPoint
-		RenditionMapping ppt = new RenditionMapping();
-		ppt.setSourceMediaTypes(Arrays.asList(
-			"application/vnd.openxmlformats-officedocument.presentationml.presentation",
-			"application/vnd.ms-powerpoint"
-		));
-		ppt.setConverter("jod");
-		ppt.setTargetMediaType("application/pdf");
-		ppt.setKind(defaultKind);
-		renditionMappings.add(ppt);
-
-		// OpenDocument formats
-		RenditionMapping odf = new RenditionMapping();
-		odf.setSourceMediaTypes(Arrays.asList(
-			"application/vnd.oasis.opendocument.text",
-			"application/vnd.oasis.opendocument.spreadsheet",
-			"application/vnd.oasis.opendocument.presentation"
-		));
-		odf.setConverter("jod");
-		odf.setTargetMediaType("application/pdf");
-		odf.setKind(defaultKind);
-		renditionMappings.add(odf);
-
-		log.info("Added " + renditionMappings.size() + " default rendition mappings");
 	}
 
 	public ContentStream convertToPdf(ContentStream contentStream,
 			String documentName) {
+		log.info("[JodRendition] Starting PDF conversion for: " + documentName + ", mimeType: " + contentStream.getMimeType());
+
 		//Skip pdf file (Avoid converting pdf to pdf)
 		if(contentStream.getMimeType().equals("application/pdf")){
+			log.info("[JodRendition] Skipping PDF file - already PDF");
 			return contentStream;
 		}
 
+		OutputStream outputStream = null;
 		File inputFile = null;
 		File outputFile = null;
-		OfficeManager officeManager = null;
 		try {
 			String prefix = getPrefix(documentName);
 			String suffix = getSuffix(documentName);
+			log.info("[JodRendition] Creating temp file with prefix=" + prefix + ", suffix=." + suffix);
+
 			inputFile = convertInputStreamToFile(prefix, "." + suffix,
 					contentStream.getStream());
 			inputFile.deleteOnExit();
+			log.info("[JodRendition] Input file created: " + inputFile.getAbsolutePath() + ", size=" + inputFile.length());
+
 			outputFile = File.createTempFile("output", ".pdf");
 			outputFile.deleteOnExit();
+			log.info("[JodRendition] Output file created: " + outputFile.getAbsolutePath());
 
-			String officehome = propertyManager
-					.readValue(PropertyKey.JODCONVERTER_OFFICEHOME);
-			// Read port from configuration with default fallback
-			int portNumber = getJodConverterPort();
-			officeManager = new DefaultOfficeManagerBuilder().setOfficeHome(officehome).setPortNumber(portNumber).build();
-			officeManager.start();
+			// Ensure singleton OfficeManager is started
+			ensureOfficeManagerStarted();
 
-			OfficeDocumentConverter converter = new OfficeDocumentConverter(
-					officeManager);
-			converter.convert(inputFile, outputFile);
-
-			// Read file into byte array to avoid FileInputStream leak
-			// (FileInputStream would remain open if returned directly)
-			byte[] pdfBytes;
-			try (InputStream fis = new FileInputStream(outputFile);
-				 ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-				byte[] buffer = new byte[8192];
-				int read;
-				while ((read = fis.read(buffer)) != -1) {
-					baos.write(buffer, 0, read);
-				}
-				pdfBytes = baos.toByteArray();
+			// Synchronize the conversion to prevent concurrent LibreOffice issues
+			synchronized (officeManagerLock) {
+				log.info("[JodRendition] Starting conversion (synchronized)...");
+				OfficeDocumentConverter converter = new OfficeDocumentConverter(officeManager);
+				converter.convert(inputFile, outputFile);
+				log.info("[JodRendition] Conversion completed, output size=" + outputFile.length());
 			}
 
+			// convert back
+			FileInputStream fis = new FileInputStream(outputFile);
 			ContentStreamImpl result = new ContentStreamImpl();
-			result.setStream(new ByteArrayInputStream(pdfBytes));
+			result.setStream(fis);
 			result.setFileName(contentStream.getFileName());
 			result.setMimeType("application/pdf");
-			result.setLength(BigInteger.valueOf(pdfBytes.length));
+			result.setLength(BigInteger.valueOf(outputFile.length()));
 
+			log.info("[JodRendition] PDF conversion successful for: " + documentName);
 			return result;
 
-		} catch (OfficeException | IOException e) {
-			log.error("Failed to convert to PDF", e);
+		} catch (IOException e) {
+			log.error("[JodRendition] IOException during PDF conversion: " + e.getMessage(), e);
+		} catch (OfficeException e) {
+			log.error("[JodRendition] OfficeException during PDF conversion: " + e.getMessage(), e);
+			// Reset the office manager state so it can be restarted on next request
+			synchronized (officeManagerLock) {
+				if (officeManager != null) {
+					try {
+						officeManager.stop();
+					} catch (OfficeException ex) {
+						log.warn("[JodRendition] Error stopping failed OfficeManager: " + ex.getMessage());
+					}
+					officeManager = null;
+					officeManagerStarted = false;
+				}
+			}
+		} catch (Exception e) {
+			log.error("[JodRendition] Unexpected exception during PDF conversion: " + e.getMessage(), e);
 		} finally {
-			// Always stop OfficeManager to prevent resource leak
-			if (officeManager != null) {
+			if (outputStream != null) {
 				try {
-					officeManager.stop();
-				} catch (Exception e) {
-					log.warn("Failed to stop OfficeManager cleanly", e);
+					outputStream.close();
+				} catch (IOException e) {
+					e.printStackTrace();
 				}
 			}
-
-			// Clean up temp files
-			if (inputFile != null && inputFile.exists()) {
-				inputFile.delete();
-			}
-			if (outputFile != null && outputFile.exists()) {
-				outputFile.delete();
-			}
+			// Note: Don't stop the singleton OfficeManager here - it stays running for reuse
 		}
 
+		log.error("[JodRendition] PDF conversion failed for: " + documentName);
 		return null;
-	}
-
-	/**
-	 * Get JODConverter port from configuration with default fallback.
-	 * Default port is 8100, which is the standard LibreOffice/OpenOffice headless port.
-	 *
-	 * @return configured port number, or 8100 if not configured
-	 */
-	private int getJodConverterPort() {
-		final int DEFAULT_PORT = 8100;
-		try {
-			String portStr = propertyManager.readValue(PropertyKey.JODCONVERTER_PORT);
-			if (portStr != null && !portStr.trim().isEmpty()) {
-				int port = Integer.parseInt(portStr.trim());
-				if (port > 0 && port < 65536) {
-					log.debug("Using configured JODConverter port: " + port);
-					return port;
-				} else {
-					log.warn("Invalid JODConverter port number: " + port + ", using default: " + DEFAULT_PORT);
-				}
-			}
-		} catch (NumberFormatException e) {
-			log.warn("Invalid JODConverter port configuration, using default: " + DEFAULT_PORT);
-		}
-		return DEFAULT_PORT;
 	}
 
 	/**
@@ -365,65 +243,8 @@ public class JodRenditionManagerImpl implements RenditionManager {
 	}
 
 	public boolean checkConvertible(String mediatype) {
-		// First check if the mimetype is configured in our rendition mappings
-		boolean configured = false;
-		for (RenditionMapping mapping : renditionMappings) {
-			if (mapping.getSourceMediaTypes() != null && mapping.getSourceMediaTypes().contains(mediatype)) {
-				configured = true;
-				break;
-			}
-		}
-
-		if (!configured) {
-			log.debug("Mimetype not configured for rendition: " + mediatype);
-			return false;
-		}
-
-		// Then verify the JODConverter registry supports this format
 		DocumentFormat df = registry.getFormatByMediaType(mediatype);
-		boolean supportedByConverter = df != null;
-		if (!supportedByConverter) {
-			log.debug("Mimetype configured but not supported by JODConverter registry: " + mediatype);
-		}
-		return supportedByConverter;
-	}
-
-	@Override
-	public String getTargetMimeType(String sourceMimeType) {
-		for (RenditionMapping mapping : renditionMappings) {
-			if (mapping.getSourceMediaTypes() != null && 
-				mapping.getSourceMediaTypes().contains(sourceMimeType)) {
-				return mapping.getTargetMediaType();
-			}
-		}
-		return null;
-	}
-
-	@Override
-	public String getRenditionKind(String sourceMimeType) {
-		for (RenditionMapping mapping : renditionMappings) {
-			if (mapping.getSourceMediaTypes() != null && 
-				mapping.getSourceMediaTypes().contains(sourceMimeType)) {
-				return mapping.getKind();
-			}
-		}
-		return defaultKind;
-	}
-
-	@Override
-	public boolean isRenditionEnabled() {
-		return renditionEnabled;
-	}
-
-	@Override
-	public List<String> getSupportedSourceMimeTypes() {
-		List<String> result = new ArrayList<>();
-		for (RenditionMapping mapping : renditionMappings) {
-			if (mapping.getSourceMediaTypes() != null) {
-				result.addAll(mapping.getSourceMediaTypes());
-			}
-		}
-		return result;
+		return df != null;
 	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {

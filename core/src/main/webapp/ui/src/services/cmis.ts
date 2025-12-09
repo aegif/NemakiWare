@@ -792,8 +792,14 @@ export class CMISService {
                     }
                   }
 
+                  // DEBUG: Log allProperties structure to understand why path extraction fails
+                  console.log('[CMIS DEBUG] allProperties keys:', Object.keys(allProperties));
+                  console.log('[CMIS DEBUG] cmis:path raw value:', allProperties['cmis:path']);
+                  console.log('[CMIS DEBUG] All properties:', allProperties);
+
                   // Extract path from allProperties if available
                   const path = allProperties['cmis:path'] as string | undefined;
+                  console.log('[CMIS DEBUG] Extracted path:', path);
 
                   const cmisObject: CMISObject = {
                     id: id,
@@ -2642,25 +2648,7 @@ export class CMISService {
           if (xhr.status === 200) {
             try {
               const response = JSON.parse(xhr.responseText);
-              // Transform REST API response to CMISObject format
-              // REST API returns: { id, type, name, originalId, parentId, created, creator, mimeType, isDeletedWithParent }
-              // CMISObject expects: { id, name, baseType, objectType, lastModificationDate, contentStreamMimeType, ... }
-              const archives = (response.archives || []).map((archive: any) => ({
-                id: archive.id,
-                name: archive.name,
-                baseType: archive.type,  // REST API 'type' maps to CMISObject 'baseType'
-                objectType: archive.type,
-                parentId: archive.parentId,
-                lastModificationDate: archive.created,  // REST API 'created' is the archive date
-                createdBy: archive.creator,
-                contentStreamMimeType: archive.mimeType,
-                properties: {},
-                allowableActions: [],
-                // Archive-specific fields for display
-                originalId: archive.originalId,
-                isDeletedWithParent: archive.isDeletedWithParent
-              }));
-              resolve(archives);
+              resolve(response.archives || []);
             } catch (e) {
               reject(new Error('Invalid response format'));
             }
@@ -2822,17 +2810,17 @@ export class CMISService {
   async getContentStream(repositoryId: string, objectId: string): Promise<ArrayBuffer> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-
+      
       // Use AtomPub binding for content stream download
       xhr.open('GET', `/core/atom/${repositoryId}/content?id=${objectId}`, true);
       xhr.responseType = 'arraybuffer';
       xhr.setRequestHeader('Accept', 'application/octet-stream');
-
+      
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
-
+      
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
@@ -2844,9 +2832,55 @@ export class CMISService {
           }
         }
       };
-
+      
       xhr.onerror = () => {
         // Network error occurred
+        reject(new Error('Network error'));
+      };
+      
+      xhr.send();
+    });
+  }
+
+  /**
+   * Get renditions for a document (e.g., PDF preview for Office files)
+   * @param repositoryId Repository ID
+   * @param objectId Document object ID
+   * @returns Array of rendition objects with streamId, mimeType, kind, etc.
+   */
+  async getRenditions(repositoryId: string, objectId: string): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      // Use Jersey REST API endpoint for renditions
+      xhr.open('GET', `/core/rest/repo/${repositoryId}/renditions/${objectId}`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.renditions || response || []);
+            } catch (e) {
+              resolve([]);
+            }
+          } else if (xhr.status === 404) {
+            // No renditions found
+            resolve([]);
+          } else {
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
+          }
+        }
+      };
+
+      xhr.onerror = () => {
         reject(new Error('Network error'));
       };
 
@@ -2855,24 +2889,17 @@ export class CMISService {
   }
 
   /**
-   * Get a Blob URL for content stream that can be used in <img>, <video>, <iframe> tags.
-   * This method fetches the content with proper authentication headers and creates a Blob URL.
-   *
-   * IMPORTANT: The returned Blob URL should be revoked with URL.revokeObjectURL() when no longer needed
-   * to prevent memory leaks.
-   *
-   * @param repositoryId The repository ID
-   * @param objectId The object ID
-   * @param mimeType The MIME type of the content (e.g., 'image/jpeg', 'video/mp4')
-   * @returns Promise<string> A Blob URL that can be used in HTML elements
+   * Generate renditions for a document (triggers PDF conversion for Office files)
+   * @param repositoryId Repository ID
+   * @param objectId Document object ID
+   * @param force Force regeneration even if rendition exists
    */
-  async getContentBlobUrl(repositoryId: string, objectId: string, mimeType: string): Promise<string> {
+  async generateRenditions(repositoryId: string, objectId: string, force: boolean = false): Promise<any> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
 
-      // Use AtomPub binding for content stream download with authentication
-      xhr.open('GET', `/core/atom/${repositoryId}/content?id=${objectId}`, true);
-      xhr.responseType = 'blob';
+      xhr.open('POST', `/core/rest/repo/${repositoryId}/renditions/generate?objectId=${objectId}&force=${force}`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
 
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
@@ -2881,167 +2908,12 @@ export class CMISService {
 
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            // Create a Blob with the correct MIME type and generate a URL
-            const blob = new Blob([xhr.response], { type: mimeType });
-            const blobUrl = URL.createObjectURL(blob);
-            resolve(blobUrl);
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => {
-        reject(new Error('Network error while fetching content'));
-      };
-
-      xhr.send();
-    });
-  }
-
-  // ==========================================
-  // Rendition Operations
-  // ==========================================
-
-  /**
-   * Base URL for rendition REST API
-   * Separate from restBaseUrl to support different path structure
-   */
-  private renditionBaseUrl = '/core/api/v1/repo';
-
-  /**
-   * Get renditions for a document using AtomPub binding
-   * @param repositoryId The repository ID
-   * @param objectId The document object ID
-   * @returns Promise<Rendition[]> Array of renditions for the document
-   */
-  async getRenditions(repositoryId: string, objectId: string): Promise<any[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // Use AtomPub binding with renditionFilter=* to get rendition information
-      const url = `/core/atom/${repositoryId}/id?id=${encodeURIComponent(objectId)}&renditionFilter=*`;
-      xhr.open('GET', url, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              // Parse AtomPub XML response
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-
-              // Extract rendition elements using getElementsByTagName for reliable namespace handling
-              const renditions: any[] = [];
-
-              // Helper function to get element text by tag name (handles namespaced elements)
-              const getElementText = (parent: Element, localName: string): string => {
-                // Try with cmis: prefix first
-                let elements = parent.getElementsByTagName(`cmis:${localName}`);
-                if (elements.length > 0) {
-                  return elements[0].textContent || '';
-                }
-                // Fallback to local name without namespace
-                elements = parent.getElementsByTagName(localName);
-                if (elements.length > 0) {
-                  return elements[0].textContent || '';
-                }
-                return '';
-              };
-
-              // Get all rendition elements (try both with and without namespace prefix)
-              let renditionElements = xmlDoc.getElementsByTagName('cmis:rendition');
-              if (renditionElements.length === 0) {
-                renditionElements = xmlDoc.getElementsByTagName('rendition');
-              }
-
-              console.log('[CMISService.getRenditions] Found', renditionElements.length, 'rendition elements');
-
-              for (let i = 0; i < renditionElements.length; i++) {
-                const renditionEl = renditionElements[i];
-                const streamId = getElementText(renditionEl, 'streamId');
-                const mimetype = getElementText(renditionEl, 'mimetype');
-                const length = parseInt(getElementText(renditionEl, 'length') || '0', 10);
-                const kind = getElementText(renditionEl, 'kind');
-                const title = getElementText(renditionEl, 'title');
-                const height = parseInt(getElementText(renditionEl, 'height') || '0', 10);
-                const width = parseInt(getElementText(renditionEl, 'width') || '0', 10);
-
-                console.log('[CMISService.getRenditions] Rendition:', { streamId, mimetype, kind, length });
-
-                if (streamId) {
-                  renditions.push({
-                    id: streamId,
-                    streamId: streamId,
-                    mimetype: mimetype,
-                    length: length,
-                    kind: kind,
-                    title: title,
-                    height: height,
-                    width: width
-                  });
-                }
-              }
-
-              console.log('[CMISService.getRenditions] Returning', renditions.length, 'renditions');
-              resolve(renditions);
-            } catch (e) {
-              console.error('Failed to parse renditions from AtomPub response:', e);
-              reject(new Error('Failed to parse renditions response'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => {
-        reject(new Error('Network error while fetching renditions'));
-      };
-
-      xhr.send();
-    });
-  }
-
-  /**
-   * Generate rendition for a document
-   * @param repositoryId The repository ID
-   * @param objectId The document object ID
-   * @param force If true, regenerate even if rendition exists
-   * @returns Promise<string | null> Rendition ID if generated, null otherwise
-   */
-  async generateRendition(repositoryId: string, objectId: string, force: boolean = false): Promise<string | null> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      const url = `${this.renditionBaseUrl}/${repositoryId}/renditions/generate?objectId=${encodeURIComponent(objectId)}&force=${force}`;
-      xhr.open('POST', url, true);
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
+          if (xhr.status === 200 || xhr.status === 201 || xhr.status === 202) {
             try {
               const response = JSON.parse(xhr.responseText);
-              if (response.status === 'success') {
-                resolve(response.renditionId || null);
-              } else {
-                reject(new Error(response.message || 'Failed to generate rendition'));
-              }
+              resolve(response);
             } catch (e) {
-              reject(new Error('Failed to parse generate rendition response'));
+              resolve({ success: true });
             }
           } else {
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
@@ -3051,7 +2923,7 @@ export class CMISService {
       };
 
       xhr.onerror = () => {
-        reject(new Error('Network error while generating rendition'));
+        reject(new Error('Network error'));
       };
 
       xhr.send();
@@ -3059,79 +2931,22 @@ export class CMISService {
   }
 
   /**
-   * Get supported source mimetypes for rendition generation
-   * @param repositoryId The repository ID
-   * @returns Promise<{supportedTypes: string[], enabled: boolean}>
+   * Get rendition content as a Blob with proper authentication
+   * This is needed because react-pdf can't use token-based URLs directly.
+   * @param repositoryId Repository ID
+   * @param objectId Original document object ID
+   * @param streamId Rendition stream ID
+   * @returns Promise<Blob> PDF content as blob
    */
-  async getRenditionSupportedTypes(repositoryId: string): Promise<{supportedTypes: string[], enabled: boolean}> {
+  async getRenditionContent(repositoryId: string, objectId: string, streamId: string): Promise<Blob> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      const url = `${this.renditionBaseUrl}/${repositoryId}/renditions/supported-types`;
-      xhr.open('GET', url, true);
+      const url = `${this.baseUrl}/${repositoryId}?cmisselector=content&objectId=${objectId}&streamId=${streamId}`;
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              if (response.status === 'success') {
-                resolve({
-                  supportedTypes: response.supportedTypes || [],
-                  enabled: response.enabled || false
-                });
-              } else {
-                reject(new Error(response.message || 'Failed to get supported types'));
-              }
-            } catch (e) {
-              reject(new Error('Failed to parse supported types response'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => {
-        reject(new Error('Network error while fetching supported types'));
-      };
-
-      xhr.send();
-    });
-  }
-
-  /**
-   * Get rendition content stream URL with authentication
-   * Uses CMIS Browser Binding streamId parameter
-   * @param repositoryId The repository ID
-   * @param objectId The document object ID
-   * @param streamId The rendition stream ID
-   * @returns URL string for rendition content
-   */
-  getRenditionStreamUrl(repositoryId: string, objectId: string, streamId: string): string {
-    return `${this.baseUrl}/${repositoryId}/root?objectId=${encodeURIComponent(objectId)}&cmisselector=content&streamId=${encodeURIComponent(streamId)}`;
-  }
-
-  /**
-   * Get rendition content as Blob URL for display in iframe/embed
-   * @param repositoryId The repository ID
-   * @param objectId The document object ID
-   * @param streamId The rendition stream ID
-   * @param mimeType The MIME type of the rendition (e.g., 'application/pdf')
-   * @returns Promise<string> A Blob URL that can be used in HTML elements
-   */
-  async getRenditionBlobUrl(repositoryId: string, objectId: string, streamId: string, mimeType: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      const url = this.getRenditionStreamUrl(repositoryId, objectId, streamId);
       xhr.open('GET', url, true);
       xhr.responseType = 'blob';
 
+      // Set authentication headers (using the same headers as other CMIS requests)
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
@@ -3140,31 +2955,9 @@ export class CMISService {
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
-            // xhr.response is already a Blob when responseType is 'blob'
-            const responseBlob = xhr.response as Blob;
-            console.log('[CMISService.getRenditionBlobUrl] Response blob:', {
-              size: responseBlob.size,
-              type: responseBlob.type,
-              expectedMimeType: mimeType
-            });
-
-            // DEBUG: Check first bytes to verify it's actually a PDF
-            responseBlob.slice(0, 20).text().then(header => {
-              console.log('[CMISService.getRenditionBlobUrl] First 20 bytes:', header);
-              if (!header.startsWith('%PDF')) {
-                console.error('[CMISService.getRenditionBlobUrl] WARNING: Response is not a valid PDF! Header:', header);
-              }
-            });
-
-            // Use the response blob directly, or re-create with correct MIME type if needed
-            const blob = responseBlob.type === mimeType ? responseBlob : new Blob([responseBlob], { type: mimeType });
-            const blobUrl = URL.createObjectURL(blob);
-            console.log('[CMISService.getRenditionBlobUrl] Created blob URL:', blobUrl);
-            resolve(blobUrl);
+            resolve(xhr.response);
           } else {
-            console.error('[CMISService.getRenditionBlobUrl] HTTP error:', xhr.status, xhr.statusText);
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
+            reject(new Error(`Failed to fetch rendition content: HTTP ${xhr.status}`));
           }
         }
       };
@@ -3175,5 +2968,18 @@ export class CMISService {
 
       xhr.send();
     });
+  }
+
+  /**
+   * Get rendition content stream URL
+   * @param repositoryId Repository ID
+   * @param objectId Original document object ID
+   * @param streamId Rendition stream ID
+   * @returns URL for downloading rendition content
+   * @deprecated Use getRenditionContent() instead for authenticated access
+   */
+  getRenditionUrl(repositoryId: string, objectId: string, streamId: string): string {
+    const token = this.authService.getAuthToken();
+    return `${this.baseUrl}/${repositoryId}?cmisselector=content&objectId=${objectId}&streamId=${streamId}&token=${token}`;
   }
 }

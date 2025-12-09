@@ -2,9 +2,6 @@
   "name": "nemakiware-spa",
   "version": "2.4.2",
   "private": true,
-  "engines": {
-    "node": ">=20.19.0"
-  },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@types/react": "^18.2.0",
@@ -14,7 +11,6 @@
     "dayjs": "^1.11.0",
     "monaco-editor": "^0.52.2",
     "oidc-client-ts": "^3.3.0",
-    "pako": "^2.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-image-gallery": "^1.4.0",
@@ -25,7 +21,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/sync-callback-assets.js",
+    "build": "vite build",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
     "test": "playwright test",
@@ -39,7 +35,6 @@
   "devDependencies": {
     "@playwright/test": "^1.45.0",
     "@types/jszip": "^3.4.0",
-    "@types/pako": "^2.0.4",
     "@types/react-image-gallery": "^1.2.4",
     "@vitejs/plugin-react": "^5.1.1",
     "jszip": "^3.10.1",

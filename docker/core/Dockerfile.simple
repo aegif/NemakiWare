@@ -1,16 +1,14 @@
 FROM tomcat:10.1-jre17
 
-# Install curl, openjdk for jar command, LibreOffice for Office document preview, and fonts
+# Install curl, openjdk, LibreOffice (for PDF conversion), and Japanese fonts
 RUN apt-get update && apt-get install -y \
     curl \
     openjdk-17-jdk-headless \
     libreoffice-writer \
     libreoffice-calc \
     libreoffice-impress \
-    libreoffice-common \
-    fonts-dejavu \
-    fonts-liberation \
     fonts-noto-cjk \
+    fonts-noto-cjk-extra \
     && rm -rf /var/lib/apt/lists/*
 
 # Remove default Tomcat applications
