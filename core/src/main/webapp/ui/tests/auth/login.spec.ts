@@ -57,7 +57,7 @@
  *    - Rationale: Ant Design components require specific interaction sequence
  *
  * 6. Login Verification Strategy (Lines 48-59, 189-190):
- *    - Primary: URL contains '/ui/dist/' (successful redirect)
+ *    - Primary: URL contains '/ui/' (successful redirect)
  *    - Secondary: Password field not visible (left login page)
  *    - Tertiary: Main layout elements present (.ant-layout-sider, .ant-layout-content)
  *    - User display in header: text=admin
@@ -185,7 +185,7 @@ test.describe('NemakiWare Authentication', () => {
     await authHelper.login();
 
     // Verify successful login by checking URL
-    expect(page.url()).toContain('/ui/dist/');
+    expect(page.url()).toContain('/ui/');
 
     // Verify we're no longer on login page
     await expect(page.locator('input[type="password"]')).not.toBeVisible();
@@ -352,7 +352,7 @@ test.describe('NemakiWare Authentication', () => {
     await page.waitForTimeout(2000);
 
     const onLoginPage = await page.locator('input[type="password"]').isVisible();
-    const redirectedToLogin = page.url().includes('login') || page.url().endsWith('/ui/dist/');
+    const redirectedToLogin = page.url().includes('login') || page.url().endsWith('/ui/');
 
     expect(onLoginPage || redirectedToLogin).toBe(true);
   });
