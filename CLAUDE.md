@@ -412,6 +412,52 @@ npx playwright test --reporter=list
 **Test Log**:
 - `/tmp/playwright-tests.log`: Complete Playwright test execution output with detailed browser console logs
 
+#### OIDC/SAML Authentication Tests (2025-12-09) ✅
+
+**Status**: All external authentication tests passing with Keycloak IdP
+
+**Test Results**:
+| Test Suite | Tests | Status |
+|------------|-------|--------|
+| login.spec.ts | 7 | ✅ 7/7 PASS |
+| oidc-login.spec.ts | 5 | ✅ 5/5 PASS |
+| saml-login.spec.ts | 7 | ✅ 7/7 PASS |
+| **Total** | **19** | **✅ 19/19 PASS** |
+
+**Prerequisites**:
+- Keycloak container running at `localhost:8088`
+- Realm `nemakiware` with OIDC/SAML clients configured
+- Test user: `testuser:password`
+
+**Keycloak Setup**:
+```bash
+cd docker
+docker compose -f docker-compose.keycloak.yml up -d
+# Wait ~60 seconds for Keycloak to start
+curl -s http://localhost:8088/realms/nemakiware/.well-known/openid-configuration
+```
+
+**Test Execution**:
+```bash
+cd core/src/main/webapp/ui
+npx playwright test tests/auth/ --project=chromium
+```
+
+**Keycloak Configuration** (`docker/realm-export.json`):
+- **OIDC Client**: `nemakiware-oidc-client` (Authorization Code flow)
+- **SAML Client**: `nemakiware-saml-client` (SAML 2.0)
+- **Redirect URIs**: `http://localhost:8080/core/ui/*`
+
+**Test Coverage**:
+- ✅ OIDC/SAML login button visibility
+- ✅ Redirect to Keycloak IdP
+- ✅ Complete login flow (Keycloak → NemakiWare)
+- ✅ Token conversion endpoints (`/core/rest/repo/{repositoryId}/authtoken/oidc/convert`, `/core/rest/repo/{repositoryId}/authtoken/saml/convert`)
+- ✅ Invalid request rejection
+- ✅ Non-existent user rejection (auto-provisioning not implemented)
+
+**Note**: SSO users must pre-exist in NemakiWare. Auto-provisioning is not yet implemented.
+
 #### Verification Summary
 
 **Test Coverage Analysis**:
