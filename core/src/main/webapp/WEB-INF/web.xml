@@ -340,6 +340,10 @@
  </servlet-mapping>
  <servlet-mapping>
   <servlet-name>default</servlet-name>
+  <url-pattern>*.mjs</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
   <url-pattern>*.css</url-pattern>
  </servlet-mapping>
  <servlet-mapping>
@@ -397,6 +401,10 @@
 	<!-- MIME type mappings for static resources -->
 	<mime-mapping>
 		<extension>js</extension>
+		<mime-type>text/javascript</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>mjs</extension>
 		<mime-type>text/javascript</mime-type>
 	</mime-mapping>
 	<mime-mapping>

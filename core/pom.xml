@@ -803,6 +803,7 @@
 								<include>saml-callback.html</include>
 								<include>silent-callback.html</include>
 								<include>assets/**</include>
+								<include>pdf-worker/**</include>
 								<include>*.png</include>
 							</includes>
 						</resource>
