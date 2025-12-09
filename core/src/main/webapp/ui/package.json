@@ -38,9 +38,11 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.45.0",
+    "@types/jszip": "^3.4.0",
     "@types/pako": "^2.0.4",
     "@types/react-image-gallery": "^1.2.4",
     "@vitejs/plugin-react": "^5.1.1",
+    "jszip": "^3.10.1",
     "vite": "^7.2.2"
   }
 }
