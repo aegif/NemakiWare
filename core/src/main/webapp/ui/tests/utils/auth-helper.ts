@@ -124,7 +124,7 @@ export interface LoginCredentials {
  *    - Dropdown wait: .ant-dropdown:not(.ant-dropdown-hidden) 3s timeout
  *    - Logout menu item: Filter by Japanese text 'ログアウト'
  *    - Force click: { force: true } to bypass overlay/visibility checks
- *    - URL wait: Pattern matching /ui/dist/ path with 5s timeout
+ *    - URL wait: Pattern matching /ui/ path with 5s timeout
  *    - Verification: Check for login form elements (password field OR username field)
  *    - Rationale: Hard navigation requires different wait strategy than SPA routing
  *    - Implementation: Extensive logging and dual verification (URL + form elements)
@@ -552,7 +552,7 @@ export class AuthHelper {
       // Wait for URL to change to the login page
       console.log('AuthHelper: Waiting for navigation...');
       try {
-        await this.page.waitForURL('**/ui/dist/**', { timeout: 5000 });
+        await this.page.waitForURL('**/ui/**', { timeout: 5000 });
         console.log('AuthHelper: URL changed to:', this.page.url());
       } catch (e) {
         console.log('AuthHelper: URL wait timed out, current URL:', this.page.url());
@@ -593,7 +593,7 @@ export class AuthHelper {
       // Check if we're on a page that requires authentication
       const currentUrl = this.page.url();
 
-      if (currentUrl.includes('/ui/dist/') && !currentUrl.includes('login')) {
+      if (currentUrl.includes('/ui/') && !currentUrl.includes('login')) {
         // Look for elements that only appear when logged in
         const authenticatedElements = [
           '.ant-layout-sider', // Sidebar

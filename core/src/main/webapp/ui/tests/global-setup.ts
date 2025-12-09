@@ -117,7 +117,7 @@ async function globalSetup(config: FullConfig) {
     await page.getByRole('button', { name: 'ログイン' }).click();
 
     // Wait for successful login (URL change or specific element)
-    await page.waitForURL('**/ui/dist/**', { timeout: 15000 });
+    await page.waitForURL('**/ui/**', { timeout: 15000 });
 
     console.log('✅ Authentication system is working');
 
