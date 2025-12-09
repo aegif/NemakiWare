@@ -119,7 +119,7 @@ test.describe('NemakiWare Authentication', () => {
 
     // CRITICAL FIX (2025-12-02): Clear localStorage and all storage to remove cached auth
     // Navigate to page first, then clear all storage types
-    await page.goto('/core/ui/dist/index.html');
+    await page.goto('/core/ui/index.html');
     await page.evaluate(() => {
       // Clear all storage mechanisms
       localStorage.clear();
@@ -139,7 +139,7 @@ test.describe('NemakiWare Authentication', () => {
     // Playwright browser context caches HTTP Basic Auth credentials per-origin
     // Navigating to about:blank and back forces credential cache to be cleared
     await page.goto('about:blank');
-    await page.goto('/core/ui/dist/index.html');
+    await page.goto('/core/ui/index.html');
 
     // Clear storage again after fresh navigation
     await page.evaluate(() => {
@@ -151,7 +151,7 @@ test.describe('NemakiWare Authentication', () => {
   test('should display login page correctly', async ({ page }) => {
     const testHelper = new TestHelper(page);
 
-    await page.goto('/core/ui/dist/index.html');
+    await page.goto('/core/ui/index.html');
 
     // Check page title
     await expect(page).toHaveTitle(/NemakiWare|CMIS/);
@@ -235,7 +235,7 @@ test.describe('NemakiWare Authentication', () => {
     const page = await context.newPage();
 
     try {
-      await page.goto('/core/ui/dist/index.html');
+      await page.goto('/core/ui/index.html');
 
       // Wait for login form
       await page.waitForSelector('input[type="password"]', { timeout: 10000 });
@@ -281,7 +281,7 @@ test.describe('NemakiWare Authentication', () => {
   });
 
   test('should handle empty credentials', async ({ page }) => {
-    await page.goto('/core/ui/dist/index.html');
+    await page.goto('/core/ui/index.html');
 
     // Wait for form to load
     await page.waitForSelector('input[type="password"]', { timeout: 10000 });
@@ -346,7 +346,7 @@ test.describe('NemakiWare Authentication', () => {
 
   test('should redirect to login when accessing protected routes without authentication', async ({ page }) => {
     // Try to access a protected route directly
-    await page.goto('/core/ui/dist/index.html#/documents');
+    await page.goto('/core/ui/index.html#/documents');
 
     // Should redirect to login or show login form
     await page.waitForTimeout(2000);

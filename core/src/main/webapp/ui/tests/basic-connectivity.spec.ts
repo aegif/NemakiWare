@@ -120,7 +120,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Basic Connectivity Tests', () => {
   test('should load NemakiWare UI page', async ({ page }) => {
     // Navigate to the UI
-    await page.goto('http://localhost:8080/core/ui/dist/index.html');
+    await page.goto('http://localhost:8080/core/ui/index.html');
 
     // Check that the page loads
     await expect(page).toHaveTitle(/NemakiWare/);
@@ -138,13 +138,13 @@ test.describe('Basic Connectivity Tests', () => {
 
   test('should load basic NemakiWare backend', async ({ page }) => {
     // Test if the backend is accessible
-    const response = await page.request.get('http://localhost:8080/core/ui/dist/index.html');
+    const response = await page.request.get('http://localhost:8080/core/ui/index.html');
     expect(response.status()).toBe(200);
   });
 
   test('should check for required static assets', async ({ page }) => {
     // Get the index.html content and parse asset references dynamically
-    const response = await page.request.get('http://localhost:8080/core/ui/dist/index.html');
+    const response = await page.request.get('http://localhost:8080/core/ui/index.html');
     expect(response.status()).toBe(200);
 
     const htmlContent = await response.text();
@@ -176,7 +176,7 @@ test.describe('Basic Connectivity Tests', () => {
   });
 
   test('should wait for React app initialization', async ({ page }) => {
-    await page.goto('http://localhost:8080/core/ui/dist/index.html');
+    await page.goto('http://localhost:8080/core/ui/index.html');
 
     // Wait for potential React app initialization
     await page.waitForTimeout(5000);

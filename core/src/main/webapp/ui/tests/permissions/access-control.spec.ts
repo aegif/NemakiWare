@@ -1212,7 +1212,7 @@ test.describe('Access Control and Permissions', () => {
             }
 
             // Navigate back to documents
-            await page.goto('http://localhost:8080/core/ui/dist/index.html#/documents');
+            await page.goto('http://localhost:8080/core/ui/index.html#/documents');
             await page.waitForTimeout(2000);
             console.log('Test: Navigated back to documents page');
 
@@ -2094,7 +2094,7 @@ test.describe('Access Control and Permissions', () => {
           }
 
           // Navigate back to documents
-          await page.goto('http://localhost:8080/core/ui/dist/index.html#/documents');
+          await page.goto('http://localhost:8080/core/ui/index.html#/documents');
           await page.waitForTimeout(2000);
           console.log('Test: Navigated back to documents page');
 
@@ -2329,7 +2329,7 @@ test.describe('Access Control and Permissions', () => {
       // Try to navigate to documents page explicitly if not there
       if (!page.url().includes('/documents')) {
         console.log('Test: Not on documents page, navigating...');
-        await page.goto('http://localhost:8080/core/ui/dist/documents');
+        await page.goto('http://localhost:8080/core/ui/documents');
         await page.waitForTimeout(2000);
       }
 

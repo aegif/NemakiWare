@@ -245,7 +245,7 @@ export class AuthHelper {
 
     // Navigate to login page
     // CRITICAL FIX (2025-11-13): Use 'domcontentloaded' instead of 'networkidle'
-    await this.page.goto('/core/ui/dist/index.html', { waitUntil: 'domcontentloaded' });
+    await this.page.goto('/core/ui/index.html', { waitUntil: 'domcontentloaded' });
 
     // CRITICAL FIX (2025-11-13): Check if already authenticated via BASIC auth
     // Check for authenticated layout elements before attempting to fill login form
@@ -476,7 +476,7 @@ export class AuthHelper {
       // If redirect didn't happen automatically, navigate manually
       // Mobile browsers use 'load' instead of 'networkidle' to avoid timeout issues after route handler tests
       const isMobile = this.page.viewportSize() && this.page.viewportSize()!.width <= 414;
-      await this.page.goto('/core/ui/dist/index.html', {
+      await this.page.goto('/core/ui/index.html', {
         waitUntil: isMobile ? 'load' : 'networkidle',
         timeout: isMobile ? 45000 : 30000  // Extra timeout for mobile
       });

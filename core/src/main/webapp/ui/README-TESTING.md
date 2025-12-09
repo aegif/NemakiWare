@@ -144,11 +144,11 @@ tests/
 ### 🔍 診断結果
 ```bash
 # 正常: HTML ファイル
-curl http://localhost:8080/core/ui/dist/index.html
+curl http://localhost:8080/core/ui/index.html
 # → HTTP 200
 
 # 異常: JavaScript ファイル
-curl http://localhost:8080/core/ui/dist/assets/index-B81QkMzs.js
+curl http://localhost:8080/core/ui/assets/index-B81QkMzs.js
 # → HTTP 404
 
 # 診断テスト実行結果

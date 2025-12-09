@@ -56,7 +56,7 @@ npx playwright show-report
 ### Docker・アプリケーション基本情報
 - **Docker Compose**: `docker/docker-compose-simple.yml`
 - **WARファイル**: `core/target/core.war`
-- **ベースURL**: `http://localhost:8080/core/ui/dist/`（テストは`/core/ui`をターゲット）
+- **ベースURL**: `http://localhost:8080/core/ui/`（テストは`/core/ui`をターゲット）
 - **CMISベース**: `http://localhost:8080/core`
 - **認証情報**: `admin:admin`
 
@@ -95,7 +95,7 @@ sleep 30
 - 再発した場合: デバッグのためにまずwebkitを除外したターゲット実行を検討、その後再有効化
 
 ### ナビゲーション
-- UIパスは一貫して`/core/ui/dist/`を使用
+- UIパスは一貫して`/core/ui/`を使用
 - `/ui/`単独への退行を避ける
 
 ### 実行を短く、永続的に
@@ -267,7 +267,7 @@ npx playwright test tests/documents/folder-hierarchy-operations.spec.ts --projec
 - **推定失敗数**: 85
 
 #### 仮説
-- 断続的な認証フロー、`/core/ui/dist/login?repositoryId=bedroom`へのリダイレクト
+- 断続的な認証フロー、`/core/ui/login?repositoryId=bedroom`へのリダイレクト
 - Basic認証 vs トークンを期待するテスト
 
 #### 主要ファイル

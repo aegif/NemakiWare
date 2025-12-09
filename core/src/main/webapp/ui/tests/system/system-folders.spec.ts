@@ -35,7 +35,7 @@ test.describe('System Folders (/.system)', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to /.system folder via URL
-    await page.goto('http://localhost:8080/core/ui/dist/index.html#/documents');
+    await page.goto('http://localhost:8080/core/ui/index.html#/documents');
     await page.waitForTimeout(2000);
 
     // Look for .system folder in document table
@@ -185,7 +185,7 @@ test.describe('System Folders (/.system)', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to root documents page
-    await page.goto('http://localhost:8080/core/ui/dist/index.html#/documents');
+    await page.goto('http://localhost:8080/core/ui/index.html#/documents');
     await page.waitForTimeout(2000);
 
     // Find and click .system folder

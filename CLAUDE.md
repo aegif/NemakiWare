@@ -1978,7 +1978,7 @@ curl -u admin:password http://localhost:5984/_all_dbs
 # Expected: ["bedroom","bedroom_closet","canopy","canopy_closet","nemaki_conf"]
 
 # UI access
-curl http://localhost:8080/core/ui/dist/
+curl http://localhost:8080/core/ui/
 # Expected: React UI login page
 ```
 
@@ -2283,7 +2283,7 @@ cd docker && docker compose -f docker-compose-simple.yml down
 docker compose -f docker-compose-simple.yml up -d --build
 
 # 4. Verify deployment
-curl -s http://localhost:8080/core/ui/dist/ | grep -o 'src="[^"]*"'
+curl -s http://localhost:8080/core/ui/ | grep -o 'src="[^"]*"'
 ```
 
 #### Browser Cache Management
@@ -2297,7 +2297,7 @@ curl -s http://localhost:8080/core/ui/dist/ | grep -o 'src="[^"]*"'
 <meta http-equiv="Expires" content="0" />
 
 <!-- Add version parameter to assets -->
-<script src="/core/ui/dist/assets/index-HASH.js?v=build-timestamp"></script>
+<script src="/core/ui/assets/index-HASH.js?v=build-timestamp"></script>
 ```
 
 #### WAR-based Deployment (Recommended)
@@ -2319,13 +2319,13 @@ docker compose -f docker-compose-simple.yml up -d --build
 
 # 4. Wait for deployment and test
 sleep 30
-curl -s http://localhost:8080/core/ui/dist/ | grep -o 'src="[^"]*"'
+curl -s http://localhost:8080/core/ui/ | grep -o 'src="[^"]*"'
 ```
 
 #### UI Testing Checklist
 
 **Authentication Flow Testing**:
-1. ✅ Access `http://localhost:8080/core/ui/dist/` shows login screen
+1. ✅ Access `http://localhost:8080/core/ui/` shows login screen
 2. ✅ Repository dropdown shows available repositories ("bedroom")
 3. ✅ Login with admin:admin succeeds and redirects to documents
 4. ✅ Document list loads without errors
@@ -2354,7 +2354,7 @@ curl -s http://localhost:8080/core/ui/dist/ | grep -o 'src="[^"]*"'
 
 **Issue**: 404 on UI assets
 **Solution**:
-- Check base path in vite.config.ts: `/core/ui/dist/`
+- Check base path in vite.config.ts: `/core/ui/`
 - Verify index.html asset references match built files
 - Ensure container has all asset files
 

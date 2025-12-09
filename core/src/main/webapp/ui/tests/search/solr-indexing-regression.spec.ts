@@ -87,7 +87,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     const testContent = `Property update test content ${uniqueId}`;
     const uniqueDescription = `UniqueDesc_${uniqueId}_SolrTest`;
 
-    await page.goto('http://localhost:8080/core/ui/dist/#/documents');
+    await page.goto('http://localhost:8080/core/ui/#/documents');
     await page.waitForTimeout(3000);
     console.log(`Creating test document: ${testFileName}`);
 
@@ -162,7 +162,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     // Step 2: Navigate back to documents page and find the uploaded document in folder view
     // This approach is more reliable than search as it doesn't depend on Solr indexing timing
     console.log('Looking for uploaded document in folder view...');
-    await page.goto('http://localhost:8080/core/ui/dist/#/documents');
+    await page.goto('http://localhost:8080/core/ui/#/documents');
     await page.waitForTimeout(3000);
 
     // Look for the test document in the table
@@ -532,7 +532,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to documents page
-    await page.goto('http://localhost:8080/core/ui/dist/#/documents');
+    await page.goto('http://localhost:8080/core/ui/#/documents');
     await page.waitForTimeout(3000);
 
     // Create a unique test file content
@@ -628,7 +628,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     // Cleanup: Delete the test file
     // (Navigate back to documents and delete)
-    await page.goto('http://localhost:8080/core/ui/dist/#/documents');
+    await page.goto('http://localhost:8080/core/ui/#/documents');
     await page.waitForTimeout(2000);
 
     const testFileRow = page.locator('.ant-table tbody tr').filter({ hasText: uniqueFileName });
@@ -665,7 +665,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to documents page
-    await page.goto('http://localhost:8080/core/ui/dist/#/documents');
+    await page.goto('http://localhost:8080/core/ui/#/documents');
     await page.waitForTimeout(3000);
 
     // Create a test document to delete
@@ -747,7 +747,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     console.log('✅ Document is searchable before deletion');
 
     // Delete the document
-    await page.goto('http://localhost:8080/core/ui/dist/#/documents');
+    await page.goto('http://localhost:8080/core/ui/#/documents');
     await page.waitForTimeout(2000);
 
     const testFileRow = page.locator('.ant-table tbody tr').filter({ hasText: uniqueFileName });
@@ -799,7 +799,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to documents page
-    await page.goto('http://localhost:8080/core/ui/dist/#/documents');
+    await page.goto('http://localhost:8080/core/ui/#/documents');
     await page.waitForTimeout(3000);
 
     // Look for an existing document that can be moved

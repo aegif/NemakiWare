@@ -137,7 +137,7 @@ npx playwright test --project=chromium --workers=1
 ### Important Commands
 ```bash
 # Check server status
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/dist/index.html
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/index.html
 
 # Start Docker services
 cd /home/ubuntu/repos/NemakiWare/docker && docker compose -f docker-compose-simple.yml up -d

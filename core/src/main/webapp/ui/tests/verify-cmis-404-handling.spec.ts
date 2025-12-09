@@ -158,7 +158,7 @@ test.describe('CMIS API 404 Error Handling', () => {
     });
 
     // Navigate to login page
-    await page.goto('http://localhost:8080/core/ui/dist/index.html');
+    await page.goto('http://localhost:8080/core/ui/index.html');
     await page.waitForTimeout(1000);
 
     // Login as admin
@@ -241,7 +241,7 @@ test.describe('CMIS API 404 Error Handling', () => {
     // This test verifies that even if 404 handling doesn't redirect,
     // the UI remains functional and user isn't "stuck"
 
-    await page.goto('http://localhost:8080/core/ui/dist/index.html');
+    await page.goto('http://localhost:8080/core/ui/index.html');
     await page.waitForTimeout(1000);
 
     // Login

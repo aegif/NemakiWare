@@ -21,7 +21,7 @@ async function globalSetup(config: FullConfig) {
     console.log(`📡 Checking NemakiWare backend at ${baseURL}`);
 
     // Test basic connectivity to NemakiWare UI endpoint (public access)
-    const response = await page.goto(`${baseURL}/core/ui/dist/`, {
+    const response = await page.goto(`${baseURL}/core/ui/`, {
       waitUntil: 'networkidle',
       timeout: 30000,
     });
@@ -49,7 +49,7 @@ async function globalSetup(config: FullConfig) {
     // Perform a test login to verify authentication system
     console.log('🔐 Testing authentication system');
 
-    await page.goto(`${baseURL}/core/ui/dist/`);
+    await page.goto(`${baseURL}/core/ui/`);
 
     // Wait for React app to load by waiting for content in the root div
     console.log('⏳ Waiting for React app to load...');

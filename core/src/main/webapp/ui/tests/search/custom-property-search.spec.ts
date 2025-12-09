@@ -50,7 +50,7 @@ test.describe('Custom Property Search Functionality', () => {
       await page.waitForTimeout(2000);
     } else {
       // Fallback: Navigate directly to search page
-      await page.goto('http://localhost:8080/core/ui/dist/#/search');
+      await page.goto('http://localhost:8080/core/ui/#/search');
       await page.waitForTimeout(2000);
     }
   });
@@ -479,7 +479,7 @@ test.describe('Custom Property Input Types', () => {
       await searchMenu.click();
       await page.waitForTimeout(2000);
     } else {
-      await page.goto('http://localhost:8080/core/ui/dist/#/search');
+      await page.goto('http://localhost:8080/core/ui/#/search');
       await page.waitForTimeout(2000);
     }
   });

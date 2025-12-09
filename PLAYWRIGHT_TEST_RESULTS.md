@@ -108,7 +108,7 @@ Playwrightは6つのブラウザプロファイルで各テストを実行しま
 ```
 ✅ should analyze UI structure after login
    - Page Title: NemakiWare SPA
-   - URL: http://localhost:8080/core/ui/dist/
+   - URL: http://localhost:8080/core/ui/
    - DOM Content: 7830 characters
    - Container Elements: 11 found
    - Ant Design Elements: True

@@ -135,7 +135,7 @@ test.describe('Archive Management', () => {
     } else {
       console.log('Archive management menu item not found - feature may not be available in menu');
       // Try direct navigation
-      await page.goto('/core/ui/dist/#/archives');
+      await page.goto('/core/ui/#/archives');
       await page.waitForTimeout(2000);
 
       const hasContent = await page.locator('.ant-table, .ant-card').count() > 0;
@@ -151,7 +151,7 @@ test.describe('Archive Management', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to archive management
-    await page.goto('/core/ui/dist/#/archives');
+    await page.goto('/core/ui/#/archives');
     await page.waitForTimeout(2000);
 
     // Check if table exists
@@ -188,7 +188,7 @@ test.describe('Archive Management', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to archive management
-    await page.goto('/core/ui/dist/#/archives');
+    await page.goto('/core/ui/#/archives');
     await page.waitForTimeout(2000);
 
     const archiveTable = page.locator('.ant-table');
@@ -290,7 +290,7 @@ test.describe('Archive Management', () => {
     }
 
     // Now navigate to archive management to verify
-    await page.goto('/core/ui/dist/#/archives');
+    await page.goto('/core/ui/#/archives');
     await page.waitForTimeout(2000);
 
     // Look for the deleted document in archive list
@@ -310,7 +310,7 @@ test.describe('Archive Management', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to archive management
-    await page.goto('/core/ui/dist/#/archives');
+    await page.goto('/core/ui/#/archives');
     await page.waitForTimeout(2000);
 
     const archiveTable = page.locator('.ant-table-tbody');
@@ -382,7 +382,7 @@ test.describe('Archive Management', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to archive management
-    await page.goto('/core/ui/dist/#/archives');
+    await page.goto('/core/ui/#/archives');
     await page.waitForTimeout(2000);
 
     const archiveRows = page.locator('.ant-table-tbody tr');
@@ -425,7 +425,7 @@ test.describe('Archive Management', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to archive management
-    await page.goto('/core/ui/dist/#/archives');
+    await page.goto('/core/ui/#/archives');
     await page.waitForTimeout(2000);
 
     const archiveRows = page.locator('.ant-table-tbody tr');
@@ -476,7 +476,7 @@ test.describe('Archive Management', () => {
   test('should display empty state when no archives exist', async ({ page }) => {
     // This test verifies the empty state handling
     // Navigate to archive management
-    await page.goto('/core/ui/dist/#/archives');
+    await page.goto('/core/ui/#/archives');
     await page.waitForTimeout(2000);
 
     const archiveTable = page.locator('.ant-table');

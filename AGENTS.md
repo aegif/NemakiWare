@@ -204,7 +204,7 @@ docker compose -f docker-compose-simple.yml up -d --build --force-recreate
 sleep 90
 
 # 6. Verify UI is accessible
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/dist/index.html
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/index.html
 # Expected: 200
 ```
 
@@ -282,7 +282,7 @@ npx playwright show-report
 
 **Test Environment Requirements**:
 - Docker containers must be running (see Docker Environment section)
-- Server must be healthy: `http://localhost:8080/core/ui/dist/index.html` returns 200
+- Server must be healthy: `http://localhost:8080/core/ui/index.html` returns 200
 - Recommended: Single worker (`--workers=1`) to avoid race conditions
 
 ## Coding Style & Naming
@@ -538,7 +538,7 @@ sleep 90
 ```
 
 **Tests failing with timeout**:
-- Check server is responding: `curl http://localhost:8080/core/ui/dist/index.html`
+- Check server is responding: `curl http://localhost:8080/core/ui/index.html`
 - Increase timeout in `playwright.config.ts`: `timeout: 60000`
 - Use `--workers=1` to avoid race conditions
 - Check Docker container logs for errors

@@ -26,7 +26,7 @@ test.describe('Error Recovery Tests', () => {
 
     // Login and navigate to documents
     await authHelper.login();
-    await page.goto('http://localhost:8080/core/ui/dist/');
+    await page.goto('http://localhost:8080/core/ui/');
     await testHelper.waitForAntdLoad();
 
     // Navigate to Documents section

@@ -433,7 +433,7 @@ test.describe.skip('Custom Type and Custom Attributes (WIP - Manual Form UI not 
     }
 
     // Navigate to document detail page
-    await page.goto(`http://localhost:8080/core/ui/dist/#/documents/${testDocumentId}`);
+    await page.goto(`http://localhost:8080/core/ui/#/documents/${testDocumentId}`);
     await page.waitForTimeout(2000);
 
     // Click on properties tab
@@ -493,7 +493,7 @@ test.describe.skip('Custom Type and Custom Attributes (WIP - Manual Form UI not 
 
       // Delete test document if created
       if (testDocumentId) {
-        await page.goto('http://localhost:8080/core/ui/dist/#/documents');
+        await page.goto('http://localhost:8080/core/ui/#/documents');
         await page.waitForTimeout(2000);
 
         const documentRow = page.locator(`tr:has([href*="${testDocumentId}"])`);

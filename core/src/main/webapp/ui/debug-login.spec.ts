@@ -1,7 +1,7 @@
 import { test } from '@playwright/test';
 
 test('debug login page HTML', async ({ page }) => {
-  await page.goto('http://localhost:8080/core/ui/dist/index.html');
+  await page.goto('http://localhost:8080/core/ui/index.html');
   await page.waitForTimeout(2000);
   
   // Get HTML content

@@ -113,7 +113,7 @@ import 'react-pdf/dist/Page/AnnotationLayer.css';
 // SECURITY: Configure worker with patched pdfjs-dist@5.3.31 (CVE-2024-4367 fixed)
 // Use local worker file from public directory to avoid CORS issues with CDN
 // (CDN requests fail when Authorization headers are present due to CORS policy)
-pdfjs.GlobalWorkerOptions.workerSrc = '/core/ui/dist/pdf-worker/pdf.worker.min.mjs';
+pdfjs.GlobalWorkerOptions.workerSrc = '/core/ui/pdf-worker/pdf.worker.min.mjs';
 
 interface PDFPreviewProps {
   url: string;

@@ -48,7 +48,7 @@ test.describe('Search Results Detailed Verification', () => {
     }
 
     // Navigate to documents page
-    await page.goto('http://localhost:8080/core/ui/dist/#/documents');
+    await page.goto('http://localhost:8080/core/ui/#/documents');
     await page.waitForTimeout(2000);
   });
 

@@ -150,7 +150,7 @@ test.describe('Document Viewer Authentication', () => {
     });
 
     // Navigate to login page
-    await page.goto('http://localhost:8080/core/ui/dist/index.html');
+    await page.goto('http://localhost:8080/core/ui/index.html');
     await page.waitForTimeout(1000);
 
     // Login as admin
@@ -250,7 +250,7 @@ test.describe('Document Viewer Authentication', () => {
 
   test('should handle multiple document detail accesses without session issues', async ({ page, browserName }) => {
     // Login
-    await page.goto('http://localhost:8080/core/ui/dist/index.html');
+    await page.goto('http://localhost:8080/core/ui/index.html');
     await page.waitForTimeout(1000);
 
     const repositorySelect = page.locator('.ant-select-selector').first();
@@ -397,7 +397,7 @@ test.describe('Document Viewer Authentication', () => {
             await page.waitForTimeout(1000);
             console.log(`  ✅ Clicked back button`);
           } else {
-            await page.goto('http://localhost:8080/core/ui/dist/index.html#/documents');
+            await page.goto('http://localhost:8080/core/ui/index.html#/documents');
             await page.waitForTimeout(2000);
             console.log(`  ✅ Navigated back to documents page`);
           }

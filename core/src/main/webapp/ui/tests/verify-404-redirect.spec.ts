@@ -61,7 +61,7 @@
  *    - Expects React app to handle unknown routes gracefully
  *    - Verifies no "Cannot GET" or raw 404 error pages shown
  *    - Rationale: React SPA should handle all client routes, show login on unknown
- *    - Implementation: Access non-existent /core/ui/dist/nonexistent-page directly
+ *    - Implementation: Access non-existent /core/ui/nonexistent-page directly
  *
  * 7. Console Logging for Diagnostic Visibility (Lines 30, 42, 48, 85, 107, 123, 134):
  *    - Logs each test phase: "Login successful", "Testing 404 error handling"
@@ -236,7 +236,7 @@ test.describe('404 Error Handling Verification', () => {
 
   test('should show login page without error on initial 404', async ({ page }) => {
     // Try to access non-existent URL directly (without logging in first)
-    await page.goto('http://localhost:8080/core/ui/dist/nonexistent-page');
+    await page.goto('http://localhost:8080/core/ui/nonexistent-page');
     await page.waitForTimeout(2000);
 
     // React Router should handle this gracefully

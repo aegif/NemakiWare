@@ -148,7 +148,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
   test.describe('Unauthenticated State', () => {
     test('should redirect to login when accessing protected route without authentication', async ({ page }) => {
       // Navigate to the app first to establish context for localStorage access
-      await page.goto('http://localhost:8080/core/ui/dist/index.html');
+      await page.goto('http://localhost:8080/core/ui/index.html');
       await page.waitForLoadState('domcontentloaded');
       await page.waitForTimeout(1000);
 
@@ -188,7 +188,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
 
     test('should clear localStorage when authentication fails with 401', async ({ page }) => {
       // Set up a mock token that will fail validation
-      await page.goto('http://localhost:8080/core/ui/dist/index.html');
+      await page.goto('http://localhost:8080/core/ui/index.html');
       await page.waitForTimeout(1000);
 
       // Set invalid token in localStorage
@@ -206,7 +206,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       console.log('Token before navigation:', tokenBefore ? 'SET' : 'NOT SET');
 
       // Navigate to protected route - should trigger auth check
-      await page.goto('http://localhost:8080/core/ui/dist/index.html#/documents');
+      await page.goto('http://localhost:8080/core/ui/index.html#/documents');
       await page.waitForTimeout(3000);
 
       // Check if token was cleared or login form is shown
@@ -225,7 +225,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
   test.describe('Loading State', () => {
     test('should show loading spinner during authentication check', async ({ page }) => {
       // Navigate to the app first to establish context for localStorage access
-      await page.goto('http://localhost:8080/core/ui/dist/index.html');
+      await page.goto('http://localhost:8080/core/ui/index.html');
       await page.waitForLoadState('domcontentloaded');
       await page.waitForTimeout(500);
 
@@ -238,7 +238,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
 
       // Navigate and immediately check for loading state
       // Loading state is very brief, so we need to catch it quickly
-      const navigationPromise = page.goto('http://localhost:8080/core/ui/dist/index.html#/documents');
+      const navigationPromise = page.goto('http://localhost:8080/core/ui/index.html#/documents');
 
       // Check for spinner within first 500ms
       let loadingSpinnerSeen = false;
@@ -380,7 +380,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
   test.describe('Token/Storage Handling', () => {
     test('should handle invalid localStorage data gracefully', async ({ page }) => {
       // Set malformed data in localStorage
-      await page.goto('http://localhost:8080/core/ui/dist/index.html');
+      await page.goto('http://localhost:8080/core/ui/index.html');
       await page.waitForTimeout(1000);
 
       await page.evaluate(() => {
@@ -389,7 +389,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       });
 
       // Navigate to protected route
-      await page.goto('http://localhost:8080/core/ui/dist/index.html#/documents');
+      await page.goto('http://localhost:8080/core/ui/index.html#/documents');
       await page.waitForTimeout(3000);
 
       // Should gracefully handle and show login
@@ -410,14 +410,14 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
     test('should handle empty localStorage correctly', async ({ page }) => {
       // Clear all storage
       await page.context().clearCookies();
-      await page.goto('http://localhost:8080/core/ui/dist/index.html');
+      await page.goto('http://localhost:8080/core/ui/index.html');
       await page.evaluate(() => {
         localStorage.clear();
         sessionStorage.clear();
       });
 
       // Navigate to protected route
-      await page.goto('http://localhost:8080/core/ui/dist/index.html#/documents');
+      await page.goto('http://localhost:8080/core/ui/index.html#/documents');
       await page.waitForTimeout(3000);
 
       // Should show login form
@@ -436,7 +436,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
   test.describe('Login Callback', () => {
     test('should call window.location.reload on successful login', async ({ page }) => {
       // Navigate to the app first to establish context for localStorage access
-      await page.goto('http://localhost:8080/core/ui/dist/index.html');
+      await page.goto('http://localhost:8080/core/ui/index.html');
       await page.waitForLoadState('domcontentloaded');
       await page.waitForTimeout(500);
 
@@ -448,7 +448,7 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
       });
 
       // Navigate to protected route - should show login
-      await page.goto('http://localhost:8080/core/ui/dist/index.html#/documents');
+      await page.goto('http://localhost:8080/core/ui/index.html#/documents');
       await page.waitForTimeout(2000);
 
       // Track page reload
