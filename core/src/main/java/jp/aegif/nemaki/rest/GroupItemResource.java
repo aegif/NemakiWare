@@ -88,13 +88,22 @@ public class GroupItemResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		
+		if (StringUtils.isBlank(query)) {
+			status = false;
+			addErrMsg(errMsg, "query", ErrorCode.ERR_MANDATORY);
+			return makeResult(status, result, errMsg).toJSONString();
+		}
+
 		List<GroupItem> groups = getContentService().getGroupItems(repositoryId);
 		if(groups == null) groups = new ArrayList<>();
 		JSONArray queriedGroups = new JSONArray();
 
 		for(GroupItem g : groups) {
-			if ( g.getGroupId().contains(query)|| g.getName().contains(query)) {
+			String groupId = g.getGroupId();
+			String groupName = g.getName();
+			boolean matches = (StringUtils.isNotEmpty(groupId) && groupId.contains(query)) ||
+			                  (StringUtils.isNotEmpty(groupName) && groupName.contains(query));
+			if (matches) {
 				if(queriedGroups.size()<50){
 					queriedGroups.add(this.convertGroupToJson(g));
 				}else{

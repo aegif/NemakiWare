@@ -314,14 +314,20 @@ private ContentService getContentServiceSafe() {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+		if (StringUtils.isBlank(query)) {
+			status = false;
+			addErrMsg(errMsg, "query", ErrorCode.ERR_MANDATORY);
+			return makeResult(status, result, errMsg).toJSONString();
+		}
+
 		List<UserItem> users;
 		JSONArray queriedUsers = new JSONArray();
 		users = getContentService().getUserItems(repositoryId);
 		for (UserItem user : users) {
 			String userId = user.getUserId();
 			String userName = user.getName();
-			boolean matches = (userId != null && userId.contains(query)) ||
-			                  (userName != null && userName.contains(query));
+			boolean matches = (StringUtils.isNotEmpty(userId) && userId.contains(query)) ||
+			                  (StringUtils.isNotEmpty(userName) && userName.contains(query));
 			if (matches) {
 				JSONObject userJSON = convertUserToJson(user, repositoryId);
 				if(queriedUsers.size() < 50){
