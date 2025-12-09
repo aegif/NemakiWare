@@ -29,6 +29,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Collections;
 import java.util.concurrent.locks.Lock;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -320,9 +321,9 @@ private ContentService getContentServiceSafe() {
 			return makeResult(status, result, errMsg).toJSONString();
 		}
 
-		List<UserItem> users;
 		JSONArray queriedUsers = new JSONArray();
-		users = getContentService().getUserItems(repositoryId);
+		List<UserItem> users = ObjectUtils.defaultIfNull(
+				getContentServiceSafe().getUserItems(repositoryId), Collections.emptyList());
 		for (UserItem user : users) {
 			String userId = user.getUserId();
 			String userName = user.getName();

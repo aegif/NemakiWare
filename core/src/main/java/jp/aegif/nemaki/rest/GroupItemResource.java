@@ -58,6 +58,7 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.apache.commons.logging.Log;
@@ -79,6 +80,15 @@ public class GroupItemResource extends ResourceBase{
 				.getBean("ContentService", ContentService.class);
 	}
 
+	private ContentService getContentServiceSafe() {
+		ContentService service = getContentService();
+		if (service == null) {
+			throw new IllegalStateException(
+					"ContentService not available - dependency injection failed");
+		}
+		return service;
+	}
+
 	@SuppressWarnings("unchecked")
 	@GET
 	@Path("/search")
@@ -94,8 +104,8 @@ public class GroupItemResource extends ResourceBase{
 			return makeResult(status, result, errMsg).toJSONString();
 		}
 
-		List<GroupItem> groups = getContentService().getGroupItems(repositoryId);
-		if(groups == null) groups = new ArrayList<>();
+		List<GroupItem> groups = ObjectUtils.defaultIfNull(
+				getContentServiceSafe().getGroupItems(repositoryId), Collections.emptyList());
 		JSONArray queriedGroups = new JSONArray();
 
 		for(GroupItem g : groups) {
