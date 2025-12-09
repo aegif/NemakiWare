@@ -953,15 +953,9 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, originalPwc, ChangeType.UPDATED);
 
-		// Call Solr indexing for updated PWC
-		try {
-			if (solrUtil != null && originalPwc != null) {
-				solrUtil.indexDocument(repositoryId, originalPwc);
-			}
-		} catch (Exception e) {
-			log.warn("Solr indexing failed for PWC update, repositoryId={}, documentId={}: {}",
-				repositoryId, originalPwc != null ? originalPwc.getId() : "null", e.getMessage());
-		}
+		// Call Solr indexing(optional)
+		// TODO: Update with specific document indexing
+		// solrUtil.indexDocument(repositoryId, content);
 
 		return originalPwc;
 	}
@@ -1119,15 +1113,9 @@ public class ContentServiceImpl implements ContentService {
 		// Write change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
-		// Call Solr indexing for checked out document
-		try {
-			if (solrUtil != null && result != null) {
-				solrUtil.indexDocument(repositoryId, result);
-			}
-		} catch (Exception e) {
-			log.warn("Solr indexing failed for checkOut, repositoryId={}, documentId={}: {}",
-				repositoryId, result != null ? result.getId() : "null", e.getMessage());
-		}
+		// Call Solr indexing(optional)
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 
 		return result;
 	}
@@ -1237,15 +1225,9 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		writeChangeEvent(callContext, repositoryId, latest, ChangeType.UPDATED);
 
-		// Call Solr indexing for checked in document
-		try {
-			if (solrUtil != null && result != null) {
-				solrUtil.indexDocument(repositoryId, result);
-			}
-		} catch (Exception e) {
-			log.warn("Solr indexing failed for checkIn, repositoryId={}, documentId={}: {}",
-				repositoryId, result != null ? result.getId() : "null", e.getMessage());
-		}
+		// Call Solr indexing(optional)
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 
 		return result;
 	}
@@ -1277,15 +1259,9 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		writeChangeEvent(callContext, repositoryId, previousDoc, ChangeType.UPDATED);
 
-		// Call Solr indexing for updated document
-		try {
-			if (solrUtil != null && result != null) {
-				solrUtil.indexDocument(repositoryId, result);
-			}
-		} catch (Exception e) {
-			log.warn("Solr indexing failed for updateWithoutCheckInOut, repositoryId={}, documentId={}: {}",
-				repositoryId, result != null ? result.getId() : "null", e.getMessage());
-		}
+		// Call Solr indexing(optional)
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 
 		return result;
 	}
@@ -1698,12 +1674,6 @@ public class ContentServiceImpl implements ContentService {
 		final String groupId = properties.getProperties().get("nemaki:groupId").getFirstValue().toString();
 		groupItem.setGroupId(groupId);
 
-		// FIX: Set name to groupId if cmis:name was not provided
-		// This ensures group items are displayed with their groupId in document list instead of "Unknown"
-		if (groupItem.getName() == null || groupItem.getName().trim().isEmpty()) {
-			groupItem.setName(groupId);
-		}
-
 		validateGroupItem(repositoryId, groupItem);
 
 		GroupItem created = contentDaoService.create(repositoryId, groupItem);
@@ -1748,12 +1718,6 @@ public class ContentServiceImpl implements ContentService {
 		UserItem userItem = new UserItem(i);
 		final String userId = properties.getProperties().get("nemaki:userId").getFirstValue().toString();
 		userItem.setUserId(userId);
-
-		// FIX: Set name to userId if cmis:name was not provided
-		// This ensures user items are displayed with their userId in document list instead of "Unknown"
-		if (userItem.getName() == null || userItem.getName().trim().isEmpty()) {
-			userItem.setName(userId);
-		}
 
 		// ACL
 		final String ANYONE = repositoryInfoMap.get(repositoryId).getPrincipalIdAnyone();
@@ -2106,16 +2070,9 @@ public class ContentServiceImpl implements ContentService {
 				result = contentDaoService.update(repositoryId, (Item) content);
 			}
 		}
-
-		// Call Solr indexing to update search index after property changes
-		try {
-			if (solrUtil != null && result != null) {
-				solrUtil.indexDocument(repositoryId, result);
-			}
-		} catch (Exception e) {
-			log.warn("Solr indexing failed for updated content {} (non-critical): {}",
-					content.getId(), e.getMessage());
-		}
+		// Call Solr indexing(optional)
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 
 		return result;
 	}
@@ -2183,15 +2140,9 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, source, ChangeType.UPDATED);
 		writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
 
-		// Call Solr indexing for moved content
-		try {
-			if (solrUtil != null && content != null) {
-				solrUtil.indexDocument(repositoryId, content);
-			}
-		} catch (Exception e) {
-			log.warn("Solr indexing failed for move, repositoryId={}, contentId={}: {}",
-				repositoryId, content != null ? content.getId() : "null", e.getMessage());
-		}
+		// Call Solr indexing(optional)
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 	}
 
 	private Content move(String repositoryId, Content content, String sourceId) {
@@ -2255,8 +2206,7 @@ public class ContentServiceImpl implements ContentService {
 		boolean archiveCreateEnabled = propertyManager.readBoolean(PropertyKey.ARCHIVE_CREATE_ENABLED);
 		if (archiveCreateEnabled) {
 			log.debug("Creating archive for object: {}", objectId);
-			// OPTIMIZATION: Pass Content directly to avoid duplicate getContent() call
-			createArchiveInternal(callContext, repositoryId, content, deletedWithParent);
+			createArchive(callContext, repositoryId, objectId, deletedWithParent);
 		} else {
 			log.debug("Archive creation disabled - skipping archive for object: {}", objectId);
 		}
@@ -2286,12 +2236,9 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Delete item
-		// OPTIMIZATION: Allow skipping deletion verification for faster deletions
-		// When verification is disabled, ~50ms per object is saved but deletion may not be confirmed
-		boolean verifyDeletion = propertyManager.readBoolean(PropertyKey.DELETION_VERIFY_ENABLED);
-
+		
 		try {
-			contentDaoService.delete(repositoryId, objectId, verifyDeletion);
+			contentDaoService.delete(repositoryId, objectId);
 		} catch (Exception e) {
 			log.error("ERROR in contentDaoService.delete() for object {}: {}", objectId, e.getMessage(), e);
 			throw e; // Re-throw to maintain original error handling
@@ -2317,7 +2264,8 @@ public class ContentServiceImpl implements ContentService {
 		for (String relationshipId : relationshipIds) {
 			try {
 				contentDaoService.delete(repositoryId, relationshipId);
-				// PERFORMANCE FIX: Removed Thread.sleep(5) - unnecessary delay that slowed deletions
+				// Brief pause to prevent overwhelming CouchDB
+				Thread.sleep(5);
 			} catch (Exception e) {
 				log.warn("Failed to delete relationship " + relationshipId + ": " + e.getMessage());
 				// Continue with other deletions
@@ -2417,8 +2365,6 @@ public class ContentServiceImpl implements ContentService {
 			}
 
 			// Delete a document
-			// PERFORMANCE FIX: delete() already handles Solr index removal internally
-			// Removed duplicate solrUtil.deleteDocument() call that was causing unnecessary overhead
 			delete(callContext, repositoryId, version.getId(), deleteWithParent);
 		}
 
@@ -2442,6 +2388,10 @@ public class ContentServiceImpl implements ContentService {
 			// Continue even if VersionSeries deletion fails - documents are already deleted
 		}
 	}
+
+		// Call Solr indexing(optional)
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 	}
 
 	// deletedWithParent flag controls whether it's deleted with the parent all
@@ -2631,21 +2581,11 @@ public class ContentServiceImpl implements ContentService {
 	private String createPreview(CallContext callContext, String repositoryId, ContentStream contentStream,
 			Document document) {
 
-		// Check if rendition generation is enabled before proceeding
-		if (!renditionManager.isRenditionEnabled()) {
-			log.debug("Rendition generation is disabled - skipping preview creation for {}", document.getId());
-			return null;
-		}
-
 		Rendition rendition = new Rendition();
 		rendition.setTitle("PDF Preview");
-
-		// Use configured kind from rendition manager, with fallback to CMIS_PREVIEW
-		String configuredKind = renditionManager.getRenditionKind(contentStream.getMimeType());
-		rendition.setKind(configuredKind != null ? configuredKind : RenditionKind.CMIS_PREVIEW.value());
-		
-		// CRITICAL: Set the document ID reference for CouchDB view queries
-		rendition.setRenditionDocumentId(document.getId());
+		rendition.setKind(RenditionKind.CMIS_PREVIEW.value());
+		rendition.setMimetype(contentStream.getMimeType());
+		rendition.setLength(contentStream.getLength());
 
 		ContentStream converted = renditionManager.convertToPdf(contentStream, document.getName());
 
@@ -2654,19 +2594,6 @@ public class ContentServiceImpl implements ContentService {
 			// TODO logging
 			return null;
 		} else {
-			// Set mimetype/length from CONVERTED stream (PDF), not original document
-			rendition.setMimetype(converted.getMimeType());
-			BigInteger convertedLength = converted.getBigLength();
-			// getLength() returns primitive long (not Long), so cannot be null
-			// Use it as fallback when getBigLength() returns null
-			if (convertedLength == null) {
-				long length = converted.getLength();
-				if (length >= 0) {
-					convertedLength = BigInteger.valueOf(length);
-				}
-			}
-			rendition.setLength(convertedLength != null ? convertedLength.longValue() : -1L);
-
 			String renditionId = contentDaoService.createRendition(repositoryId, rendition, converted);
 			List<String> renditionIds = document.getRenditionIds();
 			if (renditionIds == null) {
@@ -2760,91 +2687,6 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		return renditions;
-	}
-
-	@Override
-	public String generateRendition(CallContext callContext, String repositoryId, String objectId, boolean force) {
-		Document document = getDocument(repositoryId, objectId);
-		if (document == null) {
-			log.warn("Document not found for rendition generation: " + objectId);
-			return null;
-		}
-
-		// Check if rendition generation is enabled
-		if (!renditionManager.isRenditionEnabled()) {
-			log.debug("Rendition generation is disabled");
-			return null;
-		}
-
-		// Check if rendition already exists (unless force=true)
-		if (!force && CollectionUtils.isNotEmpty(document.getRenditionIds())) {
-			log.debug("Document already has renditions, skipping: " + objectId);
-			return null;
-		}
-
-		// Get attachment content
-		String attachmentId = document.getAttachmentNodeId();
-		if (attachmentId == null) {
-			log.debug("Document has no content stream, skipping: " + objectId);
-			return null;
-		}
-
-		AttachmentNode attachment = getAttachment(repositoryId, attachmentId);
-		if (attachment == null) {
-			log.warn("Attachment not found for document: " + objectId);
-			return null;
-		}
-
-		// Check if mimetype is convertible
-		String mimeType = attachment.getMimeType();
-		if (!renditionManager.checkConvertible(mimeType)) {
-			log.debug("Mimetype not convertible: " + mimeType);
-			return null;
-		}
-
-		// Create content stream and generate rendition
-		ContentStream contentStream = new ContentStreamImpl(
-			document.getName(),
-			BigInteger.valueOf(attachment.getLength()),
-			mimeType,
-			attachment.getInputStream()
-		);
-
-		String renditionId = createPreview(callContext, repositoryId, contentStream, document);
-
-		// Update document with new rendition ID
-		if (renditionId != null) {
-			contentDaoService.update(repositoryId, document);
-			log.info("Generated rendition for document: " + objectId + ", renditionId: " + renditionId);
-		}
-
-		return renditionId;
-	}
-
-	@Override
-	public List<String> generateRenditionsBatch(CallContext callContext, String repositoryId, 
-			List<String> objectIds, boolean force, int maxItems) {
-		List<String> generatedIds = new ArrayList<>();
-		int count = 0;
-
-		for (String objectId : objectIds) {
-			if (maxItems > 0 && count >= maxItems) {
-				break;
-			}
-
-			try {
-				String renditionId = generateRendition(callContext, repositoryId, objectId, force);
-				if (renditionId != null) {
-					generatedIds.add(renditionId);
-					count++;
-				}
-			} catch (Exception e) {
-				log.warn("Failed to generate rendition for document: " + objectId, e);
-			}
-		}
-
-		log.info("Batch rendition generation completed: " + generatedIds.size() + " renditions generated");
-		return generatedIds;
 	}
 
 	// ///////////////////////////////////////
@@ -3101,15 +2943,7 @@ public class ContentServiceImpl implements ContentService {
 	public Archive createArchive(CallContext callContext, String repositoryId, String objectId,
 			Boolean deletedWithParent) {
 		Content content = getContent(repositoryId, objectId);
-		return createArchiveInternal(callContext, repositoryId, content, deletedWithParent);
-	}
 
-	/**
-	 * OPTIMIZATION: Internal method that accepts Content directly to avoid duplicate getContent() calls
-	 * Used by delete() method which already has Content fetched
-	 */
-	private Archive createArchiveInternal(CallContext callContext, String repositoryId, Content content,
-			Boolean deletedWithParent) {
 		// Set base info
 		Archive a = new Archive();
 
@@ -3166,32 +3000,18 @@ public class ContentServiceImpl implements ContentService {
 		if (archive.isFolder()) {
 			Folder restored = restoreFolder(repositoryId, archive);
 			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
-			// Index restored folder in Solr
-			try {
-				if (solrUtil != null && restored != null) {
-					solrUtil.indexDocument(repositoryId, restored);
-				}
-			} catch (Exception e) {
-				log.warn("Solr indexing failed for restored folder, repositoryId={}, folderId={}: {}",
-					repositoryId, restored != null ? restored.getId() : "null", e.getMessage());
-			}
 		} else if (archive.isDocument()) {
 			Document restored = restoreDocument(repositoryId, archive);
 			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
-			// Index restored document in Solr
-			try {
-				if (solrUtil != null && restored != null) {
-					solrUtil.indexDocument(repositoryId, restored);
-				}
-			} catch (Exception e) {
-				log.warn("Solr indexing failed for restored document, repositoryId={}, documentId={}: {}",
-					repositoryId, restored != null ? restored.getId() : "null", e.getMessage());
-			}
 		} else if (archive.isAttachment()) {
 			log.error("Attachment can't be restored alone");
 		} else {
 			log.error("Only document or folder is supported for restoration");
 		}
+
+		// Call Solr indexing(optional)
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 	}
 
 	private Document restoreDocument(String repositoryId, Archive archive) {
@@ -3446,12 +3266,6 @@ public class ContentServiceImpl implements ContentService {
 	private void createPreviewAtomic(CallContext callContext, String repositoryId, ContentStream contentStream, 
 			Document document, String attachmentId) {
 		log.debug("Creating preview atomically for attachment: {}", attachmentId);
-
-		// Check if rendition generation is enabled before proceeding
-		if (!renditionManager.isRenditionEnabled()) {
-			log.debug("Rendition generation is disabled - skipping atomic preview creation for {}", document.getId());
-			return;
-		}
 		
 		// Use the already-created and verified attachment
 		AttachmentNode an = getAttachment(repositoryId, attachmentId);
