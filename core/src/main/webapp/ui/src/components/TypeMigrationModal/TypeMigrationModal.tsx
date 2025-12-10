@@ -7,16 +7,35 @@
  * Features:
  * - Displays current object type
  * - Shows compatible types (same base type)
+ * - Provides input forms for additional required properties
+ * - Supports various property types (string, integer, boolean, datetime, decimal)
  * - Warns about additional required properties
  * - Performs type migration via REST API
  *
  * @since 2025-12-11
+ * @updated 2025-12-11 - Added property input forms
  */
 
 import React, { useState, useEffect } from 'react';
-import { Modal, Select, Alert, Spin, Typography, Space, Descriptions } from 'antd';
-import { SwapOutlined, WarningOutlined } from '@ant-design/icons';
+import {
+  Modal,
+  Select,
+  Alert,
+  Spin,
+  Typography,
+  Space,
+  Descriptions,
+  Form,
+  Input,
+  InputNumber,
+  Switch,
+  DatePicker,
+  Divider
+} from 'antd';
+import { SwapOutlined, WarningOutlined, FormOutlined } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
+import { useAuth } from '../../contexts/AuthContext';
+import dayjs from 'dayjs';
 
 const { Text, Paragraph } = Typography;
 
@@ -30,12 +49,23 @@ interface TypeMigrationModalProps {
   onSuccess: (newTypeId: string) => void;
 }
 
+interface PropertyDefinition {
+  id: string;
+  displayName: string;
+  description?: string;
+  propertyType: string; // 'string' | 'integer' | 'boolean' | 'datetime' | 'decimal' | 'id' | 'html' | 'uri'
+  cardinality: string; // 'single' | 'multi'
+  required: boolean;
+  defaultValue?: unknown;
+  choices?: Array<{ displayName: string; value: unknown }>;
+}
+
 interface CompatibleType {
   id: string;
   displayName: string;
   description: string;
   baseTypeId: string;
-  additionalRequiredProperties: Record<string, string>;
+  additionalRequiredProperties: Record<string, PropertyDefinition>;
 }
 
 export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
@@ -54,14 +84,23 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
   const [currentTypeDisplayName, setCurrentTypeDisplayName] = useState<string>('');
   const [baseType, setBaseType] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [form] = Form.useForm();
 
-  const cmisService = new CMISService();
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
 
   useEffect(() => {
     if (visible && objectId) {
       loadCompatibleTypes();
+      form.resetFields();
+      setSelectedType(null);
     }
   }, [visible, objectId, repositoryId]);
+
+  // Reset form when type selection changes
+  useEffect(() => {
+    form.resetFields();
+  }, [selectedType]);
 
   const loadCompatibleTypes = async () => {
     setLoadingTypes(true);
@@ -81,13 +120,44 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
   const handleMigrate = async () => {
     if (!selectedType) return;
 
-    setLoading(true);
-    setError(null);
     try {
-      await cmisService.migrateObjectType(repositoryId, objectId, selectedType);
+      // Validate form if there are additional properties
+      const formValues = await form.validateFields();
+
+      setLoading(true);
+      setError(null);
+
+      // Transform form values to proper types
+      const additionalProperties: Record<string, unknown> = {};
+      const selectedTypeInfo = compatibleTypes[selectedType];
+
+      if (selectedTypeInfo && selectedTypeInfo.additionalRequiredProperties) {
+        for (const [propId, propDef] of Object.entries(selectedTypeInfo.additionalRequiredProperties)) {
+          const value = formValues[propId];
+          if (value !== undefined && value !== null && value !== '') {
+            // Convert datetime values to ISO string
+            if (propDef.propertyType === 'datetime' && value) {
+              additionalProperties[propId] = dayjs(value).toISOString();
+            } else {
+              additionalProperties[propId] = value;
+            }
+          }
+        }
+      }
+
+      await cmisService.migrateObjectType(
+        repositoryId,
+        objectId,
+        selectedType,
+        Object.keys(additionalProperties).length > 0 ? additionalProperties : undefined
+      );
       onSuccess(selectedType);
       onClose();
     } catch (e) {
+      if (e && typeof e === 'object' && 'errorFields' in e) {
+        // Form validation error - don't show as error message
+        return;
+      }
       setError(`タイプの変更に失敗しました: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setLoading(false);
@@ -97,18 +167,89 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
   const handleCancel = () => {
     setSelectedType(null);
     setError(null);
+    form.resetFields();
     onClose();
   };
 
   const selectedTypeInfo = selectedType ? compatibleTypes[selectedType] : null;
-  const hasAdditionalRequiredProps = selectedTypeInfo &&
-    Object.keys(selectedTypeInfo.additionalRequiredProperties).length > 0;
+  const additionalProps = selectedTypeInfo?.additionalRequiredProperties || {};
+  const hasAdditionalRequiredProps = Object.keys(additionalProps).length > 0;
 
   const typeOptions = Object.values(compatibleTypes).map((type) => ({
     value: type.id,
     label: type.displayName || type.id,
     description: type.description,
   }));
+
+  /**
+   * Render input component based on property type
+   */
+  const renderPropertyInput = (propDef: PropertyDefinition) => {
+    const { propertyType, cardinality } = propDef;
+
+    // Multi-value properties - use text area for now
+    if (cardinality === 'multi') {
+      return (
+        <Input.TextArea
+          placeholder="複数の値はカンマで区切って入力"
+          rows={2}
+        />
+      );
+    }
+
+    // Single-value properties
+    switch (propertyType) {
+      case 'boolean':
+        return <Switch checkedChildren="True" unCheckedChildren="False" />;
+
+      case 'integer':
+        return (
+          <InputNumber
+            style={{ width: '100%' }}
+            placeholder="整数値を入力"
+            precision={0}
+          />
+        );
+
+      case 'decimal':
+        return (
+          <InputNumber
+            style={{ width: '100%' }}
+            placeholder="小数値を入力"
+          />
+        );
+
+      case 'datetime':
+        return (
+          <DatePicker
+            showTime
+            style={{ width: '100%' }}
+            placeholder="日時を選択"
+          />
+        );
+
+      case 'html':
+        return (
+          <Input.TextArea
+            placeholder="HTMLを入力"
+            rows={3}
+          />
+        );
+
+      case 'uri':
+        return (
+          <Input
+            placeholder="URIを入力 (例: https://example.com)"
+            type="url"
+          />
+        );
+
+      case 'id':
+      case 'string':
+      default:
+        return <Input placeholder="値を入力" />;
+    }
+  };
 
   return (
     <Modal
@@ -128,7 +269,8 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
         loading: loading,
         danger: hasAdditionalRequiredProps,
       }}
-      width={600}
+      width={650}
+      destroyOnClose
     >
       {loadingTypes ? (
         <div style={{ textAlign: 'center', padding: '40px 0' }}>
@@ -180,40 +322,63 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
           )}
 
           {/* Selected type description */}
-          {selectedTypeInfo && (
+          {selectedTypeInfo && selectedTypeInfo.description && (
             <div>
               <Text type="secondary">
-                {selectedTypeInfo.description || '説明なし'}
+                {selectedTypeInfo.description}
               </Text>
             </div>
           )}
 
-          {/* Additional required properties warning */}
-          {hasAdditionalRequiredProps && (
-            <Alert
-              message="追加の必須プロパティ"
-              description={
-                <div>
-                  <Paragraph>
-                    新しいタイプには以下の必須プロパティがありますが、現在のオブジェクトには存在しません:
-                  </Paragraph>
-                  <ul>
-                    {Object.entries(selectedTypeInfo.additionalRequiredProperties).map(
-                      ([propId, propName]) => (
-                        <li key={propId}>
-                          <strong>{propName}</strong> ({propId})
-                        </li>
-                      )
-                    )}
-                  </ul>
-                  <Paragraph type="warning">
-                    <WarningOutlined /> タイプ変更後、これらのプロパティに値を設定する必要があります。
-                  </Paragraph>
-                </div>
-              }
-              type="warning"
-              showIcon
-            />
+          {/* Additional required properties form */}
+          {hasAdditionalRequiredProps && selectedTypeInfo && (
+            <>
+              <Divider style={{ margin: '12px 0' }} />
+              <Alert
+                message={
+                  <Space>
+                    <FormOutlined />
+                    <span>追加の必須プロパティ</span>
+                  </Space>
+                }
+                description="新しいタイプには以下の必須プロパティがあります。値を入力してください。"
+                type="warning"
+                showIcon
+                icon={<WarningOutlined />}
+              />
+
+              <Form
+                form={form}
+                layout="vertical"
+                size="small"
+                style={{ marginTop: 8 }}
+              >
+                {Object.entries(additionalProps).map(([propId, propDef]) => (
+                  <Form.Item
+                    key={propId}
+                    name={propId}
+                    label={
+                      <Space>
+                        <Text strong>{propDef.displayName}</Text>
+                        <Text type="secondary" style={{ fontSize: '12px' }}>
+                          ({propDef.propertyType})
+                        </Text>
+                      </Space>
+                    }
+                    rules={[
+                      {
+                        required: propDef.required,
+                        message: `${propDef.displayName}は必須です`,
+                      },
+                    ]}
+                    tooltip={propDef.description}
+                    valuePropName={propDef.propertyType === 'boolean' ? 'checked' : 'value'}
+                  >
+                    {renderPropertyInput(propDef)}
+                  </Form.Item>
+                ))}
+              </Form>
+            </>
           )}
 
           {/* Error message */}

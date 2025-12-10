@@ -203,14 +203,27 @@ public class TypeMigrationController {
                     typeInfo.put("baseTypeId", td.getBaseTypeId().value());
 
                     // Find required properties that don't exist in current type
-                    Map<String, String> requiredProperties = new HashMap<>();
+                    // Return full property definitions for form generation
+                    Map<String, Map<String, Object>> requiredProperties = new HashMap<>();
                     if (td.getPropertyDefinitions() != null) {
                         for (PropertyDefinition<?> pd : td.getPropertyDefinitions().values()) {
                             if (pd.isRequired() && !isSystemProperty(pd.getId())) {
                                 // Check if this property exists in current type
                                 if (currentType.getPropertyDefinitions() == null ||
                                     !currentType.getPropertyDefinitions().containsKey(pd.getId())) {
-                                    requiredProperties.put(pd.getId(), pd.getDisplayName());
+                                    Map<String, Object> propInfo = new HashMap<>();
+                                    propInfo.put("id", pd.getId());
+                                    propInfo.put("displayName", pd.getDisplayName() != null ? pd.getDisplayName() : pd.getId());
+                                    propInfo.put("description", pd.getDescription());
+                                    propInfo.put("propertyType", pd.getPropertyType().value());
+                                    propInfo.put("cardinality", pd.getCardinality().value());
+                                    propInfo.put("required", pd.isRequired());
+                                    propInfo.put("defaultValue", pd.getDefaultValue());
+                                    // Add choices if available
+                                    if (pd.getChoices() != null && !pd.getChoices().isEmpty()) {
+                                        propInfo.put("choices", pd.getChoices());
+                                    }
+                                    requiredProperties.put(pd.getId(), propInfo);
                                 }
                             }
                         }
@@ -312,6 +325,34 @@ public class TypeMigrationController {
 
             // Perform the migration
             content.setObjectType(newTypeId);
+
+            // Apply additional properties if provided
+            Map<String, Object> additionalProps = request.getAdditionalProperties();
+            if (additionalProps != null && !additionalProps.isEmpty()) {
+                // Get existing subTypeProperties or create new list
+                List<jp.aegif.nemaki.model.Property> subTypeProps = content.getSubTypeProperties();
+                if (subTypeProps == null) {
+                    subTypeProps = new java.util.ArrayList<>();
+                }
+
+                for (Map.Entry<String, Object> entry : additionalProps.entrySet()) {
+                    String propId = entry.getKey();
+                    Object propValue = entry.getValue();
+
+                    // Get property definition to validate
+                    PropertyDefinition<?> propDef = newType.getPropertyDefinitions().get(propId);
+                    if (propDef != null && propValue != null) {
+                        // Remove existing property with same ID if present
+                        subTypeProps.removeIf(p -> propId.equals(p.getKey()));
+
+                        // Add new property
+                        subTypeProps.add(new jp.aegif.nemaki.model.Property(propId, propValue));
+                        log.info("[TypeMigration] Set additional property: " + propId + " = " + propValue);
+                    }
+                }
+
+                content.setSubTypeProperties(subTypeProps);
+            }
 
             // Update change token
             String newChangeToken = String.valueOf(System.currentTimeMillis());
