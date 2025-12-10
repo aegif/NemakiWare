@@ -3177,4 +3177,109 @@ export class CMISService {
       xhr.send(formData);
     });
   }
+
+  // =====================================================
+  // Type Migration API (NemakiWare Extension)
+  // =====================================================
+
+  /**
+   * Get compatible types for type migration.
+   * Returns all types that an object can be migrated to (same base type).
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Object ID to check compatible types for
+   * @returns Promise resolving to compatible types information
+   */
+  async getCompatibleTypesForMigration(
+    repositoryId: string,
+    objectId: string
+  ): Promise<{
+    currentType: string;
+    currentTypeDisplayName: string;
+    baseType: string;
+    compatibleTypes: Record<string, {
+      id: string;
+      displayName: string;
+      description: string;
+      baseTypeId: string;
+      additionalRequiredProperties: Record<string, string>;
+    }>;
+    count: number;
+  }> {
+    const headers = this.getAuthHeaders();
+    const response = await fetch(
+      `/core/api/v1/repo/${repositoryId}/type-migration/compatible-types/${objectId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          ...headers,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Failed to get compatible types: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.status === 'error') {
+      throw new Error(data.message || 'Failed to get compatible types');
+    }
+
+    return data;
+  }
+
+  /**
+   * Migrate an object to a new type.
+   * This is a NemakiWare-specific extension - CMIS standard does not support changing object types.
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Object ID to migrate
+   * @param newTypeId Target type ID
+   * @param additionalProperties Additional properties required by the new type
+   * @returns Promise resolving to migration result
+   */
+  async migrateObjectType(
+    repositoryId: string,
+    objectId: string,
+    newTypeId: string,
+    additionalProperties?: Record<string, unknown>
+  ): Promise<{
+    objectId: string;
+    previousType: string;
+    newType: string;
+    changeToken: string;
+  }> {
+    const headers = this.getAuthHeaders();
+    const response = await fetch(
+      `/core/api/v1/repo/${repositoryId}/type-migration`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          ...headers,
+        },
+        body: JSON.stringify({
+          objectId,
+          newTypeId,
+          additionalProperties,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Type migration failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.status === 'error') {
+      throw new Error(data.message || 'Type migration failed');
+    }
+
+    return data;
+  }
 }

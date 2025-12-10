@@ -258,7 +258,8 @@ import {
   UploadOutlined,
   ArrowLeftOutlined,
   PlusOutlined,
-  DeleteOutlined
+  DeleteOutlined,
+  SwapOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
@@ -267,6 +268,7 @@ import { PropertyEditor } from '../PropertyEditor/PropertyEditor';
 import { PreviewComponent } from '../PreviewComponent/PreviewComponent';
 import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
 import { SecondaryTypeSelector } from '../SecondaryTypeSelector/SecondaryTypeSelector';
+import { TypeMigrationModal } from '../TypeMigrationModal/TypeMigrationModal';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -288,6 +290,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [objectPickerVisible, setObjectPickerVisible] = useState(false);
   const [selectedTargetObject, setSelectedTargetObject] = useState<CMISObject | null>(null);
   const [relationshipType, setRelationshipType] = useState<string>('nemaki:bidirectionalRelationship');
+  const [typeMigrationModalVisible, setTypeMigrationModalVisible] = useState(false);
   const [form] = Form.useForm();
   const [relationshipForm] = Form.useForm();
 
@@ -800,7 +803,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 </Space>
               )}
               
-              <Button 
+              <Button
+                icon={<SwapOutlined />}
+                onClick={() => setTypeMigrationModalVisible(true)}
+              >
+                タイプを変更
+              </Button>
+
+              <Button
                 icon={<EditOutlined />}
                 onClick={() => navigate(`/permissions/${object.id}`)}
               >
@@ -983,6 +993,19 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         onCancel={() => setObjectPickerVisible(false)}
         title="ターゲットオブジェクトを選択"
         filterType="all"
+      />
+
+      <TypeMigrationModal
+        visible={typeMigrationModalVisible}
+        repositoryId={repositoryId}
+        objectId={object.id}
+        objectName={object.name}
+        currentType={object.objectType}
+        onClose={() => setTypeMigrationModalVisible(false)}
+        onSuccess={async (newTypeId) => {
+          message.success(`タイプを ${newTypeId} に変更しました`);
+          await loadObject(); // Reload object to get updated type
+        }}
       />
     </div>
   );
