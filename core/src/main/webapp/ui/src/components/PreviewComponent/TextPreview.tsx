@@ -225,7 +225,8 @@ export const TextPreview: React.FC<TextPreviewProps> = ({ url, fileName }) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(url)
+    // Include credentials for authenticated content fetch
+    fetch(url, { credentials: 'include' })
       .then(response => {
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
@@ -236,7 +237,8 @@ export const TextPreview: React.FC<TextPreviewProps> = ({ url, fileName }) => {
         setContent(text);
         setLoading(false);
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error('TextPreview fetch error:', err);
         setError('ファイルの読み込みに失敗しました');
         setLoading(false);
       });
