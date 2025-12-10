@@ -269,9 +269,12 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [types, setTypes] = useState<TypeDefinition[]>([]);
+  const [secondaryTypes, setSecondaryTypes] = useState<TypeDefinition[]>([]);
   const [lastExecutedQuery, setLastExecutedQuery] = useState<string>('');
   const [selectedTypeProperties, setSelectedTypeProperties] = useState<PropertyDefinition[]>([]);
+  const [selectedSecondaryTypeProperties, setSelectedSecondaryTypeProperties] = useState<PropertyDefinition[]>([]);
   const [loadingProperties, setLoadingProperties] = useState(false);
+  const [loadingSecondaryProperties, setLoadingSecondaryProperties] = useState(false);
   const [form] = Form.useForm();
   const navigate = useNavigate();
 
@@ -280,6 +283,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
   useEffect(() => {
     loadTypes();
+    loadSecondaryTypes();
     const query = searchParams.get('q');
     if (query) {
       // Don't set the CMIS query to the form - it would confuse users
@@ -294,6 +298,15 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       setTypes(typeList);
     } catch (error) {
       // Failed to load types
+    }
+  };
+
+  const loadSecondaryTypes = async () => {
+    try {
+      const secondaryTypeList = await cmisService.getSecondaryTypes(repositoryId);
+      setSecondaryTypes(secondaryTypeList);
+    } catch (error) {
+      // Failed to load secondary types
     }
   };
 
@@ -338,6 +351,50 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       setSelectedTypeProperties([]);
     } finally {
       setLoadingProperties(false);
+    }
+  };
+
+  // Handle secondary type selection and load its property definitions
+  const handleSecondaryTypeSelect = async (typeId: string | undefined) => {
+    // Clear previous secondary property values when type changes
+    const currentValues = form.getFieldsValue();
+    const newValues = { ...currentValues };
+    // Remove all secondary property values (keys starting with 'secondaryProp_')
+    Object.keys(newValues).forEach(key => {
+      if (key.startsWith('secondaryProp_')) {
+        delete newValues[key];
+      }
+    });
+    form.setFieldsValue(newValues);
+
+    if (!typeId) {
+      setSelectedSecondaryTypeProperties([]);
+      return;
+    }
+
+    setLoadingSecondaryProperties(true);
+    try {
+      const typeDefinition = await cmisService.getType(repositoryId, typeId);
+
+      // Filter to get only custom queryable properties (exclude cmis:* standard properties)
+      const customProperties: PropertyDefinition[] = [];
+      if (typeDefinition.propertyDefinitions) {
+        Object.values(typeDefinition.propertyDefinitions).forEach(propDef => {
+          // Exclude standard CMIS properties and only include queryable properties
+          if (!propDef.id.startsWith('cmis:') && propDef.queryable) {
+            customProperties.push(propDef);
+          }
+        });
+      }
+
+      // Sort by displayName for consistent ordering
+      customProperties.sort((a, b) => a.displayName.localeCompare(b.displayName));
+      setSelectedSecondaryTypeProperties(customProperties);
+    } catch (error) {
+      console.error('Failed to load secondary type properties:', error);
+      setSelectedSecondaryTypeProperties([]);
+    } finally {
+      setLoadingSecondaryProperties(false);
     }
   };
 
@@ -409,6 +466,11 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
         conditions.push(`cmis:createdBy = '${values.createdBy}'`);
       }
 
+      // Add secondary type filter condition
+      if (values.secondaryType) {
+        conditions.push(`ANY cmis:secondaryObjectTypeIds IN ('${values.secondaryType}')`);
+      }
+
       // Add custom property conditions
       selectedTypeProperties.forEach(propDef => {
         const fieldName = `customProp_${propDef.id}`;
@@ -437,6 +499,34 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
               break;
             default:
               // Default to string-like comparison
+              conditions.push(`${propId} LIKE '%${value}%'`);
+          }
+        }
+      });
+
+      // Add secondary type property conditions
+      selectedSecondaryTypeProperties.forEach(propDef => {
+        const fieldName = `secondaryProp_${propDef.id}`;
+        const value = values[fieldName];
+
+        if (value !== undefined && value !== null && value !== '') {
+          const propId = propDef.id;
+
+          switch (propDef.propertyType) {
+            case 'string':
+              conditions.push(`${propId} LIKE '%${value}%'`);
+              break;
+            case 'integer':
+            case 'decimal':
+              conditions.push(`${propId} = ${value}`);
+              break;
+            case 'boolean':
+              conditions.push(`${propId} = ${value}`);
+              break;
+            case 'datetime':
+              conditions.push(`${propId} = TIMESTAMP '${value.toISOString()}'`);
+              break;
+            default:
               conditions.push(`${propId} LIKE '%${value}%'`);
           }
         }
@@ -496,6 +586,26 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       dataIndex: 'objectType',
       key: 'objectType',
       width: 150,
+    },
+    {
+      title: 'セカンダリタイプ',
+      dataIndex: 'secondaryTypeIds',
+      key: 'secondaryTypes',
+      width: 180,
+      render: (secondaryTypeIds: string[] | undefined) => {
+        if (!secondaryTypeIds || secondaryTypeIds.length === 0) {
+          return <span style={{ color: '#999' }}>-</span>;
+        }
+        return (
+          <Tooltip title={secondaryTypeIds.join(', ')}>
+            <span style={{ color: '#1890ff' }}>
+              {secondaryTypeIds.length === 1
+                ? secondaryTypeIds[0].replace(/^.*:/, '')
+                : `${secondaryTypeIds.length}個`}
+            </span>
+          </Tooltip>
+        );
+      },
     },
     {
       title: 'サイズ',
@@ -601,7 +711,25 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                 ))}
               </Select>
             </Form.Item>
-            
+
+            <Form.Item
+              name="secondaryType"
+              label="セカンダリタイプ"
+            >
+              <Select
+                placeholder="セカンダリタイプを選択"
+                allowClear
+                onChange={(value) => handleSecondaryTypeSelect(value)}
+                loading={loadingSecondaryProperties}
+              >
+                {secondaryTypes.map(type => (
+                  <Select.Option key={type.id} value={type.id}>
+                    {type.displayName}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+
             <Form.Item
               name="name"
               label="名前"
@@ -716,6 +844,90 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
             </Card>
           )}
 
+          {/* Dynamic Secondary Type Property Search Fields */}
+          {selectedSecondaryTypeProperties.length > 0 && (
+            <Card
+              size="small"
+              title="セカンダリタイプのプロパティで検索"
+              style={{ marginTop: 16, marginBottom: 16 }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+                {selectedSecondaryTypeProperties.map(propDef => {
+                  const fieldName = `secondaryProp_${propDef.id}`;
+
+                  // Render different input types based on property type
+                  const renderInput = () => {
+                    switch (propDef.propertyType) {
+                      case 'string':
+                        if (propDef.choices && propDef.choices.length > 0) {
+                          return (
+                            <Select
+                              placeholder={`${propDef.displayName}を選択`}
+                              allowClear
+                            >
+                              {propDef.choices.map((choice, index) => (
+                                <Select.Option key={index} value={choice.value[0]}>
+                                  {choice.displayName}
+                                </Select.Option>
+                              ))}
+                            </Select>
+                          );
+                        }
+                        return <Input placeholder={`${propDef.displayName}を入力`} />;
+
+                      case 'integer':
+                        return (
+                          <InputNumber
+                            style={{ width: '100%' }}
+                            placeholder={`${propDef.displayName}を入力`}
+                            precision={0}
+                            min={propDef.minValue}
+                            max={propDef.maxValue}
+                          />
+                        );
+
+                      case 'decimal':
+                        return (
+                          <InputNumber
+                            style={{ width: '100%' }}
+                            placeholder={`${propDef.displayName}を入力`}
+                            step={0.01}
+                            min={propDef.minValue}
+                            max={propDef.maxValue}
+                          />
+                        );
+
+                      case 'boolean':
+                        return (
+                          <Select placeholder={`${propDef.displayName}を選択`} allowClear>
+                            <Select.Option value="true">はい (true)</Select.Option>
+                            <Select.Option value="false">いいえ (false)</Select.Option>
+                          </Select>
+                        );
+
+                      case 'datetime':
+                        return <DatePicker style={{ width: '100%' }} showTime />;
+
+                      default:
+                        return <Input placeholder={`${propDef.displayName}を入力`} />;
+                    }
+                  };
+
+                  return (
+                    <Form.Item
+                      key={propDef.id}
+                      name={fieldName}
+                      label={propDef.displayName}
+                      tooltip={propDef.description || undefined}
+                    >
+                      {renderInput()}
+                    </Form.Item>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit" loading={loading}>
@@ -724,6 +936,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
               <Button onClick={() => {
                 form.resetFields();
                 setLastExecutedQuery('');
+                setSelectedTypeProperties([]);
+                setSelectedSecondaryTypeProperties([]);
               }}>
                 クリア
               </Button>

@@ -370,6 +370,32 @@ export class CMISService {
     return undefined;
   }
 
+  // Helper method to safely extract array values from CMIS properties
+  // Used for multi-value properties like cmis:secondaryObjectTypeIds
+  private getSafeArrayProperty(props: Record<string, any>, key: string): string[] {
+    const property = props[key];
+
+    // Handle Browser Binding format: {id: "cmis:secondaryObjectTypeIds", value: ["type1", "type2"]}
+    if (property && typeof property === 'object' && property.value !== undefined) {
+      const value = property.value;
+      if (Array.isArray(value)) {
+        return value.map(v => String(v));
+      } else if (typeof value === 'string' && value !== '') {
+        return [value];
+      }
+      return [];
+    }
+
+    // Handle direct value
+    if (Array.isArray(property)) {
+      return property.map(v => String(v));
+    } else if (typeof property === 'string' && property !== '') {
+      return [property];
+    }
+
+    return [];
+  }
+
   // REMOVED: getSafeBooleanProperty - unused helper method (2025-10-22)
 
   private extractAllowableActions(allowableActionsData: any): string[] {
@@ -1467,7 +1493,8 @@ export class CMISService {
                   lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
                   contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
                   contentStreamMimeType: this.getSafeStringProperty(props, 'cmis:contentStreamMimeType'),
-                  path: this.getSafeStringProperty(props, 'cmis:path')
+                  path: this.getSafeStringProperty(props, 'cmis:path'),
+                  secondaryTypeIds: this.getSafeArrayProperty(props, 'cmis:secondaryObjectTypeIds')
                 };
               });
 

@@ -79,6 +79,7 @@ export interface CMISObject {
   lastModifiedBy?: string;
   lastModificationDate?: string;
   aclInherited?: boolean;
+  secondaryTypeIds?: string[];
 }
 
 export interface SearchResult {
