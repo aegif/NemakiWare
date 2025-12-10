@@ -410,7 +410,17 @@ export class CMISService {
       }
 
       formData.append(`propertyId[${propertyIndex}]`, key);
-      formData.append(`propertyValue[${propertyIndex}]`, String(value));
+
+      // CRITICAL FIX (2025-12-11): Handle multi-value properties correctly
+      // CMIS Browser Binding expects propertyValue[n][m] format for arrays
+      // Without this fix, arrays are converted to "[value1,value2]" string
+      if (Array.isArray(value)) {
+        value.forEach((v, i) => {
+          formData.append(`propertyValue[${propertyIndex}][${i}]`, String(v));
+        });
+      } else {
+        formData.append(`propertyValue[${propertyIndex}]`, String(value));
+      }
       propertyIndex++;
     });
   }
@@ -2981,5 +2991,163 @@ export class CMISService {
   getRenditionUrl(repositoryId: string, objectId: string, streamId: string): string {
     const token = this.authService.getAuthToken();
     return `${this.baseUrl}/${repositoryId}?cmisselector=content&objectId=${objectId}&streamId=${streamId}&token=${token}`;
+  }
+
+  // ============================================================
+  // Type Selection and Secondary Types Management (2025-12-11)
+  // ============================================================
+
+  /**
+   * Get document types available for document creation.
+   * Returns cmis:document and all its descendant types that are creatable.
+   * @param repositoryId Repository ID
+   * @returns Promise resolving to array of document TypeDefinitions
+   */
+  async getDocumentTypes(repositoryId: string): Promise<TypeDefinition[]> {
+    const allTypes = await this.getTypes(repositoryId);
+
+    // Build a set of all document type IDs (cmis:document and all descendants)
+    const documentTypeIds = new Set<string>(['cmis:document']);
+
+    // Iteratively find all descendants of cmis:document
+    let foundNew = true;
+    while (foundNew) {
+      foundNew = false;
+      for (const type of allTypes) {
+        if (type.parentTypeId && documentTypeIds.has(type.parentTypeId) && !documentTypeIds.has(type.id)) {
+          documentTypeIds.add(type.id);
+          foundNew = true;
+        }
+      }
+    }
+
+    // Filter to only document types that are creatable
+    return allTypes.filter(type =>
+      documentTypeIds.has(type.id) && type.creatable !== false
+    );
+  }
+
+  /**
+   * Get folder types available for folder creation.
+   * Returns cmis:folder and all its descendant types that are creatable.
+   * @param repositoryId Repository ID
+   * @returns Promise resolving to array of folder TypeDefinitions
+   */
+  async getFolderTypes(repositoryId: string): Promise<TypeDefinition[]> {
+    const allTypes = await this.getTypes(repositoryId);
+
+    // Build a set of all folder type IDs (cmis:folder and all descendants)
+    const folderTypeIds = new Set<string>(['cmis:folder']);
+
+    // Iteratively find all descendants of cmis:folder
+    let foundNew = true;
+    while (foundNew) {
+      foundNew = false;
+      for (const type of allTypes) {
+        if (type.parentTypeId && folderTypeIds.has(type.parentTypeId) && !folderTypeIds.has(type.id)) {
+          folderTypeIds.add(type.id);
+          foundNew = true;
+        }
+      }
+    }
+
+    // Filter to only folder types that are creatable
+    return allTypes.filter(type =>
+      folderTypeIds.has(type.id) && type.creatable !== false
+    );
+  }
+
+  /**
+   * Get secondary types available for assignment.
+   * Returns cmis:secondary and all its descendant types.
+   * @param repositoryId Repository ID
+   * @returns Promise resolving to array of secondary TypeDefinitions
+   */
+  async getSecondaryTypes(repositoryId: string): Promise<TypeDefinition[]> {
+    const allTypes = await this.getTypes(repositoryId);
+
+    // Build a set of all secondary type IDs (cmis:secondary and all descendants)
+    const secondaryTypeIds = new Set<string>(['cmis:secondary']);
+
+    // Iteratively find all descendants of cmis:secondary
+    let foundNew = true;
+    while (foundNew) {
+      foundNew = false;
+      for (const type of allTypes) {
+        if (type.parentTypeId && secondaryTypeIds.has(type.parentTypeId) && !secondaryTypeIds.has(type.id)) {
+          secondaryTypeIds.add(type.id);
+          foundNew = true;
+        }
+      }
+    }
+
+    // Filter to only actual secondary types (exclude cmis:secondary itself as it's not directly assignable)
+    return allTypes.filter(type =>
+      secondaryTypeIds.has(type.id) && type.id !== 'cmis:secondary'
+    );
+  }
+
+  /**
+   * Update secondary types for an object using Browser Binding.
+   * Uses addSecondaryTypeIds and removeSecondaryTypeIds parameters for efficient updates.
+   * @param repositoryId Repository ID
+   * @param objectId Object ID to update
+   * @param addTypes Array of secondary type IDs to add
+   * @param removeTypes Array of secondary type IDs to remove
+   * @returns Promise resolving to updated CMISObject
+   */
+  async updateSecondaryTypes(
+    repositoryId: string,
+    objectId: string,
+    addTypes: string[],
+    removeTypes: string[]
+  ): Promise<CMISObject> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 201) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              const updated = this.buildCmisObjectFromBrowserData(response);
+              resolve(updated);
+            } catch (e) {
+              reject(new Error('Failed to parse response'));
+            }
+          } else {
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
+          }
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Network error'));
+
+      const formData = new FormData();
+      formData.append('cmisaction', 'update');
+      formData.append('objectId', objectId);
+      formData.append('succinct', 'true');
+      formData.append('_charset_', 'UTF-8');
+
+      // Add secondary types to add
+      if (addTypes.length > 0) {
+        formData.append('addSecondaryTypeIds', addTypes.join(','));
+      }
+
+      // Add secondary types to remove
+      if (removeTypes.length > 0) {
+        formData.append('removeSecondaryTypeIds', removeTypes.join(','));
+      }
+
+      xhr.send(formData);
+    });
   }
 }

@@ -266,6 +266,7 @@ import { CMISObject, VersionHistory, TypeDefinition, Relationship } from '../../
 import { PropertyEditor } from '../PropertyEditor/PropertyEditor';
 import { PreviewComponent } from '../PreviewComponent/PreviewComponent';
 import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
+import { SecondaryTypeSelector } from '../SecondaryTypeSelector/SecondaryTypeSelector';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -308,11 +309,47 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       const obj = await cmisService.getObject(repositoryId, objectId);
       setObject(obj);
 
+      // Get primary type definition
       const typeDef = await cmisService.getType(repositoryId, obj.objectType);
-      setTypeDefinition(typeDef);
+
+      // Merge secondary type property definitions (Phase 4: 2025-12-11)
+      const secondaryTypeIds: string[] = obj.properties?.['cmis:secondaryObjectTypeIds'] || [];
+      let mergedPropertyDefinitions = { ...typeDef.propertyDefinitions };
+
+      if (secondaryTypeIds.length > 0) {
+        // Fetch all secondary type definitions in parallel
+        const secondaryTypeDefs = await Promise.all(
+          secondaryTypeIds.map(typeId =>
+            cmisService.getType(repositoryId, typeId).catch(err => {
+              console.error(`Failed to load secondary type ${typeId}:`, err);
+              return null;
+            })
+          )
+        );
+
+        // Merge property definitions from secondary types
+        for (const secTypeDef of secondaryTypeDefs) {
+          if (secTypeDef && secTypeDef.propertyDefinitions) {
+            // Add secondary type property definitions
+            for (const [propId, propDef] of Object.entries(secTypeDef.propertyDefinitions)) {
+              if (!mergedPropertyDefinitions[propId]) {
+                mergedPropertyDefinitions[propId] = propDef;
+              }
+            }
+          }
+        }
+      }
+
+      // Create merged type definition
+      const mergedTypeDef = {
+        ...typeDef,
+        propertyDefinitions: mergedPropertyDefinitions
+      };
+
+      setTypeDefinition(mergedTypeDef);
 
       // Expose propertyDefinitions for test verification
-      (window as any).__NEMAKI_PROPERTY_DEFINITIONS__ = typeDef.propertyDefinitions;
+      (window as any).__NEMAKI_PROPERTY_DEFINITIONS__ = mergedTypeDef.propertyDefinitions;
     } catch (error) {
       message.error('オブジェクトの読み込みに失敗しました');
     } finally {
@@ -625,17 +662,33 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     );
   };
 
+  // Handler for secondary type updates
+  const handleSecondaryTypeUpdate = (updatedObject: CMISObject) => {
+    setObject(updatedObject);
+    // Reload type definition to get updated property definitions
+    loadObject();
+  };
+
   const tabItems = [
     {
       key: 'properties',
       label: 'プロパティ',
       children: (
-        <PropertyEditor
-          object={object}
-          propertyDefinitions={typeDefinition.propertyDefinitions}
-          onSave={handleUpdateProperties}
-          readOnly={isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy}
-        />
+        <div>
+          {/* Secondary Type Selector - above property editor */}
+          <SecondaryTypeSelector
+            repositoryId={repositoryId}
+            object={object}
+            onUpdate={handleSecondaryTypeUpdate}
+            readOnly={isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy}
+          />
+          <PropertyEditor
+            object={object}
+            propertyDefinitions={typeDefinition.propertyDefinitions}
+            onSave={handleUpdateProperties}
+            readOnly={isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy}
+          />
+        </div>
       ),
     },
     ...(canPreview(object) ? [{

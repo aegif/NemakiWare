@@ -216,6 +216,7 @@ import {
   Modal,
   Form,
   Input,
+  Select,
   message,
   Popconfirm,
   Tooltip,
@@ -245,7 +246,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
-import { CMISObject } from '../../types/cmis';
+import { CMISObject, TypeDefinition } from '../../types/cmis';
 import { FolderTree } from '../FolderTree/FolderTree';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -292,6 +293,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [folderError, setFolderError] = useState<string | null>(null);
 
+  // Type selection states (2025-12-11)
+  const [documentTypes, setDocumentTypes] = useState<TypeDefinition[]>([]);
+  const [folderTypes, setFolderTypes] = useState<TypeDefinition[]>([]);
+  const [typesLoading, setTypesLoading] = useState(false);
+
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -320,6 +326,29 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setSearchParams({ folderId: ROOT_FOLDER_ID });
     }
   }, [repositoryId, searchParams, setSearchParams]); // Include searchParams to react to URL changes
+
+  // Load available document and folder types for upload/creation dialogs
+  useEffect(() => {
+    const loadTypes = async () => {
+      setTypesLoading(true);
+      try {
+        const [docTypes, fldTypes] = await Promise.all([
+          cmisService.getDocumentTypes(repositoryId),
+          cmisService.getFolderTypes(repositoryId)
+        ]);
+        setDocumentTypes(docTypes);
+        setFolderTypes(fldTypes);
+      } catch (error) {
+        console.error('Failed to load types:', error);
+        // Set defaults if type loading fails
+        setDocumentTypes([{ id: 'cmis:document', displayName: 'ドキュメント' } as TypeDefinition]);
+        setFolderTypes([{ id: 'cmis:folder', displayName: 'フォルダ' } as TypeDefinition]);
+      } finally {
+        setTypesLoading(false);
+      }
+    };
+    loadTypes();
+  }, [repositoryId]);
 
   // Load objects when selectedFolderId changes (the folder displayed in list pane)
   useEffect(() => {
@@ -375,7 +404,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
 
   const handleUpload = async (values: any) => {
-    const { file, name } = values;
+    const { file, name, objectTypeId } = values;
 
     // Clear previous error
     setUploadError(null);
@@ -397,7 +426,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         return;
       }
 
-      await cmisService.createDocument(repositoryId, selectedFolderId, actualFile, { 'cmis:name': name });
+      // Build properties with selected type (2025-12-11)
+      const properties: Record<string, any> = {
+        'cmis:name': name,
+        'cmis:objectTypeId': objectTypeId || 'cmis:document'
+      };
+
+      await cmisService.createDocument(repositoryId, selectedFolderId, actualFile, properties);
 
       message.success('ファイルをアップロードしました');
       setUploadModalVisible(false);
@@ -419,7 +454,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setFolderError(null);
 
     try {
-      await cmisService.createFolder(repositoryId, selectedFolderId, values.name);
+      // Build properties with selected type (2025-12-11)
+      const properties: Record<string, any> = {
+        'cmis:name': values.name,
+        'cmis:objectTypeId': values.objectTypeId || 'cmis:folder'
+      };
+
+      await cmisService.createFolder(repositoryId, selectedFolderId, values.name, properties);
       message.success('フォルダを作成しました');
       setFolderModalVisible(false);
       setFolderError(null);
@@ -1022,6 +1063,29 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
           >
             <Input placeholder="ファイル名を入力" />
           </Form.Item>
+          <Form.Item
+            name="objectTypeId"
+            label="タイプ"
+            initialValue="cmis:document"
+          >
+            <Select
+              loading={typesLoading}
+              placeholder="ドキュメントタイプを選択"
+              showSearch
+              optionFilterProp="label"
+            >
+              {documentTypes.map(type => (
+                <Select.Option key={type.id} value={type.id} label={type.displayName || type.id}>
+                  {type.displayName || type.id}
+                  {type.description && (
+                    <span style={{ color: '#888', marginLeft: 8, fontSize: '12px' }}>
+                      - {type.description}
+                    </span>
+                  )}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
@@ -1065,6 +1129,29 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             rules={[{ required: true, message: 'フォルダ名を入力してください' }]}
           >
             <Input placeholder="フォルダ名を入力" />
+          </Form.Item>
+          <Form.Item
+            name="objectTypeId"
+            label="タイプ"
+            initialValue="cmis:folder"
+          >
+            <Select
+              loading={typesLoading}
+              placeholder="フォルダタイプを選択"
+              showSearch
+              optionFilterProp="label"
+            >
+              {folderTypes.map(type => (
+                <Select.Option key={type.id} value={type.id} label={type.displayName || type.id}>
+                  {type.displayName || type.id}
+                  {type.description && (
+                    <span style={{ color: '#888', marginLeft: 8, fontSize: '12px' }}>
+                      - {type.description}
+                    </span>
+                  )}
+                </Select.Option>
+              ))}
+            </Select>
           </Form.Item>
           <Form.Item>
             <Space>
