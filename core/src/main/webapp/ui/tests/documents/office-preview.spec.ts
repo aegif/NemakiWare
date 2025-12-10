@@ -37,6 +37,9 @@ import * as os from 'os';
 import JSZip from 'jszip';
 
 test.describe('Office Document Preview', () => {
+  // Run tests sequentially so that Test 4 can find Office documents uploaded by earlier tests
+  test.describe.configure({ mode: 'serial' });
+
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   const uploadedFiles: string[] = [];
@@ -553,16 +556,20 @@ test.describe('Office Document Preview', () => {
    * Tests the rendition generation API directly:
    * - POST to /core/api/v1/repo/{repositoryId}/renditions/generate
    * - Verifies response contains rendition metadata
+   *
+   * Note: This test runs after Tests 1-3 in serial mode, so Office documents
+   * should already exist from earlier tests.
    */
   test('should verify rendition API generates PDF for Office files', async ({ page }) => {
-    console.log('Test 3: Direct rendition API verification');
+    console.log('Test 4: Direct rendition API verification');
 
-    // First upload a test file via API
+    // Query for any existing Office document (should exist from Tests 1-3)
     const apiResponse = await page.evaluate(async () => {
       try {
-        // Query for any existing Office document
+        // Query for any existing Office document by file name extension
+        // Using LIKE on cmis:name is more reliable than MIME type matching
         const queryResponse = await fetch(
-          `/core/browser/bedroom?cmisselector=query&q=SELECT%20*%20FROM%20cmis:document%20WHERE%20cmis:contentStreamMimeType%20LIKE%20'%25openxmlformats%25'`,
+          `/core/browser/bedroom?cmisselector=query&q=SELECT%20*%20FROM%20cmis:document%20WHERE%20cmis:name%20LIKE%20'%25.xlsx'`,
           {
             headers: {
               'Authorization': 'Basic ' + btoa('admin:admin'),
@@ -579,9 +586,10 @@ test.describe('Office Document Preview', () => {
         const officeDoc = queryData.results?.[0];
 
         if (!officeDoc) {
+          // No Office document found - this is unexpected in serial mode
+          // Return error instead of skip since Tests 1-3 should have uploaded files
           return {
-            skip: true,
-            reason: 'No Office document found in repository'
+            error: 'No .xlsx document found in repository. Tests 1-3 should have uploaded Excel files.'
           };
         }
 
@@ -635,14 +643,7 @@ test.describe('Office Document Preview', () => {
 
     if (apiResponse.error) {
       console.log(`❌ API Error: ${apiResponse.error}`);
-      test.skip(true, `API error: ${apiResponse.error}`);
-      return;
-    }
-
-    if (apiResponse.skip) {
-      console.log(`⊘ Skipping: ${apiResponse.reason}`);
-      test.skip(true, apiResponse.reason);
-      return;
+      throw new Error(apiResponse.error);
     }
 
     console.log(`Document: ${apiResponse.fileName} (${apiResponse.mimeType})`);
