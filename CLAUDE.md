@@ -583,6 +583,132 @@ curl -s http://localhost:8080/core/ui/assets/index-*.js 2>/dev/null | grep -o "l
 # 期待: localhost:8088 のみ
 ```
 
+### 外部認証・プレビュー機能 総合チェックリスト (2025-12-12) ✅
+
+**目的**: 外部認証（OIDC/SAML）とプレビュー機能のデグレを防止するための総合チェックリスト
+
+#### 1. 外部認証（OIDC/SAML）デグレ防止
+
+**検証済み状態 (2025-12-12)**: 19/19 テスト合格
+
+**必須チェック項目**:
+```bash
+# 1-1. Keycloak起動確認
+docker ps --filter "name=keycloak" --format "{{.Names}}: {{.Status}}"
+# 未起動の場合:
+cd docker && docker compose -f docker-compose.keycloak.yml up -d
+sleep 60  # Keycloak起動待機
+
+# 1-2. OIDC設定確認
+curl -s http://localhost:8088/realms/nemakiware/.well-known/openid-configuration | head -5
+# 期待: HTTP 200 with JSON
+
+# 1-3. コールバックファイル確認
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/oidc-callback.html  # 200
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/saml-callback.html  # 200
+
+# 1-4. アセットファイル確認
+curl -s http://localhost:8080/core/ui/oidc-callback.html | grep -o 'src="[^"]*"'
+# 期待: /core/ui/assets/index-XXXX.js (ハッシュ付き)
+
+# 1-5. Playwrightテスト実行
+cd core/src/main/webapp/ui
+npx playwright test tests/auth/ --project=chromium
+# 期待: 19/19 PASS (login: 7, oidc: 5, saml: 7)
+```
+
+**OIDC設定ファイル**:
+- `core/src/main/webapp/ui/src/config/oidc.ts` - authority: `http://localhost:8088/realms/nemakiware`
+- `core/src/main/webapp/ui/src/config/saml.ts` - sso_url: `http://localhost:8088/realms/nemakiware/protocol/saml`
+
+#### 2. プレビュー機能デグレ防止
+
+**検証済み状態 (2025-12-12)**: PDF worker, 画像, Officeプレビューすべて正常
+
+**必須チェック項目**:
+```bash
+# 2-1. PDF Worker確認
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/pdf-worker/pdf.worker.min.mjs
+# 期待: 200
+
+# 2-2. .mjs MIME type確認 (web.xmlに設定必要)
+grep -A 2 "mjs" core/src/main/webapp/WEB-INF/web.xml
+# 期待: <mime-type>text/javascript</mime-type>
+
+# 2-3. pom.xmlでpdf-workerがデプロイされることを確認
+grep "pdf-worker" core/pom.xml
+# 期待: <include>pdf-worker/**</include>
+
+# 2-4. PDFPreview認証確認 (CMISService使用)
+grep "cmisService.getContentStream" core/src/main/webapp/ui/src/components/PreviewComponent/PDFPreview.tsx
+# 期待: マッチあり（認証付きでコンテンツ取得）
+```
+
+**プレビューコンポーネント一覧**:
+| コンポーネント | ファイル | 認証方式 |
+|---------------|---------|---------|
+| PDFPreview | `PDFPreview.tsx` | CMISService.getContentStream() ✅ |
+| ImagePreview | `ImagePreview.tsx` | CMISService.getContentStream() ✅ |
+| OfficePreview | `OfficePreview.tsx` | CMISService.getContentStream() ✅ |
+| VideoPreview | `VideoPreview.tsx` | CMISService.getContentStream() ✅ |
+| TextPreview | `TextPreview.tsx` | CMISService.getContentStream() ✅ |
+
+#### 3. UIビルド・デプロイ統合チェック
+
+**デプロイ前の完全チェックリスト**:
+```bash
+# 3-1. UIビルド
+cd core/src/main/webapp/ui && npm run build
+
+# 3-2. UIパス統一確認（ゼロ件が正常）
+grep -r "/ui/dist/" src/ tests/ --include="*.ts" --include="*.tsx" | wc -l
+# 期待: 0
+
+# 3-3. コールバックHTMLのアセット参照確認
+cat dist/oidc-callback.html | grep -o 'index-[A-Za-z0-9]*\.js'
+cat dist/index.html | grep -o 'index-[A-Za-z0-9]*\.js'
+# 期待: 同じハッシュ値
+
+# 3-4. WAR再ビルド
+cd /path/to/NemakiWare
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests
+
+# 3-5. デプロイ
+cp core/target/core.war docker/core/core.war
+cd docker && docker compose -f docker-compose-simple.yml down && docker compose -f docker-compose-simple.yml up -d --build --force-recreate
+
+# 3-6. 起動待機
+sleep 90
+
+# 3-7. 基本動作確認
+curl -s -o /dev/null -w "%{http_code}" -u admin:admin http://localhost:8080/core/atom/bedroom
+# 期待: 200
+```
+
+#### 4. 自動テスト必須実行リスト
+
+**コード変更後の必須テスト**:
+```bash
+# QA統合テスト（73項目）
+./qa-test.sh
+# 期待: 73/73 PASS
+
+# TCKコアテスト（11項目）
+mvn test -Dtest=BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup -f core/pom.xml -Pdevelopment
+# 期待: 11/11 PASS
+
+# 外部認証テスト（19項目）- Keycloak必須
+cd core/src/main/webapp/ui
+npx playwright test tests/auth/ --project=chromium
+# 期待: 19/19 PASS
+
+# 基本接続テスト（4項目）
+npx playwright test tests/basic-connectivity.spec.ts --project=chromium
+# 期待: 4/4 PASS
+```
+
+**テスト未実行での本番デプロイ禁止**: 上記テストを全て実行し、全項目合格を確認してからデプロイすること。
+
 ---
 
 ## Recent Major Changes (2025-11-12 - ACL Cache Staleness Fix) ✅
