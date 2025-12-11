@@ -104,6 +104,13 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- NemakiWare standard types: nemaki:document, secondary types -->
+				<!-- MUST run after StandardCmisViews to ensure base types exist -->
+				<bean class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -160,6 +167,12 @@
 	</bean>
 
 	<bean id="patch_TestUserInitialization" class="jp.aegif.nemaki.patch.Patch_TestUserInitialization">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_NemakiwareStandardTypes" class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

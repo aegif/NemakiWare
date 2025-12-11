@@ -37,8 +37,6 @@
 
 		COMPLETE FIX: init-method forces bean instantiation, properties provide required dependencies
 
-		DEPLOYMENT (2025-11-11): Deploying this fix after discovering it was not yet deployed
-
 		EXPERIMENTAL FIX (2025-11-11): Temporarily removing init-method to test if it prevents
 		ApplicationListener registration. Properties alone should be sufficient to force bean creation.
 	-->
@@ -94,14 +92,21 @@
 					</property>
 				</bean>
 				<!-- CMIS-specific patches that require running services -->
-				<!-- CRITICAL FIX (2025-10-18): Patch_StandardCmisViews ENHANCED -->
-				<!-- Now creates all 38 views from bedroom_init.dump specification -->
 				<bean class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Initial users and groups: testgroup, testuser with firstName/lastName -->
+				<!-- Enhanced version with proper user properties -->
 				<bean class="jp.aegif.nemaki.patch.Patch_TestUserInitialization">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- NemakiWare standard types: nemaki:document, secondary types -->
+				<!-- MUST run after StandardCmisViews to ensure base types exist -->
+				<bean class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />
 					</property>
@@ -135,6 +140,9 @@
 		<property name="typeManager">
 			<ref bean="TypeManager" />
 		</property>
+		<property name="solrUtil">
+			<ref bean="solrUtil" />
+		</property>
 	</bean>
 
 	<!-- Individual Patch Bean Definitions for ServletContextListener access -->
@@ -152,7 +160,6 @@
 		</property>
 	</bean>
 
-	<!-- CRITICAL FIX (2025-10-18): patch_StandardCmisViews ENHANCED to create all 38 views -->
 	<bean id="patch_StandardCmisViews" class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
@@ -160,6 +167,12 @@
 	</bean>
 
 	<bean id="patch_TestUserInitialization" class="jp.aegif.nemaki.patch.Patch_TestUserInitialization">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_NemakiwareStandardTypes" class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

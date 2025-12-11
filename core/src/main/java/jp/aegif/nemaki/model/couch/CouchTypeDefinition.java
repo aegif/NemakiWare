@@ -460,6 +460,8 @@ public class CouchTypeDefinition extends CouchNodeBase {
 				return "cmis:relationship";
 			case "CMIS_POLICY":
 				return "cmis:policy";
+			case "CMIS_SECONDARY":
+				return "cmis:secondary";
 			default:
 				// 既にCMIS形式の場合はそのまま返す
 				if (couchDbFormat.startsWith("cmis:")) {

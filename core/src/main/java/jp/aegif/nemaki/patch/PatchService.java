@@ -546,7 +546,9 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 
 				// Create secondary type definition
 				jp.aegif.nemaki.model.NemakiTypeDefinition typeDef = new jp.aegif.nemaki.model.NemakiTypeDefinition();
-				typeDef.setId("tck:testSecondaryType");
+				// CRITICAL FIX: Use setTypeId(), not setId() - setId() sets NodeBase.id (CouchDB internal ID)
+				// but setTypeId() sets the CMIS type identifier which is used for CouchDB document _id
+				typeDef.setTypeId("tck:testSecondaryType");
 				typeDef.setLocalName("testSecondaryType");
 				typeDef.setLocalNameSpace("http://tck.opencmis.apache.org");
 				typeDef.setDisplayName("TCK Test Secondary Type");
@@ -560,7 +562,8 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 				typeDef.setFulltextIndexed(false);
 				typeDef.setIncludedInSupertypeQuery(true);
 				typeDef.setControllablePolicy(false);
-				typeDef.setControllableACL(true);
+				// CMIS 1.1 SPEC: Secondary types MUST have controllableACL=false (TCK requirement)
+				typeDef.setControllableACL(false);
 
 				// Create the type
 				typeService.createTypeDefinition(repositoryId, typeDef);
