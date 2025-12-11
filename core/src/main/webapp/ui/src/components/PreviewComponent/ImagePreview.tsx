@@ -186,7 +186,7 @@
  * - Missing props: TypeScript prevents, but runtime missing url shows blank gallery
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ImageGallery from 'react-image-gallery';
 import 'react-image-gallery/styles/css/image-gallery.css';
 import { Spin, Alert } from 'antd';
@@ -200,12 +200,33 @@ interface ImagePreviewProps {
   objectId?: string;
 }
 
+// Helper function to detect MIME type from filename extension
+const getMimeTypeFromFileName = (fileName: string): string => {
+  const ext = fileName.toLowerCase().split('.').pop();
+  const mimeTypes: Record<string, string> = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'svg': 'image/svg+xml',
+    'bmp': 'image/bmp',
+    'ico': 'image/x-icon',
+    'tiff': 'image/tiff',
+    'tif': 'image/tiff',
+  };
+  return mimeTypes[ext || ''] || 'image/jpeg'; // Default to JPEG
+};
+
 export const ImagePreview: React.FC<ImagePreviewProps> = ({ url, fileName, repositoryId, objectId }) => {
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Use ref to track current blob URL for proper cleanup (fixes memory leak)
+  const blobUrlRef = useRef<string | null>(null);
 
   // Extract repositoryId and objectId from URL if not provided as props
   const extractFromUrl = (urlString: string): { repoId: string | null; objId: string | null } => {
@@ -221,6 +242,12 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({ url, fileName, repos
     const fetchImageContent = async () => {
       setIsLoading(true);
       setError(null);
+
+      // Revoke previous blob URL before creating a new one
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
 
       try {
         const { repoId, objId } = extractFromUrl(url);
@@ -239,11 +266,15 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({ url, fileName, repos
         // Use CMISService to fetch content with proper authentication headers
         const arrayBuffer = await cmisService.getContentStream(effectiveRepoId, effectiveObjId);
 
-        // Convert ArrayBuffer to Blob and create URL
-        const blob = new Blob([arrayBuffer]);
+        // Convert ArrayBuffer to Blob with proper MIME type and create URL
+        const mimeType = getMimeTypeFromFileName(fileName);
+        const blob = new Blob([arrayBuffer], { type: mimeType });
         const blobUrl = URL.createObjectURL(blob);
 
-        console.log('[ImagePreview] Content fetched successfully, blob URL created');
+        // Store in ref for cleanup
+        blobUrlRef.current = blobUrl;
+
+        console.log('[ImagePreview] Content fetched successfully, blob URL created with MIME:', mimeType);
         setImageUrl(blobUrl);
       } catch (err) {
         console.error('Image fetch error:', err);
@@ -259,11 +290,12 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({ url, fileName, repos
 
     // Cleanup: revoke blob URL when component unmounts or URL changes
     return () => {
-      if (imageUrl) {
-        URL.revokeObjectURL(imageUrl);
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
       }
     };
-  }, [url, repositoryId, objectId]);
+  }, [url, repositoryId, objectId, fileName]);
 
   if (error) {
     return <Alert message="エラー" description={error} type="error" showIcon />;

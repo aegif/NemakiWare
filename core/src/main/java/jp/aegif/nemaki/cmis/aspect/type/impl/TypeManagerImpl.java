@@ -3471,8 +3471,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			}
 		}
 
-		// CRITICAL DEBUG: File-based logging for getTypesDescendants exit
-		log.info("*** TCK PATH TRACKING: getTypesDescendants EXIT: Returned " + result.size() + " TypeDefinitionContainer objects ***");
+		// Debug logging for getTypesDescendants exit
+		log.debug("getTypesDescendants completed: returned {} TypeDefinitionContainer objects", result.size());
 
 		return result;
 	}

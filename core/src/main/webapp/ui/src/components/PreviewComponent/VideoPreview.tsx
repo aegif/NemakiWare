@@ -185,7 +185,7 @@
  * - react-player not loaded: Import failure causes component crash (rare)
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactPlayer from 'react-player';
 import { Spin, Alert } from 'antd';
 import { CMISService } from '../../services/cmis';
@@ -198,12 +198,34 @@ interface VideoPreviewProps {
   objectId?: string;
 }
 
+// Helper function to detect MIME type from filename extension
+const getMimeTypeFromFileName = (fileName: string): string => {
+  const ext = fileName.toLowerCase().split('.').pop();
+  const mimeTypes: Record<string, string> = {
+    'mp4': 'video/mp4',
+    'webm': 'video/webm',
+    'ogg': 'video/ogg',
+    'ogv': 'video/ogg',
+    'mov': 'video/quicktime',
+    'avi': 'video/x-msvideo',
+    'wmv': 'video/x-ms-wmv',
+    'flv': 'video/x-flv',
+    'mkv': 'video/x-matroska',
+    'm4v': 'video/x-m4v',
+    '3gp': 'video/3gpp',
+  };
+  return mimeTypes[ext || ''] || 'video/mp4'; // Default to MP4
+};
+
 export const VideoPreview: React.FC<VideoPreviewProps> = ({ url, fileName, repositoryId, objectId }) => {
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Use ref to track current blob URL for proper cleanup (fixes memory leak)
+  const blobUrlRef = useRef<string | null>(null);
 
   // Extract repositoryId and objectId from URL if not provided as props
   const extractFromUrl = (urlString: string): { repoId: string | null; objId: string | null } => {
@@ -219,6 +241,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ url, fileName, repos
     const fetchVideoContent = async () => {
       setIsLoading(true);
       setError(null);
+
+      // Revoke previous blob URL before creating a new one
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
 
       try {
         const { repoId, objId } = extractFromUrl(url);
@@ -237,11 +265,15 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ url, fileName, repos
         // Use CMISService to fetch content with proper authentication headers
         const arrayBuffer = await cmisService.getContentStream(effectiveRepoId, effectiveObjId);
 
-        // Convert ArrayBuffer to Blob and create URL
-        const blob = new Blob([arrayBuffer]);
+        // Convert ArrayBuffer to Blob with proper MIME type and create URL
+        const mimeType = getMimeTypeFromFileName(fileName);
+        const blob = new Blob([arrayBuffer], { type: mimeType });
         const blobUrl = URL.createObjectURL(blob);
 
-        console.log('[VideoPreview] Content fetched successfully, blob URL created');
+        // Store in ref for cleanup
+        blobUrlRef.current = blobUrl;
+
+        console.log('[VideoPreview] Content fetched successfully, blob URL created with MIME:', mimeType);
         setVideoUrl(blobUrl);
       } catch (err) {
         console.error('Video fetch error:', err);
@@ -257,11 +289,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ url, fileName, repos
 
     // Cleanup: revoke blob URL when component unmounts or URL changes
     return () => {
-      if (videoUrl) {
-        URL.revokeObjectURL(videoUrl);
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
       }
     };
-  }, [url, repositoryId, objectId]);
+  }, [url, repositoryId, objectId, fileName]);
 
   if (error) {
     return <Alert message="エラー" description={error} type="error" showIcon />;

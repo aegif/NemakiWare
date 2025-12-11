@@ -95,7 +95,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		if (cached != null && (cached.getPropertyDefinitions() == null || cached.getPropertyDefinitions().isEmpty())) {
 			// Custom types should have properties, if we have 0 it means the cache is stale
 			if (!typeId.startsWith("cmis:")) { // Don't invalidate base types with no custom properties
-				log.warn("TCK FIX: Cached TypeDefinition for " + typeId + " has 0 properties, invalidating cache");
+				log.debug("Cache fix: TypeDefinition for {} has 0 properties, invalidating stale cache entry", typeId);
 				SHARED_TYPE_DEFINITIONS.remove(cacheKey);
 			}
 		}
@@ -112,12 +112,12 @@ public class RepositoryServiceImpl implements RepositoryService,
 				for (Map.Entry<String, PropertyDefinition<?>> entry : td.getPropertyDefinitions().entrySet()) {
 					PropertyDefinition<?> propDef = entry.getValue();
 					if (propDef == null) {
-						log.error("Null PropertyDefinition found for property '" + entry.getKey() + "' in type " + typeId);
+						log.warn("Null PropertyDefinition found for property '{}' in type {}", entry.getKey(), typeId);
 						nullPropCount++;
 					} else {
 						validPropCount++;
 						if (propDef.getId() == null) {
-							log.error("PropertyDefinition with null ID found for property '" + entry.getKey() + "' in type " + typeId);
+							log.warn("PropertyDefinition with null ID found for property '{}' in type {}", entry.getKey(), typeId);
 						}
 					}
 				}
@@ -125,9 +125,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 					log.debug("TypeDefinition " + typeId + " has " + validPropCount + " valid properties and " + nullPropCount + " null properties");
 				}
 
-				// CRITICAL FIX: Log warning if we're about to cache a type with 0 properties
+				// Log warning if we're about to cache a type with 0 properties
 				if (validPropCount == 0 && !typeId.startsWith("cmis:")) {
-					log.error("TCK WARNING: About to cache custom type " + typeId + " with 0 properties!");
+					log.warn("Caching custom type {} with 0 properties - may indicate initialization issue", typeId);
 				}
 			}
 			return td;
@@ -616,14 +616,14 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 		// Check if this exact type ID already exists
 		if (typeManager.getTypeById(repositoryId, requestedTypeId) != null) {
-			// Type with this ID already exists - this shouldn't happen in TCK tests
-			log.warn("TCK WARNING: Type with ID " + requestedTypeId + " already exists!");
-			// Add timestamp suffix to avoid conflict
-			ntd.setTypeId(requestedTypeId + "_" + String.valueOf(System.currentTimeMillis()));
-		} else {
-			// Use the exact type ID provided by the client (including any timestamps)
-			ntd.setTypeId(requestedTypeId);
+			// Type with this ID already exists - return constraint error instead of silent alteration
+			// CMIS spec requires that duplicate type IDs are rejected with a constraint exception
+			log.debug("Type creation rejected: Type ID '{}' already exists in repository '{}'", requestedTypeId, repositoryId);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException(
+				"Type with ID '" + requestedTypeId + "' already exists. Cannot create duplicate type definition.");
 		}
+		// Use the exact type ID provided by the client (including any timestamps)
+		ntd.setTypeId(requestedTypeId);
 		ntd.setLocalName(typeDefinition.getLocalName());
 		ntd.setLocalNameSpace(typeDefinition.getLocalNamespace());
 		ntd.setQueryName(typeDefinition.getQueryName());

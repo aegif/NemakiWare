@@ -102,7 +102,7 @@
  * - ✅ Reduced attack surface: Simpler implementation with fewer features = fewer vulnerabilities
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Button, Spin, Alert } from 'antd';
 import { CMISService } from '../../services/cmis';
@@ -134,6 +134,9 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
   const [pdfData, setPdfData] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  // Use ref to track current blob URL for proper cleanup (fixes memory leak)
+  const blobUrlRef = useRef<string | null>(null);
+
   // Extract repositoryId and objectId from URL if not provided as props
   const extractFromUrl = (urlString: string): { repoId: string | null; objId: string | null } => {
     // URL format: /core/browser/{repositoryId}/node/{objectId}/content
@@ -149,6 +152,12 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
     const fetchPdfContent = async () => {
       setIsLoading(true);
       setError(null);
+
+      // Revoke previous blob URL before creating a new one
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
 
       try {
         const { repoId, objId } = extractFromUrl(url);
@@ -171,6 +180,9 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
         const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
         const blobUrl = URL.createObjectURL(blob);
 
+        // Store in ref for cleanup
+        blobUrlRef.current = blobUrl;
+
         console.log('[PDFPreview] Content fetched successfully, blob URL created');
         setPdfData(blobUrl);
       } catch (err) {
@@ -187,8 +199,9 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
 
     // Cleanup: revoke blob URL when component unmounts or URL changes
     return () => {
-      if (pdfData) {
-        URL.revokeObjectURL(pdfData);
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
       }
     };
   }, [url, repositoryId, objectId]);
@@ -264,8 +277,8 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
             <Button onClick={zoomIn} disabled={scale >= 3.0}>
               拡大
             </Button>
-            <a href={url} download={fileName} style={{ marginLeft: 'auto' }}>
-              <Button>ダウンロード</Button>
+            <a href={pdfData || '#'} download={fileName} style={{ marginLeft: 'auto' }}>
+              <Button disabled={!pdfData}>ダウンロード</Button>
             </a>
           </div>
 
