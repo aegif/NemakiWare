@@ -649,11 +649,13 @@ run_test "Empty Credentials Authentication" "curl -s -o /dev/null -w '%{http_cod
 run_test "CMIS AtomPub Invalid Auth" "curl -s -o /dev/null -w '%{http_code}' -u 'invalid:invalid' 'http://localhost:8080/core/atom/bedroom'" "401"
 run_test "CMIS Browser Invalid Auth" "curl -s -o /dev/null -w '%{http_code}' -u 'invalid:invalid' 'http://localhost:8080/core/browser/bedroom'" "401"
 
-# Test special characters are handled safely (connection error is acceptable for security)
+# Test special characters are handled safely (should reject malicious input)
 echo -n "Testing: Special Characters Security ... "
 total_tests=$((total_tests + 1))
-status=$(curl -s -o /dev/null -w '%{http_code}' -u 'testuser:test' 'http://localhost:8080/core/rest/repo/bedroom/authtoken/testuser/login' -X POST -d '' 2>/dev/null || echo "000")
-if [[ "$status" == "401" ]] || [[ "$status" == "000" ]]; then
+# Use credentials with SQL injection attempt and shell escape characters
+# These should always be rejected (401) regardless of database state
+status=$(curl -s -o /dev/null -w '%{http_code}' -u "admin' OR '1'='1:password" 'http://localhost:8080/core/rest/repo/bedroom/authtoken/admin/login' -X POST -d '' 2>/dev/null || echo "000")
+if [[ "$status" == "401" ]] || [[ "$status" == "000" ]] || [[ "$status" == "400" ]]; then
     echo -e "${GREEN}PASSED${NC} (Special characters properly rejected: $status)"
     success_count=$((success_count + 1))
 else

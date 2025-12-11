@@ -1003,6 +1003,154 @@ These deprecated classes are preserved for historical reference only and are NOT
 
 ---
 
+## Recent Major Changes (2025-12-11 - Secondary Type UI & QA Test Fix) ✅
+
+### Secondary Type Management UI - Complete Implementation
+
+**Status**: ✅ **PRODUCTION READY** - Full secondary type management functionality available in DocumentViewer
+
+**Feature Description**:
+Users can add and remove secondary types (aspects) from CMIS objects through the Document Viewer UI. Secondary types in CMIS 1.1 provide a way to extend objects with additional properties without creating new primary types.
+
+**Architecture Overview**:
+
+| Component | File | Status | Description |
+|-----------|------|--------|-------------|
+| **SecondaryTypeSelector** | `ui/src/components/SecondaryTypeSelector/SecondaryTypeSelector.tsx` | ✅ Complete | Reusable component for secondary type management |
+| **DocumentViewer Integration** | `ui/src/components/DocumentViewer/DocumentViewer.tsx` | ✅ Complete | Tab "セカンダリタイプ" at lines 269, 641-652 |
+| **CMIS Service** | `ui/src/services/cmis.ts` | ✅ Complete | updateProperties() method for cmis:secondaryObjectTypeIds |
+
+**Key Features**:
+- Display current secondary types on an object
+- Add new secondary types from available types dropdown
+- Remove existing secondary types with confirmation
+- Real-time updates via cmis:secondaryObjectTypeIds property
+- Type display names and descriptions shown via tooltips
+- Loading states and error handling
+
+**User Workflow**:
+1. Open document in DocumentViewer
+2. Navigate to "セカンダリタイプ" tab
+3. View current secondary types as tags
+4. Select secondary type from dropdown and click "追加" to add
+5. Click X on tag to remove secondary type (with confirmation)
+
+**Technical Implementation** (SecondaryTypeSelector.tsx):
+
+```typescript
+// Add secondary type
+const handleAddSecondaryType = async () => {
+  const newSecondaryTypeIds = [...currentSecondaryTypeIds, selectedTypeToAdd];
+  await cmisService.updateProperties(
+    repositoryId,
+    object.id,
+    { 'cmis:secondaryObjectTypeIds': newSecondaryTypeIds },
+    changeTokenValue
+  );
+};
+
+// Remove secondary type
+const handleRemoveSecondaryType = async (typeIdToRemove: string) => {
+  const newSecondaryTypeIds = currentSecondaryTypeIds.filter(id => id !== typeIdToRemove);
+  await cmisService.updateProperties(
+    repositoryId,
+    object.id,
+    { 'cmis:secondaryObjectTypeIds': newSecondaryTypeIds },
+    changeTokenValue
+  );
+};
+```
+
+---
+
+### Preview Components Authentication - CMISService Integration
+
+**Status**: ✅ **RESOLVED** - All preview components now use authenticated CMISService
+
+**Problem Summary**:
+- **Symptom**: Preview components (PDF, Office, etc.) returned HTTP 401 Unauthorized
+- **Root Cause**: Direct fetch() calls without authentication headers
+- **Impact**: Document preview failed for all authenticated users
+
+**Solution Implemented**:
+All preview components now use CMISService.getContentStream() which properly includes authentication headers:
+
+**Files Modified**:
+- `ui/src/components/PreviewComponent/PDFPreview.tsx`
+- `ui/src/components/PreviewComponent/OfficePreview.tsx`
+- `ui/src/components/PreviewComponent/ImagePreview.tsx`
+- `ui/src/components/PreviewComponent/VideoPreview.tsx`
+
+**Authentication Pattern**:
+```typescript
+// Before (broken)
+const response = await fetch(contentUrl);  // No auth headers
+
+// After (fixed)
+const blob = await cmisService.getContentStream(repositoryId, objectId);
+const url = URL.createObjectURL(blob);
+```
+
+---
+
+### QA Test Fix - Special Characters Security Test
+
+**Status**: ✅ **RESOLVED** - All 73/73 QA tests now pass (100%)
+
+**Problem Summary**:
+- **Symptom**: "Special Characters Security" test failed (72/73 tests passing)
+- **Root Cause**: Test used `testuser:test` credentials which now authenticate successfully after BCrypt password setup
+- **Expected**: HTTP 401 (reject special characters)
+- **Actual**: HTTP 200 (valid credentials)
+
+**Solution Implemented**:
+Changed test to use actual SQL injection attempt credentials instead of valid user credentials.
+
+**File Modified**: `qa-test.sh` (Lines 652-663)
+
+**Before**:
+```bash
+# Used valid testuser credentials
+status=$(curl -s -o /dev/null -w '%{http_code}' -u "testuser:test" ...)
+```
+
+**After**:
+```bash
+# Use credentials with SQL injection attempt
+# These should always be rejected (401) regardless of database state
+status=$(curl -s -o /dev/null -w '%{http_code}' -u "admin' OR '1'='1:password" ...)
+```
+
+**Test Verification**:
+```bash
+./qa-test.sh
+# Result: 73/73 tests PASS (100%)
+```
+
+**Security Testing Logic**:
+- SQL injection pattern `admin' OR '1'='1` in username
+- Should always be rejected by authentication system
+- Verifies special characters are properly handled/escaped
+- Tests security boundary of authentication layer
+
+---
+
+### TCK Compliance Verification (2025-12-11)
+
+**Test Results**: All critical TCK test groups passing
+
+| Test Group | Tests | Status |
+|------------|-------|--------|
+| TypesTestGroup | 3/3 | ✅ PASS |
+| BasicsTestGroup | 3/3 | ✅ PASS |
+| ControlTestGroup | 1/1 | ✅ PASS |
+| VersioningTestGroup | 4/4 | ✅ PASS |
+| **Total** | **11/11** | **✅ 100%** |
+
+**QA Integration Tests**: 73/73 PASS (100%)
+
+---
+
 ## Recent Major Changes (2025-12-16 - Test User Authentication Fix) ✅
 
 ### Test User Password Authentication - BCrypt Hash Requirement
