@@ -250,7 +250,7 @@ export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId
         case 'pdf':
           return <PDFPreview url={contentUrl} fileName={object.name} />;
         case 'text':
-          return <TextPreview url={contentUrl} fileName={object.name} />;
+          return <TextPreview url={contentUrl} fileName={object.name} repositoryId={repositoryId} objectId={object.id} />;
         case 'office':
           return <OfficePreview url={contentUrl} fileName={object.name} mimeType={object.contentStreamMimeType!} repositoryId={repositoryId} objectId={object.id} />;
         default:

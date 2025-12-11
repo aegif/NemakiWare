@@ -213,36 +213,69 @@
 import React, { useState, useEffect } from 'react';
 import { Editor } from '@monaco-editor/react';
 import { Spin, Alert } from 'antd';
+import { CMISService } from '../../services/cmis';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface TextPreviewProps {
   url: string;
   fileName: string;
+  repositoryId?: string;
+  objectId?: string;
 }
 
-export const TextPreview: React.FC<TextPreviewProps> = ({ url, fileName }) => {
+export const TextPreview: React.FC<TextPreviewProps> = ({ url, fileName, repositoryId, objectId }) => {
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
+
   const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Extract repositoryId and objectId from URL if not provided as props
+  const extractFromUrl = (urlString: string): { repoId: string | null; objId: string | null } => {
+    // URL format: /core/browser/{repositoryId}/node/{objectId}/content
+    const match = urlString.match(/\/core\/browser\/([^/]+)\/node\/([^/]+)/);
+    if (match) {
+      return { repoId: match[1], objId: match[2] };
+    }
+    return { repoId: null, objId: null };
+  };
+
   useEffect(() => {
-    // Include credentials for authenticated content fetch
-    fetch(url, { credentials: 'include' })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+    const fetchContent = async () => {
+      try {
+        const { repoId, objId } = extractFromUrl(url);
+        const effectiveRepoId = repositoryId || repoId;
+        const effectiveObjId = objectId || objId;
+
+        if (!effectiveRepoId || !effectiveObjId) {
+          console.error('TextPreview: Missing repositoryId or objectId');
+          setError('ファイルの読み込みに必要な情報が不足しています');
+          setLoading(false);
+          return;
         }
-        return response.text();
-      })
-      .then(text => {
+
+        console.log('[TextPreview] Fetching content with auth headers for:', effectiveRepoId, effectiveObjId);
+
+        // Use CMISService to fetch content with proper authentication headers
+        const arrayBuffer = await cmisService.getContentStream(effectiveRepoId, effectiveObjId);
+
+        // Convert ArrayBuffer to text using TextDecoder
+        const decoder = new TextDecoder('utf-8');
+        const text = decoder.decode(arrayBuffer);
+
+        console.log('[TextPreview] Content fetched successfully, length:', text.length);
         setContent(text);
         setLoading(false);
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error('TextPreview fetch error:', err);
         setError('ファイルの読み込みに失敗しました');
         setLoading(false);
-      });
-  }, [url]);
+      }
+    };
+
+    fetchContent();
+  }, [url, repositoryId, objectId]);
 
   const getLanguage = () => {
     const ext = fileName.split('.').pop()?.toLowerCase();
