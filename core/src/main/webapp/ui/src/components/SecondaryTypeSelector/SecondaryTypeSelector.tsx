@@ -15,8 +15,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Select, Tag, Space, Modal, message, Spin, Typography, Tooltip } from 'antd';
-import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { Select, Tag, Space, Modal, message, Spin, Typography, Tooltip, Button } from 'antd';
+import { ExclamationCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
 import { TypeDefinition, CMISObject } from '../../types/cmis';
 import { useAuth } from '../../contexts/AuthContext';
@@ -42,6 +42,7 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
   const [availableTypes, setAvailableTypes] = useState<TypeDefinition[]>([]);
   const [loading, setLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [selectedTypeId, setSelectedTypeId] = useState<string | undefined>(undefined);
 
   // Get current secondary type IDs from object properties
   const currentSecondaryTypeIds: string[] =
@@ -64,18 +65,19 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
     }
   };
 
-  const handleAddSecondaryType = async (typeId: string) => {
-    if (!typeId || currentSecondaryTypeIds.includes(typeId)) return;
+  const handleAddSecondaryType = async () => {
+    if (!selectedTypeId || currentSecondaryTypeIds.includes(selectedTypeId)) return;
 
     setUpdating(true);
     try {
       const updated = await cmisService.updateSecondaryTypes(
         repositoryId,
         object.id,
-        [typeId],
+        [selectedTypeId],
         []
       );
-      message.success(`セカンダリタイプ「${typeId}」を追加しました`);
+      message.success(`セカンダリタイプ「${selectedTypeId}」を追加しました`);
+      setSelectedTypeId(undefined); // Clear selection after successful add
       onUpdate?.(updated);
     } catch (error) {
       console.error('Failed to add secondary type:', error);
@@ -183,31 +185,42 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
         )}
       </div>
 
-      {/* Add secondary type selector */}
+      {/* Add secondary type selector with explicit add button */}
       {!readOnly && availableOptions.length > 0 && (
-        <Select
-          style={{ width: '100%', maxWidth: 400 }}
-          placeholder="セカンダリタイプを追加..."
-          loading={updating}
-          disabled={updating}
-          showSearch
-          optionFilterProp="label"
-          value={undefined}
-          onChange={handleAddSecondaryType}
-        >
-          {availableOptions.map(type => (
-            <Select.Option key={type.id} value={type.id} label={type.displayName || type.id}>
-              <div>
-                <span>{type.displayName || type.id}</span>
-                {type.description && (
-                  <span style={{ color: '#888', marginLeft: 8, fontSize: '12px' }}>
-                    - {type.description}
-                  </span>
-                )}
-              </div>
-            </Select.Option>
-          ))}
-        </Select>
+        <Space.Compact style={{ width: '100%', maxWidth: 500 }}>
+          <Select
+            style={{ flex: 1 }}
+            placeholder="追加するセカンダリタイプを選択..."
+            loading={updating}
+            disabled={updating}
+            showSearch
+            optionFilterProp="label"
+            value={selectedTypeId}
+            onChange={setSelectedTypeId}
+          >
+            {availableOptions.map(type => (
+              <Select.Option key={type.id} value={type.id} label={type.displayName || type.id}>
+                <div>
+                  <span>{type.displayName || type.id}</span>
+                  {type.description && (
+                    <span style={{ color: '#888', marginLeft: 8, fontSize: '12px' }}>
+                      - {type.description}
+                    </span>
+                  )}
+                </div>
+              </Select.Option>
+            ))}
+          </Select>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={handleAddSecondaryType}
+            loading={updating}
+            disabled={!selectedTypeId || updating}
+          >
+            追加
+          </Button>
+        </Space.Compact>
       )}
 
       {!readOnly && availableOptions.length === 0 && availableTypes.length > 0 && (

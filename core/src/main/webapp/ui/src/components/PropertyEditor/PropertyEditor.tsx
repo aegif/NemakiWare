@@ -242,6 +242,11 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                 <Text type="secondary" style={{ fontSize: 12 }}>(読み取り専用)</Text>
               </Tooltip>
             )}
+            {record.propId === 'cmis:secondaryObjectTypeIds' && (
+              <Tooltip title="上部の「セカンダリタイプ」セクションで編集できます">
+                <Text type="secondary" style={{ fontSize: 12 }}>(専用UI)</Text>
+              </Tooltip>
+            )}
           </Space>
         ),
       },
@@ -285,9 +290,10 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
   };
 
   // Edit Mode: Form view with only updatable properties
+  // Exclude cmis:secondaryObjectTypeIds - it should only be edited via SecondaryTypeSelector UI
   const renderEditMode = () => {
     const editableProps = Object.entries(safePropDefs).filter(
-      ([_, propDef]) => propDef.updatable
+      ([propId, propDef]) => propDef.updatable && propId !== 'cmis:secondaryObjectTypeIds'
     );
 
     return (
