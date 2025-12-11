@@ -105,6 +105,8 @@
 import React, { useState, useEffect } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Button, Spin, Alert } from 'antd';
+import { CMISService } from '../../services/cmis';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Required CSS for react-pdf text and annotation layers
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -118,9 +120,13 @@ pdfjs.GlobalWorkerOptions.workerSrc = '/core/ui/pdf-worker/pdf.worker.min.mjs';
 interface PDFPreviewProps {
   url: string;
   fileName: string;
+  repositoryId?: string;
+  objectId?: string;
 }
 
-export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName }) => {
+export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositoryId, objectId }) => {
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [scale, setScale] = useState<number>(1.0);
@@ -128,28 +134,44 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName }) => {
   const [pdfData, setPdfData] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  // Extract repositoryId and objectId from URL if not provided as props
+  const extractFromUrl = (urlString: string): { repoId: string | null; objId: string | null } => {
+    // URL format: /core/browser/{repositoryId}/node/{objectId}/content
+    const match = urlString.match(/\/core\/browser\/([^/]+)\/node\/([^/]+)/);
+    if (match) {
+      return { repoId: match[1], objId: match[2] };
+    }
+    return { repoId: null, objId: null };
+  };
+
   // Fetch PDF content with authentication and convert to Blob URL
   useEffect(() => {
     const fetchPdfContent = async () => {
       setIsLoading(true);
       setError(null);
-      
+
       try {
-        // Fetch PDF with credentials included for authentication
-        const response = await fetch(url, {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/pdf',
-          },
-        });
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+        const { repoId, objId } = extractFromUrl(url);
+        const effectiveRepoId = repositoryId || repoId;
+        const effectiveObjId = objectId || objId;
+
+        if (!effectiveRepoId || !effectiveObjId) {
+          console.error('PDFPreview: Missing repositoryId or objectId');
+          setError('ファイルの読み込みに必要な情報が不足しています');
+          setIsLoading(false);
+          return;
         }
-        
-        const blob = await response.blob();
+
+        console.log('[PDFPreview] Fetching content with auth headers for:', effectiveRepoId, effectiveObjId);
+
+        // Use CMISService to fetch content with proper authentication headers
+        const arrayBuffer = await cmisService.getContentStream(effectiveRepoId, effectiveObjId);
+
+        // Convert ArrayBuffer to Blob and create URL
+        const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
         const blobUrl = URL.createObjectURL(blob);
+
+        console.log('[PDFPreview] Content fetched successfully, blob URL created');
         setPdfData(blobUrl);
       } catch (err) {
         console.error('PDF fetch error:', err);
@@ -169,7 +191,7 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName }) => {
         URL.revokeObjectURL(pdfData);
       }
     };
-  }, [url]);
+  }, [url, repositoryId, objectId]);
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);

@@ -186,27 +186,108 @@
  * - Missing props: TypeScript prevents, but runtime missing url shows blank gallery
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import ImageGallery from 'react-image-gallery';
 import 'react-image-gallery/styles/css/image-gallery.css';
+import { Spin, Alert } from 'antd';
+import { CMISService } from '../../services/cmis';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface ImagePreviewProps {
   url: string;
   fileName: string;
+  repositoryId?: string;
+  objectId?: string;
 }
 
-export const ImagePreview: React.FC<ImagePreviewProps> = ({ url, fileName }) => {
-  const images = [{ 
-    original: url, 
-    thumbnail: url, 
-    description: fileName 
+export const ImagePreview: React.FC<ImagePreviewProps> = ({ url, fileName, repositoryId, objectId }) => {
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Extract repositoryId and objectId from URL if not provided as props
+  const extractFromUrl = (urlString: string): { repoId: string | null; objId: string | null } => {
+    // URL format: /core/browser/{repositoryId}/node/{objectId}/content
+    const match = urlString.match(/\/core\/browser\/([^/]+)\/node\/([^/]+)/);
+    if (match) {
+      return { repoId: match[1], objId: match[2] };
+    }
+    return { repoId: null, objId: null };
+  };
+
+  useEffect(() => {
+    const fetchImageContent = async () => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const { repoId, objId } = extractFromUrl(url);
+        const effectiveRepoId = repositoryId || repoId;
+        const effectiveObjId = objectId || objId;
+
+        if (!effectiveRepoId || !effectiveObjId) {
+          console.error('ImagePreview: Missing repositoryId or objectId');
+          setError('ファイルの読み込みに必要な情報が不足しています');
+          setIsLoading(false);
+          return;
+        }
+
+        console.log('[ImagePreview] Fetching content with auth headers for:', effectiveRepoId, effectiveObjId);
+
+        // Use CMISService to fetch content with proper authentication headers
+        const arrayBuffer = await cmisService.getContentStream(effectiveRepoId, effectiveObjId);
+
+        // Convert ArrayBuffer to Blob and create URL
+        const blob = new Blob([arrayBuffer]);
+        const blobUrl = URL.createObjectURL(blob);
+
+        console.log('[ImagePreview] Content fetched successfully, blob URL created');
+        setImageUrl(blobUrl);
+      } catch (err) {
+        console.error('Image fetch error:', err);
+        setError(`画像の取得に失敗しました: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (url) {
+      fetchImageContent();
+    }
+
+    // Cleanup: revoke blob URL when component unmounts or URL changes
+    return () => {
+      if (imageUrl) {
+        URL.revokeObjectURL(imageUrl);
+      }
+    };
+  }, [url, repositoryId, objectId]);
+
+  if (error) {
+    return <Alert message="エラー" description={error} type="error" showIcon />;
+  }
+
+  if (isLoading || !imageUrl) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px' }}>
+        <Spin size="large" tip="画像を取得しています..." />
+      </div>
+    );
+  }
+
+  const images = [{
+    original: imageUrl,
+    thumbnail: imageUrl,
+    description: fileName
   }];
-  
+
   return (
     <div style={{ maxWidth: '100%', maxHeight: '600px' }}>
-      <ImageGallery 
-        items={images} 
-        showThumbnails={false} 
+      <ImageGallery
+        items={images}
+        showThumbnails={false}
         showPlayButton={false}
         showFullscreenButton={true}
         showNav={false}

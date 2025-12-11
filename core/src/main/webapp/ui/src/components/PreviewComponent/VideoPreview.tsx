@@ -185,22 +185,103 @@
  * - react-player not loaded: Import failure causes component crash (rare)
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactPlayer from 'react-player';
+import { Spin, Alert } from 'antd';
+import { CMISService } from '../../services/cmis';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface VideoPreviewProps {
   url: string;
   fileName: string;
+  repositoryId?: string;
+  objectId?: string;
 }
 
-export const VideoPreview: React.FC<VideoPreviewProps> = ({ url, fileName }) => {
+export const VideoPreview: React.FC<VideoPreviewProps> = ({ url, fileName, repositoryId, objectId }) => {
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Extract repositoryId and objectId from URL if not provided as props
+  const extractFromUrl = (urlString: string): { repoId: string | null; objId: string | null } => {
+    // URL format: /core/browser/{repositoryId}/node/{objectId}/content
+    const match = urlString.match(/\/core\/browser\/([^/]+)\/node\/([^/]+)/);
+    if (match) {
+      return { repoId: match[1], objId: match[2] };
+    }
+    return { repoId: null, objId: null };
+  };
+
+  useEffect(() => {
+    const fetchVideoContent = async () => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const { repoId, objId } = extractFromUrl(url);
+        const effectiveRepoId = repositoryId || repoId;
+        const effectiveObjId = objectId || objId;
+
+        if (!effectiveRepoId || !effectiveObjId) {
+          console.error('VideoPreview: Missing repositoryId or objectId');
+          setError('ファイルの読み込みに必要な情報が不足しています');
+          setIsLoading(false);
+          return;
+        }
+
+        console.log('[VideoPreview] Fetching content with auth headers for:', effectiveRepoId, effectiveObjId);
+
+        // Use CMISService to fetch content with proper authentication headers
+        const arrayBuffer = await cmisService.getContentStream(effectiveRepoId, effectiveObjId);
+
+        // Convert ArrayBuffer to Blob and create URL
+        const blob = new Blob([arrayBuffer]);
+        const blobUrl = URL.createObjectURL(blob);
+
+        console.log('[VideoPreview] Content fetched successfully, blob URL created');
+        setVideoUrl(blobUrl);
+      } catch (err) {
+        console.error('Video fetch error:', err);
+        setError(`動画の取得に失敗しました: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (url) {
+      fetchVideoContent();
+    }
+
+    // Cleanup: revoke blob URL when component unmounts or URL changes
+    return () => {
+      if (videoUrl) {
+        URL.revokeObjectURL(videoUrl);
+      }
+    };
+  }, [url, repositoryId, objectId]);
+
+  if (error) {
+    return <Alert message="エラー" description={error} type="error" showIcon />;
+  }
+
+  if (isLoading || !videoUrl) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px' }}>
+        <Spin size="large" tip="動画を取得しています..." />
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: '100%', textAlign: 'center' }}>
       <h4 style={{ marginBottom: '16px' }}>{fileName}</h4>
       <div style={{ width: '100%', height: '400px' }}>
         {/* TypeScript workaround: react-player v3.x type definitions issue */}
         <ReactPlayer
-          {...{ url, controls: true } as any}
+          {...{ url: videoUrl, controls: true } as any}
         />
       </div>
     </div>
