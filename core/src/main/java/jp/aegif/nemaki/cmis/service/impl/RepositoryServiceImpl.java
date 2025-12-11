@@ -95,7 +95,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 		if (cached != null && (cached.getPropertyDefinitions() == null || cached.getPropertyDefinitions().isEmpty())) {
 			// Custom types should have properties, if we have 0 it means the cache is stale
 			if (!typeId.startsWith("cmis:")) { // Don't invalidate base types with no custom properties
-				log.debug("Cache fix: TypeDefinition for {} has 0 properties, invalidating stale cache entry", typeId);
+				if (log.isDebugEnabled()) {
+					log.debug("Cache fix: TypeDefinition for " + typeId + " has 0 properties, invalidating stale cache entry");
+				}
 				SHARED_TYPE_DEFINITIONS.remove(cacheKey);
 			}
 		}
@@ -112,12 +114,12 @@ public class RepositoryServiceImpl implements RepositoryService,
 				for (Map.Entry<String, PropertyDefinition<?>> entry : td.getPropertyDefinitions().entrySet()) {
 					PropertyDefinition<?> propDef = entry.getValue();
 					if (propDef == null) {
-						log.warn("Null PropertyDefinition found for property '{}' in type {}", entry.getKey(), typeId);
+						log.warn("Null PropertyDefinition found for property '" + entry.getKey() + "' in type " + typeId);
 						nullPropCount++;
 					} else {
 						validPropCount++;
 						if (propDef.getId() == null) {
-							log.warn("PropertyDefinition with null ID found for property '{}' in type {}", entry.getKey(), typeId);
+							log.warn("PropertyDefinition with null ID found for property '" + entry.getKey() + "' in type " + typeId);
 						}
 					}
 				}
@@ -127,7 +129,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 				// Log warning if we're about to cache a type with 0 properties
 				if (validPropCount == 0 && !typeId.startsWith("cmis:")) {
-					log.warn("Caching custom type {} with 0 properties - may indicate initialization issue", typeId);
+					log.warn("Caching custom type " + typeId + " with 0 properties - may indicate initialization issue");
 				}
 			}
 			return td;
@@ -618,7 +620,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 		if (typeManager.getTypeById(repositoryId, requestedTypeId) != null) {
 			// Type with this ID already exists - return constraint error instead of silent alteration
 			// CMIS spec requires that duplicate type IDs are rejected with a constraint exception
-			log.debug("Type creation rejected: Type ID '{}' already exists in repository '{}'", requestedTypeId, repositoryId);
+			if (log.isDebugEnabled()) {
+				log.debug("Type creation rejected: Type ID '" + requestedTypeId + "' already exists in repository '" + repositoryId + "'");
+			}
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException(
 				"Type with ID '" + requestedTypeId + "' already exists. Cannot create duplicate type definition.");
 		}

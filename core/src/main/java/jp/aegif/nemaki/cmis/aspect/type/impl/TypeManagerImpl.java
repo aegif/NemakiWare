@@ -3472,7 +3472,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		}
 
 		// Debug logging for getTypesDescendants exit
-		log.debug("getTypesDescendants completed: returned {} TypeDefinitionContainer objects", result.size());
+		if (log.isDebugEnabled()) {
+			log.debug("getTypesDescendants completed: returned " + result.size() + " TypeDefinitionContainer objects");
+		}
 
 		return result;
 	}
