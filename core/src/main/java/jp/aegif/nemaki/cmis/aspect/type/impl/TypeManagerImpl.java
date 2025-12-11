@@ -1959,8 +1959,19 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		}
 
 		SecondaryTypeDefinitionImpl type = new SecondaryTypeDefinitionImpl();
-		SecondaryTypeDefinitionImpl parentType = nemakiType.getParentId() != null && types != null ?
-				(SecondaryTypeDefinitionImpl) types.get(nemakiType.getParentId()).getTypeDefinition() : null;
+
+		// CRITICAL FIX (2025-12-11): Add null safety for parent type lookup
+		// Previously this line would NPE if types.get(parentId) returned null
+		SecondaryTypeDefinitionImpl parentType = null;
+		if (nemakiType.getParentId() != null && types != null) {
+			TypeDefinitionContainer parentContainer = types.get(nemakiType.getParentId());
+			if (parentContainer != null) {
+				parentType = (SecondaryTypeDefinitionImpl) parentContainer.getTypeDefinition();
+			} else {
+				log.debug("buildSecondaryTypeDefinitionFromDB: Parent type '" + nemakiType.getParentId() +
+					"' not found in TYPES for type '" + nemakiType.getTypeId() + "'");
+			}
+		}
 
 		// Set base attributes, and properties(with specific properties
 		// included)
@@ -2107,23 +2118,45 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 		// CRITICAL FIX: BaseTypeId-specific default values per CMIS 1.1 specification
 		Map<String, Object> baseDefaults = getBaseTypeIdDefaults(nemakiType.getBaseId());
-		
-		boolean creatable = (nemakiType.isCreatable() == null) ? 
-				(parentType != null ? parentType.isCreatable() : (Boolean) baseDefaults.get("creatable")) : nemakiType.isCreatable();
+
+		// CRITICAL FIX (2025-12-12): Enforce CMIS 1.1 spec constraints for secondary types
+		// Per CMIS 1.1 specification section 2.1.4:
+		// - Secondary types MUST have creatable=false, fileable=false, controllablePolicy=false, controllableAcl=false
+		// This OVERRIDES any values stored in the database to ensure spec compliance
+		boolean isSecondaryType = BaseTypeId.CMIS_SECONDARY.equals(nemakiType.getBaseId());
+
+		boolean creatable;
+		boolean filable;
+		boolean controllablePolicy;
+		boolean controllableACL;
+
+		if (isSecondaryType) {
+			// CMIS spec enforcement - ignore database/parent values
+			creatable = false;
+			filable = false;
+			controllablePolicy = false;
+			controllableACL = false;
+		} else {
+			// Non-secondary types: use standard fallback logic
+			creatable = (nemakiType.isCreatable() == null) ?
+					(parentType != null ? parentType.isCreatable() : (Boolean) baseDefaults.get("creatable")) : nemakiType.isCreatable();
+			filable = (nemakiType.isFilable() == null) ?
+					(parentType != null ? parentType.isFileable() : (Boolean) baseDefaults.get("fileable")) : nemakiType.isFilable();
+			controllablePolicy = (nemakiType.isControllablePolicy() == null) ?
+					(parentType != null ? parentType.isControllablePolicy() : (Boolean) baseDefaults.get("controllablePolicy")) : nemakiType.isControllablePolicy();
+			controllableACL = (nemakiType.isControllableACL() == null) ?
+					(parentType != null ? parentType.isControllableAcl() : (Boolean) baseDefaults.get("controllableAcl")) : nemakiType.isControllableACL();
+		}
+
 		type.setIsCreatable(creatable);
-		boolean filable = (nemakiType.isFilable() == null) ? 
-				(parentType != null ? parentType.isFileable() : (Boolean) baseDefaults.get("fileable")) : nemakiType.isFilable();
 		type.setIsFileable(filable);
-		boolean queryable = (nemakiType.isQueryable() == null) ? 
+		type.setIsControllablePolicy(controllablePolicy);
+		type.setIsControllableAcl(controllableACL);
+
+		boolean queryable = (nemakiType.isQueryable() == null) ?
 				(parentType != null ? parentType.isQueryable() : (Boolean) baseDefaults.get("queryable")) : nemakiType.isQueryable();
 		type.setIsQueryable(queryable);
-		boolean controllablePolicy = (nemakiType.isControllablePolicy() == null) ? 
-				(parentType != null ? parentType.isControllablePolicy() : (Boolean) baseDefaults.get("controllablePolicy")) : nemakiType.isControllablePolicy();
-		type.setIsControllablePolicy(controllablePolicy);
-		boolean controllableACL = (nemakiType.isControllableACL() == null) ? 
-				(parentType != null ? parentType.isControllableAcl() : (Boolean) baseDefaults.get("controllableAcl")) : nemakiType.isControllableACL();
-		type.setIsControllableAcl(controllableACL);
-		boolean fulltextIndexed = (nemakiType.isFulltextIndexed() == null) ? 
+		boolean fulltextIndexed = (nemakiType.isFulltextIndexed() == null) ?
 				(parentType != null ? parentType.isFulltextIndexed() : (Boolean) baseDefaults.get("fulltextIndexed")) : nemakiType.isFulltextIndexed();
 		type.setIsFulltextIndexed(fulltextIndexed);
 		boolean includedInSupertypeQuery = (nemakiType
@@ -3425,8 +3458,17 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_SECONDARY.value()),
 					result, d, ipd, repositoryId);
 		} else {
+			// CRITICAL FIX (2025-12-12): CMIS spec compliance for getTypeDescendants
+			// When typeId is specified, return ONLY its descendants (children, grandchildren, etc.)
+			// Do NOT include the requested type itself in the result list
+			// This fixes TCK BaseTypesTest line 261 failure (type count mismatch between
+			// getTypeDescendants and getTypeChildren)
 			TypeDefinitionContainer tdc = types.get(typeId);
-			flattenTypeDefinitionContainer(tdc, result, d, ipd, repositoryId);
+			if (tdc != null && tdc.getChildren() != null) {
+				for (TypeDefinitionContainer child : tdc.getChildren()) {
+					flattenTypeDefinitionContainer(child, result, d, ipd, repositoryId);
+				}
+			}
 		}
 
 		// CRITICAL DEBUG: File-based logging for getTypesDescendants exit
@@ -4058,53 +4100,66 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * @param repositoryId The repository ID for which to invalidate the cache
 	 */
 	/**
-	 * CRITICAL FIX: Invalidate type definition cache with lazy regeneration
-	 * Root cause: Immediate regeneration after type deletion causes circular reference
-	 * Solution: Use lazy initialization to regenerate cache only when accessed next time
+	 * CRITICAL FIX (2025-12-11): Invalidate type definition cache with IMMEDIATE regeneration
+	 * Root cause: PatchService creates types in CouchDB AFTER TypeManagerImpl.init() runs,
+	 * so subtypes (including secondary types) are not loaded during initial startup.
+	 * Solution: When cache is invalidated (after PatchService creates types), immediately
+	 * regenerate the types for the specific repository to load newly created types.
 	 */
 	private void invalidateTypeDefinitionCache(String repositoryId) {
 		synchronized (initLock) {
-			log.debug("invalidateTypeDefinitionCache: Invalidating cache for repository=" + repositoryId);
-			
+			log.info("invalidateTypeDefinitionCache: Invalidating and regenerating cache for repository=" + repositoryId);
+
 			// Remove the specific repository's type cache
 			if (TYPES != null && TYPES.containsKey(repositoryId)) {
 				Map<String, TypeDefinitionContainer> repositoryTypes = TYPES.get(repositoryId);
 				int typesCount = repositoryTypes != null ? repositoryTypes.size() : 0;
-				
-				log.debug("invalidateTypeDefinitionCache: Removing " + typesCount + " cached types for repository=" + repositoryId);
+
+				log.info("invalidateTypeDefinitionCache: Removing " + typesCount + " cached types for repository=" + repositoryId);
 				TYPES.remove(repositoryId);
 			}
-			
-			// CRITICAL FIX: Use lazy regeneration instead of immediate regeneration
-			// Cache will be regenerated automatically on next access via ensureInitialized()
-			log.debug("invalidateTypeDefinitionCache: Cache cleared for repository=" + repositoryId + 
-					". Will be regenerated on next access (lazy initialization)");
-			
+
 			// Clear related caches to maintain consistency
 			if (basetypes != null) {
-				// Only clear basetypes if it's related to this repository
-				// Since basetypes are shared across repositories, we need to be careful
 				log.debug("invalidateTypeDefinitionCache: Clearing base types cache");
 				basetypes.clear();
 			}
-			
+
 			// Clear property definition caches for this repository
 			if (subTypeProperties != null) {
-				// Remove entries that belong to this repository
 				subTypeProperties.entrySet().removeIf(entry -> entry.getKey().startsWith(repositoryId + ":"));
 				log.debug("invalidateTypeDefinitionCache: Cleared subtype properties for repository=" + repositoryId);
 			}
-			
+
 			if (propertyDefinitionCoresByPropertyId != null && propertyDefinitionCoresByQueryName != null) {
-				// These are global caches, but we might need to clear repository-specific entries
-				// For now, clear all to ensure consistency (can be optimized later)
 				propertyDefinitionCoresByPropertyId.clear();
 				propertyDefinitionCoresByQueryName.clear();
 				log.debug("invalidateTypeDefinitionCache: Cleared property definition caches");
 			}
-			
-			log.debug("invalidateTypeDefinitionCache: Cache invalidation complete for repository=" + repositoryId + 
-					". Next access will trigger safe regeneration.");
+
+			// CRITICAL FIX (2025-12-11): Immediately regenerate types for this repository
+			// This ensures that types created by PatchService are loaded into TypeManager cache
+			try {
+				log.info("invalidateTypeDefinitionCache: Regenerating types for repository=" + repositoryId);
+				generate(repositoryId);
+
+				// Log the newly loaded types for verification
+				Map<String, TypeDefinitionContainer> newTypes = TYPES.get(repositoryId);
+				int newTypesCount = newTypes != null ? newTypes.size() : 0;
+				log.info("invalidateTypeDefinitionCache: Regenerated " + newTypesCount + " types for repository=" + repositoryId);
+
+				// Log secondary types specifically for debugging
+				if (newTypes != null) {
+					long secondaryCount = newTypes.keySet().stream()
+						.filter(id -> !id.startsWith("cmis:"))
+						.count();
+					log.info("invalidateTypeDefinitionCache: Found " + secondaryCount + " custom/secondary types");
+				}
+			} catch (Exception e) {
+				log.error("invalidateTypeDefinitionCache: Failed to regenerate types for repository=" + repositoryId, e);
+			}
+
+			log.info("invalidateTypeDefinitionCache: Cache invalidation and regeneration complete for repository=" + repositoryId);
 		}
 	}
 

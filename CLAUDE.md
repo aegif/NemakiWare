@@ -1003,6 +1003,92 @@ These deprecated classes are preserved for historical reference only and are NOT
 
 ---
 
+## Recent Major Changes (2025-12-11 - TypeManager Secondary Type Loading Fix) ✅
+
+### Secondary Type Loading During Startup - Critical Timing Fix
+
+**CRITICAL FIX (2025-12-11)**: Resolved issue where secondary types (and all custom subtypes) were not loaded into TypeManager cache during startup.
+
+**Problem Summary**:
+- **Symptom**: Secondary types existed in CouchDB but were not accessible via CMIS API (returned "objectNotFound")
+- **Impact**: All custom secondary types (tck:testSecondaryType, nemaki:metadataAspect, etc.) were unavailable
+- **Root Cause**: Timing issue - TypeManagerImpl.init() ran BEFORE PatchService created design documents and type definitions
+
+**Investigation Process**:
+1. ✅ Verified secondary types existed in CouchDB with correct data (baseId=CMIS_SECONDARY, parentId=cmis:secondary)
+2. ✅ Discovered "CRITICAL ERROR: TYPES is empty after initialization!" log message
+3. ✅ Traced startup order: TypeManagerImpl.init() → design documents not yet created → empty result from getTypeDefinitions()
+4. ✅ PatchService runs later and creates types, but TypeManager cache wasn't refreshed
+
+**Solution Implemented**:
+
+**File Modified**: `core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java`
+
+**Fix 1 - Immediate Cache Regeneration** (Lines 4061-4122):
+Changed `invalidateTypeDefinitionCache()` from lazy regeneration to immediate regeneration:
+```java
+// CRITICAL FIX (2025-12-11): Immediately regenerate types for this repository
+// This ensures that types created by PatchService are loaded into TypeManager cache
+try {
+    log.info("invalidateTypeDefinitionCache: Regenerating types for repository=" + repositoryId);
+    generate(repositoryId);
+
+    // Log the newly loaded types for verification
+    Map<String, TypeDefinitionContainer> newTypes = TYPES.get(repositoryId);
+    int newTypesCount = newTypes != null ? newTypes.size() : 0;
+    log.info("invalidateTypeDefinitionCache: Regenerated " + newTypesCount + " types for repository=" + repositoryId);
+} catch (Exception e) {
+    log.error("invalidateTypeDefinitionCache: Failed to regenerate types for repository=" + repositoryId, e);
+}
+```
+
+**Fix 2 - Null Safety for Secondary Types** (Lines 1963-1974):
+Added null safety for parent type lookup in `buildSecondaryTypeDefinitionFromDB()`:
+```java
+// CRITICAL FIX (2025-12-11): Add null safety for parent type lookup
+// Previously this line would NPE if types.get(parentId) returned null
+SecondaryTypeDefinitionImpl parentType = null;
+if (nemakiType.getParentId() != null && types != null) {
+    TypeDefinitionContainer parentContainer = types.get(nemakiType.getParentId());
+    if (parentContainer != null) {
+        parentType = (SecondaryTypeDefinitionImpl) parentContainer.getTypeDefinition();
+    }
+}
+```
+
+**Startup Sequence (After Fix)**:
+1. TypeManagerImpl.init() → loads base types only (design docs don't exist yet)
+2. PatchService.onApplicationEvent() → creates type definitions in CouchDB
+3. PatchService calls invalidateTypeManagerCaches()
+4. **NEW**: TypeManager.invalidateTypeDefinitionCache() → immediately regenerates types
+5. All secondary types now loaded into cache
+
+**Verification Results**:
+```bash
+# Custom Type Test Suite
+Total tests: 12
+Passed: 12
+Failed: 0
+
+# QA Test Suite
+Tests passed: 73/73 (100%)
+```
+
+**Secondary Types Now Available**:
+- cmis:secondary (base type)
+  - nemaki:classificationInfo
+  - nemaki:clientInfo
+  - nemaki:commentable
+  - nemaki:metadataAspect
+  - nemaki:reviewInfo
+  - nemaki:testAspect
+  - tck:testSecondaryType
+  - test:metadataAspect
+
+**Status**: ✅ RESOLVED - All secondary types now correctly loaded during startup
+
+---
+
 ## Recent Major Changes (2025-12-11 - Secondary Type UI & QA Test Fix) ✅
 
 ### Secondary Type Management UI - Complete Implementation

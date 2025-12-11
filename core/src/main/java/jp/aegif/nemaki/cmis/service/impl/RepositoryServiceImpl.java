@@ -54,6 +54,7 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
 import org.apache.chemistry.opencmis.commons.definitions.TypeMutability;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
@@ -630,11 +631,31 @@ public class RepositoryServiceImpl implements RepositoryService,
 		ntd.setBaseId(typeDefinition.getBaseTypeId());
 		ntd.setParentId(typeDefinition.getParentTypeId());
 		ntd.setDescription(typeDefinition.getDescription());
-		ntd.setCreatable(typeDefinition.isCreatable());
-		ntd.setFilable(typeDefinition.isFileable());
+
+		// CRITICAL FIX (2025-12-12): Enforce CMIS 1.1 spec constraints for secondary types
+		// Per CMIS 1.1 specification section 2.1.4:
+		// - Secondary types MUST have creatable=false (cannot be created as standalone objects)
+		// - Secondary types MUST have fileable=false (cannot be filed in folders)
+		// - Secondary types MUST have controllablePolicy=false (cannot have policies)
+		// - Secondary types MUST have controllableAcl=false (cannot have ACLs - they attach to objects that have ACLs)
+		boolean isSecondaryType = BaseTypeId.CMIS_SECONDARY.equals(typeDefinition.getBaseTypeId());
+
+		if (isSecondaryType) {
+			// Enforce CMIS 1.1 spec constraints for secondary types - ignore client values
+			ntd.setCreatable(false);
+			ntd.setFilable(false);
+			ntd.setControllablePolicy(false);
+			ntd.setControllableACL(false);
+			log.debug("TCK SPEC COMPLIANCE: Enforced secondary type constraints (creatable=false, fileable=false, controllablePolicy=false, controllableAcl=false) for type: " + requestedTypeId);
+		} else {
+			// Non-secondary types: use client-provided values
+			ntd.setCreatable(typeDefinition.isCreatable());
+			ntd.setFilable(typeDefinition.isFileable());
+			ntd.setControllablePolicy(typeDefinition.isControllablePolicy());
+			ntd.setControllableACL(typeDefinition.isControllableAcl());
+		}
+
 		ntd.setQueryable(typeDefinition.isQueryable());
-		ntd.setControllablePolicy(typeDefinition.isControllablePolicy());
-		ntd.setControllableACL(typeDefinition.isControllableAcl());
 		ntd.setFulltextIndexed(typeDefinition.isFulltextIndexed());
 		ntd.setIncludedInSupertypeQuery(typeDefinition
 				.isIncludedInSupertypeQuery());
