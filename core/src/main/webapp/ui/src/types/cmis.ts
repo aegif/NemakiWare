@@ -60,13 +60,51 @@ export interface Group {
   members: string[];
 }
 
+/**
+ * CMIS AllowableActions object
+ * Contains boolean flags indicating which operations are allowed on an object.
+ * This matches the CMIS 1.1 specification where allowableActions is an object
+ * with boolean properties, NOT an array of strings.
+ */
+export interface AllowableActions {
+  canDeleteObject?: boolean;
+  canUpdateProperties?: boolean;
+  canGetFolderTree?: boolean;
+  canGetProperties?: boolean;
+  canGetObjectRelationships?: boolean;
+  canGetObjectParents?: boolean;
+  canGetFolderParent?: boolean;
+  canGetDescendants?: boolean;
+  canMoveObject?: boolean;
+  canDeleteContentStream?: boolean;
+  canCheckOut?: boolean;
+  canCancelCheckOut?: boolean;
+  canCheckIn?: boolean;
+  canSetContentStream?: boolean;
+  canGetAllVersions?: boolean;
+  canAddObjectToFolder?: boolean;
+  canRemoveObjectFromFolder?: boolean;
+  canGetContentStream?: boolean;
+  canApplyPolicy?: boolean;
+  canGetAppliedPolicies?: boolean;
+  canRemovePolicy?: boolean;
+  canGetChildren?: boolean;
+  canCreateDocument?: boolean;
+  canCreateFolder?: boolean;
+  canCreateRelationship?: boolean;
+  canDeleteTree?: boolean;
+  canGetRenditions?: boolean;
+  canGetACL?: boolean;
+  canApplyACL?: boolean;
+}
+
 export interface CMISObject {
   id: string;
   name: string;
   objectType: string;
   baseType: string;
   properties: Record<string, any>;
-  allowableActions: string[];
+  allowableActions?: AllowableActions;
   parentId?: string;
   path?: string;
   contentStreamLength?: number;

@@ -213,6 +213,7 @@ import { ArchiveManagement } from './components/ArchiveManagement/ArchiveManagem
 import { Login } from './components/Login/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute/ProtectedRoute';
+import { AdminRoute } from './components/AdminRoute/AdminRoute';
 
 const customTheme = {
   token: {
@@ -254,19 +255,26 @@ function AppContent() {
               <SearchResults repositoryId={authToken.repositoryId} />
             </ProtectedRoute>
           } />
+          {/* Admin-only routes - require admin role */}
           <Route path="/users" element={
             <ProtectedRoute>
-              <UserManagement repositoryId={authToken.repositoryId} />
+              <AdminRoute>
+                <UserManagement repositoryId={authToken.repositoryId} />
+              </AdminRoute>
             </ProtectedRoute>
           } />
           <Route path="/groups" element={
             <ProtectedRoute>
-              <GroupManagement repositoryId={authToken.repositoryId} />
+              <AdminRoute>
+                <GroupManagement repositoryId={authToken.repositoryId} />
+              </AdminRoute>
             </ProtectedRoute>
           } />
           <Route path="/types" element={
             <ProtectedRoute>
-              <TypeManagement repositoryId={authToken.repositoryId} />
+              <AdminRoute>
+                <TypeManagement repositoryId={authToken.repositoryId} />
+              </AdminRoute>
             </ProtectedRoute>
           } />
           <Route path="/permissions/:objectId" element={
@@ -276,7 +284,9 @@ function AppContent() {
           } />
           <Route path="/archive" element={
             <ProtectedRoute>
-              <ArchiveManagement repositoryId={authToken.repositoryId} />
+              <AdminRoute>
+                <ArchiveManagement repositoryId={authToken.repositoryId} />
+              </AdminRoute>
             </ProtectedRoute>
           } />
           <Route path="/oidc-callback" element={<Login onLogin={() => {}} />} />

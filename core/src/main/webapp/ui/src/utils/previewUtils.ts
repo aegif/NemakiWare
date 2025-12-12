@@ -9,10 +9,25 @@ export const getFileType = (mimeType: string): 'image' | 'video' | 'pdf' | 'text
   return 'unsupported';
 };
 
+/**
+ * Determines if an object can be previewed.
+ * Checks:
+ * 1. Object is a document (baseType === 'cmis:document')
+ * 2. Has content (contentStreamMimeType is set)
+ * 3. User has permission to get content stream (allowableActions.canGetContentStream === true)
+ * 4. File type is supported for preview
+ *
+ * Note: CMIS allowableActions is an object with boolean properties, NOT an array.
+ * Example: { canGetContentStream: true, canDeleteObject: false, ... }
+ */
 export const canPreview = (object: CMISObject): boolean => {
-  return object.baseType === 'cmis:document' && 
-         !!object.contentStreamMimeType && 
-         object.allowableActions?.includes('canGetContentStream') &&
+  // Check if allowableActions allows content stream access
+  // CMIS 1.1 returns allowableActions as an object with boolean values
+  const canGetContent = object.allowableActions?.canGetContentStream === true;
+
+  return object.baseType === 'cmis:document' &&
+         !!object.contentStreamMimeType &&
+         canGetContent &&
          getFileType(object.contentStreamMimeType) !== 'unsupported';
 };
 

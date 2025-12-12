@@ -42,7 +42,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "testpass",
+          "value": "password",
           "temporary": false
         }
       ],

@@ -270,6 +270,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   const uiBuildTime = typeof __UI_BUILD_TIME__ !== 'undefined' ? __UI_BUILD_TIME__ : 'dev';
   const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '3.0.0';
 
+  // Check if current user is admin
+  // For basic auth: username === 'admin'
+  // For OIDC/SAML: check if 'admin' role is present (username typically matches)
+  const isAdmin = authToken?.username === 'admin';
+
+  // Build menu items - admin submenu only shown to admin users
   const menuItems = [
     {
       key: '/documents',
@@ -281,7 +287,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
       icon: <SearchOutlined />,
       label: '検索',
     },
-    {
+    // Only include admin menu for admin users
+    ...(isAdmin ? [{
       key: 'admin',
       icon: <SettingOutlined />,
       label: '管理',
@@ -307,7 +314,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           label: 'アーカイブ',
         },
       ],
-    },
+    }] : []),
   ];
 
   const handleMenuClick = ({ key }: { key: string }) => {
