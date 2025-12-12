@@ -274,7 +274,7 @@
  */
 
 import { AuthService } from './auth';
-import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL } from '../types/cmis';
+import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions } from '../types/cmis';
 
 export class CMISService {
   private baseUrl = '/core/browser';
@@ -398,24 +398,37 @@ export class CMISService {
 
   // REMOVED: getSafeBooleanProperty - unused helper method (2025-10-22)
 
-  private extractAllowableActions(allowableActionsData: any): string[] {
+  /**
+   * Extract allowableActions from CMIS response data.
+   * CMIS 1.1 returns allowableActions as an object with boolean properties.
+   * Example: { canGetContentStream: true, canDeleteObject: false, ... }
+   *
+   * @param allowableActionsData - Raw allowableActions data from CMIS response
+   * @returns AllowableActions object with boolean properties
+   */
+  private extractAllowableActions(allowableActionsData: any): AllowableActions | undefined {
     if (!allowableActionsData) {
-      return [];
+      return undefined;
     }
 
     const data = allowableActionsData.allowableActions ?? allowableActionsData;
 
+    if (typeof data === 'object' && !Array.isArray(data)) {
+      // CMIS 1.1 standard: allowableActions is an object with boolean values
+      return data as AllowableActions;
+    }
+
+    // Fallback: If somehow we receive an array (non-standard), convert to object
     if (Array.isArray(data)) {
-      return data.map(action => String(action));
+      const result: AllowableActions = {};
+      data.forEach(action => {
+        const key = String(action) as keyof AllowableActions;
+        (result as any)[key] = true;
+      });
+      return result;
     }
 
-    if (typeof data === 'object') {
-      return Object.entries(data)
-        .filter(([, value]) => value === true || value === 'true')
-        .map(([key]) => key);
-    }
-
-    return [];
+    return undefined;
   }
 
   private encodeObjectIdSegment(objectId?: string): string {
@@ -644,26 +657,26 @@ export class CMISService {
               const response = JSON.parse(xhr.responseText);
 
               const props = response.succinctProperties || response.properties || {};
-              const rootFolder = {
+              const rootFolder: CMISObject = {
                 id: this.getSafeStringProperty(props, 'cmis:objectId', 'e02f784f8360a02cc14d1314c10038ff'),
                 name: this.getSafeStringProperty(props, 'cmis:name', 'Root Folder'),
                 objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:folder'),
                 baseType: 'cmis:folder',
                 properties: props,
-                allowableActions: ['canGetChildren'],
+                allowableActions: this.extractAllowableActions(response.allowableActions) || { canGetChildren: true },
                 path: this.getSafeStringProperty(props, 'cmis:path', '/')
               };
 
               resolve(rootFolder);
             } catch (error) {
               // Failed to parse response - use fallback
-              const fallbackFolder = {
+              const fallbackFolder: CMISObject = {
                 id: 'e02f784f8360a02cc14d1314c10038ff',
                 name: 'Root Folder',
                 objectType: 'cmis:folder',
                 baseType: 'cmis:folder',
                 properties: {},
-                allowableActions: ['canGetChildren'],
+                allowableActions: { canGetChildren: true },
                 path: '/'
               };
               resolve(fallbackFolder);
@@ -672,29 +685,29 @@ export class CMISService {
             // Request failed - handle authentication errors
             this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
             // For now, still provide fallback but notify about auth error
-            const fallbackFolder = {
+            const fallbackFolder: CMISObject = {
               id: 'e02f784f8360a02cc14d1314c10038ff',
               name: 'Root Folder',
               objectType: 'cmis:folder',
               baseType: 'cmis:folder',
               properties: {},
-              allowableActions: ['canGetChildren'],
+              allowableActions: { canGetChildren: true },
               path: '/'
             };
             resolve(fallbackFolder);
           }
         }
       };
-      
+
       xhr.onerror = () => {
         // Network error - use fallback folder
-        const fallbackFolder = {
+        const fallbackFolder: CMISObject = {
           id: 'e02f784f8360a02cc14d1314c10038ff',
           name: 'Root Folder',
           objectType: 'cmis:folder',
           baseType: 'cmis:folder',
           properties: {},
-          allowableActions: ['canGetChildren'],
+          allowableActions: { canGetChildren: true },
           path: '/'
         };
         resolve(fallbackFolder);
@@ -843,7 +856,7 @@ export class CMISService {
                     objectType: objectType,
                     baseType: objectType.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
                     properties: allProperties,
-                    allowableActions: [],
+                    allowableActions: undefined,  // AtomPub doesn't include allowableActions by default
                     path: path,  // Add path property from XML response
                     createdBy: createdBy,
                     lastModifiedBy: lastModifiedBy,
@@ -863,7 +876,7 @@ export class CMISService {
                       'cmis:name': atomTitle,
                       'cmis:objectId': atomId.split('/').pop() || `entry-${i}`
                     },
-                    allowableActions: []
+                    allowableActions: undefined
                   };
                   children.push(fallbackObject);
                 }
@@ -1030,9 +1043,10 @@ export class CMISService {
                 }
               }
 
-              // CRITICAL FIX (2025-11-19): Extract allowableActions from AtomPub response
+              // CRITICAL FIX (2025-11-19, updated 2025-12-12): Extract allowableActions from AtomPub response
               // This is required for canPreview() utility to work correctly
-              const allowableActions: string[] = [];
+              // Now returns AllowableActions object instead of string[] for type safety
+              const allowableActions: AllowableActions = {};
               const allowableActionsElement = entry.querySelector('cmis\\:allowableActions, allowableActions');
               if (allowableActionsElement) {
                 // CRITICAL FIX: Cannot use attribute selector [localName^="can"] because localName is a property, not an attribute
@@ -1044,9 +1058,8 @@ export class CMISService {
                   // Check if element name starts with "can" (canGetContentStream, canDeleteObject, etc.)
                   if (actionName && actionName.startsWith('can')) {
                     const actionValue = actionEl.textContent?.trim();
-                    if (actionValue === 'true') {
-                      allowableActions.push(actionName);
-                    }
+                    // Set as boolean property in AllowableActions object
+                    (allowableActions as any)[actionName] = actionValue === 'true';
                   }
                 }
               }
@@ -1057,7 +1070,7 @@ export class CMISService {
                 objectType: objectType,
                 baseType: baseType,
                 properties: propertiesMap, // NOW POPULATED with all CMIS properties including changeToken!
-                allowableActions: allowableActions,
+                allowableActions: Object.keys(allowableActions).length > 0 ? allowableActions : undefined,
                 path: path,
                 createdBy: createdBy || undefined,
                 creationDate: creationDate || undefined,
@@ -1197,7 +1210,7 @@ export class CMISService {
                 lastModifiedBy: lastModifiedBy,
                 lastModificationDate: lastModificationDate,
                 properties: propertiesMap,
-                allowableActions: []
+                allowableActions: undefined  // AtomPub getObjectByPath doesn't return allowableActions
               };
 
               resolve(cmisObject);
@@ -1358,7 +1371,7 @@ export class CMISService {
                 objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
                 baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
                 properties: props,
-                allowableActions: response.allowableActions || [],
+                allowableActions: this.extractAllowableActions(response.allowableActions),
                 createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
                 lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
                 creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
@@ -1486,7 +1499,7 @@ export class CMISService {
                   objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
                   baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
                   properties: props,
-                  allowableActions: result.allowableActions || [],
+                  allowableActions: this.extractAllowableActions(result.allowableActions),
                   createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
                   lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
                   creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
@@ -1554,18 +1567,18 @@ export class CMISService {
                   properties: {
                     'cmis:versionLabel': title
                   },
-                  allowableActions: []
+                  allowableActions: undefined  // Version list doesn't include allowableActions
                 });
               }
 
               // Use first version as latestVersion (versions are typically ordered newest-first)
-              const latestVersion = versions[0] || {
+              const latestVersion: CMISObject = versions[0] || {
                 id: '',
                 name: '',
                 objectType: 'cmis:document',
                 baseType: 'cmis:document',
                 properties: {},
-                allowableActions: []
+                allowableActions: undefined
               };
 
               const versionHistory: VersionHistory = {
