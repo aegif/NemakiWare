@@ -98,7 +98,10 @@ run_http_test() {
 
 echo "=== 1. ENVIRONMENT VERIFICATION ==="
 run_test "Java 17 Environment" "java -version 2>&1 | grep 'version \"17'" ""
-run_test "Docker Containers Running" "docker compose -f docker/docker-compose-simple.yml ps --filter 'status=running' | tail -n +2 | wc -l | tr -d ' '" "3"
+# Check for at least 3 core containers (core, couchdb, solr). Keycloak may also be running.
+run_test "Core Container Running" "docker ps --filter 'name=core' --filter 'status=running' --format '{{.Names}}' | grep -c core" "1"
+run_test "CouchDB Container Running" "docker ps --filter 'name=couchdb' --filter 'status=running' --format '{{.Names}}' | grep -c couchdb" "1"
+run_test "Solr Container Running" "docker ps --filter 'name=solr' --filter 'status=running' --format '{{.Names}}' | grep -c solr" "1"
 
 echo
 echo "=== 2. DATABASE INITIALIZATION TESTS ==="

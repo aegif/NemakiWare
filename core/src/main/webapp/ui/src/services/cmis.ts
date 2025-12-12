@@ -724,7 +724,8 @@ export class CMISService {
       // Use AtomPub for all folder children queries due to Browser Binding issues with empty results
       // Always use AtomPub for children queries - more reliable than Browser Binding
       // CRITICAL FIX: Add filter=* to get all properties including versioning properties
-      const url = `/core/atom/${repositoryId}/children?id=${folderId}&filter=*`;
+      // CRITICAL FIX (2025-12-12): Add includeAllowableActions=true to enable preview tab
+      const url = `/core/atom/${repositoryId}/children?id=${folderId}&filter=*&includeAllowableActions=true`;
       
       xhr.open('GET', url, true);
 
@@ -850,21 +851,41 @@ export class CMISService {
                   const path = allProperties['cmis:path'] as string | undefined;
                   console.log('[CMIS DEBUG] Extracted path:', path);
 
-                  const cmisObject: CMISObject = {
+                  // Extract contentStreamMimeType for preview support
+                  const contentStreamMimeType = getPropertyValue('cmis:contentStreamMimeType', 'propertyString');
+
+                  // Extract allowableActions from AtomPub response
+                  // AllowableActions are in cmis:allowableActions element with boolean children
+                  let allowableActions: AllowableActions | undefined = undefined;
+                  const allowableActionsElem = cmisObject?.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'allowableActions')[0] ||
+                                              cmisObject?.querySelector('cmis\\:allowableActions, allowableActions');
+                  if (allowableActionsElem) {
+                    allowableActions = {};
+                    const actionElements = allowableActionsElem.children;
+                    for (let k = 0; k < actionElements.length; k++) {
+                      const actionElem = actionElements[k];
+                      const actionName = actionElem.localName || actionElem.nodeName.replace('cmis:', '');
+                      const actionValue = actionElem.textContent === 'true';
+                      (allowableActions as any)[actionName] = actionValue;
+                    }
+                  }
+
+                  const cmisObjectResult: CMISObject = {
                     id: id,
                     name: name,
                     objectType: objectType,
                     baseType: objectType.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
                     properties: allProperties,
-                    allowableActions: undefined,  // AtomPub doesn't include allowableActions by default
+                    allowableActions: allowableActions,
                     path: path,  // Add path property from XML response
                     createdBy: createdBy,
                     lastModifiedBy: lastModifiedBy,
                     creationDate: creationDate,
                     lastModificationDate: lastModificationDate,
-                    contentStreamLength: contentStreamLengthStr ? parseInt(contentStreamLengthStr) : undefined
+                    contentStreamLength: contentStreamLengthStr ? parseInt(contentStreamLengthStr) : undefined,
+                    contentStreamMimeType: contentStreamMimeType || undefined
                   };
-                  children.push(cmisObject);
+                  children.push(cmisObjectResult);
                 } else {
                   // プロパティが見つからない場合の簡易処理
                   const fallbackObject: CMISObject = {
@@ -3140,54 +3161,75 @@ export class CMISService {
     repositoryId: string,
     objectId: string,
     addTypes: string[],
-    removeTypes: string[]
+    removeTypes: string[],
+    changeToken?: string
   ): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 201) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const updated = this.buildCmisObjectFromBrowserData(response);
-              resolve(updated);
-            } catch (e) {
-              reject(new Error('Failed to parse response'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
+    return new Promise(async (resolve, reject) => {
+      try {
+        // If no changeToken provided, fetch the current object to get it
+        let token = changeToken;
+        if (!token) {
+          try {
+            const currentObject = await this.getObject(repositoryId, objectId);
+            token = currentObject.properties?.['cmis:changeToken'] as string;
+          } catch (e) {
+            console.warn('Could not fetch changeToken, proceeding without it:', e);
           }
         }
-      };
 
-      xhr.onerror = () => reject(new Error('Network error'));
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
+        xhr.setRequestHeader('Accept', 'application/json');
 
-      const formData = new FormData();
-      formData.append('cmisaction', 'update');
-      formData.append('objectId', objectId);
-      formData.append('succinct', 'true');
-      formData.append('_charset_', 'UTF-8');
+        const headers = this.getAuthHeaders();
+        Object.entries(headers).forEach(([key, value]) => {
+          xhr.setRequestHeader(key, value);
+        });
 
-      // Add secondary types to add
-      if (addTypes.length > 0) {
-        formData.append('addSecondaryTypeIds', addTypes.join(','));
+        xhr.onreadystatechange = () => {
+          if (xhr.readyState === 4) {
+            if (xhr.status === 200 || xhr.status === 201) {
+              try {
+                const response = JSON.parse(xhr.responseText);
+                const updated = this.buildCmisObjectFromBrowserData(response);
+                resolve(updated);
+              } catch (e) {
+                reject(new Error('Failed to parse response'));
+              }
+            } else {
+              const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+              reject(error);
+            }
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Network error'));
+
+        const formData = new FormData();
+        formData.append('cmisaction', 'update');
+        formData.append('objectId', objectId);
+        formData.append('succinct', 'true');
+        formData.append('_charset_', 'UTF-8');
+
+        // CRITICAL FIX (2025-12-12): Include changeToken to prevent update conflicts
+        if (token) {
+          formData.append('changeToken', token);
+        }
+
+        // Add secondary types to add
+        if (addTypes.length > 0) {
+          formData.append('addSecondaryTypeIds', addTypes.join(','));
+        }
+
+        // Add secondary types to remove
+        if (removeTypes.length > 0) {
+          formData.append('removeSecondaryTypeIds', removeTypes.join(','));
+        }
+
+        xhr.send(formData);
+      } catch (e) {
+        reject(e);
       }
-
-      // Add secondary types to remove
-      if (removeTypes.length > 0) {
-        formData.append('removeSecondaryTypeIds', removeTypes.join(','));
-      }
-
-      xhr.send(formData);
     });
   }
 
