@@ -677,21 +677,24 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       key: 'properties',
       label: 'プロパティ',
       children: (
-        <div>
-          {/* Secondary Type Selector - above property editor */}
-          <SecondaryTypeSelector
-            repositoryId={repositoryId}
-            object={object}
-            onUpdate={handleSecondaryTypeUpdate}
-            readOnly={isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy}
-          />
-          <PropertyEditor
-            object={object}
-            propertyDefinitions={typeDefinition.propertyDefinitions}
-            onSave={handleUpdateProperties}
-            readOnly={isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy}
-          />
-        </div>
+        <PropertyEditor
+          object={object}
+          propertyDefinitions={typeDefinition.propertyDefinitions}
+          onSave={handleUpdateProperties}
+          readOnly={isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy}
+        />
+      ),
+    },
+    {
+      key: 'secondaryTypes',
+      label: 'セカンダリタイプ',
+      children: (
+        <SecondaryTypeSelector
+          repositoryId={repositoryId}
+          object={object}
+          onUpdate={handleSecondaryTypeUpdate}
+          readOnly={isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy}
+        />
       ),
     },
     ...(canPreview(object) ? [{
