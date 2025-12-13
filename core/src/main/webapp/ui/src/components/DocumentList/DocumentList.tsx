@@ -309,25 +309,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // - Only set currentFolderId on INITIAL load (when currentFolderId is empty)
   // - For subsequent navigation, only update selectedFolderId
   // This prevents tree redraw when user clicks folders in the table
-  // CRITICAL FIX (2025-12-13): Handle React Router timing issue
-  // - searchParams might not be synced with URL immediately on mount
-  // - Check actual window.location.hash as fallback
   useEffect(() => {
     const folderIdFromUrl = searchParams.get('folderId');
-    // Also check the actual URL in case searchParams hasn't synced yet (React Router timing issue)
-    const urlParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
-    const actualFolderIdInUrl = urlParams.get('folderId');
-
-    // Use whichever folderId is available (searchParams or actual URL)
-    const effectiveFolderId = folderIdFromUrl || actualFolderIdInUrl;
-
-    if (effectiveFolderId) {
+    if (folderIdFromUrl) {
       // Always update selectedFolderId to show correct folder contents
-      setSelectedFolderId(effectiveFolderId);
+      setSelectedFolderId(folderIdFromUrl);
       // Only set currentFolderId if it hasn't been set yet (initial load)
       // This prevents tree redraw on every folder navigation
       if (!currentFolderId) {
-        setCurrentFolderId(effectiveFolderId);
+        setCurrentFolderId(folderIdFromUrl);
       }
     } else if (!selectedFolderId) {
       // Default to root folder if no URL parameter and no selected folder
@@ -651,10 +641,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   setSearchParams({ folderId: record.id });
                   // Path will be set by loadObjects() after fetching from CMIS - no manual construction
                 } else {
-                  // CRITICAL FIX (2025-12-13): Use selectedFolderId for back button navigation
-                  // currentFolderId is only set on initial load and doesn't change during table navigation
-                  // selectedFolderId tracks the actual folder being viewed
-                  const folderParam = selectedFolderId ? `?folderId=${selectedFolderId}` : '';
+                  // CRITICAL FIX: Include currentFolderId in URL for back button navigation
+                  const folderParam = currentFolderId ? `?folderId=${currentFolderId}` : '';
                   navigate(`/documents/${record.id}${folderParam}`);
                 }
               }}
@@ -787,8 +775,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 icon={<EyeOutlined />}
                 size="small"
                 onClick={() => {
-                  // CRITICAL FIX (2025-12-13): Use selectedFolderId for back button navigation
-                  const folderParam = selectedFolderId ? `?folderId=${selectedFolderId}` : '';
+                  // CRITICAL FIX: Include currentFolderId in URL for back button navigation
+                  const folderParam = currentFolderId ? `?folderId=${currentFolderId}` : '';
                   navigate(`/documents/${record.id}${folderParam}`);
                 }}
               />

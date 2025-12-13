@@ -101,19 +101,12 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   }, [externalCurrentFolderId]);
 
   // Initial load - get root folder and build tree
-  // CRITICAL FIX (2025-12-13): Only load root folder if no external folder is provided
-  // This prevents overriding the folder specified in URL (e.g., when navigating back)
   useEffect(() => {
-    if (!externalCurrentFolderId) {
-      loadRootFolder();
-    }
-  }, [repositoryId, externalCurrentFolderId]);
+    loadRootFolder();
+  }, [repositoryId]);
 
   /**
    * Load root folder and initialize tree
-   * CRITICAL FIX (2025-12-13): Check URL for existing folderId before calling onSelect
-   * This prevents race condition where FolderTree calls onSelect with root folder
-   * before DocumentList has processed the URL folderId parameter
    */
   const loadRootFolder = async () => {
     const authData = localStorage.getItem('nemakiware_auth');
@@ -121,10 +114,6 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
       setLoading(false);
       return;
     }
-
-    // Check if URL already has a folderId - if so, don't override with root
-    const urlParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
-    const folderIdInUrl = urlParams.get('folderId');
 
     try {
       setLoading(true);
@@ -139,12 +128,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
       setSelectedFolderId(rootFolder.id);
 
       await loadTreeFromFolder(rootFolder.id);
-
-      // Only call onSelect if URL doesn't already have a folderId
-      // This prevents overriding the folder from URL when navigating back
-      if (!folderIdInUrl) {
-        onSelect(rootFolder.id, rootFolder.path || '/');
-      }
+      onSelect(rootFolder.id, rootFolder.path || '/');
     } catch (error) {
       console.error('Failed to load root folder:', error);
       message.error('ルートフォルダの読み込みに失敗しました');
