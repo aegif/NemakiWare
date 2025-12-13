@@ -28,6 +28,7 @@ import {
 } from 'antd';
 import { InfoCircleOutlined, EditOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { getSafeBooleanValue } from '../../utils/cmisPropertyUtils';
 import { PropertyDefinition, CMISObject } from '../../types/cmis';
 
 const { Text } = Typography;
@@ -200,7 +201,10 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
     }
 
     if (propDef.propertyType === 'boolean') {
-      return actualValue ? 'はい' : 'いいえ';
+      // CRITICAL FIX (2025-12-14): Convert string 'true'/'false' to actual boolean
+      // JavaScript evaluates string 'false' as truthy, causing incorrect display
+      const boolValue = getSafeBooleanValue(actualValue);
+      return boolValue ? 'はい' : 'いいえ';
     }
 
     return String(actualValue);

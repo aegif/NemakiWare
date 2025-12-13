@@ -646,7 +646,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   // currentFolderId = the tree pivot point (may differ from selected folder)
                   // When user clicks back from document detail, they should return to selectedFolderId
                   const folderParam = selectedFolderId ? `?folderId=${selectedFolderId}` : '';
-                  navigate(`/documents/${record.id}${folderParam}`);
+                  const targetUrl = `/documents/${record.id}${folderParam}`;
+                  console.log('[DocumentList] Navigating to document with selectedFolderId:', selectedFolderId);
+                  console.log('[DocumentList] Full target URL:', targetUrl);
+                  navigate(targetUrl);
                 }
               }}
             >
@@ -780,7 +783,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 onClick={() => {
                   // CRITICAL FIX (2025-12-13): Use selectedFolderId for back button navigation
                   const folderParam = selectedFolderId ? `?folderId=${selectedFolderId}` : '';
-                  navigate(`/documents/${record.id}${folderParam}`);
+                  const targetUrl = `/documents/${record.id}${folderParam}`;
+                  console.log('[DocumentList] View button clicked, selectedFolderId:', selectedFolderId);
+                  console.log('[DocumentList] Full target URL:', targetUrl);
+                  navigate(targetUrl);
                 }}
               />
             </Tooltip>

@@ -764,9 +764,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 icon={<ArrowLeftOutlined />}
                 onClick={() => {
                   // CRITICAL FIX: Preserve current folder when navigating back
+                  console.log('[DocumentViewer] Back button clicked, currentFolderId:', currentFolderId);
+                  console.log('[DocumentViewer] Full URL params:', searchParams.toString());
                   if (currentFolderId) {
-                    navigate(`/documents?folderId=${currentFolderId}`);
+                    const targetUrl = `/documents?folderId=${currentFolderId}`;
+                    console.log('[DocumentViewer] Navigating to:', targetUrl);
+                    navigate(targetUrl);
                   } else {
+                    console.log('[DocumentViewer] No folderId, navigating to /documents');
                     navigate('/documents');
                   }
                 }}

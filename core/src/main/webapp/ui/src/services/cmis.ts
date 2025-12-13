@@ -1064,15 +1064,19 @@ export class CMISService {
                 }
               }
 
-              // CRITICAL FIX (2025-11-19, updated 2025-12-12): Extract allowableActions from AtomPub response
+              // CRITICAL FIX (2025-12-14): Extract allowableActions from AtomPub response using getElementsByTagNameNS
+              // querySelector with 'cmis\\:' prefix doesn't work reliably in XML context
               // This is required for canPreview() utility to work correctly
-              // Now returns AllowableActions object instead of string[] for type safety
+              const CMIS_NS = 'http://docs.oasis-open.org/ns/cmis/core/200908/';
               const allowableActions: AllowableActions = {};
-              const allowableActionsElement = entry.querySelector('cmis\\:allowableActions, allowableActions');
+              const allowableActionsElements = entry.getElementsByTagNameNS(CMIS_NS, 'allowableActions');
+              const allowableActionsElement = allowableActionsElements.length > 0 ? allowableActionsElements[0] :
+                                              entry.querySelector('allowableActions');
+              console.log('[CMIS DEBUG] getObject allowableActions element found:', !!allowableActionsElement);
               if (allowableActionsElement) {
-                // CRITICAL FIX: Cannot use attribute selector [localName^="can"] because localName is a property, not an attribute
-                // Must iterate through all child elements and check localName property
+                // Iterate through all child elements to find can* actions
                 const children = allowableActionsElement.children;
+                console.log('[CMIS DEBUG] getObject allowableActions children count:', children.length);
                 for (let i = 0; i < children.length; i++) {
                   const actionEl = children[i];
                   const actionName = actionEl.localName;
@@ -1083,6 +1087,8 @@ export class CMISService {
                     (allowableActions as any)[actionName] = actionValue === 'true';
                   }
                 }
+                console.log('[CMIS DEBUG] getObject extracted allowableActions:', Object.keys(allowableActions));
+                console.log('[CMIS DEBUG] canGetContentStream:', allowableActions.canGetContentStream);
               }
 
               const cmisObject: CMISObject = {
@@ -2539,7 +2545,12 @@ export class CMISService {
               // getElementsByTagName('entry') doesn't find <atom:entry> because of namespace prefix
               const ATOM_NS = 'http://www.w3.org/2005/Atom';
               const CMIS_NS = 'http://docs.oasis-open.org/ns/cmis/core/200908/';
+
+              console.log('[CMIS DEBUG] getRelationships parsing XML, response length:', xhr.responseText.length);
+              console.log('[CMIS DEBUG] getRelationships first 500 chars:', xhr.responseText.substring(0, 500));
+
               const entries = xmlDoc.getElementsByTagNameNS(ATOM_NS, 'entry');
+              console.log('[CMIS DEBUG] getRelationships found', entries.length, 'entry elements');
 
               const relationships: Relationship[] = [];
               for (let i = 0; i < entries.length; i++) {
@@ -2581,6 +2592,8 @@ export class CMISService {
                 const targetId = getPropertyValue('cmis:targetId');
                 const objectTypeId = getPropertyValue('cmis:objectTypeId') || 'cmis:relationship';
 
+                console.log(`[CMIS DEBUG] getRelationships entry ${i}: id=${relationshipId}, sourceId=${sourceId}, targetId=${targetId}, type=${objectTypeId}`);
+
                 // Only add if we have valid source and target IDs
                 if (sourceId && targetId) {
                   relationships.push({
@@ -2590,8 +2603,11 @@ export class CMISService {
                     relationshipType: objectTypeId,
                     properties: {}
                   });
+                } else {
+                  console.log(`[CMIS DEBUG] getRelationships entry ${i} skipped: missing sourceId or targetId`);
                 }
               }
+              console.log('[CMIS DEBUG] getRelationships returning', relationships.length, 'relationships');
               
               resolve(relationships);
             } catch (e) {
