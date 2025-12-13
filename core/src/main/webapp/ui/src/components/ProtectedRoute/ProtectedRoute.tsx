@@ -231,26 +231,30 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   );
 }
 
-// Error boundary to catch any unhandled errors and redirect to login
+// Error boundary to catch authentication errors only
+// CRITICAL FIX (2025-12-13): Only show login for 401/403 errors, not for all errors
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  { hasError: boolean }
+  { hasError: boolean; isAuthError: boolean; errorMessage: string }
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, isAuthError: false, errorMessage: '' };
   }
 
-  static getDerivedStateFromError(_: Error) {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error) {
+    // Check if this is an authentication-related error
+    const isAuthError = error.message.includes('401') ||
+                        error.message.includes('Unauthorized') ||
+                        error.message.includes('403') ||
+                        error.message.includes('Forbidden');
+    return { hasError: true, isAuthError, errorMessage: error.message };
   }
 
   componentDidCatch(error: Error, _errorInfo: React.ErrorInfo) {
-    // ErrorBoundary caught an error - handle authentication errors
-
-    // Check if this is an authentication-related error
+    console.error('ErrorBoundary caught an error:', error);
+    // Only redirect to login for authentication errors
     if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-      // Clear authentication and redirect to login
       localStorage.removeItem('nemakiware_auth');
       window.location.href = '/core/ui/';
     }
@@ -258,10 +262,43 @@ class ErrorBoundary extends React.Component<
 
   render() {
     if (this.state.hasError) {
+      // For authentication errors, show login
+      if (this.state.isAuthError) {
+        return (
+          <Login onLogin={() => {
+            window.location.reload();
+          }} />
+        );
+      }
+      // For non-auth errors (404, 500, etc.), show error message with retry button
       return (
-        <Login onLogin={() => {
-          window.location.reload();
-        }} />
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+          padding: '20px'
+        }}>
+          <h2>エラーが発生しました</h2>
+          <p style={{ color: '#666', marginBottom: '20px' }}>
+            {this.state.errorMessage || 'ページの読み込み中にエラーが発生しました'}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              padding: '10px 20px',
+              fontSize: '16px',
+              cursor: 'pointer',
+              backgroundColor: '#1890ff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px'
+            }}
+          >
+            再読み込み
+          </button>
+        </div>
       );
     }
 
