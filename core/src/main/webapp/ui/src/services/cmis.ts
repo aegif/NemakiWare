@@ -2591,8 +2591,8 @@ export class CMISService {
   async createRelationship(repositoryId: string, relationship: Partial<Relationship>): Promise<Relationship> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/relationship/create`, true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
+      // CRITICAL FIX: Use CMIS Browser Binding standard endpoint instead of custom REST endpoint
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
       xhr.setRequestHeader('Accept', 'application/json');
 
       const headers = this.getAuthHeaders();
@@ -2602,10 +2602,18 @@ export class CMISService {
 
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
+          if (xhr.status === 200 || xhr.status === 201) {
             try {
               const response = JSON.parse(xhr.responseText);
-              resolve(response.relationship);
+              // Build Relationship object from CMIS Browser Binding response
+              const createdRelationship: Relationship = {
+                id: response.properties?.['cmis:objectId']?.value || response.succinctProperties?.['cmis:objectId'],
+                sourceId: response.properties?.['cmis:sourceId']?.value || response.succinctProperties?.['cmis:sourceId'] || relationship.sourceId || '',
+                targetId: response.properties?.['cmis:targetId']?.value || response.succinctProperties?.['cmis:targetId'] || relationship.targetId || '',
+                relationshipType: response.properties?.['cmis:objectTypeId']?.value || response.succinctProperties?.['cmis:objectTypeId'] || relationship.relationshipType || '',
+                properties: response.properties || response.succinctProperties || {}
+              };
+              resolve(createdRelationship);
             } catch (e) {
               reject(new Error('Invalid response format'));
             }
@@ -2617,14 +2625,26 @@ export class CMISService {
       };
 
       xhr.onerror = () => reject(new Error('Network error during relationship creation'));
-      xhr.send(JSON.stringify(relationship));
+
+      // Use CMIS Browser Binding form data format
+      const formData = new FormData();
+      formData.append('cmisaction', 'createRelationship');
+      formData.append('propertyId[0]', 'cmis:objectTypeId');
+      formData.append('propertyValue[0]', relationship.relationshipType || 'nemaki:bidirectionalRelationship');
+      formData.append('propertyId[1]', 'cmis:sourceId');
+      formData.append('propertyValue[1]', relationship.sourceId || '');
+      formData.append('propertyId[2]', 'cmis:targetId');
+      formData.append('propertyValue[2]', relationship.targetId || '');
+
+      xhr.send(formData);
     });
   }
 
   async deleteRelationship(repositoryId: string, relationshipId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('DELETE', `${this.baseUrl}/${repositoryId}/relationship/${relationshipId}`, true);
+      // CRITICAL FIX: Use CMIS Browser Binding standard delete endpoint
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
       xhr.setRequestHeader('Accept', 'application/json');
 
       const headers = this.getAuthHeaders();
@@ -2644,7 +2664,12 @@ export class CMISService {
       };
 
       xhr.onerror = () => reject(new Error('Network error during relationship deletion'));
-      xhr.send();
+
+      // Use CMIS Browser Binding form data format for delete
+      const formData = new FormData();
+      formData.append('cmisaction', 'delete');
+      formData.append('objectId', relationshipId);
+      xhr.send(formData);
     });
   }
 

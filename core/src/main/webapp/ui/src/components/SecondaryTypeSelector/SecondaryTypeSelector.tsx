@@ -70,11 +70,14 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
 
     setUpdating(true);
     try {
+      // CRITICAL FIX: Pass changeToken from object properties to avoid updateConflict error
+      const changeToken = object.properties?.['cmis:changeToken'] as string;
       const updated = await cmisService.updateSecondaryTypes(
         repositoryId,
         object.id,
         [selectedTypeId],
-        []
+        [],
+        changeToken
       );
       message.success(`セカンダリタイプ「${selectedTypeId}」を追加しました`);
       setSelectedTypeId(undefined); // Clear selection after successful add
@@ -116,11 +119,14 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
       onOk: async () => {
         setUpdating(true);
         try {
+          // CRITICAL FIX: Pass changeToken from object properties to avoid updateConflict error
+          const changeToken = object.properties?.['cmis:changeToken'] as string;
           const updated = await cmisService.updateSecondaryTypes(
             repositoryId,
             object.id,
             [],
-            [typeId]
+            [typeId],
+            changeToken
           );
           message.success(`セカンダリタイプ「${typeId}」を削除しました`);
           onUpdate?.(updated);
