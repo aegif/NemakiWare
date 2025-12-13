@@ -641,7 +641,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   setSearchParams({ folderId: record.id });
                   // Path will be set by loadObjects() after fetching from CMIS - no manual construction
                 } else {
-                  navigate(`/documents/${record.id}`);
+                  // CRITICAL FIX: Include currentFolderId in URL for back button navigation
+                  const folderParam = currentFolderId ? `?folderId=${currentFolderId}` : '';
+                  navigate(`/documents/${record.id}${folderParam}`);
                 }
               }}
             >
@@ -772,7 +774,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               <Button
                 icon={<EyeOutlined />}
                 size="small"
-                onClick={() => navigate(`/documents/${record.id}`)}
+                onClick={() => {
+                  // CRITICAL FIX: Include currentFolderId in URL for back button navigation
+                  const folderParam = currentFolderId ? `?folderId=${currentFolderId}` : '';
+                  navigate(`/documents/${record.id}${folderParam}`);
+                }}
               />
             </Tooltip>
             {record.baseType === 'cmis:document' && (

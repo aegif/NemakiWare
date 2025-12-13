@@ -271,6 +271,8 @@ import { SecondaryTypeSelector } from '../SecondaryTypeSelector/SecondaryTypeSel
 import { TypeMigrationModal } from '../TypeMigrationModal/TypeMigrationModal';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
+import { getSafeArrayValue, getSafeStringValue, getSafeBooleanValue } from '../../utils/cmisPropertyUtils';
+import { useSearchParams } from 'react-router-dom';
 
 interface DocumentViewerProps {
   repositoryId: string;
@@ -279,6 +281,7 @@ interface DocumentViewerProps {
 export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) => {
   const { objectId } = useParams<{ objectId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { handleAuthError } = useAuth();
   const [object, setObject] = useState<CMISObject | null>(null);
   const [typeDefinition, setTypeDefinition] = useState<TypeDefinition | null>(null);
@@ -316,7 +319,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       const typeDef = await cmisService.getType(repositoryId, obj.objectType);
 
       // Merge secondary type property definitions (Phase 4: 2025-12-11)
-      const secondaryTypeIds: string[] = obj.properties?.['cmis:secondaryObjectTypeIds'] || [];
+      // CRITICAL FIX: Use getSafeArrayValue to handle CMIS Browser Binding format {value: [...]}
+      const secondaryTypeIds: string[] = getSafeArrayValue(obj.properties?.['cmis:secondaryObjectTypeIds']);
       let mergedPropertyDefinitions = { ...typeDef.propertyDefinitions };
 
       if (secondaryTypeIds.length > 0) {
@@ -490,7 +494,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     if (!object) return;
 
     // Extract change token for optimistic locking (CMIS requires this to prevent HTTP 409 conflicts)
-    const changeToken = object.properties['cmis:changeToken'];
+    // CRITICAL FIX: Use getSafeStringValue to handle CMIS Browser Binding format {value: "..."}
+    const changeToken = getSafeStringValue(object.properties?.['cmis:changeToken']);
 
     try {
       const updatedObject = await cmisService.updateProperties(repositoryId, object.id, properties, changeToken);
@@ -506,12 +511,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   }
 
   // Check-out status detection - handle both boolean and string values
-  // AtomPub binding returns string "true"/"false", Browser binding returns boolean true/false
-  const isPrivateWorkingCopy = object.properties?.['cmis:isPrivateWorkingCopy'];
-  const isVersionSeriesCheckedOut = object.properties?.['cmis:isVersionSeriesCheckedOut'];
-  const isCheckedOut = isPrivateWorkingCopy === true || isPrivateWorkingCopy === 'true' ||
-                       isVersionSeriesCheckedOut === true || isVersionSeriesCheckedOut === 'true';
-  const checkedOutBy = object.properties?.['cmis:versionSeriesCheckedOutBy'] || '';
+  // CRITICAL FIX: Use getSafeBooleanValue to handle all CMIS binding formats
+  const isPrivateWorkingCopy = getSafeBooleanValue(object.properties?.['cmis:isPrivateWorkingCopy']);
+  const isVersionSeriesCheckedOut = getSafeBooleanValue(object.properties?.['cmis:isVersionSeriesCheckedOut']);
+  const isCheckedOut = isPrivateWorkingCopy || isVersionSeriesCheckedOut;
+  const checkedOutBy = getSafeStringValue(object.properties?.['cmis:versionSeriesCheckedOutBy']);
+
+  // Get current folder ID from URL params for back button navigation
+  const currentFolderId = searchParams.get('folderId');
 
   const versionColumns = [
     {
@@ -753,9 +760,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         <Space direction="vertical" style={{ width: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Space>
-              <Button 
+              <Button
                 icon={<ArrowLeftOutlined />}
-                onClick={() => navigate('/documents')}
+                onClick={() => {
+                  // CRITICAL FIX: Preserve current folder when navigating back
+                  if (currentFolderId) {
+                    navigate(`/documents?folderId=${currentFolderId}`);
+                  } else {
+                    navigate('/documents');
+                  }
+                }}
               >
                 戻る
               </Button>

@@ -20,6 +20,7 @@ import { ExclamationCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
 import { TypeDefinition, CMISObject } from '../../types/cmis';
 import { useAuth } from '../../contexts/AuthContext';
+import { getSafeArrayValue, getSafeStringValue } from '../../utils/cmisPropertyUtils';
 
 const { Text } = Typography;
 
@@ -45,8 +46,9 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
   const [selectedTypeId, setSelectedTypeId] = useState<string | undefined>(undefined);
 
   // Get current secondary type IDs from object properties
+  // CRITICAL FIX: Use getSafeArrayValue to handle CMIS Browser Binding format {value: [...]}
   const currentSecondaryTypeIds: string[] =
-    object.properties?.['cmis:secondaryObjectTypeIds'] || [];
+    getSafeArrayValue(object.properties?.['cmis:secondaryObjectTypeIds']);
 
   useEffect(() => {
     loadAvailableTypes();
@@ -70,8 +72,8 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
 
     setUpdating(true);
     try {
-      // CRITICAL FIX: Pass changeToken from object properties to avoid updateConflict error
-      const changeToken = object.properties?.['cmis:changeToken'] as string;
+      // CRITICAL FIX: Use getSafeStringValue to handle CMIS Browser Binding format {value: "..."}
+      const changeToken = getSafeStringValue(object.properties?.['cmis:changeToken']);
       const updated = await cmisService.updateSecondaryTypes(
         repositoryId,
         object.id,
@@ -119,8 +121,8 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
       onOk: async () => {
         setUpdating(true);
         try {
-          // CRITICAL FIX: Pass changeToken from object properties to avoid updateConflict error
-          const changeToken = object.properties?.['cmis:changeToken'] as string;
+          // CRITICAL FIX: Use getSafeStringValue to handle CMIS Browser Binding format {value: "..."}
+          const changeToken = getSafeStringValue(object.properties?.['cmis:changeToken']);
           const updated = await cmisService.updateSecondaryTypes(
             repositoryId,
             object.id,

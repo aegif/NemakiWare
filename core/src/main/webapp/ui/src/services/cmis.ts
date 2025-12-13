@@ -2539,37 +2539,46 @@ export class CMISService {
               const relationships: Relationship[] = [];
               for (let i = 0; i < entries.length; i++) {
                 const entry = entries[i];
-                const id = entry.querySelector('id')?.textContent || '';
 
                 // Helper function to get property value from CMIS XML
                 // CMIS XML structure: <cmis:properties><cmis:propertyId propertyDefinitionId="cmis:sourceId"><cmis:value>...</cmis:value></cmis:propertyId></cmis:properties>
-                const getPropertyValue = (propName: string, propType: string = 'propertyId'): string => {
+                // CRITICAL FIX: Need to search all property types (propertyId, propertyString, etc.)
+                const getPropertyValue = (propName: string): string => {
                   const properties = entry.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'properties')[0] ||
                                    entry.querySelector('cmis\\:properties, properties');
                   if (!properties) return '';
 
-                  const propElements = properties.getElementsByTagName(`cmis:${propType}`);
-                  for (let j = 0; j < propElements.length; j++) {
-                    const elem = propElements[j];
-                    if (elem.getAttribute('propertyDefinitionId') === propName) {
-                      const valueElem = elem.querySelector('cmis\\:value, value');
-                      return valueElem?.textContent || '';
+                  // Search through all child elements with propertyDefinitionId attribute
+                  const propTypes = ['propertyId', 'propertyString', 'propertyDateTime', 'propertyBoolean', 'propertyInteger', 'propertyDecimal'];
+                  for (const propType of propTypes) {
+                    const propElements = properties.getElementsByTagName(`cmis:${propType}`);
+                    for (let j = 0; j < propElements.length; j++) {
+                      const elem = propElements[j];
+                      if (elem.getAttribute('propertyDefinitionId') === propName) {
+                        const valueElem = elem.querySelector('cmis\\:value, value');
+                        return valueElem?.textContent || '';
+                      }
                     }
                   }
                   return '';
                 };
 
-                const sourceId = getPropertyValue('cmis:sourceId', 'propertyId');
-                const targetId = getPropertyValue('cmis:targetId', 'propertyId');
-                const objectTypeId = getPropertyValue('cmis:objectTypeId', 'propertyId') || 'cmis:relationship';
+                // CRITICAL FIX: Get objectId from cmis:objectId property, not from <atom:id> which is base64 encoded
+                const relationshipId = getPropertyValue('cmis:objectId');
+                const sourceId = getPropertyValue('cmis:sourceId');
+                const targetId = getPropertyValue('cmis:targetId');
+                const objectTypeId = getPropertyValue('cmis:objectTypeId') || 'cmis:relationship';
 
-                relationships.push({
-                  id: id.split('/').pop() || id,
-                  sourceId: sourceId,
-                  targetId: targetId,
-                  relationshipType: objectTypeId,
-                  properties: {}
-                });
+                // Only add if we have valid source and target IDs
+                if (sourceId && targetId) {
+                  relationships.push({
+                    id: relationshipId,
+                    sourceId: sourceId,
+                    targetId: targetId,
+                    relationshipType: objectTypeId,
+                    properties: {}
+                  });
+                }
               }
               
               resolve(relationships);
