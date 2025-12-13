@@ -641,8 +641,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   setSearchParams({ folderId: record.id });
                   // Path will be set by loadObjects() after fetching from CMIS - no manual construction
                 } else {
-                  // CRITICAL FIX: Include currentFolderId in URL for back button navigation
-                  const folderParam = currentFolderId ? `?folderId=${currentFolderId}` : '';
+                  // CRITICAL FIX (2025-12-13): Use selectedFolderId for back button navigation
+                  // selectedFolderId = the folder whose contents are currently displayed
+                  // currentFolderId = the tree pivot point (may differ from selected folder)
+                  // When user clicks back from document detail, they should return to selectedFolderId
+                  const folderParam = selectedFolderId ? `?folderId=${selectedFolderId}` : '';
                   navigate(`/documents/${record.id}${folderParam}`);
                 }
               }}
@@ -775,8 +778,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 icon={<EyeOutlined />}
                 size="small"
                 onClick={() => {
-                  // CRITICAL FIX: Include currentFolderId in URL for back button navigation
-                  const folderParam = currentFolderId ? `?folderId=${currentFolderId}` : '';
+                  // CRITICAL FIX (2025-12-13): Use selectedFolderId for back button navigation
+                  const folderParam = selectedFolderId ? `?folderId=${selectedFolderId}` : '';
                   navigate(`/documents/${record.id}${folderParam}`);
                 }}
               />

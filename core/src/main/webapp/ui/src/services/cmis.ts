@@ -2534,27 +2534,39 @@ export class CMISService {
               // Parse AtomPub XML response for relationships
               const parser = new DOMParser();
               const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-              const entries = xmlDoc.getElementsByTagName('entry');
-              
+
+              // CRITICAL FIX (2025-12-13): Use getElementsByTagNameNS for atom:entry elements
+              // getElementsByTagName('entry') doesn't find <atom:entry> because of namespace prefix
+              const ATOM_NS = 'http://www.w3.org/2005/Atom';
+              const CMIS_NS = 'http://docs.oasis-open.org/ns/cmis/core/200908/';
+              const entries = xmlDoc.getElementsByTagNameNS(ATOM_NS, 'entry');
+
               const relationships: Relationship[] = [];
               for (let i = 0; i < entries.length; i++) {
                 const entry = entries[i];
 
                 // Helper function to get property value from CMIS XML
                 // CMIS XML structure: <cmis:properties><cmis:propertyId propertyDefinitionId="cmis:sourceId"><cmis:value>...</cmis:value></cmis:propertyId></cmis:properties>
-                // CRITICAL FIX: Need to search all property types (propertyId, propertyString, etc.)
+                // CRITICAL FIX (2025-12-13): Need to search all property types using proper namespaces
                 const getPropertyValue = (propName: string): string => {
-                  const properties = entry.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'properties')[0] ||
+                  const properties = entry.getElementsByTagNameNS(CMIS_NS, 'properties')[0] ||
                                    entry.querySelector('cmis\\:properties, properties');
                   if (!properties) return '';
 
                   // Search through all child elements with propertyDefinitionId attribute
+                  // CRITICAL FIX: Use getElementsByTagNameNS instead of getElementsByTagName
                   const propTypes = ['propertyId', 'propertyString', 'propertyDateTime', 'propertyBoolean', 'propertyInteger', 'propertyDecimal'];
                   for (const propType of propTypes) {
-                    const propElements = properties.getElementsByTagName(`cmis:${propType}`);
+                    const propElements = properties.getElementsByTagNameNS(CMIS_NS, propType);
                     for (let j = 0; j < propElements.length; j++) {
                       const elem = propElements[j];
                       if (elem.getAttribute('propertyDefinitionId') === propName) {
+                        // CRITICAL FIX: Use getElementsByTagNameNS for value element too
+                        const valueElems = elem.getElementsByTagNameNS(CMIS_NS, 'value');
+                        if (valueElems.length > 0) {
+                          return valueElems[0].textContent || '';
+                        }
+                        // Fallback to querySelector
                         const valueElem = elem.querySelector('cmis\\:value, value');
                         return valueElem?.textContent || '';
                       }
