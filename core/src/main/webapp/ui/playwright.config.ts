@@ -149,7 +149,8 @@ export default defineConfig({
   //   },
   // ],
 
-  // Global setup and teardown (temporarily disabled for initial testing)
-  // globalSetup: require.resolve('./tests/global-setup.ts'),
+  // Global setup ensures Keycloak is running for OIDC/SAML tests
+  // CRITICAL (2025-12-14): This setup will start Keycloak if not running
+  globalSetup: require.resolve('./tests/global-setup.ts'),
   // globalTeardown: require.resolve('./tests/global-teardown.ts'),
 });

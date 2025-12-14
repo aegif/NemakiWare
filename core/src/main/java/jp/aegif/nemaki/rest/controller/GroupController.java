@@ -64,7 +64,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * Replaces Jersey-based GroupItemResource with full Spring DI support
  */
 @RestController
-@RequestMapping("/api/v1/repo/{repositoryId}/groups")
+@RequestMapping("/v1/repo/{repositoryId}/groups")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class GroupController {
 

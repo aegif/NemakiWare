@@ -59,7 +59,7 @@ import jp.aegif.nemaki.util.spring.SpringContext;
  * Provides endpoints for getting and generating PDF renditions for Office documents
  */
 @RestController
-@RequestMapping("/api/v1/repo/{repositoryId}/renditions")
+@RequestMapping("/v1/repo/{repositoryId}/renditions")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class RenditionController {
 
@@ -109,13 +109,21 @@ public class RenditionController {
      */
     @GetMapping("/{objectId}")
     public ResponseEntity<Map<String, Object>> getRenditions(
-            @PathVariable String repositoryId,
-            @PathVariable String objectId) {
+            @PathVariable("repositoryId") String repositoryId,
+            @PathVariable("objectId") String objectId) {
 
         Map<String, Object> response = new HashMap<>();
 
         try {
             log.info("[RenditionController] Getting renditions for objectId=" + objectId + " in repo=" + repositoryId);
+
+            // Check if document exists first
+            Content content = getContentService().getContent(repositoryId, objectId);
+            if (content == null) {
+                response.put("status", "error");
+                response.put("message", "Document not found");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+            }
 
             List<Rendition> renditions = getContentService().getRenditions(repositoryId, objectId);
 
@@ -164,9 +172,9 @@ public class RenditionController {
      */
     @PostMapping("/generate")
     public ResponseEntity<Map<String, Object>> generateRendition(
-            @PathVariable String repositoryId,
-            @RequestParam String objectId,
-            @RequestParam(required = false, defaultValue = "false") boolean force) {
+            @PathVariable("repositoryId") String repositoryId,
+            @RequestParam("objectId") String objectId,
+            @RequestParam(value = "force", required = false, defaultValue = "false") boolean force) {
 
         Map<String, Object> response = new HashMap<>();
 
@@ -302,10 +310,11 @@ public class RenditionController {
      * Get supported MIME types for rendition
      */
     @GetMapping("/supported-types")
-    public ResponseEntity<Map<String, Object>> getSupportedTypes(@PathVariable String repositoryId) {
+    public ResponseEntity<Map<String, Object>> getSupportedTypes(@PathVariable("repositoryId") String repositoryId) {
         Map<String, Object> response = new HashMap<>();
         response.put("status", "success");
         response.put("supportedTypes", SUPPORTED_MIME_TYPES);
+        response.put("enabled", true); // Rendition generation is enabled if LibreOffice is available
         return ResponseEntity.ok(response);
     }
 
@@ -314,9 +323,9 @@ public class RenditionController {
      */
     @PostMapping("/batch")
     public ResponseEntity<Map<String, Object>> batchGenerateRenditions(
-            @PathVariable String repositoryId,
-            @RequestParam List<String> objectIds,
-            @RequestParam(required = false, defaultValue = "false") boolean force) {
+            @PathVariable("repositoryId") String repositoryId,
+            @RequestParam("objectIds") List<String> objectIds,
+            @RequestParam(value = "force", required = false, defaultValue = "false") boolean force) {
 
         Map<String, Object> response = new HashMap<>();
         List<Map<String, Object>> results = new ArrayList<>();

@@ -1,139 +1,151 @@
-import { chromium, FullConfig } from '@playwright/test';
+import { FullConfig } from '@playwright/test';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import * as path from 'path';
+
+const execAsync = promisify(exec);
 
 /**
  * Global setup for NemakiWare UI tests
  *
  * This setup:
- * - Verifies backend availability
- * - Prepares authentication state
- * - Sets up test data if needed
+ * - Ensures Keycloak is running for OIDC/SAML tests
+ * - Verifies backend availability via HTTP check
+ *
+ * CRITICAL (2025-12-14): Keycloak is REQUIRED for external authentication tests.
+ * This setup will start Keycloak if not running.
+ *
+ * Note: Login verification is handled by individual tests with their own
+ * authentication helpers (AuthHelper) for better isolation and reliability.
  */
-async function globalSetup(config: FullConfig) {
-  console.log('🚀 Starting NemakiWare UI Test Global Setup');
 
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
 
-  try {
-    // Check if NemakiWare backend is available
-    const baseURL = config.projects[0].use.baseURL || 'http://localhost:8080';
-
-    console.log(`📡 Checking NemakiWare backend at ${baseURL}`);
-
-    // Test basic connectivity to NemakiWare UI endpoint (public access)
-    const response = await page.goto(`${baseURL}/core/ui/`, {
-      waitUntil: 'networkidle',
-      timeout: 30000,
-    });
-
-    if (!response || response.status() !== 200) {
-      throw new Error(`❌ NemakiWare backend not available at ${baseURL}. Status: ${response?.status()}`);
-    }
-
-    console.log('✅ NemakiWare backend is available');
-
-    // Check UI development server (if running)
-    try {
-      const uiResponse = await page.goto('http://localhost:5173', {
-        waitUntil: 'networkidle',
-        timeout: 10000,
-      });
-
-      if (uiResponse && uiResponse.status() === 200) {
-        console.log('✅ Vite development server is running');
-      }
-    } catch (error) {
-      console.log('ℹ️  Vite development server not running (using production build)');
-    }
-
-    // Perform a test login to verify authentication system
-    console.log('🔐 Testing authentication system');
-
-    await page.goto(`${baseURL}/core/ui/`);
-
-    // Wait for React app to load by waiting for content in the root div
-    console.log('⏳ Waiting for React app to load...');
-    await page.waitForFunction(() => {
-      const root = document.getElementById('root');
-      return root && root.innerHTML.length > 0;
-    }, { timeout: 30000 });
-
-    console.log('⏳ Waiting for React app to stabilize...');
-    await page.waitForTimeout(2000); // Additional time for React components to render
-
-    // Take a screenshot for debugging
-    await page.screenshot({ path: 'debug-login-page.png', fullPage: true });
-    console.log('📸 Screenshot saved as debug-login-page.png');
-
-    // Log page content for debugging
-    const pageContent = await page.content();
-    console.log('📄 Page title:', await page.title());
-    console.log('📄 Page URL:', page.url());
-    console.log('📄 Root div content length:', pageContent.includes('<div id="root">') ? 'Found' : 'Not found');
-
-    // Check for JavaScript errors
-    const jsErrors: string[] = [];
-    page.on('console', (msg) => {
-      if (msg.type() === 'error') {
-        jsErrors.push(msg.text());
-      }
-    });
-
-    // Wait for login form to load with more specific debugging
-    try {
-      await page.waitForSelector('input[placeholder="ユーザー名"]', { timeout: 10000 });
-    } catch (error) {
-      console.log('❌ Username field not found, checking available inputs...');
-      const inputs = await page.locator('input').all();
-      console.log(`Found ${inputs.length} input elements`);
-      for (let i = 0; i < inputs.length; i++) {
-        const input = inputs[i];
-        const placeholder = await input.getAttribute('placeholder');
-        const type = await input.getAttribute('type');
-        const name = await input.getAttribute('name');
-        console.log(`Input ${i}: placeholder="${placeholder}", type="${type}", name="${name}"`);
-      }
-
-      if (jsErrors.length > 0) {
-        console.log('JavaScript errors detected:');
-        jsErrors.forEach(err => console.log('  ', err));
-      }
-
-      throw error;
-    }
-
-    // Test login functionality
-    await page.fill('input[placeholder="ユーザー名"]', 'admin');
-    await page.fill('input[placeholder="パスワード"]', 'admin');
-
-    // Select bedroom repository if dropdown exists
-    const repositorySelect = page.locator('.ant-select');
-    if (await repositorySelect.count() > 0) {
-      await repositorySelect.click();
-      await page.getByText('bedroom').click();
-    }
-
-    // Click login button
-    await page.getByRole('button', { name: 'ログイン' }).click();
-
-    // Wait for successful login (URL change or specific element)
-    await page.waitForURL('**/ui/**', { timeout: 15000 });
-
-    console.log('✅ Authentication system is working');
-
-    // Save authentication state for tests
-    await page.context().storageState({ path: 'tests/fixtures/auth-state.json' });
-
-    console.log('💾 Authentication state saved for tests');
-
-  } catch (error) {
-    console.error('❌ Global setup failed:', error);
-    throw error;
-  } finally {
-    await browser.close();
+/**
+ * Get the docker directory path
+ * Directory structure:
+ *   <project-root>/
+ *     core/src/main/webapp/ui/tests/  <- tests directory (__dirname)
+ *     docker/                         <- docker directory
+ *
+ * From tests/, we need to go up 6 levels to project root:
+ * tests/ -> ui/ -> webapp/ -> main/ -> src/ -> core/ -> project-root/
+ */
+function getDockerDir(): string {
+  // Use environment variable if set, otherwise calculate relative path
+  if (process.env.DOCKER_DIR) {
+    return process.env.DOCKER_DIR;
   }
 
-  console.log('🎉 Global setup completed successfully');
+  // Navigate from tests directory to project root
+  // __dirname is: <project-root>/core/src/main/webapp/ui/tests
+  // We need: <project-root>/docker
+  const projectRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', '..'); // 6 levels up
+  return path.join(projectRoot, 'docker');
+}
+
+/**
+ * Check if Keycloak is running and healthy
+ */
+async function isKeycloakRunning(): Promise<boolean> {
+  try {
+    const response = await fetch(`${KEYCLOAK_URL}/realms/nemakiware/.well-known/openid-configuration`, {
+      signal: AbortSignal.timeout(5000)
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if NemakiWare backend is running
+ */
+async function isBackendRunning(baseURL: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${baseURL}/core/atom/bedroom`, {
+      signal: AbortSignal.timeout(10000),
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64')
+      }
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Start Keycloak using docker-compose
+ */
+async function startKeycloak(): Promise<void> {
+  console.log('🔐 Starting Keycloak...');
+
+  const dockerDir = getDockerDir();
+  console.log(`📁 Docker directory: ${dockerDir}`);
+
+  try {
+    await execAsync(`cd "${dockerDir}" && docker compose -f docker-compose.keycloak.yml up -d`);
+    console.log('⏳ Waiting for Keycloak to become healthy (up to 90 seconds)...');
+
+    // Wait for Keycloak to be ready
+    const maxWait = 90;
+    for (let i = 0; i < maxWait; i++) {
+      if (await isKeycloakRunning()) {
+        console.log(`✅ Keycloak is ready after ${i + 1} seconds`);
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    throw new Error(`Keycloak did not become healthy within ${maxWait} seconds`);
+  } catch (error) {
+    console.error('❌ Failed to start Keycloak:', error);
+    throw error;
+  }
+}
+
+async function globalSetup(config: FullConfig) {
+  console.log('🚀 Starting NemakiWare UI Test Global Setup');
+  console.log('');
+
+  // Step 1: Check and start Keycloak for external authentication tests
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('Step 1: Keycloak (External Authentication)');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  if (await isKeycloakRunning()) {
+    console.log('✅ Keycloak is already running at ' + KEYCLOAK_URL);
+  } else {
+    console.log('⚠️ Keycloak is not running, starting...');
+    await startKeycloak();
+  }
+
+  // Step 2: Check NemakiWare backend availability
+  console.log('');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('Step 2: NemakiWare Backend');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  const baseURL = config.projects[0]?.use?.baseURL || 'http://localhost:8080';
+  console.log(`📡 Checking NemakiWare backend at ${baseURL}`);
+
+  if (await isBackendRunning(baseURL)) {
+    console.log('✅ NemakiWare backend is available');
+  } else {
+    const errorMsg = `❌ NemakiWare backend not available at ${baseURL}. Please start the Docker containers.`;
+    console.error(errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  // Summary
+  console.log('');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('🎉 Global Setup Complete');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log(`   Keycloak: ${KEYCLOAK_URL}`);
+  console.log(`   Backend:  ${baseURL}`);
+  console.log('');
 }
 
 export default globalSetup;

@@ -64,7 +64,7 @@ import org.mindrot.jbcrypt.BCrypt;
  * Replaces Jersey-based UserItemResource with full Spring DI support
  */
 @RestController
-@RequestMapping("/api/v1/repo/{repositoryId}/users")
+@RequestMapping("/v1/repo/{repositoryId}/users")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class UserController {
 

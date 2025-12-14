@@ -65,7 +65,7 @@ import jp.aegif.nemaki.util.spring.SpringContext;
  * @since 2025-12-11
  */
 @RestController
-@RequestMapping("/api/v1/repo/{repositoryId}/type-migration")
+@RequestMapping("/v1/repo/{repositoryId}/type-migration")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class TypeMigrationController {
 
