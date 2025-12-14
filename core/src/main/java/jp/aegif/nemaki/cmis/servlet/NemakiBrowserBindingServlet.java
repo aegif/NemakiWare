@@ -978,6 +978,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 return; // Content operation handles response directly
             } else if ("typeDefinition".equals(cmisselector)) {
                 result = handleTypeDefinitionOperation(service, repositoryId, request);
+            } else if ("versions".equals(cmisselector)) {
+                // CMIS 1.1 Browser Binding: getAllVersions operation
+                // URL format: /browser/{repositoryId}/{objectId}?cmisselector=versions
+                result = handleVersionsOperation(service, repositoryId, objectId, request);
             } else {
                 // For other selectors, fall back to standard OpenCMIS dispatcher
                 super.service(wrappedRequest, response);
@@ -1152,6 +1156,35 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         );
 
         return acl;
+    }
+
+    /**
+     * Handle versions operation - equivalent to getAllVersions CMIS service call
+     * CMIS 1.1 Browser Binding: Implements cmisselector=versions for version history retrieval.
+     *
+     * URL format: /browser/{repositoryId}/{objectId}?cmisselector=versions
+     * Optional parameters:
+     *   - filter: comma-separated list of property IDs to include
+     *   - includeAllowableActions: boolean to include allowable actions
+     *   - versionSeriesId: optional, will be derived from objectId if not provided
+     */
+    private Object handleVersionsOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+        // Parse optional parameters
+        String filter = HttpUtils.getStringParameter(request, "filter");
+        Boolean includeAllowableActions = getBooleanParameterSafe(request, "includeAllowableActions");
+        String versionSeriesId = HttpUtils.getStringParameter(request, "versionSeriesId");
+
+        log.info("NEMAKI CMIS versions: repositoryId=" + repositoryId + ", objectId=" + objectId
+            + ", versionSeriesId=" + versionSeriesId + ", filter=" + filter);
+
+        // Call CMIS service to get all versions
+        java.util.List<org.apache.chemistry.opencmis.commons.data.ObjectData> versions = service.getAllVersions(
+            repositoryId, objectId, versionSeriesId, filter, includeAllowableActions, null
+        );
+
+        log.info("NEMAKI CMIS versions: Retrieved " + (versions != null ? versions.size() : 0) + " versions");
+
+        return versions;
     }
 
     /**

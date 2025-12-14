@@ -515,13 +515,8 @@ test.describe('CMIS Versioning API', () => {
     pwcId = '';
   });
 
-  // Use AtomPub binding for versions endpoint (Browser Binding cmisselector=versions returns 404/405)
+  // CMIS 1.1 Browser Binding: cmisselector=versions (implemented 2025-12-14)
   test('should retrieve all versions of a document', async ({ request }) => {
-    // AtomPub base URL for versions
-    const atomBaseUrl = process.env.DOCKER_ENV === '1'
-      ? 'http://localhost:8080/core/atom/bedroom'
-      : 'http://localhost:8080/core/atom/bedroom';
-
     // 1. Create document with initial version (using Browser Binding)
     const uniqueName = `version-history-test-${Date.now()}.txt`;
     const createResponse = await request.post(baseUrl, {
@@ -588,24 +583,25 @@ test.describe('CMIS Versioning API', () => {
     testDocumentId = checkinData.succinctProperties['cmis:objectId'];
     pwcId = '';
 
-    // 4. Retrieve all versions using AtomPub binding
-    // NOTE: AtomPub returns XML with <atom:entry> elements for each version
-    const versionsResponse = await request.get(`${atomBaseUrl}/versions`, {
+    // 4. Retrieve all versions using Browser Binding cmisselector=versions
+    // NOTE: Browser Binding returns JSON array of ObjectData
+    const versionsResponse = await request.get(`${baseUrl}/${testDocumentId}`, {
       headers: { 'Authorization': authHeader },
       params: {
-        id: testDocumentId,
+        cmisselector: 'versions',
       },
     });
 
     expect(versionsResponse.status()).toBe(200);
-    const versionsXml = await versionsResponse.text();
+    const versionsData = await versionsResponse.json();
 
-    // Parse version labels from AtomPub XML response
-    // Format: <cmis:propertyString propertyDefinitionId="cmis:versionLabel">...<cmis:value>X.X</cmis:value>
-    const versionLabelMatches = versionsXml.match(/<cmis:propertyString[^>]*propertyDefinitionId="cmis:versionLabel"[^>]*>[\s\S]*?<cmis:value>([^<]+)<\/cmis:value>/g) || [];
-    const versionLabels = versionLabelMatches.map(match => {
-      const valueMatch = match.match(/<cmis:value>([^<]+)<\/cmis:value>/);
-      return valueMatch ? valueMatch[1] : '';
+    // Parse version labels from Browser Binding JSON response
+    // Format: Array of ObjectData with properties.propertyList[] array
+    // Each property has: { id: "cmis:versionLabel", firstValue: "1.0", values: ["1.0"] }
+    const versionLabels = versionsData.map((version: any) => {
+      const propertyList = version.properties?.propertyList || [];
+      const versionLabelProp = propertyList.find((p: any) => p.id === 'cmis:versionLabel');
+      return versionLabelProp?.firstValue || '';
     });
 
     console.log('Versions retrieved:', versionLabels.length);
