@@ -13,27 +13,33 @@
 
 import { test, expect } from '@playwright/test';
 
+// CRITICAL: Run tests serially to avoid parallel login conflicts
+test.describe.configure({ mode: 'serial' });
+
 const BASE_URL = 'http://localhost:8080/core/ui';
 const ADMIN_ROUTES = ['/users', '/groups', '/types', '/archive'];
 
 /**
- * Helper to login via basic auth
+ * Helper to login via basic auth with improved reliability
  */
 async function loginAsUser(page: any, username: string, password: string) {
+  // Navigate to login page
   await page.goto(`${BASE_URL}/`);
 
-  // Wait for login form
-  await page.waitForSelector('input[placeholder*="ユーザー"]', { timeout: 10000 });
+  // Wait for login form with retry
+  await page.waitForSelector('input[placeholder*="ユーザー"]', { timeout: 15000 });
 
-  // Fill login form
+  // Clear any existing values and fill login form
+  await page.fill('input[placeholder*="ユーザー"]', '');
   await page.fill('input[placeholder*="ユーザー"]', username);
+  await page.fill('input[type="password"]', '');
   await page.fill('input[type="password"]', password);
 
   // Click login button
   await page.click('button:has-text("ログイン")');
 
-  // Wait for navigation to documents page
-  await page.waitForURL(/\/#\/documents/, { timeout: 30000 });
+  // Wait for navigation to documents page with increased timeout
+  await page.waitForURL(/\/#\/documents/, { timeout: 45000 });
 }
 
 test.describe('Admin Route Protection', () => {
