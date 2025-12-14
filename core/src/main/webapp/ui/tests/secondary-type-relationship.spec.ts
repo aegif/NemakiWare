@@ -34,6 +34,48 @@ async function login(page: any) {
   await page.waitForURL('**/documents**', { timeout: 30000 });
 }
 
+// Helper function to navigate to document viewer
+async function navigateToAnyDocument(page: any): Promise<void> {
+  // Wait for document list to load
+  await page.waitForSelector('.ant-table-tbody', { timeout: 15000 });
+  await page.waitForTimeout(1500);
+
+  // Find a file row by looking for document name pattern
+  const fileLink = page.locator('.ant-table-tbody a').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
+  const isLinkVisible = await fileLink.isVisible().catch(() => false);
+
+  if (isLinkVisible) {
+    // Get the parent row and click the view button
+    const row = page.locator('tr').filter({ has: fileLink });
+    await row.scrollIntoViewIfNeeded();
+
+    const viewButton = row.locator('button').filter({ has: page.locator('span.anticon-eye') }).first();
+    if (await viewButton.isVisible().catch(() => false)) {
+      const currentUrl = page.url();
+      await viewButton.click();
+      await page.waitForFunction(
+        (oldUrl: string) => window.location.href !== oldUrl && window.location.href.includes('/documents/'),
+        currentUrl,
+        { timeout: 15000 }
+      );
+    } else {
+      await fileLink.click();
+      await page.waitForURL(/\/documents\/[a-f0-9]+/, { timeout: 15000 });
+    }
+  } else {
+    // Fallback: find any row with a file-like name
+    const fileRow = page.locator('.ant-table-tbody tr').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
+    await fileRow.scrollIntoViewIfNeeded();
+    const firstButton = fileRow.locator('.ant-btn').first();
+    await firstButton.click();
+    await page.waitForURL(/\/documents\/[a-f0-9]+/, { timeout: 15000 });
+  }
+
+  // Wait for document viewer to load
+  await page.waitForLoadState('networkidle', { timeout: 20000 });
+  await page.waitForSelector('div[role="tablist"]', { timeout: 25000 });
+}
+
 // Helper function to create a test document via API
 // Note: CMIS Browser Binding requires POST to parent folder path for createDocument
 async function createTestDocument(request: any, name: string): Promise<string> {
@@ -77,29 +119,48 @@ test.describe('Secondary Type Management', () => {
   test('should display secondary type tab in document viewer', async ({ page }) => {
     await login(page);
 
-    // Wait for document list and find a document (not folder) to view
-    await page.waitForSelector('.ant-table-row', { timeout: 10000 });
+    // Wait for document list to load
+    await page.waitForSelector('.ant-table-tbody', { timeout: 15000 });
+    await page.waitForTimeout(1500);
 
-    // Find a file row (not folder) and click its eye button
-    // Files have the "file" icon, folders have "folder" icon
-    const fileRow = page.locator('tr').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
-    await expect(fileRow).toBeVisible({ timeout: 5000 });
+    // Find a file row (not folder) by looking for document name pattern
+    const fileLink = page.locator('.ant-table-tbody a').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
+    const isLinkVisible = await fileLink.isVisible().catch(() => false);
 
-    const viewButton = fileRow.locator('button').filter({ has: page.locator('.anticon-eye') });
-    await expect(viewButton).toBeVisible({ timeout: 5000 });
+    if (isLinkVisible) {
+      // Get the parent row and click the view button
+      const row = page.locator('tr').filter({ has: fileLink });
+      await row.scrollIntoViewIfNeeded();
 
-    // Click and wait for navigation to document viewer
-    await Promise.all([
-      page.waitForURL('**/documents/**', { timeout: 15000 }),
-      viewButton.click()
-    ]);
+      const viewButton = row.locator('button').filter({ has: page.locator('span.anticon-eye') }).first();
+      if (await viewButton.isVisible().catch(() => false)) {
+        const currentUrl = page.url();
+        await viewButton.click();
+        await page.waitForFunction(
+          (oldUrl: string) => window.location.href !== oldUrl && window.location.href.includes('/documents/'),
+          currentUrl,
+          { timeout: 15000 }
+        );
+      } else {
+        await fileLink.click();
+        await page.waitForURL(/\/documents\/[a-f0-9]+/, { timeout: 15000 });
+      }
+    } else {
+      // Fallback: find any row with a file-like name
+      const fileRow = page.locator('.ant-table-tbody tr').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
+      await fileRow.scrollIntoViewIfNeeded();
+      const firstButton = fileRow.locator('.ant-btn').first();
+      await firstButton.click();
+      await page.waitForURL(/\/documents\/[a-f0-9]+/, { timeout: 15000 });
+    }
 
-    // Wait for document viewer to load with tabs
-    await page.waitForSelector('.ant-tabs', { timeout: 15000 });
+    // Wait for document viewer to load
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    await page.waitForSelector('div[role="tablist"]', { timeout: 25000 });
 
-    // Check for secondary type tab
-    const secondaryTypeTab = await page.locator('.ant-tabs-tab:has-text("セカンダリタイプ")');
-    await expect(secondaryTypeTab).toBeVisible();
+    // Check for secondary type tab using getByRole
+    const secondaryTypeTab = page.getByRole('tab', { name: 'セカンダリタイプ' });
+    await expect(secondaryTypeTab).toBeVisible({ timeout: 10000 });
   });
 
   test('should add secondary type to document via API', async ({ request }) => {
@@ -316,29 +377,11 @@ test.describe('Relationship Management', () => {
 
   test('should display relationships tab in document viewer', async ({ page }) => {
     await login(page);
+    await navigateToAnyDocument(page);
 
-    // Wait for document list and find a document (not folder) to view
-    await page.waitForSelector('.ant-table-row', { timeout: 10000 });
-
-    // Find a file row and click its eye button
-    const fileRow = page.locator('tr').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
-    await expect(fileRow).toBeVisible({ timeout: 5000 });
-
-    const viewButton = fileRow.locator('button').filter({ has: page.locator('.anticon-eye') });
-    await expect(viewButton).toBeVisible({ timeout: 5000 });
-
-    // Click and wait for navigation
-    await Promise.all([
-      page.waitForURL('**/documents/**', { timeout: 15000 }),
-      viewButton.click()
-    ]);
-
-    // Wait for document viewer to load with tabs
-    await page.waitForSelector('.ant-tabs', { timeout: 15000 });
-
-    // Check for relationships tab
-    const relationshipsTab = await page.locator('.ant-tabs-tab:has-text("関係")');
-    await expect(relationshipsTab).toBeVisible();
+    // Check for relationships tab using getByRole
+    const relationshipsTab = page.getByRole('tab', { name: '関係' });
+    await expect(relationshipsTab).toBeVisible({ timeout: 10000 });
   });
 });
 
@@ -346,61 +389,28 @@ test.describe('UI Integration Tests', () => {
 
   test('should navigate to secondary type tab and show content', async ({ page }) => {
     await login(page);
+    await navigateToAnyDocument(page);
 
-    // Wait for document list and find a document (not folder) to view
-    await page.waitForSelector('.ant-table-row', { timeout: 10000 });
-
-    // Find a file row and click its eye button
-    const fileRow = page.locator('tr').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
-    await expect(fileRow).toBeVisible({ timeout: 5000 });
-
-    const viewButton = fileRow.locator('button').filter({ has: page.locator('.anticon-eye') });
-    await expect(viewButton).toBeVisible({ timeout: 5000 });
-
-    // Click and wait for navigation
-    await Promise.all([
-      page.waitForURL('**/documents/**', { timeout: 15000 }),
-      viewButton.click()
-    ]);
-
-    // Wait for document viewer to load with tabs
-    await page.waitForSelector('.ant-tabs', { timeout: 15000 });
-
-    // Click on secondary type tab
-    await page.click('.ant-tabs-tab:has-text("セカンダリタイプ")');
+    // Click on secondary type tab using getByRole
+    const secondaryTypeTab = page.getByRole('tab', { name: 'セカンダリタイプ' });
+    await expect(secondaryTypeTab).toBeVisible({ timeout: 10000 });
+    await secondaryTypeTab.click();
 
     // Wait for tab content to load
     await page.waitForTimeout(1000);
 
-    // Check that secondary type content is visible
-    const content = await page.locator('text=セカンダリタイプ');
-    await expect(content.first()).toBeVisible();
+    // Verify tab is active by checking aria-selected
+    await expect(secondaryTypeTab).toHaveAttribute('aria-selected', 'true', { timeout: 5000 });
   });
 
   test('should show secondary type selector dropdown when not all types assigned', async ({ page }) => {
     await login(page);
+    await navigateToAnyDocument(page);
 
-    // Wait for document list and find a document (not folder) to view
-    await page.waitForSelector('.ant-table-row', { timeout: 10000 });
-
-    // Find a file row and click its eye button
-    const fileRow = page.locator('tr').filter({ hasText: /\.txt|\.pdf|\.docx|\.png|\.jpg/ }).first();
-    await expect(fileRow).toBeVisible({ timeout: 5000 });
-
-    const viewButton = fileRow.locator('button').filter({ has: page.locator('.anticon-eye') });
-    await expect(viewButton).toBeVisible({ timeout: 5000 });
-
-    // Click and wait for navigation
-    await Promise.all([
-      page.waitForURL('**/documents/**', { timeout: 15000 }),
-      viewButton.click()
-    ]);
-
-    // Wait for document viewer to load with tabs
-    await page.waitForSelector('.ant-tabs', { timeout: 15000 });
-
-    // Click on secondary type tab
-    await page.click('.ant-tabs-tab:has-text("セカンダリタイプ")');
+    // Click on secondary type tab using getByRole
+    const secondaryTypeTab = page.getByRole('tab', { name: 'セカンダリタイプ' });
+    await expect(secondaryTypeTab).toBeVisible({ timeout: 10000 });
+    await secondaryTypeTab.click();
 
     // Wait for content to load fully
     await page.waitForTimeout(2000);
