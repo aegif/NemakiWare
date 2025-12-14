@@ -515,11 +515,14 @@ test.describe('CMIS Versioning API', () => {
     pwcId = '';
   });
 
-  // SKIP: NemakiWare doesn't support cmisselector=versions in Browser Binding
-  // The versions endpoint returns HTTP 404/405. Use AtomPub binding instead:
-  // GET /core/atom/bedroom/versions?id={objectId}
-  test.skip('should retrieve all versions of a document', async ({ request }) => {
-    // 1. Create document with initial version
+  // Use AtomPub binding for versions endpoint (Browser Binding cmisselector=versions returns 404/405)
+  test('should retrieve all versions of a document', async ({ request }) => {
+    // AtomPub base URL for versions
+    const atomBaseUrl = process.env.DOCKER_ENV === '1'
+      ? 'http://localhost:8080/core/atom/bedroom'
+      : 'http://localhost:8080/core/atom/bedroom';
+
+    // 1. Create document with initial version (using Browser Binding)
     const uniqueName = `version-history-test-${Date.now()}.txt`;
     const createResponse = await request.post(baseUrl, {
       headers: {
@@ -585,33 +588,33 @@ test.describe('CMIS Versioning API', () => {
     testDocumentId = checkinData.succinctProperties['cmis:objectId'];
     pwcId = '';
 
-    // 4. Retrieve all versions using cmisselector=versions
-    // NOTE: Pass the actual document objectId, not versionSeriesId
-    // The backend will look up versionSeriesId from the document
-    const versionsResponse = await request.get(`${baseUrl}/root`, {
+    // 4. Retrieve all versions using AtomPub binding
+    // NOTE: AtomPub returns XML with <atom:entry> elements for each version
+    const versionsResponse = await request.get(`${atomBaseUrl}/versions`, {
       headers: { 'Authorization': authHeader },
       params: {
-        cmisselector: 'versions',
-        objectId: testDocumentId,  // Use actual document ID, not versionSeriesId
-        succinct: 'true',
+        id: testDocumentId,
       },
     });
 
     expect(versionsResponse.status()).toBe(200);
-    const versionsData = await versionsResponse.json();
+    const versionsXml = await versionsResponse.text();
 
-    // NOTE: CMIS Browser Binding returns array directly, not { objects: [...] }
-    expect(Array.isArray(versionsData)).toBe(true);
-    console.log('Versions retrieved:', versionsData.length);
+    // Parse version labels from AtomPub XML response
+    // Format: <cmis:propertyString propertyDefinitionId="cmis:versionLabel">...<cmis:value>X.X</cmis:value>
+    const versionLabelMatches = versionsXml.match(/<cmis:propertyString[^>]*propertyDefinitionId="cmis:versionLabel"[^>]*>[\s\S]*?<cmis:value>([^<]+)<\/cmis:value>/g) || [];
+    const versionLabels = versionLabelMatches.map(match => {
+      const valueMatch = match.match(/<cmis:value>([^<]+)<\/cmis:value>/);
+      return valueMatch ? valueMatch[1] : '';
+    });
+
+    console.log('Versions retrieved:', versionLabels.length);
+    console.log('Version labels:', versionLabels);
 
     // Verify we have multiple versions
-    expect(versionsData.length).toBeGreaterThanOrEqual(2);
+    expect(versionLabels.length).toBeGreaterThanOrEqual(2);
 
     // Verify version labels
-    const versionLabels = versionsData.map((obj: any) =>
-      obj.succinctProperties['cmis:versionLabel']
-    );
-    console.log('Version labels:', versionLabels);
     expect(versionLabels).toContain('1.0');
     expect(versionLabels).toContain('2.0');
   });
