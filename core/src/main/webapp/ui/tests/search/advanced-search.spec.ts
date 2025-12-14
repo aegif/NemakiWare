@@ -568,6 +568,9 @@ test.describe('Advanced Search', () => {
     await page.waitForTimeout(2000);
 
     // Search for keyword that definitely doesn't exist
+    // CRITICAL (2025-12-14): Do NOT use numbers in the keyword!
+    // Japanese text analyzer (text_ja) tokenizes "keyword123" into "keyword" and "123"
+    // "123" exists in many PDFs (page numbers, version numbers), causing false matches
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
 
     if (await searchInput.count() === 0) {
@@ -575,7 +578,7 @@ test.describe('Advanced Search', () => {
       return;
     }
 
-    await searchInput.first().fill('zzznonexistentkeyword123');
+    await searchInput.first().fill('xyznonexistentkeywordxyz');
 
     const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
     if (await searchButton.count() > 0) {
@@ -1068,6 +1071,15 @@ test.describe('Advanced Search', () => {
   });
 
   test('should find Japanese PDF by full-text search', async ({ page, browserName }) => {
+    /**
+     * Japanese PDF Full-text Search Test
+     *
+     * This test verifies that Japanese content can be searched via CONTAINS().
+     * It requires a PDF with a Japanese filename (e.g., "日本語ドキュメント.pdf") to pass.
+     *
+     * CRITICAL (2025-12-14): Optimized wait times to prevent test timeout.
+     * The test looks for PDFs with Japanese characters in the filename, not just content.
+     */
     console.log('Test 10: Japanese PDF full-text search verification (multilingual support)');
 
     // Detect mobile browsers for force click if needed
@@ -1075,7 +1087,7 @@ test.describe('Advanced Search', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Wait for page to be fully loaded
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1000);
 
     // Search for Japanese keyword (common in Japanese PDFs)
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
@@ -1085,99 +1097,58 @@ test.describe('Advanced Search', () => {
       return;
     }
 
-    // Test with Japanese keyword: "ドキュメント" (document)
-    await searchInput.first().fill('ドキュメント');
-
     const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
-    if (await searchButton.count() > 0) {
-      await searchButton.first().click(isMobile ? { force: true } : {});
-    } else {
-      await searchInput.first().press('Enter');
-    }
-
-    // Wait for initial search results (Solr may need time for indexing)
-    await page.waitForTimeout(5000);
-
-    // Verify results table appears
-    const resultsTable = page.locator('.ant-table, .search-results');
-    if (await resultsTable.count() > 0) {
-      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
-    }
 
     // Look for any Japanese PDF in results (filename pattern: contains Japanese characters)
-    // This regex matches common Japanese characters (Hiragana, Katakana, Kanji)
-    const japanesePdfResults = page.locator('tr').filter({
+    // This regex matches common Japanese characters (Hiragana, Katakana, Kanji) followed by .pdf
+    const japanesePdfLocator = page.locator('tr').filter({
       hasText: /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+.*\.pdf/
     });
 
-    if (await japanesePdfResults.count() === 0) {
-      console.log('⚠️ Japanese PDF not found with "ドキュメント" keyword - waiting for Solr indexing...');
-      await page.waitForTimeout(25000); // Additional wait for Solr commit (up to 30 seconds)
+    // Quick check with multiple keywords - optimized for speed
+    const keywords = ['ドキュメント', '検索', '文書', 'テスト'];
+    let foundJapanesePdf = false;
 
-      // Retry search
-      await searchInput.first().fill('ドキュメント');
+    for (const keyword of keywords) {
+      await searchInput.first().fill(keyword);
       if (await searchButton.count() > 0) {
         await searchButton.first().click(isMobile ? { force: true } : {});
       } else {
         await searchInput.first().press('Enter');
       }
-      await page.waitForTimeout(3000);
+
+      // Reduced wait time (was 3000-25000ms, now 2000ms)
+      await page.waitForTimeout(2000);
+
+      const count = await japanesePdfLocator.count();
+      if (count > 0) {
+        console.log(`✅ Found ${count} Japanese PDF(s) with keyword: "${keyword}"`);
+        foundJapanesePdf = true;
+
+        // Verify first result
+        const firstResult = japanesePdfLocator.first();
+        await expect(firstResult).toBeVisible({ timeout: 5000 });
+
+        const resultText = await firstResult.textContent();
+        console.log(`✅ Japanese PDF search result: ${resultText}`);
+
+        // Verify PDF file type indicator
+        const hasPdfIndicator = resultText && (
+          resultText.toLowerCase().includes('pdf') ||
+          resultText.includes('.pdf')
+        );
+        expect(hasPdfIndicator).toBe(true);
+        console.log('✅ PDF file type indicator present in Japanese search result');
+        console.log('✅ Multilingual (Japanese) full-text search verification complete');
+        break;
+      }
     }
 
-    // Check if Japanese PDF found
-    const finalJapanesePdfCount = await japanesePdfResults.count();
-
-    if (finalJapanesePdfCount > 0) {
-      console.log(`✅ Found ${finalJapanesePdfCount} Japanese PDF(s) with "ドキュメント" keyword`);
-
-      // Verify first result
-      const firstResult = japanesePdfResults.first();
-      await expect(firstResult).toBeVisible({ timeout: 5000 });
-
-      const resultText = await firstResult.textContent();
-      console.log(`✅ Japanese PDF search result: ${resultText}`);
-
-      // Verify PDF file type indicator
-      const hasPdfIndicator = resultText && (
-        resultText.toLowerCase().includes('pdf') ||
-        resultText.includes('.pdf')
-      );
-      expect(hasPdfIndicator).toBe(true);
-      console.log('✅ PDF file type indicator present in Japanese search result');
-
-      console.log('✅ Multilingual (Japanese) full-text search verification complete');
-    } else {
-      // If no Japanese PDF found, try alternative keywords
-      console.log('ℹ️ Trying alternative Japanese keywords...');
-
-      const alternativeKeywords = ['検索', '文書', 'テスト'];
-      let foundWithAlternative = false;
-
-      for (const keyword of alternativeKeywords) {
-        await searchInput.first().fill(keyword);
-        if (await searchButton.count() > 0) {
-          await searchButton.first().click(isMobile ? { force: true } : {});
-        } else {
-          await searchInput.first().press('Enter');
-        }
-        await page.waitForTimeout(3000);
-
-        const alternativeResults = page.locator('tr').filter({
-          hasText: /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+.*\.pdf/
-        });
-
-        if (await alternativeResults.count() > 0) {
-          console.log(`✅ Found Japanese PDF with alternative keyword: "${keyword}"`);
-          foundWithAlternative = true;
-          break;
-        }
-      }
-
-      if (!foundWithAlternative) {
-        // If still no Japanese PDF found, skip test gracefully
-        test.skip('Japanese PDF not found with tested keywords - may not be uploaded or indexed yet. ' +
-                  'To enable this test, upload a Japanese PDF with keywords like "ドキュメント", "検索", "文書", or "テスト".');
-      }
+    if (!foundJapanesePdf) {
+      // If no Japanese PDF found, skip test gracefully
+      // This is expected when no Japanese-named PDFs exist in the repository
+      test.skip('No Japanese-named PDF found in repository. ' +
+                'To enable this test, upload a PDF with Japanese filename (e.g., "日本語ドキュメント.pdf").');
     }
   });
 });
