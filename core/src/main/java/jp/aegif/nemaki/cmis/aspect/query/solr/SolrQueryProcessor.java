@@ -342,19 +342,35 @@ public class SolrQueryProcessor implements QueryProcessor {
 		}
 
 		// includedInSupertypeQuery
+		// CRITICAL FIX (2025-12-14): Use getId() instead of getQueryName() for Solr type filtering
+		// Reason: Solr indexes use content.getObjectType() which returns the type ID (cmis:document),
+		// but getQueryName() returns a different name (nemaki:document) causing no results.
 		List<TypeDefinitionContainer> typeDescendants = typeManager
 				.getTypesDescendants(repositoryId, td.getId(), BigInteger.valueOf(-1), false);
 		Iterator<TypeDefinitionContainer> iterator = typeDescendants.iterator();
 		List<String> tables = new ArrayList<String>();
+
+		// CRITICAL FIX (2025-12-14): Always include the base type (td) first
+		// getTypesDescendants() only returns descendants, not the base type itself
+		// Without this, querying "SELECT * FROM cmis:document" won't find documents
+		// that have objecttype=cmis:document (only subtypes like nemaki:document)
+		String baseTypeId = td.getId();
+		if (baseTypeId != null) {
+			tables.add(baseTypeId.replaceAll(":", "\\\\:"));
+		}
+
 		while (iterator.hasNext()) {
 			TypeDefinition descendant = iterator.next().getTypeDefinition();
-			if (td.getId() != descendant.getId()) {
-				boolean isq = (descendant.isIncludedInSupertypeQuery() == null) ? false
-						: descendant.isIncludedInSupertypeQuery();
-				if (!isq)
-					continue;
+			// Skip if this is the base type (already added above)
+			if (td.getId().equals(descendant.getId())) {
+				continue;
 			}
-			String table = descendant.getQueryName();
+			boolean isq = (descendant.isIncludedInSupertypeQuery() == null) ? false
+					: descendant.isIncludedInSupertypeQuery();
+			if (!isq)
+				continue;
+			// FIX: Use getId() to match what is indexed in Solr (content.getObjectType())
+			String table = descendant.getId();
 			if (table != null) {
 				tables.add(table.replaceAll(":", "\\\\:"));
 			}
@@ -417,9 +433,6 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		long numFound =0;
 		// Output search results to ObjectList
-		logger.info("Solr response check: resp=" + (resp != null ? "not null" : "null") + 
-			    ", results=" + (resp != null && resp.getResults() != null ? "not null" : "null") +
-			    ", numFound=" + (resp != null && resp.getResults() != null ? resp.getResults().getNumFound() : "N/A"));
 		if (resp != null && resp.getResults() != null
 				&& resp.getResults().getNumFound() != 0) {
 			SolrDocumentList docs = resp.getResults();

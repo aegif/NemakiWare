@@ -546,7 +546,6 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkSearchExpr(Tree node) {
-		int t = node.getType();
 		switch (node.getType()) {
 		case TextSearchLexer.TEXT_AND:
 			return walkTextAnd(node);
@@ -559,8 +558,6 @@ public class SolrPredicateWalker{
 		case TextSearchLexer.TEXT_SEARCH_PHRASE_STRING_LIT:
 			return walkTextPhrase(node);
 		default:
-			//walkOtherExpr(node);
-			//return null;
 			return walkTextPhrase(node);
 		}
 	}
@@ -593,16 +590,32 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkTextWord(Tree node) {
-		Term term = new Term("text", escapeString(node.toString()));
+		String nodeText = node.toString();
+		String escapedText = escapeString(nodeText);
+		Term term = new Term("text", escapedText);
 		TermQuery q = new TermQuery(term);
 		return q;
 	}
 
 	private Query walkTextPhrase(Tree node) {
-		String termString = escapeString(node.toString());
+		String nodeText = node.toString();
+		String termString = escapeString(nodeText);
+
+		// CRITICAL FIX (2025-12-14): Handle single-quoted search terms properly
+		// For simple terms like 'test', remove quotes and do a term search (not phrase search)
+		// This allows the Solr analyzer to process the term properly
 		if(termString.charAt(0) == '\'' && termString.charAt(termString.length()-1) == '\'' ){
-			termString = '"' + termString.substring(1, termString.length() -1) + '"';
+			// Remove the single quotes to get the actual search term
+			termString = termString.substring(1, termString.length() - 1);
+
+			// Check if this is a simple term (no spaces) or a phrase (has spaces)
+			if (termString.contains(" ")) {
+				// Multi-word phrase - wrap in double quotes for phrase search
+				termString = '"' + termString + '"';
+			}
+			// Single word - leave as is for term search (no quotes needed)
 		}
+
 		Term term = new Term("text", termString);
 		TermQuery q = new TermQuery(term);
 		return q;
