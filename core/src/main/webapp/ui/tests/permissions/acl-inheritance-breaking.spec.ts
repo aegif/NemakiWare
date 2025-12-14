@@ -44,39 +44,23 @@ import { getAclInheritedViaRest } from '../utils/acl';
  */
 
 /**
- * Click Root Folder in the tree to populate the main table with its children
- */
-async function selectRootFolder(page: any): Promise<void> {
-  const rootFolderTreeItem = page.getByRole('treeitem', { name: /Root Folder/i });
-  await rootFolderTreeItem.click();
-  await page.waitForTimeout(1000);
-  
-  // Wait for table to show data (not "No data")
-  await page.waitForFunction(
-    () => {
-      const table = document.querySelector('.ant-table-tbody');
-      if (!table) return false;
-      const rows = table.querySelectorAll('tr');
-      for (const row of rows) {
-        if (!row.textContent?.includes('No data')) {
-          return true;
-        }
-      }
-      return false;
-    },
-    { timeout: 10000 }
-  );
-  
-  console.log('Root Folder selected and table populated');
-}
-
-/**
  * Poll for folder row to appear in main table with retries
  * Handles Solr indexing delays by retrying with page reloads
+ *
+ * REWRITTEN (2025-12-14): Removed incorrect selectRootFolder that used non-existent treeitem.
+ * The documents page shows root folder contents directly without tree navigation.
  */
 async function waitForTableRow(page: any, folderName: string, maxAttempts = 10): Promise<any> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    await selectRootFolder(page);
+    // Wait for table to be visible and have data
+    try {
+      await page.waitForSelector('.ant-table-tbody tr', { timeout: 5000 });
+    } catch {
+      console.log(`Table not visible yet (attempt ${attempt}/${maxAttempts})`);
+      await page.reload();
+      await page.waitForTimeout(2000);
+      continue;
+    }
 
     const table = page.locator('.ant-table');
     const folderRow = table.locator('tbody tr').filter({ hasText: folderName });
