@@ -151,125 +151,57 @@ async function waitForTableLoad(page: any, timeout: number = 30000) {
   }
 }
 
+// CRITICAL: Serial mode for type definition tests to avoid conflicts
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Type Definition Upload and JSON Editing', () => {
-  test.beforeAll(async ({ browser }) => {
-    // CRITICAL: Clean up accumulated test types before running tests
-    // Evidence shows 20+ test types accumulated from previous runs causing:
-    // 1. typeManager.refreshTypes() exceeding 30 seconds
-    // 2. Types spread across multiple pages (pagination: 1, 2, 3)
-    // 3. Edit button clicks timing out because type rows not on current page
-    console.log('=== Starting cleanup of accumulated test types ===');
+  test.beforeAll(async ({ request }) => {
+    // SIMPLIFIED CLEANUP: Use direct API calls instead of UI navigation
+    // This prevents the 90-second timeout caused by complex UI cleanup
+    console.log('=== Starting API-based cleanup of test types ===');
+
+    const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
+    const baseUrl = 'http://localhost:8080/core/rest/bedroom/types';
+
+    // Test type patterns to clean up
+    const testTypePatterns = ['test:uploadTest', 'test:editTest', 'test:cancelTest', 'test:correctField'];
 
     try {
-      const context = await browser.newContext();
-      const page = await context.newPage();
-      const cleanupAuth = new AuthHelper(page);
+      // Get all types via REST API
+      const typesResponse = await request.get(baseUrl, {
+        headers: { 'Authorization': authHeader }
+      });
 
-      // Login to access type management
-      await cleanupAuth.login();
-      await page.waitForTimeout(2000);
+      if (typesResponse.ok()) {
+        const types = await typesResponse.json();
 
-      // Navigate to Type Management
-      const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
-      if (await adminMenu.count() > 0) {
-        await adminMenu.click();
-        await page.waitForTimeout(1000);
-      }
+        // Filter test types that match our patterns
+        const testTypes = types.filter((t: any) =>
+          testTypePatterns.some(pattern => t.typeId?.startsWith(pattern) || t.id?.startsWith(pattern))
+        );
 
-      const typeManagementItem = page.locator('.ant-menu-item:has-text("タイプ管理")');
-      if (await typeManagementItem.count() > 0) {
-        await typeManagementItem.click();
-        await page.waitForTimeout(2000);
-      }
+        console.log(`  Found ${testTypes.length} test types to clean up`);
 
-      await page.waitForSelector('.ant-table', { timeout: 15000 });
-
-      // Wait for table to stabilize before cleanup
-      await waitForTableLoad(page, 15000);
-
-      console.log('  Table loaded, starting cleanup operations');
-
-      // Delete all test types matching patterns: test:uploadTest*, test:editTest*, test:cancelTest*, test:correctField*
-      const testTypePatterns = [
-        'test:uploadTest',
-        'test:editTest',
-        'test:cancelTest',
-        'test:correctField'
-      ];
-
-      let totalDeleted = 0;
-
-      for (const pattern of testTypePatterns) {
-        // Keep deleting until no more types with this pattern found
-        let deletedInThisRound = 0;
-        let maxAttempts = 50; // Safety limit to prevent infinite loop
-        let attempt = 0;
-
-        while (attempt < maxAttempts) {
-          attempt++;
-
-          // Wait for table to be stable before each delete operation
-          await page.waitForTimeout(500);
-
-          // Find type row matching pattern
-          const typeRow = page.locator(`tr:has-text("${pattern}")`).first();
-
-          if (await typeRow.count() === 0) {
-            console.log(`  ✓ No more types matching "${pattern}"`);
-            break; // No more types with this pattern
-          }
-
-          // Get type ID for logging
-          const typeIdCell = typeRow.locator('td').first();
-          const typeId = await typeIdCell.textContent();
-
-          // Find delete button with multiple selector strategies
-          const deleteButton = typeRow.locator('button:has-text("削除")').first();
-          if (await deleteButton.count() === 0) {
-            console.log(`  ! No delete button found for ${typeId}, trying next pattern`);
-            break;
-          }
-
-          // Ensure button is visible before clicking
-          await deleteButton.scrollIntoViewIfNeeded();
-          await deleteButton.click({ force: true });
-          await page.waitForTimeout(1000);
-
-          // Confirm deletion in popconfirm
-          const popconfirm = page.locator('.ant-popconfirm');
-          if (await popconfirm.count() > 0) {
-            const okButton = popconfirm.locator('button.ant-btn-primary');
-            await okButton.click();
-
-            // Wait for success message with short timeout (don't wait too long)
-            try {
-              const successMessage = page.locator('.ant-message:has-text("タイプを削除しました")');
-              await successMessage.waitFor({ state: 'visible', timeout: 5000 });
-            } catch (e) {
-              console.log(`  ! Success message not visible for ${typeId}, continuing anyway`);
+        // Delete each test type via API
+        for (const type of testTypes) {
+          const typeId = type.typeId || type.id;
+          try {
+            const deleteResponse = await request.delete(`${baseUrl}/${encodeURIComponent(typeId)}`, {
+              headers: { 'Authorization': authHeader }
+            });
+            if (deleteResponse.ok()) {
+              console.log(`  ✓ Deleted: ${typeId}`);
             }
-
-            // Wait for table to update (shorter timeout for cleanup)
-            await page.waitForTimeout(1000);
-
-            deletedInThisRound++;
-            totalDeleted++;
-            console.log(`  ✓ Deleted: ${typeId} (${deletedInThisRound} in this pattern)`);
+          } catch (e) {
+            console.log(`  ! Failed to delete ${typeId} (may not exist)`);
           }
         }
-
-        if (deletedInThisRound > 0) {
-          console.log(`  Total deleted for "${pattern}": ${deletedInThisRound}`);
-        }
       }
-
-      console.log(`=== Cleanup complete: ${totalDeleted} test types deleted ===`);
-
-      await context.close();
     } catch (error) {
-      console.error('Error during cleanup (non-fatal):', error);
-      console.log('Continuing with test setup despite cleanup error');
+      console.log('  API cleanup skipped (endpoint may not exist or types already clean)');
     }
+
+    console.log('=== Cleanup complete ===');
 
     // Create temporary type definition files for upload tests
     const tmpDir = require('os').tmpdir();

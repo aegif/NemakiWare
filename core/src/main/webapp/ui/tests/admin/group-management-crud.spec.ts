@@ -182,6 +182,10 @@ const TEST_GROUP_DESCRIPTION = 'Test group for automated testing';
  * - All test data cleaned up in Test 5 (delete operation)
  */
 
+// CRITICAL: Serial mode ensures tests run in order (create → add member → edit → verify → delete)
+// Without this, parallel execution causes each test to generate different testGroupName
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Group Management CRUD Operations', () => {
   let authHelper: AuthHelper;
 

@@ -135,7 +135,7 @@ test.describe('Archive Management', () => {
     } else {
       console.log('Archive management menu item not found - feature may not be available in menu');
       // Try direct navigation
-      await page.goto('/core/ui/#/archives');
+      await page.goto('/core/ui/#/archive');
       await page.waitForTimeout(2000);
 
       const hasContent = await page.locator('.ant-table, .ant-card').count() > 0;
@@ -151,7 +151,7 @@ test.describe('Archive Management', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to archive management
-    await page.goto('/core/ui/#/archives');
+    await page.goto('/core/ui/#/archive');
     await page.waitForTimeout(2000);
 
     // Check if table exists
@@ -188,7 +188,7 @@ test.describe('Archive Management', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to archive management
-    await page.goto('/core/ui/#/archives');
+    await page.goto('/core/ui/#/archive');
     await page.waitForTimeout(2000);
 
     const archiveTable = page.locator('.ant-table');
@@ -290,7 +290,7 @@ test.describe('Archive Management', () => {
     }
 
     // Now navigate to archive management to verify
-    await page.goto('/core/ui/#/archives');
+    await page.goto('/core/ui/#/archive');
     await page.waitForTimeout(2000);
 
     // Look for the deleted document in archive list
@@ -310,7 +310,7 @@ test.describe('Archive Management', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to archive management
-    await page.goto('/core/ui/#/archives');
+    await page.goto('/core/ui/#/archive');
     await page.waitForTimeout(2000);
 
     const archiveTable = page.locator('.ant-table-tbody');
@@ -328,24 +328,43 @@ test.describe('Archive Management', () => {
     const objectName = await firstRow.locator('td').nth(1).textContent();
     console.log(`Attempting to restore: ${objectName}`);
 
-    // Find restore button in the first row
-    const restoreButton = firstRow.locator('button').filter({ hasText: /復元|Restore/i }).first();
+    // Wait for table to fully render with all action buttons
+    await page.waitForTimeout(1000);
 
-    if (await restoreButton.count() === 0) {
-      // Try icon-based selector
-      const iconRestoreButton = firstRow.locator('button').filter({
-        has: page.locator('span[role="img"][aria-label="reload"]')
-      }).first();
+    // Find restore button in the first row - try multiple selectors
+    // The button has text "復元" and is inside a Popconfirm wrapper
+    let restoreButton = firstRow.locator('button').filter({ hasText: /復元/i }).first();
+    let buttonCount = await restoreButton.count();
+    console.log(`Restore button with text "復元": ${buttonCount}`);
 
-      if (await iconRestoreButton.count() === 0) {
-        console.log('Restore button not found - skipping test');
-        test.skip();
-        return;
-      }
-      await iconRestoreButton.click(isMobile ? { force: true } : {});
-    } else {
-      await restoreButton.click(isMobile ? { force: true } : {});
+    if (buttonCount === 0) {
+      // Try finding by primary button type (restore button is type="primary")
+      restoreButton = firstRow.locator('button.ant-btn-primary').first();
+      buttonCount = await restoreButton.count();
+      console.log(`Primary button: ${buttonCount}`);
     }
+
+    if (buttonCount === 0) {
+      // Try finding any button with ReloadOutlined icon class
+      restoreButton = firstRow.locator('button:has(.anticon-reload)').first();
+      buttonCount = await restoreButton.count();
+      console.log(`Button with reload icon: ${buttonCount}`);
+    }
+
+    if (buttonCount === 0) {
+      // Debug: List all buttons in the row
+      const allButtons = await firstRow.locator('button').all();
+      console.log(`Total buttons in row: ${allButtons.length}`);
+      for (let i = 0; i < allButtons.length; i++) {
+        const text = await allButtons[i].textContent();
+        console.log(`Button ${i}: "${text}"`);
+      }
+      console.log('Restore button not found - skipping test');
+      test.skip();
+      return;
+    }
+
+    await restoreButton.click(isMobile ? { force: true } : {});
 
     await page.waitForTimeout(500);
 
@@ -382,7 +401,7 @@ test.describe('Archive Management', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to archive management
-    await page.goto('/core/ui/#/archives');
+    await page.goto('/core/ui/#/archive');
     await page.waitForTimeout(2000);
 
     const archiveRows = page.locator('.ant-table-tbody tr');
@@ -425,7 +444,7 @@ test.describe('Archive Management', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to archive management
-    await page.goto('/core/ui/#/archives');
+    await page.goto('/core/ui/#/archive');
     await page.waitForTimeout(2000);
 
     const archiveRows = page.locator('.ant-table-tbody tr');
@@ -476,7 +495,7 @@ test.describe('Archive Management', () => {
   test('should display empty state when no archives exist', async ({ page }) => {
     // This test verifies the empty state handling
     // Navigate to archive management
-    await page.goto('/core/ui/#/archives');
+    await page.goto('/core/ui/#/archive');
     await page.waitForTimeout(2000);
 
     const archiveTable = page.locator('.ant-table');

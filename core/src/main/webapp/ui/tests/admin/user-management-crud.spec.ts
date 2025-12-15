@@ -154,6 +154,10 @@ import { randomUUID } from 'crypto';
  * - Password: TestPassword123! (strong password with special chars)
  */
 
+// CRITICAL: Serial mode ensures tests run in order (create → edit → verify → delete)
+// Without this, parallel execution causes each test to generate different testUsername
+test.describe.configure({ mode: 'serial' });
+
 test.describe('User Management CRUD Operations', () => {
   let authHelper: AuthHelper;
   const testUsername = `testuser_${randomUUID().substring(0, 8)}`;
@@ -367,7 +371,8 @@ test.describe('User Management CRUD Operations', () => {
       await page.waitForTimeout(1000);
 
       // Check if updated email is visible (either in modal or detail view)
-      const updatedEmail = page.locator('text=updated_email@test.local');
+      // FIX (2025-12-14): Use .first() to avoid strict mode violation when multiple cells match
+      const updatedEmail = page.locator('text=updated_email@test.local').first();
 
       // Email may be in modal or detail panel
       if (await updatedEmail.count() > 0) {
@@ -413,7 +418,9 @@ test.describe('User Management CRUD Operations', () => {
         await page.waitForTimeout(500);
 
         // Confirm deletion
-        const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button:has-text("OK"), button:has-text("削除")');
+        // FIX (2025-12-14): Look for Popconfirm's "はい" button which appears in popover
+        // UserManagement.tsx uses okText="はい" cancelText="いいえ"
+        const confirmButton = page.locator('.ant-popover-content button.ant-btn-primary, .ant-popconfirm-buttons button.ant-btn-primary, button:has-text("はい")');
         console.log(`Delete test: Looking for confirm button, count: ${await confirmButton.count()}`);
         if (await confirmButton.count() > 0) {
           console.log(`Delete test: Clicking confirm button...`);
