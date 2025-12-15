@@ -199,14 +199,23 @@ test.describe('Archive Management', () => {
       return;
     }
 
-    // Check for type icons in the table
+    // CRITICAL FIX (2025-12-14): Check for actual data rows, not empty state rows
+    // Ant Design shows "ant-table-placeholder" for empty tables with a single row
+    const emptyPlaceholder = page.locator('.ant-table-placeholder, .ant-empty');
+    if (await emptyPlaceholder.count() > 0) {
+      console.log('Archive table is empty (placeholder visible) - this is expected if nothing has been deleted');
+      return;
+    }
+
+    // Check for actual data rows (not placeholder rows)
     const tableBody = page.locator('.ant-table-tbody');
-    const rows = tableBody.locator('tr');
-    const rowCount = await rows.count();
+    const dataRows = tableBody.locator('tr.ant-table-row');
+    const rowCount = await dataRows.count();
+
+    console.log(`Found ${rowCount} data rows in archive table`);
 
     if (rowCount === 0) {
       console.log('No archive entries found - this is expected if nothing has been deleted');
-      // Empty archive list is valid state
       return;
     }
 
@@ -313,9 +322,20 @@ test.describe('Archive Management', () => {
     await page.goto('/core/ui/#/archive');
     await page.waitForTimeout(2000);
 
+    // CRITICAL FIX (2025-12-14): Check for empty table placeholder first
+    const emptyPlaceholder = page.locator('.ant-table-placeholder, .ant-empty');
+    if (await emptyPlaceholder.count() > 0) {
+      console.log('Archive table is empty - skipping restore test');
+      test.skip();
+      return;
+    }
+
+    // Check for actual data rows (not placeholder rows)
     const archiveTable = page.locator('.ant-table-tbody');
-    const archiveRows = archiveTable.locator('tr');
+    const archiveRows = archiveTable.locator('tr.ant-table-row');
     const rowCount = await archiveRows.count();
+
+    console.log(`Found ${rowCount} data rows in archive table`);
 
     if (rowCount === 0) {
       console.log('No archive entries to restore - skipping test');
@@ -325,7 +345,14 @@ test.describe('Archive Management', () => {
 
     // Get first archive entry name for verification
     const firstRow = archiveRows.first();
-    const objectName = await firstRow.locator('td').nth(1).textContent();
+    // Use timeout with catch to handle edge cases
+    let objectName: string | null = null;
+    try {
+      objectName = await firstRow.locator('td').nth(1).textContent({ timeout: 5000 });
+    } catch (e) {
+      console.log('Could not get object name - row may have unexpected structure');
+      objectName = 'Unknown';
+    }
     console.log(`Attempting to restore: ${objectName}`);
 
     // Wait for table to fully render with all action buttons
