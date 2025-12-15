@@ -214,6 +214,7 @@ import { OIDCService } from '../../services/oidc';
 import { getOIDCConfig, isOIDCEnabled } from '../../config/oidc';
 import { SAMLService } from '../../services/saml';
 import { getSAMLConfig, isSAMLEnabled } from '../../config/saml';
+import { DEFAULT_REPOSITORY_ID } from '../../config/app';
 
 interface LoginProps {
   onLogin: (auth: AuthToken) => void;
@@ -245,7 +246,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   });
   
   useEffect(() => {
-    (window as any).authService = authService;
+    // SECURITY: Only expose authService in development mode for debugging
+    // Production builds should NOT have window.authService accessible via XSS attacks
+    if (import.meta.env.DEV) {
+      (window as any).authService = authService;
+    }
   }, [authService]);
 
   useEffect(() => {
@@ -278,7 +283,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         form.setFieldsValue({ repositoryId: repos[0] });
       }
     } catch (error) {
-      setRepositories(['bedroom']);
+      // Fallback to configured default repository when discovery fails
+      setRepositories([DEFAULT_REPOSITORY_ID]);
     }
   };
 
@@ -306,7 +312,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       if (window.location.pathname.includes('oidc-callback')) {
         // Process OIDC callback
         const oidcUser = await oidcService.signinRedirectCallback();
-        const repositoryId = repositories.length > 0 ? repositories[0] : 'bedroom';
+        const repositoryId = repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID;
         const auth = await oidcService.convertOIDCToken(oidcUser, repositoryId);
 
         // Save auth to localStorage before redirect
@@ -342,7 +348,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError(null);
 
     try {
-      const repositoryId = repositories.length > 0 ? repositories[0] : 'bedroom';
+      const repositoryId = repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID;
       samlService.initiateLogin(repositoryId);
     } catch (error) {
       // SAML login failed - log actual error for debugging

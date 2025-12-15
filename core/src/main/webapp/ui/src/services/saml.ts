@@ -193,6 +193,7 @@
 
 import { AuthToken } from './auth';
 import pako from 'pako';
+import { DEFAULT_REPOSITORY_ID } from '../config/app';
 
 export interface SAMLConfig {
   sso_url: string;
@@ -260,7 +261,8 @@ export class SAMLService {
   }
 
   async handleSAMLResponse(samlResponse: string, relayState?: string): Promise<AuthToken> {
-    const repositoryId = this.extractRepositoryIdFromRelayState(relayState) || 'bedroom';
+    // Use configured default repository when RelayState is missing or invalid
+    const repositoryId = this.extractRepositoryIdFromRelayState(relayState) || DEFAULT_REPOSITORY_ID;
     
     const response = await fetch(`/core/rest/repo/${repositoryId}/authtoken/saml/convert`, {
       method: 'POST',
