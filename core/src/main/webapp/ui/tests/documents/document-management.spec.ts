@@ -703,12 +703,14 @@ test.describe('Document Management', () => {
       // Verify UI is still responsive
       await expect(page.locator('body')).toBeVisible();
 
-      // Check for any error states
+      // Check for any error states - use specific class-based selectors only
+      // CRITICAL FIX (2025-12-15): Avoid text-based selectors like 'text=Error' which
+      // match legitimate content (e.g., error-recovery documentation, button text)
       const errorSelectors = [
         '.ant-result-error',
         '.error-page',
-        'text=Error',
-        'text=エラー',
+        '.ant-alert-error',
+        '.ant-message-error',
       ];
 
       for (const selector of errorSelectors) {
