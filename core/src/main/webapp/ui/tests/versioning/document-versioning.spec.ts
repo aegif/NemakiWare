@@ -140,6 +140,10 @@ import { TestHelper } from '../utils/test-helper';
  * - DocumentList DEBUG message capture (Lines 83-86)
  */
 test.describe('Document Versioning', () => {
+  // CRITICAL: Run tests sequentially to avoid concurrent upload conflicts
+  // Multiple uploads at the same time cause modal timeout issues
+  test.describe.configure({ mode: 'serial' });
+
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
@@ -303,8 +307,10 @@ test.describe('Document Versioning', () => {
     await documentsMenuItem.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
 
-    // Upload a test document first
-    const uploadSuccess = await testHelper.uploadDocument('checkin-test.txt', 'Version 1.0 content', isMobile);
+    // Upload a test document first with unique name to avoid conflicts
+    const timestamp = Date.now();
+    const filename = `checkin-test-${timestamp}.txt`;
+    const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 content', isMobile);
     if (!uploadSuccess) {
       console.log('Test: Upload failed - skipping test');
       test.skip();
@@ -312,8 +318,8 @@ test.describe('Document Versioning', () => {
     }
 
     // Select the document
-    console.log('Test: Looking for checkin-test.txt in document table');
-    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'checkin-test.txt' }).first();
+    console.log(`Test: Looking for ${filename} in document table`);
+    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     await expect(documentRow).toBeVisible();
     await documentRow.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -340,7 +346,7 @@ test.describe('Document Versioning', () => {
         const checkinFileInput = page.locator('input[type="file"]').last();
         if (await checkinFileInput.isVisible()) {
           await checkinFileInput.setInputFiles({
-            name: 'checkin-test.txt',
+            name: filename,
             mimeType: 'text/plain',
             buffer: Buffer.from('Version 2.0 content - updated', 'utf-8'),
           });
@@ -367,7 +373,7 @@ test.describe('Document Versioning', () => {
     // Wait for table to refresh after check-in operation
     await page.waitForTimeout(2000);
 
-    const cleanupDocRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'checkin-test.txt' }).first();
+    const cleanupDocRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     if (await cleanupDocRow.count() > 0) {
       await cleanupDocRow.click();
       await page.waitForTimeout(500);
@@ -395,8 +401,10 @@ test.describe('Document Versioning', () => {
     await documentsMenuItem.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
 
-    // Upload a test document
-    const uploadSuccess = await testHelper.uploadDocument('cancel-checkout-test.txt', 'Original content', isMobile);
+    // Upload a test document with unique name
+    const timestamp = Date.now();
+    const filename = `cancel-checkout-${timestamp}.txt`;
+    const uploadSuccess = await testHelper.uploadDocument(filename, 'Original content', isMobile);
     if (!uploadSuccess) {
       console.log('Test: Upload failed - skipping test');
       test.skip();
@@ -404,8 +412,8 @@ test.describe('Document Versioning', () => {
     }
 
     // Select and check-out the document
-    console.log('Test: Looking for cancel-checkout-test.txt in document table');
-    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'cancel-checkout-test.txt' }).first();
+    console.log(`Test: Looking for ${filename} in document table`);
+    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     await expect(documentRow).toBeVisible();
     await documentRow.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -442,7 +450,7 @@ test.describe('Document Versioning', () => {
     // Wait for table to refresh after cancel operation
     await page.waitForTimeout(2000);
 
-    const cleanupDocRow2 = page.locator('.ant-table-tbody tr').filter({ hasText: 'cancel-checkout-test.txt' }).first();
+    const cleanupDocRow2 = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     if (await cleanupDocRow2.count() > 0) {
       await cleanupDocRow2.click();
       await page.waitForTimeout(500);
@@ -470,8 +478,10 @@ test.describe('Document Versioning', () => {
     await documentsMenuItem.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
 
-    // Upload a test document
-    const uploadSuccess = await testHelper.uploadDocument('version-history-test.txt', 'Version 1.0', isMobile);
+    // Upload a test document with unique name
+    const timestamp = Date.now();
+    const filename = `version-history-${timestamp}.txt`;
+    const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0', isMobile);
     if (!uploadSuccess) {
       console.log('Test: Upload failed - skipping test');
       test.skip();
@@ -479,8 +489,8 @@ test.describe('Document Versioning', () => {
     }
 
     // Select the document
-    console.log('Test: Looking for version-history-test.txt in document table');
-    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'version-history-test.txt' }).first();
+    console.log(`Test: Looking for ${filename} in document table`);
+    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     await expect(documentRow).toBeVisible();
     await documentRow.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -525,7 +535,7 @@ test.describe('Document Versioning', () => {
     // Wait for modal to close if still open
     await page.waitForTimeout(1000);
 
-    const cleanupDocRow3 = page.locator('.ant-table-tbody tr').filter({ hasText: 'version-history-test.txt' }).first();
+    const cleanupDocRow3 = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     if (await cleanupDocRow3.count() > 0) {
       await cleanupDocRow3.click();
       await page.waitForTimeout(500);
@@ -553,8 +563,10 @@ test.describe('Document Versioning', () => {
     await documentsMenuItem.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
 
-    // Upload a test document
-    const uploadSuccess = await testHelper.uploadDocument('version-download-test.txt', 'Version 1.0 for download', isMobile);
+    // Upload a test document with unique name
+    const timestamp = Date.now();
+    const filename = `version-download-${timestamp}.txt`;
+    const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 for download', isMobile);
     if (!uploadSuccess) {
       console.log('Test: Upload failed - skipping test');
       test.skip();
@@ -562,8 +574,8 @@ test.describe('Document Versioning', () => {
     }
 
     // Select the document
-    console.log('Test: Looking for version-download-test.txt in document table');
-    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'version-download-test.txt' }).first();
+    console.log(`Test: Looking for ${filename} in document table`);
+    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     await expect(documentRow).toBeVisible();
     await documentRow.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -594,8 +606,8 @@ test.describe('Document Versioning', () => {
 
           // Verify download started - use regex for flexible filename matching
           // Server may append version info or other metadata to filename
-          const filename = download.suggestedFilename();
-          expect(filename).toMatch(/version-download-test/i);
+          const downloadedFilename = download.suggestedFilename();
+          expect(downloadedFilename).toMatch(/version-download/i);
 
           // Wait for download to complete
           await download.path();
@@ -622,7 +634,7 @@ test.describe('Document Versioning', () => {
     // Wait for modal to close if still open
     await page.waitForTimeout(1000);
 
-    const cleanupDocRow4 = page.locator('.ant-table-tbody tr').filter({ hasText: 'version-download-test.txt' }).first();
+    const cleanupDocRow4 = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
     if (await cleanupDocRow4.count() > 0) {
       await cleanupDocRow4.click();
       await page.waitForTimeout(500);

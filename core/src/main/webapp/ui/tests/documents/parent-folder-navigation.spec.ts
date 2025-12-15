@@ -23,14 +23,137 @@ import { test, expect, Page } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
+// Test environment constants
+const CMIS_BASE_URL = 'http://localhost:8080/core';
+const REPOSITORY_ID = 'bedroom';
+const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
+const ADMIN_CREDENTIALS = 'admin:admin';
+
+// Helper function to create a test folder via CMIS API
+async function createTestFolder(parentId: string, folderName: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${CMIS_BASE_URL}/browser/${REPOSITORY_ID}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(ADMIN_CREDENTIALS).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        cmisaction: 'createFolder',
+        'propertyId[0]': 'cmis:objectTypeId',
+        'propertyValue[0]': 'cmis:folder',
+        'propertyId[1]': 'cmis:name',
+        'propertyValue[1]': folderName,
+        folderId: parentId,
+      }).toString(),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.properties?.['cmis:objectId']?.value || null;
+    }
+    console.log(`Failed to create folder ${folderName}:`, response.status);
+    return null;
+  } catch (error) {
+    console.log(`Error creating folder ${folderName}:`, error);
+    return null;
+  }
+}
+
+// Helper function to delete a folder via CMIS API
+async function deleteTestFolder(folderId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${CMIS_BASE_URL}/browser/${REPOSITORY_ID}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(ADMIN_CREDENTIALS).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        cmisaction: 'deleteTree',
+        folderId: folderId,
+        allVersions: 'true',
+        continueOnFailure: 'true',
+      }).toString(),
+    });
+    return response.ok || response.status === 204;
+  } catch (error) {
+    console.log(`Error deleting folder:`, error);
+    return false;
+  }
+}
+
 test.describe('Parent Folder Navigation', () => {
   // CRITICAL FIX (2025-11-26): Set timeout at describe level to ensure it applies
   // Individual test.setTimeout() calls were being ignored - using describe.configure instead
-  test.describe.configure({ timeout: 90000 }); // 90 seconds for all tests in this suite
+  // CRITICAL FIX (2025-12-15): Use serial mode to ensure beforeAll/afterAll run once
+  // and test folders are created/cleaned up properly
+  test.describe.configure({ timeout: 90000, mode: 'serial' }); // 90 seconds, serial execution
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   let page: Page;
+
+  // CRITICAL FIX (2025-12-15): Create test folders to ensure tests don't skip
+  // These folders will be created in beforeAll if no folders exist in the repository
+  let createdTestFolderId: string | null = null;
+  let createdSubFolderId: string | null = null;
+  let testFoldersCreated = false;
+
+  test.beforeAll(async () => {
+    // Check if any folders exist in the repository
+    // If not, create test folders to enable the tests
+    try {
+      const response = await fetch(
+        `${CMIS_BASE_URL}/browser/${REPOSITORY_ID}/root?cmisselector=children`,
+        {
+          headers: {
+            'Authorization': `Basic ${Buffer.from(ADMIN_CREDENTIALS).toString('base64')}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const folders = data.objects?.filter((obj: any) => {
+          const baseTypeId = obj.object.properties['cmis:baseTypeId']?.value;
+          return baseTypeId === 'cmis:folder';
+        }) || [];
+
+        console.log(`[NAV TEST SETUP] Found ${folders.length} existing folders in repository`);
+
+        // CRITICAL FIX (2025-12-15): Always create test folders to ensure they appear at top of list
+        // Existing folders might be on a different page or below documents in sort order
+        // Using "0-" prefix ensures our test folder appears first alphabetically
+        console.log('[NAV TEST SETUP] Creating test folders with 0- prefix for visibility...');
+
+        const timestamp = Date.now();
+        createdTestFolderId = await createTestFolder(ROOT_FOLDER_ID, `0-NavTestFolder-${timestamp}`);
+
+        if (createdTestFolderId) {
+          console.log(`[NAV TEST SETUP] Created parent folder: ${createdTestFolderId}`);
+
+          // Create a subfolder for multi-level navigation tests
+          createdSubFolderId = await createTestFolder(createdTestFolderId, `0-NavTestSubFolder-${timestamp}`);
+          if (createdSubFolderId) {
+            console.log(`[NAV TEST SETUP] Created subfolder: ${createdSubFolderId}`);
+            testFoldersCreated = true;
+          }
+        }
+      }
+    } catch (error) {
+      console.log('[NAV TEST SETUP] Error checking/creating folders:', error);
+    }
+  });
+
+  test.afterAll(async () => {
+    // Clean up test folders if they were created
+    if (testFoldersCreated && createdTestFolderId) {
+      console.log('[NAV TEST CLEANUP] Cleaning up created test folders...');
+      const deleted = await deleteTestFolder(createdTestFolderId);
+      console.log(`[NAV TEST CLEANUP] Folder deletion: ${deleted ? 'success' : 'failed'}`);
+    }
+  });
 
   test.beforeEach(async ({ page: testPage, browserName }) => {
     page = testPage;
