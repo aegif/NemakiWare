@@ -134,7 +134,13 @@ test.describe('Internationalization Tests', () => {
     const japaneseFilename = `テストファイル-${uuid}.txt`;
 
     // Locate upload button
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() === 0) {
       test.skip('File upload functionality not available');
@@ -192,7 +198,13 @@ test.describe('Internationalization Tests', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() === 0) {
       test.skip('File upload functionality not available');
@@ -287,7 +299,13 @@ test.describe('Internationalization Tests', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() === 0) {
       test.skip('File upload functionality not available');
@@ -365,7 +383,13 @@ test.describe('Internationalization Tests', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() === 0) {
       test.skip('File upload functionality not available');
@@ -451,7 +475,13 @@ test.describe('Internationalization Tests', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() === 0) {
       test.skip('File upload functionality not available');

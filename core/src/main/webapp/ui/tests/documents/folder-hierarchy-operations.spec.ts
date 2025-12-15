@@ -252,9 +252,12 @@ test.describe('Folder Hierarchy Operations', () => {
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
     await page.waitForTimeout(1000);
 
-    const parentFolder = page.locator(`text=${parentFolderName}`);
-    await parentFolder.click();
-    await page.waitForTimeout(1500);
+    // CRITICAL FIX (2025-12-15): Click folder link button, not raw text
+    // Folders are rendered as <Button type="link"> inside table rows
+    const parentFolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: parentFolderName }).first();
+    const parentFolderButton = parentFolderRow.locator('button.ant-btn-link').first();
+    await parentFolderButton.click();
+    await page.waitForTimeout(2000);
 
     // Check for breadcrumb
     const breadcrumb = page.locator('.ant-breadcrumb');
@@ -275,10 +278,11 @@ test.describe('Folder Hierarchy Operations', () => {
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
     await page.waitForTimeout(1000);
 
-    // Navigate into child
-    const childFolder = page.locator(`text=${childFolderName}`);
-    await childFolder.click();
-    await page.waitForTimeout(1500);
+    // Navigate into child - CRITICAL FIX (2025-12-15): Use button locator
+    const childFolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: childFolderName }).first();
+    const childFolderButton = childFolderRow.locator('button.ant-btn-link').first();
+    await childFolderButton.click();
+    await page.waitForTimeout(2000);
 
     // Verify breadcrumb shows both parent and child
     const childBreadcrumbItem = breadcrumb.locator('.ant-breadcrumb-link, .ant-breadcrumb-item').filter({ hasText: childFolderName });
@@ -292,7 +296,8 @@ test.describe('Folder Hierarchy Operations', () => {
       await page.waitForTimeout(1500);
 
       // Verify we're back in parent folder (child folder should be visible)
-      await expect(childFolder).toBeVisible({ timeout: 5000 });
+      // CRITICAL FIX (2025-12-15): Use row locator reference
+      await expect(childFolderRow).toBeVisible({ timeout: 5000 });
 
       // Verify breadcrumb updated (child should not be in breadcrumb anymore)
       const updatedChildBreadcrumb = breadcrumb.locator('.ant-breadcrumb-item').filter({ hasText: childFolderName });
