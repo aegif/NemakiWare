@@ -516,6 +516,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const isVersionSeriesCheckedOut = getSafeBooleanValue(object.properties?.['cmis:isVersionSeriesCheckedOut']);
   const isCheckedOut = isPrivateWorkingCopy || isVersionSeriesCheckedOut;
   const checkedOutBy = getSafeStringValue(object.properties?.['cmis:versionSeriesCheckedOutBy']);
+  const isReadOnlyCheckout = Boolean(isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy);
 
   // Get current folder ID from URL params for back button navigation
   const currentFolderId = searchParams.get('folderId');
@@ -688,7 +689,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           object={object}
           propertyDefinitions={typeDefinition.propertyDefinitions}
           onSave={handleUpdateProperties}
-          readOnly={isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy}
+          readOnly={isReadOnlyCheckout}
         />
       ),
     },
@@ -700,7 +701,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           repositoryId={repositoryId}
           object={object}
           onUpdate={handleSecondaryTypeUpdate}
-          readOnly={isCheckedOut && checkedOutBy && checkedOutBy !== object.createdBy}
+          readOnly={isReadOnlyCheckout}
         />
       ),
     },

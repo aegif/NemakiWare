@@ -275,6 +275,7 @@
 
 import { AuthService } from './auth';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions } from '../types/cmis';
+import { CompatibleType } from '../types/typeMigration';
 
 export class CMISService {
   private baseUrl = '/core/browser';
@@ -539,7 +540,7 @@ export class CMISService {
     };
   }
 
-  private getAuthHeaders() {
+  private getAuthHeaders(): Record<string, string> {
     try {
       const authData = localStorage.getItem('nemakiware_auth');
 
@@ -551,7 +552,7 @@ export class CMISService {
           const credentials = btoa(`${auth.username}:dummy`);
           return {
             'Authorization': `Basic ${credentials}`,
-            'nemaki_auth_token': auth.token
+            'nemaki_auth_token': String(auth.token)
           };
         }
       }
@@ -3314,13 +3315,7 @@ export class CMISService {
     currentType: string;
     currentTypeDisplayName: string;
     baseType: string;
-    compatibleTypes: Record<string, {
-      id: string;
-      displayName: string;
-      description: string;
-      baseTypeId: string;
-      additionalRequiredProperties: Record<string, string>;
-    }>;
+    compatibleTypes: Record<string, CompatibleType>;
     count: number;
   }> {
     const headers = this.getAuthHeaders();

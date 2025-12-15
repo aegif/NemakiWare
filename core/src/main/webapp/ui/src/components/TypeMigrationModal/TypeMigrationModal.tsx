@@ -35,6 +35,7 @@ import {
 import { SwapOutlined, WarningOutlined, FormOutlined } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
 import { useAuth } from '../../contexts/AuthContext';
+import { CompatibleType, MigrationPropertyDefinition } from '../../types/typeMigration';
 import dayjs from 'dayjs';
 
 const { Text, Paragraph } = Typography;
@@ -47,25 +48,6 @@ interface TypeMigrationModalProps {
   currentType: string;
   onClose: () => void;
   onSuccess: (newTypeId: string) => void;
-}
-
-interface PropertyDefinition {
-  id: string;
-  displayName: string;
-  description?: string;
-  propertyType: string; // 'string' | 'integer' | 'boolean' | 'datetime' | 'decimal' | 'id' | 'html' | 'uri'
-  cardinality: string; // 'single' | 'multi'
-  required: boolean;
-  defaultValue?: unknown;
-  choices?: Array<{ displayName: string; value: unknown }>;
-}
-
-interface CompatibleType {
-  id: string;
-  displayName: string;
-  description: string;
-  baseTypeId: string;
-  additionalRequiredProperties: Record<string, PropertyDefinition>;
 }
 
 export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
@@ -184,7 +166,7 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
   /**
    * Render input component based on property type
    */
-  const renderPropertyInput = (propDef: PropertyDefinition) => {
+  const renderPropertyInput = (propDef: MigrationPropertyDefinition) => {
     const { propertyType, cardinality } = propDef;
 
     // Multi-value properties - use text area for now
