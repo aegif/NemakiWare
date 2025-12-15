@@ -742,8 +742,11 @@ test.describe('Access Control and Permissions', () => {
         await folderLink.first().click();
         await page.waitForTimeout(2000);
 
-        // Upload document
-        const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+        // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+        let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+        if (await uploadButton.count() === 0) {
+          uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+        }
         if (await uploadButton.count() > 0) {
           await uploadButton.click(isMobile ? { force: true } : {});
           await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
@@ -2545,8 +2548,11 @@ test.describe('Access Control and Permissions', () => {
         await folderLink.click();
         await page.waitForTimeout(2000);
 
-        // Check if upload button exists or is disabled
-        const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+        // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+        let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+        if (await uploadButton.count() === 0) {
+          uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+        }
 
         if (await uploadButton.count() > 0) {
           const isDisabled = await uploadButton.first().isDisabled();

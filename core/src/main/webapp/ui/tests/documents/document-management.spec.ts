@@ -374,8 +374,12 @@ test.describe('Document Management', () => {
     // Generate unique filename to avoid conflicts
     const filename = `test-upload-${randomUUID().substring(0, 8)}.txt`;
 
-    // Look for upload button (ファイルアップロード)
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
     const buttonCount = await uploadButton.count();
 
     if (buttonCount > 0) {
@@ -564,8 +568,11 @@ test.describe('Document Management', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    // First upload a test document to delete
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
     if (await uploadButton.count() > 0) {
       await uploadButton.click(isMobile ? { force: true } : {});
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });

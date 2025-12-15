@@ -157,7 +157,11 @@ test.describe('Bulk Operations', () => {
    */
   async function createTestDocuments(page: any, count: number, uuid: string): Promise<string[]> {
     const createdNames: string[] = [];
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() === 0) {
       return [];

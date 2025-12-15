@@ -132,6 +132,9 @@ import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
 
 test.describe('Document Properties Edit and Persistence', () => {
+  // CRITICAL: Tests must run in order - upload creates document for subsequent tests
+  test.describe.configure({ mode: 'serial' });
+
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   const testDocName = `test-props-doc-${randomUUID().substring(0, 8)}.txt`;
@@ -203,7 +206,12 @@ test.describe('Document Properties Edit and Persistence', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() > 0) {
       await uploadButton.click(isMobile ? { force: true } : {});

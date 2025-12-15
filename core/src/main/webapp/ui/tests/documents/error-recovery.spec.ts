@@ -98,7 +98,11 @@ test.describe('Error Recovery Tests', () => {
       await route.abort('failed');
     });
 
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() === 0) {
       test.skip('File upload functionality not available');
@@ -151,7 +155,11 @@ test.describe('Error Recovery Tests', () => {
       }
     });
 
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() === 0) {
       test.skip('File upload functionality not available');
@@ -254,7 +262,11 @@ test.describe('Error Recovery Tests', () => {
       }
     });
 
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() === 0) {
       test.skip('File upload functionality not available');
@@ -337,8 +349,11 @@ test.describe('Error Recovery Tests', () => {
       }
     });
 
-    // Try to perform an action during network loss
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() > 0) {
       await uploadButton.click(isMobile ? { force: true } : {});
@@ -442,7 +457,11 @@ test.describe('Error Recovery Tests', () => {
       });
     });
 
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() === 0) {
       test.skip('File upload functionality not available');

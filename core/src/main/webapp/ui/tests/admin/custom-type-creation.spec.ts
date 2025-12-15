@@ -477,8 +477,11 @@ test.describe('Custom Type Creation and Property Management', () => {
       await page.waitForTimeout(2000);
     }
 
-    // Try to upload document with custom type
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
 
     if (await uploadButton.count() > 0) {
       await uploadButton.click(isMobile ? { force: true } : {});

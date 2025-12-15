@@ -343,8 +343,11 @@ test.describe.skip('Custom Type and Custom Attributes (WIP - Manual Form UI not 
       await page.waitForTimeout(2000);
     }
 
-    // Upload document with custom type
-    const uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' });
+    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
+    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
     if (await uploadButton.count() > 0) {
       await uploadButton.click(isMobile ? { force: true } : {});
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
