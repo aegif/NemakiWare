@@ -183,11 +183,12 @@ test.describe('Folder Hierarchy Operations', () => {
     await page.waitForTimeout(1000);
 
     // Verify parent folder appears
-    const parentFolder = page.locator(`text=${parentFolderName}`);
-    await expect(parentFolder).toBeVisible({ timeout: 5000 });
+    const parentFolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: parentFolderName }).first();
+    await expect(parentFolderRow).toBeVisible({ timeout: 5000 });
 
-    // Navigate into parent folder
-    await parentFolder.click();
+    // Navigate into parent folder - click folder link button
+    const parentFolderButton = parentFolderRow.locator('button.ant-btn-link').first();
+    await parentFolderButton.click();
     await page.waitForTimeout(1500);
 
     // Create child folder inside parent
@@ -199,11 +200,12 @@ test.describe('Folder Hierarchy Operations', () => {
     await page.waitForTimeout(1000);
 
     // Verify child folder appears
-    const childFolder = page.locator(`text=${childFolderName}`);
-    await expect(childFolder).toBeVisible({ timeout: 5000 });
+    const childFolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: childFolderName }).first();
+    await expect(childFolderRow).toBeVisible({ timeout: 5000 });
 
-    // Navigate into child folder
-    await childFolder.click();
+    // Navigate into child folder - click folder link button
+    const childFolderButton = childFolderRow.locator('button.ant-btn-link').first();
+    await childFolderButton.click();
     await page.waitForTimeout(1500);
 
     // Create grandchild folder
@@ -215,8 +217,8 @@ test.describe('Folder Hierarchy Operations', () => {
     await page.waitForTimeout(1000);
 
     // Verify grandchild folder appears
-    const grandchildFolder = page.locator(`text=${grandchildFolderName}`);
-    await expect(grandchildFolder).toBeVisible({ timeout: 5000 });
+    const grandchildFolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: grandchildFolderName }).first();
+    await expect(grandchildFolderRow).toBeVisible({ timeout: 5000 });
 
     console.log(`Created 3-level folder hierarchy: ${parentFolderName}/${childFolderName}/${grandchildFolderName}`);
   });
@@ -407,9 +409,10 @@ test.describe('Folder Hierarchy Operations', () => {
     await page.waitForSelector('.ant-message-success', { timeout: 10000 });
     await page.waitForTimeout(1000);
 
-    // Navigate into parent
-    const parentFolder = page.locator(`text=${parentName}`);
-    await parentFolder.click();
+    // Navigate into parent - click folder link button
+    const parentFolderRow2 = page.locator('.ant-table-tbody tr').filter({ hasText: parentName }).first();
+    const parentFolderButton2 = parentFolderRow2.locator('button.ant-btn-link').first();
+    await parentFolderButton2.click();
     await page.waitForTimeout(1500);
 
     // Create child
@@ -421,8 +424,8 @@ test.describe('Folder Hierarchy Operations', () => {
     await page.waitForTimeout(1000);
 
     // Verify child appears
-    const childFolder = page.locator(`text=${childName}`);
-    await expect(childFolder).toBeVisible({ timeout: 5000 });
+    const childFolderRow2 = page.locator('.ant-table-tbody tr').filter({ hasText: childName }).first();
+    await expect(childFolderRow2).toBeVisible({ timeout: 5000 });
 
     // Delete child folder
     const childRow = page.locator('tr').filter({ hasText: childName });
