@@ -641,13 +641,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   setSearchParams({ folderId: record.id });
                   // Path will be set by loadObjects() after fetching from CMIS - no manual construction
                 } else {
-                  // CRITICAL FIX (2025-12-16): Use selectedFolderId with fallbacks for back button navigation
-                  // Fallback chain: selectedFolderId -> URL folderId -> ROOT_FOLDER_ID
-                  // This ensures the back button always has a valid folder to return to
+                  // CRITICAL FIX (2025-12-16): Use selectedFolderId with URL fallback for back button navigation
+                  // selectedFolderId = the folder whose contents are currently displayed
+                  // currentFolderId = the tree pivot point (may differ from selected folder)
+                  // When user clicks back from document detail, they should return to selectedFolderId
+                  // FALLBACK: If selectedFolderId is empty (race condition), use URL param or ROOT_FOLDER_ID
                   const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
                   const folderParam = `?folderId=${effectiveFolderId}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;
                   console.log('[DocumentList] Navigating to document with effectiveFolderId:', effectiveFolderId);
+                  console.log('[DocumentList] selectedFolderId:', selectedFolderId, 'URL folderId:', searchParams.get('folderId'));
                   console.log('[DocumentList] Full target URL:', targetUrl);
                   navigate(targetUrl);
                 }
@@ -744,8 +747,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       key: 'size',
       width: 100,
       render: (size: number) => {
-        // CMIS 1.1: -1 means unknown size, null/0 means no content
-        if (!size || size < 0) return '-';
+        if (!size) return '-';
         if (size < 1024) return `${size} B`;
         return `${Math.round(size / 1024)} KB`;
       },
@@ -782,7 +784,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 icon={<EyeOutlined />}
                 size="small"
                 onClick={() => {
-                  // CRITICAL FIX (2025-12-16): Use selectedFolderId with fallbacks for back button navigation
+                  // CRITICAL FIX (2025-12-16): Use selectedFolderId with URL fallback for back button navigation
                   const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
                   const folderParam = `?folderId=${effectiveFolderId}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;

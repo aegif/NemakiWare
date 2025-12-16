@@ -1774,20 +1774,8 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private String copyAttachment(CallContext callContext, String repositoryId, String attachmentId) {
-		// CRITICAL FIX (2025-12-16): Handle null attachmentId (document without content)
-		if (attachmentId == null || attachmentId.isEmpty()) {
-			log.debug("copyAttachment: attachmentId is null or empty, returning null (document has no content)");
-			return null;
-		}
-
 		AttachmentNode original = getAttachment(repositoryId, attachmentId);
-
-		// CRITICAL FIX (2025-12-16): Handle null attachment (corrupted or deleted)
-		if (original == null) {
-			log.warn("copyAttachment: Could not retrieve attachment with ID '{}', returning null", attachmentId);
-			return null;
-		}
-
+		
 		String mimeType = original.getMimeType();
 		if (mimeType == null || mimeType.isEmpty()) {
 			mimeType = "application/octet-stream";

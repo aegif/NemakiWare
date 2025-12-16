@@ -7,53 +7,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
-## 🚨 CRITICAL: 必須デプロイ手順 (2025-12-16)
-
-**重要**: コード変更後のデプロイは **必ず** `deploy-with-verification.sh` を使用してください。
-
-### なぜ必須なのか
-
-**根本原因 (2025-12-16発見)**:
-- `frontend-maven-plugin` がMavenビルド中に自動的に `npm run build` を実行する
-- 手動で `npm run build` を実行してからMavenを実行すると **二重ビルド** が発生
-- Viteは毎回異なるアセットハッシュを生成するため、手動ビルドとMavenビルドでハッシュが不一致になる
-
-手動デプロイでは以下の問題が頻発します：
-- ❌ 二重ビルドによるアセットハッシュ不整合
-- ❌ Dockerイメージのキャッシュにより古いコードがデプロイされる
-- ❌ 修正が反映されない「幽霊デプロイ」
-
-### 正しいデプロイ手順
-
-```bash
-# プロジェクトルートから実行
-./deploy-with-verification.sh
-```
-
-このスクリプトは以下を自動実行します：
-1. UIの`dist/`とMavenの`target/`を完全削除
-2. Mavenビルドを実行（frontend-maven-pluginがUIビルドも実行）
-3. dist/index.htmlとWAR内のアセットハッシュを検証
-4. Docker `--no-cache` と `-v` でキャッシュ根絶
-5. デプロイ後のアセットハッシュ検証
-6. 全ハッシュの一致を確認
-
-### 禁止事項
-
-❌ **絶対禁止**: `npm run build` を手動実行してから `mvn package` を実行（二重ビルドでハッシュ不整合）
-❌ `--force-recreate` だけでは不十分（イメージは再利用される）
-❌ キャッシュクリアなしでのデプロイ
-
-### 検証失敗時
-
-スクリプトが `ERROR` で終了した場合：
-1. エラーメッセージを確認
-2. `rm -rf core/target/ core/src/main/webapp/ui/dist/` でビルド成果物を削除
-3. `docker system prune -f` を実行
-4. スクリプトを再実行
-
----
-
 ## Security Vulnerability Status (2025-11-19) ✅ ALL RESOLVED
 
 ### UI Dependencies Security Audit - COMPLETE ✅

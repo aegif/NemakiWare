@@ -54,55 +54,6 @@ CLAUDE.mdはClaude Code固有の技術詳細を記録していますが、この
 
 ---
 
-## 🚨 デプロイ手順（CRITICAL - 2025-12-16 - 全エージェント必読）
-
-**絶対ルール**: コード変更後のデプロイは **必ず** `deploy-with-verification.sh` を使用すること。
-
-### 根本原因
-
-`frontend-maven-plugin` がMavenビルド中に自動的に `npm run build` を実行するため：
-- 手動 `npm run build` → `mvn package` の実行は **二重ビルド** になる
-- Viteは毎回異なるアセットハッシュを生成する
-- 結果：手動ビルドのアセットとWAR内のアセットが不一致になり、**修正がデプロイされない**
-
-### 必須手順
-
-```bash
-# プロジェクトルートから実行（これ以外禁止）
-./deploy-with-verification.sh
-```
-
-このスクリプトは以下を自動実行：
-1. `dist/` と `target/` を完全削除
-2. Maven経由でUIビルドとWARビルドを統合実行
-3. アセットハッシュの一致を検証
-4. Docker `--no-cache` でキャッシュ根絶
-5. デプロイ後のハッシュ検証
-
-### 禁止事項（絶対守ること）
-
-| ❌ 禁止 | 理由 |
-|--------|------|
-| `npm run build` 単独実行 | 二重ビルドでハッシュ不整合 |
-| `mvn package` 単独実行 | 検証なしでデプロイ失敗の可能性 |
-| `docker compose up --force-recreate` のみ | イメージが再利用される |
-| 手動でWARコピー→docker restart | キャッシュが残る |
-
-### エラー時の対処
-
-```bash
-# ビルド成果物を完全削除
-rm -rf core/target/ core/src/main/webapp/ui/dist/
-
-# Dockerキャッシュ削除
-docker system prune -f
-
-# 再実行
-./deploy-with-verification.sh
-```
-
----
-
 ## 🔒 UI パス統一ルール（CRITICAL - 2025-12-09）
 
 **重要**: NemakiWare UI の全パスは `/core/ui/` を使用します。`/core/ui/dist/` は**禁止**です。

@@ -765,11 +765,10 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 icon={<ArrowLeftOutlined />}
                 onClick={() => {
                   // CRITICAL FIX (2025-12-16): Always navigate with folderId to preserve folder context
-                  // Use ROOT_FOLDER_ID as fallback when no folderId in URL
-                  const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
-                  const effectiveFolderId = currentFolderId || ROOT_FOLDER_ID;
                   console.log('[DocumentViewer] Back button clicked, currentFolderId:', currentFolderId);
-                  console.log('[DocumentViewer] effectiveFolderId:', effectiveFolderId);
+                  console.log('[DocumentViewer] Full URL params:', searchParams.toString());
+                  // Use ROOT_FOLDER_ID as fallback when no folderId in URL
+                  const effectiveFolderId = currentFolderId || 'e02f784f8360a02cc14d1314c10038ff';
                   const targetUrl = `/documents?folderId=${effectiveFolderId}`;
                   console.log('[DocumentViewer] Navigating to:', targetUrl);
                   navigate(targetUrl);
@@ -856,8 +855,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               {object.lastModificationDate ? new Date(object.lastModificationDate).toLocaleString('ja-JP') : '-'}
             </Descriptions.Item>
             <Descriptions.Item label="サイズ">
-              {/* CMIS 1.1: -1 means unknown size, null/0 means no content */}
-              {object.contentStreamLength && object.contentStreamLength > 0
+              {object.contentStreamLength
                 ? (object.contentStreamLength < 1024
                     ? `${object.contentStreamLength} B`
                     : `${Math.round(object.contentStreamLength / 1024)} KB`)
