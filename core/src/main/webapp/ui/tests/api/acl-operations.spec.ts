@@ -739,9 +739,7 @@ test.describe('ACL Operations - Permission Combinations', () => {
       const { exists: writeOnlyExists, ace: writeOnlyAce } = verifyUserInACL(acl, writeOnlyUser);
       expect(writeOnlyExists).toBeTruthy();
       expect(writeOnlyAce?.permissions).toContain('cmis:write');
-      // NOTE: In NemakiWare's CMIS implementation, cmis:write may implicitly include cmis:read
-      // This is a valid CMIS implementation choice - many repositories normalize permissions
-      // Original assertion removed: expect(writeOnlyAce?.permissions).not.toContain('cmis:read');
+      expect(writeOnlyAce?.permissions).not.toContain('cmis:read');
       console.log(`Test 2: ✓ ${writeOnlyUser} has correct permissions: ${writeOnlyAce?.permissions?.join(', ')}`);
 
       // Test 3: Read + Write permissions
