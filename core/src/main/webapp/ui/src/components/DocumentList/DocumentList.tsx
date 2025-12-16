@@ -744,7 +744,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       key: 'size',
       width: 100,
       render: (size: number) => {
-        if (!size) return '-';
+        // CMIS 1.1: -1 means unknown size, null/0 means no content
+        if (!size || size < 0) return '-';
         if (size < 1024) return `${size} B`;
         return `${Math.round(size / 1024)} KB`;
       },

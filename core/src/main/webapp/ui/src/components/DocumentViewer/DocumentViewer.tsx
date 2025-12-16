@@ -856,7 +856,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               {object.lastModificationDate ? new Date(object.lastModificationDate).toLocaleString('ja-JP') : '-'}
             </Descriptions.Item>
             <Descriptions.Item label="サイズ">
-              {object.contentStreamLength
+              {/* CMIS 1.1: -1 means unknown size, null/0 means no content */}
+              {object.contentStreamLength && object.contentStreamLength > 0
                 ? (object.contentStreamLength < 1024
                     ? `${object.contentStreamLength} B`
                     : `${Math.round(object.contentStreamLength / 1024)} KB`)
