@@ -641,13 +641,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   setSearchParams({ folderId: record.id });
                   // Path will be set by loadObjects() after fetching from CMIS - no manual construction
                 } else {
-                  // CRITICAL FIX (2025-12-13): Use selectedFolderId for back button navigation
+                  // CRITICAL FIX (2025-12-16): Use selectedFolderId with URL fallback for back button navigation
                   // selectedFolderId = the folder whose contents are currently displayed
                   // currentFolderId = the tree pivot point (may differ from selected folder)
                   // When user clicks back from document detail, they should return to selectedFolderId
-                  const folderParam = selectedFolderId ? `?folderId=${selectedFolderId}` : '';
+                  // FALLBACK: If selectedFolderId is empty (race condition), use URL param or ROOT_FOLDER_ID
+                  const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
+                  const folderParam = `?folderId=${effectiveFolderId}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;
-                  console.log('[DocumentList] Navigating to document with selectedFolderId:', selectedFolderId);
+                  console.log('[DocumentList] Navigating to document with effectiveFolderId:', effectiveFolderId);
+                  console.log('[DocumentList] selectedFolderId:', selectedFolderId, 'URL folderId:', searchParams.get('folderId'));
                   console.log('[DocumentList] Full target URL:', targetUrl);
                   navigate(targetUrl);
                 }
@@ -781,10 +784,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 icon={<EyeOutlined />}
                 size="small"
                 onClick={() => {
-                  // CRITICAL FIX (2025-12-13): Use selectedFolderId for back button navigation
-                  const folderParam = selectedFolderId ? `?folderId=${selectedFolderId}` : '';
+                  // CRITICAL FIX (2025-12-16): Use selectedFolderId with URL fallback for back button navigation
+                  const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
+                  const folderParam = `?folderId=${effectiveFolderId}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;
-                  console.log('[DocumentList] View button clicked, selectedFolderId:', selectedFolderId);
+                  console.log('[DocumentList] View button clicked, effectiveFolderId:', effectiveFolderId);
                   console.log('[DocumentList] Full target URL:', targetUrl);
                   navigate(targetUrl);
                 }}
