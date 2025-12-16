@@ -20,34 +20,31 @@ echo "NemakiWare デプロイ検証スクリプト"
 echo "=============================================="
 echo ""
 
-# Step 1: UIビルド
-echo "=== Step 1: UIビルド ==="
-cd "${UI_DIR}"
+# Step 1: WARビルド（UIビルドも含む）
+# NOTE: frontend-maven-plugin が npm build を自動実行するため、
+#       手動で npm run build を実行すると二重ビルドになりハッシュ不整合が発生する
+echo "=== Step 1: WARビルド (Maven + UIビルド統合) ==="
+cd "${SCRIPT_DIR}"
 
 # CRITICAL: 古いビルド成果物を完全に削除
 echo "Cleaning old build artifacts..."
-rm -rf dist/
+rm -rf core/target/
+rm -rf "${UI_DIR}/dist/"
 
-npm run build 2>&1 | tail -5
+# Maven がfrontend-maven-plugin経由でUIビルドも実行
+echo "Building WAR (includes npm build via frontend-maven-plugin)..."
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests 2>&1 | tail -10
 
-# アセットハッシュを取得（index.htmlから参照されているファイル）
-UI_ASSET_HASH=$(grep -o 'index-[A-Za-z0-9_-]*\.js' dist/index.html | head -1 | sed 's/index-\(.*\)\.js/\1/')
+# ビルド後のUIアセットハッシュを取得
+UI_ASSET_HASH=$(grep -o 'index-[A-Za-z0-9_-]*\.js' "${UI_DIR}/dist/index.html" | head -1 | sed 's/index-\(.*\)\.js/\1/')
 if [ -z "$UI_ASSET_HASH" ]; then
-    echo "ERROR: index.html内にindex-*.js参照が見つかりません"
+    echo "ERROR: UIビルド後のindex.html内にindex-*.js参照が見つかりません"
     exit 1
 fi
-echo "UIアセットハッシュ: ${UI_ASSET_HASH}"
+echo "UIアセットハッシュ (Mavenビルド後): ${UI_ASSET_HASH}"
 echo ""
 
-# Step 2: WARビルド
-echo "=== Step 2: WARビルド ==="
-cd "${SCRIPT_DIR}"
-
-# CRITICAL: Mavenターゲットを完全に削除して古いアセットを根絶
-echo "Cleaning Maven target directory..."
-rm -rf core/target/
-
-mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
+echo "=== Step 2: WAR検証 ==="
 
 # WAR内のアセットを検証
 WAR_FILE="${SCRIPT_DIR}/core/target/core.war"
@@ -57,7 +54,8 @@ if [ ! -f "$WAR_FILE" ]; then
 fi
 
 # WAR内のindex.htmlからアセットハッシュを確認
-WAR_ASSET_HASH=$(unzip -p "$WAR_FILE" "ui/dist/index.html" 2>/dev/null | grep -o 'index-[A-Za-z0-9_-]*\.js' | head -1 | sed 's/index-\(.*\)\.js/\1/')
+# Note: pom.xmlのwebResourcesでdist/からui/にコピーされる
+WAR_ASSET_HASH=$(unzip -p "$WAR_FILE" "ui/index.html" 2>/dev/null | grep -o 'index-[A-Za-z0-9_-]*\.js' | head -1 | sed 's/index-\(.*\)\.js/\1/')
 if [ -z "$WAR_ASSET_HASH" ]; then
     echo "ERROR: WAR内のindex.htmlにアセット参照が見つかりません"
     exit 1
@@ -69,7 +67,7 @@ if [ "$UI_ASSET_HASH" != "$WAR_ASSET_HASH" ]; then
     echo "  WAR内: ${WAR_ASSET_HASH}"
     exit 1
 fi
-echo "WAR内アセットハッシュ: ${WAR_ASSET_HASH} (一致)"
+echo "WAR内アセットハッシュ: ${WAR_ASSET_HASH} (一致) ✓"
 echo ""
 
 # Step 3: Dockerデプロイ
