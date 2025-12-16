@@ -205,3 +205,11 @@ tck-evidence-2025-10-11.tar.gz
 *.orig
 *.old
 node/
+
+# Legacy OpenCMIS JARs (removed 2025-12-16)
+# These are no longer needed - using lib/built-jars/ for custom OpenCMIS builds
+lib/014-source/
+suspended-modules/opencmis-1.1.0-legacy/
+suspended-modules/opencmis-1.2.0-jars/
+suspended-modules/opencmis-legacy-converted/
+chemistry-opencmis-1.1.0-jakarta-jars/
