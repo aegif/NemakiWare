@@ -187,9 +187,13 @@ public class VersioningServiceImpl implements VersioningService {
 			// //////////////////
 
 			Document pwc = contentService.getDocument(repositoryId, objectId.getValue());
-			nemakiCachePool.get(repositoryId).removeCmisCache(pwc.getId());
-			
+
+			// CRITICAL FIX (2025-12-16): Check for null BEFORE accessing pwc.getId()
+			// Without this fix, NPE occurs when pwc is null
 			exceptionService.objectNotFound(DomainType.OBJECT, pwc, objectId.getValue());
+
+			// Safe to access pwc.getId() now since objectNotFound throws if null
+			nemakiCachePool.get(repositoryId).removeCmisCache(pwc.getId());
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, pwc);
 
