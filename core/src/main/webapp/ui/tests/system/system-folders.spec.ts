@@ -44,9 +44,10 @@ test.describe('System Folders (/.system)', () => {
 
     console.log('✅ Found .system folder in document list');
 
-    // Click to open .system folder
-    const folderIcon = systemFolderRow.locator('[data-icon="folder"]');
-    await folderIcon.click(isMobile ? { force: true } : {});
+    // Click on folder name button to navigate into .system folder
+    // Note: Ant Design renders folder names as <Button type="link"> (not actual <a> tags)
+    const folderNameButton = systemFolderRow.getByRole('button', { name: '.system' });
+    await folderNameButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
 
     // Verify we're now in .system folder
@@ -67,27 +68,48 @@ test.describe('System Folders (/.system)', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    // Navigate directly via API to get folder ID first
-    const foldersResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+    // Navigate via folder hierarchy instead of path query (path queries don't work for .system folders)
+    // Step 1: Get root folder children
+    const rootResponse = await page.request.get('http://localhost:8080/core/browser/bedroom/root?cmisselector=children', {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
       },
-      form: {
-        'cmisaction': 'query',
-        'statement': "SELECT cmis:objectId FROM cmis:folder WHERE cmis:path = '/.system/users'",
-      },
     });
+    const rootData = await rootResponse.json();
 
-    const foldersData = await foldersResponse.json();
-    console.log('Query response:', JSON.stringify(foldersData, null, 2));
-
-    if (!foldersData.results || foldersData.results.length === 0) {
-      console.log('⚠️ No /.system/users folder found - may need to be created');
+    // Step 2: Find .system folder
+    const systemFolder = rootData.objects?.find((obj: any) =>
+      obj.object?.properties?.['cmis:name']?.value === '.system'
+    );
+    if (!systemFolder) {
+      console.log('⚠️ No .system folder found in root');
       test.skip();
       return;
     }
+    const systemFolderId = systemFolder.object?.properties?.['cmis:objectId']?.value;
+    console.log('Found .system folder ID:', systemFolderId);
 
-    const usersObjectId = foldersData.results[0]['cmis:objectId'];
+    // Step 3: Get .system children
+    const systemResponse = await page.request.get(
+      `http://localhost:8080/core/browser/bedroom/${systemFolderId}?cmisselector=children`,
+      {
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        },
+      }
+    );
+    const systemData = await systemResponse.json();
+
+    // Step 4: Find users folder
+    const usersFolder = systemData.objects?.find((obj: any) =>
+      obj.object?.properties?.['cmis:name']?.value === 'users'
+    );
+    if (!usersFolder) {
+      console.log('⚠️ No users folder found in .system');
+      test.skip();
+      return;
+    }
+    const usersObjectId = usersFolder.object?.properties?.['cmis:objectId']?.value;
     console.log('Found /.system/users folder ID:', usersObjectId);
 
     // Get children of users folder via Browser Binding
@@ -125,26 +147,47 @@ test.describe('System Folders (/.system)', () => {
   });
 
   test('should display groups in /.system/groups folder', async ({ page }) => {
-    // Get /.system/groups folder ID
-    const foldersResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+    // Navigate via folder hierarchy instead of path query (path queries don't work for .system folders)
+    // Step 1: Get root folder children
+    const rootResponse = await page.request.get('http://localhost:8080/core/browser/bedroom/root?cmisselector=children', {
       headers: {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
       },
-      form: {
-        'cmisaction': 'query',
-        'statement': "SELECT cmis:objectId FROM cmis:folder WHERE cmis:path = '/.system/groups'",
-      },
     });
+    const rootData = await rootResponse.json();
 
-    const foldersData = await foldersResponse.json();
-
-    if (!foldersData.results || foldersData.results.length === 0) {
-      console.log('⚠️ No /.system/groups folder found - may need to be created');
+    // Step 2: Find .system folder
+    const systemFolder = rootData.objects?.find((obj: any) =>
+      obj.object?.properties?.['cmis:name']?.value === '.system'
+    );
+    if (!systemFolder) {
+      console.log('⚠️ No .system folder found in root');
       test.skip();
       return;
     }
+    const systemFolderId = systemFolder.object?.properties?.['cmis:objectId']?.value;
 
-    const groupsObjectId = foldersData.results[0]['cmis:objectId'];
+    // Step 3: Get .system children
+    const systemResponse = await page.request.get(
+      `http://localhost:8080/core/browser/bedroom/${systemFolderId}?cmisselector=children`,
+      {
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        },
+      }
+    );
+    const systemData = await systemResponse.json();
+
+    // Step 4: Find groups folder
+    const groupsFolder = systemData.objects?.find((obj: any) =>
+      obj.object?.properties?.['cmis:name']?.value === 'groups'
+    );
+    if (!groupsFolder) {
+      console.log('⚠️ No groups folder found in .system');
+      test.skip();
+      return;
+    }
+    const groupsObjectId = groupsFolder.object?.properties?.['cmis:objectId']?.value;
     console.log('Found /.system/groups folder ID:', groupsObjectId);
 
     // Get children of groups folder
@@ -188,20 +231,21 @@ test.describe('System Folders (/.system)', () => {
     await page.goto('http://localhost:8080/core/ui/index.html#/documents');
     await page.waitForTimeout(2000);
 
-    // Find and click .system folder
+    // Find and click .system folder name button to navigate
+    // Note: Ant Design renders folder names as <Button type="link"> (not actual <a> tags)
     const systemFolderRow = page.locator('tr:has-text(".system")').first();
     await expect(systemFolderRow).toBeVisible({ timeout: 10000 });
 
-    const systemFolderIcon = systemFolderRow.locator('[data-icon="folder"]');
-    await systemFolderIcon.click(isMobile ? { force: true } : {});
+    const systemFolderButton = systemFolderRow.getByRole('button', { name: '.system' });
+    await systemFolderButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
 
-    // Find and click users folder
+    // Find and click users folder name button to navigate
     const usersFolderRow = page.locator('tr:has-text("users")').first();
     await expect(usersFolderRow).toBeVisible({ timeout: 10000 });
 
-    const usersFolderIcon = usersFolderRow.locator('[data-icon="folder"]');
-    await usersFolderIcon.click(isMobile ? { force: true } : {});
+    const usersFolderButton = usersFolderRow.getByRole('button', { name: 'users' });
+    await usersFolderButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(3000);
 
     // Verify we can see users (check for table rows)

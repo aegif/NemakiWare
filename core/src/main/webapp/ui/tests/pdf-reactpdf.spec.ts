@@ -12,8 +12,8 @@ test('PDF preview should render with react-pdf', async ({ page }) => {
   await page.waitForSelector('.ant-table-tbody', { timeout: 30000 });
   await page.waitForTimeout(3000);
 
-  // Find and click PDF file
-  const pdfCell = page.locator('td:has-text("test-document.pdf")').first();
+  // Find and click any PDF file (look for .pdf extension in the list)
+  const pdfCell = page.locator('td:has-text(".pdf")').first();
   await expect(pdfCell).toBeVisible({ timeout: 10000 });
   const row = pdfCell.locator('xpath=ancestor::tr');
   await row.locator('button.ant-btn-link').first().click();

@@ -153,6 +153,15 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
       setIsLoading(true);
       setError(null);
 
+      // CRITICAL FIX (2025-12-16): If URL is already a blob URL, use it directly
+      // This happens when OfficePreview passes a pre-fetched blob URL for PDF renditions
+      if (url.startsWith('blob:')) {
+        console.log('[PDFPreview] Using provided blob URL directly:', url.substring(0, 50) + '...');
+        setPdfData(url);
+        setIsLoading(false);
+        return;
+      }
+
       // Revoke previous blob URL before creating a new one
       if (blobUrlRef.current) {
         URL.revokeObjectURL(blobUrlRef.current);
