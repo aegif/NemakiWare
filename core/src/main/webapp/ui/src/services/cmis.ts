@@ -275,6 +275,18 @@
 
 import { AuthService } from './auth';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions } from '../types/cmis';
+import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } from '../types/typeMigration';
+
+const MIGRATION_PROPERTY_TYPES: MigrationPropertyType[] = [
+  'string',
+  'integer',
+  'decimal',
+  'boolean',
+  'datetime',
+  'id',
+  'html',
+  'uri'
+];
 
 export class CMISService {
   private baseUrl = '/core/browser';
@@ -539,7 +551,7 @@ export class CMISService {
     };
   }
 
-  private getAuthHeaders() {
+  private getAuthHeaders(): Record<string, string> {
     try {
       const authData = localStorage.getItem('nemakiware_auth');
 
@@ -551,7 +563,7 @@ export class CMISService {
           const credentials = btoa(`${auth.username}:dummy`);
           return {
             'Authorization': `Basic ${credentials}`,
-            'nemaki_auth_token': auth.token
+            'nemaki_auth_token': String(auth.token)
           };
         }
       }
@@ -560,6 +572,34 @@ export class CMISService {
     }
 
     return {};
+  }
+
+  private normalizeMigrationPropertyDefinition(rawPropDef: unknown, fallbackId?: string): MigrationPropertyDefinition {
+    const prop = (rawPropDef ?? {}) as Record<string, unknown>;
+    const propertyTypeCandidate = typeof prop.propertyType === 'string' ? prop.propertyType : undefined;
+    const propertyType: MigrationPropertyType = MIGRATION_PROPERTY_TYPES.includes(propertyTypeCandidate as MigrationPropertyType)
+      ? (propertyTypeCandidate as MigrationPropertyType)
+      : 'string';
+    const cardinality = prop.cardinality === 'multi' ? 'multi' : 'single';
+    const id = (String(prop.id ?? fallbackId ?? '').trim()) || (fallbackId ?? 'unknown');
+
+    const choices = Array.isArray((prop as Record<string, unknown>).choices)
+      ? (prop as { choices: Array<Record<string, unknown>> }).choices.map((choice) => ({
+          displayName: String(choice.displayName ?? choice.value ?? ''),
+          value: choice.value
+        }))
+      : undefined;
+
+    return {
+      id,
+      displayName: String(prop.displayName ?? prop.id ?? id ?? 'Unknown property'),
+      description: typeof prop.description === 'string' ? prop.description : undefined,
+      propertyType,
+      cardinality,
+      required: Boolean(prop.required),
+      defaultValue: prop.defaultValue,
+      choices,
+    };
   }
 
   private handleHttpError(status: number, statusText: string, url: string) {
@@ -3314,13 +3354,7 @@ export class CMISService {
     currentType: string;
     currentTypeDisplayName: string;
     baseType: string;
-    compatibleTypes: Record<string, {
-      id: string;
-      displayName: string;
-      description: string;
-      baseTypeId: string;
-      additionalRequiredProperties: Record<string, string>;
-    }>;
+    compatibleTypes: Record<string, CompatibleType>;
     count: number;
   }> {
     const headers = this.getAuthHeaders();
@@ -3345,7 +3379,42 @@ export class CMISService {
       throw new Error(data.message || 'Failed to get compatible types');
     }
 
-    return data;
+    const rawCompatibleTypes = (data.compatibleTypes ?? {}) as Record<string, unknown>;
+    const compatibleTypes: Record<string, CompatibleType> = {};
+
+    Object.entries(rawCompatibleTypes).forEach(([rawId, rawType]) => {
+      const type = (rawType ?? {}) as Record<string, unknown>;
+      const additionalRequiredPropertiesRaw = (type.additionalRequiredProperties ?? {}) as Record<string, unknown>;
+      const additionalRequiredProperties: Record<string, MigrationPropertyDefinition> = {};
+
+      Object.entries(additionalRequiredPropertiesRaw).forEach(([propId, propDef]) => {
+        additionalRequiredProperties[propId] = this.normalizeMigrationPropertyDefinition(propDef, propId);
+      });
+
+      const normalizedId = String(type.id ?? rawId ?? '').trim() || rawId;
+
+      compatibleTypes[normalizedId] = {
+        id: normalizedId,
+        displayName: typeof type.displayName === 'string' ? type.displayName : normalizedId,
+        description: typeof type.description === 'string' ? type.description : undefined,
+        baseTypeId: typeof type.baseTypeId === 'string'
+          ? type.baseTypeId
+          : typeof type.baseId === 'string'
+            ? type.baseId
+            : '',
+        additionalRequiredProperties,
+      };
+    });
+
+    return {
+      currentType: String(data.currentType ?? ''),
+      currentTypeDisplayName: typeof data.currentTypeDisplayName === 'string'
+        ? data.currentTypeDisplayName
+        : String(data.currentType ?? ''),
+      baseType: String(data.baseType ?? ''),
+      compatibleTypes,
+      count: typeof data.count === 'number' ? data.count : Object.keys(compatibleTypes).length,
+    };
   }
 
   /**
