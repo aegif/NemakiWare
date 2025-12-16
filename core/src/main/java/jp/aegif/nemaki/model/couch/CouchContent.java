@@ -121,7 +121,57 @@ public class CouchContent extends CouchNodeBase{
 				}
 			}
 
-			// TODO: aspects, secondaryIds の変換 (remaining complex objects)
+			// CRITICAL FIX (2025-12-17): aspects conversion - Secondary type properties were not being loaded from CouchDB
+			// This is why nemaki:comment and other secondary type properties showed as null after update
+			if (properties.containsKey("aspects")) {
+				Object aspectsValue = properties.get("aspects");
+				if (aspectsValue instanceof List) {
+					@SuppressWarnings("unchecked")
+					List<Map<String, Object>> aspectsList = (List<Map<String, Object>>) aspectsValue;
+					List<Aspect> convertedAspects = new ArrayList<Aspect>();
+					for (Map<String, Object> aspectMap : aspectsList) {
+						String aspectName = (String) aspectMap.get("name");
+						if (aspectName != null) {
+							Aspect aspect = new Aspect();
+							aspect.setName(aspectName);
+
+							// Convert properties within the aspect
+							Object propsValue = aspectMap.get("properties");
+							if (propsValue instanceof List) {
+								@SuppressWarnings("unchecked")
+								List<Map<String, Object>> propsList = (List<Map<String, Object>>) propsValue;
+								List<Property> aspectProperties = new ArrayList<Property>();
+								for (Map<String, Object> propMap : propsList) {
+									String key = (String) propMap.get("key");
+									Object value = propMap.get("value");
+									if (key != null) {
+										aspectProperties.add(new Property(key, value));
+									}
+								}
+								aspect.setProperties(aspectProperties);
+							}
+							convertedAspects.add(aspect);
+						}
+					}
+					this.aspects = convertedAspects;
+					if (log.isDebugEnabled()) {
+						log.debug("Aspects loaded from CouchDB: " + convertedAspects.size() + " aspects");
+					}
+				}
+			}
+
+			// CRITICAL FIX (2025-12-17): secondaryIds conversion - Secondary type IDs were not being loaded from CouchDB
+			if (properties.containsKey("secondaryIds")) {
+				Object secondaryIdsValue = properties.get("secondaryIds");
+				if (secondaryIdsValue instanceof List) {
+					@SuppressWarnings("unchecked")
+					List<String> convertedSecondaryIds = (List<String>) secondaryIdsValue;
+					this.secondaryIds = new ArrayList<String>(convertedSecondaryIds);
+					if (log.isDebugEnabled()) {
+						log.debug("SecondaryIds loaded from CouchDB: " + convertedSecondaryIds.size() + " IDs");
+					}
+				}
+			}
 		}
 	}
 
@@ -135,13 +185,7 @@ public class CouchContent extends CouchNodeBase{
 		setSubTypeProperties(c.getSubTypeProperties());
 		setAspects(c.getAspects());
 		setSecondaryIds(c.getSecondaryIds());
-
-		// DEBUG: Trace objectType for UserItem creation
-		String inputObjectType = c.getObjectType();
-		log.error("CouchContent constructor: input objectType=" + inputObjectType + ", class=" + c.getClass().getName());
-		setObjectType(inputObjectType);
-		log.error("CouchContent constructor: after setObjectType, this.objectType=" + this.objectType);
-
+		setObjectType(c.getObjectType());
 		setChangeToken(c.getChangeToken());
 
 		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from Content layer
