@@ -12,7 +12,7 @@ import org.apache.commons.logging.LogFactory;
  * Test for CloudantClientPool connection configuration
  * This test verifies that the pool can handle different environments correctly
  */
-@Ignore("Integration tests temporarily disabled due to timeout issues - see CLAUDE.md")
+// @Ignore removed - re-enabled for comprehensive test verification (2025-12-16)
 public class CloudantClientPoolTest {
     
     private static final Log log = LogFactory.getLog(CloudantClientPoolTest.class);
