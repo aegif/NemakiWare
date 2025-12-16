@@ -299,14 +299,34 @@ test.describe('ACL Operations - API Direct Tests', () => {
     const page = await context.newPage();
 
     try {
-      // Step 1: Verify test user is not in ACL (should have been removed by previous test)
-      console.log(`Test: Verifying ${testUsername} is not in current ACL`);
+      // Step 1: Ensure test user is NOT in ACL (make test independent of previous test)
+      console.log(`Test: Checking if ${testUsername} exists in current ACL`);
       const currentAcl = await getACL(page, repositoryId, testFolderId);
       console.log(`Test: Current ACL has ${currentAcl.aces?.length || 0} entries`);
 
-      const { exists: userExists } = verifyUserInACL(currentAcl, testUsername);
-      expect(userExists).toBeFalsy();
-      console.log(`Test: ✓ Confirmed ${testUsername} is not in ACL`);
+      const { exists: userExists, ace: existingAce } = verifyUserInACL(currentAcl, testUsername);
+
+      // CRITICAL FIX (2025-12-16): Make test independent by removing user if they exist
+      // This allows the test to run standalone without depending on previous test's execution
+      if (userExists) {
+        console.log(`Test: User ${testUsername} exists in ACL, removing first...`);
+        await applyACL(
+          page,
+          repositoryId,
+          testFolderId,
+          [], // no adds
+          [{ principal: testUsername, permissions: existingAce?.permissions || ['cmis:read', 'cmis:write'] }] // remove
+        );
+        console.log(`Test: User ${testUsername} removed from ACL`);
+
+        // Verify removal
+        const aclAfterRemove = await getACL(page, repositoryId, testFolderId);
+        const { exists: stillExists } = verifyUserInACL(aclAfterRemove, testUsername);
+        expect(stillExists).toBeFalsy();
+        console.log(`Test: ✓ Verified ${testUsername} is no longer in ACL`);
+      } else {
+        console.log(`Test: ✓ Confirmed ${testUsername} is not in ACL`);
+      }
 
       // Step 2: Restore test user to ACL with original permissions using helper function
       console.log(`Test: Restoring ${testUsername} to ACL with cmis:read and cmis:write`);
