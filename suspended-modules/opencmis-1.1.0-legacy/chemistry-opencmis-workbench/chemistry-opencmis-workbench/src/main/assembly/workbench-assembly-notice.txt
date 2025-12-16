@@ -1,0 +1,22 @@
+
+OpenCMIS Workbench
+Copyright 2009-2017 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+
+OpenCMIS contains code from the following Open Source projects:
+
+- Base64 
+  Copyright (c) 2010 Robert Harder
+  Public Domain, <http://iharder.net/base64>
+
+- JSON.simple
+  Copyright (c) 2012 Yidong Fang
+  Apache License 2.0, <http://code.google.com/p/json-simple/>
+  
+  
+OpenCMIS contains OASIS CMIS 1.0 and CMIS 1.1 schema and WSDL files.
+Copyright (c) 2010 and 2013 OASIS Open
+<https://www.oasis-open.org/committees/cmis>

@@ -71,87 +71,6 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
 
-  const coerceSingleValue = (value: unknown, propDef: MigrationPropertyDefinition) => {
-    if (value === undefined || value === null) return undefined;
-    if (typeof value === 'string' && value.trim() === '') return undefined;
-
-    switch (propDef.propertyType) {
-      case 'boolean': {
-        if (typeof value === 'boolean') return value;
-        if (typeof value === 'string') {
-          const normalized = value.trim().toLowerCase();
-          if (normalized === 'true') return true;
-          if (normalized === 'false') return false;
-        }
-        return Boolean(value);
-      }
-      case 'integer': {
-        const parsed = typeof value === 'number' ? value : Number(value);
-        return Number.isNaN(parsed) ? undefined : Math.trunc(parsed);
-      }
-      case 'decimal': {
-        const parsed = typeof value === 'number' ? value : Number(value);
-        return Number.isNaN(parsed) ? undefined : parsed;
-      }
-      case 'datetime': {
-        if (typeof value === 'string' || typeof value === 'number' || value instanceof Date || dayjs.isDayjs(value)) {
-          const parsedDate = dayjs(value);
-          return parsedDate.isValid() ? parsedDate.toISOString() : undefined;
-        }
-        return undefined;
-      }
-      default:
-        return value;
-    }
-  };
-
-  const coerceMultiValue = (value: unknown, propDef: MigrationPropertyDefinition) => {
-    if (value === undefined || value === null) return [];
-
-    const values = Array.isArray(value)
-      ? value
-      : String(value)
-          .split(',')
-          .map((entry) => entry.trim())
-          .filter((entry) => entry.length > 0);
-
-    return values
-      .map((entry) => coerceSingleValue(entry, propDef))
-      .filter((entry): entry is Exclude<ReturnType<typeof coerceSingleValue>, undefined> => entry !== undefined);
-  };
-
-  const getInitialFormValue = (propDef: MigrationPropertyDefinition) => {
-    if (propDef.defaultValue === undefined || propDef.defaultValue === null) {
-      return undefined;
-    }
-
-    if (propDef.cardinality === 'multi') {
-      if (Array.isArray(propDef.defaultValue)) {
-        return propDef.defaultValue.join(', ');
-      }
-      return String(propDef.defaultValue);
-    }
-
-    if (propDef.propertyType === 'datetime') {
-      if (
-        typeof propDef.defaultValue === 'string' ||
-        typeof propDef.defaultValue === 'number' ||
-        propDef.defaultValue instanceof Date ||
-        dayjs.isDayjs(propDef.defaultValue)
-      ) {
-        const parsedDate = dayjs(propDef.defaultValue);
-        return parsedDate.isValid() ? parsedDate : undefined;
-      }
-      return undefined;
-    }
-
-    if (propDef.propertyType === 'boolean' || propDef.propertyType === 'integer' || propDef.propertyType === 'decimal') {
-      return coerceSingleValue(propDef.defaultValue, propDef);
-    }
-
-    return propDef.defaultValue;
-  };
-
   useEffect(() => {
     if (visible && objectId) {
       loadCompatibleTypes();
@@ -163,23 +82,7 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
   // Reset form when type selection changes
   useEffect(() => {
     form.resetFields();
-    if (!selectedType) return;
-
-    const selected = compatibleTypes[selectedType];
-    if (!selected) return;
-
-    const defaultValues: Record<string, unknown> = {};
-    Object.entries(selected.additionalRequiredProperties || {}).forEach(([propId, propDef]) => {
-      const initialValue = getInitialFormValue(propDef);
-      if (initialValue !== undefined) {
-        defaultValues[propId] = initialValue;
-      }
-    });
-
-    if (Object.keys(defaultValues).length > 0) {
-      form.setFieldsValue(defaultValues);
-    }
-  }, [selectedType, compatibleTypes, form]);
+  }, [selectedType]);
 
   const loadCompatibleTypes = async () => {
     setLoadingTypes(true);
@@ -213,18 +116,13 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
       if (selectedTypeInfo && selectedTypeInfo.additionalRequiredProperties) {
         for (const [propId, propDef] of Object.entries(selectedTypeInfo.additionalRequiredProperties)) {
           const value = formValues[propId];
-
-          if (propDef.cardinality === 'multi') {
-            const normalizedValues = coerceMultiValue(value, propDef);
-            if (normalizedValues.length > 0) {
-              additionalProperties[propId] = normalizedValues;
+          if (value !== undefined && value !== null && value !== '') {
+            // Convert datetime values to ISO string
+            if (propDef.propertyType === 'datetime' && value) {
+              additionalProperties[propId] = dayjs(value).toISOString();
+            } else {
+              additionalProperties[propId] = value;
             }
-            continue;
-          }
-
-          const normalizedValue = coerceSingleValue(value, propDef);
-          if (normalizedValue !== undefined) {
-            additionalProperties[propId] = normalizedValue;
           }
         }
       }
