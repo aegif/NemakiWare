@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<!--
+ Licensed to the Apache Software Foundation (ASF) under one
+ or more contributor license agreements.  See the NOTICE file
+ distributed with this work for additional information
+ regarding copyright ownership.  The ASF licenses this file
+ to you under the Apache License, Version 2.0 (the
+ "License"); you may not use this file except in compliance
+ with the License.  You may obtain a copy of the License at
+
+ http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing,
+ software distributed under the License is distributed on an
+ "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ KIND, either express or implied.  See the License for the
+ specific language governing permissions and limitations
+ under the License.
+-->
+<html>
+<head>
+<meta charset="UTF-8">
+<title>OpenCMIS Browser Binding</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<link rel="stylesheet" type="text/css" href="../css/opencmis.css"/>
+<script src="../browser?login=script" type="text/javascript"></script>
+<script type="text/javascript">
+var repositoryUrl;
+var rootFolderUrl;
+var rootFolderId;
+var rootFolder = "/";
+var lastToken;
+var currentFolderId;
+
+// login and logout
+
+function login() {
+	cmisLogin(function(success) {
+		if (success) {
+			cmisNextToken(function(token) {
+				var script0 = document.createElement('script');
+				script0.setAttribute('src', cmisServiceURL() + '?callback=printRepositoryInfos&token=' + token);
+				script0.setAttribute('type', 'text/javascript');
+				document.body.appendChild(script0);
+			});
+		}
+	});
+}
+
+function logout() {
+	cmisLogout(function(success) {
+		if (success) {
+			// login again
+			login();
+		}
+	});
+}
+
+// helpers
+
+function performJsonpRequest(url, callback, params) {
+	var callUrl = url;
+
+	if (params) {
+		for (var key in params) {
+			callUrl = callUrl + '&' + key + '=' + encodeURIComponent(params[key]);
+		}
+	}
+
+	cmisNextToken(function(token) {
+		callUrl = callUrl + 
+		'&callback=' + callback + 
+		'&token=' + encodeURIComponent(token) +
+		'&suppressResponseCodes=true'
+
+		var script = document.createElement('script');
+		script.setAttribute('src', callUrl);
+		script.setAttribute('type', 'text/javascript');
+		document.body.appendChild(script);
+	});
+}
+
+function loadCmisDataById(id, selector, callback, params) {
+	performJsonpRequest(rootFolderUrl + '?cmisselector=' + selector + '&objectId=' + encodeURIComponent(id), callback, params);
+}
+
+function loadCmisDataByPath(path, selector, callback, params) {
+	performJsonpRequest(rootFolderUrl + path + '?cmisselector=' + selector, callback, params);
+}
+
+function loadCmisRepositoryData(selector, callback, params) {
+	performJsonpRequest(repositoryUrl + '?cmisselector=' + selector, callback, params);
+}
+
+function loadCmisLastResult(token, callback) {
+	var url = repositoryUrl + '?cmisselector=lastResult' +
+	'&callback=' + callback +
+	'&token=' + encodeURIComponent(token);
+
+	var script = document.createElement('script');
+	script.setAttribute('src', url);
+	script.setAttribute('type', 'text/javascript');
+	document.body.appendChild(script);
+}
+
+function openContentInNewWindow(id) {
+	cmisNextToken(function(token) {
+		var url = rootFolderUrl + 
+		'?cmisselector=content' +
+		'&objectId=' + encodeURIComponent(id) + 
+		'&token=' + encodeURIComponent(token);
+		window.open(url, '_blank');
+	});
+}
+
+function createAndSubmitDeleteForm(rootFolderUrl, id, cmisaction, callback) {
+	cmisNextToken(function(token) {
+		var targetFrame = document.createElement('iframe');
+		targetFrame.style.display = 'none';
+		targetFrame.name = 'cmis-frame-' + cmisaction + '-' + id;
+		document.body.appendChild(targetFrame);
+
+		targetFrame.addEventListener('load',
+		function() {
+			callback();
+			document.body.removeChild(targetFrame);
+		},
+		false);
+
+		var frameBody = targetFrame.contentWindow.document.createElement('body');
+		targetFrame.appendChild(frameBody);
+
+		var cmisForm = targetFrame.contentWindow.document.createElement('form');
+		cmisForm.action = rootFolderUrl + '?objectId=' + encodeURIComponent(id);
+		cmisForm.method = 'POST';
+		cmisForm.target = targetFrame.name;
+		frameBody.appendChild(cmisForm);
+
+		var cmisActionInput = targetFrame.contentWindow.document.createElement('input');
+		cmisActionInput.name = 'cmisaction';
+		cmisActionInput.type = 'text';
+		cmisActionInput.value = cmisaction;
+		cmisForm.appendChild(cmisActionInput);
+
+		var cmisAllVersionsInput = targetFrame.contentWindow.document.createElement('input');
+		cmisAllVersionsInput.name = 'allVersions';
+		cmisAllVersionsInput.type = 'text';
+		cmisAllVersionsInput.value = 'true';
+		cmisForm.appendChild(cmisAllVersionsInput);
+
+		var cmisTokenInput = targetFrame.contentWindow.document.createElement('input');
+		cmisTokenInput.name = 'token';
+		cmisTokenInput.type = 'text';
+		cmisTokenInput.value = token;
+		cmisForm.appendChild(cmisTokenInput);
+
+		cmisForm.submit();
+	});
+}
+
+// print callbacks
+
+function printRepositoryInfos(infos) {
+	for(repId in infos) {
+		var ri = infos[repId];		
+		document.getElementById('repositoryInfo').innerHTML =
+			'<h2>Repsository "' + ri.repositoryName + '" (' + ri.repositoryId + ')</h2>' +
+			'<table>' +
+			'<tr><td>Id:</td><td>' + ri.repositoryId + '</td></tr>' +
+			'<tr><td>Name:</td><td>' + ri.repositoryName + '</td></tr>' +
+			'<tr><td>Description:</td><td>' + ri.repositoryDescription + '</td></tr>' +
+			'<tr><td>Product:</td><td>' + ri.vendorName + ' ' + ri.productName + ' ' + ri.productVersion + '</td></tr>' +
+			'<tr><td>Root folder id:</td><td>' + ri.rootFolderId + '</td></tr>' +
+			'<tr><td>Repository URL:</td><td>' + ri.repositoryUrl + '</td></tr>' +
+			'<tr><td>Root folder URL:</td><td>' + ri.rootFolderUrl + '</td></tr>' +
+			'</table>';
+
+		// the InMemory repository has only one repository
+		repositoryUrl = ri.repositoryUrl;
+		rootFolderUrl = ri.rootFolderUrl;
+		rootFolderId = ri.rootFolderId;
+	}
+
+	currentFolderId = rootFolderId;
+
+	loadCmisDataByPath(rootFolder, 'object', 'printObject', {});
+	reloadChildren();
+	loadCmisRepositoryData('typeChildren', 'printTypes', {});
+}
+
+function printObject(obj) {
+	var id = obj.properties["cmis:objectId"].value;
+	var name = obj.properties["cmis:name"].value;
+
+	var s = '<h2>Object "' + name + '" (' + id + ')</h2>';
+
+	s = s + '<h3>Properties</h3>';
+	s = s + '<table>';
+
+	for(propertyId in obj.properties) {
+		var property = obj.properties[propertyId];
+		s = s + '<tr><td>' + propertyId + '</td>';
+		s = s + '<td>' + property.displayName + '</td>';
+		s = s + '<td>' + property.type + '</td>';
+		s = s + '<td>' + property.cardinality + '</td>';
+
+		if(property.type == 'datetime') {
+			s = s + '<td>' + (new Date(property.value)) + '</td></tr>';
+		} else {
+			s = s + '<td>' + property.value + '</td></tr>';
+		}
+	}
+
+	s = s + '</table>';
+
+	document.getElementById('objectInfo').innerHTML = s;
+}
+
+function printChildren(children) {
+	var s = '<h2>Children</h2>';
+
+	s = s + '<h3>Properties</h3>';
+
+	s = s + '<input type="button" value="Reload folder" onClick="reloadChildren()">';
+
+	s = s + '<table><tr><th>Name</th><th>Type</th><th>MIME Type</th><th>Size</th>' +
+	'<th>Created By</th><th>Created At</th><th>Id</th><th></th></tr>';
+
+	for(var index in children.objects) {
+		var object = children.objects[index].object;
+
+		var name = object.properties["cmis:name"].value;
+		var type = object.properties["cmis:objectTypeId"].value;
+		var mimetype = "";
+		var size = "";
+		var createdBy = object.properties["cmis:createdBy"].value;
+		var creationDate = new Date(object.properties["cmis:creationDate"].value);
+		var id = object.properties["cmis:objectId"].value;
+		var link = 0; // 0 - no link, 1 - content link, 2 - folder link
+		var deleteLink = "deleteObject('" + id + "')";
+
+		if(object.properties["cmis:baseTypeId"].value == "cmis:folder") {
+			deleteLink = "deleteFolder('" + id + "')";
+			link = 2;
+		}
+
+		if(object.properties["cmis:baseTypeId"].value == "cmis:document") {
+			if(object.properties["cmis:contentStreamLength"]) {
+				size = object.properties["cmis:contentStreamLength"].value;
+			} else {
+				size = "";
+			}
+
+			if(object.properties["cmis:contentStreamMimeType"]) {
+				mimetype = object.properties["cmis:contentStreamMimeType"].value;
+				link = 1;
+			} else {
+				mimetype = "";
+				link = "";
+			}
+		}
+
+		s = s + '<tr><td>';
+		if(link == 1) {
+			s = s + "<a href=\"javascript:openContentInNewWindow('" + id + "')\">" + name + "</a>";
+		} else if(link == 2) {
+			s = s + "<a href=\"javascript:navigateDown('" + id + "')\">" + name + "</a>";
+		} else {
+			s = s + name;
+		}
+
+		s = s + '</td><td>' + type + '</td><td>' + mimetype + '</td><td style="rext-align:right">' + size +
+		'</td><td>' + createdBy + '</td><td>' + creationDate + '</td><td>' + id + '</td><td><button onClick="' + deleteLink + '">delete</button></td></tr>';
+	}
+
+	s = s + '</table>';
+
+	document.getElementById('folderInfo').innerHTML = s;
+}
+
+function printTypes(types) {
+	var s = '<h2>Base Types</h2>';
+
+	for(var index in types.types) {
+		var type = types.types[index];
+
+		s = s + '<h3>' + type.id + '</h3>';
+		s = s + '<ul>';
+
+		for(var propId in type.propertyDefinitions) {
+			var propType = type.propertyDefinitions[propId];
+			s = s + '<li>' + propType.id + '</li>';
+		}
+
+		s = s + '</ul>';
+	}
+
+	document.getElementById('typeInfo').innerHTML = s;
+}
+
+// navigate
+
+function reloadChildren() {
+	var params = {};
+
+	params.filter = 'cmis:name,cmis:objectId,cmis:objectTypeId,cmis:baseTypeId,' +
+	'cmis:contentStreamMimeType,cmis:contentStreamLength,' + 
+	'cmis:creationDate,cmis:createdBy'
+	params.includeAllowableActions = 'false';	
+	params.includeRelationships = 'none';	
+	params.renditionFilter = 'cmis:none';
+	params.maxItems = '100';	
+	params.orderBy = 'cmis:name';
+
+	loadCmisDataById(currentFolderId, 'children', 'printChildren', params);
+}
+
+function navigateDown(folderId) {
+	currentFolderId = folderId;
+	loadCmisDataById(currentFolderId, 'children', 'printChildren', {});
+}
+
+// delete
+
+function deleteObject(id) {
+	createAndSubmitDeleteForm(rootFolderUrl, id, 'delete', reloadChildren);
+}
+
+function deleteFolder(id) {
+	createAndSubmitDeleteForm(rootFolderUrl, id, 'deleteTree', reloadChildren);
+}
+
+
+// query
+
+function querySubmit() {
+	var queryForm = document.getElementById('queryForm');	
+	queryForm.action = repositoryUrl;
+
+	var queryParams = {};
+	queryParams.q = queryForm.q.value;
+	queryParams.maxItems = queryForm.maxItems.value;
+	queryParams.skipCount = queryForm.skipCount.value;
+
+	loadCmisRepositoryData('query', 'queryCallback', queryParams);
+}
+
+function queryCallback(result) {
+	if (!(typeof result.exception === 'undefined')) {
+		alert('Exception: ' + result.exception + '\n\nError:\n' + result.message);
+		return;
+	}
+
+	var cols = {};
+	var colCount = 0;
+	var table = [];
+
+	for(var i = 0; i < result.results.length; i++) {
+		var props = result.results[i].properties;
+		var row = [];
+		for(var queryName in props) {
+			var pos;
+			if (typeof cols[queryName] === 'undefined') {
+				pos = cols[queryName] = colCount++;
+			} else {
+				pos = cols[queryName];
+			}
+
+			while(row.length < pos - 1) {
+				row.push('');
+			}
+
+			if(props[queryName].type == 'datetime') {
+				row[pos] = new Date(props[queryName].value);
+			} else {
+				row[pos] = props[queryName].value;
+			}
+		}
+		table.push(row);
+	}
+
+	var s = '<h3>Query Results</h3>';
+
+	s = s + '<table><tr>';
+	for(var i = 0; i < colCount; i++) {
+		for(var colName in cols) {
+			if(cols[colName] == i) {
+				s = s + '<th>' + colName + '</th>';
+				break;
+			}
+		}
+	}
+	s = s + '</tr>';
+
+	for(var rowIndex = 0; rowIndex < table.length; rowIndex++) {
+		s = s + '<tr>';
+		for(var colIndex = 0; colIndex < colCount; colIndex++) {
+			s = s + '<td>';
+			if(colIndex < table[rowIndex].length) {
+				s = s + table[rowIndex][colIndex];
+			}
+			s = s + '</td>';
+		}
+		s = s + '</tr>';
+	}
+
+	s = s + '</table>';
+
+	document.getElementById('queryResult').innerHTML = s;
+}
+
+// create Folder
+
+function createFolderSubmit() {
+	var createForm = document.getElementById('createFolderForm');
+	createForm.action = rootFolderUrl + createForm.folder.value;
+
+	cmisNextToken(function(token) {
+		lastToken = token;
+		createForm.token.value = token;
+		createForm.submit();
+	});
+}
+
+// create document
+
+function createDocumentSubmit() {
+	var createForm = document.getElementById('createDocumentForm');
+	createForm.action = rootFolderUrl + createForm.folder.value;
+
+	cmisNextToken(function(token) {
+		lastToken = token;
+		createForm.token.value = token;
+		createForm.submit();
+	});
+}
+
+// create helpers
+
+function createCallback() {
+	if(lastToken) {
+		loadCmisLastResult(lastToken, 'showNewId');
+	}
+}
+
+function showNewId(result) {
+	if(result.objectId) {
+		alert('New object id: ' + result.objectId + '\n\nCode: ' + result.code);
+	} else {
+		alert('Exception: ' + result.exception + '\n\nError:\n' + result.message + '\n\nCode: ' + result.code);
+	}
+}
+</script>
+</head>
+<body onLoad="login()">
+
+<h1>OpenCMIS Web Interface</h1>
+
+<input type="button" value="Logout" onClick="logout()">
+
+<br />
+<div id="repositoryInfo" class="box">repositoryInfo</div>
+<br />
+<div id="objectInfo" class="box">objectInfo</div>
+<br />
+<div id="folderInfo" class="box">folderInfo</div>
+<br />
+<div id="typeInfo" class="box">typeInfo</div>
+<br />
+
+<div id="query" class="box">
+<h2>Query</h2>
+<form id="queryForm" action="" method="GET" target="_blank">
+	<input name="cmisaction" type="hidden" value="query" />
+	<input name="token" type="hidden" value="" />
+	<table>
+		<tr><td>Query:</td><td><input name="q" type="text" size="100" maxlength="1000" value="SELECT * FROM cmis:document"></td></tr>
+		<tr><td>Max Items:</td><td><input name="maxItems" type="text" size="4" maxlength="8" value="100"></td></tr>
+		<tr><td>Skip Count:</td><td><input name="skipCount" type="text" size="4" maxlength="8" value="0"></td></tr>
+		<tr><td></td><td><input type="button" value="Go" onClick="querySubmit()"/></td></tr>
+	</table>
+</form>
+</div>
+<div id="queryResult" class="box"></div>
+<br />
+
+<div id="folder" class="box">
+<h2>Create Folder</h2>
+<form id="createFolderForm" action="" method="POST" target="createResult">
+	<input name="_charset_" type="hidden" />
+	<input name="cmisaction" type="hidden" value="createFolder" />
+	<input name="token" type="hidden" value="" />
+	<table>
+	<tr>
+		<td>Parent Folder:</td>
+		<td><input name="folder" type="text" size="100" maxlength="1000" value="/"></td>
+	</tr>
+	<tr>
+		<td>Folder Name:</td>
+		<td><input id="docname" name="propertyValue[0]" type="text" size="100" maxlength="100" value="folder"><input name="propertyId[0]" type="hidden" value="cmis:name" /></td>
+	</tr>
+	<tr>
+		<td>Object Type:</td>
+		<td><input name="propertyValue[1]" type="text" size="100" maxlength="100" value="cmis:folder"><input name="propertyId[1]" type="hidden" value="cmis:objectTypeId" /></td>
+	</tr>
+	<tr>
+		<td></td>
+		<td><input type="button" value="Create" onClick="createFolderSubmit()"/></td>
+	</tr>
+	</table>
+</form>
+</div>
+<br />
+
+<div id="document" class="box">
+<h2>Create Document</h2>
+
+
+
+<form id="createDocumentForm" action="" method="POST" target="createResult" enctype="multipart/form-data">
+	<input name="_charset_" type="hidden" />
+	<input name="cmisaction" type="hidden" value="createDocument" />
+	<input name="token" type="hidden" value="" />
+	<table>
+	<tr>
+		<td>Parent Folder:</td>
+		<td><input name="folder" type="text" size="100" maxlength="1000" value="/"></td>
+	</tr>
+	<tr>
+		<td>Document Name:</td>
+		<td><input id="docname" name="propertyValue[0]" type="text" size="100" maxlength="100" value="document"><input name="propertyId[0]" type="hidden" value="cmis:name" /></td>
+	</tr>
+	<tr>
+		<td>Object Type:</td>
+		<td><input name="propertyValue[1]" type="text" size="100" maxlength="100" value="cmis:document"><input name="propertyId[1]" type="hidden" value="cmis:objectTypeId" /></td>  
+	</tr>
+	<tr>
+		<td>File name:</td>
+		<td><input name="filename" type="text" size="30" maxlength="30" value=""> (if left blank, the original file name is used)</td>
+	</tr>
+	<tr>
+		<td>Content type:</td>
+		<td><input name="contentType" type="text" size="30" maxlength="30" value=""> (if left blank, the content type is determined by the browser)</td>
+	</tr>
+	<tr>
+		<td>File:</td>
+		<td><input name="content" type="file"></td>
+	</tr>
+	<tr>
+		<td></td>
+		<td><input type="button" value="Create" onClick="createDocumentSubmit()"/></td>
+	</tr>
+	</table>
+</form>
+
+</div>
+<br />
+
+<iframe name="createResult" style="display:none;" onload="createCallback()"></iframe>
+
+</body>
+</html>

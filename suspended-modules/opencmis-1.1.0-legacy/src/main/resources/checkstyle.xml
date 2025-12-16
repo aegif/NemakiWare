@@ -1,0 +1,180 @@
+<?xml version="1.0"?>
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.  
+-->
+<!DOCTYPE module PUBLIC
+    "-//Puppy Crawl//DTD Check Configuration 1.2//EN"
+    "http://www.puppycrawl.com/dtds/configuration_1_2.dtd">
+    
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+
+    <module name="SuppressionFilter">
+        <property name="file" value="${checkstyle.suppressions.file}"/>
+    </module>
+
+    <module name="JavadocPackage">
+      <property name="allowLegacy" value="true"/>
+      <property name="severity" value="warning"/>
+    </module>
+    <!--<module name="NewlineAtEndOfFile"/>-->
+    <!--<module name="Translation"/>-->
+    <module name="FileLength">
+        <property name="max" value="4000"/>
+    </module>
+    <module name="FileTabCharacter">
+        <property name="eachLine" value="true"/>
+    </module>
+    <!--
+    <module name="RegexpSingleline">
+        <property name="format" value="\s+$"/>
+        <property name="message" value="Line has trailing spaces."/>
+    </module>
+    -->
+
+    <module name="TreeWalker">
+
+        <property name="cacheFile" value="${checkstyle.cache.file}"/>
+        <property name="tabWidth" value="4"/>
+
+        <module name="JavadocMethod"/>
+        <module name="JavadocType">
+            <property name="scope" value="public"/>
+            <property name="allowUnknownTags" value="true"/>
+        </module>
+        <module name="JavadocVariable"/>
+        <module name="JavadocStyle"/>
+        <module name="MissingDeprecated"/>
+        <!--
+        <module name="WriteTag">
+            <property name="tag" value="@cmis"/>
+            <property name="tagFormat" value="\d\.\d"/>
+            <property name="severity" value="ignore"/>
+            <property name="tagSeverity" value="info"/>
+        </module>
+        -->
+
+        <module name="ConstantName"/>
+        <module name="LocalFinalVariableName"/>
+        <module name="LocalVariableName"/>
+        <module name="MemberName"/>
+        <module name="MethodName"/>
+        <module name="PackageName"/>
+        <module name="ParameterName"/>
+        <module name="StaticVariableName"/>
+        <module name="TypeName"/>
+
+        <!-- <module name="Header">                            -->
+            <!-- The follow property value demonstrates the ability     -->
+            <!-- to have access to ANT properties. In this case it uses -->
+            <!-- the ${basedir} property to allow Checkstyle to be run  -->
+            <!-- from any directory within a project. See property      -->
+            <!-- expansion,                                             -->
+            <!-- http://checkstyle.sf.net/config.html#properties        -->
+            <!-- <property                                              -->
+            <!--     name="headerFile"                                  -->
+            <!--     value="${basedir}/java.header"/>                   -->
+        <!-- </module> -->
+
+
+        <module name="AvoidStarImport"/>
+        <module name="IllegalImport"/> <!-- defaults to sun.* packages -->
+        <module name="RedundantImport"/>
+        <module name="UnusedImports">
+            <property name="processJavadoc" value="true"/>
+        </module>    
+
+        <module name="LineLength">
+            <!-- the Eclipse formatter sometimes adds a few more characters: 120 -> 125 -->
+            <property name="max" value="125"/>
+        </module>
+        <module name="MethodLength">
+            <property name="max" value="300"/>
+        </module>
+        <module name="ParameterNumber">
+            <property name="max" value="12"/>
+        </module>
+
+        <module name="EmptyForIteratorPad"/>
+        <module name="EmptyForInitializerPad"/>
+        <module name="MethodParamPad"/>
+        <module name="NoWhitespaceAfter">
+           <property name="tokens" value="BNOT, DEC, DOT, INC, LNOT, UNARY_MINUS, UNARY_PLUS"/>
+        </module>
+        <module name="NoWhitespaceBefore"/>
+        <module name="OperatorWrap"/>
+        <module name="ParenPad"/>
+        <module name="TypecastParenPad"/>
+        <module name="WhitespaceAfter"/>
+        <module name="WhitespaceAround"/>
+
+        <module name="ModifierOrder"/>
+        <module name="RedundantModifier"/>
+
+        <module name="AvoidNestedBlocks"/>
+        <module name="EmptyBlock">
+            <property name="option" value="text"/>
+        </module>
+        <module name="LeftCurly">
+            <property name="option" value="eol"/>
+        </module>
+        <module name="NeedBraces"/>
+        <module name="RightCurly">
+            <property name="option" value="same"/>
+        </module>
+
+        <module name="EmptyStatement"/>
+        <module name="IllegalThrows">
+            <property name="severity" value="warning"/>
+        </module>
+        <module name="StringLiteralEquality">
+            <property name="severity" value="info"/>
+        </module>
+        <module name="EqualsHashCode"/>
+        <module name="CovariantEquals"/>
+        <module name="HiddenField">
+            <property name="ignoreConstructorParameter" value="true"/>
+            <property name="ignoreSetter" value="true"/>
+        </module>
+        <module name="IllegalInstantiation"/>
+        <module name="InnerAssignment"/>
+        <!--
+        <module name="MagicNumber">
+            <property name="severity" value="info"/>
+        </module>
+        -->
+        <module name="MissingSwitchDefault"/>
+        <module name="DefaultComesLast"/>
+        <module name="RedundantThrows"/>
+        <module name="SimplifyBooleanExpression"/>
+        <module name="SimplifyBooleanReturn"/>
+
+        <!--<module name="DesignForExtension"/>-->
+        <module name="FinalClass"/>
+        <module name="HideUtilityClassConstructor"/>
+        <module name="InterfaceIsType"/>
+        <module name="VisibilityModifier"/>
+
+        <module name="ArrayTypeStyle"/>
+        <!--<module name="FinalParameters"/>-->
+        <module name="TodoComment"/>
+        <module name="UpperEll"/>
+
+    </module>
+    
+</module>

@@ -81,12 +81,12 @@
  *    - Advantage: Consistent auth state across all components
  *
  * 6. Window Exposure for Debugging (Lines 33-36):
- *    - Exposes authService instance to window object IN DEVELOPMENT MODE ONLY
- *    - (window as any).authService = this (guarded by import.meta.env.DEV)
- *    - Available in browser console as window.authService during development
- *    - SECURITY: Disabled in production to prevent token exposure via console
- *    - Implementation: Type assertion (window as any) with DEV environment check
- *    - Advantage: Manual token inspection and state debugging in development
+ *    - Exposes authService instance to window object
+ *    - (window as any).authService = this
+ *    - Available in browser console as window.authService
+ *    - Rationale: Debugging authentication issues in production
+ *    - Implementation: Type assertion (window as any) to bypass TypeScript
+ *    - Advantage: Manual token inspection and state debugging
  *
  * 7. Response Status Validation Pattern (Lines 54-82):
  *    - Checks xhr.readyState === 4 (request complete)
@@ -206,9 +206,7 @@ export class AuthService {
       }
     }
 
-    // Only expose authService globally in development mode for debugging
-    // SECURITY: This is disabled in production to prevent token exposure via browser console
-    if (typeof window !== 'undefined' && import.meta.env.DEV) {
+    if (typeof window !== 'undefined') {
       (window as any).authService = this;
     }
   }
