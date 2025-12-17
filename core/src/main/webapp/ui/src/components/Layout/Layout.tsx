@@ -248,6 +248,32 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   const location = useLocation();
   const { logout, authToken } = useAuth();
 
+  // CRITICAL FIX (2025-12-17): Clean up any stale overlays on Layout mount
+  // This runs after successful login when the Layout component first mounts
+  useEffect(() => {
+    // Clean up any stale Ant Design overlays that may have been left behind
+    const cleanupOverlays = () => {
+      const overlays = document.querySelectorAll(
+        '.ant-modal-mask, .ant-modal-wrap, .ant-spin-blur, .ant-spin-nested-loading > .ant-spin-container.ant-spin-blur'
+      );
+      overlays.forEach((overlay) => {
+        if (overlay.classList.contains('ant-spin-blur')) {
+          overlay.classList.remove('ant-spin-blur');
+        } else {
+          overlay.remove();
+        }
+      });
+      // Reset body styles that might have been set by modals/spinners
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+      document.body.classList.remove('ant-scrolling-effect');
+    };
+    cleanupOverlays();
+    // Also run after a short delay in case of async rendering
+    const timeoutId = setTimeout(cleanupOverlays, 200);
+    return () => clearTimeout(timeoutId);
+  }, []);
+
   // Fetch Core build info on mount
   useEffect(() => {
     const fetchCoreBuildInfo = async () => {

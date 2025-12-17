@@ -253,6 +253,26 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     }
   }, [authService]);
 
+  // CRITICAL FIX (2025-12-17): Clean up any stale overlays when Login component unmounts
+  // This prevents the gray screen issue after successful login
+  useEffect(() => {
+    return () => {
+      // Cleanup function runs when Login unmounts (after successful authentication)
+      const cleanupOverlays = () => {
+        const overlays = document.querySelectorAll('.ant-modal-mask, .ant-modal-wrap, .ant-spin-blur');
+        overlays.forEach((overlay) => {
+          overlay.remove();
+          console.log('Login cleanup: Removed overlay element');
+        });
+        // Also remove any body overflow restrictions that might have been set
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+      };
+      // Small delay to ensure React has finished unmounting
+      setTimeout(cleanupOverlays, 100);
+    };
+  }, []);
+
   useEffect(() => {
     loadRepositories();
     // Load Core build info
