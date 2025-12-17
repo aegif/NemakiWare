@@ -495,6 +495,14 @@ npx playwright test --reporter=list
 | **Total** | **19** | **✅ 19/19 PASS** |
 
 **Keycloak Setup**:
+
+**推奨**: `deploy-with-verification.sh` を使用すると Keycloak も自動起動されます:
+```bash
+./deploy-with-verification.sh
+# Keycloakが起動していない場合は自動的に起動します
+```
+
+手動起動が必要な場合:
 ```bash
 cd docker
 docker compose -f docker-compose.keycloak.yml up -d
@@ -591,7 +599,13 @@ curl -s http://localhost:8080/core/ui/assets/index-*.js 2>/dev/null | grep -o "l
 
 **検証済み状態 (2025-12-12)**: 19/19 テスト合格
 
-**必須チェック項目**:
+**推奨デプロイ方法** (Keycloak自動起動):
+```bash
+./deploy-with-verification.sh
+# Step 3aでKeycloakの起動確認・自動起動が行われます
+```
+
+**手動確認が必要な場合**:
 ```bash
 # 1-1. Keycloak起動確認
 docker ps --filter "name=keycloak" --format "{{.Names}}: {{.Status}}"

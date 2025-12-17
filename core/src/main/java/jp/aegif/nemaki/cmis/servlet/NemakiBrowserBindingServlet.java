@@ -170,6 +170,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     return;
                 }
             }
+
+            // CRITICAL FIX (2025-12-17): Handle updateProperties directly to support multi-value properties
+            // The parent OpenCMIS servlet doesn't properly parse propertyValue[N][M] format for multi-value properties
+            if ("updateProperties".equals(postMethodCmisaction) || "update".equals(postMethodCmisaction)) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Routing updateProperties action");
+                }
+                String pathInfo = request.getPathInfo();
+                if (routeCmisAction(postMethodCmisaction, request, response, pathInfo, "POST")) {
+                    return;
+                }
+            }
         }
 
         String method = request.getMethod();
@@ -2923,23 +2935,21 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Handle CMIS updateProperties operation via Browser Binding.
      * Implements the missing updateProperties functionality.
      */
-    private boolean handleUpdatePropertiesOperation(HttpServletRequest request, HttpServletResponse response, String pathInfo) 
+    private boolean handleUpdatePropertiesOperation(HttpServletRequest request, HttpServletResponse response, String pathInfo)
             throws IOException, ServletException, Exception {
-        
-        
-        
+
         try {
             // Extract object ID
             String objectId = request.getParameter("objectId");
             if (objectId == null || objectId.isEmpty()) {
                 throw new IllegalArgumentException("objectId parameter is required for updateProperties operation");
             }
-            
+
             String repositoryId = extractRepositoryIdFromPath(pathInfo);
             if (repositoryId == null) {
                 throw new IllegalArgumentException("Could not determine repository ID from path: " + pathInfo);
             }
-            
+
             // Extract properties to update
             java.util.Map<String, Object> properties = extractPropertiesFromRequest(request);
 
@@ -3009,23 +3019,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl cmisProperties =
                 properties.isEmpty() ? new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl() : convertToCmisProperties(properties);
 
-            
-
             // Use holders to receive the updated object ID
             org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder = new org.apache.chemistry.opencmis.commons.spi.Holder<String>(objectId);
 
             // CRITICAL TCK FIX: Get change token from request parameter
             // Browser Binding passes changeToken as a request parameter
             String changeTokenParam = request.getParameter("changeToken");
-            
+
             org.apache.chemistry.opencmis.commons.spi.Holder<String> changeTokenHolder = new org.apache.chemistry.opencmis.commons.spi.Holder<String>(changeTokenParam);
 
             cmisService.updateProperties(repositoryId, objectIdHolder, changeTokenHolder, cmisProperties, null);
-
-            
-
-            
-            
 
             // Get the updated object to return (following OpenCMIS standard)
             String newObjectId = (objectIdHolder.getValue() == null ? objectId : objectIdHolder.getValue());
@@ -3790,6 +3793,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Extract CMIS properties from Browser Binding property array parameters.
      * Converts propertyId[0], propertyValue[0], propertyId[1], propertyValue[1]... format
      * to a Map of property names to values.
+     * 
+     * CRITICAL FIX (2025-12-17): Also handles multi-value properties in format:
+     * propertyValue[N][0], propertyValue[N][1], propertyValue[N][2]...
      */
     private java.util.Map<String, Object> extractPropertiesFromRequest(HttpServletRequest request) {
         java.util.Map<String, Object> properties = new java.util.HashMap<>();
@@ -3800,20 +3806,46 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             if (paramName.startsWith("propertyId[") && paramName.endsWith("]")) {
                 // Extract index from propertyId[N]
                 String indexStr = paramName.substring("propertyId[".length(), paramName.length() - 1);
-                String valueParamName = "propertyValue[" + indexStr + "]";
+                String singleValueParamName = "propertyValue[" + indexStr + "]";
                 
                 String[] idValues = paramMap.get(paramName);
-                String[] propValues = paramMap.get(valueParamName);
+                String[] propValues = paramMap.get(singleValueParamName);
                 
                 if (idValues != null && idValues.length > 0) {
                     String propertyId = idValues[0];
+                    
                     if (propValues != null && propValues.length > 0) {
+                        // Single-value property: propertyValue[N]
                         String propertyValue = propValues[0];
                         properties.put(propertyId, propertyValue);
                     } else {
-                        // CRITICAL TCK FIX: Empty propertyValue means empty list (e.g., clearing secondary types)
-                        if ("cmis:secondaryObjectTypeIds".equals(propertyId)) {
-                            properties.put(propertyId, new java.util.ArrayList<String>());
+                        // CRITICAL FIX (2025-12-17): Check for multi-value property format: propertyValue[N][M]
+                        // Multi-value properties are sent as propertyValue[0][0], propertyValue[0][1], etc.
+                        java.util.List<String> multiValues = new java.util.ArrayList<>();
+                        String multiValuePrefix = "propertyValue[" + indexStr + "][";
+                        
+                        // Collect all multi-value entries for this property
+                        for (String mvParamName : paramMap.keySet()) {
+                            if (mvParamName.startsWith(multiValuePrefix) && mvParamName.endsWith("]")) {
+                                String[] mvValues = paramMap.get(mvParamName);
+                                if (mvValues != null && mvValues.length > 0) {
+                                    multiValues.add(mvValues[0]);
+                                }
+                            }
+                        }
+                        
+                        if (!multiValues.isEmpty()) {
+                            // Multi-value property found
+                            properties.put(propertyId, multiValues);
+                            if (log.isDebugEnabled()) {
+                                log.debug("extractPropertiesFromRequest: Found multi-value property " +
+                                    propertyId + " with " + multiValues.size() + " values");
+                            }
+                        } else {
+                            // CRITICAL TCK FIX: Empty propertyValue means empty list (e.g., clearing secondary types)
+                            if ("cmis:secondaryObjectTypeIds".equals(propertyId)) {
+                                properties.put(propertyId, new java.util.ArrayList<String>());
+                            }
                         }
                     }
                 }
@@ -3825,17 +3857,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     
     /**
      * Convert properties map to OpenCMIS PropertiesImpl format.
+     * CRITICAL FIX (2025-12-17): Properly handle multi-value properties (List values)
      */
     private org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl convertToCmisProperties(
             java.util.Map<String, Object> properties) {
-        
-        org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl cmisProperties = 
+
+        org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl cmisProperties =
             new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
-        
+
         for (java.util.Map.Entry<String, Object> entry : properties.entrySet()) {
             String propertyId = entry.getKey();
             Object value = entry.getValue();
-            
+
 
             // CRITICAL TCK FIX: cmis:secondaryObjectTypeIds is a multi-value ID property
             if ("cmis:secondaryObjectTypeIds".equals(propertyId)) {
@@ -3856,31 +3889,42 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl idProp =
                     new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(propertyId, value.toString());
                 cmisProperties.addProperty(idProp);
-                
+
             }
             // Other CMIS ID properties should also use PropertyIdImpl for consistency
             else if (propertyId.endsWith("Id") && (propertyId.startsWith("cmis:") || propertyId.contains("ObjectId"))) {
                 org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl idProp =
                     new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(propertyId, value.toString());
                 cmisProperties.addProperty(idProp);
-                
+
             }
             // String properties (cmis:name, cmis:description, etc.)
             else if ("cmis:name".equals(propertyId) || "cmis:description".equals(propertyId) || (propertyId.startsWith("cmis:") && propertyId.endsWith("Name"))) {
-                org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl stringProp = 
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl stringProp =
                     new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl(propertyId, value.toString());
                 cmisProperties.addProperty(stringProp);
-                
-            } 
+
+            }
+            // CRITICAL FIX (2025-12-17): Handle multi-value string properties (List values)
+            else if (value instanceof java.util.List) {
+                @SuppressWarnings("unchecked")
+                java.util.List<String> valueList = (java.util.List<String>) value;
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl stringProp =
+                    new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl(propertyId, valueList);
+                cmisProperties.addProperty(stringProp);
+                if (log.isDebugEnabled()) {
+                    log.debug("convertToCmisProperties: Multi-value property " + propertyId + " with " + valueList.size() + " values");
+                }
+            }
             else {
-                // Default to string property for unknown types
-                org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl stringProp = 
+                // Default to single-value string property for unknown types
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl stringProp =
                     new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl(propertyId, value.toString());
                 cmisProperties.addProperty(stringProp);
-                
+
             }
         }
-        
+
         return cmisProperties;
     }
     

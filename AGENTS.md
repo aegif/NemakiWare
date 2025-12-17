@@ -106,11 +106,38 @@ find core/src/main/webapp/ui/tests -name "*.ts" -exec sed -i '' 's|/ui/dist/|/ui
 
 ## 🧪 テスト委譲のプロセス
 
+### 🚀 推奨デプロイ方法（Keycloak自動起動）
+
+**重要**: コード変更後のデプロイには `deploy-with-verification.sh` を使用してください。
+このスクリプトは Keycloak の起動確認・自動起動も行います。
+
+```bash
+# プロジェクトルートから実行
+./deploy-with-verification.sh
+
+# スクリプトが実行すること:
+# - Step 1: UIビルド
+# - Step 2: WARビルド
+# - Step 3a: Keycloak起動確認・自動起動 ← 自動的にKeycloakを起動
+# - Step 3b: NemakiWareビルド
+# - Step 4: サーバー起動待機
+# - Step 5: デプロイ検証（アセットハッシュ確認）
+# - Step 6: 基本APIテスト
+# - Step 7: 外部認証確認
+```
+
+**手動でKeycloakを起動する必要がある場合**:
+```bash
+cd docker
+docker compose -f docker-compose.keycloak.yml up -d
+sleep 60  # Keycloak起動待機
+```
+
 ### ステップ1: 委譲前の準備（委譲元エージェント）
 
 ```bash
-# 1. 環境の健全性確認
-docker ps                       # 全コンテナ起動確認
+# 1. 環境の健全性確認（推奨: deploy-with-verification.sh を先に実行）
+docker ps                       # 全コンテナ起動確認（keycloakを含む4コンテナ）
 ./qa-test.sh                    # QAテスト全通過確認（56/56）
 git status                      # クリーンな状態確認
 
@@ -178,7 +205,8 @@ git push origin <branch-name>
 ### 委譲元エージェント（Claude Code等）
 
 **環境準備**:
-- [ ] Dockerコンテナ全て起動済み（`docker ps`で確認）
+- [ ] **デプロイスクリプト実行推奨**（`./deploy-with-verification.sh` → Keycloak自動起動）⚠️ **推奨**
+- [ ] Dockerコンテナ全て起動済み（`docker ps` → keycloakを含む4コンテナ）
 - [ ] QAテスト全通過（`./qa-test.sh` → 56/56）
 - [ ] **外部認証テスト通過**（`npx playwright test tests/auth/` → 19/19）⚠️ **必須**
 - [ ] **UIパス統一確認**（`grep -r "/ui/dist/"` → ゼロ件）⚠️ **必須**

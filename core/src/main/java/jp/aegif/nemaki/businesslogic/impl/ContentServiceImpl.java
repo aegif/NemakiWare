@@ -1924,12 +1924,28 @@ public class ContentServiceImpl implements ContentService {
 			ids = secondaryTypeIds.getValues();
 		}
 
+		// CRITICAL FIX (2025-12-17): Build a map of existing aspect properties for merging
+		// This ensures that when updating secondary type properties, existing values are preserved
+		// for properties that are not included in the update request
+		Map<String, Map<String, Property>> existingAspectProperties = new HashMap<>();
+		if (content.getAspects() != null) {
+			for (Aspect existingAspect : content.getAspects()) {
+				Map<String, Property> propMap = new HashMap<>();
+				if (existingAspect.getProperties() != null) {
+					for (Property p : existingAspect.getProperties()) {
+						propMap.put(p.getKey(), p);
+					}
+				}
+				existingAspectProperties.put(existingAspect.getName(), propMap);
+			}
+		}
+
 		for (String secondaryTypeId : ids) {
 			if (secondaryTypeId != null && !secondaryTypeId.trim().isEmpty()) {
 				try {
 					org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = getTypeManager()
 							.getTypeDefinition(repositoryId, secondaryTypeId);
-					
+
 					if (td != null && td.getBaseTypeId() == org.apache.chemistry.opencmis.commons.enums.BaseTypeId.CMIS_SECONDARY) {
 						Aspect aspect = new Aspect();
 						aspect.setName(secondaryTypeId);
@@ -1952,19 +1968,49 @@ public class ContentServiceImpl implements ContentService {
 								log.debug("No property definitions found for secondary type " + secondaryTypeId);
 							}
 						}
-						
-						List<Property> props = injectPropertyValue(propDefs, properties, content);
-						aspect.setProperties(props);
+
+						// CRITICAL FIX (2025-12-17): Merge existing properties with new properties
+						// New properties override existing ones, but non-updated properties are preserved
+						List<Property> newProps = injectPropertyValue(propDefs, properties, content);
+						Map<String, Property> existingProps = existingAspectProperties.get(secondaryTypeId);
+
+						List<Property> mergedProps = new ArrayList<>();
+						Set<String> updatedKeys = new HashSet<>();
+
+						// First, add all new/updated properties
+						for (Property p : newProps) {
+							mergedProps.add(p);
+							updatedKeys.add(p.getKey());
+							if (log.isDebugEnabled()) {
+								log.debug("Secondary type {} - adding/updating property: {} = {}",
+									secondaryTypeId, p.getKey(), p.getValue());
+							}
+						}
+
+						// Then, preserve existing properties that were not updated
+						if (existingProps != null) {
+							for (Map.Entry<String, Property> entry : existingProps.entrySet()) {
+								if (!updatedKeys.contains(entry.getKey())) {
+									mergedProps.add(entry.getValue());
+									if (log.isDebugEnabled()) {
+										log.debug("Secondary type {} - preserving existing property: {} = {}",
+											secondaryTypeId, entry.getKey(), entry.getValue().getValue());
+									}
+								}
+							}
+						}
+
+						aspect.setProperties(mergedProps);
 						aspects.add(aspect);
-						
+
 						if (log.isDebugEnabled()) {
-							log.debug("Successfully processed secondary type " + secondaryTypeId + " with " + 
-								(props != null ? props.size() : 0) + " properties");
+							log.debug("Successfully processed secondary type " + secondaryTypeId + " with " +
+								(mergedProps != null ? mergedProps.size() : 0) + " properties (merged)");
 						}
 					} else {
 						if (log.isDebugEnabled()) {
-							log.debug("Secondary type {} is not valid or not a secondary type (td: {}, baseTypeId: {})", 
-								secondaryTypeId, td != null ? "not null" : "null", 
+							log.debug("Secondary type {} is not valid or not a secondary type (td: {}, baseTypeId: {})",
+								secondaryTypeId, td != null ? "not null" : "null",
 								td != null ? td.getBaseTypeId() : "null");
 						}
 					}
@@ -1992,6 +2038,7 @@ public class ContentServiceImpl implements ContentService {
 	private List<Property> injectPropertyValue(Collection<PropertyDefinition<?>> propertyDefnitions,
 			Properties properties, Content content) {
 		List<Property> props = new ArrayList<Property>();
+
 		for (PropertyDefinition<?> pd : propertyDefnitions) {
 			switch (pd.getUpdatability()) {
 			case READONLY:
@@ -2014,8 +2061,10 @@ public class ContentServiceImpl implements ContentService {
 			}
 
 			PropertyData<?> property = properties.getProperties().get(pd.getId());
-			if (property == null)
+			if (property == null) {
 				continue;
+			}
+
 			Property p = new Property();
 			p.setKey(property.getId());
 			switch (pd.getCardinality()) {

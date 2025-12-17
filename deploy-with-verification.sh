@@ -86,7 +86,26 @@ echo "Cleaning up Docker resources..."
 docker compose -f docker-compose-simple.yml down -v 2>/dev/null || true
 docker rmi docker-core 2>/dev/null || true
 
+# Keycloak起動確認と起動
+echo ""
+echo "=== Step 3a: Keycloak起動確認 ==="
+if curl -s --max-time 5 "http://localhost:8088/realms/nemakiware/.well-known/openid-configuration" > /dev/null 2>&1; then
+    echo "Keycloak: 既に起動中"
+else
+    echo "Keycloak: 起動していません。起動します..."
+    docker compose -f docker-compose.keycloak.yml up -d 2>&1 | tail -3
+    echo "Keycloak起動待機 (60秒)..."
+    sleep 60
+    if curl -s --max-time 5 "http://localhost:8088/realms/nemakiware/.well-known/openid-configuration" > /dev/null 2>&1; then
+        echo "Keycloak: 起動完了"
+    else
+        echo "WARNING: Keycloakの起動に問題があります"
+    fi
+fi
+echo ""
+
 # 強制リビルド
+echo "=== Step 3b: NemakiWareビルド ==="
 echo "Building with --no-cache..."
 docker compose -f docker-compose-simple.yml build --no-cache core 2>&1 | tail -5
 docker compose -f docker-compose-simple.yml up -d --force-recreate 2>&1 | tail -10
@@ -146,5 +165,25 @@ else
     exit 1
 fi
 
+# Keycloak最終確認
 echo ""
+echo "=== Step 7: 外部認証確認 ==="
+if curl -s --max-time 5 "http://localhost:8088/realms/nemakiware/.well-known/openid-configuration" > /dev/null 2>&1; then
+    echo "Keycloak: OK (http://localhost:8088)"
+else
+    echo "WARNING: Keycloakに接続できません"
+fi
+
+echo ""
+echo "=============================================="
 echo "デプロイ完了!"
+echo "=============================================="
+echo ""
+echo "起動中のサービス:"
+docker ps --format "  - {{.Names}}: {{.Status}}" | grep -E "core|couchdb|solr|keycloak" || true
+echo ""
+echo "手動検証URL:"
+echo "  - UI: http://localhost:8080/core/ui/"
+echo "  - CMIS: http://localhost:8080/core/atom/bedroom"
+echo "  - Keycloak: http://localhost:8088"
+echo ""

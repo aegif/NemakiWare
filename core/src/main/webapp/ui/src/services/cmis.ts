@@ -2565,7 +2565,11 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       // Use CMIS AtomPub binding for relationships (Browser Binding doesn't support relationships endpoint)
-      xhr.open('GET', `/core/atom/${repositoryId}/relationships?id=${objectId}`, true);
+      // CRITICAL FIX (2025-12-17): Add relationshipDirection=either to get bidirectional relationships
+      // Without this parameter, CMIS defaults to 'source' direction only, meaning relationships where
+      // the object is the TARGET will not be returned. For bidirectional relationships (like
+      // nemaki:bidirectionalRelationship), users expect to see the relationship from both sides.
+      xhr.open('GET', `/core/atom/${repositoryId}/relationships?id=${objectId}&relationshipDirection=either`, true);
       xhr.setRequestHeader('Accept', 'application/atom+xml');
       
       const headers = this.getAuthHeaders();

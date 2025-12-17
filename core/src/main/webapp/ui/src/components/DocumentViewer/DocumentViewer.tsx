@@ -425,16 +425,25 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const handleCheckIn = async (values: any) => {
     if (!object) return;
 
+    // CRITICAL FIX (2025-12-17): Use PWC ID for checkIn operation
+    // When isPrivateWorkingCopy is true, object.id is already the PWC ID
+    // When viewing original document (isVersionSeriesCheckedOut), use pwcId from properties
+    const isPWC = getSafeBooleanValue(object.properties?.['cmis:isPrivateWorkingCopy']);
+    const checkedOutId = getSafeStringValue(object.properties?.['cmis:versionSeriesCheckedOutId']);
+    const effectiveObjectId = isPWC ? object.id : (checkedOutId || object.id);
+    console.log('[DocumentViewer] handleCheckIn using objectId:', effectiveObjectId, '(isPWC:', isPWC, ', checkedOutId:', checkedOutId, ')');
+
     try {
       setLoading(true);
       const file = values.file?.file;
-      await cmisService.checkIn(repositoryId, object.id, file, values);
+      await cmisService.checkIn(repositoryId, effectiveObjectId, file, values);
       message.success('チェックインしました');
       setCheckoutModalVisible(false);
       form.resetFields();
       await loadObject();
       await loadVersionHistory();
     } catch (error) {
+      console.error('[DocumentViewer] handleCheckIn error:', error);
       message.error('チェックインに失敗しました');
     } finally {
       setLoading(false);
@@ -444,12 +453,21 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const handleCancelCheckOut = async () => {
     if (!object) return;
 
+    // CRITICAL FIX (2025-12-17): Use PWC ID for cancelCheckOut operation
+    // When isPrivateWorkingCopy is true, object.id is already the PWC ID
+    // When viewing original document (isVersionSeriesCheckedOut), use pwcId from properties
+    const isPWC = getSafeBooleanValue(object.properties?.['cmis:isPrivateWorkingCopy']);
+    const checkedOutId = getSafeStringValue(object.properties?.['cmis:versionSeriesCheckedOutId']);
+    const effectiveObjectId = isPWC ? object.id : (checkedOutId || object.id);
+    console.log('[DocumentViewer] handleCancelCheckOut using objectId:', effectiveObjectId, '(isPWC:', isPWC, ', checkedOutId:', checkedOutId, ')');
+
     try {
       setLoading(true);
-      await cmisService.cancelCheckOut(repositoryId, object.id);
+      await cmisService.cancelCheckOut(repositoryId, effectiveObjectId);
       message.success('チェックアウトをキャンセルしました');
       await loadObject();
     } catch (error) {
+      console.error('[DocumentViewer] handleCancelCheckOut error:', error);
       message.error('チェックアウトのキャンセルに失敗しました');
     } finally {
       setLoading(false);
@@ -764,11 +782,18 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               <Button
                 icon={<ArrowLeftOutlined />}
                 onClick={() => {
-                  // CRITICAL FIX (2025-12-16): Always navigate with folderId to preserve folder context
-                  console.log('[DocumentViewer] Back button clicked, currentFolderId:', currentFolderId);
-                  console.log('[DocumentViewer] Full URL params:', searchParams.toString());
-                  // Use ROOT_FOLDER_ID as fallback when no folderId in URL
-                  const effectiveFolderId = currentFolderId || 'e02f784f8360a02cc14d1314c10038ff';
+                  // CRITICAL FIX (2025-12-17): Use document's parentId as primary source for back navigation
+                  // Priority: 1. URL folderId param, 2. object's cmis:parentId, 3. ROOT_FOLDER_ID
+                  const urlFolderId = currentFolderId;
+                  const documentParentId = getSafeStringValue(object.properties?.['cmis:parentId']);
+
+                  console.log('[DocumentViewer] Back button clicked');
+                  console.log('[DocumentViewer] URL folderId:', urlFolderId);
+                  console.log('[DocumentViewer] Document parentId:', documentParentId);
+
+                  // Use document's parentId as the most reliable source
+                  // This ensures we return to the document's actual parent folder
+                  const effectiveFolderId = documentParentId || urlFolderId || 'e02f784f8360a02cc14d1314c10038ff';
                   const targetUrl = `/documents?folderId=${effectiveFolderId}`;
                   console.log('[DocumentViewer] Navigating to:', targetUrl);
                   navigate(targetUrl);
