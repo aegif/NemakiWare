@@ -213,6 +213,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize authentication state from localStorage
   React.useEffect(() => {
+    // CRITICAL FIX (2025-12-17): Clean up any stale Ant Design modal overlays
+    // This prevents the gray screen issue after login when a modal mask is left behind
+    const cleanupStaleOverlays = () => {
+      const staleMasks = document.querySelectorAll('.ant-modal-mask, .ant-modal-wrap');
+      staleMasks.forEach((mask) => {
+        // Only remove if the mask doesn't have an associated visible modal
+        const parent = mask.parentElement;
+        const hasVisibleModal = parent?.querySelector('.ant-modal:not([style*="display: none"])');
+        if (!hasVisibleModal) {
+          mask.remove();
+          console.log('AuthContext: Removed stale modal overlay');
+        }
+      });
+    };
+
     const checkAuthState = () => {
       const authService = AuthService.getInstance();
       const currentAuth = authService.getCurrentAuth();
@@ -220,6 +235,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (currentAuth) {
         setAuthToken(currentAuth);
         setIsAuthenticated(true);
+        // Clean up any stale overlays when auth state changes to authenticated
+        cleanupStaleOverlays();
       } else {
         setAuthToken(null);
         setIsAuthenticated(false);
@@ -228,6 +245,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Mark initialization as complete
       setIsLoading(false);
     };
+
+    // Clean up stale overlays on mount
+    cleanupStaleOverlays();
 
     // Initial check
     checkAuthState();

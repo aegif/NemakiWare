@@ -200,7 +200,7 @@
  */
 
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ConfigProvider } from 'antd';
+import { ConfigProvider, App as AntApp } from 'antd';
 import { Layout } from './components/Layout/Layout';
 import { DocumentList } from './components/DocumentList/DocumentList';
 import { DocumentViewer } from './components/DocumentViewer/DocumentViewer';
@@ -302,9 +302,14 @@ function AppContent() {
 function App() {
   return (
     <ConfigProvider theme={customTheme}>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
+      {/* AntApp wraps the entire application to ensure Modal.confirm, message, notification
+          static methods properly integrate with React lifecycle and clean up on unmount.
+          This prevents the gray overlay issue that occurs when modals are not properly destroyed. */}
+      <AntApp>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </AntApp>
     </ConfigProvider>
   );
 }
