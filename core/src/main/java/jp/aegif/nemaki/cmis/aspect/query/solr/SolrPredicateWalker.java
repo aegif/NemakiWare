@@ -592,6 +592,10 @@ public class SolrPredicateWalker{
 	private Query walkTextWord(Tree node) {
 		String nodeText = node.toString();
 		String escapedText = escapeString(nodeText);
+		// CRITICAL FIX (2025-12-17): Use phrase search to prevent tokenization issues
+		// Without quotes, Solr tokenizes 'TEST_KEYWORD' into 'test', 'keyword'
+		// causing incorrect matches for documents containing just 'test'
+		escapedText = '"' + escapedText + '"';
 		Term term = new Term("text", escapedText);
 		TermQuery q = new TermQuery(term);
 		return q;
@@ -601,20 +605,21 @@ public class SolrPredicateWalker{
 		String nodeText = node.toString();
 		String termString = escapeString(nodeText);
 
-		// CRITICAL FIX (2025-12-14): Handle single-quoted search terms properly
-		// For simple terms like 'test', remove quotes and do a term search (not phrase search)
-		// This allows the Solr analyzer to process the term properly
+		// CRITICAL FIX (2025-12-17): Always use phrase search for CONTAINS queries
+		// Previous behavior: single words like 'test_keyword' were searched as individual terms
+		// Problem: Solr tokenizes 'SEARCH_TEST_KEYWORD_123' into 'search', 'test', 'keyword', '123'
+		//          causing documents with just 'test' to incorrectly match
+		// Solution: Always wrap in double quotes to force exact phrase matching
+		//          This ensures 'SEARCH_TEST_KEYWORD_123' only matches documents containing
+		//          that exact sequence of tokens, not any individual token
 		if(termString.charAt(0) == '\'' && termString.charAt(termString.length()-1) == '\'' ){
 			// Remove the single quotes to get the actual search term
 			termString = termString.substring(1, termString.length() - 1);
-
-			// Check if this is a simple term (no spaces) or a phrase (has spaces)
-			if (termString.contains(" ")) {
-				// Multi-word phrase - wrap in double quotes for phrase search
-				termString = '"' + termString + '"';
-			}
-			// Single word - leave as is for term search (no quotes needed)
 		}
+
+		// Always wrap in double quotes to force phrase search
+		// This prevents tokenized words from matching independently
+		termString = '"' + termString + '"';
 
 		Term term = new Term("text", termString);
 		TermQuery q = new TermQuery(term);

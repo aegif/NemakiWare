@@ -1953,13 +1953,15 @@ public class ContentServiceImpl implements ContentService {
 							}
 						}
 						
-						List<Property> props = injectPropertyValue(propDefs, properties, content);
+						// CRITICAL FIX (2025-12-17): Pass true for onlyLocalProperties to exclude inherited properties
+						// This prevents cmis:description and other inherited properties from being saved in aspects
+						List<Property> props = injectPropertyValue(propDefs, properties, content, true);
 						aspect.setProperties(props);
 						aspects.add(aspect);
-						
+
 						if (log.isDebugEnabled()) {
-							log.debug("Successfully processed secondary type " + secondaryTypeId + " with " + 
-								(props != null ? props.size() : 0) + " properties");
+							log.debug("Successfully processed secondary type " + secondaryTypeId + " with " +
+								(props != null ? props.size() : 0) + " local properties (inherited properties excluded)");
 						}
 					} else {
 						if (log.isDebugEnabled()) {
@@ -1991,8 +1993,32 @@ public class ContentServiceImpl implements ContentService {
 
 	private List<Property> injectPropertyValue(Collection<PropertyDefinition<?>> propertyDefnitions,
 			Properties properties, Content content) {
+		return injectPropertyValue(propertyDefnitions, properties, content, false);
+	}
+
+	/**
+	 * Inject property values from request into Property objects.
+	 *
+	 * @param propertyDefnitions Property definitions to process
+	 * @param properties Properties from the update request
+	 * @param content The content being modified
+	 * @param onlyLocalProperties If true, skip inherited properties (used for secondary types)
+	 * @return List of Property objects with values from the request
+	 */
+	private List<Property> injectPropertyValue(Collection<PropertyDefinition<?>> propertyDefnitions,
+			Properties properties, Content content, boolean onlyLocalProperties) {
 		List<Property> props = new ArrayList<Property>();
 		for (PropertyDefinition<?> pd : propertyDefnitions) {
+			// CRITICAL FIX (2025-12-17): Skip inherited properties when building secondary type aspects
+			// This prevents cmis:description and other inherited properties from being saved in aspects
+			// instead of the main document properties
+			if (onlyLocalProperties && pd.isInherited()) {
+				if (log.isDebugEnabled()) {
+					log.debug("Skipping inherited property {} for secondary type aspect", pd.getId());
+				}
+				continue;
+			}
+
 			switch (pd.getUpdatability()) {
 			case READONLY:
 				continue;
