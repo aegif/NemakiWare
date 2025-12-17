@@ -308,13 +308,47 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     }
   };
 
+  // CRITICAL FIX (2025-12-18): Cleanup function to remove any overlays before/after login
+  const performCleanup = () => {
+    // Remove ALL potential overlay elements
+    const overlaySelectors = [
+      '.ant-modal-mask', '.ant-modal-wrap', '.ant-modal-root',
+      '.ant-drawer-mask', '.ant-drawer-wrap',
+      '.ant-spin-blur', '.ant-btn-loading-icon'
+    ];
+    overlaySelectors.forEach(selector => {
+      document.querySelectorAll(selector).forEach(el => {
+        if (el.classList.contains('ant-spin-blur') || el.classList.contains('ant-btn-loading-icon')) {
+          el.classList.remove('ant-spin-blur');
+        } else {
+          el.remove();
+        }
+      });
+    });
+    // Reset body styles
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+    document.body.classList.remove('ant-scrolling-effect');
+  };
+
   const handleSubmit = async (values: { username: string; password: string; repositoryId: string }) => {
     setLoading(true);
     setError(null);
 
     try {
       const auth = await authService.login(values.username, values.password, values.repositoryId);
+
+      // CRITICAL FIX (2025-12-18): Cleanup BEFORE React state transition
+      // This runs AFTER successful login but BEFORE the auth state changes cause re-render
+      performCleanup();
+
+      // Small delay to ensure DOM cleanup completes before state transition
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       onLogin(auth);
+
+      // Additional cleanup after onLogin callback
+      setTimeout(performCleanup, 100);
     } catch (error) {
       setError('ログインに失敗しました。ユーザー名、パスワード、リポジトリIDを確認してください。');
     } finally {
@@ -339,7 +373,14 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         // Set authMethod for IdP-side logout support
         auth.authMethod = 'oidc';
         authService.saveAuth(auth);
+
+        // CRITICAL FIX (2025-12-18): Cleanup before callback and redirect
+        performCleanup();
+
         onLogin(auth);
+
+        // Cleanup again before redirect
+        setTimeout(performCleanup, 50);
 
         // Redirect to main app after successful OIDC authentication
         window.location.href = '/core/ui/';
@@ -397,7 +438,14 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         // Set authMethod for IdP-side logout support
         auth.authMethod = 'saml';
         authService.saveAuth(auth);
+
+        // CRITICAL FIX (2025-12-18): Cleanup before callback and redirect
+        performCleanup();
+
         onLogin(auth);
+
+        // Cleanup again before redirect
+        setTimeout(performCleanup, 50);
 
         // Redirect to main app after successful SAML authentication
         window.location.href = '/core/ui/';

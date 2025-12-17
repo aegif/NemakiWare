@@ -12,7 +12,7 @@
  * - Scalability: Table with pagination handles dozens of custom properties efficiently
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Form,
   Input,
@@ -52,6 +52,61 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
 
   const safePropDefs = propertyDefinitions || {};
 
+  // CRITICAL FIX (2025-12-18): Track previous object ID to detect object changes
+  const prevObjectIdRef = useRef<string | null>(null);
+
+  // CRITICAL FIX (2025-12-18): getInitialValues must be defined before useEffect
+  // to avoid stale closure issues
+  const getInitialValuesInternal = () => {
+    const initialValues: Record<string, any> = {};
+
+    Object.entries(safePropDefs).forEach(([propId, propDef]: [string, PropertyDefinition]) => {
+      let value = object.properties[propId];
+
+      // Extract actual value from Browser Binding format
+      if (typeof value === 'object' && value !== null && !Array.isArray(value) && 'value' in value) {
+        value = value.value;
+      }
+
+      if (value !== undefined && value !== null) {
+        if (propDef.propertyType === 'datetime' && value) {
+          initialValues[propId] = dayjs(value);
+        } else {
+          initialValues[propId] = value;
+        }
+      } else if (propDef.defaultValue && propDef.defaultValue.length > 0) {
+        if (propDef.cardinality === 'multi') {
+          initialValues[propId] = propDef.defaultValue;
+        } else {
+          initialValues[propId] = propDef.defaultValue[0];
+        }
+      }
+    });
+
+    return initialValues;
+  };
+
+  // CRITICAL FIX (2025-12-18): Sync form values when object prop changes
+  // This fixes the issue where Description disappears when re-editing after save
+  // Root cause: Form's initialValues are only read once at mount, not on prop changes
+  // Solution: Use useEffect to explicitly update form values when object changes
+  useEffect(() => {
+    const currentObjectId = object?.id;
+
+    // Only sync if the object has changed (by ID) or if we're in edit mode
+    if (editMode && form) {
+      // Use setTimeout to ensure React has finished updating the DOM
+      // before we set the form values
+      setTimeout(() => {
+        const freshValues = getInitialValuesInternal();
+        form.setFieldsValue(freshValues);
+      }, 0);
+    }
+
+    // Update ref for next comparison
+    prevObjectIdRef.current = currentObjectId;
+  }, [object, editMode, form, safePropDefs]);
+
   const handleSubmit = async (values: Record<string, any>) => {
     setLoading(true);
     try {
@@ -72,7 +127,9 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
 
       await onSave(processedValues);
       setEditMode(false);
-      form.resetFields();
+      // CRITICAL FIX (2025-12-18): Removed form.resetFields() here
+      // The useEffect hook now handles syncing form values with the object prop
+      // This fixes the issue where Description disappeared when re-editing after save
     } finally {
       setLoading(false);
     }
@@ -80,7 +137,9 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
 
   const handleCancel = () => {
     setEditMode(false);
-    form.resetFields();
+    // CRITICAL FIX (2025-12-18): Removed form.resetFields() here
+    // The useEffect hook handles syncing form values with the object prop
+    // When editMode becomes true again, the form will get fresh values
   };
 
   const renderPropertyField = (_propId: string, propDef: PropertyDefinition) => {
@@ -149,35 +208,9 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
     }
   };
 
-  const getInitialValues = () => {
-    const initialValues: Record<string, any> = {};
-
-    Object.entries(safePropDefs).forEach(([propId, propDef]: [string, PropertyDefinition]) => {
-      let value = object.properties[propId];
-
-      // CRITICAL FIX (2025-11-18): Extract actual value from Browser Binding format
-      // Browser Binding returns {value: ..., id: ..., type: ...}, we need just the value
-      if (typeof value === 'object' && value !== null && !Array.isArray(value) && 'value' in value) {
-        value = value.value;
-      }
-
-      if (value !== undefined && value !== null) {
-        if (propDef.propertyType === 'datetime' && value) {
-          initialValues[propId] = dayjs(value);
-        } else {
-          initialValues[propId] = value;
-        }
-      } else if (propDef.defaultValue && propDef.defaultValue.length > 0) {
-        if (propDef.cardinality === 'multi') {
-          initialValues[propId] = propDef.defaultValue;
-        } else {
-          initialValues[propId] = propDef.defaultValue[0];
-        }
-      }
-    });
-
-    return initialValues;
-  };
+  // CRITICAL FIX (2025-12-18): Use getInitialValuesInternal defined above
+  // This ensures form values are correctly synced with the object prop
+  const getInitialValues = getInitialValuesInternal;
 
   const formatDisplayValue = (value: any, propDef: PropertyDefinition): string => {
     if (value === undefined || value === null) return '-';

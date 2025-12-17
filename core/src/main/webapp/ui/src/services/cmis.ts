@@ -2526,7 +2526,12 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       // Use CMIS AtomPub binding for relationships (Browser Binding doesn't support relationships endpoint)
-      xhr.open('GET', `/core/atom/${repositoryId}/relationships?id=${objectId}`, true);
+      // CRITICAL FIX (2025-12-18): Add relationshipDirection=either to get BOTH source and target relationships
+      // Without this parameter, the server defaults to 'source' only, which means:
+      // - Object A shows relationship A→B in its relationships tab
+      // - Object B does NOT show relationship A→B (because B is target, not source)
+      // With 'either', both objects will show the relationship in their tabs (bidirectional display)
+      xhr.open('GET', `/core/atom/${repositoryId}/relationships?id=${objectId}&relationshipDirection=either`, true);
       xhr.setRequestHeader('Accept', 'application/atom+xml');
       
       const headers = this.getAuthHeaders();

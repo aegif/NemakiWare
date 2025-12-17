@@ -213,19 +213,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize authentication state from localStorage
   React.useEffect(() => {
-    // CRITICAL FIX (2025-12-17): Clean up any stale Ant Design modal overlays
-    // This prevents the gray screen issue after login when a modal mask is left behind
+    // CRITICAL FIX (2025-12-17): Comprehensive cleanup of ALL possible overlay elements
+    // This prevents the gray screen issue after login
     const cleanupStaleOverlays = () => {
-      const staleMasks = document.querySelectorAll('.ant-modal-mask, .ant-modal-wrap');
-      staleMasks.forEach((mask) => {
-        // Only remove if the mask doesn't have an associated visible modal
-        const parent = mask.parentElement;
-        const hasVisibleModal = parent?.querySelector('.ant-modal:not([style*="display: none"])');
-        if (!hasVisibleModal) {
-          mask.remove();
-          console.log('AuthContext: Removed stale modal overlay');
+      // List of ALL selectors that could cause gray overlay or block input
+      const overlaySelectors = [
+        '.ant-modal-mask',
+        '.ant-modal-wrap',
+        '.ant-modal-root',
+        '.ant-drawer-mask',
+        '.ant-drawer-wrap',
+        '.ant-image-preview-mask',
+        '.ant-image-preview-wrap',
+        '.ant-spin-nested-loading > .ant-spin-blur',
+        '[class*="ant-"][class*="-mask"]',
+        '[class*="ant-"][class*="-wrap"]:empty',
+      ];
+
+      overlaySelectors.forEach(selector => {
+        try {
+          const elements = document.querySelectorAll(selector);
+          elements.forEach((el) => {
+            // Check if the element is blocking interaction
+            const style = window.getComputedStyle(el);
+            const isBlocking = style.position === 'fixed' || style.position === 'absolute';
+            const hasHighZIndex = parseInt(style.zIndex) > 100;
+            const isOverlay = el.classList.contains('ant-modal-mask') ||
+                             el.classList.contains('ant-drawer-mask') ||
+                             el.classList.contains('ant-spin-blur');
+
+            if (isBlocking || hasHighZIndex || isOverlay) {
+              console.log('AuthContext: Removing potential overlay element:', el.className);
+              if (el.classList.contains('ant-spin-blur')) {
+                el.classList.remove('ant-spin-blur');
+              } else {
+                el.remove();
+              }
+            }
+          });
+        } catch (e) {
+          // Ignore selector errors
         }
       });
+
+      // Reset body styles that could block interaction
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.top = '';
+      document.body.classList.remove('ant-scrolling-effect');
+
+      // Reset root element styles
+      const root = document.getElementById('root');
+      if (root) {
+        root.style.pointerEvents = '';
+        root.style.filter = '';
+        root.style.opacity = '';
+      }
     };
 
     const checkAuthState = () => {
