@@ -74,6 +74,10 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
     if (mimeType.includes('opendocument.text')) return 'OpenDocument テキスト';
     if (mimeType.includes('opendocument.spreadsheet')) return 'OpenDocument スプレッドシート';
     if (mimeType.includes('opendocument.presentation')) return 'OpenDocument プレゼンテーション';
+    if (mimeType === 'application/rtf' || mimeType === 'text/rtf') return 'RTF文書';
+    if (mimeType === 'application/msword') return 'Word文書 (旧形式)';
+    if (mimeType === 'application/vnd.ms-excel') return 'Excel文書 (旧形式)';
+    if (mimeType === 'application/vnd.ms-powerpoint') return 'PowerPoint文書 (旧形式)';
     return 'オフィス文書';
   };
 

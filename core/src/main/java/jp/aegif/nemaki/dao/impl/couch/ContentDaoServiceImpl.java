@@ -900,16 +900,26 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				log.info("CouchFolder created, calling convert()");
 				Content content = folder.convert();
 				log.info("Content converted. Type: " + content.getClass().getSimpleName() + ", ObjectType: " + content.getObjectType());
-				// Ensure objectType is set correctly
-				content.setObjectType(actualType);
+				// CRITICAL FIX (2025-12-19): Use objectType field (subtype) not actualType (base type)
+				// actualType is the "type" field (e.g., "cmis:folder") for routing purposes
+				// objectType is the actual CMIS object type (e.g., "nemaki:folder")
+				// Only set if convert() didn't already set the objectType
+				if (content.getObjectType() == null) {
+					content.setObjectType(objectType != null ? objectType : actualType);
+				}
 				log.info("Final Content - ObjectType: " + content.getObjectType() + ", isFolder: " + content.isFolder());
 				return content;
 			} else if ("document".equals(actualType) || "cmis:document".equals(actualType)) {
 				log.info("Converting to CouchDocument for type: " + actualType);
 				CouchDocument document = mapper.convertValue(actualDocMap, CouchDocument.class);
 				Content content = document.convert();
-				// Ensure objectType is set correctly
-				content.setObjectType(actualType);
+				// CRITICAL FIX (2025-12-19): Use objectType field (subtype) not actualType (base type)
+				// actualType is the "type" field (e.g., "cmis:document") for routing purposes
+				// objectType is the actual CMIS object type (e.g., "nemaki:document")
+				// Only set if convert() didn't already set the objectType
+				if (content.getObjectType() == null) {
+					content.setObjectType(objectType != null ? objectType : actualType);
+				}
 				log.info("Final Document Content - ObjectType: " + content.getObjectType());
 				return content;
 			} else if ("cmis:item".equals(actualType)) {
@@ -937,7 +947,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					// Generic item (fallback)
 					CouchItem ci = mapper.convertValue(actualDocMap, CouchItem.class);
 					Content content = ci.convert();
-					content.setObjectType(actualType);
+					// CRITICAL FIX (2025-12-19): Use objectType field (subtype) not actualType (base type)
+					if (content.getObjectType() == null) {
+						content.setObjectType(objectType != null ? objectType : actualType);
+					}
 					log.info("Final Item - ObjectType: " + content.getObjectType());
 					return content;
 				}
@@ -946,9 +959,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				// Generic content - try to convert to CouchContent
 				CouchContent content = mapper.convertValue(actualDocMap, CouchContent.class);
 				Content convertedContent = content.convert();
-				// Ensure objectType is set correctly
-				if (actualType != null) {
-					convertedContent.setObjectType(actualType);
+				// CRITICAL FIX (2025-12-19): Use objectType field (subtype) not actualType (base type)
+				// Only set if convert() didn't already set the objectType
+				if (convertedContent.getObjectType() == null && actualType != null) {
+					convertedContent.setObjectType(objectType != null ? objectType : actualType);
 				}
 				log.info("Final Generic Content - ObjectType: " + convertedContent.getObjectType());
 				return convertedContent;

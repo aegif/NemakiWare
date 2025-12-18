@@ -5,7 +5,14 @@ export const getFileType = (mimeType: string): 'image' | 'video' | 'pdf' | 'text
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType === 'application/pdf') return 'pdf';
   if (mimeType.startsWith('text/') || mimeType === 'application/json') return 'text';
-  if (mimeType.includes('officedocument') || mimeType.includes('opendocument')) return 'office';
+  // Office documents: OpenXML, ODF, legacy MS Office formats, and RTF
+  if (mimeType.includes('officedocument') ||
+      mimeType.includes('opendocument') ||
+      mimeType === 'application/rtf' ||
+      mimeType === 'text/rtf' ||
+      mimeType === 'application/msword' ||
+      mimeType === 'application/vnd.ms-excel' ||
+      mimeType === 'application/vnd.ms-powerpoint') return 'office';
   return 'unsupported';
 };
 
@@ -38,11 +45,20 @@ export const getSupportedMimeTypes = (): string[] => {
     'application/pdf',
     'text/plain', 'text/html', 'text/css', 'text/javascript', 'text/xml', 'application/json',
     'application/xml', 'text/csv', 'text/markdown',
+    // Modern Office formats (OpenXML)
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    // OpenDocument formats
     'application/vnd.oasis.opendocument.text',
     'application/vnd.oasis.opendocument.spreadsheet',
-    'application/vnd.oasis.opendocument.presentation'
+    'application/vnd.oasis.opendocument.presentation',
+    // Legacy Office formats
+    'application/msword',
+    'application/vnd.ms-excel',
+    'application/vnd.ms-powerpoint',
+    // RTF
+    'application/rtf',
+    'text/rtf'
   ];
 };

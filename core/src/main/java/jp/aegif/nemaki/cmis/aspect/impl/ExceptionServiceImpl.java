@@ -558,8 +558,12 @@ public class ExceptionServiceImpl implements ExceptionService,
 			PropertyDefinition<T> propertyDefinition = (PropertyDefinition<T>) propertyDefinitions
 					.get(pd.getId());
 			// If an input property is not defined one, output error.
-			if (propertyDefinition == null)
-				constraint(objectId, "An undefined property is provided!");
+			if (propertyDefinition == null) {
+				// DEBUG: Log which property is undefined and what type definition was used
+				log.error("UNDEFINED PROPERTY DEBUG: Property '" + pd.getId() + "' is not defined in type '" +
+					typeDefinition.getId() + "'. Available properties: " + propertyDefinitions.keySet());
+				constraint(objectId, "An undefined property is provided! Property: " + pd.getId());
+			}
 
 			// Check "required" flag - COMPLETE TCK COMPLIANCE FIX for updateProperties operations
 			if (propertyDefinition.isRequired() && !DataUtil.valueExist(pd.getValues())) {
