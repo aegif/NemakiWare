@@ -181,6 +181,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 		Matcher time_m = time_p.matcher(statement);
 		statement = time_m.replaceAll("$1:$2:$3");
 
+		// CRITICAL FIX (2025-12-18): Auto-inject JOIN for secondary type properties
+		// This allows queries like "WHERE nemaki:comment LIKE '%test%'" to work without
+		// requiring users to manually add "JOIN nemaki:commentable" to the query
+		statement = injectSecondaryTypeJoins(repositoryId, statement);
+
 		// TODO walker is required?
 
 		if (logger.isDebugEnabled()) {
@@ -287,10 +292,21 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// Build solr statement of WHERE
 		String whereQueryString = "";
 		if (whereTree == null || whereTree.isNil()) {
-			whereQueryString = "*:*";
-			logger.info("[QUERY DEBUG] whereTree is null or nil, using default query: *:*");
+			// CRITICAL FIX (2025-12-18): Try to parse secondary type properties manually
+			// when OpenCMIS parsing fails (e.g., due to FailedPredicateException)
+			String manualWhereQuery = parseSecondaryTypeWhereClause(repositoryId, statement);
+			if (manualWhereQuery != null && !manualWhereQuery.isEmpty()) {
+				whereQueryString = manualWhereQuery;
+				if (logger.isDebugEnabled()) {
+					logger.debug("Using manually parsed WHERE clause for secondary type: " + whereQueryString);
+				}
+			} else {
+				whereQueryString = "*:*";
+				if (logger.isDebugEnabled()) {
+					logger.debug("whereTree is null or nil, using default query: *:*");
+				}
+			}
 		} else {
-			logger.info("[QUERY DEBUG] whereTree found, processing predicate...");
 			try {
 				SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(repositoryId,
 						queryObject, solrUtil, contentService);
@@ -394,12 +410,13 @@ public class SolrQueryProcessor implements QueryProcessor {
 			logger.debug("Query: Added sort by modified desc to prioritize recent documents");
 		}
 		
-		logger.info(solrQuery.toString());
-		logger.info("[QUERY DEBUG] statement: " + statement);
-		logger.info("[QUERY DEBUG] skipCount: " + skipCount);
-		logger.info("[QUERY DEBUG] maxItems: " + maxItems);
-		logger.info("[QUERY DEBUG] whereQueryString: " + whereQueryString);
-		logger.info("[QUERY DEBUG] fromQueryString: " + fromQueryString);
+		if (logger.isDebugEnabled()) {
+			logger.debug("Solr query: " + solrQuery.toString());
+			logger.debug("CMIS statement: " + statement);
+			logger.debug("skipCount: " + skipCount + ", maxItems: " + maxItems);
+			logger.debug("whereQueryString: " + whereQueryString);
+			logger.debug("fromQueryString: " + fromQueryString);
+		}
 		if(skipCount == null){
 			solrQuery.set(CommonParams.START, 0);
 		}else{
@@ -414,19 +431,15 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		QueryResponse resp = null;
 		try {
-			logger.info("[QUERY DEBUG] Creating SolrClient...");
 			if (solrClient == null) {
-				logger.error("[QUERY DEBUG] SolrClient is null!");
+				logger.error("SolrClient is null - cannot execute query");
 				exceptionService.invalidArgument("Solr client initialization failed");
 				return null;
 			}
-			logger.info("[QUERY DEBUG] Executing Solr query: " + solrQuery.toString());
 			// Core name is already included in the URL from SolrUtil.getSolrUrl()
 			resp = solrClient.query(solrQuery);
-			logger.info("[QUERY DEBUG] Solr query executed successfully, response: " + (resp != null ? "not null" : "null"));
 		} catch (SolrServerException | IOException e) {
-			logger.error("[QUERY DEBUG] Solr query failed: " + e.getMessage(), e);
-			e.printStackTrace();
+			logger.error("Solr query failed: " + e.getMessage(), e);
 			exceptionService.invalidArgument("Solr query execution failed: " + e.getMessage());
 			return null;
 		}
@@ -570,13 +583,240 @@ public class SolrQueryProcessor implements QueryProcessor {
 						return whereTree.getChild(0);
 					}
 				}
-				
+
 			}
 		}
-		
+
 		return null;
 	}
-	
+
+	/**
+	 * CRITICAL FIX (2025-12-18): Auto-inject JOIN clauses for secondary type properties
+	 *
+	 * CMIS 1.1 requires that queries using secondary type properties must include
+	 * a JOIN clause for the secondary type. However, this is not intuitive for users.
+	 * This method automatically detects secondary type properties in the WHERE clause
+	 * and injects the appropriate JOIN clauses.
+	 *
+	 * Example transformation:
+	 * Input:  SELECT cmis:objectId FROM cmis:document WHERE nemaki:comment LIKE '%test%'
+	 * Output: SELECT cmis:objectId FROM cmis:document JOIN nemaki:commentable WHERE nemaki:comment LIKE '%test%'
+	 *
+	 * @param repositoryId the repository ID
+	 * @param statement the original CMIS SQL statement
+	 * @return the modified statement with JOIN clauses for secondary types, or original if no changes needed
+	 */
+	private String injectSecondaryTypeJoins(String repositoryId, String statement) {
+		if (statement == null || repositoryId == null || typeManager == null) {
+			return statement;
+		}
+
+		try {
+			// Extract WHERE clause to find property names
+			String upperStatement = statement.toUpperCase();
+			int whereIndex = upperStatement.indexOf(" WHERE ");
+			if (whereIndex < 0) {
+				// No WHERE clause, nothing to do
+				return statement;
+			}
+
+			String whereClause = statement.substring(whereIndex + 7); // After " WHERE "
+
+			// Find property names in WHERE clause (pattern: prefix:name)
+			// This regex matches CMIS property names like "nemaki:comment", "cmis:name", etc.
+			Pattern propPattern = Pattern.compile("([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)");
+			Matcher propMatcher = propPattern.matcher(whereClause);
+
+			java.util.Set<String> secondaryTypesToJoin = new java.util.LinkedHashSet<>();
+
+			while (propMatcher.find()) {
+				String propertyName = propMatcher.group(1);
+
+				// Skip standard CMIS properties (they don't need JOINs)
+				if (propertyName.startsWith("cmis:")) {
+					continue;
+				}
+
+				// Check if this property belongs to a secondary type
+				TypeDefinition secondaryType = typeManager.findSecondaryTypeByPropertyQueryName(repositoryId, propertyName);
+				if (secondaryType != null) {
+					secondaryTypesToJoin.add(secondaryType.getId());
+					if (logger.isDebugEnabled()) {
+						logger.debug("Found secondary type property '" + propertyName + "' -> adding JOIN for '" + secondaryType.getId() + "'");
+					}
+				}
+			}
+
+			// If we found secondary types, inject JOIN clauses
+			if (!secondaryTypesToJoin.isEmpty()) {
+				// Find the FROM clause position
+				int fromIndex = upperStatement.indexOf(" FROM ");
+				if (fromIndex < 0) {
+					return statement;
+				}
+
+				// Find the end of the FROM clause (either WHERE, ORDER BY, or end of string)
+				int fromEndIndex = whereIndex; // We know WHERE exists
+
+				// Build the JOIN clause string
+				StringBuilder joinClause = new StringBuilder();
+				for (String secondaryTypeId : secondaryTypesToJoin) {
+					joinClause.append(" JOIN ").append(secondaryTypeId);
+				}
+
+				// Insert JOIN clause before WHERE
+				String beforeWhere = statement.substring(0, fromEndIndex);
+				String afterIncludingWhere = statement.substring(fromEndIndex);
+				String modifiedStatement = beforeWhere + joinClause.toString() + afterIncludingWhere;
+
+				if (logger.isDebugEnabled()) {
+					logger.debug("Injected secondary type JOIN: " + statement + " -> " + modifiedStatement);
+				}
+
+				return modifiedStatement;
+			}
+
+		} catch (Exception e) {
+			logger.warn("Error in injectSecondaryTypeJoins: " + e.getMessage() + " - using original statement");
+		}
+
+		return statement;
+	}
+
+	/**
+	 * CRITICAL FIX (2025-12-18): Manual parser for secondary type WHERE clauses.
+	 * This is a fallback when OpenCMIS QueryUtilStrict fails to parse queries
+	 * containing secondary type properties (throws FailedPredicateException).
+	 *
+	 * Supports the following patterns:
+	 * - property LIKE 'pattern'
+	 * - property = 'value'
+	 * - property != 'value'
+	 * - property IS NULL
+	 * - property IS NOT NULL
+	 *
+	 * @param repositoryId the repository ID
+	 * @param statement the CMIS SQL statement
+	 * @return Solr query string, or null if parsing fails or no secondary type properties
+	 */
+	private String parseSecondaryTypeWhereClause(String repositoryId, String statement) {
+		if (statement == null || repositoryId == null) {
+			return null;
+		}
+
+		try {
+			// Extract WHERE clause
+			String upperStatement = statement.toUpperCase();
+			int whereIndex = upperStatement.indexOf(" WHERE ");
+			if (whereIndex < 0) {
+				return null;
+			}
+
+			String whereClause = statement.substring(whereIndex + 7).trim();
+
+			// Check if this WHERE clause contains secondary type properties (non-cmis: prefix)
+			Pattern propPattern = Pattern.compile("([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)");
+			Matcher propMatcher = propPattern.matcher(whereClause);
+
+			boolean hasSecondaryTypeProperty = false;
+			while (propMatcher.find()) {
+				String propName = propMatcher.group(1);
+				if (!propName.startsWith("cmis:")) {
+					hasSecondaryTypeProperty = true;
+					break;
+				}
+			}
+
+			if (!hasSecondaryTypeProperty) {
+				return null;
+			}
+
+			// Parse the WHERE clause manually
+			// Support: LIKE, =, !=, <>, IS NULL, IS NOT NULL
+
+			// Pattern for LIKE: property LIKE 'value'
+			Pattern likePattern = Pattern.compile(
+				"([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\\s+LIKE\\s+'([^']*)'",
+				Pattern.CASE_INSENSITIVE
+			);
+			Matcher likeMatcher = likePattern.matcher(whereClause);
+			if (likeMatcher.find()) {
+				String propertyName = likeMatcher.group(1);
+				String pattern = likeMatcher.group(2);
+
+				// Convert to Solr field name
+				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
+
+				// Convert SQL LIKE pattern to Solr wildcard pattern
+				// % -> *, _ as SQL wildcard -> ? (but literal _ should remain _)
+				// Note: This simple conversion treats all _ as wildcards
+				String solrPattern = pattern.replace("%", "*").replace("_", "?");
+
+				if (logger.isDebugEnabled()) {
+					logger.debug("Parsed secondary type LIKE query: " + propertyName + " -> " + solrFieldName + ":" + solrPattern);
+				}
+
+				return solrFieldName + ":" + solrPattern;
+			}
+
+			// Pattern for equals: property = 'value'
+			Pattern equalsPattern = Pattern.compile(
+				"([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*'([^']*)'",
+				Pattern.CASE_INSENSITIVE
+			);
+			Matcher equalsMatcher = equalsPattern.matcher(whereClause);
+			if (equalsMatcher.find()) {
+				String propertyName = equalsMatcher.group(1);
+				String value = equalsMatcher.group(2);
+				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
+				return solrFieldName + ":\"" + value + "\"";
+			}
+
+			// Pattern for not equals: property != 'value' or property <> 'value'
+			Pattern notEqualsPattern = Pattern.compile(
+				"([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\\s*(?:!=|<>)\\s*'([^']*)'",
+				Pattern.CASE_INSENSITIVE
+			);
+			Matcher notEqualsMatcher = notEqualsPattern.matcher(whereClause);
+			if (notEqualsMatcher.find()) {
+				String propertyName = notEqualsMatcher.group(1);
+				String value = notEqualsMatcher.group(2);
+				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
+				return "-" + solrFieldName + ":\"" + value + "\"";
+			}
+
+			// Pattern for IS NULL: property IS NULL
+			Pattern isNullPattern = Pattern.compile(
+				"([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\\s+IS\\s+NULL",
+				Pattern.CASE_INSENSITIVE
+			);
+			Matcher isNullMatcher = isNullPattern.matcher(whereClause);
+			if (isNullMatcher.find()) {
+				String propertyName = isNullMatcher.group(1);
+				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
+				return "-" + solrFieldName + ":[* TO *]";
+			}
+
+			// Pattern for IS NOT NULL: property IS NOT NULL
+			Pattern isNotNullPattern = Pattern.compile(
+				"([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\\s+IS\\s+NOT\\s+NULL",
+				Pattern.CASE_INSENSITIVE
+			);
+			Matcher isNotNullMatcher = isNotNullPattern.matcher(whereClause);
+			if (isNotNullMatcher.find()) {
+				String propertyName = isNotNullMatcher.group(1);
+				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
+				return solrFieldName + ":[* TO *]";
+			}
+
+			return null;
+
+		} catch (Exception e) {
+			logger.warn("Error parsing secondary type WHERE clause: " + e.getMessage());
+			return null;
+		}
+	}
+
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
 	}

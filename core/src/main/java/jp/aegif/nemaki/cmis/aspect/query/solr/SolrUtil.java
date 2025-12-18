@@ -408,6 +408,81 @@ public class SolrUtil implements ApplicationContextAware {
 			doc.addField("change_token", content.getChangeToken());
 		}
 
+		// CRITICAL FIX (2025-12-18): Index secondary type IDs for cmis:secondaryObjectTypeIds queries
+		List<String> secondaryIds = content.getSecondaryIds();
+		if (secondaryIds != null && !secondaryIds.isEmpty()) {
+			for (String secondaryId : secondaryIds) {
+				doc.addField("secondary_object_type_ids", secondaryId);
+			}
+			if (log.isDebugEnabled()) {
+				log.debug("Added {} secondary type IDs for content: {}", secondaryIds.size(), content.getId());
+			}
+		}
+
+		// CRITICAL FIX (2025-12-18): Index secondary type (aspect) properties for attribute search
+		// This enables queries like: nemaki:comment LIKE '%テスト%'
+		// NOTE: Field names should NOT be escaped when adding to SolrInputDocument
+		// Escaping is only needed in query strings, not field names
+		List<jp.aegif.nemaki.model.Aspect> aspects = content.getAspects();
+		if (aspects != null && !aspects.isEmpty()) {
+			for (jp.aegif.nemaki.model.Aspect aspect : aspects) {
+				List<jp.aegif.nemaki.model.Property> properties = aspect.getProperties();
+				if (properties != null) {
+					for (jp.aegif.nemaki.model.Property prop : properties) {
+						String key = prop.getKey();
+						Object value = prop.getValue();
+						if (key != null && value != null) {
+							// Use dynamic field naming convention for custom properties
+							// Matches Solr dynamicField pattern: dynamic.* (no escaping needed for field names)
+							String solrFieldName = "dynamic.property." + key;
+
+							// Handle multi-value properties (List) vs single value
+							if (value instanceof List) {
+								for (Object item : (List<?>) value) {
+									if (item != null) {
+										doc.addField(solrFieldName, item.toString());
+									}
+								}
+							} else {
+								doc.addField(solrFieldName, value.toString());
+							}
+
+							if (log.isDebugEnabled()) {
+								log.debug("Added aspect property {} = {} for content: {}", key, value, content.getId());
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// CRITICAL FIX (2025-12-18): Index subtype properties (from primary type subtypes)
+		List<jp.aegif.nemaki.model.Property> subTypeProperties = content.getSubTypeProperties();
+		if (subTypeProperties != null && !subTypeProperties.isEmpty()) {
+			for (jp.aegif.nemaki.model.Property prop : subTypeProperties) {
+				String key = prop.getKey();
+				Object value = prop.getValue();
+				if (key != null && value != null) {
+					// Use dynamic field naming convention (no escaping for field names)
+					String solrFieldName = "dynamic.property." + key;
+
+					if (value instanceof List) {
+						for (Object item : (List<?>) value) {
+							if (item != null) {
+								doc.addField(solrFieldName, item.toString());
+							}
+						}
+					} else {
+						doc.addField(solrFieldName, value.toString());
+					}
+
+					if (log.isDebugEnabled()) {
+						log.debug("Added subtype property {} = {} for content: {}", key, value, content.getId());
+					}
+				}
+			}
+		}
+
 		if (log.isDebugEnabled()) {
 			log.debug("Created Solr document for content: {} with {} fields", content.getId(), doc.size());
 		}

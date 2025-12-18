@@ -4381,16 +4381,123 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			log.warn("Cannot invalidate type cache for null or empty repositoryId");
 			return;
 		}
-		
+
 		log.info("Invalidating type cache for repository: " + repositoryId);
-		
+
 		try {
 			// Use existing cache invalidation infrastructure
 			invalidateTypeDefinitionCache(repositoryId);
-			
+
 			log.info("✅ Type cache invalidated successfully for repository: " + repositoryId);
 		} catch (Exception e) {
 			log.error("❌ Failed to invalidate type cache for repository: " + repositoryId, e);
 		}
+	}
+
+	/**
+	 * CRITICAL FIX (2025-12-18): Find the secondary type that contains a given property
+	 * This is needed for CMIS SQL query processing where secondary type properties
+	 * require JOINs to be searchable.
+	 *
+	 * @param repositoryId repository ID
+	 * @param propertyQueryName query name of the property (e.g., "nemaki:comment")
+	 * @return TypeDefinition of the secondary type containing this property, or null if not found
+	 */
+	@Override
+	public TypeDefinition findSecondaryTypeByPropertyQueryName(String repositoryId, String propertyQueryName) {
+		if (repositoryId == null || propertyQueryName == null) {
+			return null;
+		}
+
+		try {
+			// CRITICAL FIX (2025-12-18): Get ALL types from the TYPES map, not just root types
+			// The getTypeDefinitionList() method only returns root types (parentTypeId == null)
+			// But secondary types like nemaki:commentable have parentTypeId = "cmis:secondary"
+			// so they are not included in getTypeDefinitionList()
+			ensureInitialized();
+			Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+			if (types == null || types.isEmpty()) {
+				log.warn("findSecondaryTypeByPropertyQueryName: No types found for repository " + repositoryId);
+				return null;
+			}
+			Collection<TypeDefinitionContainer> allTypes = types.values();
+
+			if (log.isDebugEnabled()) {
+				log.debug("findSecondaryTypeByPropertyQueryName: Searching for property '" + propertyQueryName + "' in " + allTypes.size() + " types");
+			}
+
+			// Iterate through all types to find secondary types
+			for (TypeDefinitionContainer container : allTypes) {
+				TypeDefinition typeDef = container.getTypeDefinition();
+				if (typeDef == null) {
+					continue;
+				}
+
+				String typeId = typeDef.getId();
+
+				// CRITICAL FIX (2025-12-18): Multiple ways to detect secondary types
+				// 1. Check baseTypeId enum
+				// 2. Check if parent is cmis:secondary
+				// 3. Check if type ID starts with secondary type prefixes
+				boolean isSecondaryType = false;
+
+				// Method 1: Check baseTypeId enum
+				if (typeDef.getBaseTypeId() == org.apache.chemistry.opencmis.commons.enums.BaseTypeId.CMIS_SECONDARY) {
+					isSecondaryType = true;
+				}
+
+				// Method 2: Check parent type ID
+				if (!isSecondaryType && typeDef.getParentTypeId() != null) {
+					String parentId = typeDef.getParentTypeId();
+					if ("cmis:secondary".equals(parentId) || parentId.contains("secondary")) {
+						isSecondaryType = true;
+					}
+				}
+
+				// Method 3: Check type ID (fallback for types with missing baseTypeId)
+				// Skip base types (cmis:document, cmis:folder, cmis:relationship, cmis:policy, cmis:item)
+				if (!isSecondaryType) {
+					if (typeId != null && !typeId.startsWith("cmis:") &&
+						!"cmis:secondary".equals(typeId)) {
+						// Check if this is a custom type that might be secondary
+						// by looking for properties that are not in base types
+						// This is a heuristic - if the type has the property we're looking for
+						// and it's not a primary type, it might be a secondary type
+						Map<String, PropertyDefinition<?>> props = typeDef.getPropertyDefinitions();
+						if (props != null && props.containsKey(propertyQueryName)) {
+							// Found the property - check if this type inherits from a base type
+							org.apache.chemistry.opencmis.commons.enums.BaseTypeId baseId = typeDef.getBaseTypeId();
+							if (baseId == null || baseId == org.apache.chemistry.opencmis.commons.enums.BaseTypeId.CMIS_SECONDARY) {
+								isSecondaryType = true;
+							}
+						}
+					}
+				}
+
+				if (isSecondaryType) {
+					// Check if this type has the property
+					Map<String, PropertyDefinition<?>> props = typeDef.getPropertyDefinitions();
+					if (props != null) {
+						for (PropertyDefinition<?> prop : props.values()) {
+							if (propertyQueryName.equals(prop.getQueryName()) ||
+								propertyQueryName.equals(prop.getId())) {
+								if (log.isDebugEnabled()) {
+									log.debug("findSecondaryTypeByPropertyQueryName: Found secondary type '" + typeDef.getId() + "' containing property '" + propertyQueryName + "'");
+								}
+								return typeDef;
+							}
+						}
+					}
+				}
+			}
+
+			if (log.isDebugEnabled()) {
+				log.debug("findSecondaryTypeByPropertyQueryName: Property '" + propertyQueryName + "' not found in any secondary type");
+			}
+		} catch (Exception e) {
+			log.warn("Error finding secondary type for property '" + propertyQueryName + "': " + e.getMessage(), e);
+		}
+
+		return null;
 	}
 }
