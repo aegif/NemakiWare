@@ -56,15 +56,19 @@ public class CouchDocument extends CouchContent {
 
 	private Boolean immutable;
 	
+	private static final org.apache.commons.logging.Log log = org.apache.commons.logging.LogFactory.getLog(CouchDocument.class);
+
 	public CouchDocument(){
 		super();
+		log.info("!!! CouchDocument: DEFAULT CONSTRUCTOR called");
 	}
-	
+
 	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
 	@JsonCreator
 	public CouchDocument(Map<String, Object> properties) {
 		super(properties); // 親クラスのMapコンストラクタを呼び出し
-		
+		log.info("!!! CouchDocument: @JsonCreator CONSTRUCTOR called with " + (properties != null ? properties.size() : 0) + " properties");
+
 		if (properties != null) {
 			// CouchDocument固有のフィールドマッピング
 			this.attachmentNodeId = (String) properties.get("attachmentNodeId");

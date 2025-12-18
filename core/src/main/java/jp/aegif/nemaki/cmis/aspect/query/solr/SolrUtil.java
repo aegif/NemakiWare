@@ -410,9 +410,15 @@ public class SolrUtil implements ApplicationContextAware {
 
 		// CRITICAL FIX (2025-12-18): Index secondary type IDs for cmis:secondaryObjectTypeIds queries
 		List<String> secondaryIds = content.getSecondaryIds();
+		// DIAGNOSTIC LOG (2025-12-18): Always log at INFO level to diagnose indexing issues
+		log.info("!!! SOLR INDEXING: content={}, secondaryIds={}, secondaryIds.size={}",
+				content.getId(),
+				secondaryIds,
+				secondaryIds != null ? secondaryIds.size() : "null");
 		if (secondaryIds != null && !secondaryIds.isEmpty()) {
 			for (String secondaryId : secondaryIds) {
 				doc.addField("secondary_object_type_ids", secondaryId);
+				log.info("!!! SOLR: Added secondary_object_type_ids={} for content={}", secondaryId, content.getId());
 			}
 			if (log.isDebugEnabled()) {
 				log.debug("Added {} secondary type IDs for content: {}", secondaryIds.size(), content.getId());
@@ -424,9 +430,18 @@ public class SolrUtil implements ApplicationContextAware {
 		// NOTE: Field names should NOT be escaped when adding to SolrInputDocument
 		// Escaping is only needed in query strings, not field names
 		List<jp.aegif.nemaki.model.Aspect> aspects = content.getAspects();
+		// DIAGNOSTIC LOG (2025-12-18): Always log at INFO level to diagnose indexing issues
+		log.info("!!! SOLR INDEXING: content={}, aspects={}, aspects.size={}",
+				content.getId(),
+				aspects,
+				aspects != null ? aspects.size() : "null");
 		if (aspects != null && !aspects.isEmpty()) {
 			for (jp.aegif.nemaki.model.Aspect aspect : aspects) {
+				log.info("!!! SOLR: Processing aspect={} for content={}", aspect.getName(), content.getId());
 				List<jp.aegif.nemaki.model.Property> properties = aspect.getProperties();
+				log.info("!!! SOLR: aspect={} has {} properties: {}", aspect.getName(),
+						properties != null ? properties.size() : "null",
+						properties != null ? properties : "null");
 				if (properties != null) {
 					for (jp.aegif.nemaki.model.Property prop : properties) {
 						String key = prop.getKey();
@@ -441,10 +456,12 @@ public class SolrUtil implements ApplicationContextAware {
 								for (Object item : (List<?>) value) {
 									if (item != null) {
 										doc.addField(solrFieldName, item.toString());
+										log.info("!!! SOLR: Added {}={} (multivalue item) for content={}", solrFieldName, item, content.getId());
 									}
 								}
 							} else {
 								doc.addField(solrFieldName, value.toString());
+								log.info("!!! SOLR: Added {}={} for content={}", solrFieldName, value, content.getId());
 							}
 
 							if (log.isDebugEnabled()) {

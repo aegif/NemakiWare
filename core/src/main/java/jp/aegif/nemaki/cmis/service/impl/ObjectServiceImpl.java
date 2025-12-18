@@ -1047,6 +1047,13 @@ public class ObjectServiceImpl implements ObjectService {
 		// Allow null properties for secondary type operations
 		// Properties can be null when only modifying secondary types
 		// exceptionService.invalidArgumentRequired("properties", properties);
+
+		// CRITICAL FIX (2025-12-18): Invalidate content cache BEFORE getting content for update
+		// This ensures we get fresh data from CouchDB including correct aspect properties
+		// Without this fix, cached content with empty aspects would cause property loss during updates
+		nemakiCachePool.get(repositoryId).getContentCache().remove(objectId.getValue());
+		log.info("!!! checkExceptionBeforeUpdateProperties: Invalidated content cache for " + objectId.getValue() + " before update");
+
 		Content content = contentService.getContent(repositoryId, objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
 		if (content.isDocument()) {

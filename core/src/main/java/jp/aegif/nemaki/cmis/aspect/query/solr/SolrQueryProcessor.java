@@ -311,12 +311,37 @@ public class SolrQueryProcessor implements QueryProcessor {
 				SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(repositoryId,
 						queryObject, solrUtil, contentService);
 				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
-				whereQueryString = whereQuery.toString();
-				} catch (Exception e) {
+
+				// CRITICAL FIX (2025-12-18): Handle null whereQuery from walkPredicate
+				// walkPredicate can return null for unsupported patterns like ANY cmis:secondaryObjectTypeIds IN (...)
+				if (whereQuery != null) {
+					whereQueryString = whereQuery.toString();
+				} else {
+					// Fall back to manual parsing
+					String manualWhereQuery = parseSecondaryTypeWhereClause(repositoryId, statement);
+					if (manualWhereQuery != null && !manualWhereQuery.isEmpty()) {
+						whereQueryString = manualWhereQuery;
+						if (logger.isDebugEnabled()) {
+							logger.debug("walkPredicate returned null, using manually parsed WHERE clause: " + whereQueryString);
+						}
+					} else {
+						whereQueryString = "*:*";
+						if (logger.isDebugEnabled()) {
+							logger.debug("walkPredicate returned null, using default query: *:*");
+						}
+					}
+				}
+			} catch (Exception e) {
 				logger.error("Error in SolrPredicateWalker.walkPredicate: " + e.getMessage(), e);
-				e.printStackTrace();
-				// TODO Output more detailed exception
-				exceptionService.invalidArgument("Invalid CMIS SQL statement: " + e.getMessage());
+				// CRITICAL FIX (2025-12-18): Try manual parsing before throwing exception
+				String manualWhereQuery = parseSecondaryTypeWhereClause(repositoryId, statement);
+				if (manualWhereQuery != null && !manualWhereQuery.isEmpty()) {
+					whereQueryString = manualWhereQuery;
+					logger.info("Using manually parsed WHERE clause after walkPredicate error: " + whereQueryString);
+				} else {
+					e.printStackTrace();
+					exceptionService.invalidArgument("Invalid CMIS SQL statement: " + e.getMessage());
+				}
 			}
 		}
 
@@ -694,6 +719,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 * - property != 'value'
 	 * - property IS NULL
 	 * - property IS NOT NULL
+	 * - ANY cmis:secondaryObjectTypeIds IN ('type1', 'type2')
 	 *
 	 * @param repositoryId the repository ID
 	 * @param statement the CMIS SQL statement
@@ -713,6 +739,63 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 
 			String whereClause = statement.substring(whereIndex + 7).trim();
+			String upperWhereClause = whereClause.toUpperCase();
+
+			// CRITICAL FIX (2025-12-18): Handle cmis:secondaryObjectTypeIds queries
+			// Pattern: ANY cmis:secondaryObjectTypeIds IN ('value1', 'value2', ...)
+			if (upperWhereClause.contains("SECONDARYOBJECTTYPEIDS")) {
+				Pattern anyInPattern = Pattern.compile(
+					"ANY\\s+cmis:secondaryObjectTypeIds\\s+IN\\s*\\(([^)]+)\\)",
+					Pattern.CASE_INSENSITIVE
+				);
+				Matcher anyInMatcher = anyInPattern.matcher(whereClause);
+				if (anyInMatcher.find()) {
+					String valuesStr = anyInMatcher.group(1);
+					// Parse values: 'value1', 'value2', ...
+					Pattern valuePattern = Pattern.compile("'([^']*)'");
+					Matcher valueMatcher = valuePattern.matcher(valuesStr);
+
+					List<String> values = new ArrayList<>();
+					while (valueMatcher.find()) {
+						values.add(valueMatcher.group(1));
+					}
+
+					if (!values.isEmpty()) {
+						// Build Solr query for multi-valued field
+						// secondary_object_type_ids:(value1 OR value2 OR ...)
+						StringBuilder solrQuery = new StringBuilder();
+						solrQuery.append("secondary_object_type_ids:(");
+						for (int i = 0; i < values.size(); i++) {
+							if (i > 0) {
+								solrQuery.append(" OR ");
+							}
+							// Escape colons in type IDs for Solr
+							solrQuery.append(values.get(i).replace(":", "\\:"));
+						}
+						solrQuery.append(")");
+
+						if (logger.isDebugEnabled()) {
+							logger.debug("Parsed cmis:secondaryObjectTypeIds ANY IN query: " + solrQuery);
+						}
+						return solrQuery.toString();
+					}
+				}
+
+				// Pattern: cmis:secondaryObjectTypeIds = 'value' (single value)
+				Pattern equalsPattern = Pattern.compile(
+					"cmis:secondaryObjectTypeIds\\s*=\\s*'([^']*)'",
+					Pattern.CASE_INSENSITIVE
+				);
+				Matcher equalsMatcher = equalsPattern.matcher(whereClause);
+				if (equalsMatcher.find()) {
+					String value = equalsMatcher.group(1);
+					String solrQuery = "secondary_object_type_ids:" + value.replace(":", "\\:");
+					if (logger.isDebugEnabled()) {
+						logger.debug("Parsed cmis:secondaryObjectTypeIds = query: " + solrQuery);
+					}
+					return solrQuery;
+				}
+			}
 
 			// Check if this WHERE clause contains secondary type properties (non-cmis: prefix)
 			Pattern propPattern = Pattern.compile("([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)");

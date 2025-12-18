@@ -1897,6 +1897,17 @@ public class ContentServiceImpl implements ContentService {
 		// The isEmpty() check prevented secondary type deletion
 		if (secondary != null) {
 			content.setAspects(secondary);
+
+			// CRITICAL FIX (2025-12-18): Also set secondaryIds to match the aspects
+			// This ensures that when secondary types are updated, both aspects AND secondaryIds are persisted
+			// Without this, Solr indexing couldn't find the secondary type IDs
+			List<String> secondaryIds = new ArrayList<>();
+			for (Aspect aspect : secondary) {
+				if (aspect.getName() != null) {
+					secondaryIds.add(aspect.getName());
+				}
+			}
+			content.setSecondaryIds(secondaryIds);
 		}
 
 		// Set modified signature
@@ -1924,12 +1935,25 @@ public class ContentServiceImpl implements ContentService {
 			ids = secondaryTypeIds.getValues();
 		}
 
+		// CRITICAL FIX (2025-12-18): Build a map of existing aspects from content for property preservation
+		// This ensures that existing aspect properties are not lost during updates
+		Map<String, Aspect> existingAspectsMap = new java.util.HashMap<>();
+		List<Aspect> existingAspects = content.getAspects();
+		if (existingAspects != null) {
+			for (Aspect existingAspect : existingAspects) {
+				if (existingAspect.getName() != null) {
+					existingAspectsMap.put(existingAspect.getName(), existingAspect);
+				}
+			}
+		}
+		log.info("!!! buildSecondaryTypes: Found " + existingAspectsMap.size() + " existing aspects in content");
+
 		for (String secondaryTypeId : ids) {
 			if (secondaryTypeId != null && !secondaryTypeId.trim().isEmpty()) {
 				try {
 					org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = getTypeManager()
 							.getTypeDefinition(repositoryId, secondaryTypeId);
-					
+
 					if (td != null && td.getBaseTypeId() == org.apache.chemistry.opencmis.commons.enums.BaseTypeId.CMIS_SECONDARY) {
 						Aspect aspect = new Aspect();
 						aspect.setName(secondaryTypeId);
@@ -1952,21 +1976,27 @@ public class ContentServiceImpl implements ContentService {
 								log.debug("No property definitions found for secondary type " + secondaryTypeId);
 							}
 						}
-						
+
 						// CRITICAL FIX (2025-12-17): Pass true for onlyLocalProperties to exclude inherited properties
 						// This prevents cmis:description and other inherited properties from being saved in aspects
-						List<Property> props = injectPropertyValue(propDefs, properties, content, true);
-						aspect.setProperties(props);
+						List<Property> newProps = injectPropertyValue(propDefs, properties, content, true);
+
+						// CRITICAL FIX (2025-12-18): Preserve existing aspect properties that aren't being updated
+						// This fixes the bug where aspect properties (like nemaki:comment) were lost during document update
+						Aspect existingAspect = existingAspectsMap.get(secondaryTypeId);
+						List<Property> mergedProps = mergeAspectProperties(existingAspect, newProps, properties, secondaryTypeId);
+
+						aspect.setProperties(mergedProps);
 						aspects.add(aspect);
 
-						if (log.isDebugEnabled()) {
-							log.debug("Successfully processed secondary type " + secondaryTypeId + " with " +
-								(props != null ? props.size() : 0) + " local properties (inherited properties excluded)");
-						}
+						log.info("!!! buildSecondaryTypes: Processed secondary type " + secondaryTypeId + " with " +
+							(mergedProps != null ? mergedProps.size() : 0) + " merged properties (new: " +
+							(newProps != null ? newProps.size() : 0) + ", existing preserved: " +
+							(mergedProps != null && newProps != null ? (mergedProps.size() - newProps.size()) : 0) + ")");
 					} else {
 						if (log.isDebugEnabled()) {
-							log.debug("Secondary type {} is not valid or not a secondary type (td: {}, baseTypeId: {})", 
-								secondaryTypeId, td != null ? "not null" : "null", 
+							log.debug("Secondary type {} is not valid or not a secondary type (td: {}, baseTypeId: {})",
+								secondaryTypeId, td != null ? "not null" : "null",
 								td != null ? td.getBaseTypeId() : "null");
 						}
 					}
@@ -1978,6 +2008,74 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 		return aspects;
+	}
+
+	/**
+	 * Merge existing aspect properties with new properties from the update request.
+	 * This preserves existing property values that aren't being explicitly updated.
+	 *
+	 * CRITICAL FIX (2025-12-18): Without this merge logic, aspect properties like nemaki:comment
+	 * would be lost when updating other document properties.
+	 *
+	 * @param existingAspect The existing aspect from content (may be null if aspect is new)
+	 * @param newProps Properties extracted from the update request
+	 * @param updateProperties The full properties from the update request (to check what's being updated)
+	 * @param secondaryTypeId The secondary type ID for logging
+	 * @return Merged list of properties (existing + new, with new overwriting existing on conflict)
+	 */
+	private List<Property> mergeAspectProperties(Aspect existingAspect, List<Property> newProps,
+			Properties updateProperties, String secondaryTypeId) {
+		// If no existing aspect, just return new properties
+		if (existingAspect == null || existingAspect.getProperties() == null || existingAspect.getProperties().isEmpty()) {
+			log.info("!!! mergeAspectProperties: No existing aspect for " + secondaryTypeId + ", returning new props only");
+			return newProps != null ? newProps : new ArrayList<>();
+		}
+
+		// Build a map of new property keys for quick lookup
+		Set<String> newPropKeys = new java.util.HashSet<>();
+		Set<String> updateRequestKeys = new java.util.HashSet<>();
+
+		if (newProps != null) {
+			for (Property prop : newProps) {
+				if (prop.getKey() != null) {
+					newPropKeys.add(prop.getKey());
+				}
+			}
+		}
+
+		// Also get all property keys from the update request to know what's being explicitly updated
+		if (updateProperties != null && updateProperties.getProperties() != null) {
+			updateRequestKeys.addAll(updateProperties.getProperties().keySet());
+		}
+
+		// Start with new properties
+		Map<String, Property> mergedMap = new java.util.LinkedHashMap<>();
+		if (newProps != null) {
+			for (Property prop : newProps) {
+				if (prop.getKey() != null) {
+					mergedMap.put(prop.getKey(), prop);
+				}
+			}
+		}
+
+		// Add existing properties that aren't being updated
+		int preservedCount = 0;
+		for (Property existingProp : existingAspect.getProperties()) {
+			String key = existingProp.getKey();
+			if (key != null && !mergedMap.containsKey(key)) {
+				// Only preserve if the property isn't explicitly being updated (even to null)
+				if (!updateRequestKeys.contains(key)) {
+					mergedMap.put(key, existingProp);
+					preservedCount++;
+					log.info("!!! mergeAspectProperties: Preserved existing property " + key + "=" + existingProp.getValue() + " for " + secondaryTypeId);
+				}
+			}
+		}
+
+		log.info("!!! mergeAspectProperties: Merged " + mergedMap.size() + " total properties for " + secondaryTypeId +
+			" (new: " + newPropKeys.size() + ", preserved: " + preservedCount + ")");
+
+		return new ArrayList<>(mergedMap.values());
 	}
 
 	private List<String> getSecondaryTypeIds(Content content) {
@@ -2108,9 +2206,11 @@ public class ContentServiceImpl implements ContentService {
 				result = contentDaoService.update(repositoryId, (Item) content);
 			}
 		}
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Call Solr indexing(optional) - CRITICAL FIX (2025-12-18): Enable Solr indexing on update
+		// This ensures secondary type properties are indexed after updates
+		if (solrUtil != null && result != null) {
+			solrUtil.indexDocument(repositoryId, result);
+		}
 
 		return result;
 	}

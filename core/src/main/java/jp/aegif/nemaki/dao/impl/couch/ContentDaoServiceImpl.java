@@ -843,7 +843,33 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				if (parentIdObj != null) actualDocMap.put("parentId", parentIdObj);
 				if (aspectsObj != null) actualDocMap.put("aspects", aspectsObj);
 			}
-			
+
+			// CRITICAL FIX (2025-12-18): Always explicitly retrieve aspects and secondaryIds
+			// These fields are essential for Solr indexing of secondary type properties
+			// The getProperties() method may not include these complex nested fields
+			if (!actualDocMap.containsKey("aspects")) {
+				Object aspectsObj = doc.get("aspects");
+				if (aspectsObj != null) {
+					actualDocMap.put("aspects", aspectsObj);
+					log.info("CLOUDANT FIX: Explicitly added aspects field to actualDocMap");
+				}
+			}
+			if (!actualDocMap.containsKey("secondaryIds")) {
+				Object secondaryIdsObj = doc.get("secondaryIds");
+				if (secondaryIdsObj != null) {
+					actualDocMap.put("secondaryIds", secondaryIdsObj);
+					log.info("CLOUDANT FIX: Explicitly added secondaryIds field to actualDocMap");
+				}
+			}
+			// Log the aspects/secondaryIds status for debugging
+			log.info("CLOUDANT DEBUG: actualDocMap contains aspects=" + actualDocMap.containsKey("aspects")
+					+ ", secondaryIds=" + actualDocMap.containsKey("secondaryIds"));
+			if (actualDocMap.containsKey("aspects")) {
+				Object aspectsVal = actualDocMap.get("aspects");
+				log.info("CLOUDANT DEBUG: aspects value type=" + (aspectsVal != null ? aspectsVal.getClass().getName() : "null")
+						+ ", value=" + aspectsVal);
+			}
+
 			log.info("Type fields - type: " + type + ", objectType: " + objectType);
 			
 			// Use objectType if type is null, otherwise use type

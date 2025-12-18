@@ -54,13 +54,15 @@ public class CouchContent extends CouchNodeBase{
 
 	public CouchContent(){
 		super();
+		log.info("!!! CouchContent: DEFAULT CONSTRUCTOR called (no @JsonCreator)");
 	}
-	
+
 	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
 	@JsonCreator
 	public CouchContent(Map<String, Object> properties) {
 		super(properties); // 親クラスのMapコンストラクタを呼び出し
-		
+		log.info("!!! CouchContent: @JsonCreator CONSTRUCTOR called with " + (properties != null ? properties.size() : 0) + " properties");
+
 		if (properties != null) {
 			// CouchContent固有のフィールドマッピング
 			this.name = (String) properties.get("name");
@@ -123,20 +125,25 @@ public class CouchContent extends CouchNodeBase{
 
 			// CRITICAL FIX (2025-12-17): aspects conversion - Secondary type properties were not being loaded from CouchDB
 			// This is why nemaki:comment and other secondary type properties showed as null after update
+			log.info("!!! CouchContent @JsonCreator: checking for aspects field in properties map");
 			if (properties.containsKey("aspects")) {
 				Object aspectsValue = properties.get("aspects");
+				log.info("!!! CouchContent @JsonCreator: aspectsValue type=" + (aspectsValue != null ? aspectsValue.getClass().getName() : "null"));
 				if (aspectsValue instanceof List) {
 					@SuppressWarnings("unchecked")
 					List<Map<String, Object>> aspectsList = (List<Map<String, Object>>) aspectsValue;
+					log.info("!!! CouchContent @JsonCreator: aspectsList.size()=" + aspectsList.size());
 					List<Aspect> convertedAspects = new ArrayList<Aspect>();
 					for (Map<String, Object> aspectMap : aspectsList) {
 						String aspectName = (String) aspectMap.get("name");
+						log.info("!!! CouchContent @JsonCreator: processing aspect name=" + aspectName + ", aspectMap keys=" + aspectMap.keySet());
 						if (aspectName != null) {
 							Aspect aspect = new Aspect();
 							aspect.setName(aspectName);
 
 							// Convert properties within the aspect
 							Object propsValue = aspectMap.get("properties");
+							log.info("!!! CouchContent @JsonCreator: aspect " + aspectName + " propsValue type=" + (propsValue != null ? propsValue.getClass().getName() : "null") + ", value=" + propsValue);
 							if (propsValue instanceof List) {
 								@SuppressWarnings("unchecked")
 								List<Map<String, Object>> propsList = (List<Map<String, Object>>) propsValue;
@@ -144,20 +151,22 @@ public class CouchContent extends CouchNodeBase{
 								for (Map<String, Object> propMap : propsList) {
 									String key = (String) propMap.get("key");
 									Object value = propMap.get("value");
+									log.info("!!! CouchContent @JsonCreator: aspect " + aspectName + " property key=" + key + ", value=" + value);
 									if (key != null) {
 										aspectProperties.add(new Property(key, value));
 									}
 								}
 								aspect.setProperties(aspectProperties);
+								log.info("!!! CouchContent @JsonCreator: aspect " + aspectName + " has " + aspectProperties.size() + " properties");
 							}
 							convertedAspects.add(aspect);
 						}
 					}
 					this.aspects = convertedAspects;
-					if (log.isDebugEnabled()) {
-						log.debug("Aspects loaded from CouchDB: " + convertedAspects.size() + " aspects");
-					}
+					log.info("!!! CouchContent @JsonCreator: Loaded " + convertedAspects.size() + " aspects total");
 				}
+			} else {
+				log.info("!!! CouchContent @JsonCreator: NO aspects field in properties map. Keys=" + properties.keySet());
 			}
 
 			// CRITICAL FIX (2025-12-17): secondaryIds conversion - Secondary type IDs were not being loaded from CouchDB
