@@ -12,16 +12,20 @@ import java.nio.file.Paths;
 /**
  * Servlet to handle React SPA fallback routing
  *
- * For React Router to work correctly, all non-existent routes under /ui/dist/
+ * For React Router to work correctly, all non-existent routes under /ui/
  * must return the index.html file. This servlet intercepts 404 errors and
  * serves index.html instead, allowing React Router to handle client-side routing.
  *
  * This is a standard pattern for Single Page Applications (SPAs).
+ *
+ * CRITICAL FIX (2025-12-19): Updated paths from /ui/dist/ to /ui/
+ * per UI Path Unification (2025-12-09). The Maven war-plugin now copies
+ * dist/ contents directly to ui/ in the WAR file.
  */
 public class ReactSpaFallbackServlet extends HttpServlet {
 
     private static final long serialVersionUID = 1L;
-    private static final String INDEX_PATH = "/ui/dist/index.html";
+    private static final String INDEX_PATH = "/ui/index.html";
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
@@ -29,8 +33,8 @@ public class ReactSpaFallbackServlet extends HttpServlet {
 
         String requestPath = request.getRequestURI();
 
-        // Only handle requests under /ui/dist/ path
-        if (!requestPath.startsWith(request.getContextPath() + "/ui/dist/")) {
+        // Only handle requests under /ui/ path
+        if (!requestPath.startsWith(request.getContextPath() + "/ui/")) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND);
             return;
         }

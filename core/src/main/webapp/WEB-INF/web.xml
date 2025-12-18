@@ -318,19 +318,40 @@
  </servlet>
 
 <!-- Map React SPA fallback servlet to handle client-side routing -->
-<!-- SIMPLIFIED (2025-10-22): Only handle /ui/dist/ paths for React Router -->
-<!-- /ui/ paths are handled by default servlet with redirect index.html -->
+<!-- CRITICAL FIX (2025-12-19): Updated from /ui/dist/* to /ui/* per UI Path Unification -->
+<!-- Maven war-plugin copies dist/ contents directly to ui/ in the WAR file -->
 <servlet-mapping>
  <servlet-name>react-spa-fallback</servlet-name>
- <url-pattern>/ui/dist/*</url-pattern>
+ <url-pattern>/ui/*</url-pattern>
 </servlet-mapping>
 
-<!-- CRITICAL FIX: Exact mapping for index.html to prevent SPA fallback loop -->
-<!-- Without this, forwarding to /ui/dist/index.html re-enters ReactSpaFallbackServlet -->
+<!-- CRITICAL FIX: Exact mappings for HTML files to prevent SPA fallback loop -->
+<!-- Without this, forwarding to /ui/index.html re-enters ReactSpaFallbackServlet -->
 <!-- causing a StackOverflowError from recursive ApplicationHttpRequest.getAttribute calls -->
 <servlet-mapping>
  <servlet-name>default</servlet-name>
- <url-pattern>/ui/dist/index.html</url-pattern>
+ <url-pattern>/ui/index.html</url-pattern>
+</servlet-mapping>
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/oidc-callback.html</url-pattern>
+</servlet-mapping>
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/saml-callback.html</url-pattern>
+</servlet-mapping>
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/silent-callback.html</url-pattern>
+</servlet-mapping>
+<!-- Static asset directories - served directly by default servlet -->
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/assets/*</url-pattern>
+</servlet-mapping>
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/pdf-worker/*</url-pattern>
 </servlet-mapping>
 
  <!-- Map default servlet to handle static resources -->
