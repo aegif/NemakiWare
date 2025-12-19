@@ -274,6 +274,7 @@
  */
 
 import { AuthService } from './auth';
+import { CmisHttpClient } from './http';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions } from '../types/cmis';
 import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } from '../types/typeMigration';
 
@@ -292,11 +293,14 @@ export class CMISService {
   private baseUrl = '/core/browser';
   private restBaseUrl = '/core/rest/repo';  // REST API for type management operations
   private authService: AuthService;
+  private httpClient: CmisHttpClient;
   private onAuthError?: (error: any) => void;
 
   constructor(onAuthError?: (error: any) => void) {
     this.authService = AuthService.getInstance();
     this.onAuthError = onAuthError;
+    // Initialize HTTP client with auth header provider
+    this.httpClient = new CmisHttpClient(() => this.getAuthHeaders());
   }
 
   setAuthErrorHandler(handler: (error: any) => void) {
@@ -629,51 +633,40 @@ export class CMISService {
 
   async getRepositories(): Promise<string[]> {
     try {
-      return new Promise((resolve) => {
-        const xhr = new XMLHttpRequest();
-        
-        // Use unauthenticated endpoint for getting repository list
-        // This is needed for the login screen where user hasn't authenticated yet
-        xhr.open('GET', '/core/rest/all/repositories', true);
-        xhr.setRequestHeader('Accept', 'application/json');
-        
-        xhr.onreadystatechange = () => {
-          if (xhr.readyState === 4) {
-            if (xhr.status === 200) {
-              try {
-                const response = JSON.parse(xhr.responseText);
-                // Extract repository IDs from the response
-                if (Array.isArray(response)) {
-                  const repositoryIds = response.map(repo => repo.id).filter(id => id);
-                  resolve(repositoryIds);
-                } else if (response.repositories) {
-                  resolve(response.repositories);
-                } else {
-                  resolve([]);
-                }
-              } catch (e) {
-                // Failed to parse response - return empty array
-                resolve([]);
-              }
-            } else {
-              // Failed to fetch repositories
-              if (xhr.status === 401) {
-                this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-              }
-              resolve([]);
-            }
-          }
-        };
-        
-        xhr.onerror = () => {
-          // Network error - return empty array
-          resolve([]);
-        };
-
-        xhr.send();
+      // Use unauthenticated endpoint for getting repository list
+      // This is needed for the login screen where user hasn't authenticated yet
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url: '/core/rest/all/repositories',
+        accept: 'application/json',
+        includeAuth: false  // No auth needed for repository list
       });
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          // Extract repository IDs from the response
+          if (Array.isArray(data)) {
+            const repositoryIds = data.map(repo => repo.id).filter(id => id);
+            return repositoryIds;
+          } else if (data.repositories) {
+            return data.repositories;
+          } else {
+            return [];
+          }
+        } catch (e) {
+          // Failed to parse response - return empty array
+          return [];
+        }
+      } else {
+        // Failed to fetch repositories
+        if (response.status === 401) {
+          this.handleHttpError(response.status, response.statusText, response.responseURL);
+        }
+        return [];
+      }
     } catch (error) {
-      // Exception during repository fetch
+      // Network error or exception - return empty array
       return [];
     }
   }
