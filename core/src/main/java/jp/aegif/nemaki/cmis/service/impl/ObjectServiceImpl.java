@@ -1053,7 +1053,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// Without this fix, cached content with empty aspects would cause property loss during updates
 		nemakiCachePool.get(repositoryId).getContentCache().remove(objectId.getValue());
 		if (log.isDebugEnabled()) {
-			log.debug("checkExceptionBeforeUpdateProperties: Invalidated content cache for {} before update", objectId.getValue());
+			log.debug("checkExceptionBeforeUpdateProperties: Invalidated content cache for " + objectId.getValue() + " before update");
 		}
 
 		Content content = contentService.getContent(repositoryId, objectId.getValue());

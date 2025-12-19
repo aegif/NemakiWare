@@ -4149,7 +4149,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             if (log.isDebugEnabled()) {
                 java.util.Map<String, String[]> paramMap = request.getParameterMap();
                 for (java.util.Map.Entry<String, String[]> entry : paramMap.entrySet()) {
-                    log.debug("applyAcl param: {} = {}", entry.getKey(), java.util.Arrays.toString(entry.getValue()));
+                    log.debug("applyAcl param: " + entry.getKey() + " = " + java.util.Arrays.toString(entry.getValue()));
                 }
             }
 
@@ -4169,7 +4169,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 extDataImpl.setExtensions(extensions);
                 extensionsData = extDataImpl;
                 if (log.isDebugEnabled()) {
-                    log.debug("Passing {} extension elements to applyAcl", extensions.size());
+                    log.debug("Passing " + extensions.size() + " extension elements to applyAcl");
                 }
             }
 
@@ -4266,11 +4266,11 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         elements.add(element);
 
                         if (log.isDebugEnabled()) {
-                            log.debug("Extracted extension element - name: {}, value: {}", extensionName, extensionValue);
+                            log.debug("Extracted extension element - name: " + extensionName + ", value: " + extensionValue);
                         }
                     }
                 } catch (Exception e) {
-                    log.error("Error extracting extension element from parameter: {}", paramName, e);
+                    log.error("Error extracting extension element from parameter: " + paramName, e);
                 }
             }
         }
