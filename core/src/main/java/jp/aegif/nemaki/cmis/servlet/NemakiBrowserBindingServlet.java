@@ -4145,11 +4145,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             try {
                 cmisService = getCmisService(callContext);
 
-            // DEBUG: Log all request parameters to see what we're receiving
-            log.info("!!! SERVLET: applyAcl request parameters:");
-            java.util.Map<String, String[]> paramMap = request.getParameterMap();
-            for (java.util.Map.Entry<String, String[]> entry : paramMap.entrySet()) {
-                log.info("!!! SERVLET:   " + entry.getKey() + " = " + java.util.Arrays.toString(entry.getValue()));
+            // Log request parameters at debug level
+            if (log.isDebugEnabled()) {
+                java.util.Map<String, String[]> paramMap = request.getParameterMap();
+                for (java.util.Map.Entry<String, String[]> entry : paramMap.entrySet()) {
+                    log.debug("applyAcl param: {} = {}", entry.getKey(), java.util.Arrays.toString(entry.getValue()));
+                }
             }
 
             // Extract ACL from request parameters
@@ -4163,13 +4164,13 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // Create ExtensionsData if extensions exist
             org.apache.chemistry.opencmis.commons.data.ExtensionsData extensionsData = null;
             if (!extensions.isEmpty()) {
-                org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionDataImpl extDataImpl = 
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionDataImpl extDataImpl =
                     new org.apache.chemistry.opencmis.commons.impl.dataobjects.ExtensionDataImpl();
                 extDataImpl.setExtensions(extensions);
                 extensionsData = extDataImpl;
-                log.info("!!! SERVLET: Passing " + extensions.size() + " extension elements to applyAcl");
-            } else {
-                log.info("!!! SERVLET: No extension elements found in request");
+                if (log.isDebugEnabled()) {
+                    log.debug("Passing {} extension elements to applyAcl", extensions.size());
+                }
             }
 
             // Apply ACL using CMIS service - convert List<Ace> to Acl objects
@@ -4263,11 +4264,13 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                             new org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl(
                                 null, extensionName, null, extensionValue);
                         elements.add(element);
-                        
-                        log.info("!!! SERVLET: Extracted extension element - name: " + extensionName + ", value: " + extensionValue);
+
+                        if (log.isDebugEnabled()) {
+                            log.debug("Extracted extension element - name: {}, value: {}", extensionName, extensionValue);
+                        }
                     }
                 } catch (Exception e) {
-                    log.error("!!! SERVLET: Error extracting extension element from parameter: " + paramName, e);
+                    log.error("Error extracting extension element from parameter: {}", paramName, e);
                 }
             }
         }

@@ -1052,7 +1052,9 @@ public class ObjectServiceImpl implements ObjectService {
 		// This ensures we get fresh data from CouchDB including correct aspect properties
 		// Without this fix, cached content with empty aspects would cause property loss during updates
 		nemakiCachePool.get(repositoryId).getContentCache().remove(objectId.getValue());
-		log.info("!!! checkExceptionBeforeUpdateProperties: Invalidated content cache for " + objectId.getValue() + " before update");
+		if (log.isDebugEnabled()) {
+			log.debug("checkExceptionBeforeUpdateProperties: Invalidated content cache for {} before update", objectId.getValue());
+		}
 
 		Content content = contentService.getContent(repositoryId, objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());

@@ -2032,7 +2032,9 @@ public class ContentServiceImpl implements ContentService {
 			Properties updateProperties, String secondaryTypeId) {
 		// If no existing aspect, just return new properties
 		if (existingAspect == null || existingAspect.getProperties() == null || existingAspect.getProperties().isEmpty()) {
-			log.info("!!! mergeAspectProperties: No existing aspect for " + secondaryTypeId + ", returning new props only");
+			if (log.isDebugEnabled()) {
+				log.debug("mergeAspectProperties: No existing aspect for {}, returning new props only", secondaryTypeId);
+			}
 			return newProps != null ? newProps : new ArrayList<>();
 		}
 
@@ -2072,13 +2074,18 @@ public class ContentServiceImpl implements ContentService {
 				if (!updateRequestKeys.contains(key)) {
 					mergedMap.put(key, existingProp);
 					preservedCount++;
-					log.info("!!! mergeAspectProperties: Preserved existing property " + key + "=" + existingProp.getValue() + " for " + secondaryTypeId);
+					if (log.isDebugEnabled()) {
+						log.debug("mergeAspectProperties: Preserved existing property {}={} for {}",
+							key, existingProp.getValue(), secondaryTypeId);
+					}
 				}
 			}
 		}
 
-		log.info("!!! mergeAspectProperties: Merged " + mergedMap.size() + " total properties for " + secondaryTypeId +
-			" (new: " + newPropKeys.size() + ", preserved: " + preservedCount + ")");
+		if (log.isDebugEnabled()) {
+			log.debug("mergeAspectProperties: Merged {} total properties for {} (new: {}, preserved: {})",
+				mergedMap.size(), secondaryTypeId, newPropKeys.size(), preservedCount);
+		}
 
 		return new ArrayList<>(mergedMap.values());
 	}

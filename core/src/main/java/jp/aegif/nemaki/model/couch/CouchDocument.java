@@ -60,14 +60,12 @@ public class CouchDocument extends CouchContent {
 
 	public CouchDocument(){
 		super();
-		log.info("!!! CouchDocument: DEFAULT CONSTRUCTOR called");
 	}
 
 	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
 	@JsonCreator
 	public CouchDocument(Map<String, Object> properties) {
 		super(properties); // 親クラスのMapコンストラクタを呼び出し
-		log.info("!!! CouchDocument: @JsonCreator CONSTRUCTOR called with " + (properties != null ? properties.size() : 0) + " properties");
 
 		if (properties != null) {
 			// CouchDocument固有のフィールドマッピング
