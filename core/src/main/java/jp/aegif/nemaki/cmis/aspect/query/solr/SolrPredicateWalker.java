@@ -314,16 +314,25 @@ public class SolrPredicateWalker{
 					"Operator ANY...IN only is allowed on multi-value properties ");
 		}
 
-		// Build a statement
-		// TODO Just set multiValued flag ON on Solr. Syntax is common as that
-		// of wakEquals.
-		Query q = walkEquals(leftNode, rightNode);
-		return q;
+		// CRITICAL FIX (2025-12-19): Build proper OR query for multi-valued IN clause
+		// The previous implementation called walkEquals() which doesn't handle IN lists correctly
+		// Now we iterate over the list values similar to walkIn() method
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
+		String field = solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName().toString());
+		List<?> list = (List<?>) walkExpr(rightNode);
+		for (Object elm : list) {
+			Term t = new Term(field, elm.toString());
+			TermQuery tq = new TermQuery(t);
+			builder.add(tq, Occur.SHOULD);
+		}
+		return builder.build();
 	}
 
 	private Query walkNotInAny(Tree leftNode, Tree rightNode) {
-		Query q = walkNotEquals(leftNode, rightNode);
-		return q;
+		// CRITICAL FIX (2025-12-19): Build proper NOT query for multi-valued NOT IN clause
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
+		builder.add(walkInAny(leftNode, rightNode), Occur.MUST_NOT);
+		return builder.build();
 	}
 
 	private Query walkIsNull(Tree colNode) {
