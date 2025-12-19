@@ -23,6 +23,9 @@ const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
 const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID || 'nemakiware-oidc-client';
 
 test.describe('NemakiWare OIDC Authentication', () => {
+  // Serial mode: OIDC tests interact with shared Keycloak session state
+  test.describe.configure({ mode: 'serial' });
+
   test.beforeEach(async ({ page }) => {
     await page.context().clearCookies();
     await page.context().clearPermissions();

@@ -23,6 +23,9 @@ const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
 const SAML_ENTITY_ID = process.env.SAML_ENTITY_ID || 'nemakiware-saml-client';
 
 test.describe('NemakiWare SAML Authentication', () => {
+  // Serial mode: SAML tests interact with shared Keycloak session state
+  test.describe.configure({ mode: 'serial' });
+
   test.beforeEach(async ({ page }) => {
     await page.context().clearCookies();
     await page.context().clearPermissions();

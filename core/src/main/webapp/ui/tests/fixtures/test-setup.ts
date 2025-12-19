@@ -168,11 +168,14 @@ export async function setupTestData(): Promise<{ folderId: string; files: TestFi
 
   const files: TestFile[] = [];
 
-  // Upload test files
+  // Upload test files (all available fixtures)
   const testFiles = [
     'テキストサンプル.txt',
     'PDFサンプル.pdf',
     '画像サンプル.png',
+    'Excelサンプル.xlsx',
+    'PowerPointサンプル.pptx',
+    'Wordサンプル.docx',
   ];
 
   for (const fileName of testFiles) {

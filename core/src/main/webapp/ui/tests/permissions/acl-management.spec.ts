@@ -71,6 +71,10 @@ import { TestHelper } from '../utils/test-helper';
  * - GROUP_EVERYONE: Default group removed in access control tests
  */
 test.describe('Advanced ACL Management', () => {
+  // CRITICAL FIX (2025-12-19): Serial mode prevents parallel execution conflicts
+  // Tests depend on shared 'testuser' principal which can cause race conditions
+  test.describe.configure({ mode: 'serial' });
+
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   // FIX: Enhanced uniqueness for parallel execution - timestamp + random value
