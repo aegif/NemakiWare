@@ -9,10 +9,7 @@
  * Prerequisites:
  * - NemakiWare core running
  * - testuser account with password 'test' (non-admin role)
- *
- * SKIP REASON for non-admin tests (2025-12-16):
- * Non-admin user tests are skipped because testuser may not be configured
- * with correct BCrypt password. Admin tests work and validate the route protection.
+ *   NOTE: testuser is automatically created by global-setup.ts with BCrypt password
  */
 
 import { test, expect } from '@playwright/test';
@@ -48,11 +45,9 @@ async function loginAsUser(page: any, username: string, password: string) {
 
 test.describe('Admin Route Protection', () => {
   /**
-   * SKIP REASON (2025-12-16): Non-admin user tests require testuser with BCrypt password.
-   * If testuser doesn't exist or has plaintext password, these tests will fail.
-   * Admin tests below still validate the route protection functionality.
+   * Non-admin user tests - testuser is automatically created by global-setup.ts
    */
-  test.describe.skip('Non-admin user (testuser)', () => {
+  test.describe('Non-admin user (testuser)', () => {
     test.beforeEach(async ({ page }) => {
       // Login as non-admin user
       await loginAsUser(page, 'testuser', 'test');
@@ -163,10 +158,9 @@ test.describe('Admin Route Protection', () => {
 });
 
 /**
- * SKIP REASON (2025-12-16): Permission Management tests require testuser with BCrypt password.
- * These tests verify non-admin permission access which requires a working testuser account.
+ * Permission Management tests - testuser is automatically created by global-setup.ts
  */
-test.describe.skip('Permission Management Access', () => {
+test.describe('Permission Management Access', () => {
   // Permission management should be accessible to both admin and non-admin
   // because users need to manage permissions on their own documents
 

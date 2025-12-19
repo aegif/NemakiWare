@@ -76,6 +76,100 @@ async function isBackendRunning(baseURL: string): Promise<boolean> {
 }
 
 /**
+ * Ensure testuser exists in CouchDB with BCrypt password
+ * This is required for non-admin user tests
+ */
+async function ensureTestUserExists(): Promise<void> {
+  const couchdbUrl = process.env.COUCHDB_URL || 'http://localhost:5984';
+  const couchdbAuth = 'Basic ' + Buffer.from('admin:password').toString('base64');
+
+  try {
+    // Check if testuser already exists
+    const checkResponse = await fetch(`${couchdbUrl}/bedroom/_find`, {
+      method: 'POST',
+      headers: {
+        'Authorization': couchdbAuth,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        selector: { type: 'user', userId: 'testuser' },
+        limit: 1
+      }),
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!checkResponse.ok) {
+      console.log('⚠️ Could not query CouchDB for testuser');
+      return;
+    }
+
+    const result = await checkResponse.json();
+
+    if (result.docs && result.docs.length > 0) {
+      const existingUser = result.docs[0];
+      // Check if password is already BCrypt hashed
+      if (existingUser.password && existingUser.password.startsWith('$2')) {
+        console.log('✅ testuser already exists with BCrypt password');
+        return;
+      }
+
+      // Update existing user with BCrypt password
+      console.log('🔐 Updating testuser with BCrypt password...');
+      existingUser.password = '$2a$12$WOlW7Yk7vFYz7kjFCz/GpeJ7B4kzWhnSMXH2UcN/iMAuiMcYC/Cie'; // BCrypt hash of 'test'
+
+      const updateResponse = await fetch(`${couchdbUrl}/bedroom/${existingUser._id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': couchdbAuth,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(existingUser),
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (updateResponse.ok) {
+        console.log('✅ testuser password updated to BCrypt');
+      } else {
+        console.log('⚠️ Failed to update testuser password');
+      }
+    } else {
+      // Create new testuser
+      console.log('👤 Creating testuser...');
+      const newUser = {
+        type: 'user',
+        userId: 'testuser',
+        name: 'Test User',
+        firstName: 'Test',
+        lastName: 'User',
+        email: 'testuser@example.com',
+        password: '$2a$12$WOlW7Yk7vFYz7kjFCz/GpeJ7B4kzWhnSMXH2UcN/iMAuiMcYC/Cie', // BCrypt hash of 'test'
+        admin: false,
+        created: new Date().toISOString(),
+        creator: 'admin'
+      };
+
+      const createResponse = await fetch(`${couchdbUrl}/bedroom`, {
+        method: 'POST',
+        headers: {
+          'Authorization': couchdbAuth,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(newUser),
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (createResponse.ok) {
+        console.log('✅ testuser created successfully');
+      } else {
+        console.log('⚠️ Failed to create testuser:', await createResponse.text());
+      }
+    }
+  } catch (error) {
+    console.log('⚠️ Could not ensure testuser exists:', error);
+  }
+}
+
+/**
  * Start Keycloak using docker-compose
  */
 async function startKeycloak(): Promise<void> {
@@ -137,6 +231,13 @@ async function globalSetup(config: FullConfig) {
     console.error(errorMsg);
     throw new Error(errorMsg);
   }
+
+  // Step 3: Ensure testuser exists for non-admin tests
+  console.log('');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('Step 3: Test User Setup');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  await ensureTestUserExists();
 
   // Summary
   console.log('');
