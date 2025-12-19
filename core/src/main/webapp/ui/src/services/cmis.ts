@@ -275,7 +275,18 @@
 
 import { AuthService } from './auth';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions } from '../types/cmis';
-import { CompatibleType } from '../types/typeMigration';
+import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } from '../types/typeMigration';
+
+const MIGRATION_PROPERTY_TYPES: MigrationPropertyType[] = [
+  'string',
+  'integer',
+  'decimal',
+  'boolean',
+  'datetime',
+  'id',
+  'html',
+  'uri'
+];
 
 export class CMISService {
   private baseUrl = '/core/browser';
@@ -561,6 +572,34 @@ export class CMISService {
     }
 
     return {};
+  }
+
+  private normalizeMigrationPropertyDefinition(rawPropDef: unknown, fallbackId?: string): MigrationPropertyDefinition {
+    const prop = (rawPropDef ?? {}) as Record<string, unknown>;
+    const propertyTypeCandidate = typeof prop.propertyType === 'string' ? prop.propertyType : undefined;
+    const propertyType: MigrationPropertyType = MIGRATION_PROPERTY_TYPES.includes(propertyTypeCandidate as MigrationPropertyType)
+      ? (propertyTypeCandidate as MigrationPropertyType)
+      : 'string';
+    const cardinality = prop.cardinality === 'multi' ? 'multi' : 'single';
+    const id = (String(prop.id ?? fallbackId ?? '').trim()) || (fallbackId ?? 'unknown');
+
+    const choices = Array.isArray((prop as Record<string, unknown>).choices)
+      ? (prop as { choices: Array<Record<string, unknown>> }).choices.map((choice) => ({
+          displayName: String(choice.displayName ?? choice.value ?? ''),
+          value: choice.value
+        }))
+      : undefined;
+
+    return {
+      id,
+      displayName: String(prop.displayName ?? prop.id ?? id ?? 'Unknown property'),
+      description: typeof prop.description === 'string' ? prop.description : undefined,
+      propertyType,
+      cardinality,
+      required: Boolean(prop.required),
+      defaultValue: prop.defaultValue,
+      choices,
+    };
   }
 
   private handleHttpError(status: number, statusText: string, url: string) {
@@ -2526,11 +2565,10 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       // Use CMIS AtomPub binding for relationships (Browser Binding doesn't support relationships endpoint)
-      // CRITICAL FIX (2025-12-18): Add relationshipDirection=either to get BOTH source and target relationships
-      // Without this parameter, the server defaults to 'source' only, which means:
-      // - Object A shows relationship A→B in its relationships tab
-      // - Object B does NOT show relationship A→B (because B is target, not source)
-      // With 'either', both objects will show the relationship in their tabs (bidirectional display)
+      // CRITICAL FIX (2025-12-17): Add relationshipDirection=either to get bidirectional relationships
+      // Without this parameter, CMIS defaults to 'source' direction only, meaning relationships where
+      // the object is the TARGET will not be returned. For bidirectional relationships (like
+      // nemaki:bidirectionalRelationship), users expect to see the relationship from both sides.
       xhr.open('GET', `/core/atom/${repositoryId}/relationships?id=${objectId}&relationshipDirection=either`, true);
       xhr.setRequestHeader('Accept', 'application/atom+xml');
       
@@ -3345,7 +3383,42 @@ export class CMISService {
       throw new Error(data.message || 'Failed to get compatible types');
     }
 
-    return data;
+    const rawCompatibleTypes = (data.compatibleTypes ?? {}) as Record<string, unknown>;
+    const compatibleTypes: Record<string, CompatibleType> = {};
+
+    Object.entries(rawCompatibleTypes).forEach(([rawId, rawType]) => {
+      const type = (rawType ?? {}) as Record<string, unknown>;
+      const additionalRequiredPropertiesRaw = (type.additionalRequiredProperties ?? {}) as Record<string, unknown>;
+      const additionalRequiredProperties: Record<string, MigrationPropertyDefinition> = {};
+
+      Object.entries(additionalRequiredPropertiesRaw).forEach(([propId, propDef]) => {
+        additionalRequiredProperties[propId] = this.normalizeMigrationPropertyDefinition(propDef, propId);
+      });
+
+      const normalizedId = String(type.id ?? rawId ?? '').trim() || rawId;
+
+      compatibleTypes[normalizedId] = {
+        id: normalizedId,
+        displayName: typeof type.displayName === 'string' ? type.displayName : normalizedId,
+        description: typeof type.description === 'string' ? type.description : undefined,
+        baseTypeId: typeof type.baseTypeId === 'string'
+          ? type.baseTypeId
+          : typeof type.baseId === 'string'
+            ? type.baseId
+            : '',
+        additionalRequiredProperties,
+      };
+    });
+
+    return {
+      currentType: String(data.currentType ?? ''),
+      currentTypeDisplayName: typeof data.currentTypeDisplayName === 'string'
+        ? data.currentTypeDisplayName
+        : String(data.currentType ?? ''),
+      baseType: String(data.baseType ?? ''),
+      compatibleTypes,
+      count: typeof data.count === 'number' ? data.count : Object.keys(compatibleTypes).length,
+    };
   }
 
   /**

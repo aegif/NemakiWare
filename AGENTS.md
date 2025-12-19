@@ -54,55 +54,6 @@ CLAUDE.mdはClaude Code固有の技術詳細を記録していますが、この
 
 ---
 
-## 🚨 デプロイ手順（CRITICAL - 2025-12-16 - 全エージェント必読）
-
-**絶対ルール**: コード変更後のデプロイは **必ず** `deploy-with-verification.sh` を使用すること。
-
-### 根本原因
-
-`frontend-maven-plugin` がMavenビルド中に自動的に `npm run build` を実行するため：
-- 手動 `npm run build` → `mvn package` の実行は **二重ビルド** になる
-- Viteは毎回異なるアセットハッシュを生成する
-- 結果：手動ビルドのアセットとWAR内のアセットが不一致になり、**修正がデプロイされない**
-
-### 必須手順
-
-```bash
-# プロジェクトルートから実行（これ以外禁止）
-./deploy-with-verification.sh
-```
-
-このスクリプトは以下を自動実行：
-1. `dist/` と `target/` を完全削除
-2. Maven経由でUIビルドとWARビルドを統合実行
-3. アセットハッシュの一致を検証
-4. Docker `--no-cache` でキャッシュ根絶
-5. デプロイ後のハッシュ検証
-
-### 禁止事項（絶対守ること）
-
-| ❌ 禁止 | 理由 |
-|--------|------|
-| `npm run build` 単独実行 | 二重ビルドでハッシュ不整合 |
-| `mvn package` 単独実行 | 検証なしでデプロイ失敗の可能性 |
-| `docker compose up --force-recreate` のみ | イメージが再利用される |
-| 手動でWARコピー→docker restart | キャッシュが残る |
-
-### エラー時の対処
-
-```bash
-# ビルド成果物を完全削除
-rm -rf core/target/ core/src/main/webapp/ui/dist/
-
-# Dockerキャッシュ削除
-docker system prune -f
-
-# 再実行
-./deploy-with-verification.sh
-```
-
----
-
 ## 🔒 UI パス統一ルール（CRITICAL - 2025-12-09）
 
 **重要**: NemakiWare UI の全パスは `/core/ui/` を使用します。`/core/ui/dist/` は**禁止**です。
@@ -155,11 +106,38 @@ find core/src/main/webapp/ui/tests -name "*.ts" -exec sed -i '' 's|/ui/dist/|/ui
 
 ## 🧪 テスト委譲のプロセス
 
+### 🚀 推奨デプロイ方法（Keycloak自動起動）
+
+**重要**: コード変更後のデプロイには `deploy-with-verification.sh` を使用してください。
+このスクリプトは Keycloak の起動確認・自動起動も行います。
+
+```bash
+# プロジェクトルートから実行
+./deploy-with-verification.sh
+
+# スクリプトが実行すること:
+# - Step 1: UIビルド
+# - Step 2: WARビルド
+# - Step 3a: Keycloak起動確認・自動起動 ← 自動的にKeycloakを起動
+# - Step 3b: NemakiWareビルド
+# - Step 4: サーバー起動待機
+# - Step 5: デプロイ検証（アセットハッシュ確認）
+# - Step 6: 基本APIテスト
+# - Step 7: 外部認証確認
+```
+
+**手動でKeycloakを起動する必要がある場合**:
+```bash
+cd docker
+docker compose -f docker-compose.keycloak.yml up -d
+sleep 60  # Keycloak起動待機
+```
+
 ### ステップ1: 委譲前の準備（委譲元エージェント）
 
 ```bash
-# 1. 環境の健全性確認
-docker ps                       # 全コンテナ起動確認
+# 1. 環境の健全性確認（推奨: deploy-with-verification.sh を先に実行）
+docker ps                       # 全コンテナ起動確認（keycloakを含む4コンテナ）
 ./qa-test.sh                    # QAテスト全通過確認（56/56）
 git status                      # クリーンな状態確認
 
@@ -227,7 +205,8 @@ git push origin <branch-name>
 ### 委譲元エージェント（Claude Code等）
 
 **環境準備**:
-- [ ] Dockerコンテナ全て起動済み（`docker ps`で確認）
+- [ ] **デプロイスクリプト実行推奨**（`./deploy-with-verification.sh` → Keycloak自動起動）⚠️ **推奨**
+- [ ] Dockerコンテナ全て起動済み（`docker ps` → keycloakを含む4コンテナ）
 - [ ] QAテスト全通過（`./qa-test.sh` → 56/56）
 - [ ] **外部認証テスト通過**（`npx playwright test tests/auth/` → 19/19）⚠️ **必須**
 - [ ] **UIパス統一確認**（`grep -r "/ui/dist/"` → ゼロ件）⚠️ **必須**

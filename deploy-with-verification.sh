@@ -20,31 +20,34 @@ echo "NemakiWare デプロイ検証スクリプト"
 echo "=============================================="
 echo ""
 
-# Step 1: WARビルド（UIビルドも含む）
-# NOTE: frontend-maven-plugin が npm build を自動実行するため、
-#       手動で npm run build を実行すると二重ビルドになりハッシュ不整合が発生する
-echo "=== Step 1: WARビルド (Maven + UIビルド統合) ==="
-cd "${SCRIPT_DIR}"
+# Step 1: UIビルド
+echo "=== Step 1: UIビルド ==="
+cd "${UI_DIR}"
 
 # CRITICAL: 古いビルド成果物を完全に削除
 echo "Cleaning old build artifacts..."
-rm -rf core/target/
-rm -rf "${UI_DIR}/dist/"
+rm -rf dist/
 
-# Maven がfrontend-maven-plugin経由でUIビルドも実行
-echo "Building WAR (includes npm build via frontend-maven-plugin)..."
-mvn clean package -f core/pom.xml -Pdevelopment -DskipTests 2>&1 | tail -10
+npm run build 2>&1 | tail -5
 
-# ビルド後のUIアセットハッシュを取得
-UI_ASSET_HASH=$(grep -o 'index-[A-Za-z0-9_-]*\.js' "${UI_DIR}/dist/index.html" | head -1 | sed 's/index-\(.*\)\.js/\1/')
+# アセットハッシュを取得（index.htmlから参照されているファイル）
+UI_ASSET_HASH=$(grep -o 'index-[A-Za-z0-9_-]*\.js' dist/index.html | head -1 | sed 's/index-\(.*\)\.js/\1/')
 if [ -z "$UI_ASSET_HASH" ]; then
-    echo "ERROR: UIビルド後のindex.html内にindex-*.js参照が見つかりません"
+    echo "ERROR: index.html内にindex-*.js参照が見つかりません"
     exit 1
 fi
-echo "UIアセットハッシュ (Mavenビルド後): ${UI_ASSET_HASH}"
+echo "UIアセットハッシュ: ${UI_ASSET_HASH}"
 echo ""
 
-echo "=== Step 2: WAR検証 ==="
+# Step 2: WARビルド
+echo "=== Step 2: WARビルド ==="
+cd "${SCRIPT_DIR}"
+
+# CRITICAL: Mavenターゲットを完全に削除して古いアセットを根絶
+echo "Cleaning Maven target directory..."
+rm -rf core/target/
+
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 
 # WAR内のアセットを検証
 WAR_FILE="${SCRIPT_DIR}/core/target/core.war"
@@ -54,8 +57,7 @@ if [ ! -f "$WAR_FILE" ]; then
 fi
 
 # WAR内のindex.htmlからアセットハッシュを確認
-# Note: pom.xmlのwebResourcesでdist/からui/にコピーされる
-WAR_ASSET_HASH=$(unzip -p "$WAR_FILE" "ui/index.html" 2>/dev/null | grep -o 'index-[A-Za-z0-9_-]*\.js' | head -1 | sed 's/index-\(.*\)\.js/\1/')
+WAR_ASSET_HASH=$(unzip -p "$WAR_FILE" "ui/dist/index.html" 2>/dev/null | grep -o 'index-[A-Za-z0-9_-]*\.js' | head -1 | sed 's/index-\(.*\)\.js/\1/')
 if [ -z "$WAR_ASSET_HASH" ]; then
     echo "ERROR: WAR内のindex.htmlにアセット参照が見つかりません"
     exit 1
@@ -67,7 +69,7 @@ if [ "$UI_ASSET_HASH" != "$WAR_ASSET_HASH" ]; then
     echo "  WAR内: ${WAR_ASSET_HASH}"
     exit 1
 fi
-echo "WAR内アセットハッシュ: ${WAR_ASSET_HASH} (一致) ✓"
+echo "WAR内アセットハッシュ: ${WAR_ASSET_HASH} (一致)"
 echo ""
 
 # Step 3: Dockerデプロイ
@@ -84,7 +86,26 @@ echo "Cleaning up Docker resources..."
 docker compose -f docker-compose-simple.yml down -v 2>/dev/null || true
 docker rmi docker-core 2>/dev/null || true
 
+# Keycloak起動確認と起動
+echo ""
+echo "=== Step 3a: Keycloak起動確認 ==="
+if curl -s --max-time 5 "http://localhost:8088/realms/nemakiware/.well-known/openid-configuration" > /dev/null 2>&1; then
+    echo "Keycloak: 既に起動中"
+else
+    echo "Keycloak: 起動していません。起動します..."
+    docker compose -f docker-compose.keycloak.yml up -d 2>&1 | tail -3
+    echo "Keycloak起動待機 (60秒)..."
+    sleep 60
+    if curl -s --max-time 5 "http://localhost:8088/realms/nemakiware/.well-known/openid-configuration" > /dev/null 2>&1; then
+        echo "Keycloak: 起動完了"
+    else
+        echo "WARNING: Keycloakの起動に問題があります"
+    fi
+fi
+echo ""
+
 # 強制リビルド
+echo "=== Step 3b: NemakiWareビルド ==="
 echo "Building with --no-cache..."
 docker compose -f docker-compose-simple.yml build --no-cache core 2>&1 | tail -5
 docker compose -f docker-compose-simple.yml up -d --force-recreate 2>&1 | tail -10
@@ -144,5 +165,25 @@ else
     exit 1
 fi
 
+# Keycloak最終確認
 echo ""
+echo "=== Step 7: 外部認証確認 ==="
+if curl -s --max-time 5 "http://localhost:8088/realms/nemakiware/.well-known/openid-configuration" > /dev/null 2>&1; then
+    echo "Keycloak: OK (http://localhost:8088)"
+else
+    echo "WARNING: Keycloakに接続できません"
+fi
+
+echo ""
+echo "=============================================="
 echo "デプロイ完了!"
+echo "=============================================="
+echo ""
+echo "起動中のサービス:"
+docker ps --format "  - {{.Names}}: {{.Status}}" | grep -E "core|couchdb|solr|keycloak" || true
+echo ""
+echo "手動検証URL:"
+echo "  - UI: http://localhost:8080/core/ui/"
+echo "  - CMIS: http://localhost:8080/core/atom/bedroom"
+echo "  - Keycloak: http://localhost:8088"
+echo ""

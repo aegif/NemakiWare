@@ -312,8 +312,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       dataIndex: 'contentStreamLength',
       key: 'size',
       width: 100,
-      // CMIS 1.1: -1 means unknown size
-      render: (size: number) => (size && size > 0) ? `${Math.round(size / 1024)} KB` : '-',
+      render: (size: number) => size ? `${Math.round(size / 1024)} KB` : '-',
     },
     {
       title: 'アクション',

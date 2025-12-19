@@ -188,8 +188,7 @@ public class VersioningServiceImpl implements VersioningService {
 
 			Document pwc = contentService.getDocument(repositoryId, objectId.getValue());
 
-			// CRITICAL FIX (2025-12-16): Check for null BEFORE accessing pwc.getId()
-			// Without this fix, NPE occurs when pwc is null
+			// CRITICAL FIX: Check for null BEFORE accessing pwc.getId()
 			exceptionService.objectNotFound(DomainType.OBJECT, pwc, objectId.getValue());
 
 			// Safe to access pwc.getId() now since objectNotFound throws if null

@@ -1946,7 +1946,9 @@ public class ContentServiceImpl implements ContentService {
 				}
 			}
 		}
-		log.info("!!! buildSecondaryTypes: Found " + existingAspectsMap.size() + " existing aspects in content");
+		if (log.isDebugEnabled()) {
+			log.debug("buildSecondaryTypes: Found {} existing aspects in content", existingAspectsMap.size());
+		}
 
 		for (String secondaryTypeId : ids) {
 			if (secondaryTypeId != null && !secondaryTypeId.trim().isEmpty()) {
@@ -1989,10 +1991,13 @@ public class ContentServiceImpl implements ContentService {
 						aspect.setProperties(mergedProps);
 						aspects.add(aspect);
 
-						log.info("!!! buildSecondaryTypes: Processed secondary type " + secondaryTypeId + " with " +
-							(mergedProps != null ? mergedProps.size() : 0) + " merged properties (new: " +
-							(newProps != null ? newProps.size() : 0) + ", existing preserved: " +
-							(mergedProps != null && newProps != null ? (mergedProps.size() - newProps.size()) : 0) + ")");
+						if (log.isDebugEnabled()) {
+							log.debug("Processed secondary type {} with {} merged properties (new: {}, preserved: {})",
+								secondaryTypeId,
+								mergedProps != null ? mergedProps.size() : 0,
+								newProps != null ? newProps.size() : 0,
+								mergedProps != null && newProps != null ? (mergedProps.size() - newProps.size()) : 0);
+						}
 					} else {
 						if (log.isDebugEnabled()) {
 							log.debug("Secondary type {} is not valid or not a secondary type (td: {}, baseTypeId: {})",
@@ -2106,6 +2111,7 @@ public class ContentServiceImpl implements ContentService {
 	private List<Property> injectPropertyValue(Collection<PropertyDefinition<?>> propertyDefnitions,
 			Properties properties, Content content, boolean onlyLocalProperties) {
 		List<Property> props = new ArrayList<Property>();
+
 		for (PropertyDefinition<?> pd : propertyDefnitions) {
 			// CRITICAL FIX (2025-12-17): Skip inherited properties when building secondary type aspects
 			// This prevents cmis:description and other inherited properties from being saved in aspects
@@ -2138,8 +2144,10 @@ public class ContentServiceImpl implements ContentService {
 			}
 
 			PropertyData<?> property = properties.getProperties().get(pd.getId());
-			if (property == null)
+			if (property == null) {
 				continue;
+			}
+
 			Property p = new Property();
 			p.setKey(property.getId());
 			switch (pd.getCardinality()) {
