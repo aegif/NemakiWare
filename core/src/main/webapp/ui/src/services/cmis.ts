@@ -1443,6 +1443,9 @@ export class CMISService {
    * Get ACL for an object (REST API endpoint)
    * Retrieves the Access Control List (permissions) for a CMIS object
    *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   *
    * CRITICAL FIX (2025-11-22): Switched from Browser Binding to REST API endpoint
    * - Old: /core/browser/{repositoryId}/{objectId}?cmisselector=acl
    * - New: /core/rest/repo/{repositoryId}/node/{objectId}/acl
@@ -1453,59 +1456,54 @@ export class CMISService {
    * @returns ACL object containing permissions
    */
   async getACL(repositoryId: string, objectId: string): Promise<ACL> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/node/${objectId}/acl`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `/core/rest/repo/${repositoryId}/node/${objectId}/acl`;
+      const response = await this.httpClient.getJson(url);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
+          const aclData = data.result?.acl || data.acl || {};
+          const permissions = (aclData.permissions || []).map((perm: any) => ({
+            principalId: perm.principalId,
+            permissions: perm.permissions || [],
+            direct: perm.direct !== false // Default to true if not specified
+          }));
 
-              const aclData = response.result?.acl || response.acl || {};
-              const permissions = (aclData.permissions || []).map((perm: any) => ({
-                principalId: perm.principalId,
-                permissions: perm.permissions || [],
-                direct: perm.direct !== false // Default to true if not specified
-              }));
+          // Extract aclInherited (default to true if not specified)
+          const aclInherited = aclData.aclInherited !== false;
 
-              // Extract aclInherited (default to true if not specified)
-              const aclInherited = aclData.aclInherited !== false;
+          const acl: ACL = {
+            permissions: permissions,
+            isExact: aclData.isExact !== false, // Default to true if not specified
+            aclInherited
+          };
 
-              const acl: ACL = {
-                permissions: permissions,
-                isExact: aclData.isExact !== false, // Default to true if not specified
-                aclInherited
-              };
-
-              resolve(acl);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+          return acl;
+        } catch (e) {
+          throw new Error('Invalid response format');
         }
-      };
+      }
 
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send();
-    });
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
    * Set ACL for an object (REST API endpoint)
    * Sets the Access Control List (permissions) for a CMIS object
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
    *
    * CRITICAL FIX (2025-11-22): Switched from Browser Binding to REST API endpoint
    * - Old: /core/browser/{repositoryId} with cmisaction=applyACL
@@ -1518,30 +1516,8 @@ export class CMISService {
    * @param options Optional parameters including breakInheritance flag
    */
   async setACL(repositoryId: string, objectId: string, acl: ACL, options?: { breakInheritance?: boolean }): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `/core/rest/repo/${repositoryId}/node/${objectId}/acl`, true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error'));
+    try {
+      const url = `/core/rest/repo/${repositoryId}/node/${objectId}/acl`;
 
       const payload: {
         permissions: { principalId: string; permissions: string[]; direct: boolean }[];
@@ -1559,8 +1535,22 @@ export class CMISService {
         payload.breakInheritance = options.breakInheritance;
       }
 
-      xhr.send(JSON.stringify(payload));
-    });
+      const response = await this.httpClient.postJson(url, payload);
+
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
+
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async getUsers(repositoryId: string): Promise<User[]> {
