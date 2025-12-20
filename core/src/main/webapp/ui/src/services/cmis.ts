@@ -903,37 +903,24 @@ export class CMISService {
     }
   }
 
+  /**
+   * Create a document using the new CmisHttpClient (CMIS Browser Binding standard)
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   * Uses FormData for multipart/form-data encoding (required for file uploads).
+   *
+   * @param repositoryId Repository ID
+   * @param parentId Parent folder ID
+   * @param file File to upload
+   * @param properties Document properties
+   * @returns Created document object
+   */
   async createDocument(repositoryId: string, parentId: string, file: File, properties: Record<string, any>): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       // Browser Binding createDocument uses repository base URL, not object-specific URL
       // Parent folder is specified via folderId parameter in form data
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 201) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const created = this.buildCmisObjectFromBrowserData(response);
-              resolve(created);
-            } catch (e) {
-              reject(new Error('Failed to parse Browser Binding response'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error'));
+      const url = `${this.baseUrl}/${repositoryId}`;
 
       const documentName = properties?.['cmis:name'] || properties?.name || file.name;
       const defaults = {
@@ -959,40 +946,46 @@ export class CMISService {
         formData.append('contentType', file.type);
       }
 
-      xhr.send(formData);
-    });
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200 || response.status === 201) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return this.buildCmisObjectFromBrowserData(data);
+        } catch (e) {
+          throw new Error('Failed to parse Browser Binding response');
+        }
+      }
+
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
+  /**
+   * Create a folder using the new CmisHttpClient (CMIS Browser Binding standard)
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   * Uses FormData for multipart/form-data encoding.
+   *
+   * @param repositoryId Repository ID
+   * @param parentId Parent folder ID
+   * @param name Folder name
+   * @param properties Folder properties
+   * @returns Created folder object
+   */
   async createFolder(repositoryId: string, parentId: string, name: string, properties: Record<string, any> = {}): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
+    try {
       const parentSegment = this.encodeObjectIdSegment(parentId);
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/${parentSegment}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 201) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const created = this.buildCmisObjectFromBrowserData(response);
-              resolve(created);
-            } catch (e) {
-              reject(new Error('Failed to parse Browser Binding response'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error'));
+      const url = `${this.baseUrl}/${repositoryId}/${parentSegment}`;
 
       const defaults = {
         'cmis:objectTypeId': properties?.['cmis:objectTypeId'] || 'cmis:folder',
@@ -1011,8 +1004,28 @@ export class CMISService {
       }
 
       this.appendPropertiesToFormData(formData, properties || {}, defaults);
-      xhr.send(formData);
-    });
+
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200 || response.status === 201) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return this.buildCmisObjectFromBrowserData(data);
+        } catch (e) {
+          throw new Error('Failed to parse Browser Binding response');
+        }
+      }
+
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async updateProperties(repositoryId: string, objectId: string, properties: Record<string, any>, changeToken?: string): Promise<CMISObject> {
@@ -1302,8 +1315,12 @@ export class CMISService {
   }
 
   /**
-   * Check in a PWC (Private Working Copy) (CMIS Browser Binding standard)
+   * Check in a PWC (Private Working Copy) using the new CmisHttpClient (CMIS Browser Binding standard)
    * Completes the check-out/check-in cycle and creates a new version
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   * Uses FormData for multipart/form-data encoding (required for file uploads).
    *
    * @param repositoryId Repository ID
    * @param objectId PWC (Private Working Copy) object ID
@@ -1314,37 +1331,8 @@ export class CMISService {
    * @returns New version object
    */
   async checkIn(repositoryId: string, objectId: string, file?: File, properties?: Record<string, any>): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // CMIS Browser Binding checkIn: POST with multipart/form-data
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const newVersion = this.buildCmisObjectFromBrowserData(response);
-              resolve(newVersion);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error'));
+    try {
+      const url = `${this.baseUrl}/${repositoryId}`;
 
       // Build multipart form data for Browser Binding checkIn
       const formData = new FormData();
@@ -1370,8 +1358,30 @@ export class CMISService {
         }
       }
 
-      xhr.send(formData);
-    });
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return this.buildCmisObjectFromBrowserData(data);
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      // Handle HTTP errors
+      if (response.status === 401 || response.status === 403) {
+        const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+        throw error;
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
