@@ -1105,40 +1105,43 @@ export class CMISService {
     });
   }
 
+  /**
+   * Delete an object using the new CmisHttpClient
+   * 
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   * Uses application/x-www-form-urlencoded for Browser Binding operations without file uploads.
+   * 
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @param objectId Object ID to delete
+   * @returns Promise resolving when deletion is complete
+   */
   async deleteObject(repositoryId: string, objectId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // CRITICAL FIX (2025-11-18): Use application/x-www-form-urlencoded for Browser Binding
-      // Previous bug: Used FormData without Content-Type, causing multipart/form-data
-      // Browser Binding requires form-urlencoded for operations without file uploads
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.baseUrl}/${repositoryId}`;
+      const params = new URLSearchParams();
+      params.append('cmisaction', 'deleteObject');
+      params.append('objectId', objectId);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      const response = await this.httpClient.postUrlEncoded(url, params);
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      // Use URLSearchParams for application/x-www-form-urlencoded (matches checkOut pattern)
-      const formData = new URLSearchParams();
-      formData.append('cmisaction', 'deleteObject');
-      formData.append('objectId', objectId);
-
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send(formData.toString());
-    });
+      // Handle HTTP errors
+      if (response.status === 401 || response.status === 403) {
+        const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+        throw error;
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async search(repositoryId: string, query: string): Promise<SearchResult> {
@@ -1254,55 +1257,48 @@ export class CMISService {
   }
 
   /**
-   * Check out a document (CMIS Browser Binding standard)
+   * Check out a document using the new CmisHttpClient (CMIS Browser Binding standard)
    * Creates a Private Working Copy (PWC) and returns it
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
    *
    * @param repositoryId Repository ID
    * @param objectId Document object ID to check out
    * @returns PWC (Private Working Copy) object
    */
   async checkOut(repositoryId: string, objectId: string): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // CMIS Browser Binding checkOut: POST with form-urlencoded
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.baseUrl}/${repositoryId}`;
+      const params = new URLSearchParams();
+      params.append('cmisaction', 'checkOut');
+      params.append('objectId', objectId);
+      params.append('succinct', 'true');
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      const response = await this.httpClient.postUrlEncoded(url, params);
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const pwc = this.buildCmisObjectFromBrowserData(response);
-              resolve(pwc);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return this.buildCmisObjectFromBrowserData(data);
+        } catch (e) {
+          throw new Error('Invalid response format');
         }
-      };
+      }
 
-      xhr.onerror = () => reject(new Error('Network error'));
-
-      // Build form data for Browser Binding checkOut
-      const formData = new URLSearchParams();
-      formData.append('cmisaction', 'checkOut');
-      formData.append('objectId', objectId);
-      formData.append('succinct', 'true');
-
-      xhr.send(formData.toString());
-    });
+      // Handle HTTP errors
+      if (response.status === 401 || response.status === 403) {
+        const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+        throw error;
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
@@ -1379,46 +1375,41 @@ export class CMISService {
   }
 
   /**
-   * Cancel check-out of a PWC (Private Working Copy) (CMIS Browser Binding standard)
+   * Cancel check-out of a PWC using the new CmisHttpClient (CMIS Browser Binding standard)
    * Discards the PWC and any changes made
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
    *
    * @param repositoryId Repository ID
    * @param objectId PWC (Private Working Copy) object ID to cancel
    */
   async cancelCheckOut(repositoryId: string, objectId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // CMIS Browser Binding cancelCheckOut: POST with form-urlencoded
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.baseUrl}/${repositoryId}`;
+      const params = new URLSearchParams();
+      params.append('cmisaction', 'cancelCheckOut');
+      params.append('objectId', objectId);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      const response = await this.httpClient.postUrlEncoded(url, params);
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error'));
-
-      // Build form data for Browser Binding cancelCheckOut
-      const formData = new URLSearchParams();
-      formData.append('cmisaction', 'cancelCheckOut');
-      formData.append('objectId', objectId);
-
-      xhr.send(formData.toString());
-    });
+      // Handle HTTP errors
+      if (response.status === 401 || response.status === 403) {
+        const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+        throw error;
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
