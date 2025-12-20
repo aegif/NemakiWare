@@ -333,17 +333,26 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     {
       title: 'アクション',
       key: 'actions',
-      width: 200,
+      width: 280,
       render: (_: any, record: TypeDefinition) => (
         <Space>
+          <Button
+            icon={<FormOutlined />}
+            size="small"
+            onClick={() => handleOpenGUIEditor(record, true)}
+            disabled={!record.deletable && record.id.startsWith('cmis:')}
+            title={!record.deletable && record.id.startsWith('cmis:') ? '標準CMISタイプは編集できません' : 'GUIで編集'}
+          >
+            GUI編集
+          </Button>
           <Button
             icon={<EditOutlined />}
             size="small"
             onClick={() => handleJsonEdit(record)}
             disabled={!record.deletable && record.id.startsWith('cmis:')}
-            title={!record.deletable && record.id.startsWith('cmis:') ? '標準CMISタイプは編集できません' : ''}
+            title={!record.deletable && record.id.startsWith('cmis:') ? '標準CMISタイプは編集できません' : 'JSONで編集'}
           >
-            編集
+            JSON
           </Button>
           {record.deletable !== false && !record.id.startsWith('cmis:') ? (
             <Popconfirm

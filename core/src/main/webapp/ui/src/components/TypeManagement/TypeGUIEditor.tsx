@@ -88,7 +88,19 @@ interface TypeFormData {
   controllablePolicy: boolean;
   controllableACL: boolean;
   propertyDefinitions: PropertyFormData[];
+  allowedSourceTypes?: string[];
+  allowedTargetTypes?: string[];
 }
+
+// Extract prefix from type ID (e.g., "nemaki:customDocument" -> "nemaki:")
+const extractPrefix = (typeId: string): string => {
+  if (!typeId) return '';
+  const colonIndex = typeId.indexOf(':');
+  if (colonIndex > 0) {
+    return typeId.substring(0, colonIndex + 1);
+  }
+  return '';
+};
 
 interface TypeGUIEditorProps {
   initialValue: TypeDefinition | null;
@@ -115,7 +127,9 @@ const typeDefinitionToFormData = (typeDef: TypeDefinition | null): TypeFormData 
       includedInSupertypeQuery: true,
       controllablePolicy: true,
       controllableACL: true,
-      propertyDefinitions: []
+      propertyDefinitions: [],
+      allowedSourceTypes: [],
+      allowedTargetTypes: []
     };
   }
 
@@ -137,6 +151,9 @@ const typeDefinitionToFormData = (typeDef: TypeDefinition | null): TypeFormData 
     });
   }
 
+  // Handle relationship-specific fields
+  const typeDefAny = typeDef as any;
+
   return {
     id: typeDef.id || '',
     localName: typeDef.id || '',
@@ -151,7 +168,9 @@ const typeDefinitionToFormData = (typeDef: TypeDefinition | null): TypeFormData 
     includedInSupertypeQuery: true,
     controllablePolicy: true,
     controllableACL: true,
-    propertyDefinitions: properties
+    propertyDefinitions: properties,
+    allowedSourceTypes: typeDefAny.allowedSourceTypes || [],
+    allowedTargetTypes: typeDefAny.allowedTargetTypes || []
   };
 };
 
@@ -159,7 +178,7 @@ const typeDefinitionToFormData = (typeDef: TypeDefinition | null): TypeFormData 
 const formDataToJson = (formData: TypeFormData): any => {
   const propertyDefinitions: PropertyFormData[] = formData.propertyDefinitions || [];
   
-  return {
+  const result: any = {
     id: formData.id,
     localName: formData.localName || formData.id,
     localNamespace: formData.localNamespace || '',
@@ -185,6 +204,18 @@ const formDataToJson = (formData: TypeFormData): any => {
       openChoice: prop.openChoice
     }))
   };
+
+  // Add relationship-specific fields if baseId is cmis:relationship
+  if (formData.baseId === 'cmis:relationship') {
+    if (formData.allowedSourceTypes && formData.allowedSourceTypes.length > 0) {
+      result.allowedSourceTypes = formData.allowedSourceTypes;
+    }
+    if (formData.allowedTargetTypes && formData.allowedTargetTypes.length > 0) {
+      result.allowedTargetTypes = formData.allowedTargetTypes;
+    }
+  }
+
+  return result;
 };
 
 export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
@@ -235,6 +266,11 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
       errors.push('このタイプIDは既に存在します');
     }
 
+    // Check for duplicate display name (warning level)
+    if (data.displayName && existingTypes.some(t => t.displayName === data.displayName && t.id !== data.id)) {
+      errors.push(`警告: 表示名 "${data.displayName}" は既に他のタイプで使用されています`);
+    }
+
     // Validate property definitions
     const propertyIds = new Set<string>();
     data.propertyDefinitions.forEach((prop, index) => {
@@ -249,7 +285,35 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
       if (!prop.propertyType) {
         errors.push(`プロパティ ${index + 1}: データ型は必須です`);
       }
+
+      // Check for duplicate property display name within the type
+      const duplicateDisplayName = data.propertyDefinitions.filter(
+        (p, i) => i !== index && p.displayName && p.displayName === prop.displayName
+      );
+      if (prop.displayName && duplicateDisplayName.length > 0) {
+        errors.push(`プロパティ ${index + 1}: 表示名 "${prop.displayName}" は重複しています`);
+      }
     });
+
+    // Validate relationship-specific fields
+    if (data.baseId === 'cmis:relationship') {
+      // Check if allowedSourceTypes reference existing types
+      if (data.allowedSourceTypes) {
+        data.allowedSourceTypes.forEach(typeId => {
+          if (!existingTypes.some(t => t.id === typeId)) {
+            errors.push(`警告: ソースタイプ "${typeId}" は未定義です`);
+          }
+        });
+      }
+      // Check if allowedTargetTypes reference existing types
+      if (data.allowedTargetTypes) {
+        data.allowedTargetTypes.forEach(typeId => {
+          if (!existingTypes.some(t => t.id === typeId)) {
+            errors.push(`警告: ターゲットタイプ "${typeId}" は未定義です`);
+          }
+        });
+      }
+    }
 
     return errors;
   };
@@ -304,10 +368,11 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
     }
   };
 
-  // Add new property
+  // Add new property with auto-prefix based on type ID
   const addProperty = () => {
+    const prefix = extractPrefix(formData.id);
     const newProperty: PropertyFormData = {
-      id: '',
+      id: prefix,
       displayName: '',
       description: '',
       propertyType: 'string',
@@ -681,6 +746,86 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
             </Col>
           </Row>
         </Panel>
+
+        {formData.baseId === 'cmis:relationship' && (
+          <Panel header="リレーションシップ設定" key="relationship">
+            <Alert
+              message="リレーションシップタイプの設定"
+              description="ソースタイプとターゲットタイプを指定して、どのタイプ間のリレーションシップを許可するかを定義します。"
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  label={
+                    <Space>
+                      許可されるソースタイプ
+                      <Tooltip title="このリレーションシップのソースとして許可されるタイプを選択します">
+                        <QuestionCircleOutlined />
+                      </Tooltip>
+                    </Space>
+                  }
+                >
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    placeholder="ソースタイプを選択"
+                    value={formData.allowedSourceTypes}
+                    onChange={(values) => {
+                      const newFormData = { ...formData, allowedSourceTypes: values };
+                      setFormData(newFormData);
+                      setValidationErrors(validateFormData(newFormData));
+                    }}
+                    style={{ width: '100%' }}
+                  >
+                    {existingTypes
+                      .filter(t => t.baseTypeId === 'cmis:document' || t.baseTypeId === 'cmis:folder')
+                      .map(type => (
+                        <Select.Option key={type.id} value={type.id}>
+                          {type.displayName || type.id}
+                        </Select.Option>
+                      ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  label={
+                    <Space>
+                      許可されるターゲットタイプ
+                      <Tooltip title="このリレーションシップのターゲットとして許可されるタイプを選択します">
+                        <QuestionCircleOutlined />
+                      </Tooltip>
+                    </Space>
+                  }
+                >
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    placeholder="ターゲットタイプを選択"
+                    value={formData.allowedTargetTypes}
+                    onChange={(values) => {
+                      const newFormData = { ...formData, allowedTargetTypes: values };
+                      setFormData(newFormData);
+                      setValidationErrors(validateFormData(newFormData));
+                    }}
+                    style={{ width: '100%' }}
+                  >
+                    {existingTypes
+                      .filter(t => t.baseTypeId === 'cmis:document' || t.baseTypeId === 'cmis:folder')
+                      .map(type => (
+                        <Select.Option key={type.id} value={type.id}>
+                          {type.displayName || type.id}
+                        </Select.Option>
+                      ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+            </Row>
+          </Panel>
+        )}
 
         <Panel header="プロパティ定義" key="properties">
           {formData.propertyDefinitions.length === 0 ? (
