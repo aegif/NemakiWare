@@ -2246,148 +2246,120 @@ export class CMISService {
   }
 
   async initSearchEngine(repositoryId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/search-engine/init`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+    try {
+      const url = `${this.baseUrl}/${repositoryId}/search-engine/init`;
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url,
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during search engine initialization'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during search engine initialization');
+    }
   }
 
   async reindexSearchEngine(repositoryId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/search-engine/reindex`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+    try {
+      const url = `${this.baseUrl}/${repositoryId}/search-engine/reindex`;
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url,
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during search engine reindexing'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during search engine reindexing');
+    }
   }
 
   async getArchives(repositoryId: string): Promise<CMISObject[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       // Use correct REST endpoint for archive index
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/archive/index`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+      const url = `/core/rest/repo/${repositoryId}/archive/index`;
+      const response = await this.httpClient.getJson(url);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response.archives || []);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return data.archives || [];
+        } catch (e) {
+          throw new Error('Invalid response format');
         }
-      };
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during archive retrieval'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during archive retrieval');
+    }
   }
 
   async archiveObject(repositoryId: string, objectId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/archive/${objectId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.baseUrl}/${repositoryId}/archive/${objectId}`;
+      const response = await this.httpClient.postJson(url, {});
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during object archiving'));
-      xhr.send(JSON.stringify({}));
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during object archiving');
+    }
   }
 
   async restoreObject(repositoryId: string, objectId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       // Use REST API endpoint for archive restore (PUT method, matches ArchiveResource.java)
       // ArchiveResource: @PUT @Path("/restore/{id}")
-      xhr.open('PUT', `/core/rest/repo/${repositoryId}/archive/restore/${objectId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      const url = `/core/rest/repo/${repositoryId}/archive/restore/${objectId}`;
+      const response = await this.httpClient.request({
+        method: 'PUT',
+        url,
+        body: JSON.stringify({}),
+        contentType: 'application/json',
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during object restoration'));
-      xhr.send(JSON.stringify({}));
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during object restoration');
+    }
   }
 
   /**
@@ -2435,38 +2407,28 @@ export class CMISService {
   }
 
   async getContentStream(repositoryId: string, objectId: string): Promise<ArrayBuffer> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      
+    try {
       // Use AtomPub binding for content stream download
-      xhr.open('GET', `/core/atom/${repositoryId}/content?id=${objectId}`, true);
-      xhr.responseType = 'arraybuffer';
-      xhr.setRequestHeader('Accept', 'application/octet-stream');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      const url = `/core/atom/${repositoryId}/content?id=${objectId}`;
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url,
+        accept: 'application/octet-stream',
+        responseType: 'arraybuffer'
       });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            resolve(xhr.response);
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-      
-      xhr.onerror = () => {
-        // Network error occurred
-        reject(new Error('Network error'));
-      };
-      
-      xhr.send();
-    });
+
+      if (response.status === 200) {
+        return response.response as ArrayBuffer;
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
@@ -2476,43 +2438,31 @@ export class CMISService {
    * @returns Array of rendition objects with streamId, mimeType, kind, etc.
    */
   async getRenditions(repositoryId: string, objectId: string): Promise<any[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
+    try {
       // Use Jersey REST API endpoint for renditions
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/renditions/${objectId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+      const url = `/core/rest/repo/${repositoryId}/renditions/${objectId}`;
+      const response = await this.httpClient.getJson(url);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response.renditions || response || []);
-            } catch (e) {
-              resolve([]);
-            }
-          } else if (xhr.status === 404) {
-            // No renditions found
-            resolve([]);
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return data.renditions || data || [];
+        } catch (e) {
+          return [];
         }
-      };
+      } else if (response.status === 404) {
+        // No renditions found
+        return [];
+      }
 
-      xhr.onerror = () => {
-        reject(new Error('Network error'));
-      };
-
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
@@ -2522,39 +2472,30 @@ export class CMISService {
    * @param force Force regeneration even if rendition exists
    */
   async generateRenditions(repositoryId: string, objectId: string, force: boolean = false): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
-      xhr.open('POST', `/core/rest/repo/${repositoryId}/renditions/generate?objectId=${objectId}&force=${force}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+    try {
+      const url = `/core/rest/repo/${repositoryId}/renditions/generate?objectId=${objectId}&force=${force}`;
+      const response = await this.httpClient.request({
+        method: 'POST',
+        url,
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 201 || xhr.status === 202) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (e) {
-              resolve({ success: true });
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200 || response.status === 201 || response.status === 202) {
+        try {
+          return JSON.parse(response.responseText);
+        } catch (e) {
+          return { success: true };
         }
-      };
+      }
 
-      xhr.onerror = () => {
-        reject(new Error('Network error'));
-      };
-
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
@@ -2566,35 +2507,25 @@ export class CMISService {
    * @returns Promise<Blob> PDF content as blob
    */
   async getRenditionContent(repositoryId: string, objectId: string, streamId: string): Promise<Blob> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       const url = `${this.baseUrl}/${repositoryId}?cmisselector=content&objectId=${objectId}&streamId=${streamId}`;
-
-      xhr.open('GET', url, true);
-      xhr.responseType = 'blob';
-
-      // Set authentication headers (using the same headers as other CMIS requests)
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url,
+        responseType: 'blob'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            resolve(xhr.response);
-          } else {
-            reject(new Error(`Failed to fetch rendition content: HTTP ${xhr.status}`));
-          }
-        }
-      };
+      if (response.status === 200) {
+        return response.response as Blob;
+      }
 
-      xhr.onerror = () => {
-        reject(new Error('Network error while fetching rendition content'));
-      };
-
-      xhr.send();
-    });
+      throw new Error(`Failed to fetch rendition content: HTTP ${response.status}`);
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error while fetching rendition content');
+    }
   }
 
   /**
@@ -2720,73 +2651,59 @@ export class CMISService {
     removeTypes: string[],
     changeToken?: string
   ): Promise<CMISObject> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        // If no changeToken provided, fetch the current object to get it
-        let token = changeToken;
-        if (!token) {
-          try {
-            const currentObject = await this.getObject(repositoryId, objectId);
-            token = currentObject.properties?.['cmis:changeToken'] as string;
-          } catch (e) {
-            console.warn('Could not fetch changeToken, proceeding without it:', e);
-          }
+    try {
+      // If no changeToken provided, fetch the current object to get it
+      let token = changeToken;
+      if (!token) {
+        try {
+          const currentObject = await this.getObject(repositoryId, objectId);
+          token = currentObject.properties?.['cmis:changeToken'] as string;
+        } catch (e) {
+          console.warn('Could not fetch changeToken, proceeding without it:', e);
         }
-
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-        xhr.setRequestHeader('Accept', 'application/json');
-
-        const headers = this.getAuthHeaders();
-        Object.entries(headers).forEach(([key, value]) => {
-          xhr.setRequestHeader(key, value);
-        });
-
-        xhr.onreadystatechange = () => {
-          if (xhr.readyState === 4) {
-            if (xhr.status === 200 || xhr.status === 201) {
-              try {
-                const response = JSON.parse(xhr.responseText);
-                const updated = this.buildCmisObjectFromBrowserData(response);
-                resolve(updated);
-              } catch (e) {
-                reject(new Error('Failed to parse response'));
-              }
-            } else {
-              const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-              reject(error);
-            }
-          }
-        };
-
-        xhr.onerror = () => reject(new Error('Network error'));
-
-        const formData = new FormData();
-        formData.append('cmisaction', 'update');
-        formData.append('objectId', objectId);
-        formData.append('succinct', 'true');
-        formData.append('_charset_', 'UTF-8');
-
-        // CRITICAL FIX (2025-12-12): Include changeToken to prevent update conflicts
-        if (token) {
-          formData.append('changeToken', token);
-        }
-
-        // Add secondary types to add
-        if (addTypes.length > 0) {
-          formData.append('addSecondaryTypeIds', addTypes.join(','));
-        }
-
-        // Add secondary types to remove
-        if (removeTypes.length > 0) {
-          formData.append('removeSecondaryTypeIds', removeTypes.join(','));
-        }
-
-        xhr.send(formData);
-      } catch (e) {
-        reject(e);
       }
-    });
+
+      const url = `${this.baseUrl}/${repositoryId}`;
+      const formData = new FormData();
+      formData.append('cmisaction', 'update');
+      formData.append('objectId', objectId);
+      formData.append('succinct', 'true');
+      formData.append('_charset_', 'UTF-8');
+
+      // CRITICAL FIX (2025-12-12): Include changeToken to prevent update conflicts
+      if (token) {
+        formData.append('changeToken', token);
+      }
+
+      // Add secondary types to add
+      if (addTypes.length > 0) {
+        formData.append('addSecondaryTypeIds', addTypes.join(','));
+      }
+
+      // Add secondary types to remove
+      if (removeTypes.length > 0) {
+        formData.append('removeSecondaryTypeIds', removeTypes.join(','));
+      }
+
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200 || response.status === 201) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return this.buildCmisObjectFromBrowserData(data);
+        } catch (e) {
+          throw new Error('Failed to parse response');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   // =====================================================
