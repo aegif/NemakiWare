@@ -2072,150 +2072,113 @@ export class CMISService {
   }
 
   async getRelationships(repositoryId: string, objectId: string): Promise<Relationship[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       // Use CMIS AtomPub binding for relationships (Browser Binding doesn't support relationships endpoint)
       // CRITICAL FIX (2025-12-17): Add relationshipDirection=either to get bidirectional relationships
       // Without this parameter, CMIS defaults to 'source' direction only, meaning relationships where
       // the object is the TARGET will not be returned. For bidirectional relationships (like
       // nemaki:bidirectionalRelationship), users expect to see the relationship from both sides.
-      xhr.open('GET', `/core/atom/${repositoryId}/relationships?id=${objectId}&relationshipDirection=either`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      const url = `/core/atom/${repositoryId}/relationships?id=${objectId}&relationshipDirection=either`;
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url,
+        accept: 'application/atom+xml'
       });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              // Parse AtomPub XML response for relationships
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
 
-              // CRITICAL FIX (2025-12-13): Use getElementsByTagNameNS for atom:entry elements
-              // getElementsByTagName('entry') doesn't find <atom:entry> because of namespace prefix
-              const ATOM_NS = 'http://www.w3.org/2005/Atom';
-              const CMIS_NS = 'http://docs.oasis-open.org/ns/cmis/core/200908/';
+      if (response.status === 200) {
+        try {
+          // Parse AtomPub XML response for relationships
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(response.responseText, 'text/xml');
 
-              console.log('[CMIS DEBUG] getRelationships parsing XML, response length:', xhr.responseText.length);
-              console.log('[CMIS DEBUG] getRelationships first 500 chars:', xhr.responseText.substring(0, 500));
+          // CRITICAL FIX (2025-12-13): Use getElementsByTagNameNS for atom:entry elements
+          // getElementsByTagName('entry') doesn't find <atom:entry> because of namespace prefix
+          const ATOM_NS = 'http://www.w3.org/2005/Atom';
+          const CMIS_NS = 'http://docs.oasis-open.org/ns/cmis/core/200908/';
 
-              const entries = xmlDoc.getElementsByTagNameNS(ATOM_NS, 'entry');
-              console.log('[CMIS DEBUG] getRelationships found', entries.length, 'entry elements');
+          console.log('[CMIS DEBUG] getRelationships parsing XML, response length:', response.responseText.length);
+          console.log('[CMIS DEBUG] getRelationships first 500 chars:', response.responseText.substring(0, 500));
 
-              const relationships: Relationship[] = [];
-              for (let i = 0; i < entries.length; i++) {
-                const entry = entries[i];
+          const entries = xmlDoc.getElementsByTagNameNS(ATOM_NS, 'entry');
+          console.log('[CMIS DEBUG] getRelationships found', entries.length, 'entry elements');
 
-                // Helper function to get property value from CMIS XML
-                // CMIS XML structure: <cmis:properties><cmis:propertyId propertyDefinitionId="cmis:sourceId"><cmis:value>...</cmis:value></cmis:propertyId></cmis:properties>
-                // CRITICAL FIX (2025-12-13): Need to search all property types using proper namespaces
-                const getPropertyValue = (propName: string): string => {
-                  const properties = entry.getElementsByTagNameNS(CMIS_NS, 'properties')[0] ||
-                                   entry.querySelector('cmis\\:properties, properties');
-                  if (!properties) return '';
+          const relationships: Relationship[] = [];
+          for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i];
 
-                  // Search through all child elements with propertyDefinitionId attribute
-                  // CRITICAL FIX: Use getElementsByTagNameNS instead of getElementsByTagName
-                  const propTypes = ['propertyId', 'propertyString', 'propertyDateTime', 'propertyBoolean', 'propertyInteger', 'propertyDecimal'];
-                  for (const propType of propTypes) {
-                    const propElements = properties.getElementsByTagNameNS(CMIS_NS, propType);
-                    for (let j = 0; j < propElements.length; j++) {
-                      const elem = propElements[j];
-                      if (elem.getAttribute('propertyDefinitionId') === propName) {
-                        // CRITICAL FIX: Use getElementsByTagNameNS for value element too
-                        const valueElems = elem.getElementsByTagNameNS(CMIS_NS, 'value');
-                        if (valueElems.length > 0) {
-                          return valueElems[0].textContent || '';
-                        }
-                        // Fallback to querySelector
-                        const valueElem = elem.querySelector('cmis\\:value, value');
-                        return valueElem?.textContent || '';
-                      }
+            // Helper function to get property value from CMIS XML
+            // CMIS XML structure: <cmis:properties><cmis:propertyId propertyDefinitionId="cmis:sourceId"><cmis:value>...</cmis:value></cmis:propertyId></cmis:properties>
+            // CRITICAL FIX (2025-12-13): Need to search all property types using proper namespaces
+            const getPropertyValue = (propName: string): string => {
+              const properties = entry.getElementsByTagNameNS(CMIS_NS, 'properties')[0] ||
+                               entry.querySelector('cmis\\:properties, properties');
+              if (!properties) return '';
+
+              // Search through all child elements with propertyDefinitionId attribute
+              // CRITICAL FIX: Use getElementsByTagNameNS instead of getElementsByTagName
+              const propTypes = ['propertyId', 'propertyString', 'propertyDateTime', 'propertyBoolean', 'propertyInteger', 'propertyDecimal'];
+              for (const propType of propTypes) {
+                const propElements = properties.getElementsByTagNameNS(CMIS_NS, propType);
+                for (let j = 0; j < propElements.length; j++) {
+                  const elem = propElements[j];
+                  if (elem.getAttribute('propertyDefinitionId') === propName) {
+                    // CRITICAL FIX: Use getElementsByTagNameNS for value element too
+                    const valueElems = elem.getElementsByTagNameNS(CMIS_NS, 'value');
+                    if (valueElems.length > 0) {
+                      return valueElems[0].textContent || '';
                     }
+                    // Fallback to querySelector
+                    const valueElem = elem.querySelector('cmis\\:value, value');
+                    return valueElem?.textContent || '';
                   }
-                  return '';
-                };
-
-                // CRITICAL FIX: Get objectId from cmis:objectId property, not from <atom:id> which is base64 encoded
-                const relationshipId = getPropertyValue('cmis:objectId');
-                const sourceId = getPropertyValue('cmis:sourceId');
-                const targetId = getPropertyValue('cmis:targetId');
-                const objectTypeId = getPropertyValue('cmis:objectTypeId') || 'cmis:relationship';
-
-                console.log(`[CMIS DEBUG] getRelationships entry ${i}: id=${relationshipId}, sourceId=${sourceId}, targetId=${targetId}, type=${objectTypeId}`);
-
-                // Only add if we have valid source and target IDs
-                if (sourceId && targetId) {
-                  relationships.push({
-                    id: relationshipId,
-                    sourceId: sourceId,
-                    targetId: targetId,
-                    relationshipType: objectTypeId,
-                    properties: {}
-                  });
-                } else {
-                  console.log(`[CMIS DEBUG] getRelationships entry ${i} skipped: missing sourceId or targetId`);
                 }
               }
-              console.log('[CMIS DEBUG] getRelationships returning', relationships.length, 'relationships');
-              
-              resolve(relationships);
-            } catch (e) {
-              reject(new Error('Failed to parse relationships XML'));
+              return '';
+            };
+
+            // CRITICAL FIX: Get objectId from cmis:objectId property, not from <atom:id> which is base64 encoded
+            const relationshipId = getPropertyValue('cmis:objectId');
+            const sourceId = getPropertyValue('cmis:sourceId');
+            const targetId = getPropertyValue('cmis:targetId');
+            const objectTypeId = getPropertyValue('cmis:objectTypeId') || 'cmis:relationship';
+
+            console.log(`[CMIS DEBUG] getRelationships entry ${i}: id=${relationshipId}, sourceId=${sourceId}, targetId=${targetId}, type=${objectTypeId}`);
+
+            // Only add if we have valid source and target IDs
+            if (sourceId && targetId) {
+              relationships.push({
+                id: relationshipId,
+                sourceId: sourceId,
+                targetId: targetId,
+                relationshipType: objectTypeId,
+                properties: {}
+              });
+            } else {
+              console.log(`[CMIS DEBUG] getRelationships entry ${i} skipped: missing sourceId or targetId`);
             }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
           }
+          console.log('[CMIS DEBUG] getRelationships returning', relationships.length, 'relationships');
+          
+          return relationships;
+        } catch (e) {
+          throw new Error('Failed to parse relationships XML');
         }
-      };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send();
-    });
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async createRelationship(repositoryId: string, relationship: Partial<Relationship>): Promise<Relationship> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       // CRITICAL FIX: Use CMIS Browser Binding standard endpoint instead of custom REST endpoint
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 201) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              // Build Relationship object from CMIS Browser Binding response
-              const createdRelationship: Relationship = {
-                id: response.properties?.['cmis:objectId']?.value || response.succinctProperties?.['cmis:objectId'],
-                sourceId: response.properties?.['cmis:sourceId']?.value || response.succinctProperties?.['cmis:sourceId'] || relationship.sourceId || '',
-                targetId: response.properties?.['cmis:targetId']?.value || response.succinctProperties?.['cmis:targetId'] || relationship.targetId || '',
-                relationshipType: response.properties?.['cmis:objectTypeId']?.value || response.succinctProperties?.['cmis:objectTypeId'] || relationship.relationshipType || '',
-                properties: response.properties || response.succinctProperties || {}
-              };
-              resolve(createdRelationship);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during relationship creation'));
+      const url = `${this.baseUrl}/${repositoryId}`;
 
       // Use CMIS Browser Binding form data format
       const formData = new FormData();
@@ -2227,41 +2190,59 @@ export class CMISService {
       formData.append('propertyId[2]', 'cmis:targetId');
       formData.append('propertyValue[2]', relationship.targetId || '');
 
-      xhr.send(formData);
-    });
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200 || response.status === 201) {
+        try {
+          const data = JSON.parse(response.responseText);
+          // Build Relationship object from CMIS Browser Binding response
+          const createdRelationship: Relationship = {
+            id: data.properties?.['cmis:objectId']?.value || data.succinctProperties?.['cmis:objectId'],
+            sourceId: data.properties?.['cmis:sourceId']?.value || data.succinctProperties?.['cmis:sourceId'] || relationship.sourceId || '',
+            targetId: data.properties?.['cmis:targetId']?.value || data.succinctProperties?.['cmis:targetId'] || relationship.targetId || '',
+            relationshipType: data.properties?.['cmis:objectTypeId']?.value || data.succinctProperties?.['cmis:objectTypeId'] || relationship.relationshipType || '',
+            properties: data.properties || data.succinctProperties || {}
+          };
+          return createdRelationship;
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during relationship creation');
+    }
   }
 
   async deleteRelationship(repositoryId: string, relationshipId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       // CRITICAL FIX: Use CMIS Browser Binding standard delete endpoint
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during relationship deletion'));
+      const url = `${this.baseUrl}/${repositoryId}`;
 
       // Use CMIS Browser Binding form data format for delete
       const formData = new FormData();
       formData.append('cmisaction', 'delete');
       formData.append('objectId', relationshipId);
-      xhr.send(formData);
-    });
+
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during relationship deletion');
+    }
   }
 
   async initSearchEngine(repositoryId: string): Promise<void> {
