@@ -274,6 +274,7 @@
  */
 
 import { AuthService } from './auth';
+import { getCmisAuthHeaders } from './auth/CmisAuthHeaderProvider';
 import { CmisHttpClient } from './http';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions } from '../types/cmis';
 import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } from '../types/typeMigration';
@@ -299,8 +300,8 @@ export class CMISService {
   constructor(onAuthError?: (error: any) => void) {
     this.authService = AuthService.getInstance();
     this.onAuthError = onAuthError;
-    // Initialize HTTP client with auth header provider
-    this.httpClient = new CmisHttpClient(() => this.getAuthHeaders());
+    // Initialize HTTP client with auth header provider from dedicated module
+    this.httpClient = new CmisHttpClient(getCmisAuthHeaders);
   }
 
   setAuthErrorHandler(handler: (error: any) => void) {
