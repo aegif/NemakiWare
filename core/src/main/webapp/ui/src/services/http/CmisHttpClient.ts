@@ -149,16 +149,35 @@ export class CmisHttpClient {
    * 
    * @param options Request options
    * @returns Promise that resolves with the response
-   * @throws CmisNetworkError on network failures
+   * @throws CmisNetworkError on network failures (including timeout and abort)
    * 
    * Note: This method does NOT reject on HTTP error status codes (4xx, 5xx).
    * The caller should check response.status and handle errors appropriately.
    * This preserves the existing behavior where some methods return fallback
    * values on HTTP errors instead of throwing.
+   * 
+   * Event handling: Uses onload for successful completion and onerror/ontimeout/onabort
+   * for network failures. This avoids the double-settlement issue where onreadystatechange
+   * at readyState === 4 could race with error events.
    */
   request(options: CmisHttpRequestOptions): Promise<CmisHttpResponse> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
+      
+      // Guard against double-settlement (defensive programming)
+      let settled = false;
+      
+      const safeResolve = (response: CmisHttpResponse) => {
+        if (settled) return;
+        settled = true;
+        resolve(response);
+      };
+      
+      const safeReject = (error: CmisNetworkError) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
       
       xhr.open(options.method, options.url, true);
       
@@ -197,31 +216,30 @@ export class CmisHttpClient {
         xhr.timeout = options.timeout;
       }
       
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          // Request completed - resolve with response regardless of status
-          // Caller is responsible for checking status and handling errors
-          resolve({
-            status: xhr.status,
-            statusText: xhr.statusText,
-            responseURL: xhr.responseURL || options.url,
-            responseText: xhr.responseText,
-            response: xhr.response,
-            getResponseHeader: (name: string) => xhr.getResponseHeader(name)
-          });
-        }
+      // Use onload for successful HTTP completion (fires when request completes at network layer)
+      // This includes HTTP 4xx/5xx responses - we resolve those and let callers handle status
+      xhr.onload = () => {
+        safeResolve({
+          status: xhr.status,
+          statusText: xhr.statusText,
+          responseURL: xhr.responseURL || options.url,
+          responseText: xhr.responseText,
+          response: xhr.response,
+          getResponseHeader: (name: string) => xhr.getResponseHeader(name)
+        });
       };
       
+      // Network-level failures reject with CmisNetworkError
       xhr.onerror = () => {
-        reject(new CmisNetworkError('Network error', options.url));
+        safeReject(new CmisNetworkError('Network error', options.url));
       };
       
       xhr.ontimeout = () => {
-        reject(new CmisNetworkError('Request timeout', options.url));
+        safeReject(new CmisNetworkError('Request timeout', options.url));
       };
       
       xhr.onabort = () => {
-        reject(new CmisNetworkError('Request aborted', options.url));
+        safeReject(new CmisNetworkError('Request aborted', options.url));
       };
       
       // Send the request
