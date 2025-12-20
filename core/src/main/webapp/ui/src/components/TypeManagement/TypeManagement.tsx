@@ -20,11 +20,13 @@ import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
-  ImportOutlined
+  ImportOutlined,
+  FormOutlined
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
 import { CMISService } from '../../services/cmis';
 import { TypeDefinition, PropertyDefinition } from '../../types/cmis';
+import { TypeGUIEditor } from './TypeGUIEditor';
 
 interface TypeManagementProps {
   repositoryId: string;
@@ -51,6 +53,11 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   const [originalTypeId, setOriginalTypeId] = useState<string>('');
   const [editConflictModalVisible, setEditConflictModalVisible] = useState(false);
   const [editBeforeAfter, setEditBeforeAfter] = useState<{ before: any; after: any } | null>(null);
+
+  // GUI editor functionality states
+  const [guiEditorModalVisible, setGuiEditorModalVisible] = useState(false);
+  const [guiEditorType, setGuiEditorType] = useState<TypeDefinition | null>(null);
+  const [guiEditorIsEditing, setGuiEditorIsEditing] = useState(false);
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
@@ -256,6 +263,37 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   const handleEditConflictCancel = () => {
     setEditConflictModalVisible(false);
     setEditBeforeAfter(null);
+  };
+
+  // GUI editor functionality handlers
+  const handleOpenGUIEditor = (type: TypeDefinition | null = null, isEditing: boolean = false) => {
+    setGuiEditorType(type);
+    setGuiEditorIsEditing(isEditing);
+    setGuiEditorModalVisible(true);
+  };
+
+  const handleGUIEditorSave = async (typeDefinition: any) => {
+    try {
+      if (guiEditorIsEditing && guiEditorType) {
+        await cmisService.updateType(repositoryId, guiEditorType.id, typeDefinition);
+        message.success('タイプを更新しました');
+      } else {
+        await cmisService.createType(repositoryId, typeDefinition);
+        message.success('タイプを作成しました');
+      }
+      setGuiEditorModalVisible(false);
+      setGuiEditorType(null);
+      setGuiEditorIsEditing(false);
+      loadTypes();
+    } catch (error) {
+      message.error(guiEditorIsEditing ? 'タイプの更新に失敗しました' : 'タイプの作成に失敗しました');
+    }
+  };
+
+  const handleGUIEditorCancel = () => {
+    setGuiEditorModalVisible(false);
+    setGuiEditorType(null);
+    setGuiEditorIsEditing(false);
   };
 
   const columns = [
@@ -555,6 +593,12 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
             ファイルからインポート
           </Button>
           <Button
+            icon={<FormOutlined />}
+            onClick={() => handleOpenGUIEditor(null, false)}
+          >
+            GUIで新規作成
+          </Button>
+          <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setModalVisible(true)}
@@ -729,6 +773,25 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* GUI Editor modal */}
+      <Modal
+        title={guiEditorIsEditing ? 'タイプ編集 (GUI)' : '新規タイプ作成 (GUI)'}
+        open={guiEditorModalVisible}
+        onCancel={handleGUIEditorCancel}
+        footer={null}
+        width={1000}
+        maskClosable={false}
+        destroyOnClose
+      >
+        <TypeGUIEditor
+          initialValue={guiEditorType}
+          existingTypes={types}
+          onSave={handleGUIEditorSave}
+          onCancel={handleGUIEditorCancel}
+          isEditing={guiEditorIsEditing}
+        />
       </Modal>
     </Card>
   );
