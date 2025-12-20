@@ -19,6 +19,7 @@ export {
   parseAtomFeed,
   parseAtomEntryResponse,
   type ParsedCmisProperties,
+  type ParsedAllowableActions,
   type ParsedAtomEntry
 } from './atompubParsers';
 

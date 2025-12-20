@@ -16,7 +16,7 @@
 import { BrowserBindingClient } from '../clients/BrowserBindingClient';
 import { AtomPubClient, AtomPubPagination } from '../clients/AtomPubClient';
 import { CmisHttpClient } from '../http';
-import { ParsedAtomEntry } from '../parsers';
+import { ParsedAtomEntry, ParsedAllowableActions } from '../parsers';
 
 /**
  * Folder creation options
@@ -61,7 +61,7 @@ export interface Folder {
   creationDate?: string;
   lastModificationDate?: string;
   properties: Record<string, unknown>;
-  allowableActions: string[];
+  allowableActions: ParsedAllowableActions;
 }
 
 /**
@@ -74,7 +74,7 @@ export interface ChildItem {
   baseType: string;
   isFolder: boolean;
   properties: Record<string, unknown>;
-  allowableActions: string[];
+  allowableActions: ParsedAllowableActions;
 }
 
 /**

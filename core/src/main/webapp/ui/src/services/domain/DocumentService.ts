@@ -16,7 +16,7 @@
 import { BrowserBindingClient } from '../clients/BrowserBindingClient';
 import { AtomPubClient } from '../clients/AtomPubClient';
 import { CmisHttpClient } from '../http';
-import { ParsedAtomEntry } from '../parsers';
+import { ParsedAtomEntry, ParsedAllowableActions } from '../parsers';
 
 /**
  * Document creation options
@@ -70,7 +70,7 @@ export interface Document {
   versionSeriesCheckedOutId?: string;
   checkinComment?: string;
   properties: Record<string, unknown>;
-  allowableActions: string[];
+  allowableActions: ParsedAllowableActions;
 }
 
 /**

@@ -27,13 +27,26 @@ export interface ParsedCmisProperties {
 }
 
 /**
+ * Parsed allowable actions from AtomPub XML
+ * 
+ * This is an object mapping action names to boolean values.
+ * Both true and false values are preserved to distinguish between:
+ * - Action explicitly allowed (true)
+ * - Action explicitly denied (false)
+ * - Action not specified (key not present)
+ */
+export interface ParsedAllowableActions {
+  [actionName: string]: boolean;
+}
+
+/**
  * Parsed CMIS object from AtomPub entry
  */
 export interface ParsedAtomEntry {
   atomTitle: string;
   atomId: string;
   properties: ParsedCmisProperties;
-  allowableActions: string[];
+  allowableActions: ParsedAllowableActions;
 }
 
 /**
@@ -194,11 +207,15 @@ export function extractAllProperties(properties: Element): ParsedCmisProperties 
 /**
  * Extract allowable actions from cmis:allowableActions element
  * 
+ * IMPORTANT: This function preserves both true AND false values from the server.
+ * This is critical for security - if the server explicitly returns canGetChildren=false,
+ * we must preserve that to prevent UI from incorrectly enabling actions for restricted users.
+ * 
  * @param parent Parent element containing allowableActions
- * @returns Array of allowed action names
+ * @returns Object mapping action names to boolean values (both true and false are preserved)
  */
-export function extractAllowableActions(parent: Element): string[] {
-  const actions: string[] = [];
+export function extractAllowableActions(parent: Element): ParsedAllowableActions {
+  const actions: ParsedAllowableActions = {};
   
   // Try namespace-aware lookup first
   let allowableActionsElem = parent.getElementsByTagNameNS(CMIS_CORE_NS, 'allowableActions')[0];
@@ -209,14 +226,16 @@ export function extractAllowableActions(parent: Element): string[] {
   }
   
   if (allowableActionsElem) {
-    // Get all child elements that have 'true' as text content
+    // Get all child elements and preserve both true AND false values
     const children = allowableActionsElem.children;
     for (let i = 0; i < children.length; i++) {
       const child = children[i];
-      if (child.textContent === 'true') {
+      const textContent = (child.textContent || '').trim().toLowerCase();
+      // Only process elements that have 'true' or 'false' as text content
+      if (textContent === 'true' || textContent === 'false') {
         // Extract action name from tag (e.g., 'cmis:canDeleteObject' -> 'canDeleteObject')
         const tagName = child.localName || child.tagName.replace(/^cmis:/, '');
-        actions.push(tagName);
+        actions[tagName] = textContent === 'true';
       }
     }
   }

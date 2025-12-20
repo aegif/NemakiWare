@@ -290,11 +290,9 @@ import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } fr
 function convertParsedEntryToCmisObject(entry: ParsedAtomEntry): CMISObject {
   const props = entry.properties;
   
-  // Convert allowableActions array to object with boolean properties
-  const allowableActions: AllowableActions = {};
-  for (const action of entry.allowableActions) {
-    (allowableActions as Record<string, boolean>)[action] = true;
-  }
+  // allowableActions is now an object with boolean properties (both true and false preserved)
+  // This preserves explicit false values from the server for security
+  const allowableActions: AllowableActions = entry.allowableActions as AllowableActions;
   
   // Extract common properties
   const id = String(props['cmis:objectId'] || entry.atomId.split('/').pop() || '');
@@ -763,10 +761,17 @@ export class CMISService {
       // Convert ParsedAtomEntry to CMISObject
       const rootFolder = convertParsedEntryToCmisObject(result.data);
       
-      // Ensure allowableActions has canGetChildren for root folder
+      // Only default canGetChildren to true if allowableActions is completely missing
+      // or if canGetChildren is undefined (not present in server response).
+      // IMPORTANT: Do NOT override explicit false values from the server - this is
+      // critical for security to prevent UI from enabling actions for restricted users.
       if (!rootFolder.allowableActions) {
         rootFolder.allowableActions = { canGetChildren: true };
+      } else if (rootFolder.allowableActions.canGetChildren === undefined) {
+        // Only set default if the server didn't specify canGetChildren at all
+        rootFolder.allowableActions.canGetChildren = true;
       }
+      // If server explicitly returned canGetChildren: false, we preserve it
       
       return rootFolder;
     } catch (error) {

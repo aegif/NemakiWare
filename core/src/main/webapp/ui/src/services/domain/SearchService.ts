@@ -12,7 +12,7 @@
 
 import { AtomPubClient, AtomPubPagination } from '../clients/AtomPubClient';
 import { CmisHttpClient } from '../http';
-import { ParsedAtomEntry } from '../parsers';
+import { ParsedAtomEntry, ParsedAllowableActions } from '../parsers';
 
 /**
  * Search options
@@ -34,7 +34,7 @@ export interface SearchResultItem {
   baseType: string;
   isFolder: boolean;
   properties: Record<string, unknown>;
-  allowableActions: string[];
+  allowableActions: ParsedAllowableActions;
 }
 
 /**
