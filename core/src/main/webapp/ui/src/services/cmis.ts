@@ -274,8 +274,54 @@
  */
 
 import { AuthService } from './auth';
+import { getCmisAuthHeaders } from './auth/CmisAuthHeaderProvider';
+import { CmisHttpClient } from './http';
+import { AtomPubClient } from './clients';
+import { ParsedAtomEntry } from './parsers';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions } from '../types/cmis';
 import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } from '../types/typeMigration';
+
+/**
+ * Convert ParsedAtomEntry to CMISObject
+ * 
+ * This helper function bridges the new parser output format to the existing CMISObject interface.
+ * It converts the allowableActions array to an object with boolean properties.
+ */
+function convertParsedEntryToCmisObject(entry: ParsedAtomEntry): CMISObject {
+  const props = entry.properties;
+  
+  // allowableActions is now an object with boolean properties (both true and false preserved)
+  // This preserves explicit false values from the server for security
+  const allowableActions: AllowableActions = entry.allowableActions as AllowableActions;
+  
+  // Extract common properties
+  const id = String(props['cmis:objectId'] || entry.atomId.split('/').pop() || '');
+  const name = String(props['cmis:name'] || entry.atomTitle || 'Unknown');
+  const objectType = String(props['cmis:objectTypeId'] || 'cmis:document');
+  const baseTypeId = String(props['cmis:baseTypeId'] || '');
+  const baseType = baseTypeId || (objectType.includes('folder') ? 'cmis:folder' : 'cmis:document');
+  
+  return {
+    id,
+    name,
+    objectType,
+    baseType,
+    properties: props,
+    allowableActions: Object.keys(allowableActions).length > 0 ? allowableActions : undefined,
+    path: props['cmis:path'] as string | undefined,
+    createdBy: props['cmis:createdBy'] as string | undefined,
+    lastModifiedBy: props['cmis:lastModifiedBy'] as string | undefined,
+    creationDate: props['cmis:creationDate'] as string | undefined,
+    lastModificationDate: props['cmis:lastModificationDate'] as string | undefined,
+    contentStreamLength: typeof props['cmis:contentStreamLength'] === 'number' 
+      ? props['cmis:contentStreamLength'] 
+      : undefined,
+    contentStreamMimeType: props['cmis:contentStreamMimeType'] as string | undefined,
+    versionLabel: props['cmis:versionLabel'] as string | undefined,
+    isLatestVersion: props['cmis:isLatestVersion'] as boolean | undefined,
+    isLatestMajorVersion: props['cmis:isLatestMajorVersion'] as boolean | undefined
+  };
+}
 
 const MIGRATION_PROPERTY_TYPES: MigrationPropertyType[] = [
   'string',
@@ -292,11 +338,17 @@ export class CMISService {
   private baseUrl = '/core/browser';
   private restBaseUrl = '/core/rest/repo';  // REST API for type management operations
   private authService: AuthService;
+  private httpClient: CmisHttpClient;
+  private atomPubClient: AtomPubClient;
   private onAuthError?: (error: any) => void;
 
   constructor(onAuthError?: (error: any) => void) {
     this.authService = AuthService.getInstance();
     this.onAuthError = onAuthError;
+    // Initialize HTTP client with auth header provider from dedicated module
+    this.httpClient = new CmisHttpClient(getCmisAuthHeaders);
+    // Initialize AtomPub client for read operations (getChildren, getObject, query)
+    this.atomPubClient = new AtomPubClient(this.httpClient, '/core/atom');
   }
 
   setAuthErrorHandler(handler: (error: any) => void) {
@@ -629,706 +681,251 @@ export class CMISService {
 
   async getRepositories(): Promise<string[]> {
     try {
-      return new Promise((resolve) => {
-        const xhr = new XMLHttpRequest();
-        
-        // Use unauthenticated endpoint for getting repository list
-        // This is needed for the login screen where user hasn't authenticated yet
-        xhr.open('GET', '/core/rest/all/repositories', true);
-        xhr.setRequestHeader('Accept', 'application/json');
-        
-        xhr.onreadystatechange = () => {
-          if (xhr.readyState === 4) {
-            if (xhr.status === 200) {
-              try {
-                const response = JSON.parse(xhr.responseText);
-                // Extract repository IDs from the response
-                if (Array.isArray(response)) {
-                  const repositoryIds = response.map(repo => repo.id).filter(id => id);
-                  resolve(repositoryIds);
-                } else if (response.repositories) {
-                  resolve(response.repositories);
-                } else {
-                  resolve([]);
-                }
-              } catch (e) {
-                // Failed to parse response - return empty array
-                resolve([]);
-              }
-            } else {
-              // Failed to fetch repositories
-              if (xhr.status === 401) {
-                this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-              }
-              resolve([]);
-            }
-          }
-        };
-        
-        xhr.onerror = () => {
-          // Network error - return empty array
-          resolve([]);
-        };
-
-        xhr.send();
+      // Use unauthenticated endpoint for getting repository list
+      // This is needed for the login screen where user hasn't authenticated yet
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url: '/core/rest/all/repositories',
+        accept: 'application/json',
+        includeAuth: false  // No auth needed for repository list
       });
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          // Extract repository IDs from the response
+          if (Array.isArray(data)) {
+            const repositoryIds = data.map(repo => repo.id).filter(id => id);
+            return repositoryIds;
+          } else if (data.repositories) {
+            return data.repositories;
+          } else {
+            return [];
+          }
+        } catch (e) {
+          // Failed to parse response - return empty array
+          return [];
+        }
+      } else {
+        // Failed to fetch repositories
+        if (response.status === 401) {
+          this.handleHttpError(response.status, response.statusText, response.responseURL);
+        }
+        return [];
+      }
     } catch (error) {
-      // Exception during repository fetch
+      // Network error or exception - return empty array
       return [];
     }
   }
 
 
+  /**
+   * Get root folder of a repository using the new AtomPubClient
+   * 
+   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
+   * which provides better separation of concerns and testability.
+   * The fallback behavior is preserved: always resolves with a folder, never rejects.
+   * 
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @returns Promise resolving to CMISObject (root folder)
+   */
   async getRootFolder(repositoryId: string): Promise<CMISObject> {
-    return new Promise((resolve, _reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/root`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
+    // Fallback folder used when request fails or returns invalid data
+    const fallbackFolder: CMISObject = {
+      id: 'e02f784f8360a02cc14d1314c10038ff',
+      name: 'Root Folder',
+      objectType: 'cmis:folder',
+      baseType: 'cmis:folder',
+      properties: {},
+      allowableActions: { canGetChildren: true },
+      path: '/'
+    };
 
-              const props = response.succinctProperties || response.properties || {};
-              const rootFolder: CMISObject = {
-                id: this.getSafeStringProperty(props, 'cmis:objectId', 'e02f784f8360a02cc14d1314c10038ff'),
-                name: this.getSafeStringProperty(props, 'cmis:name', 'Root Folder'),
-                objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:folder'),
-                baseType: 'cmis:folder',
-                properties: props,
-                allowableActions: this.extractAllowableActions(response.allowableActions) || { canGetChildren: true },
-                path: this.getSafeStringProperty(props, 'cmis:path', '/')
-              };
+    try {
+      // Use the new AtomPubClient for getRootFolder
+      const result = await this.atomPubClient.getRootFolder(repositoryId);
 
-              resolve(rootFolder);
-            } catch (error) {
-              // Failed to parse response - use fallback
-              const fallbackFolder: CMISObject = {
-                id: 'e02f784f8360a02cc14d1314c10038ff',
-                name: 'Root Folder',
-                objectType: 'cmis:folder',
-                baseType: 'cmis:folder',
-                properties: {},
-                allowableActions: { canGetChildren: true },
-                path: '/'
-              };
-              resolve(fallbackFolder);
-            }
-          } else {
-            // Request failed - handle authentication errors
-            this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            // For now, still provide fallback but notify about auth error
-            const fallbackFolder: CMISObject = {
-              id: 'e02f784f8360a02cc14d1314c10038ff',
-              name: 'Root Folder',
-              objectType: 'cmis:folder',
-              baseType: 'cmis:folder',
-              properties: {},
-              allowableActions: { canGetChildren: true },
-              path: '/'
-            };
-            resolve(fallbackFolder);
-          }
+      if (!result.success) {
+        // Handle HTTP errors - notify about auth error but still return fallback
+        if (result.status === 401 || result.status === 403) {
+          this.handleHttpError(result.status, result.error || 'Unauthorized', '');
         }
-      };
+        return fallbackFolder;
+      }
 
-      xhr.onerror = () => {
-        // Network error - use fallback folder
-        const fallbackFolder: CMISObject = {
-          id: 'e02f784f8360a02cc14d1314c10038ff',
-          name: 'Root Folder',
-          objectType: 'cmis:folder',
-          baseType: 'cmis:folder',
-          properties: {},
-          allowableActions: { canGetChildren: true },
-          path: '/'
-        };
-        resolve(fallbackFolder);
-      };
+      if (!result.data) {
+        return fallbackFolder;
+      }
+
+      // Convert ParsedAtomEntry to CMISObject
+      const rootFolder = convertParsedEntryToCmisObject(result.data);
       
-      xhr.send();
-    });
-  }
-
-  async getChildren(repositoryId: string, folderId: string): Promise<CMISObject[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+      // Only default canGetChildren to true if allowableActions is completely missing
+      // or if canGetChildren is undefined (not present in server response).
+      // IMPORTANT: Do NOT override explicit false values from the server - this is
+      // critical for security to prevent UI from enabling actions for restricted users.
+      if (!rootFolder.allowableActions) {
+        rootFolder.allowableActions = { canGetChildren: true };
+      } else if (rootFolder.allowableActions.canGetChildren === undefined) {
+        // Only set default if the server didn't specify canGetChildren at all
+        rootFolder.allowableActions.canGetChildren = true;
+      }
+      // If server explicitly returned canGetChildren: false, we preserve it
       
-      // Use AtomPub for all folder children queries due to Browser Binding issues with empty results
-      // Always use AtomPub for children queries - more reliable than Browser Binding
-      // CRITICAL FIX: Add filter=* to get all properties including versioning properties
-      // CRITICAL FIX (2025-12-12): Add includeAllowableActions=true to enable preview tab
-      const url = `/core/atom/${repositoryId}/children?id=${folderId}&filter=*&includeAllowableActions=true`;
-      
-      xhr.open('GET', url, true);
-
-      // Set headers AFTER xhr.open() - always use AtomPub
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const children: CMISObject[] = [];
-
-              // Parse AtomPub XML response
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-
-              // Check for parse errors
-              const parseError = xmlDoc.querySelector('parsererror');
-              if (parseError) {
-                // XML parsing failed
-                reject(new Error('Invalid XML response'));
-                return;
-              }
-
-              // Try both atom:entry and entry
-              const entries = xmlDoc.getElementsByTagName('atom:entry').length > 0
-                ? xmlDoc.getElementsByTagName('atom:entry')
-                : xmlDoc.getElementsByTagName('entry');
-
-              for (let i = 0; i < entries.length; i++) {
-                const entry = entries[i];
-
-                // Extract simple data from atom:entry first
-                const atomTitle = entry.querySelector('title')?.textContent || 'Unknown';
-                const atomId = entry.querySelector('id')?.textContent || '';
-
-                // Get cmisra:object for properties
-                const cmisObject = entry.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/restatom/200908/', 'object')[0] ||
-                                  entry.querySelector('cmisra\\:object, object');
-
-                let properties = null;
-                if (cmisObject) {
-                  properties = cmisObject.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'properties')[0] ||
-                             cmisObject.querySelector('cmis\\:properties, properties');
-                }
-
-                if (!properties) {
-                  // Fallback: look for properties directly under entry
-                  properties = entry.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'properties')[0] ||
-                             entry.querySelector('cmis\\:properties, properties');
-                }
-
-                if (properties) {
-                  // Helper function to get property value
-                  const getPropertyValue = (propName: string, propType: string = 'propertyString') => {
-                    const propElements = properties.getElementsByTagName(`cmis:${propType}`);
-                    for (let j = 0; j < propElements.length; j++) {
-                      const elem = propElements[j];
-                      if (elem.getAttribute('propertyDefinitionId') === propName) {
-                        const valueElem = elem.querySelector('cmis\\:value, value');
-                        return valueElem?.textContent || '';
-                      }
-                    }
-                    return '';
-                  };
-
-                  const id = getPropertyValue('cmis:objectId', 'propertyId') || atomId;
-                  const name = getPropertyValue('cmis:name', 'propertyString') || atomTitle;
-                  const objectType = getPropertyValue('cmis:objectTypeId', 'propertyId') || 'cmis:document';
-                  const createdBy = getPropertyValue('cmis:createdBy', 'propertyString');
-                  const lastModifiedBy = getPropertyValue('cmis:lastModifiedBy', 'propertyString');
-                  const creationDate = getPropertyValue('cmis:creationDate', 'propertyDateTime');
-                  const lastModificationDate = getPropertyValue('cmis:lastModificationDate', 'propertyDateTime');
-                  const contentStreamLengthStr = getPropertyValue('cmis:contentStreamLength', 'propertyInteger');
-
-                  // CRITICAL FIX: Extract ALL properties from XML, not just hardcoded ones
-                  const allProperties: Record<string, any> = {
-                    'cmis:name': name,
-                    'cmis:objectId': id,
-                    'cmis:objectTypeId': objectType,
-                    'cmis:createdBy': createdBy,
-                    'cmis:lastModifiedBy': lastModifiedBy,
-                    'cmis:creationDate': creationDate,
-                    'cmis:lastModificationDate': lastModificationDate,
-                    'cmis:contentStreamLength': contentStreamLengthStr ? parseInt(contentStreamLengthStr) : undefined
-                  };
-
-                  // Extract all property types (Boolean, String, Integer, DateTime, Id)
-                  const propertyTypes = ['propertyBoolean', 'propertyString', 'propertyInteger', 'propertyDateTime', 'propertyId'];
-                  for (const propType of propertyTypes) {
-                    const propElements = properties.getElementsByTagName(`cmis:${propType}`);
-                    for (let j = 0; j < propElements.length; j++) {
-                      const elem = propElements[j];
-                      const propName = elem.getAttribute('propertyDefinitionId');
-                      if (propName && !allProperties[propName]) {
-                        // Use getElementsByTagName for XML namespace compatibility (querySelector doesn't work reliably in XML)
-                        const valueElem = elem.getElementsByTagName('cmis:value')[0] || elem.getElementsByTagName('value')[0];
-                        if (valueElem) {
-                          let value: any = valueElem.textContent || '';
-                          // Convert boolean strings to actual booleans
-                          if (propType === 'propertyBoolean') {
-                            value = value === 'true';
-                          } else if (propType === 'propertyInteger') {
-                            value = value ? parseInt(value) : undefined;
-                          }
-                          allProperties[propName] = value;
-                        }
-                      }
-                    }
-                  }
-
-                  // DEBUG: Log allProperties structure to understand why path extraction fails
-                  console.log('[CMIS DEBUG] allProperties keys:', Object.keys(allProperties));
-                  console.log('[CMIS DEBUG] cmis:path raw value:', allProperties['cmis:path']);
-                  console.log('[CMIS DEBUG] All properties:', allProperties);
-
-                  // Extract path from allProperties if available
-                  const path = allProperties['cmis:path'] as string | undefined;
-                  console.log('[CMIS DEBUG] Extracted path:', path);
-
-                  // Extract contentStreamMimeType for preview support
-                  const contentStreamMimeType = getPropertyValue('cmis:contentStreamMimeType', 'propertyString');
-
-                  // Extract allowableActions from AtomPub response
-                  // AllowableActions are in cmis:allowableActions element with boolean children
-                  let allowableActions: AllowableActions | undefined = undefined;
-                  const allowableActionsElem = cmisObject?.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'allowableActions')[0] ||
-                                              cmisObject?.querySelector('cmis\\:allowableActions, allowableActions');
-                  if (allowableActionsElem) {
-                    allowableActions = {};
-                    const actionElements = allowableActionsElem.children;
-                    for (let k = 0; k < actionElements.length; k++) {
-                      const actionElem = actionElements[k];
-                      const actionName = actionElem.localName || actionElem.nodeName.replace('cmis:', '');
-                      const actionValue = actionElem.textContent === 'true';
-                      (allowableActions as any)[actionName] = actionValue;
-                    }
-                  }
-
-                  const cmisObjectResult: CMISObject = {
-                    id: id,
-                    name: name,
-                    objectType: objectType,
-                    baseType: objectType.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
-                    properties: allProperties,
-                    allowableActions: allowableActions,
-                    path: path,  // Add path property from XML response
-                    createdBy: createdBy,
-                    lastModifiedBy: lastModifiedBy,
-                    creationDate: creationDate,
-                    lastModificationDate: lastModificationDate,
-                    contentStreamLength: contentStreamLengthStr ? parseInt(contentStreamLengthStr) : undefined,
-                    contentStreamMimeType: contentStreamMimeType || undefined
-                  };
-                  children.push(cmisObjectResult);
-                } else {
-                  // プロパティが見つからない場合の簡易処理
-                  const fallbackObject: CMISObject = {
-                    id: atomId.split('/').pop() || `entry-${i}`,
-                    name: atomTitle,
-                    objectType: 'cmis:document',
-                    baseType: 'cmis:document',
-                    properties: {
-                      'cmis:name': atomTitle,
-                      'cmis:objectId': atomId.split('/').pop() || `entry-${i}`
-                    },
-                    allowableActions: undefined
-                  };
-                  children.push(fallbackObject);
-                }
-              }
-
-              resolve(children);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Failed to parse AtomPub response'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => {
-        // Network error occurred
-        reject(new Error('Network error'));
-      };
-      
-      xhr.send();
-    });
-  }
-
-  async getObject(repositoryId: string, objectId: string): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
-      // Use AtomPub binding for getObject as Browser Binding doesn't have proper object endpoint
-      // CRITICAL FIX (2025-11-19): Add includeAllowableActions=true to get inline allowableActions
-      // Without this parameter, allowableActions are only available via separate linked resource,
-      // causing preview tab to never appear because canPreview() expects allowableActions array
-      xhr.open('GET', `/core/atom/${repositoryId}/id?id=${objectId}&includeAllowableActions=true`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              // Parse AtomPub XML response
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-
-              const entry = xmlDoc.querySelector('entry, atom\\:entry');
-
-              if (!entry) {
-                // No entry element found in response
-                reject(new Error('No entry found in AtomPub response'));
-                return;
-              }
-
-              const title = entry.querySelector('title, atom\\:title')?.textContent || 'Unknown';
-              const properties = entry.querySelector('cmis\\:properties, properties');
-              
-              let objectType = 'cmis:document';
-              let baseType = 'cmis:document';
-              let path = '';
-              let createdBy = '';
-              let creationDate = '';
-              let lastModifiedBy = '';
-              let lastModificationDate = '';
-              let contentStreamLength: number | undefined;
-              let contentStreamMimeType = '';
-              let versionLabel = '';
-              let isLatestVersion: boolean | undefined;
-              let isLatestMajorVersion: boolean | undefined;
-
-              // CRITICAL FIX (2025-11-17): Extract ALL properties to populate properties field
-              // This is essential for changeToken extraction and other CMIS property access
-              const propertiesMap: Record<string, any> = {};
-
-              if (properties) {
-                // First, extract ALL property elements to build complete properties map
-                const allPropertyElements = properties.querySelectorAll('[propertyDefinitionId]');
-
-                allPropertyElements.forEach((propElement, _index) => {
-                  const propertyId = propElement.getAttribute('propertyDefinitionId');
-                  if (!propertyId) return;
-
-                  // Extract value(s) from the property element
-                  const valueElements = propElement.querySelectorAll('cmis\\:value, value');
-
-                  if (valueElements.length === 0) {
-                    // No value - property is null or empty
-                    propertiesMap[propertyId] = null;
-                  } else if (valueElements.length === 1) {
-                    // Single value property
-                    const textValue = valueElements[0].textContent;
-                    propertiesMap[propertyId] = textValue;
-                  } else {
-                    // Multi-value property (array)
-                    const values: string[] = [];
-                    valueElements.forEach(valueEl => {
-                      if (valueEl.textContent) {
-                        values.push(valueEl.textContent);
-                      }
-                    });
-                    propertiesMap[propertyId] = values;
-                  }
-                });
-
-                // Then extract specific properties for direct field assignment (backward compatibility)
-                const objectTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectTypeId"], propertyId[propertyDefinitionId="cmis:objectTypeId"]');
-                const baseTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:baseTypeId"], propertyId[propertyDefinitionId="cmis:baseTypeId"]');
-                const pathElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:path"], propertyString[propertyDefinitionId="cmis:path"]');
-                const createdByElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:createdBy"], propertyString[propertyDefinitionId="cmis:createdBy"]');
-                const creationDateElement = properties.querySelector('cmis\\:propertyDateTime[propertyDefinitionId="cmis:creationDate"], propertyDateTime[propertyDefinitionId="cmis:creationDate"]');
-                const lastModifiedByElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:lastModifiedBy"], propertyString[propertyDefinitionId="cmis:lastModifiedBy"]');
-                const lastModificationDateElement = properties.querySelector('cmis\\:propertyDateTime[propertyDefinitionId="cmis:lastModificationDate"], propertyDateTime[propertyDefinitionId="cmis:lastModificationDate"]');
-                const contentStreamLengthElement = properties.querySelector('cmis\\:propertyInteger[propertyDefinitionId="cmis:contentStreamLength"], propertyInteger[propertyDefinitionId="cmis:contentStreamLength"]');
-                const contentStreamMimeTypeElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:contentStreamMimeType"], propertyString[propertyDefinitionId="cmis:contentStreamMimeType"]');
-                const versionLabelElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:versionLabel"], propertyString[propertyDefinitionId="cmis:versionLabel"]');
-                const isLatestVersionElement = properties.querySelector('cmis\\:propertyBoolean[propertyDefinitionId="cmis:isLatestVersion"], propertyBoolean[propertyDefinitionId="cmis:isLatestVersion"]');
-                const isLatestMajorVersionElement = properties.querySelector('cmis\\:propertyBoolean[propertyDefinitionId="cmis:isLatestMajorVersion"], propertyBoolean[propertyDefinitionId="cmis:isLatestMajorVersion"]');
-
-                if (objectTypeElement) {
-                  objectType = objectTypeElement.querySelector('cmis\\:value, value')?.textContent || objectType;
-                }
-                if (baseTypeElement) {
-                  baseType = baseTypeElement.querySelector('cmis\\:value, value')?.textContent || baseType;
-                }
-                if (pathElement) {
-                  path = pathElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (createdByElement) {
-                  createdBy = createdByElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (creationDateElement) {
-                  creationDate = creationDateElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (lastModifiedByElement) {
-                  lastModifiedBy = lastModifiedByElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (lastModificationDateElement) {
-                  lastModificationDate = lastModificationDateElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (contentStreamLengthElement) {
-                  const lengthText = contentStreamLengthElement.querySelector('cmis\\:value, value')?.textContent;
-                  if (lengthText) {
-                    contentStreamLength = parseInt(lengthText, 10);
-                  }
-                }
-                if (contentStreamMimeTypeElement) {
-                  contentStreamMimeType = contentStreamMimeTypeElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (versionLabelElement) {
-                  versionLabel = versionLabelElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (isLatestVersionElement) {
-                  const boolText = isLatestVersionElement.querySelector('cmis\\:value, value')?.textContent;
-                  isLatestVersion = boolText === 'true';
-                }
-                if (isLatestMajorVersionElement) {
-                  const boolText = isLatestMajorVersionElement.querySelector('cmis\\:value, value')?.textContent;
-                  isLatestMajorVersion = boolText === 'true';
-                }
-              }
-
-              // CRITICAL FIX (2025-12-14): Extract allowableActions from AtomPub response using getElementsByTagNameNS
-              // querySelector with 'cmis\\:' prefix doesn't work reliably in XML context
-              // This is required for canPreview() utility to work correctly
-              const CMIS_NS = 'http://docs.oasis-open.org/ns/cmis/core/200908/';
-              const allowableActions: AllowableActions = {};
-              const allowableActionsElements = entry.getElementsByTagNameNS(CMIS_NS, 'allowableActions');
-              const allowableActionsElement = allowableActionsElements.length > 0 ? allowableActionsElements[0] :
-                                              entry.querySelector('allowableActions');
-              console.log('[CMIS DEBUG] getObject allowableActions element found:', !!allowableActionsElement);
-              if (allowableActionsElement) {
-                // Iterate through all child elements to find can* actions
-                const children = allowableActionsElement.children;
-                console.log('[CMIS DEBUG] getObject allowableActions children count:', children.length);
-                for (let i = 0; i < children.length; i++) {
-                  const actionEl = children[i];
-                  const actionName = actionEl.localName;
-                  // Check if element name starts with "can" (canGetContentStream, canDeleteObject, etc.)
-                  if (actionName && actionName.startsWith('can')) {
-                    const actionValue = actionEl.textContent?.trim();
-                    // Set as boolean property in AllowableActions object
-                    (allowableActions as any)[actionName] = actionValue === 'true';
-                  }
-                }
-                console.log('[CMIS DEBUG] getObject extracted allowableActions:', Object.keys(allowableActions));
-                console.log('[CMIS DEBUG] canGetContentStream:', allowableActions.canGetContentStream);
-              }
-
-              const cmisObject: CMISObject = {
-                id: objectId,
-                name: title,
-                objectType: objectType,
-                baseType: baseType,
-                properties: propertiesMap, // NOW POPULATED with all CMIS properties including changeToken!
-                allowableActions: Object.keys(allowableActions).length > 0 ? allowableActions : undefined,
-                path: path,
-                createdBy: createdBy || undefined,
-                creationDate: creationDate || undefined,
-                lastModifiedBy: lastModifiedBy || undefined,
-                lastModificationDate: lastModificationDate || undefined,
-                contentStreamLength: contentStreamLength,
-                contentStreamMimeType: contentStreamMimeType || undefined,
-                versionLabel: versionLabel || undefined,
-                isLatestVersion: isLatestVersion,
-                isLatestMajorVersion: isLatestMajorVersion
-              };
-
-              resolve(cmisObject);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Failed to parse AtomPub response'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => {
-        // Network error occurred
-        reject(new Error('Network error'));
-      };
-      xhr.send();
-    });
+      return rootFolder;
+    } catch (error) {
+      // Network error or exception - return fallback folder
+      return fallbackFolder;
+    }
   }
 
   /**
-   * Get a CMIS object by its path
-   * Uses AtomPub binding's path endpoint
+   * Get children of a folder using the new AtomPubClient
+   * 
+   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
+   * which provides better separation of concerns and testability.
+   * The behavior is preserved: uses AtomPub binding with filter=* and includeAllowableActions=true
+   * 
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @param folderId Folder ID to get children from
+   * @returns Promise resolving to array of CMISObject
+   */
+  async getChildren(repositoryId: string, folderId: string): Promise<CMISObject[]> {
+    try {
+      // Use the new AtomPubClient for getChildren
+      // Options match the original implementation: filter=* and includeAllowableActions=true
+      const result = await this.atomPubClient.getChildren(repositoryId, folderId, {
+        filter: '*',
+        includeAllowableActions: true
+      });
+
+      if (!result.success) {
+        // Handle HTTP errors using existing error handler
+        if (result.status === 401 || result.status === 403) {
+          const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
+          throw error;
+        }
+        throw new Error(result.error || `HTTP ${result.status}`);
+      }
+
+      // Convert ParsedAtomEntry[] to CMISObject[]
+      const children: CMISObject[] = result.data?.entries.map(convertParsedEntryToCmisObject) || [];
+      
+      return children;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
+  }
+
+  /**
+   * Get a single CMIS object by ID using the new AtomPubClient
+   * 
+   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
+   * which provides better separation of concerns and testability.
+   * The behavior is preserved: uses AtomPub binding with includeAllowableActions=true
+   * 
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @param objectId Object ID to retrieve
+   * @returns Promise resolving to CMISObject
+   */
+  async getObject(repositoryId: string, objectId: string): Promise<CMISObject> {
+    try {
+      // Use the new AtomPubClient for getObject
+      // Options match the original implementation: includeAllowableActions=true
+      const result = await this.atomPubClient.getObject(repositoryId, objectId, {
+        includeAllowableActions: true
+      });
+
+      if (!result.success) {
+        // Handle HTTP errors using existing error handler
+        if (result.status === 401 || result.status === 403) {
+          const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
+          throw error;
+        }
+        throw new Error(result.error || `HTTP ${result.status}`);
+      }
+
+      if (!result.data) {
+        throw new Error('No entry found in AtomPub response');
+      }
+
+      // Convert ParsedAtomEntry to CMISObject
+      return convertParsedEntryToCmisObject(result.data);
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
+  }
+
+  /**
+   * Get a CMIS object by its path using the new AtomPubClient
+   * 
+   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
+   * which provides better separation of concerns and testability.
+   * The behavior is preserved: uses AtomPub binding with includeAllowableActions=true
    *
    * @param repositoryId Repository ID (e.g., 'bedroom')
    * @param path Full path to the object (e.g., '/Sites/Documents')
    * @returns CMISObject with id, name, and basic properties
    */
   async getObjectByPath(repositoryId: string, path: string): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
-      // Use AtomPub binding for getObjectByPath - encode the path parameter
-      const encodedPath = encodeURIComponent(path);
-      xhr.open('GET', `/core/atom/${repositoryId}/path?path=${encodedPath}&includeAllowableActions=true`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+    try {
+      // Use the new AtomPubClient for getObjectByPath
+      // Options match the original implementation: includeAllowableActions=true
+      const result = await this.atomPubClient.getObjectByPath(repositoryId, path, {
+        includeAllowableActions: true
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              // Parse AtomPub XML response (same format as getObject)
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-
-              const entry = xmlDoc.querySelector('entry, atom\\:entry');
-
-              if (!entry) {
-                reject(new Error('No entry found in AtomPub response'));
-                return;
-              }
-
-              const title = entry.querySelector('title, atom\\:title')?.textContent || 'Unknown';
-              const properties = entry.querySelector('cmis\\:properties, properties');
-
-              let id = '';
-              let objectType = 'cmis:folder';
-              let baseType = 'cmis:folder';
-              let objectPath = path;
-              let createdBy = '';
-              let creationDate = '';
-              let lastModifiedBy = '';
-              let lastModificationDate = '';
-
-              const propertiesMap: Record<string, any> = {};
-
-              if (properties) {
-                const allPropertyElements = properties.querySelectorAll('[propertyDefinitionId]');
-
-                allPropertyElements.forEach((propElement) => {
-                  const propertyId = propElement.getAttribute('propertyDefinitionId');
-                  if (!propertyId) return;
-
-                  const valueElements = propElement.querySelectorAll('cmis\\:value, value');
-
-                  if (valueElements.length === 0) {
-                    propertiesMap[propertyId] = null;
-                  } else if (valueElements.length === 1) {
-                    propertiesMap[propertyId] = valueElements[0].textContent;
-                  } else {
-                    const values: string[] = [];
-                    valueElements.forEach(valueEl => {
-                      if (valueEl.textContent) {
-                        values.push(valueEl.textContent);
-                      }
-                    });
-                    propertiesMap[propertyId] = values;
-                  }
-                });
-
-                // Extract specific properties
-                const objectIdElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectId"], propertyId[propertyDefinitionId="cmis:objectId"]');
-                const objectTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectTypeId"], propertyId[propertyDefinitionId="cmis:objectTypeId"]');
-                const baseTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:baseTypeId"], propertyId[propertyDefinitionId="cmis:baseTypeId"]');
-                const pathElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:path"], propertyString[propertyDefinitionId="cmis:path"]');
-                const createdByElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:createdBy"], propertyString[propertyDefinitionId="cmis:createdBy"]');
-                const creationDateElement = properties.querySelector('cmis\\:propertyDateTime[propertyDefinitionId="cmis:creationDate"], propertyDateTime[propertyDefinitionId="cmis:creationDate"]');
-                const lastModifiedByElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:lastModifiedBy"], propertyString[propertyDefinitionId="cmis:lastModifiedBy"]');
-                const lastModificationDateElement = properties.querySelector('cmis\\:propertyDateTime[propertyDefinitionId="cmis:lastModificationDate"], propertyDateTime[propertyDefinitionId="cmis:lastModificationDate"]');
-
-                id = objectIdElement?.querySelector('cmis\\:value, value')?.textContent || '';
-                objectType = objectTypeElement?.querySelector('cmis\\:value, value')?.textContent || 'cmis:folder';
-                baseType = baseTypeElement?.querySelector('cmis\\:value, value')?.textContent || 'cmis:folder';
-                objectPath = pathElement?.querySelector('cmis\\:value, value')?.textContent || path;
-                createdBy = createdByElement?.querySelector('cmis\\:value, value')?.textContent || '';
-                creationDate = creationDateElement?.querySelector('cmis\\:value, value')?.textContent || '';
-                lastModifiedBy = lastModifiedByElement?.querySelector('cmis\\:value, value')?.textContent || '';
-                lastModificationDate = lastModificationDateElement?.querySelector('cmis\\:value, value')?.textContent || '';
-              }
-
-              const cmisObject: CMISObject = {
-                id: id,
-                name: title,
-                objectType: objectType,
-                baseType: baseType,
-                path: objectPath,
-                createdBy: createdBy,
-                creationDate: creationDate,
-                lastModifiedBy: lastModifiedBy,
-                lastModificationDate: lastModificationDate,
-                properties: propertiesMap,
-                allowableActions: undefined  // AtomPub getObjectByPath doesn't return allowableActions
-              };
-
-              resolve(cmisObject);
-            } catch (e) {
-              reject(new Error('Failed to parse AtomPub response'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (!result.success) {
+        // Handle HTTP errors using existing error handler
+        if (result.status === 401 || result.status === 403) {
+          const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
+          throw error;
         }
-      };
+        throw new Error(result.error || `HTTP ${result.status}`);
+      }
 
-      xhr.onerror = () => {
-        reject(new Error('Network error'));
-      };
-      xhr.send();
-    });
+      if (!result.data) {
+        throw new Error('No entry found in AtomPub response');
+      }
+
+      // Convert ParsedAtomEntry to CMISObject
+      return convertParsedEntryToCmisObject(result.data);
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
+  /**
+   * Create a document using the new CmisHttpClient (CMIS Browser Binding standard)
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   * Uses FormData for multipart/form-data encoding (required for file uploads).
+   *
+   * @param repositoryId Repository ID
+   * @param parentId Parent folder ID
+   * @param file File to upload
+   * @param properties Document properties
+   * @returns Created document object
+   */
   async createDocument(repositoryId: string, parentId: string, file: File, properties: Record<string, any>): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       // Browser Binding createDocument uses repository base URL, not object-specific URL
       // Parent folder is specified via folderId parameter in form data
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 201) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const created = this.buildCmisObjectFromBrowserData(response);
-              resolve(created);
-            } catch (e) {
-              reject(new Error('Failed to parse Browser Binding response'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error'));
+      const url = `${this.baseUrl}/${repositoryId}`;
 
       const documentName = properties?.['cmis:name'] || properties?.name || file.name;
       const defaults = {
@@ -1354,40 +951,46 @@ export class CMISService {
         formData.append('contentType', file.type);
       }
 
-      xhr.send(formData);
-    });
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200 || response.status === 201) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return this.buildCmisObjectFromBrowserData(data);
+        } catch (e) {
+          throw new Error('Failed to parse Browser Binding response');
+        }
+      }
+
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
+  /**
+   * Create a folder using the new CmisHttpClient (CMIS Browser Binding standard)
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   * Uses FormData for multipart/form-data encoding.
+   *
+   * @param repositoryId Repository ID
+   * @param parentId Parent folder ID
+   * @param name Folder name
+   * @param properties Folder properties
+   * @returns Created folder object
+   */
   async createFolder(repositoryId: string, parentId: string, name: string, properties: Record<string, any> = {}): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
+    try {
       const parentSegment = this.encodeObjectIdSegment(parentId);
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/${parentSegment}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 201) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const created = this.buildCmisObjectFromBrowserData(response);
-              resolve(created);
-            } catch (e) {
-              reject(new Error('Failed to parse Browser Binding response'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error'));
+      const url = `${this.baseUrl}/${repositoryId}/${parentSegment}`;
 
       const defaults = {
         'cmis:objectTypeId': properties?.['cmis:objectTypeId'] || 'cmis:folder',
@@ -1406,56 +1009,46 @@ export class CMISService {
       }
 
       this.appendPropertiesToFormData(formData, properties || {}, defaults);
-      xhr.send(formData);
-    });
+
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200 || response.status === 201) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return this.buildCmisObjectFromBrowserData(data);
+        } catch (e) {
+          throw new Error('Failed to parse Browser Binding response');
+        }
+      }
+
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
+  /**
+   * Update object properties using the new CmisHttpClient (CMIS Browser Binding standard)
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   * Uses FormData for multipart/form-data encoding with complex multi-value property handling.
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Object ID to update
+   * @param properties Properties to update (supports multi-value arrays)
+   * @param changeToken Optional change token for optimistic locking
+   * @returns Updated object
+   */
   async updateProperties(repositoryId: string, objectId: string, properties: Record<string, any>, changeToken?: string): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // Use Browser Binding updateProperties action
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const props = response.succinctProperties || response.properties || {};
-
-              // CRITICAL FIX (2025-11-18): Extract all properties DocumentViewer expects
-              // Previously only extracted id/name/objectType/baseType, causing all other properties
-              // (createdBy, lastModifiedBy, dates, etc.) to be undefined, displaying as hyphens in UI
-              const updatedObject: CMISObject = {
-                id: this.getSafeStringProperty(props, 'cmis:objectId', objectId),
-                name: this.getSafeStringProperty(props, 'cmis:name', 'Unknown'),
-                objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
-                baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
-                properties: props,
-                allowableActions: this.extractAllowableActions(response.allowableActions),
-                createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
-                lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
-                creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
-                lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
-                contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
-                path: this.getSafeStringProperty(props, 'cmis:path')
-              };
-              resolve(updatedObject);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+    try {
+      const url = `${this.baseUrl}/${repositoryId}`;
 
       // Use FormData for Browser Binding updateProperties
       const formData = new FormData();
@@ -1495,235 +1088,256 @@ export class CMISService {
         propertyIndex++;
       });
 
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send(formData);
-    });
-  }
+      const response = await this.httpClient.postFormData(url, formData);
 
-  async deleteObject(repositoryId: string, objectId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // CRITICAL FIX (2025-11-18): Use application/x-www-form-urlencoded for Browser Binding
-      // Previous bug: Used FormData without Content-Type, causing multipart/form-data
-      // Browser Binding requires form-urlencoded for operations without file uploads
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          const props = data.succinctProperties || data.properties || {};
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+          // CRITICAL FIX (2025-11-18): Extract all properties DocumentViewer expects
+          // Previously only extracted id/name/objectType/baseType, causing all other properties
+          // (createdBy, lastModifiedBy, dates, etc.) to be undefined, displaying as hyphens in UI
+          const updatedObject: CMISObject = {
+            id: this.getSafeStringProperty(props, 'cmis:objectId', objectId),
+            name: this.getSafeStringProperty(props, 'cmis:name', 'Unknown'),
+            objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
+            baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
+            properties: props,
+            allowableActions: this.extractAllowableActions(data.allowableActions),
+            createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
+            lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
+            creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
+            lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
+            contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
+            path: this.getSafeStringProperty(props, 'cmis:path')
+          };
+          return updatedObject;
+        } catch (e) {
+          throw new Error('Invalid response format');
         }
-      };
+      }
 
-      // Use URLSearchParams for application/x-www-form-urlencoded (matches checkOut pattern)
-      const formData = new URLSearchParams();
-      formData.append('cmisaction', 'deleteObject');
-      formData.append('objectId', objectId);
-
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send(formData.toString());
-    });
-  }
-
-  async search(repositoryId: string, query: string): Promise<SearchResult> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}?cmisselector=query&q=${encodeURIComponent(query)}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-
-              // CRITICAL FIX (2025-11-19): Transform search results to extract CMIS properties
-              // The CMIS Browser Binding returns properties in format: {"cmis:name": {"value": "x"}}
-              // The UI expects flat format: {name: "x", objectType: "y", ...}
-              // This transformation is required for search result cells to display data correctly
-              const transformedResults = (response.results || []).map((result: any) => {
-                const props = result.properties || {};
-
-                return {
-                  id: this.getSafeStringProperty(props, 'cmis:objectId', ''),
-                  name: this.getSafeStringProperty(props, 'cmis:name', 'Unknown'),
-                  objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
-                  baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
-                  properties: props,
-                  allowableActions: this.extractAllowableActions(result.allowableActions),
-                  createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
-                  lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
-                  creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
-                  lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
-                  contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
-                  contentStreamMimeType: this.getSafeStringProperty(props, 'cmis:contentStreamMimeType'),
-                  path: this.getSafeStringProperty(props, 'cmis:path'),
-                  secondaryTypeIds: this.getSafeArrayProperty(props, 'cmis:secondaryObjectTypeIds')
-                };
-              });
-
-              resolve({
-                objects: transformedResults,
-                hasMoreItems: response.hasMoreItems || false,
-                numItems: response.numItems || 0
-              });
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during search'));
-      xhr.send();
-    });
-  }
-
-  async getVersionHistory(repositoryId: string, objectId: string): Promise<VersionHistory> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // Use CMIS AtomPub binding for version history (Browser Binding doesn't support versions endpoint)
-      xhr.open('GET', `/core/atom/${repositoryId}/versions?id=${objectId}`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              // Parse AtomPub XML response for version history
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-              const entries = xmlDoc.getElementsByTagName('entry');
-              
-              const versions: CMISObject[] = [];
-              for (let i = 0; i < entries.length; i++) {
-                const entry = entries[i];
-                const id = entry.querySelector('id')?.textContent || '';
-                const title = entry.querySelector('title')?.textContent || '';
-
-                // Create full CMISObject to satisfy TypeScript interface requirements
-                versions.push({
-                  id: id.split('/').pop() || id,
-                  name: title,
-                  objectType: 'cmis:document',
-                  baseType: 'cmis:document',
-                  properties: {
-                    'cmis:versionLabel': title
-                  },
-                  allowableActions: undefined  // Version list doesn't include allowableActions
-                });
-              }
-
-              // Use first version as latestVersion (versions are typically ordered newest-first)
-              const latestVersion: CMISObject = versions[0] || {
-                id: '',
-                name: '',
-                objectType: 'cmis:document',
-                baseType: 'cmis:document',
-                properties: {},
-                allowableActions: undefined
-              };
-
-              const versionHistory: VersionHistory = {
-                versions: versions,
-                latestVersion: latestVersion
-              };
-              
-              resolve(versionHistory);
-            } catch (e) {
-              reject(new Error('Failed to parse version history XML'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send();
-    });
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
-   * Check out a document (CMIS Browser Binding standard)
+   * Delete an object using the new CmisHttpClient
+   * 
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   * Uses application/x-www-form-urlencoded for Browser Binding operations without file uploads.
+   * 
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @param objectId Object ID to delete
+   * @returns Promise resolving when deletion is complete
+   */
+  async deleteObject(repositoryId: string, objectId: string): Promise<void> {
+    try {
+      const url = `${this.baseUrl}/${repositoryId}`;
+      const params = new URLSearchParams();
+      params.append('cmisaction', 'deleteObject');
+      params.append('objectId', objectId);
+
+      const response = await this.httpClient.postUrlEncoded(url, params);
+
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
+
+      // Handle HTTP errors
+      if (response.status === 401 || response.status === 403) {
+        const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+        throw error;
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
+  }
+
+  /**
+   * Search for objects using CMIS query (Browser Binding)
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   * Uses GET request with JSON response for Browser Binding query operations.
+   *
+   * @param repositoryId Repository ID
+   * @param query CMIS query string
+   * @returns Search results
+   */
+  async search(repositoryId: string, query: string): Promise<SearchResult> {
+    try {
+      const url = `${this.baseUrl}/${repositoryId}?cmisselector=query&q=${encodeURIComponent(query)}`;
+      const response = await this.httpClient.getJson(url);
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+
+          // CRITICAL FIX (2025-11-19): Transform search results to extract CMIS properties
+          // The CMIS Browser Binding returns properties in format: {"cmis:name": {"value": "x"}}
+          // The UI expects flat format: {name: "x", objectType: "y", ...}
+          // This transformation is required for search result cells to display data correctly
+          const transformedResults = (data.results || []).map((result: any) => {
+            const props = result.properties || {};
+
+            return {
+              id: this.getSafeStringProperty(props, 'cmis:objectId', ''),
+              name: this.getSafeStringProperty(props, 'cmis:name', 'Unknown'),
+              objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
+              baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
+              properties: props,
+              allowableActions: this.extractAllowableActions(result.allowableActions),
+              createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
+              lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
+              creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
+              lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
+              contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
+              contentStreamMimeType: this.getSafeStringProperty(props, 'cmis:contentStreamMimeType'),
+              path: this.getSafeStringProperty(props, 'cmis:path'),
+              secondaryTypeIds: this.getSafeArrayProperty(props, 'cmis:secondaryObjectTypeIds')
+            };
+          });
+
+          return {
+            objects: transformedResults,
+            hasMoreItems: data.hasMoreItems || false,
+            numItems: data.numItems || 0
+          };
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during search');
+    }
+  }
+
+  /**
+   * Get version history of a document using the new AtomPubClient
+   * 
+   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
+   * which provides better separation of concerns and testability.
+   * 
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @param objectId Document ID to get version history for
+   * @returns Promise resolving to VersionHistory
+   */
+  async getVersionHistory(repositoryId: string, objectId: string): Promise<VersionHistory> {
+    try {
+      // Use the new AtomPubClient for getVersionHistory
+      const result = await this.atomPubClient.getVersionHistory(repositoryId, objectId);
+
+      if (!result.success) {
+        // Handle HTTP errors using existing error handler
+        if (result.status === 401 || result.status === 403) {
+          const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
+          throw error;
+        }
+        throw new Error(result.error || `HTTP ${result.status}`);
+      }
+
+      // Convert ParsedAtomEntry[] to CMISObject[]
+      const versions: CMISObject[] = (result.data || []).map(convertParsedEntryToCmisObject);
+
+      // Use first version as latestVersion (versions are typically ordered newest-first)
+      const latestVersion: CMISObject = versions[0] || {
+        id: '',
+        name: '',
+        objectType: 'cmis:document',
+        baseType: 'cmis:document',
+        properties: {},
+        allowableActions: undefined
+      };
+
+      return {
+        versions: versions,
+        latestVersion: latestVersion
+      };
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
+  }
+
+  /**
+   * Check out a document using the new CmisHttpClient (CMIS Browser Binding standard)
    * Creates a Private Working Copy (PWC) and returns it
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
    *
    * @param repositoryId Repository ID
    * @param objectId Document object ID to check out
    * @returns PWC (Private Working Copy) object
    */
   async checkOut(repositoryId: string, objectId: string): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // CMIS Browser Binding checkOut: POST with form-urlencoded
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.baseUrl}/${repositoryId}`;
+      const params = new URLSearchParams();
+      params.append('cmisaction', 'checkOut');
+      params.append('objectId', objectId);
+      params.append('succinct', 'true');
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      const response = await this.httpClient.postUrlEncoded(url, params);
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const pwc = this.buildCmisObjectFromBrowserData(response);
-              resolve(pwc);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return this.buildCmisObjectFromBrowserData(data);
+        } catch (e) {
+          throw new Error('Invalid response format');
         }
-      };
+      }
 
-      xhr.onerror = () => reject(new Error('Network error'));
-
-      // Build form data for Browser Binding checkOut
-      const formData = new URLSearchParams();
-      formData.append('cmisaction', 'checkOut');
-      formData.append('objectId', objectId);
-      formData.append('succinct', 'true');
-
-      xhr.send(formData.toString());
-    });
+      // Handle HTTP errors
+      if (response.status === 401 || response.status === 403) {
+        const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+        throw error;
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
-   * Check in a PWC (Private Working Copy) (CMIS Browser Binding standard)
+   * Check in a PWC (Private Working Copy) using the new CmisHttpClient (CMIS Browser Binding standard)
    * Completes the check-out/check-in cycle and creates a new version
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   * Uses FormData for multipart/form-data encoding (required for file uploads).
    *
    * @param repositoryId Repository ID
    * @param objectId PWC (Private Working Copy) object ID
@@ -1734,37 +1348,8 @@ export class CMISService {
    * @returns New version object
    */
   async checkIn(repositoryId: string, objectId: string, file?: File, properties?: Record<string, any>): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // CMIS Browser Binding checkIn: POST with multipart/form-data
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const newVersion = this.buildCmisObjectFromBrowserData(response);
-              resolve(newVersion);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error'));
+    try {
+      const url = `${this.baseUrl}/${repositoryId}`;
 
       // Build multipart form data for Browser Binding checkIn
       const formData = new FormData();
@@ -1790,56 +1375,76 @@ export class CMISService {
         }
       }
 
-      xhr.send(formData);
-    });
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return this.buildCmisObjectFromBrowserData(data);
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      // Handle HTTP errors
+      if (response.status === 401 || response.status === 403) {
+        const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+        throw error;
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
-   * Cancel check-out of a PWC (Private Working Copy) (CMIS Browser Binding standard)
+   * Cancel check-out of a PWC using the new CmisHttpClient (CMIS Browser Binding standard)
    * Discards the PWC and any changes made
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
    *
    * @param repositoryId Repository ID
    * @param objectId PWC (Private Working Copy) object ID to cancel
    */
   async cancelCheckOut(repositoryId: string, objectId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // CMIS Browser Binding cancelCheckOut: POST with form-urlencoded
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.baseUrl}/${repositoryId}`;
+      const params = new URLSearchParams();
+      params.append('cmisaction', 'cancelCheckOut');
+      params.append('objectId', objectId);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      const response = await this.httpClient.postUrlEncoded(url, params);
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error'));
-
-      // Build form data for Browser Binding cancelCheckOut
-      const formData = new URLSearchParams();
-      formData.append('cmisaction', 'cancelCheckOut');
-      formData.append('objectId', objectId);
-
-      xhr.send(formData.toString());
-    });
+      // Handle HTTP errors
+      if (response.status === 401 || response.status === 403) {
+        const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+        throw error;
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
    * Get ACL for an object (REST API endpoint)
    * Retrieves the Access Control List (permissions) for a CMIS object
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
    *
    * CRITICAL FIX (2025-11-22): Switched from Browser Binding to REST API endpoint
    * - Old: /core/browser/{repositoryId}/{objectId}?cmisselector=acl
@@ -1851,59 +1456,54 @@ export class CMISService {
    * @returns ACL object containing permissions
    */
   async getACL(repositoryId: string, objectId: string): Promise<ACL> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/node/${objectId}/acl`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `/core/rest/repo/${repositoryId}/node/${objectId}/acl`;
+      const response = await this.httpClient.getJson(url);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
+          const aclData = data.result?.acl || data.acl || {};
+          const permissions = (aclData.permissions || []).map((perm: any) => ({
+            principalId: perm.principalId,
+            permissions: perm.permissions || [],
+            direct: perm.direct !== false // Default to true if not specified
+          }));
 
-              const aclData = response.result?.acl || response.acl || {};
-              const permissions = (aclData.permissions || []).map((perm: any) => ({
-                principalId: perm.principalId,
-                permissions: perm.permissions || [],
-                direct: perm.direct !== false // Default to true if not specified
-              }));
+          // Extract aclInherited (default to true if not specified)
+          const aclInherited = aclData.aclInherited !== false;
 
-              // Extract aclInherited (default to true if not specified)
-              const aclInherited = aclData.aclInherited !== false;
+          const acl: ACL = {
+            permissions: permissions,
+            isExact: aclData.isExact !== false, // Default to true if not specified
+            aclInherited
+          };
 
-              const acl: ACL = {
-                permissions: permissions,
-                isExact: aclData.isExact !== false, // Default to true if not specified
-                aclInherited
-              };
-
-              resolve(acl);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+          return acl;
+        } catch (e) {
+          throw new Error('Invalid response format');
         }
-      };
+      }
 
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send();
-    });
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
    * Set ACL for an object (REST API endpoint)
    * Sets the Access Control List (permissions) for a CMIS object
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
    *
    * CRITICAL FIX (2025-11-22): Switched from Browser Binding to REST API endpoint
    * - Old: /core/browser/{repositoryId} with cmisaction=applyACL
@@ -1916,30 +1516,8 @@ export class CMISService {
    * @param options Optional parameters including breakInheritance flag
    */
   async setACL(repositoryId: string, objectId: string, acl: ACL, options?: { breakInheritance?: boolean }): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `/core/rest/repo/${repositoryId}/node/${objectId}/acl`, true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error'));
+    try {
+      const url = `/core/rest/repo/${repositoryId}/node/${objectId}/acl`;
 
       const payload: {
         permissions: { principalId: string; permissions: string[]; direct: boolean }[];
@@ -1957,110 +1535,88 @@ export class CMISService {
         payload.breakInheritance = options.breakInheritance;
       }
 
-      xhr.send(JSON.stringify(payload));
-    });
+      const response = await this.httpClient.postJson(url, payload);
+
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
+
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async getUsers(repositoryId: string): Promise<User[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // サーバー側修正に合わせて正しいRESTエンドポイントを使用
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/user/list`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const rawUsers = response.users || [];
-              
-              // Transform user data to match UI expectations
-              // Preserve firstName and lastName as separate fields for table display
-              const transformedUsers = rawUsers.map((user: any) => ({
-                id: user.userId || user.id,
-                name: user.userName || user.userId || user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                groups: user.groups || []
-              }));
+    try {
+      const url = `/core/rest/repo/${repositoryId}/user/list`;
+      const response = await this.httpClient.getJson(url);
 
-              resolve(transformedUsers);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Invalid response format'));
-            }
-          } else if (xhr.status === 500) {
-            // サーバー側エラーの詳細情報を解析
-            let errorMessage = 'サーバーエラーが発生しました';
-            let errorDetails = '';
-            try {
-              const errorResponse = JSON.parse(xhr.responseText);
-              if (errorResponse.message) {
-                errorMessage = errorResponse.message;
-              }
-              if (errorResponse.error) {
-                errorDetails = errorResponse.error;
-              }
-              if (errorResponse.errorType) {
-                errorDetails += ` (${errorResponse.errorType})`;
-              }
-            } catch (e) {
-              // JSONパースできない場合はレスポンステキストをそのまま使用
-              errorDetails = xhr.responseText || 'Unknown server error';
-            }
-            
-            const error = new Error(errorMessage);
-            (error as any).details = errorDetails;
-            (error as any).status = xhr.status;
-            reject(error);
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          const rawUsers = data.users || [];
+
+          // Transform user data to match UI expectations
+          // Preserve firstName and lastName as separate fields for table display
+          const transformedUsers = rawUsers.map((user: any) => ({
+            id: user.userId || user.id,
+            name: user.userName || user.userId || user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            groups: user.groups || []
+          }));
+
+          return transformedUsers;
+        } catch (e) {
+          throw new Error('Invalid response format');
         }
-      };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send();
-    });
+      } else if (response.status === 500) {
+        // サーバー側エラーの詳細情報を解析
+        let errorMessage = 'サーバーエラーが発生しました';
+        let errorDetails = '';
+        try {
+          const errorResponse = JSON.parse(response.responseText);
+          if (errorResponse.message) {
+            errorMessage = errorResponse.message;
+          }
+          if (errorResponse.error) {
+            errorDetails = errorResponse.error;
+          }
+          if (errorResponse.errorType) {
+            errorDetails += ` (${errorResponse.errorType})`;
+          }
+        } catch (e) {
+          // JSONパースできない場合はレスポンステキストをそのまま使用
+          errorDetails = response.responseText || 'Unknown server error';
+        }
+
+        const error = new Error(errorMessage);
+        (error as any).details = errorDetails;
+        (error as any).status = response.status;
+        throw error;
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async createUser(repositoryId: string, user: Partial<User>): Promise<User> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.restBaseUrl}/${repositoryId}/user/create/${user.id}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during user creation'));
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/user/create/${user.id}`;
 
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
@@ -2074,39 +1630,30 @@ export class CMISService {
         formData.append('groups', JSON.stringify(user.groups));
       }
 
-      xhr.send(formData.toString());
-    });
+      const response = await this.httpClient.postUrlEncoded(url, formData);
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return data;
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during user creation');
+    }
   }
 
   async updateUser(repositoryId: string, userId: string, user: Partial<User>): Promise<User> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('PUT', `${this.restBaseUrl}/${repositoryId}/user/update/${userId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during user update'));
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/user/update/${userId}`;
 
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
@@ -2119,132 +1666,119 @@ export class CMISService {
         formData.append('groups', JSON.stringify(user.groups));
       }
 
-      xhr.send(formData.toString());
-    });
+      // Use PUT method via httpClient.request()
+      const response = await this.httpClient.request({
+        method: 'PUT',
+        url,
+        body: formData.toString(),
+        contentType: 'application/x-www-form-urlencoded',
+        accept: 'application/json'
+      });
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return data;
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during user update');
+    }
   }
 
   async deleteUser(repositoryId: string, userId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('DELETE', `${this.restBaseUrl}/${repositoryId}/user/delete/${userId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/user/delete/${userId}`;
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      // Use DELETE method via httpClient.request()
+      const response = await this.httpClient.request({
+        method: 'DELETE',
+        url,
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during user deletion'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during user deletion');
+    }
   }
 
   async getGroups(repositoryId: string): Promise<Group[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // サーバー側修正に合わせて正しいRESTエンドポイントを使用
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/group/list`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const rawGroups = response.groups || [];
-              
-              // Transform group data to match UI expectations
-              const transformedGroups = rawGroups.map((group: any) => ({
-                id: group.groupId || group.id,
-                name: group.groupName || group.name || group.groupId || 'Unknown Group',
-                members: group.users || []
-              }));
+    try {
+      const url = `/core/rest/repo/${repositoryId}/group/list`;
+      const response = await this.httpClient.getJson(url);
 
-              resolve(transformedGroups);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else if (xhr.status === 500) {
-            // サーバー側エラーの詳細情報を解析
-            let errorMessage = 'サーバーエラーが発生しました';
-            let errorDetails = '';
-            try {
-              const errorResponse = JSON.parse(xhr.responseText);
-              if (errorResponse.message) {
-                errorMessage = errorResponse.message;
-              }
-              if (errorResponse.error) {
-                errorDetails = errorResponse.error;
-              }
-              if (errorResponse.errorType) {
-                errorDetails += ` (${errorResponse.errorType})`;
-              }
-            } catch (e) {
-              // JSONパースできない場合はレスポンステキストをそのまま使用
-              errorDetails = xhr.responseText || 'Unknown server error';
-            }
-            
-            const error = new Error(errorMessage);
-            (error as any).details = errorDetails;
-            (error as any).status = xhr.status;
-            reject(error);
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          const rawGroups = data.groups || [];
+
+          // Transform group data to match UI expectations
+          const transformedGroups = rawGroups.map((group: any) => ({
+            id: group.groupId || group.id,
+            name: group.groupName || group.name || group.groupId || 'Unknown Group',
+            members: group.users || []
+          }));
+
+          return transformedGroups;
+        } catch (e) {
+          throw new Error('Invalid response format');
         }
-      };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send();
-    });
+      } else if (response.status === 500) {
+        // サーバー側エラーの詳細情報を解析
+        let errorMessage = 'サーバーエラーが発生しました';
+        let errorDetails = '';
+        try {
+          const errorResponse = JSON.parse(response.responseText);
+          if (errorResponse.message) {
+            errorMessage = errorResponse.message;
+          }
+          if (errorResponse.error) {
+            errorDetails = errorResponse.error;
+          }
+          if (errorResponse.errorType) {
+            errorDetails += ` (${errorResponse.errorType})`;
+          }
+        } catch (e) {
+          // JSONパースできない場合はレスポンステキストをそのまま使用
+          errorDetails = response.responseText || 'Unknown server error';
+        }
+
+        const error = new Error(errorMessage);
+        (error as any).details = errorDetails;
+        (error as any).status = response.status;
+        throw error;
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async createGroup(repositoryId: string, group: Partial<Group>): Promise<Group> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.restBaseUrl}/${repositoryId}/group/create/${group.id}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during group creation'));
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/group/create/${group.id}`;
 
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
@@ -2255,39 +1789,30 @@ export class CMISService {
       formData.append('users', JSON.stringify(members));  // FORM_MEMBER_USERS = "users"
       formData.append('groups', JSON.stringify((group as any).groups || []));  // FORM_MEMBER_GROUPS = "groups"
 
-      xhr.send(formData.toString());
-    });
+      const response = await this.httpClient.postUrlEncoded(url, formData);
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return data;
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during group creation');
+    }
   }
 
   async updateGroup(repositoryId: string, groupId: string, group: Partial<Group>): Promise<Group> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('PUT', `${this.restBaseUrl}/${repositoryId}/group/update/${groupId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during group update'));
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/group/update/${groupId}`;
 
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
@@ -2298,170 +1823,136 @@ export class CMISService {
       formData.append('users', JSON.stringify(members));  // FORM_MEMBER_USERS = "users"
       formData.append('groups', JSON.stringify((group as any).groups || []));  // FORM_MEMBER_GROUPS = "groups"
 
-      xhr.send(formData.toString());
-    });
+      // Use PUT method via httpClient.request()
+      const response = await this.httpClient.request({
+        method: 'PUT',
+        url,
+        body: formData.toString(),
+        contentType: 'application/x-www-form-urlencoded',
+        accept: 'application/json'
+      });
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return data;
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during group update');
+    }
   }
 
   async deleteGroup(repositoryId: string, groupId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('DELETE', `${this.restBaseUrl}/${repositoryId}/group/delete/${groupId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/group/delete/${groupId}`;
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      // Use DELETE method via httpClient.request()
+      const response = await this.httpClient.request({
+        method: 'DELETE',
+        url,
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during group deletion'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during group deletion');
+    }
   }
 
   async getTypes(repositoryId: string): Promise<TypeDefinition[]> {
     // CRITICAL FIX (2025-10-26): Use REST API instead of Browser Binding for consistency
     // All type CRUD operations (create/update/delete) use REST API, getTypes must use same API
     // to ensure newly created types appear in the list
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.restBaseUrl}/${repositoryId}/type/list`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/type/list`;
+      const response = await this.httpClient.getJson(url);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-
-              // Response format: { types: [...] }
-              if (!response.types || !Array.isArray(response.types)) {
-                // Invalid response format - return empty array
-                resolve([]);
-                return;
-              }
-
-              const types: TypeDefinition[] = response.types.map((type: any) => ({
-                id: type.id,
-                displayName: type.displayName || type.id,
-                description: type.description || '',
-                baseTypeId: type.baseTypeId || type.baseId,
-                parentTypeId: type.parentTypeId,
-                creatable: type.creatable !== false,
-                fileable: type.fileable !== false,
-                queryable: type.queryable !== false,
-                deletable: !type.id.startsWith('cmis:') && type.typeMutability?.delete !== false,
-                propertyDefinitions: type.propertyDefinitions || {}
-              }));
-
-              resolve(types);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Failed to parse type list response'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
+          // Response format: { types: [...] }
+          if (!data.types || !Array.isArray(data.types)) {
+            // Invalid response format - return empty array
+            return [];
           }
+
+          const types: TypeDefinition[] = data.types.map((type: any) => ({
+            id: type.id,
+            displayName: type.displayName || type.id,
+            description: type.description || '',
+            baseTypeId: type.baseTypeId || type.baseId,
+            parentTypeId: type.parentTypeId,
+            creatable: type.creatable !== false,
+            fileable: type.fileable !== false,
+            queryable: type.queryable !== false,
+            deletable: !type.id.startsWith('cmis:') && type.typeMutability?.delete !== false,
+            propertyDefinitions: type.propertyDefinitions || {}
+          }));
+
+          return types;
+        } catch (e) {
+          // Failed to parse response
+          throw new Error('Failed to parse type list response');
         }
-      };
+      }
 
-      xhr.onerror = () => {
-        // Network error occurred
-        reject(new Error('Network error during type list fetch'));
-      };
-
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during type list fetch');
+    }
   }
 
   async getType(repositoryId: string, typeId: string): Promise<TypeDefinition> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}?cmisselector=typeDefinition&typeId=${encodeURIComponent(typeId)}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.baseUrl}/${repositoryId}?cmisselector=typeDefinition&typeId=${encodeURIComponent(typeId)}`;
+      const response = await this.httpClient.getJson(url);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const typeDefinition = this.buildTypeDefinitionFromBrowserData(response);
-              resolve(typeDefinition);
-            } catch (e) {
-              reject(new Error('Failed to parse type definition response'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          const typeDefinition = this.buildTypeDefinitionFromBrowserData(data);
+          return typeDefinition;
+        } catch (e) {
+          throw new Error('Failed to parse type definition response');
         }
-      };
+      }
 
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async createType(repositoryId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
     // First, create the type via REST API
-    await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.restBaseUrl}/${repositoryId}/type/create`, true);
-      xhr.timeout = 30000; // 30 second timeout to prevent indefinite hangs
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              // Backend returns {message, status} not {type}
-              // Just verify success and then fetch the type separately
-              if (response.status === 'success') {
-                resolve();
-              } else {
-                reject(new Error(response.message || 'Type creation failed'));
-              }
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during type creation'));
-      xhr.ontimeout = () => reject(new Error('Request timed out - type creation took too long'));
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/type/create`;
 
       // Map frontend TypeDefinition field names to backend expectations
       // Backend expects "baseId" instead of "baseTypeId" for CMIS type definitions
@@ -2472,51 +1963,41 @@ export class CMISService {
       // Remove baseTypeId to avoid confusion
       delete (backendPayload as any).baseTypeId;
 
-      xhr.send(JSON.stringify(backendPayload));
-    });
+      const response = await this.httpClient.postJson(url, backendPayload);
 
-    // Then fetch the created type via CMIS API to return complete definition
-    return this.getType(repositoryId, type.id!);
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          // Backend returns {message, status} not {type}
+          // Just verify success and then fetch the type separately
+          if (data.status === 'success') {
+            // Then fetch the created type via CMIS API to return complete definition
+            return this.getType(repositoryId, type.id!);
+          } else {
+            throw new Error(data.message || 'Type creation failed');
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message !== 'Invalid response format') {
+            throw e;
+          }
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during type creation');
+    }
   }
 
   async updateType(repositoryId: string, typeId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
     // First, update the type via REST API
-    await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('PUT', `${this.restBaseUrl}/${repositoryId}/type/update/${typeId}`, true);
-      xhr.timeout = 30000; // 30 second timeout to prevent indefinite hangs
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              // Backend returns {message, status} not {type}
-              // Just verify success and then fetch the type separately
-              if (response.status === 'success') {
-                resolve();
-              } else {
-                reject(new Error(response.message || 'Type update failed'));
-              }
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during type update'));
-      xhr.ontimeout = () => reject(new Error('Request timed out - type update took too long'));
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/type/update/${typeId}`;
 
       // Map frontend TypeDefinition field names to backend expectations
       // Backend expects "baseId" instead of "baseTypeId" for CMIS type definitions
@@ -2527,185 +2008,177 @@ export class CMISService {
       // Remove baseTypeId to avoid confusion
       delete (backendPayload as any).baseTypeId;
 
-      xhr.send(JSON.stringify(backendPayload));
-    });
+      // Use PUT method via httpClient.request()
+      const response = await this.httpClient.request({
+        method: 'PUT',
+        url,
+        body: JSON.stringify(backendPayload),
+        contentType: 'application/json',
+        accept: 'application/json'
+      });
 
-    // Then fetch the updated type via CMIS API to return complete definition
-    return this.getType(repositoryId, typeId);
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          // Backend returns {message, status} not {type}
+          // Just verify success and then fetch the type separately
+          if (data.status === 'success') {
+            // Then fetch the updated type via CMIS API to return complete definition
+            return this.getType(repositoryId, typeId);
+          } else {
+            throw new Error(data.message || 'Type update failed');
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message !== 'Invalid response format') {
+            throw e;
+          }
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during type update');
+    }
   }
 
   async deleteType(repositoryId: string, typeId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('DELETE', `${this.restBaseUrl}/${repositoryId}/type/delete/${typeId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/type/delete/${typeId}`;
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      // Use DELETE method via httpClient.request()
+      const response = await this.httpClient.request({
+        method: 'DELETE',
+        url,
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during type deletion'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during type deletion');
+    }
   }
 
   async getRelationships(repositoryId: string, objectId: string): Promise<Relationship[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       // Use CMIS AtomPub binding for relationships (Browser Binding doesn't support relationships endpoint)
       // CRITICAL FIX (2025-12-17): Add relationshipDirection=either to get bidirectional relationships
       // Without this parameter, CMIS defaults to 'source' direction only, meaning relationships where
       // the object is the TARGET will not be returned. For bidirectional relationships (like
       // nemaki:bidirectionalRelationship), users expect to see the relationship from both sides.
-      xhr.open('GET', `/core/atom/${repositoryId}/relationships?id=${objectId}&relationshipDirection=either`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      const url = `/core/atom/${repositoryId}/relationships?id=${objectId}&relationshipDirection=either`;
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url,
+        accept: 'application/atom+xml'
       });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              // Parse AtomPub XML response for relationships
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
 
-              // CRITICAL FIX (2025-12-13): Use getElementsByTagNameNS for atom:entry elements
-              // getElementsByTagName('entry') doesn't find <atom:entry> because of namespace prefix
-              const ATOM_NS = 'http://www.w3.org/2005/Atom';
-              const CMIS_NS = 'http://docs.oasis-open.org/ns/cmis/core/200908/';
+      if (response.status === 200) {
+        try {
+          // Parse AtomPub XML response for relationships
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(response.responseText, 'text/xml');
 
-              console.log('[CMIS DEBUG] getRelationships parsing XML, response length:', xhr.responseText.length);
-              console.log('[CMIS DEBUG] getRelationships first 500 chars:', xhr.responseText.substring(0, 500));
+          // CRITICAL FIX (2025-12-13): Use getElementsByTagNameNS for atom:entry elements
+          // getElementsByTagName('entry') doesn't find <atom:entry> because of namespace prefix
+          const ATOM_NS = 'http://www.w3.org/2005/Atom';
+          const CMIS_NS = 'http://docs.oasis-open.org/ns/cmis/core/200908/';
 
-              const entries = xmlDoc.getElementsByTagNameNS(ATOM_NS, 'entry');
-              console.log('[CMIS DEBUG] getRelationships found', entries.length, 'entry elements');
+          console.log('[CMIS DEBUG] getRelationships parsing XML, response length:', response.responseText.length);
+          console.log('[CMIS DEBUG] getRelationships first 500 chars:', response.responseText.substring(0, 500));
 
-              const relationships: Relationship[] = [];
-              for (let i = 0; i < entries.length; i++) {
-                const entry = entries[i];
+          const entries = xmlDoc.getElementsByTagNameNS(ATOM_NS, 'entry');
+          console.log('[CMIS DEBUG] getRelationships found', entries.length, 'entry elements');
 
-                // Helper function to get property value from CMIS XML
-                // CMIS XML structure: <cmis:properties><cmis:propertyId propertyDefinitionId="cmis:sourceId"><cmis:value>...</cmis:value></cmis:propertyId></cmis:properties>
-                // CRITICAL FIX (2025-12-13): Need to search all property types using proper namespaces
-                const getPropertyValue = (propName: string): string => {
-                  const properties = entry.getElementsByTagNameNS(CMIS_NS, 'properties')[0] ||
-                                   entry.querySelector('cmis\\:properties, properties');
-                  if (!properties) return '';
+          const relationships: Relationship[] = [];
+          for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i];
 
-                  // Search through all child elements with propertyDefinitionId attribute
-                  // CRITICAL FIX: Use getElementsByTagNameNS instead of getElementsByTagName
-                  const propTypes = ['propertyId', 'propertyString', 'propertyDateTime', 'propertyBoolean', 'propertyInteger', 'propertyDecimal'];
-                  for (const propType of propTypes) {
-                    const propElements = properties.getElementsByTagNameNS(CMIS_NS, propType);
-                    for (let j = 0; j < propElements.length; j++) {
-                      const elem = propElements[j];
-                      if (elem.getAttribute('propertyDefinitionId') === propName) {
-                        // CRITICAL FIX: Use getElementsByTagNameNS for value element too
-                        const valueElems = elem.getElementsByTagNameNS(CMIS_NS, 'value');
-                        if (valueElems.length > 0) {
-                          return valueElems[0].textContent || '';
-                        }
-                        // Fallback to querySelector
-                        const valueElem = elem.querySelector('cmis\\:value, value');
-                        return valueElem?.textContent || '';
-                      }
+            // Helper function to get property value from CMIS XML
+            // CMIS XML structure: <cmis:properties><cmis:propertyId propertyDefinitionId="cmis:sourceId"><cmis:value>...</cmis:value></cmis:propertyId></cmis:properties>
+            // CRITICAL FIX (2025-12-13): Need to search all property types using proper namespaces
+            const getPropertyValue = (propName: string): string => {
+              const properties = entry.getElementsByTagNameNS(CMIS_NS, 'properties')[0] ||
+                               entry.querySelector('cmis\\:properties, properties');
+              if (!properties) return '';
+
+              // Search through all child elements with propertyDefinitionId attribute
+              // CRITICAL FIX: Use getElementsByTagNameNS instead of getElementsByTagName
+              const propTypes = ['propertyId', 'propertyString', 'propertyDateTime', 'propertyBoolean', 'propertyInteger', 'propertyDecimal'];
+              for (const propType of propTypes) {
+                const propElements = properties.getElementsByTagNameNS(CMIS_NS, propType);
+                for (let j = 0; j < propElements.length; j++) {
+                  const elem = propElements[j];
+                  if (elem.getAttribute('propertyDefinitionId') === propName) {
+                    // CRITICAL FIX: Use getElementsByTagNameNS for value element too
+                    const valueElems = elem.getElementsByTagNameNS(CMIS_NS, 'value');
+                    if (valueElems.length > 0) {
+                      return valueElems[0].textContent || '';
                     }
+                    // Fallback to querySelector
+                    const valueElem = elem.querySelector('cmis\\:value, value');
+                    return valueElem?.textContent || '';
                   }
-                  return '';
-                };
-
-                // CRITICAL FIX: Get objectId from cmis:objectId property, not from <atom:id> which is base64 encoded
-                const relationshipId = getPropertyValue('cmis:objectId');
-                const sourceId = getPropertyValue('cmis:sourceId');
-                const targetId = getPropertyValue('cmis:targetId');
-                const objectTypeId = getPropertyValue('cmis:objectTypeId') || 'cmis:relationship';
-
-                console.log(`[CMIS DEBUG] getRelationships entry ${i}: id=${relationshipId}, sourceId=${sourceId}, targetId=${targetId}, type=${objectTypeId}`);
-
-                // Only add if we have valid source and target IDs
-                if (sourceId && targetId) {
-                  relationships.push({
-                    id: relationshipId,
-                    sourceId: sourceId,
-                    targetId: targetId,
-                    relationshipType: objectTypeId,
-                    properties: {}
-                  });
-                } else {
-                  console.log(`[CMIS DEBUG] getRelationships entry ${i} skipped: missing sourceId or targetId`);
                 }
               }
-              console.log('[CMIS DEBUG] getRelationships returning', relationships.length, 'relationships');
-              
-              resolve(relationships);
-            } catch (e) {
-              reject(new Error('Failed to parse relationships XML'));
+              return '';
+            };
+
+            // CRITICAL FIX: Get objectId from cmis:objectId property, not from <atom:id> which is base64 encoded
+            const relationshipId = getPropertyValue('cmis:objectId');
+            const sourceId = getPropertyValue('cmis:sourceId');
+            const targetId = getPropertyValue('cmis:targetId');
+            const objectTypeId = getPropertyValue('cmis:objectTypeId') || 'cmis:relationship';
+
+            console.log(`[CMIS DEBUG] getRelationships entry ${i}: id=${relationshipId}, sourceId=${sourceId}, targetId=${targetId}, type=${objectTypeId}`);
+
+            // Only add if we have valid source and target IDs
+            if (sourceId && targetId) {
+              relationships.push({
+                id: relationshipId,
+                sourceId: sourceId,
+                targetId: targetId,
+                relationshipType: objectTypeId,
+                properties: {}
+              });
+            } else {
+              console.log(`[CMIS DEBUG] getRelationships entry ${i} skipped: missing sourceId or targetId`);
             }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
           }
+          console.log('[CMIS DEBUG] getRelationships returning', relationships.length, 'relationships');
+          
+          return relationships;
+        } catch (e) {
+          throw new Error('Failed to parse relationships XML');
         }
-      };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send();
-    });
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async createRelationship(repositoryId: string, relationship: Partial<Relationship>): Promise<Relationship> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       // CRITICAL FIX: Use CMIS Browser Binding standard endpoint instead of custom REST endpoint
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 201) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              // Build Relationship object from CMIS Browser Binding response
-              const createdRelationship: Relationship = {
-                id: response.properties?.['cmis:objectId']?.value || response.succinctProperties?.['cmis:objectId'],
-                sourceId: response.properties?.['cmis:sourceId']?.value || response.succinctProperties?.['cmis:sourceId'] || relationship.sourceId || '',
-                targetId: response.properties?.['cmis:targetId']?.value || response.succinctProperties?.['cmis:targetId'] || relationship.targetId || '',
-                relationshipType: response.properties?.['cmis:objectTypeId']?.value || response.succinctProperties?.['cmis:objectTypeId'] || relationship.relationshipType || '',
-                properties: response.properties || response.succinctProperties || {}
-              };
-              resolve(createdRelationship);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during relationship creation'));
+      const url = `${this.baseUrl}/${repositoryId}`;
 
       // Use CMIS Browser Binding form data format
       const formData = new FormData();
@@ -2717,266 +2190,215 @@ export class CMISService {
       formData.append('propertyId[2]', 'cmis:targetId');
       formData.append('propertyValue[2]', relationship.targetId || '');
 
-      xhr.send(formData);
-    });
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200 || response.status === 201) {
+        try {
+          const data = JSON.parse(response.responseText);
+          // Build Relationship object from CMIS Browser Binding response
+          const createdRelationship: Relationship = {
+            id: data.properties?.['cmis:objectId']?.value || data.succinctProperties?.['cmis:objectId'],
+            sourceId: data.properties?.['cmis:sourceId']?.value || data.succinctProperties?.['cmis:sourceId'] || relationship.sourceId || '',
+            targetId: data.properties?.['cmis:targetId']?.value || data.succinctProperties?.['cmis:targetId'] || relationship.targetId || '',
+            relationshipType: data.properties?.['cmis:objectTypeId']?.value || data.succinctProperties?.['cmis:objectTypeId'] || relationship.relationshipType || '',
+            properties: data.properties || data.succinctProperties || {}
+          };
+          return createdRelationship;
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during relationship creation');
+    }
   }
 
   async deleteRelationship(repositoryId: string, relationshipId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       // CRITICAL FIX: Use CMIS Browser Binding standard delete endpoint
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during relationship deletion'));
+      const url = `${this.baseUrl}/${repositoryId}`;
 
       // Use CMIS Browser Binding form data format for delete
       const formData = new FormData();
       formData.append('cmisaction', 'delete');
       formData.append('objectId', relationshipId);
-      xhr.send(formData);
-    });
+
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during relationship deletion');
+    }
   }
 
   async initSearchEngine(repositoryId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/search-engine/init`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+    try {
+      const url = `${this.baseUrl}/${repositoryId}/search-engine/init`;
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url,
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during search engine initialization'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during search engine initialization');
+    }
   }
 
   async reindexSearchEngine(repositoryId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/search-engine/reindex`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+    try {
+      const url = `${this.baseUrl}/${repositoryId}/search-engine/reindex`;
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url,
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during search engine reindexing'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during search engine reindexing');
+    }
   }
 
   async getArchives(repositoryId: string): Promise<CMISObject[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       // Use correct REST endpoint for archive index
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/archive/index`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+      const url = `/core/rest/repo/${repositoryId}/archive/index`;
+      const response = await this.httpClient.getJson(url);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response.archives || []);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return data.archives || [];
+        } catch (e) {
+          throw new Error('Invalid response format');
         }
-      };
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during archive retrieval'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during archive retrieval');
+    }
   }
 
   async archiveObject(repositoryId: string, objectId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}/archive/${objectId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.baseUrl}/${repositoryId}/archive/${objectId}`;
+      const response = await this.httpClient.postJson(url, {});
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during object archiving'));
-      xhr.send(JSON.stringify({}));
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during object archiving');
+    }
   }
 
   async restoreObject(repositoryId: string, objectId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       // Use REST API endpoint for archive restore (PUT method, matches ArchiveResource.java)
       // ArchiveResource: @PUT @Path("/restore/{id}")
-      xhr.open('PUT', `/core/rest/repo/${repositoryId}/archive/restore/${objectId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      const url = `/core/rest/repo/${repositoryId}/archive/restore/${objectId}`;
+      const response = await this.httpClient.request({
+        method: 'PUT',
+        url,
+        body: JSON.stringify({}),
+        contentType: 'application/json',
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during object restoration'));
-      xhr.send(JSON.stringify({}));
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during object restoration');
+    }
   }
 
   /**
-   * Get parent folders for an object (document or folder)
+   * Get parent folders for an object (document or folder) using the new AtomPubClient
    * Returns array of parent folder objects (typically 1 parent, but CMIS supports multi-filing)
    * Used to calculate document paths from parent folder paths
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
+   * which provides better separation of concerns and testability.
    *
    * @param repositoryId - Repository ID
    * @param objectId - Object ID
    * @returns Promise resolving to array of parent folder objects with id, name, and path
    */
   async getObjectParents(repositoryId: string, objectId: string): Promise<CMISObject[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
+      // Use the new AtomPubClient for getObjectParents
+      const result = await this.atomPubClient.getObjectParents(repositoryId, objectId);
 
-      // Use AtomPub binding for getObjectParents
-      xhr.open('GET', `/core/atom/${repositoryId}/parents?id=${objectId}`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml;type=feed');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              // Parse AtomPub feed response
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-
-              const parents: CMISObject[] = [];
-              const entries = xmlDoc.querySelectorAll('entry');
-
-              entries.forEach(entry => {
-                // Extract folder ID
-                const objectIdElement = entry.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectId"] cmis\\:value, propertyId[propertyDefinitionId="cmis:objectId"] value');
-                const folderId = objectIdElement?.textContent?.trim() || '';
-
-                // Extract folder name
-                const nameElement = entry.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:name"] cmis\\:value, propertyString[propertyDefinitionId="cmis:name"] value');
-                const folderName = nameElement?.textContent?.trim() || '';
-
-                // Extract folder path
-                const pathElement = entry.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:path"] cmis\\:value, propertyString[propertyDefinitionId="cmis:path"] value');
-                const folderPath = pathElement?.textContent?.trim() || '';
-
-                if (folderId && folderName) {
-                  parents.push({
-                    id: folderId,
-                    name: folderName,
-                    path: folderPath,
-                    baseType: 'cmis:folder',
-                    objectType: 'cmis:folder',
-                    properties: {}
-                  } as CMISObject);
-                }
-              });
-
-              resolve(parents);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Failed to parse AtomPub parents response'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (!result.success) {
+        // Handle HTTP errors using existing error handler
+        if (result.status === 401 || result.status === 403) {
+          const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
+          throw error;
         }
-      };
+        throw new Error(result.error || `HTTP ${result.status}`);
+      }
 
-      xhr.onerror = () => {
-        // Network error occurred
-        reject(new Error('Network error during getObjectParents'));
-      };
+      // Convert ParsedAtomEntry[] to CMISObject[]
+      const parents: CMISObject[] = (result.data || []).map(convertParsedEntryToCmisObject);
 
-      xhr.send();
-    });
+      return parents;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during getObjectParents');
+    }
   }
 
   getDownloadUrl(repositoryId: string, objectId: string): string {
@@ -2985,38 +2407,28 @@ export class CMISService {
   }
 
   async getContentStream(repositoryId: string, objectId: string): Promise<ArrayBuffer> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      
+    try {
       // Use AtomPub binding for content stream download
-      xhr.open('GET', `/core/atom/${repositoryId}/content?id=${objectId}`, true);
-      xhr.responseType = 'arraybuffer';
-      xhr.setRequestHeader('Accept', 'application/octet-stream');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      const url = `/core/atom/${repositoryId}/content?id=${objectId}`;
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url,
+        accept: 'application/octet-stream',
+        responseType: 'arraybuffer'
       });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            resolve(xhr.response);
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-      
-      xhr.onerror = () => {
-        // Network error occurred
-        reject(new Error('Network error'));
-      };
-      
-      xhr.send();
-    });
+
+      if (response.status === 200) {
+        return response.response as ArrayBuffer;
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
@@ -3026,43 +2438,31 @@ export class CMISService {
    * @returns Array of rendition objects with streamId, mimeType, kind, etc.
    */
   async getRenditions(repositoryId: string, objectId: string): Promise<any[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
+    try {
       // Use Jersey REST API endpoint for renditions
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/renditions/${objectId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+      const url = `/core/rest/repo/${repositoryId}/renditions/${objectId}`;
+      const response = await this.httpClient.getJson(url);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response.renditions || response || []);
-            } catch (e) {
-              resolve([]);
-            }
-          } else if (xhr.status === 404) {
-            // No renditions found
-            resolve([]);
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return data.renditions || data || [];
+        } catch (e) {
+          return [];
         }
-      };
+      } else if (response.status === 404) {
+        // No renditions found
+        return [];
+      }
 
-      xhr.onerror = () => {
-        reject(new Error('Network error'));
-      };
-
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
@@ -3072,39 +2472,30 @@ export class CMISService {
    * @param force Force regeneration even if rendition exists
    */
   async generateRenditions(repositoryId: string, objectId: string, force: boolean = false): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
-      xhr.open('POST', `/core/rest/repo/${repositoryId}/renditions/generate?objectId=${objectId}&force=${force}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+    try {
+      const url = `/core/rest/repo/${repositoryId}/renditions/generate?objectId=${objectId}&force=${force}`;
+      const response = await this.httpClient.request({
+        method: 'POST',
+        url,
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 201 || xhr.status === 202) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (e) {
-              resolve({ success: true });
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200 || response.status === 201 || response.status === 202) {
+        try {
+          return JSON.parse(response.responseText);
+        } catch (e) {
+          return { success: true };
         }
-      };
+      }
 
-      xhr.onerror = () => {
-        reject(new Error('Network error'));
-      };
-
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
@@ -3116,35 +2507,25 @@ export class CMISService {
    * @returns Promise<Blob> PDF content as blob
    */
   async getRenditionContent(repositoryId: string, objectId: string, streamId: string): Promise<Blob> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
       const url = `${this.baseUrl}/${repositoryId}?cmisselector=content&objectId=${objectId}&streamId=${streamId}`;
-
-      xhr.open('GET', url, true);
-      xhr.responseType = 'blob';
-
-      // Set authentication headers (using the same headers as other CMIS requests)
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      const response = await this.httpClient.request({
+        method: 'GET',
+        url,
+        responseType: 'blob'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            resolve(xhr.response);
-          } else {
-            reject(new Error(`Failed to fetch rendition content: HTTP ${xhr.status}`));
-          }
-        }
-      };
+      if (response.status === 200) {
+        return response.response as Blob;
+      }
 
-      xhr.onerror = () => {
-        reject(new Error('Network error while fetching rendition content'));
-      };
-
-      xhr.send();
-    });
+      throw new Error(`Failed to fetch rendition content: HTTP ${response.status}`);
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error while fetching rendition content');
+    }
   }
 
   /**
@@ -3270,73 +2651,59 @@ export class CMISService {
     removeTypes: string[],
     changeToken?: string
   ): Promise<CMISObject> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        // If no changeToken provided, fetch the current object to get it
-        let token = changeToken;
-        if (!token) {
-          try {
-            const currentObject = await this.getObject(repositoryId, objectId);
-            token = currentObject.properties?.['cmis:changeToken'] as string;
-          } catch (e) {
-            console.warn('Could not fetch changeToken, proceeding without it:', e);
-          }
+    try {
+      // If no changeToken provided, fetch the current object to get it
+      let token = changeToken;
+      if (!token) {
+        try {
+          const currentObject = await this.getObject(repositoryId, objectId);
+          token = currentObject.properties?.['cmis:changeToken'] as string;
+        } catch (e) {
+          console.warn('Could not fetch changeToken, proceeding without it:', e);
         }
-
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-        xhr.setRequestHeader('Accept', 'application/json');
-
-        const headers = this.getAuthHeaders();
-        Object.entries(headers).forEach(([key, value]) => {
-          xhr.setRequestHeader(key, value);
-        });
-
-        xhr.onreadystatechange = () => {
-          if (xhr.readyState === 4) {
-            if (xhr.status === 200 || xhr.status === 201) {
-              try {
-                const response = JSON.parse(xhr.responseText);
-                const updated = this.buildCmisObjectFromBrowserData(response);
-                resolve(updated);
-              } catch (e) {
-                reject(new Error('Failed to parse response'));
-              }
-            } else {
-              const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-              reject(error);
-            }
-          }
-        };
-
-        xhr.onerror = () => reject(new Error('Network error'));
-
-        const formData = new FormData();
-        formData.append('cmisaction', 'update');
-        formData.append('objectId', objectId);
-        formData.append('succinct', 'true');
-        formData.append('_charset_', 'UTF-8');
-
-        // CRITICAL FIX (2025-12-12): Include changeToken to prevent update conflicts
-        if (token) {
-          formData.append('changeToken', token);
-        }
-
-        // Add secondary types to add
-        if (addTypes.length > 0) {
-          formData.append('addSecondaryTypeIds', addTypes.join(','));
-        }
-
-        // Add secondary types to remove
-        if (removeTypes.length > 0) {
-          formData.append('removeSecondaryTypeIds', removeTypes.join(','));
-        }
-
-        xhr.send(formData);
-      } catch (e) {
-        reject(e);
       }
-    });
+
+      const url = `${this.baseUrl}/${repositoryId}`;
+      const formData = new FormData();
+      formData.append('cmisaction', 'update');
+      formData.append('objectId', objectId);
+      formData.append('succinct', 'true');
+      formData.append('_charset_', 'UTF-8');
+
+      // CRITICAL FIX (2025-12-12): Include changeToken to prevent update conflicts
+      if (token) {
+        formData.append('changeToken', token);
+      }
+
+      // Add secondary types to add
+      if (addTypes.length > 0) {
+        formData.append('addSecondaryTypeIds', addTypes.join(','));
+      }
+
+      // Add secondary types to remove
+      if (removeTypes.length > 0) {
+        formData.append('removeSecondaryTypeIds', removeTypes.join(','));
+      }
+
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200 || response.status === 201) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return this.buildCmisObjectFromBrowserData(data);
+        } catch (e) {
+          throw new Error('Failed to parse response');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   // =====================================================

@@ -19,12 +19,13 @@
     "react-router-dom": "^6.8.0",
     "typescript": "^5.0.0"
   },
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "type-check": "tsc --noEmit",
-    "test": "playwright test",
+    "scripts": {
+      "dev": "vite",
+      "build": "vite build",
+      "preview": "vite preview",
+      "type-check": "tsc --noEmit",
+      "test": "playwright test",
+      "test:unit": "vitest run",
     "test:ui": "playwright test --ui",
     "test:debug": "playwright test --debug",
     "test:headed": "playwright test --headed",
@@ -34,11 +35,14 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.45.0",
+    "@types/jsdom": "^27.0.0",
     "@types/jszip": "^3.4.0",
     "@types/pako": "^2.0.4",
     "@types/react-image-gallery": "^1.2.4",
     "@vitejs/plugin-react": "^5.1.1",
+    "jsdom": "^27.3.0",
     "jszip": "^3.10.1",
-    "vite": "^7.2.2"
+    "vite": "^7.2.2",
+    "vitest": "^4.0.16"
   }
 }

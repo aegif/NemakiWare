@@ -58,7 +58,9 @@ test.describe('Admin Route Protection', () => {
       await page.waitForSelector('[class*="ant-menu"]', { timeout: 10000 });
 
       // Check that admin menu is NOT visible
-      const adminMenu = page.locator('span:has-text("管理")');
+      // Use exact match to avoid matching "権限管理" which also contains "管理"
+      const menu = page.locator('[class*="ant-menu"]');
+      const adminMenu = menu.getByText('管理', { exact: true });
       await expect(adminMenu).not.toBeVisible();
 
       // Verify user can see regular menus
@@ -108,7 +110,9 @@ test.describe('Admin Route Protection', () => {
       await page.waitForSelector('[class*="ant-menu"]', { timeout: 10000 });
 
       // Check that admin menu IS visible
-      const adminMenu = page.locator('span:has-text("管理")');
+      // Use exact match to avoid matching "権限管理" which also contains "管理"
+      const menu = page.locator('[class*="ant-menu"]');
+      const adminMenu = menu.getByText('管理', { exact: true });
       await expect(adminMenu).toBeVisible();
     });
 
@@ -143,7 +147,9 @@ test.describe('Admin Route Protection', () => {
 
     test('should see all admin submenu items when clicking admin menu', async ({ page }) => {
       // Click on admin menu to expand
-      await page.click('span:has-text("管理")');
+      // Use exact match to avoid matching "権限管理" which also contains "管理"
+      const menu = page.locator('[class*="ant-menu"]');
+      await menu.getByText('管理', { exact: true }).click();
 
       // Wait for submenu to expand
       await page.waitForTimeout(500);
