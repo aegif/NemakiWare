@@ -1554,105 +1554,69 @@ export class CMISService {
   }
 
   async getUsers(repositoryId: string): Promise<User[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // サーバー側修正に合わせて正しいRESTエンドポイントを使用
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/user/list`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const rawUsers = response.users || [];
-              
-              // Transform user data to match UI expectations
-              // Preserve firstName and lastName as separate fields for table display
-              const transformedUsers = rawUsers.map((user: any) => ({
-                id: user.userId || user.id,
-                name: user.userName || user.userId || user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                groups: user.groups || []
-              }));
+    try {
+      const url = `/core/rest/repo/${repositoryId}/user/list`;
+      const response = await this.httpClient.getJson(url);
 
-              resolve(transformedUsers);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Invalid response format'));
-            }
-          } else if (xhr.status === 500) {
-            // サーバー側エラーの詳細情報を解析
-            let errorMessage = 'サーバーエラーが発生しました';
-            let errorDetails = '';
-            try {
-              const errorResponse = JSON.parse(xhr.responseText);
-              if (errorResponse.message) {
-                errorMessage = errorResponse.message;
-              }
-              if (errorResponse.error) {
-                errorDetails = errorResponse.error;
-              }
-              if (errorResponse.errorType) {
-                errorDetails += ` (${errorResponse.errorType})`;
-              }
-            } catch (e) {
-              // JSONパースできない場合はレスポンステキストをそのまま使用
-              errorDetails = xhr.responseText || 'Unknown server error';
-            }
-            
-            const error = new Error(errorMessage);
-            (error as any).details = errorDetails;
-            (error as any).status = xhr.status;
-            reject(error);
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          const rawUsers = data.users || [];
+
+          // Transform user data to match UI expectations
+          // Preserve firstName and lastName as separate fields for table display
+          const transformedUsers = rawUsers.map((user: any) => ({
+            id: user.userId || user.id,
+            name: user.userName || user.userId || user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            groups: user.groups || []
+          }));
+
+          return transformedUsers;
+        } catch (e) {
+          throw new Error('Invalid response format');
         }
-      };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send();
-    });
+      } else if (response.status === 500) {
+        // サーバー側エラーの詳細情報を解析
+        let errorMessage = 'サーバーエラーが発生しました';
+        let errorDetails = '';
+        try {
+          const errorResponse = JSON.parse(response.responseText);
+          if (errorResponse.message) {
+            errorMessage = errorResponse.message;
+          }
+          if (errorResponse.error) {
+            errorDetails = errorResponse.error;
+          }
+          if (errorResponse.errorType) {
+            errorDetails += ` (${errorResponse.errorType})`;
+          }
+        } catch (e) {
+          // JSONパースできない場合はレスポンステキストをそのまま使用
+          errorDetails = response.responseText || 'Unknown server error';
+        }
+
+        const error = new Error(errorMessage);
+        (error as any).details = errorDetails;
+        (error as any).status = response.status;
+        throw error;
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async createUser(repositoryId: string, user: Partial<User>): Promise<User> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.restBaseUrl}/${repositoryId}/user/create/${user.id}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during user creation'));
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/user/create/${user.id}`;
 
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
@@ -1666,39 +1630,30 @@ export class CMISService {
         formData.append('groups', JSON.stringify(user.groups));
       }
 
-      xhr.send(formData.toString());
-    });
+      const response = await this.httpClient.postUrlEncoded(url, formData);
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return data;
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during user creation');
+    }
   }
 
   async updateUser(repositoryId: string, userId: string, user: Partial<User>): Promise<User> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('PUT', `${this.restBaseUrl}/${repositoryId}/user/update/${userId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during user update'));
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/user/update/${userId}`;
 
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
@@ -1711,132 +1666,119 @@ export class CMISService {
         formData.append('groups', JSON.stringify(user.groups));
       }
 
-      xhr.send(formData.toString());
-    });
+      // Use PUT method via httpClient.request()
+      const response = await this.httpClient.request({
+        method: 'PUT',
+        url,
+        body: formData.toString(),
+        contentType: 'application/x-www-form-urlencoded',
+        accept: 'application/json'
+      });
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return data;
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during user update');
+    }
   }
 
   async deleteUser(repositoryId: string, userId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('DELETE', `${this.restBaseUrl}/${repositoryId}/user/delete/${userId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/user/delete/${userId}`;
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      // Use DELETE method via httpClient.request()
+      const response = await this.httpClient.request({
+        method: 'DELETE',
+        url,
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during user deletion'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during user deletion');
+    }
   }
 
   async getGroups(repositoryId: string): Promise<Group[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // サーバー側修正に合わせて正しいRESTエンドポイントを使用
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/group/list`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const rawGroups = response.groups || [];
-              
-              // Transform group data to match UI expectations
-              const transformedGroups = rawGroups.map((group: any) => ({
-                id: group.groupId || group.id,
-                name: group.groupName || group.name || group.groupId || 'Unknown Group',
-                members: group.users || []
-              }));
+    try {
+      const url = `/core/rest/repo/${repositoryId}/group/list`;
+      const response = await this.httpClient.getJson(url);
 
-              resolve(transformedGroups);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else if (xhr.status === 500) {
-            // サーバー側エラーの詳細情報を解析
-            let errorMessage = 'サーバーエラーが発生しました';
-            let errorDetails = '';
-            try {
-              const errorResponse = JSON.parse(xhr.responseText);
-              if (errorResponse.message) {
-                errorMessage = errorResponse.message;
-              }
-              if (errorResponse.error) {
-                errorDetails = errorResponse.error;
-              }
-              if (errorResponse.errorType) {
-                errorDetails += ` (${errorResponse.errorType})`;
-              }
-            } catch (e) {
-              // JSONパースできない場合はレスポンステキストをそのまま使用
-              errorDetails = xhr.responseText || 'Unknown server error';
-            }
-            
-            const error = new Error(errorMessage);
-            (error as any).details = errorDetails;
-            (error as any).status = xhr.status;
-            reject(error);
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          const rawGroups = data.groups || [];
+
+          // Transform group data to match UI expectations
+          const transformedGroups = rawGroups.map((group: any) => ({
+            id: group.groupId || group.id,
+            name: group.groupName || group.name || group.groupId || 'Unknown Group',
+            members: group.users || []
+          }));
+
+          return transformedGroups;
+        } catch (e) {
+          throw new Error('Invalid response format');
         }
-      };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send();
-    });
+      } else if (response.status === 500) {
+        // サーバー側エラーの詳細情報を解析
+        let errorMessage = 'サーバーエラーが発生しました';
+        let errorDetails = '';
+        try {
+          const errorResponse = JSON.parse(response.responseText);
+          if (errorResponse.message) {
+            errorMessage = errorResponse.message;
+          }
+          if (errorResponse.error) {
+            errorDetails = errorResponse.error;
+          }
+          if (errorResponse.errorType) {
+            errorDetails += ` (${errorResponse.errorType})`;
+          }
+        } catch (e) {
+          // JSONパースできない場合はレスポンステキストをそのまま使用
+          errorDetails = response.responseText || 'Unknown server error';
+        }
+
+        const error = new Error(errorMessage);
+        (error as any).details = errorDetails;
+        (error as any).status = response.status;
+        throw error;
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async createGroup(repositoryId: string, group: Partial<Group>): Promise<Group> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.restBaseUrl}/${repositoryId}/group/create/${group.id}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during group creation'));
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/group/create/${group.id}`;
 
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
@@ -1847,39 +1789,30 @@ export class CMISService {
       formData.append('users', JSON.stringify(members));  // FORM_MEMBER_USERS = "users"
       formData.append('groups', JSON.stringify((group as any).groups || []));  // FORM_MEMBER_GROUPS = "groups"
 
-      xhr.send(formData.toString());
-    });
+      const response = await this.httpClient.postUrlEncoded(url, formData);
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return data;
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during group creation');
+    }
   }
 
   async updateGroup(repositoryId: string, groupId: string, group: Partial<Group>): Promise<Group> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('PUT', `${this.restBaseUrl}/${repositoryId}/group/update/${groupId}`, true);
-      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-      xhr.setRequestHeader('Accept', 'application/json');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during group update'));
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/group/update/${groupId}`;
 
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
@@ -1890,35 +1823,57 @@ export class CMISService {
       formData.append('users', JSON.stringify(members));  // FORM_MEMBER_USERS = "users"
       formData.append('groups', JSON.stringify((group as any).groups || []));  // FORM_MEMBER_GROUPS = "groups"
 
-      xhr.send(formData.toString());
-    });
+      // Use PUT method via httpClient.request()
+      const response = await this.httpClient.request({
+        method: 'PUT',
+        url,
+        body: formData.toString(),
+        contentType: 'application/x-www-form-urlencoded',
+        accept: 'application/json'
+      });
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return data;
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during group update');
+    }
   }
 
   async deleteGroup(repositoryId: string, groupId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('DELETE', `${this.restBaseUrl}/${repositoryId}/group/delete/${groupId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/group/delete/${groupId}`;
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      // Use DELETE method via httpClient.request()
+      const response = await this.httpClient.request({
+        method: 'DELETE',
+        url,
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during group deletion'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during group deletion');
+    }
   }
 
   async getTypes(repositoryId: string): Promise<TypeDefinition[]> {
