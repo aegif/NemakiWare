@@ -722,82 +722,57 @@ export class CMISService {
   }
 
 
+  /**
+   * Get root folder of a repository using the new AtomPubClient
+   * 
+   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
+   * which provides better separation of concerns and testability.
+   * The fallback behavior is preserved: always resolves with a folder, never rejects.
+   * 
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @returns Promise resolving to CMISObject (root folder)
+   */
   async getRootFolder(repositoryId: string): Promise<CMISObject> {
-    return new Promise((resolve, _reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/root`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
+    // Fallback folder used when request fails or returns invalid data
+    const fallbackFolder: CMISObject = {
+      id: 'e02f784f8360a02cc14d1314c10038ff',
+      name: 'Root Folder',
+      objectType: 'cmis:folder',
+      baseType: 'cmis:folder',
+      properties: {},
+      allowableActions: { canGetChildren: true },
+      path: '/'
+    };
 
-              const props = response.succinctProperties || response.properties || {};
-              const rootFolder: CMISObject = {
-                id: this.getSafeStringProperty(props, 'cmis:objectId', 'e02f784f8360a02cc14d1314c10038ff'),
-                name: this.getSafeStringProperty(props, 'cmis:name', 'Root Folder'),
-                objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:folder'),
-                baseType: 'cmis:folder',
-                properties: props,
-                allowableActions: this.extractAllowableActions(response.allowableActions) || { canGetChildren: true },
-                path: this.getSafeStringProperty(props, 'cmis:path', '/')
-              };
+    try {
+      // Use the new AtomPubClient for getRootFolder
+      const result = await this.atomPubClient.getRootFolder(repositoryId);
 
-              resolve(rootFolder);
-            } catch (error) {
-              // Failed to parse response - use fallback
-              const fallbackFolder: CMISObject = {
-                id: 'e02f784f8360a02cc14d1314c10038ff',
-                name: 'Root Folder',
-                objectType: 'cmis:folder',
-                baseType: 'cmis:folder',
-                properties: {},
-                allowableActions: { canGetChildren: true },
-                path: '/'
-              };
-              resolve(fallbackFolder);
-            }
-          } else {
-            // Request failed - handle authentication errors
-            this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            // For now, still provide fallback but notify about auth error
-            const fallbackFolder: CMISObject = {
-              id: 'e02f784f8360a02cc14d1314c10038ff',
-              name: 'Root Folder',
-              objectType: 'cmis:folder',
-              baseType: 'cmis:folder',
-              properties: {},
-              allowableActions: { canGetChildren: true },
-              path: '/'
-            };
-            resolve(fallbackFolder);
-          }
+      if (!result.success) {
+        // Handle HTTP errors - notify about auth error but still return fallback
+        if (result.status === 401 || result.status === 403) {
+          this.handleHttpError(result.status, result.error || 'Unauthorized', '');
         }
-      };
+        return fallbackFolder;
+      }
 
-      xhr.onerror = () => {
-        // Network error - use fallback folder
-        const fallbackFolder: CMISObject = {
-          id: 'e02f784f8360a02cc14d1314c10038ff',
-          name: 'Root Folder',
-          objectType: 'cmis:folder',
-          baseType: 'cmis:folder',
-          properties: {},
-          allowableActions: { canGetChildren: true },
-          path: '/'
-        };
-        resolve(fallbackFolder);
-      };
+      if (!result.data) {
+        return fallbackFolder;
+      }
+
+      // Convert ParsedAtomEntry to CMISObject
+      const rootFolder = convertParsedEntryToCmisObject(result.data);
       
-      xhr.send();
-    });
+      // Ensure allowableActions has canGetChildren for root folder
+      if (!rootFolder.allowableActions) {
+        rootFolder.allowableActions = { canGetChildren: true };
+      }
+      
+      return rootFolder;
+    } catch (error) {
+      // Network error or exception - return fallback folder
+      return fallbackFolder;
+    }
   }
 
   /**
@@ -1228,75 +1203,54 @@ export class CMISService {
     });
   }
 
+  /**
+   * Get version history of a document using the new AtomPubClient
+   * 
+   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
+   * which provides better separation of concerns and testability.
+   * 
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @param objectId Document ID to get version history for
+   * @returns Promise resolving to VersionHistory
+   */
   async getVersionHistory(repositoryId: string, objectId: string): Promise<VersionHistory> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // Use CMIS AtomPub binding for version history (Browser Binding doesn't support versions endpoint)
-      xhr.open('GET', `/core/atom/${repositoryId}/versions?id=${objectId}`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              // Parse AtomPub XML response for version history
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-              const entries = xmlDoc.getElementsByTagName('entry');
-              
-              const versions: CMISObject[] = [];
-              for (let i = 0; i < entries.length; i++) {
-                const entry = entries[i];
-                const id = entry.querySelector('id')?.textContent || '';
-                const title = entry.querySelector('title')?.textContent || '';
+    try {
+      // Use the new AtomPubClient for getVersionHistory
+      const result = await this.atomPubClient.getVersionHistory(repositoryId, objectId);
 
-                // Create full CMISObject to satisfy TypeScript interface requirements
-                versions.push({
-                  id: id.split('/').pop() || id,
-                  name: title,
-                  objectType: 'cmis:document',
-                  baseType: 'cmis:document',
-                  properties: {
-                    'cmis:versionLabel': title
-                  },
-                  allowableActions: undefined  // Version list doesn't include allowableActions
-                });
-              }
-
-              // Use first version as latestVersion (versions are typically ordered newest-first)
-              const latestVersion: CMISObject = versions[0] || {
-                id: '',
-                name: '',
-                objectType: 'cmis:document',
-                baseType: 'cmis:document',
-                properties: {},
-                allowableActions: undefined
-              };
-
-              const versionHistory: VersionHistory = {
-                versions: versions,
-                latestVersion: latestVersion
-              };
-              
-              resolve(versionHistory);
-            } catch (e) {
-              reject(new Error('Failed to parse version history XML'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (!result.success) {
+        // Handle HTTP errors using existing error handler
+        if (result.status === 401 || result.status === 403) {
+          const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
+          throw error;
         }
+        throw new Error(result.error || `HTTP ${result.status}`);
+      }
+
+      // Convert ParsedAtomEntry[] to CMISObject[]
+      const versions: CMISObject[] = (result.data || []).map(convertParsedEntryToCmisObject);
+
+      // Use first version as latestVersion (versions are typically ordered newest-first)
+      const latestVersion: CMISObject = versions[0] || {
+        id: '',
+        name: '',
+        objectType: 'cmis:document',
+        baseType: 'cmis:document',
+        properties: {},
+        allowableActions: undefined
       };
-      
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send();
-    });
+
+      return {
+        versions: versions,
+        latestVersion: latestVersion
+      };
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
@@ -2530,83 +2484,42 @@ export class CMISService {
   }
 
   /**
-   * Get parent folders for an object (document or folder)
+   * Get parent folders for an object (document or folder) using the new AtomPubClient
    * Returns array of parent folder objects (typically 1 parent, but CMIS supports multi-filing)
    * Used to calculate document paths from parent folder paths
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
+   * which provides better separation of concerns and testability.
    *
    * @param repositoryId - Repository ID
    * @param objectId - Object ID
    * @returns Promise resolving to array of parent folder objects with id, name, and path
    */
   async getObjectParents(repositoryId: string, objectId: string): Promise<CMISObject[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    try {
+      // Use the new AtomPubClient for getObjectParents
+      const result = await this.atomPubClient.getObjectParents(repositoryId, objectId);
 
-      // Use AtomPub binding for getObjectParents
-      xhr.open('GET', `/core/atom/${repositoryId}/parents?id=${objectId}`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml;type=feed');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              // Parse AtomPub feed response
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-
-              const parents: CMISObject[] = [];
-              const entries = xmlDoc.querySelectorAll('entry');
-
-              entries.forEach(entry => {
-                // Extract folder ID
-                const objectIdElement = entry.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectId"] cmis\\:value, propertyId[propertyDefinitionId="cmis:objectId"] value');
-                const folderId = objectIdElement?.textContent?.trim() || '';
-
-                // Extract folder name
-                const nameElement = entry.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:name"] cmis\\:value, propertyString[propertyDefinitionId="cmis:name"] value');
-                const folderName = nameElement?.textContent?.trim() || '';
-
-                // Extract folder path
-                const pathElement = entry.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:path"] cmis\\:value, propertyString[propertyDefinitionId="cmis:path"] value');
-                const folderPath = pathElement?.textContent?.trim() || '';
-
-                if (folderId && folderName) {
-                  parents.push({
-                    id: folderId,
-                    name: folderName,
-                    path: folderPath,
-                    baseType: 'cmis:folder',
-                    objectType: 'cmis:folder',
-                    properties: {}
-                  } as CMISObject);
-                }
-              });
-
-              resolve(parents);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Failed to parse AtomPub parents response'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (!result.success) {
+        // Handle HTTP errors using existing error handler
+        if (result.status === 401 || result.status === 403) {
+          const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
+          throw error;
         }
-      };
+        throw new Error(result.error || `HTTP ${result.status}`);
+      }
 
-      xhr.onerror = () => {
-        // Network error occurred
-        reject(new Error('Network error during getObjectParents'));
-      };
+      // Convert ParsedAtomEntry[] to CMISObject[]
+      const parents: CMISObject[] = (result.data || []).map(convertParsedEntryToCmisObject);
 
-      xhr.send();
-    });
+      return parents;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during getObjectParents');
+    }
   }
 
   getDownloadUrl(repositoryId: string, objectId: string): string {
