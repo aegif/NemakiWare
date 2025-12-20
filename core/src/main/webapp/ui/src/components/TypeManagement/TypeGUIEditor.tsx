@@ -143,16 +143,13 @@ const typeDefinitionToFormData = (typeDef: TypeDefinition | null): TypeFormData 
         description: prop.description || '',
         propertyType: prop.propertyType || 'string',
         cardinality: prop.cardinality || 'single',
-        updatability: 'readwrite',
+        updatability: prop.updatable ? 'readwrite' : 'readonly',
         required: prop.required || false,
         queryable: prop.queryable || false,
         openChoice: false
       });
     });
   }
-
-  // Handle relationship-specific fields
-  const typeDefAny = typeDef as any;
 
   return {
     id: typeDef.id || '',
@@ -169,8 +166,8 @@ const typeDefinitionToFormData = (typeDef: TypeDefinition | null): TypeFormData 
     controllablePolicy: true,
     controllableACL: true,
     propertyDefinitions: properties,
-    allowedSourceTypes: typeDefAny.allowedSourceTypes || [],
-    allowedTargetTypes: typeDefAny.allowedTargetTypes || []
+    allowedSourceTypes: typeDef.allowedSourceTypes || [],
+    allowedTargetTypes: typeDef.allowedTargetTypes || []
   };
 };
 
@@ -231,6 +228,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
   const [jsonText, setJsonText] = useState<string>('');
   const [jsonError, setJsonError] = useState<string>('');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
 
   // Initialize form with initial value
   useEffect(() => {
@@ -247,9 +245,10 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
     }
   }, [formData, activeTab]);
 
-  // Validate form data
-  const validateFormData = (data: TypeFormData): string[] => {
+  // Validate form data - returns { errors, warnings }
+  const validateFormData = (data: TypeFormData): { errors: string[], warnings: string[] } => {
     const errors: string[] = [];
+    const warnings: string[] = [];
 
     if (!data.id || data.id.trim() === '') {
       errors.push('タイプIDは必須です');
@@ -268,7 +267,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
 
     // Check for duplicate display name (warning level)
     if (data.displayName && existingTypes.some(t => t.displayName === data.displayName && t.id !== data.id)) {
-      errors.push(`警告: 表示名 "${data.displayName}" は既に他のタイプで使用されています`);
+      warnings.push(`表示名 "${data.displayName}" は既に他のタイプで使用されています`);
     }
 
     // Validate property definitions
@@ -276,53 +275,61 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
     data.propertyDefinitions.forEach((prop, index) => {
       if (!prop.id || prop.id.trim() === '') {
         errors.push(`プロパティ ${index + 1}: IDは必須です`);
-      } else if (propertyIds.has(prop.id)) {
-        errors.push(`プロパティ ${index + 1}: ID "${prop.id}" は重複しています`);
       } else {
-        propertyIds.add(prop.id);
+        // Validate property ID format
+        if (!/^[a-zA-Z][a-zA-Z0-9_:]*$/.test(prop.id)) {
+          errors.push(`プロパティ ${index + 1}: IDは英字で始まり、英数字、アンダースコア、コロンのみ使用できます`);
+        }
+        if (propertyIds.has(prop.id)) {
+          errors.push(`プロパティ ${index + 1}: ID "${prop.id}" は重複しています`);
+        } else {
+          propertyIds.add(prop.id);
+        }
       }
 
       if (!prop.propertyType) {
         errors.push(`プロパティ ${index + 1}: データ型は必須です`);
       }
 
-      // Check for duplicate property display name within the type
+      // Check for duplicate property display name within the type (warning)
       const duplicateDisplayName = data.propertyDefinitions.filter(
         (p, i) => i !== index && p.displayName && p.displayName === prop.displayName
       );
       if (prop.displayName && duplicateDisplayName.length > 0) {
-        errors.push(`プロパティ ${index + 1}: 表示名 "${prop.displayName}" は重複しています`);
+        warnings.push(`プロパティ ${index + 1}: 表示名 "${prop.displayName}" は重複しています`);
       }
     });
 
     // Validate relationship-specific fields
     if (data.baseId === 'cmis:relationship') {
-      // Check if allowedSourceTypes reference existing types
+      // Check if allowedSourceTypes reference existing types (warning)
       if (data.allowedSourceTypes) {
         data.allowedSourceTypes.forEach(typeId => {
           if (!existingTypes.some(t => t.id === typeId)) {
-            errors.push(`警告: ソースタイプ "${typeId}" は未定義です`);
+            warnings.push(`ソースタイプ "${typeId}" は未定義です`);
           }
         });
       }
-      // Check if allowedTargetTypes reference existing types
+      // Check if allowedTargetTypes reference existing types (warning)
       if (data.allowedTargetTypes) {
         data.allowedTargetTypes.forEach(typeId => {
           if (!existingTypes.some(t => t.id === typeId)) {
-            errors.push(`警告: ターゲットタイプ "${typeId}" は未定義です`);
+            warnings.push(`ターゲットタイプ "${typeId}" は未定義です`);
           }
         });
       }
     }
 
-    return errors;
+    return { errors, warnings };
   };
 
   // Handle form field changes
   const handleFormChange = (_changedValues: any, allValues: any) => {
     const newFormData = { ...formData, ...allValues };
     setFormData(newFormData);
-    setValidationErrors(validateFormData(newFormData));
+    const { errors, warnings } = validateFormData(newFormData);
+    setValidationErrors(errors);
+    setValidationWarnings(warnings);
   };
 
   // Handle JSON text changes
@@ -331,6 +338,34 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
     try {
       const parsed = JSON.parse(value);
       setJsonError('');
+      
+      // Handle propertyDefinitions in both array and object format
+      let propertyDefinitions: PropertyFormData[] = [];
+      if (Array.isArray(parsed.propertyDefinitions)) {
+        propertyDefinitions = parsed.propertyDefinitions.map((prop: any) => ({
+          id: prop.id || '',
+          displayName: prop.displayName || '',
+          description: prop.description || '',
+          propertyType: prop.propertyType || 'string',
+          cardinality: prop.cardinality || 'single',
+          updatability: prop.updatability || 'readwrite',
+          required: prop.required || false,
+          queryable: prop.queryable || false,
+          openChoice: prop.openChoice || false
+        }));
+      } else if (parsed.propertyDefinitions && typeof parsed.propertyDefinitions === 'object') {
+        propertyDefinitions = Object.entries(parsed.propertyDefinitions).map(([id, prop]: [string, any]) => ({
+          id: id,
+          displayName: prop.displayName || '',
+          description: prop.description || '',
+          propertyType: prop.propertyType || 'string',
+          cardinality: prop.cardinality || 'single',
+          updatability: prop.updatability || 'readwrite',
+          required: prop.required || false,
+          queryable: prop.queryable || false,
+          openChoice: prop.openChoice || false
+        }));
+      }
       
       // Convert parsed JSON to form data
       const newFormData: TypeFormData = {
@@ -347,22 +382,17 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
         includedInSupertypeQuery: parsed.includedInSupertypeQuery !== false,
         controllablePolicy: parsed.controllablePolicy !== false,
         controllableACL: parsed.controllableACL !== false,
-        propertyDefinitions: (parsed.propertyDefinitions || []).map((prop: any) => ({
-          id: prop.id || '',
-          displayName: prop.displayName || '',
-          description: prop.description || '',
-          propertyType: prop.propertyType || 'string',
-          cardinality: prop.cardinality || 'single',
-          updatability: prop.updatability || 'readwrite',
-          required: prop.required || false,
-          queryable: prop.queryable || false,
-          openChoice: prop.openChoice || false
-        }))
+        propertyDefinitions: propertyDefinitions,
+        // Relationship-specific fields
+        allowedSourceTypes: Array.isArray(parsed.allowedSourceTypes) ? parsed.allowedSourceTypes : undefined,
+        allowedTargetTypes: Array.isArray(parsed.allowedTargetTypes) ? parsed.allowedTargetTypes : undefined
       };
       
       setFormData(newFormData);
       form.setFieldsValue(newFormData);
-      setValidationErrors(validateFormData(newFormData));
+      const { errors, warnings } = validateFormData(newFormData);
+      setValidationErrors(errors);
+      setValidationWarnings(warnings);
     } catch (e) {
       setJsonError('JSONの形式が正しくありません');
     }
@@ -402,14 +432,17 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
     newProperties[index] = { ...newProperties[index], [field]: value };
     const newFormData = { ...formData, propertyDefinitions: newProperties };
     setFormData(newFormData);
-    setValidationErrors(validateFormData(newFormData));
+    const { errors, warnings } = validateFormData(newFormData);
+    setValidationErrors(errors);
+    setValidationWarnings(warnings);
   };
 
   // Handle save
   const handleSave = () => {
-    const errors = validateFormData(formData);
+    const { errors, warnings } = validateFormData(formData);
     if (errors.length > 0) {
       setValidationErrors(errors);
+      setValidationWarnings(warnings);
       return;
     }
 
@@ -557,7 +590,9 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
                   onChange={(e) => {
                     const newFormData = { ...formData, id: e.target.value };
                     setFormData(newFormData);
-                    setValidationErrors(validateFormData(newFormData));
+                    const { errors, warnings } = validateFormData(newFormData);
+                    setValidationErrors(errors);
+                    setValidationWarnings(warnings);
                   }}
                 />
               </Form.Item>
@@ -776,7 +811,9 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
                     onChange={(values) => {
                       const newFormData = { ...formData, allowedSourceTypes: values };
                       setFormData(newFormData);
-                      setValidationErrors(validateFormData(newFormData));
+                      const { errors, warnings } = validateFormData(newFormData);
+                      setValidationErrors(errors);
+                      setValidationWarnings(warnings);
                     }}
                     style={{ width: '100%' }}
                   >
@@ -809,7 +846,9 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
                     onChange={(values) => {
                       const newFormData = { ...formData, allowedTargetTypes: values };
                       setFormData(newFormData);
-                      setValidationErrors(validateFormData(newFormData));
+                      const { errors, warnings } = validateFormData(newFormData);
+                      setValidationErrors(errors);
+                      setValidationWarnings(warnings);
                     }}
                     style={{ width: '100%' }}
                   >
@@ -915,6 +954,22 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
             </ul>
           }
           type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
+      {validationWarnings.length > 0 && (
+        <Alert
+          message="警告"
+          description={
+            <ul style={{ margin: 0, paddingLeft: 20 }}>
+              {validationWarnings.map((warning, index) => (
+                <li key={index}>{warning}</li>
+              ))}
+            </ul>
+          }
+          type="warning"
           showIcon
           style={{ marginBottom: 16 }}
         />

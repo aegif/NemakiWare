@@ -893,6 +893,41 @@ public class TypeResource extends ResourceBase {
 		// Type mutability (currently not implemented in NemakiTypeDefinition)
 		// JSONObject typeMutability = (JSONObject) typeJson.get("typeMutability");
 		
+		// Relationship-specific attributes
+		if (BaseTypeId.CMIS_RELATIONSHIP.equals(tdf.getBaseId())) {
+			// Parse allowedSourceTypes
+			Object allowedSourceTypesObj = typeJson.get("allowedSourceTypes");
+			if (allowedSourceTypesObj instanceof JSONArray) {
+				JSONArray sourceTypesArray = (JSONArray) allowedSourceTypesObj;
+				List<String> allowedSourceTypes = new ArrayList<String>();
+				for (Object sourceType : sourceTypesArray) {
+					if (sourceType instanceof String) {
+						allowedSourceTypes.add((String) sourceType);
+					}
+				}
+				if (!allowedSourceTypes.isEmpty()) {
+					tdf.setAllowedSourceTypes(allowedSourceTypes);
+					log.debug("Set allowedSourceTypes: " + allowedSourceTypes);
+				}
+			}
+			
+			// Parse allowedTargetTypes
+			Object allowedTargetTypesObj = typeJson.get("allowedTargetTypes");
+			if (allowedTargetTypesObj instanceof JSONArray) {
+				JSONArray targetTypesArray = (JSONArray) allowedTargetTypesObj;
+				List<String> allowedTargetTypes = new ArrayList<String>();
+				for (Object targetType : targetTypesArray) {
+					if (targetType instanceof String) {
+						allowedTargetTypes.add((String) targetType);
+					}
+				}
+				if (!allowedTargetTypes.isEmpty()) {
+					tdf.setAllowedTargetTypes(allowedTargetTypes);
+					log.debug("Set allowedTargetTypes: " + allowedTargetTypes);
+				}
+			}
+		}
+		
 		// Process property definitions
 		List<String> propertyIds = new ArrayList<String>();
 		Object propertyDefinitionsObj = typeJson.get("propertyDefinitions");
