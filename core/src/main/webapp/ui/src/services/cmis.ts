@@ -1880,135 +1880,79 @@ export class CMISService {
     // CRITICAL FIX (2025-10-26): Use REST API instead of Browser Binding for consistency
     // All type CRUD operations (create/update/delete) use REST API, getTypes must use same API
     // to ensure newly created types appear in the list
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.restBaseUrl}/${repositoryId}/type/list`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/type/list`;
+      const response = await this.httpClient.getJson(url);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-
-              // Response format: { types: [...] }
-              if (!response.types || !Array.isArray(response.types)) {
-                // Invalid response format - return empty array
-                resolve([]);
-                return;
-              }
-
-              const types: TypeDefinition[] = response.types.map((type: any) => ({
-                id: type.id,
-                displayName: type.displayName || type.id,
-                description: type.description || '',
-                baseTypeId: type.baseTypeId || type.baseId,
-                parentTypeId: type.parentTypeId,
-                creatable: type.creatable !== false,
-                fileable: type.fileable !== false,
-                queryable: type.queryable !== false,
-                deletable: !type.id.startsWith('cmis:') && type.typeMutability?.delete !== false,
-                propertyDefinitions: type.propertyDefinitions || {}
-              }));
-
-              resolve(types);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Failed to parse type list response'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
+          // Response format: { types: [...] }
+          if (!data.types || !Array.isArray(data.types)) {
+            // Invalid response format - return empty array
+            return [];
           }
+
+          const types: TypeDefinition[] = data.types.map((type: any) => ({
+            id: type.id,
+            displayName: type.displayName || type.id,
+            description: type.description || '',
+            baseTypeId: type.baseTypeId || type.baseId,
+            parentTypeId: type.parentTypeId,
+            creatable: type.creatable !== false,
+            fileable: type.fileable !== false,
+            queryable: type.queryable !== false,
+            deletable: !type.id.startsWith('cmis:') && type.typeMutability?.delete !== false,
+            propertyDefinitions: type.propertyDefinitions || {}
+          }));
+
+          return types;
+        } catch (e) {
+          // Failed to parse response
+          throw new Error('Failed to parse type list response');
         }
-      };
+      }
 
-      xhr.onerror = () => {
-        // Network error occurred
-        reject(new Error('Network error during type list fetch'));
-      };
-
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during type list fetch');
+    }
   }
 
   async getType(repositoryId: string, typeId: string): Promise<TypeDefinition> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}?cmisselector=typeDefinition&typeId=${encodeURIComponent(typeId)}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.baseUrl}/${repositoryId}?cmisselector=typeDefinition&typeId=${encodeURIComponent(typeId)}`;
+      const response = await this.httpClient.getJson(url);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const typeDefinition = this.buildTypeDefinitionFromBrowserData(response);
-              resolve(typeDefinition);
-            } catch (e) {
-              reject(new Error('Failed to parse type definition response'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          const typeDefinition = this.buildTypeDefinitionFromBrowserData(data);
+          return typeDefinition;
+        } catch (e) {
+          throw new Error('Failed to parse type definition response');
         }
-      };
+      }
 
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async createType(repositoryId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
     // First, create the type via REST API
-    await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.restBaseUrl}/${repositoryId}/type/create`, true);
-      xhr.timeout = 30000; // 30 second timeout to prevent indefinite hangs
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              // Backend returns {message, status} not {type}
-              // Just verify success and then fetch the type separately
-              if (response.status === 'success') {
-                resolve();
-              } else {
-                reject(new Error(response.message || 'Type creation failed'));
-              }
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during type creation'));
-      xhr.ontimeout = () => reject(new Error('Request timed out - type creation took too long'));
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/type/create`;
 
       // Map frontend TypeDefinition field names to backend expectations
       // Backend expects "baseId" instead of "baseTypeId" for CMIS type definitions
@@ -2019,51 +1963,41 @@ export class CMISService {
       // Remove baseTypeId to avoid confusion
       delete (backendPayload as any).baseTypeId;
 
-      xhr.send(JSON.stringify(backendPayload));
-    });
+      const response = await this.httpClient.postJson(url, backendPayload);
 
-    // Then fetch the created type via CMIS API to return complete definition
-    return this.getType(repositoryId, type.id!);
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          // Backend returns {message, status} not {type}
+          // Just verify success and then fetch the type separately
+          if (data.status === 'success') {
+            // Then fetch the created type via CMIS API to return complete definition
+            return this.getType(repositoryId, type.id!);
+          } else {
+            throw new Error(data.message || 'Type creation failed');
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message !== 'Invalid response format') {
+            throw e;
+          }
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during type creation');
+    }
   }
 
   async updateType(repositoryId: string, typeId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
     // First, update the type via REST API
-    await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('PUT', `${this.restBaseUrl}/${repositoryId}/type/update/${typeId}`, true);
-      xhr.timeout = 30000; // 30 second timeout to prevent indefinite hangs
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              // Backend returns {message, status} not {type}
-              // Just verify success and then fetch the type separately
-              if (response.status === 'success') {
-                resolve();
-              } else {
-                reject(new Error(response.message || 'Type update failed'));
-              }
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during type update'));
-      xhr.ontimeout = () => reject(new Error('Request timed out - type update took too long'));
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/type/update/${typeId}`;
 
       // Map frontend TypeDefinition field names to backend expectations
       // Backend expects "baseId" instead of "baseTypeId" for CMIS type definitions
@@ -2074,38 +2008,67 @@ export class CMISService {
       // Remove baseTypeId to avoid confusion
       delete (backendPayload as any).baseTypeId;
 
-      xhr.send(JSON.stringify(backendPayload));
-    });
+      // Use PUT method via httpClient.request()
+      const response = await this.httpClient.request({
+        method: 'PUT',
+        url,
+        body: JSON.stringify(backendPayload),
+        contentType: 'application/json',
+        accept: 'application/json'
+      });
 
-    // Then fetch the updated type via CMIS API to return complete definition
-    return this.getType(repositoryId, typeId);
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          // Backend returns {message, status} not {type}
+          // Just verify success and then fetch the type separately
+          if (data.status === 'success') {
+            // Then fetch the updated type via CMIS API to return complete definition
+            return this.getType(repositoryId, typeId);
+          } else {
+            throw new Error(data.message || 'Type update failed');
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message !== 'Invalid response format') {
+            throw e;
+          }
+          throw new Error('Invalid response format');
+        }
+      }
+
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during type update');
+    }
   }
 
   async deleteType(repositoryId: string, typeId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('DELETE', `${this.restBaseUrl}/${repositoryId}/type/delete/${typeId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.restBaseUrl}/${repositoryId}/type/delete/${typeId}`;
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+      // Use DELETE method via httpClient.request()
+      const response = await this.httpClient.request({
+        method: 'DELETE',
+        url,
+        accept: 'application/json'
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 204) {
-            resolve();
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+      if (response.status === 200 || response.status === 204) {
+        return;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during type deletion'));
-      xhr.send();
-    });
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during type deletion');
+    }
   }
 
   async getRelationships(repositoryId: string, objectId: string): Promise<Relationship[]> {
