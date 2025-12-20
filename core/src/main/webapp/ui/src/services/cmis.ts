@@ -276,8 +276,54 @@
 import { AuthService } from './auth';
 import { getCmisAuthHeaders } from './auth/CmisAuthHeaderProvider';
 import { CmisHttpClient } from './http';
+import { AtomPubClient } from './clients';
+import { ParsedAtomEntry } from './parsers';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions } from '../types/cmis';
 import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } from '../types/typeMigration';
+
+/**
+ * Convert ParsedAtomEntry to CMISObject
+ * 
+ * This helper function bridges the new parser output format to the existing CMISObject interface.
+ * It converts the allowableActions array to an object with boolean properties.
+ */
+function convertParsedEntryToCmisObject(entry: ParsedAtomEntry): CMISObject {
+  const props = entry.properties;
+  
+  // Convert allowableActions array to object with boolean properties
+  const allowableActions: AllowableActions = {};
+  for (const action of entry.allowableActions) {
+    (allowableActions as Record<string, boolean>)[action] = true;
+  }
+  
+  // Extract common properties
+  const id = String(props['cmis:objectId'] || entry.atomId.split('/').pop() || '');
+  const name = String(props['cmis:name'] || entry.atomTitle || 'Unknown');
+  const objectType = String(props['cmis:objectTypeId'] || 'cmis:document');
+  const baseTypeId = String(props['cmis:baseTypeId'] || '');
+  const baseType = baseTypeId || (objectType.includes('folder') ? 'cmis:folder' : 'cmis:document');
+  
+  return {
+    id,
+    name,
+    objectType,
+    baseType,
+    properties: props,
+    allowableActions: Object.keys(allowableActions).length > 0 ? allowableActions : undefined,
+    path: props['cmis:path'] as string | undefined,
+    createdBy: props['cmis:createdBy'] as string | undefined,
+    lastModifiedBy: props['cmis:lastModifiedBy'] as string | undefined,
+    creationDate: props['cmis:creationDate'] as string | undefined,
+    lastModificationDate: props['cmis:lastModificationDate'] as string | undefined,
+    contentStreamLength: typeof props['cmis:contentStreamLength'] === 'number' 
+      ? props['cmis:contentStreamLength'] 
+      : undefined,
+    contentStreamMimeType: props['cmis:contentStreamMimeType'] as string | undefined,
+    versionLabel: props['cmis:versionLabel'] as string | undefined,
+    isLatestVersion: props['cmis:isLatestVersion'] as boolean | undefined,
+    isLatestMajorVersion: props['cmis:isLatestMajorVersion'] as boolean | undefined
+  };
+}
 
 const MIGRATION_PROPERTY_TYPES: MigrationPropertyType[] = [
   'string',
@@ -295,6 +341,7 @@ export class CMISService {
   private restBaseUrl = '/core/rest/repo';  // REST API for type management operations
   private authService: AuthService;
   private httpClient: CmisHttpClient;
+  private atomPubClient: AtomPubClient;
   private onAuthError?: (error: any) => void;
 
   constructor(onAuthError?: (error: any) => void) {
@@ -302,6 +349,8 @@ export class CMISService {
     this.onAuthError = onAuthError;
     // Initialize HTTP client with auth header provider from dedicated module
     this.httpClient = new CmisHttpClient(getCmisAuthHeaders);
+    // Initialize AtomPub client for read operations (getChildren, getObject, query)
+    this.atomPubClient = new AtomPubClient(this.httpClient, '/core/atom');
   }
 
   setAuthErrorHandler(handler: (error: any) => void) {
@@ -751,545 +800,132 @@ export class CMISService {
     });
   }
 
+  /**
+   * Get children of a folder using the new AtomPubClient
+   * 
+   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
+   * which provides better separation of concerns and testability.
+   * The behavior is preserved: uses AtomPub binding with filter=* and includeAllowableActions=true
+   * 
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @param folderId Folder ID to get children from
+   * @returns Promise resolving to array of CMISObject
+   */
   async getChildren(repositoryId: string, folderId: string): Promise<CMISObject[]> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      
-      // Use AtomPub for all folder children queries due to Browser Binding issues with empty results
-      // Always use AtomPub for children queries - more reliable than Browser Binding
-      // CRITICAL FIX: Add filter=* to get all properties including versioning properties
-      // CRITICAL FIX (2025-12-12): Add includeAllowableActions=true to enable preview tab
-      const url = `/core/atom/${repositoryId}/children?id=${folderId}&filter=*&includeAllowableActions=true`;
-      
-      xhr.open('GET', url, true);
-
-      // Set headers AFTER xhr.open() - always use AtomPub
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+    try {
+      // Use the new AtomPubClient for getChildren
+      // Options match the original implementation: filter=* and includeAllowableActions=true
+      const result = await this.atomPubClient.getChildren(repositoryId, folderId, {
+        filter: '*',
+        includeAllowableActions: true
       });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const children: CMISObject[] = [];
 
-              // Parse AtomPub XML response
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-
-              // Check for parse errors
-              const parseError = xmlDoc.querySelector('parsererror');
-              if (parseError) {
-                // XML parsing failed
-                reject(new Error('Invalid XML response'));
-                return;
-              }
-
-              // Try both atom:entry and entry
-              const entries = xmlDoc.getElementsByTagName('atom:entry').length > 0
-                ? xmlDoc.getElementsByTagName('atom:entry')
-                : xmlDoc.getElementsByTagName('entry');
-
-              for (let i = 0; i < entries.length; i++) {
-                const entry = entries[i];
-
-                // Extract simple data from atom:entry first
-                const atomTitle = entry.querySelector('title')?.textContent || 'Unknown';
-                const atomId = entry.querySelector('id')?.textContent || '';
-
-                // Get cmisra:object for properties
-                const cmisObject = entry.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/restatom/200908/', 'object')[0] ||
-                                  entry.querySelector('cmisra\\:object, object');
-
-                let properties = null;
-                if (cmisObject) {
-                  properties = cmisObject.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'properties')[0] ||
-                             cmisObject.querySelector('cmis\\:properties, properties');
-                }
-
-                if (!properties) {
-                  // Fallback: look for properties directly under entry
-                  properties = entry.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'properties')[0] ||
-                             entry.querySelector('cmis\\:properties, properties');
-                }
-
-                if (properties) {
-                  // Helper function to get property value
-                  const getPropertyValue = (propName: string, propType: string = 'propertyString') => {
-                    const propElements = properties.getElementsByTagName(`cmis:${propType}`);
-                    for (let j = 0; j < propElements.length; j++) {
-                      const elem = propElements[j];
-                      if (elem.getAttribute('propertyDefinitionId') === propName) {
-                        const valueElem = elem.querySelector('cmis\\:value, value');
-                        return valueElem?.textContent || '';
-                      }
-                    }
-                    return '';
-                  };
-
-                  const id = getPropertyValue('cmis:objectId', 'propertyId') || atomId;
-                  const name = getPropertyValue('cmis:name', 'propertyString') || atomTitle;
-                  const objectType = getPropertyValue('cmis:objectTypeId', 'propertyId') || 'cmis:document';
-                  const createdBy = getPropertyValue('cmis:createdBy', 'propertyString');
-                  const lastModifiedBy = getPropertyValue('cmis:lastModifiedBy', 'propertyString');
-                  const creationDate = getPropertyValue('cmis:creationDate', 'propertyDateTime');
-                  const lastModificationDate = getPropertyValue('cmis:lastModificationDate', 'propertyDateTime');
-                  const contentStreamLengthStr = getPropertyValue('cmis:contentStreamLength', 'propertyInteger');
-
-                  // CRITICAL FIX: Extract ALL properties from XML, not just hardcoded ones
-                  const allProperties: Record<string, any> = {
-                    'cmis:name': name,
-                    'cmis:objectId': id,
-                    'cmis:objectTypeId': objectType,
-                    'cmis:createdBy': createdBy,
-                    'cmis:lastModifiedBy': lastModifiedBy,
-                    'cmis:creationDate': creationDate,
-                    'cmis:lastModificationDate': lastModificationDate,
-                    'cmis:contentStreamLength': contentStreamLengthStr ? parseInt(contentStreamLengthStr) : undefined
-                  };
-
-                  // Extract all property types (Boolean, String, Integer, DateTime, Id)
-                  const propertyTypes = ['propertyBoolean', 'propertyString', 'propertyInteger', 'propertyDateTime', 'propertyId'];
-                  for (const propType of propertyTypes) {
-                    const propElements = properties.getElementsByTagName(`cmis:${propType}`);
-                    for (let j = 0; j < propElements.length; j++) {
-                      const elem = propElements[j];
-                      const propName = elem.getAttribute('propertyDefinitionId');
-                      if (propName && !allProperties[propName]) {
-                        // Use getElementsByTagName for XML namespace compatibility (querySelector doesn't work reliably in XML)
-                        const valueElem = elem.getElementsByTagName('cmis:value')[0] || elem.getElementsByTagName('value')[0];
-                        if (valueElem) {
-                          let value: any = valueElem.textContent || '';
-                          // Convert boolean strings to actual booleans
-                          if (propType === 'propertyBoolean') {
-                            value = value === 'true';
-                          } else if (propType === 'propertyInteger') {
-                            value = value ? parseInt(value) : undefined;
-                          }
-                          allProperties[propName] = value;
-                        }
-                      }
-                    }
-                  }
-
-                  // DEBUG: Log allProperties structure to understand why path extraction fails
-                  console.log('[CMIS DEBUG] allProperties keys:', Object.keys(allProperties));
-                  console.log('[CMIS DEBUG] cmis:path raw value:', allProperties['cmis:path']);
-                  console.log('[CMIS DEBUG] All properties:', allProperties);
-
-                  // Extract path from allProperties if available
-                  const path = allProperties['cmis:path'] as string | undefined;
-                  console.log('[CMIS DEBUG] Extracted path:', path);
-
-                  // Extract contentStreamMimeType for preview support
-                  const contentStreamMimeType = getPropertyValue('cmis:contentStreamMimeType', 'propertyString');
-
-                  // Extract allowableActions from AtomPub response
-                  // AllowableActions are in cmis:allowableActions element with boolean children
-                  let allowableActions: AllowableActions | undefined = undefined;
-                  const allowableActionsElem = cmisObject?.getElementsByTagNameNS('http://docs.oasis-open.org/ns/cmis/core/200908/', 'allowableActions')[0] ||
-                                              cmisObject?.querySelector('cmis\\:allowableActions, allowableActions');
-                  if (allowableActionsElem) {
-                    allowableActions = {};
-                    const actionElements = allowableActionsElem.children;
-                    for (let k = 0; k < actionElements.length; k++) {
-                      const actionElem = actionElements[k];
-                      const actionName = actionElem.localName || actionElem.nodeName.replace('cmis:', '');
-                      const actionValue = actionElem.textContent === 'true';
-                      (allowableActions as any)[actionName] = actionValue;
-                    }
-                  }
-
-                  const cmisObjectResult: CMISObject = {
-                    id: id,
-                    name: name,
-                    objectType: objectType,
-                    baseType: objectType.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
-                    properties: allProperties,
-                    allowableActions: allowableActions,
-                    path: path,  // Add path property from XML response
-                    createdBy: createdBy,
-                    lastModifiedBy: lastModifiedBy,
-                    creationDate: creationDate,
-                    lastModificationDate: lastModificationDate,
-                    contentStreamLength: contentStreamLengthStr ? parseInt(contentStreamLengthStr) : undefined,
-                    contentStreamMimeType: contentStreamMimeType || undefined
-                  };
-                  children.push(cmisObjectResult);
-                } else {
-                  // プロパティが見つからない場合の簡易処理
-                  const fallbackObject: CMISObject = {
-                    id: atomId.split('/').pop() || `entry-${i}`,
-                    name: atomTitle,
-                    objectType: 'cmis:document',
-                    baseType: 'cmis:document',
-                    properties: {
-                      'cmis:name': atomTitle,
-                      'cmis:objectId': atomId.split('/').pop() || `entry-${i}`
-                    },
-                    allowableActions: undefined
-                  };
-                  children.push(fallbackObject);
-                }
-              }
-
-              resolve(children);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Failed to parse AtomPub response'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (!result.success) {
+        // Handle HTTP errors using existing error handler
+        if (result.status === 401 || result.status === 403) {
+          const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
+          throw error;
         }
-      };
+        throw new Error(result.error || `HTTP ${result.status}`);
+      }
 
-      xhr.onerror = () => {
-        // Network error occurred
-        reject(new Error('Network error'));
-      };
+      // Convert ParsedAtomEntry[] to CMISObject[]
+      const children: CMISObject[] = result.data?.entries.map(convertParsedEntryToCmisObject) || [];
       
-      xhr.send();
-    });
-  }
-
-  async getObject(repositoryId: string, objectId: string): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
-      // Use AtomPub binding for getObject as Browser Binding doesn't have proper object endpoint
-      // CRITICAL FIX (2025-11-19): Add includeAllowableActions=true to get inline allowableActions
-      // Without this parameter, allowableActions are only available via separate linked resource,
-      // causing preview tab to never appear because canPreview() expects allowableActions array
-      xhr.open('GET', `/core/atom/${repositoryId}/id?id=${objectId}&includeAllowableActions=true`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-      
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-      
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              // Parse AtomPub XML response
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-
-              const entry = xmlDoc.querySelector('entry, atom\\:entry');
-
-              if (!entry) {
-                // No entry element found in response
-                reject(new Error('No entry found in AtomPub response'));
-                return;
-              }
-
-              const title = entry.querySelector('title, atom\\:title')?.textContent || 'Unknown';
-              const properties = entry.querySelector('cmis\\:properties, properties');
-              
-              let objectType = 'cmis:document';
-              let baseType = 'cmis:document';
-              let path = '';
-              let createdBy = '';
-              let creationDate = '';
-              let lastModifiedBy = '';
-              let lastModificationDate = '';
-              let contentStreamLength: number | undefined;
-              let contentStreamMimeType = '';
-              let versionLabel = '';
-              let isLatestVersion: boolean | undefined;
-              let isLatestMajorVersion: boolean | undefined;
-
-              // CRITICAL FIX (2025-11-17): Extract ALL properties to populate properties field
-              // This is essential for changeToken extraction and other CMIS property access
-              const propertiesMap: Record<string, any> = {};
-
-              if (properties) {
-                // First, extract ALL property elements to build complete properties map
-                const allPropertyElements = properties.querySelectorAll('[propertyDefinitionId]');
-
-                allPropertyElements.forEach((propElement, _index) => {
-                  const propertyId = propElement.getAttribute('propertyDefinitionId');
-                  if (!propertyId) return;
-
-                  // Extract value(s) from the property element
-                  const valueElements = propElement.querySelectorAll('cmis\\:value, value');
-
-                  if (valueElements.length === 0) {
-                    // No value - property is null or empty
-                    propertiesMap[propertyId] = null;
-                  } else if (valueElements.length === 1) {
-                    // Single value property
-                    const textValue = valueElements[0].textContent;
-                    propertiesMap[propertyId] = textValue;
-                  } else {
-                    // Multi-value property (array)
-                    const values: string[] = [];
-                    valueElements.forEach(valueEl => {
-                      if (valueEl.textContent) {
-                        values.push(valueEl.textContent);
-                      }
-                    });
-                    propertiesMap[propertyId] = values;
-                  }
-                });
-
-                // Then extract specific properties for direct field assignment (backward compatibility)
-                const objectTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectTypeId"], propertyId[propertyDefinitionId="cmis:objectTypeId"]');
-                const baseTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:baseTypeId"], propertyId[propertyDefinitionId="cmis:baseTypeId"]');
-                const pathElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:path"], propertyString[propertyDefinitionId="cmis:path"]');
-                const createdByElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:createdBy"], propertyString[propertyDefinitionId="cmis:createdBy"]');
-                const creationDateElement = properties.querySelector('cmis\\:propertyDateTime[propertyDefinitionId="cmis:creationDate"], propertyDateTime[propertyDefinitionId="cmis:creationDate"]');
-                const lastModifiedByElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:lastModifiedBy"], propertyString[propertyDefinitionId="cmis:lastModifiedBy"]');
-                const lastModificationDateElement = properties.querySelector('cmis\\:propertyDateTime[propertyDefinitionId="cmis:lastModificationDate"], propertyDateTime[propertyDefinitionId="cmis:lastModificationDate"]');
-                const contentStreamLengthElement = properties.querySelector('cmis\\:propertyInteger[propertyDefinitionId="cmis:contentStreamLength"], propertyInteger[propertyDefinitionId="cmis:contentStreamLength"]');
-                const contentStreamMimeTypeElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:contentStreamMimeType"], propertyString[propertyDefinitionId="cmis:contentStreamMimeType"]');
-                const versionLabelElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:versionLabel"], propertyString[propertyDefinitionId="cmis:versionLabel"]');
-                const isLatestVersionElement = properties.querySelector('cmis\\:propertyBoolean[propertyDefinitionId="cmis:isLatestVersion"], propertyBoolean[propertyDefinitionId="cmis:isLatestVersion"]');
-                const isLatestMajorVersionElement = properties.querySelector('cmis\\:propertyBoolean[propertyDefinitionId="cmis:isLatestMajorVersion"], propertyBoolean[propertyDefinitionId="cmis:isLatestMajorVersion"]');
-
-                if (objectTypeElement) {
-                  objectType = objectTypeElement.querySelector('cmis\\:value, value')?.textContent || objectType;
-                }
-                if (baseTypeElement) {
-                  baseType = baseTypeElement.querySelector('cmis\\:value, value')?.textContent || baseType;
-                }
-                if (pathElement) {
-                  path = pathElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (createdByElement) {
-                  createdBy = createdByElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (creationDateElement) {
-                  creationDate = creationDateElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (lastModifiedByElement) {
-                  lastModifiedBy = lastModifiedByElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (lastModificationDateElement) {
-                  lastModificationDate = lastModificationDateElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (contentStreamLengthElement) {
-                  const lengthText = contentStreamLengthElement.querySelector('cmis\\:value, value')?.textContent;
-                  if (lengthText) {
-                    contentStreamLength = parseInt(lengthText, 10);
-                  }
-                }
-                if (contentStreamMimeTypeElement) {
-                  contentStreamMimeType = contentStreamMimeTypeElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (versionLabelElement) {
-                  versionLabel = versionLabelElement.querySelector('cmis\\:value, value')?.textContent || '';
-                }
-                if (isLatestVersionElement) {
-                  const boolText = isLatestVersionElement.querySelector('cmis\\:value, value')?.textContent;
-                  isLatestVersion = boolText === 'true';
-                }
-                if (isLatestMajorVersionElement) {
-                  const boolText = isLatestMajorVersionElement.querySelector('cmis\\:value, value')?.textContent;
-                  isLatestMajorVersion = boolText === 'true';
-                }
-              }
-
-              // CRITICAL FIX (2025-12-14): Extract allowableActions from AtomPub response using getElementsByTagNameNS
-              // querySelector with 'cmis\\:' prefix doesn't work reliably in XML context
-              // This is required for canPreview() utility to work correctly
-              const CMIS_NS = 'http://docs.oasis-open.org/ns/cmis/core/200908/';
-              const allowableActions: AllowableActions = {};
-              const allowableActionsElements = entry.getElementsByTagNameNS(CMIS_NS, 'allowableActions');
-              const allowableActionsElement = allowableActionsElements.length > 0 ? allowableActionsElements[0] :
-                                              entry.querySelector('allowableActions');
-              console.log('[CMIS DEBUG] getObject allowableActions element found:', !!allowableActionsElement);
-              if (allowableActionsElement) {
-                // Iterate through all child elements to find can* actions
-                const children = allowableActionsElement.children;
-                console.log('[CMIS DEBUG] getObject allowableActions children count:', children.length);
-                for (let i = 0; i < children.length; i++) {
-                  const actionEl = children[i];
-                  const actionName = actionEl.localName;
-                  // Check if element name starts with "can" (canGetContentStream, canDeleteObject, etc.)
-                  if (actionName && actionName.startsWith('can')) {
-                    const actionValue = actionEl.textContent?.trim();
-                    // Set as boolean property in AllowableActions object
-                    (allowableActions as any)[actionName] = actionValue === 'true';
-                  }
-                }
-                console.log('[CMIS DEBUG] getObject extracted allowableActions:', Object.keys(allowableActions));
-                console.log('[CMIS DEBUG] canGetContentStream:', allowableActions.canGetContentStream);
-              }
-
-              const cmisObject: CMISObject = {
-                id: objectId,
-                name: title,
-                objectType: objectType,
-                baseType: baseType,
-                properties: propertiesMap, // NOW POPULATED with all CMIS properties including changeToken!
-                allowableActions: Object.keys(allowableActions).length > 0 ? allowableActions : undefined,
-                path: path,
-                createdBy: createdBy || undefined,
-                creationDate: creationDate || undefined,
-                lastModifiedBy: lastModifiedBy || undefined,
-                lastModificationDate: lastModificationDate || undefined,
-                contentStreamLength: contentStreamLength,
-                contentStreamMimeType: contentStreamMimeType || undefined,
-                versionLabel: versionLabel || undefined,
-                isLatestVersion: isLatestVersion,
-                isLatestMajorVersion: isLatestMajorVersion
-              };
-
-              resolve(cmisObject);
-            } catch (e) {
-              // Failed to parse response
-              reject(new Error('Failed to parse AtomPub response'));
-            }
-          } else {
-            // Request failed - handle errors
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
-
-      xhr.onerror = () => {
-        // Network error occurred
-        reject(new Error('Network error'));
-      };
-      xhr.send();
-    });
+      return children;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
-   * Get a CMIS object by its path
-   * Uses AtomPub binding's path endpoint
+   * Get a single CMIS object by ID using the new AtomPubClient
+   * 
+   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
+   * which provides better separation of concerns and testability.
+   * The behavior is preserved: uses AtomPub binding with includeAllowableActions=true
+   * 
+   * @param repositoryId Repository ID (e.g., 'bedroom')
+   * @param objectId Object ID to retrieve
+   * @returns Promise resolving to CMISObject
+   */
+  async getObject(repositoryId: string, objectId: string): Promise<CMISObject> {
+    try {
+      // Use the new AtomPubClient for getObject
+      // Options match the original implementation: includeAllowableActions=true
+      const result = await this.atomPubClient.getObject(repositoryId, objectId, {
+        includeAllowableActions: true
+      });
+
+      if (!result.success) {
+        // Handle HTTP errors using existing error handler
+        if (result.status === 401 || result.status === 403) {
+          const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
+          throw error;
+        }
+        throw new Error(result.error || `HTTP ${result.status}`);
+      }
+
+      if (!result.data) {
+        throw new Error('No entry found in AtomPub response');
+      }
+
+      // Convert ParsedAtomEntry to CMISObject
+      return convertParsedEntryToCmisObject(result.data);
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
+  }
+
+  /**
+   * Get a CMIS object by its path using the new AtomPubClient
+   * 
+   * MIGRATION NOTE: This method has been migrated to use the new AtomPubClient
+   * which provides better separation of concerns and testability.
+   * The behavior is preserved: uses AtomPub binding with includeAllowableActions=true
    *
    * @param repositoryId Repository ID (e.g., 'bedroom')
    * @param path Full path to the object (e.g., '/Sites/Documents')
    * @returns CMISObject with id, name, and basic properties
    */
   async getObjectByPath(repositoryId: string, path: string): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
-      // Use AtomPub binding for getObjectByPath - encode the path parameter
-      const encodedPath = encodeURIComponent(path);
-      xhr.open('GET', `/core/atom/${repositoryId}/path?path=${encodedPath}&includeAllowableActions=true`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
+    try {
+      // Use the new AtomPubClient for getObjectByPath
+      // Options match the original implementation: includeAllowableActions=true
+      const result = await this.atomPubClient.getObjectByPath(repositoryId, path, {
+        includeAllowableActions: true
       });
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              // Parse AtomPub XML response (same format as getObject)
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-
-              const entry = xmlDoc.querySelector('entry, atom\\:entry');
-
-              if (!entry) {
-                reject(new Error('No entry found in AtomPub response'));
-                return;
-              }
-
-              const title = entry.querySelector('title, atom\\:title')?.textContent || 'Unknown';
-              const properties = entry.querySelector('cmis\\:properties, properties');
-
-              let id = '';
-              let objectType = 'cmis:folder';
-              let baseType = 'cmis:folder';
-              let objectPath = path;
-              let createdBy = '';
-              let creationDate = '';
-              let lastModifiedBy = '';
-              let lastModificationDate = '';
-
-              const propertiesMap: Record<string, any> = {};
-
-              if (properties) {
-                const allPropertyElements = properties.querySelectorAll('[propertyDefinitionId]');
-
-                allPropertyElements.forEach((propElement) => {
-                  const propertyId = propElement.getAttribute('propertyDefinitionId');
-                  if (!propertyId) return;
-
-                  const valueElements = propElement.querySelectorAll('cmis\\:value, value');
-
-                  if (valueElements.length === 0) {
-                    propertiesMap[propertyId] = null;
-                  } else if (valueElements.length === 1) {
-                    propertiesMap[propertyId] = valueElements[0].textContent;
-                  } else {
-                    const values: string[] = [];
-                    valueElements.forEach(valueEl => {
-                      if (valueEl.textContent) {
-                        values.push(valueEl.textContent);
-                      }
-                    });
-                    propertiesMap[propertyId] = values;
-                  }
-                });
-
-                // Extract specific properties
-                const objectIdElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectId"], propertyId[propertyDefinitionId="cmis:objectId"]');
-                const objectTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectTypeId"], propertyId[propertyDefinitionId="cmis:objectTypeId"]');
-                const baseTypeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:baseTypeId"], propertyId[propertyDefinitionId="cmis:baseTypeId"]');
-                const pathElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:path"], propertyString[propertyDefinitionId="cmis:path"]');
-                const createdByElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:createdBy"], propertyString[propertyDefinitionId="cmis:createdBy"]');
-                const creationDateElement = properties.querySelector('cmis\\:propertyDateTime[propertyDefinitionId="cmis:creationDate"], propertyDateTime[propertyDefinitionId="cmis:creationDate"]');
-                const lastModifiedByElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:lastModifiedBy"], propertyString[propertyDefinitionId="cmis:lastModifiedBy"]');
-                const lastModificationDateElement = properties.querySelector('cmis\\:propertyDateTime[propertyDefinitionId="cmis:lastModificationDate"], propertyDateTime[propertyDefinitionId="cmis:lastModificationDate"]');
-
-                id = objectIdElement?.querySelector('cmis\\:value, value')?.textContent || '';
-                objectType = objectTypeElement?.querySelector('cmis\\:value, value')?.textContent || 'cmis:folder';
-                baseType = baseTypeElement?.querySelector('cmis\\:value, value')?.textContent || 'cmis:folder';
-                objectPath = pathElement?.querySelector('cmis\\:value, value')?.textContent || path;
-                createdBy = createdByElement?.querySelector('cmis\\:value, value')?.textContent || '';
-                creationDate = creationDateElement?.querySelector('cmis\\:value, value')?.textContent || '';
-                lastModifiedBy = lastModifiedByElement?.querySelector('cmis\\:value, value')?.textContent || '';
-                lastModificationDate = lastModificationDateElement?.querySelector('cmis\\:value, value')?.textContent || '';
-              }
-
-              const cmisObject: CMISObject = {
-                id: id,
-                name: title,
-                objectType: objectType,
-                baseType: baseType,
-                path: objectPath,
-                createdBy: createdBy,
-                creationDate: creationDate,
-                lastModifiedBy: lastModifiedBy,
-                lastModificationDate: lastModificationDate,
-                properties: propertiesMap,
-                allowableActions: undefined  // AtomPub getObjectByPath doesn't return allowableActions
-              };
-
-              resolve(cmisObject);
-            } catch (e) {
-              reject(new Error('Failed to parse AtomPub response'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+      if (!result.success) {
+        // Handle HTTP errors using existing error handler
+        if (result.status === 401 || result.status === 403) {
+          const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
+          throw error;
         }
-      };
+        throw new Error(result.error || `HTTP ${result.status}`);
+      }
 
-      xhr.onerror = () => {
-        reject(new Error('Network error'));
-      };
-      xhr.send();
-    });
+      if (!result.data) {
+        throw new Error('No entry found in AtomPub response');
+      }
+
+      // Convert ParsedAtomEntry to CMISObject
+      return convertParsedEntryToCmisObject(result.data);
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   async createDocument(repositoryId: string, parentId: string, file: File, properties: Record<string, any>): Promise<CMISObject> {
