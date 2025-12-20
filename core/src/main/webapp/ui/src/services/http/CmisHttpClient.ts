@@ -73,6 +73,9 @@ export interface CmisHttpRequestOptions {
   
   /** Request timeout in milliseconds (default: no timeout) */
   timeout?: number;
+  
+  /** AbortSignal for cancelling the request externally */
+  signal?: AbortSignal;
 }
 
 /**
@@ -159,25 +162,53 @@ export class CmisHttpClient {
    * Event handling: Uses onload for successful completion and onerror/ontimeout/onabort
    * for network failures. This avoids the double-settlement issue where onreadystatechange
    * at readyState === 4 could race with error events.
+   * 
+   * Cancellation: Pass an AbortSignal via options.signal to cancel the request externally.
+   * If the signal is already aborted before the request starts, it will reject immediately.
    */
   request(options: CmisHttpRequestOptions): Promise<CmisHttpResponse> {
     return new Promise((resolve, reject) => {
+      // Check if already aborted before starting
+      if (options.signal?.aborted) {
+        reject(new CmisNetworkError('Request aborted', options.url));
+        return;
+      }
+      
       const xhr = new XMLHttpRequest();
       
       // Guard against double-settlement (defensive programming)
       let settled = false;
       
+      // Cleanup function to remove abort listener
+      const cleanup = () => {
+        if (options.signal && abortHandler) {
+          options.signal.removeEventListener('abort', abortHandler);
+        }
+      };
+      
       const safeResolve = (response: CmisHttpResponse) => {
         if (settled) return;
         settled = true;
+        cleanup();
         resolve(response);
       };
       
       const safeReject = (error: CmisNetworkError) => {
         if (settled) return;
         settled = true;
+        cleanup();
         reject(error);
       };
+      
+      // Handler for external abort signal
+      const abortHandler = () => {
+        xhr.abort();
+      };
+      
+      // Wire up external abort signal
+      if (options.signal) {
+        options.signal.addEventListener('abort', abortHandler, { once: true });
+      }
       
       xhr.open(options.method, options.url, true);
       
