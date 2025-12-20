@@ -1033,52 +1033,22 @@ export class CMISService {
     }
   }
 
+  /**
+   * Update object properties using the new CmisHttpClient (CMIS Browser Binding standard)
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   * Uses FormData for multipart/form-data encoding with complex multi-value property handling.
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Object ID to update
+   * @param properties Properties to update (supports multi-value arrays)
+   * @param changeToken Optional change token for optimistic locking
+   * @returns Updated object
+   */
   async updateProperties(repositoryId: string, objectId: string, properties: Record<string, any>, changeToken?: string): Promise<CMISObject> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      // Use Browser Binding updateProperties action
-      xhr.open('POST', `${this.baseUrl}/${repositoryId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
-
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              const props = response.succinctProperties || response.properties || {};
-
-              // CRITICAL FIX (2025-11-18): Extract all properties DocumentViewer expects
-              // Previously only extracted id/name/objectType/baseType, causing all other properties
-              // (createdBy, lastModifiedBy, dates, etc.) to be undefined, displaying as hyphens in UI
-              const updatedObject: CMISObject = {
-                id: this.getSafeStringProperty(props, 'cmis:objectId', objectId),
-                name: this.getSafeStringProperty(props, 'cmis:name', 'Unknown'),
-                objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
-                baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
-                properties: props,
-                allowableActions: this.extractAllowableActions(response.allowableActions),
-                createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
-                lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
-                creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
-                lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
-                contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
-                path: this.getSafeStringProperty(props, 'cmis:path')
-              };
-              resolve(updatedObject);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
-        }
-      };
+    try {
+      const url = `${this.baseUrl}/${repositoryId}`;
 
       // Use FormData for Browser Binding updateProperties
       const formData = new FormData();
@@ -1118,9 +1088,46 @@ export class CMISService {
         propertyIndex++;
       });
 
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send(formData);
-    });
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
+          const props = data.succinctProperties || data.properties || {};
+
+          // CRITICAL FIX (2025-11-18): Extract all properties DocumentViewer expects
+          // Previously only extracted id/name/objectType/baseType, causing all other properties
+          // (createdBy, lastModifiedBy, dates, etc.) to be undefined, displaying as hyphens in UI
+          const updatedObject: CMISObject = {
+            id: this.getSafeStringProperty(props, 'cmis:objectId', objectId),
+            name: this.getSafeStringProperty(props, 'cmis:name', 'Unknown'),
+            objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
+            baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
+            properties: props,
+            allowableActions: this.extractAllowableActions(data.allowableActions),
+            createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
+            lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
+            creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
+            lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
+            contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
+            path: this.getSafeStringProperty(props, 'cmis:path')
+          };
+          return updatedObject;
+        } catch (e) {
+          throw new Error('Invalid response format');
+        }
+      }
+
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
   }
 
   /**
@@ -1162,66 +1169,71 @@ export class CMISService {
     }
   }
 
+  /**
+   * Search for objects using CMIS query (Browser Binding)
+   *
+   * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
+   * which provides better separation of concerns and testability.
+   * Uses GET request with JSON response for Browser Binding query operations.
+   *
+   * @param repositoryId Repository ID
+   * @param query CMIS query string
+   * @returns Search results
+   */
   async search(repositoryId: string, query: string): Promise<SearchResult> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}?cmisselector=query&q=${encodeURIComponent(query)}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
+    try {
+      const url = `${this.baseUrl}/${repositoryId}?cmisselector=query&q=${encodeURIComponent(query)}`;
+      const response = await this.httpClient.getJson(url);
 
-      const headers = this.getAuthHeaders();
-      Object.entries(headers).forEach(([key, value]) => {
-        xhr.setRequestHeader(key, value);
-      });
+      if (response.status === 200) {
+        try {
+          const data = JSON.parse(response.responseText);
 
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
+          // CRITICAL FIX (2025-11-19): Transform search results to extract CMIS properties
+          // The CMIS Browser Binding returns properties in format: {"cmis:name": {"value": "x"}}
+          // The UI expects flat format: {name: "x", objectType: "y", ...}
+          // This transformation is required for search result cells to display data correctly
+          const transformedResults = (data.results || []).map((result: any) => {
+            const props = result.properties || {};
 
-              // CRITICAL FIX (2025-11-19): Transform search results to extract CMIS properties
-              // The CMIS Browser Binding returns properties in format: {"cmis:name": {"value": "x"}}
-              // The UI expects flat format: {name: "x", objectType: "y", ...}
-              // This transformation is required for search result cells to display data correctly
-              const transformedResults = (response.results || []).map((result: any) => {
-                const props = result.properties || {};
+            return {
+              id: this.getSafeStringProperty(props, 'cmis:objectId', ''),
+              name: this.getSafeStringProperty(props, 'cmis:name', 'Unknown'),
+              objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
+              baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
+              properties: props,
+              allowableActions: this.extractAllowableActions(result.allowableActions),
+              createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
+              lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
+              creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
+              lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
+              contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
+              contentStreamMimeType: this.getSafeStringProperty(props, 'cmis:contentStreamMimeType'),
+              path: this.getSafeStringProperty(props, 'cmis:path'),
+              secondaryTypeIds: this.getSafeArrayProperty(props, 'cmis:secondaryObjectTypeIds')
+            };
+          });
 
-                return {
-                  id: this.getSafeStringProperty(props, 'cmis:objectId', ''),
-                  name: this.getSafeStringProperty(props, 'cmis:name', 'Unknown'),
-                  objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document'),
-                  baseType: this.getSafeStringProperty(props, 'cmis:baseTypeId', 'cmis:document'),
-                  properties: props,
-                  allowableActions: this.extractAllowableActions(result.allowableActions),
-                  createdBy: this.getSafeStringProperty(props, 'cmis:createdBy'),
-                  lastModifiedBy: this.getSafeStringProperty(props, 'cmis:lastModifiedBy'),
-                  creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
-                  lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
-                  contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
-                  contentStreamMimeType: this.getSafeStringProperty(props, 'cmis:contentStreamMimeType'),
-                  path: this.getSafeStringProperty(props, 'cmis:path'),
-                  secondaryTypeIds: this.getSafeArrayProperty(props, 'cmis:secondaryObjectTypeIds')
-                };
-              });
-
-              resolve({
-                objects: transformedResults,
-                hasMoreItems: response.hasMoreItems || false,
-                numItems: response.numItems || 0
-              });
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            reject(error);
-          }
+          return {
+            objects: transformedResults,
+            hasMoreItems: data.hasMoreItems || false,
+            numItems: data.numItems || 0
+          };
+        } catch (e) {
+          throw new Error('Invalid response format');
         }
-      };
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during search'));
-      xhr.send();
-    });
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      // Re-throw errors to preserve existing behavior
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error during search');
+    }
   }
 
   /**
