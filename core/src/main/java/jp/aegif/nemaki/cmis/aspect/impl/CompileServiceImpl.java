@@ -1849,15 +1849,20 @@ public class CompileServiceImpl implements CompileService {
 	/**
 	 * Normalize value to match expected cardinality.
 	 * - single→multi: wrap scalar in 1-element list
-	 * - multi→single: unwrap if size<=1, return first element if size>1 (with warning)
+	 * - multi→single: unwrap if size<=1, return null if size>1 (to avoid silent data loss)
 	 * 
 	 * This is a failsafe mechanism for when property definitions change after
 	 * documents have been created with the old definition.
 	 * 
+	 * IMPORTANT: When stored multi-value has >1 elements but definition expects single,
+	 * we return null rather than picking an arbitrary element. This avoids silent data
+	 * corruption at the cost of data visibility - the property will appear as null until
+	 * the data is cleaned up or the definition is corrected.
+	 * 
 	 * @param value The raw value from database
 	 * @param expectedCardinality The cardinality from current property definition
 	 * @param propertyId For logging purposes
-	 * @return Normalized value matching expected cardinality
+	 * @return Normalized value matching expected cardinality, or null if incompatible
 	 */
 	private Object normalizeCardinality(Object value, Cardinality expectedCardinality, String propertyId) {
 		if (value == null) {
@@ -1868,7 +1873,7 @@ public class CompileServiceImpl implements CompileService {
 		boolean expectMulti = expectedCardinality == Cardinality.MULTI;
 		
 		if (valueIsList && !expectMulti) {
-			// multi→single: unwrap if size<=1
+			// multi→single: unwrap if size<=1, reject if size>1
 			List<?> list = (List<?>) value;
 			if (list.isEmpty()) {
 				return null;
@@ -1876,11 +1881,12 @@ public class CompileServiceImpl implements CompileService {
 				log.debug("Cardinality normalization: unwrapping single-element list for property " + propertyId);
 				return list.get(0);
 			} else {
-				// size>1 is incompatible with single cardinality
-				log.warn("Cardinality mismatch for property " + propertyId + 
-					": stored value has " + list.size() + " elements but definition expects single value. " +
-					"Returning first element. Legacy data may need cleanup.");
-				return list.get(0);
+				// size>1 is incompatible with single cardinality - return null to avoid silent data loss
+				log.warn("CARDINALITY MISMATCH for property '" + propertyId + "': " +
+					"stored value has " + list.size() + " elements but definition expects SINGLE value. " +
+					"Returning null to avoid silent data loss. " +
+					"ACTION REQUIRED: Clean up legacy data or revert property definition to MULTI.");
+				return null;
 			}
 		} else if (!valueIsList && expectMulti) {
 			// single→multi: wrap in list
@@ -1945,12 +1951,39 @@ public class CompileServiceImpl implements CompileService {
 				} else if (element instanceof Integer) {
 					return BigInteger.valueOf((Integer) element);
 				} else if (element instanceof Double) {
-					// JSON numbers may come as Double - convert to BigInteger (truncates decimal)
-					log.debug("Type coercion: Double → Integer (truncated) for property " + propertyId);
-					return BigInteger.valueOf(((Double) element).longValue());
+					// Only allow conversion if the value is mathematically an integer (no fractional part)
+					Double d = (Double) element;
+					if (d.isNaN() || d.isInfinite()) {
+						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
+							"Cannot convert " + d + " (NaN/Infinite) to Integer.");
+						return null;
+					}
+					if (d == Math.floor(d)) {
+						// No fractional part - safe to convert
+						log.debug("Type coercion: Double → Integer for property " + propertyId);
+						return BigInteger.valueOf(d.longValue());
+					} else {
+						// Has fractional part - reject to avoid silent data loss
+						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
+							"Cannot convert Double " + d + " to Integer (has fractional part " + 
+							(d - Math.floor(d)) + "). Returning null to avoid data loss.");
+						return null;
+					}
 				} else if (element instanceof BigDecimal) {
-					log.debug("Type coercion: BigDecimal → Integer (truncated) for property " + propertyId);
-					return ((BigDecimal) element).toBigInteger();
+					// Only allow conversion if the value is mathematically an integer
+					BigDecimal bd = (BigDecimal) element;
+					try {
+						// This throws ArithmeticException if there's a fractional part
+						BigInteger result = bd.toBigIntegerExact();
+						log.debug("Type coercion: BigDecimal → Integer for property " + propertyId);
+						return result;
+					} catch (ArithmeticException e) {
+						// Has fractional part - reject
+						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
+							"Cannot convert BigDecimal " + bd + " to Integer (has fractional part). " +
+							"Returning null to avoid data loss.");
+						return null;
+					}
 				} else if (element instanceof String) {
 					try {
 						// Trim whitespace before parsing
@@ -1958,7 +1991,8 @@ public class CompileServiceImpl implements CompileService {
 						log.debug("Type coercion: String '" + element + "' → Integer for property " + propertyId);
 						return parsed;
 					} catch (NumberFormatException e) {
-						// Not parseable
+						log.warn("TYPE COERCION FAILED for property '" + propertyId + "': " +
+							"Cannot parse String '" + element + "' as Integer.");
 					}
 				}
 				break;
@@ -1967,8 +2001,14 @@ public class CompileServiceImpl implements CompileService {
 				if (element instanceof BigDecimal) {
 					return element;
 				} else if (element instanceof Double) {
+					Double d = (Double) element;
+					if (d.isNaN() || d.isInfinite()) {
+						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
+							"Cannot convert " + d + " (NaN/Infinite) to Decimal.");
+						return null;
+					}
 					log.debug("Type coercion: Double → Decimal for property " + propertyId);
-					return BigDecimal.valueOf((Double) element);
+					return BigDecimal.valueOf(d);
 				} else if (element instanceof Long) {
 					return BigDecimal.valueOf((Long) element);
 				} else if (element instanceof Integer) {
@@ -1983,7 +2023,8 @@ public class CompileServiceImpl implements CompileService {
 						log.debug("Type coercion: String '" + element + "' → Decimal for property " + propertyId);
 						return parsed;
 					} catch (NumberFormatException e) {
-						// Not parseable
+						log.warn("TYPE COERCION FAILED for property '" + propertyId + "': " +
+							"Cannot parse String '" + element + "' as Decimal.");
 					}
 				}
 				break;
@@ -1997,12 +2038,34 @@ public class CompileServiceImpl implements CompileService {
 						log.debug("Type coercion: String → DateTime for property " + propertyId);
 						return cal;
 					} catch (ParseException e) {
-						// Not parseable
+						log.warn("TYPE COERCION FAILED for property '" + propertyId + "': " +
+							"Cannot parse String '" + element + "' as DateTime.");
 					}
 				} else if (element instanceof Long) {
 					// Timestamps stored as Long (milliseconds since epoch)
+					// Apply bounds checking to reject out-of-range values
+					Long timestamp = (Long) element;
+					
+					// Reject negative timestamps (before 1970-01-01)
+					if (timestamp < 0) {
+						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
+							"Long value " + timestamp + " is negative (before Unix epoch). " +
+							"Returning null to avoid invalid DateTime.");
+						return null;
+					}
+					
+					// Reject timestamps more than 100 years in the future
+					// 100 years in milliseconds = 100 * 365.25 * 24 * 60 * 60 * 1000 ≈ 3.15576e12
+					long maxFutureMs = System.currentTimeMillis() + (100L * 365L * 24L * 60L * 60L * 1000L);
+					if (timestamp > maxFutureMs) {
+						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
+							"Long value " + timestamp + " is too far in the future (>100 years). " +
+							"This may be garbage data. Returning null.");
+						return null;
+					}
+					
 					GregorianCalendar cal = new GregorianCalendar();
-					cal.setTimeInMillis((Long) element);
+					cal.setTimeInMillis(timestamp);
 					log.debug("Type coercion: Long (timestamp) → DateTime for property " + propertyId);
 					return cal;
 				}
@@ -2028,12 +2091,24 @@ public class CompileServiceImpl implements CompileService {
 				
 			case HTML:
 			case URI:
-				// HTML and URI are string-based types
+				// HTML and URI are string-based types - only accept String inputs
+				// Do NOT use toString() on arbitrary objects as this could produce garbage data
 				if (element instanceof String) {
 					return element;
-				} else {
-					log.debug("Type coercion: " + element.getClass().getSimpleName() + " → " + expectedType.value() + " for property " + propertyId);
+				} else if (element instanceof java.net.URI) {
+					// Accept java.net.URI and convert to String (safe conversion)
+					log.debug("Type coercion: java.net.URI → " + expectedType.value() + " for property " + propertyId);
 					return element.toString();
+				} else if (element instanceof java.net.URL) {
+					// Accept java.net.URL and convert to String (safe conversion)
+					log.debug("Type coercion: java.net.URL → " + expectedType.value() + " for property " + propertyId);
+					return element.toString();
+				} else {
+					// Reject other types to avoid garbage data
+					log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
+						"Cannot convert " + element.getClass().getSimpleName() + " to " + expectedType.value() + ". " +
+						"Only String, URI, and URL types are accepted for HTML/URI properties.");
+					return null;
 				}
 				
 			default:

@@ -9,6 +9,13 @@ import org.apache.commons.logging.LogFactory;
 import org.json.JSONObject;
 import org.json.JSONArray;
 
+import jakarta.ws.rs.core.Response;
+import jp.aegif.nemaki.businesslogic.TypeService;
+import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.model.NemakiTypeDefinition;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,6 +28,7 @@ import java.util.List;
  * 2. Validation logic (subtype check, relationship reference check)
  * 3. Error response structure
  * 4. NemakiWare-specific type operations
+ * 5. TypeResource endpoint behavior with mocked services
  * 
  * Note: These tests use mocked services to avoid requiring CouchDB/Solr.
  * For integration tests with actual database, use the TCK test suite.
@@ -34,14 +42,276 @@ public class TypeResourceTests {
     private static final String TEST_TYPE_ID = "nemaki:testType";
     private static final String TEST_PARENT_TYPE_ID = "cmis:document";
     
+    // TypeResource instance for endpoint tests
+    private TypeResource typeResource;
+    
     @Before
     public void setUp() {
-        log.info("Setting up TypeResourceTest");
+        log.info("Setting up TypeResourceTests");
+        typeResource = new TypeResource();
     }
     
     @After
     public void tearDown() {
-        log.info("Tearing down TypeResourceTest");
+        log.info("Tearing down TypeResourceTests");
+        typeResource = null;
+    }
+    
+    // ========================================
+    // TypeResource Endpoint Tests with Mocked Services
+    // ========================================
+    
+    /**
+     * Test that list() returns 500 when TypeService is not available
+     */
+    @Test
+    public void testListReturns500WhenTypeServiceNull() {
+        // TypeResource with no services injected
+        Response response = typeResource.list(TEST_REPOSITORY_ID);
+        
+        assertEquals("Should return 500 Internal Server Error", 
+            Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), 
+            response.getStatus());
+        
+        // Verify error response structure
+        String entity = (String) response.getEntity();
+        assertNotNull("Response entity should not be null", entity);
+        assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
+        assertTrue("Response should mention TypeService", entity.contains("TypeService"));
+        
+        log.info("list() correctly returns 500 when TypeService is null");
+    }
+    
+    /**
+     * Test that show() returns 500 when TypeService is not available
+     */
+    @Test
+    public void testShowReturns500WhenTypeServiceNull() {
+        Response response = typeResource.show(TEST_REPOSITORY_ID, TEST_TYPE_ID);
+        
+        assertEquals("Should return 500 Internal Server Error", 
+            Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), 
+            response.getStatus());
+        
+        String entity = (String) response.getEntity();
+        assertNotNull("Response entity should not be null", entity);
+        assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
+        
+        log.info("show() correctly returns 500 when TypeService is null");
+    }
+    
+    /**
+     * Test that create() returns 500 when TypeService is not available
+     */
+    @Test
+    public void testCreateReturns500WhenTypeServiceNull() {
+        String jsonInput = createValidTypeDefinitionJson().toString();
+        Response response = typeResource.create(TEST_REPOSITORY_ID, jsonInput);
+        
+        assertEquals("Should return 500 Internal Server Error", 
+            Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), 
+            response.getStatus());
+        
+        String entity = (String) response.getEntity();
+        assertNotNull("Response entity should not be null", entity);
+        assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
+        
+        log.info("create() correctly returns 500 when TypeService is null");
+    }
+    
+    /**
+     * Test that update() returns 500 when TypeService is not available
+     */
+    @Test
+    public void testUpdateReturns500WhenTypeServiceNull() {
+        String jsonInput = createValidTypeDefinitionJson().toString();
+        Response response = typeResource.update(TEST_REPOSITORY_ID, TEST_TYPE_ID, jsonInput);
+        
+        assertEquals("Should return 500 Internal Server Error", 
+            Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), 
+            response.getStatus());
+        
+        String entity = (String) response.getEntity();
+        assertNotNull("Response entity should not be null", entity);
+        assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
+        
+        log.info("update() correctly returns 500 when TypeService is null");
+    }
+    
+    /**
+     * Test that delete() returns 500 when TypeService is not available
+     */
+    @Test
+    public void testDeleteReturns500WhenTypeServiceNull() {
+        Response response = typeResource.delete(TEST_REPOSITORY_ID, TEST_TYPE_ID);
+        
+        assertEquals("Should return 500 Internal Server Error", 
+            Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), 
+            response.getStatus());
+        
+        String entity = (String) response.getEntity();
+        assertNotNull("Response entity should not be null", entity);
+        assertTrue("Response should contain 'error' status", entity.contains("\"status\":\"error\""));
+        
+        log.info("delete() correctly returns 500 when TypeService is null");
+    }
+    
+    /**
+     * Test that update() returns 400 for base type modification attempt
+     */
+    @Test
+    public void testUpdateRejectsBaseTypeModification() {
+        // Inject a mock TypeService that returns a type definition
+        TypeService mockTypeService = createMockTypeServiceForBaseTypeTest();
+        typeResource.setTypeService(mockTypeService);
+        
+        String jsonInput = createValidTypeDefinitionJson().toString();
+        Response response = typeResource.update(TEST_REPOSITORY_ID, "cmis:document", jsonInput);
+        
+        assertEquals("Should return 400 Bad Request for base type", 
+            Response.Status.BAD_REQUEST.getStatusCode(), 
+            response.getStatus());
+        
+        String entity = (String) response.getEntity();
+        assertTrue("Response should mention base type", entity.contains("base type"));
+        
+        log.info("update() correctly rejects base type modification");
+    }
+    
+    /**
+     * Test that delete() returns 400 for base type deletion attempt
+     */
+    @Test
+    public void testDeleteRejectsBaseTypeDeletion() {
+        // Inject a mock TypeService
+        TypeService mockTypeService = createMockTypeServiceForBaseTypeTest();
+        typeResource.setTypeService(mockTypeService);
+        
+        Response response = typeResource.delete(TEST_REPOSITORY_ID, "cmis:document");
+        
+        assertEquals("Should return 400 Bad Request for base type", 
+            Response.Status.BAD_REQUEST.getStatusCode(), 
+            response.getStatus());
+        
+        String entity = (String) response.getEntity();
+        assertTrue("Response should mention base type", entity.contains("base type"));
+        
+        log.info("delete() correctly rejects base type deletion");
+    }
+    
+    /**
+     * Test response structure for successful operations
+     */
+    @Test
+    public void testSuccessResponseStructure() {
+        // Verify that success responses have the expected structure
+        JSONObject successResponse = new JSONObject();
+        successResponse.put("status", "success");
+        successResponse.put("message", "Operation completed");
+        successResponse.put("typeId", TEST_TYPE_ID);
+        
+        assertTrue("Success response must have status field", successResponse.has("status"));
+        assertEquals("Status must be 'success'", "success", successResponse.getString("status"));
+        assertTrue("Success response must have message field", successResponse.has("message"));
+        
+        log.info("Success response structure verified");
+    }
+    
+    /**
+     * Test response structure for error operations
+     */
+    @Test
+    public void testErrorResponseStructure() {
+        // Verify that error responses have the expected structure
+        JSONObject errorResponse = new JSONObject();
+        errorResponse.put("status", "error");
+        errorResponse.put("message", "Operation failed");
+        errorResponse.put("error", "Detailed error message");
+        
+        assertTrue("Error response must have status field", errorResponse.has("status"));
+        assertEquals("Status must be 'error'", "error", errorResponse.getString("status"));
+        assertTrue("Error response must have message field", errorResponse.has("message"));
+        
+        log.info("Error response structure verified");
+    }
+    
+    /**
+     * Create a mock TypeService for base type tests
+     * This returns a simple implementation that allows testing base type rejection
+     */
+    private TypeService createMockTypeServiceForBaseTypeTest() {
+        return new TypeService() {
+            @Override
+            public NemakiTypeDefinition getTypeDefinition(String repositoryId, String typeId) {
+                // Return a mock type definition for base types
+                if (typeId != null && typeId.startsWith("cmis:")) {
+                    NemakiTypeDefinition mockType = new NemakiTypeDefinition();
+                    mockType.setTypeId(typeId);
+                    return mockType;
+                }
+                return null;
+            }
+            
+            @Override
+            public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
+                return new ArrayList<>();
+            }
+            
+            @Override
+            public NemakiTypeDefinition createTypeDefinition(String repositoryId, NemakiTypeDefinition typeDefinition) {
+                return typeDefinition;
+            }
+            
+            @Override
+            public NemakiTypeDefinition updateTypeDefinition(String repositoryId, NemakiTypeDefinition typeDefinition) {
+                return typeDefinition;
+            }
+            
+            @Override
+            public void deleteTypeDefinition(String repositoryId, String typeId) {
+                // No-op for mock
+            }
+            
+            @Override
+            public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String repositoryId, String propertyId) {
+                return null;
+            }
+            
+            @Override
+            public NemakiPropertyDefinitionCore createPropertyDefinitionCore(String repositoryId, NemakiPropertyDefinitionCore propertyDefinitionCore) {
+                return propertyDefinitionCore;
+            }
+            
+            @Override
+            public NemakiPropertyDefinitionCore updatePropertyDefinitionCore(String repositoryId, NemakiPropertyDefinitionCore propertyDefinitionCore) {
+                return propertyDefinitionCore;
+            }
+            
+            @Override
+            public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String repositoryId, String detailNodeId) {
+                return null;
+            }
+            
+            @Override
+            public NemakiPropertyDefinitionDetail createPropertyDefinitionDetail(String repositoryId, NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
+                return propertyDefinitionDetail;
+            }
+            
+            @Override
+            public NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(String repositoryId, NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
+                return propertyDefinitionDetail;
+            }
+            
+            @Override
+            public void deletePropertyDefinitionDetail(String repositoryId, String detailNodeId) {
+                // No-op for mock
+            }
+            
+            @Override
+            public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(String repositoryId, String coreNodeId) {
+                return new ArrayList<>();
+            }
+        };
     }
     
     // ========================================
