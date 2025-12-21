@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Form,
   Input,
@@ -14,15 +14,38 @@ import {
   Typography,
   Tooltip,
   Row,
-  Col
+  Col,
+  Checkbox,
+  Badge
 } from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
   QuestionCircleOutlined,
   CodeOutlined,
-  FormOutlined
+  FormOutlined,
+  HolderOutlined,
+  SearchOutlined,
+  ExpandAltOutlined,
+  ShrinkOutlined
 } from '@ant-design/icons';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { TypeDefinition } from '../../types/cmis';
 
 const { TextArea } = Input;
@@ -71,6 +94,8 @@ interface PropertyFormData {
   required: boolean;
   queryable: boolean;
   openChoice: boolean;
+  // Internal unique key for drag-and-drop
+  _key?: string;
 }
 
 interface TypeFormData {
@@ -101,6 +126,10 @@ const extractPrefix = (typeId: string): string => {
   }
   return '';
 };
+
+// Generate unique key for property
+let propertyKeyCounter = 0;
+const generatePropertyKey = () => `prop_${++propertyKeyCounter}_${Date.now()}`;
 
 interface TypeGUIEditorProps {
   initialValue: TypeDefinition | null;
@@ -146,7 +175,8 @@ const typeDefinitionToFormData = (typeDef: TypeDefinition | null): TypeFormData 
         updatability: prop.updatable ? 'readwrite' : 'readonly',
         required: prop.required || false,
         queryable: prop.queryable || false,
-        openChoice: false
+        openChoice: false,
+        _key: generatePropertyKey()
       });
     });
   }
@@ -174,7 +204,7 @@ const typeDefinitionToFormData = (typeDef: TypeDefinition | null): TypeFormData 
 // Convert form data to JSON for API
 const formDataToJson = (formData: TypeFormData): any => {
   const propertyDefinitions: PropertyFormData[] = formData.propertyDefinitions || [];
-  
+
   const result: any = {
     id: formData.id,
     localName: formData.localName || formData.id,
@@ -215,6 +245,194 @@ const formDataToJson = (formData: TypeFormData): any => {
   return result;
 };
 
+// Sortable Property Card Component
+interface SortablePropertyCardProps {
+  property: PropertyFormData;
+  index: number;
+  isSelected: boolean;
+  isExpanded: boolean;
+  onToggleSelect: (index: number) => void;
+  onToggleExpand: (key: string) => void;
+  onUpdate: (index: number, field: keyof PropertyFormData, value: any) => void;
+  onRemove: (index: number) => void;
+}
+
+const SortablePropertyCard: React.FC<SortablePropertyCardProps> = ({
+  property,
+  index,
+  isSelected,
+  isExpanded,
+  onToggleSelect,
+  onToggleExpand,
+  onUpdate,
+  onRemove
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: property._key || property.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    marginBottom: 12
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <Card
+        size="small"
+        style={{
+          border: isSelected ? '2px solid #1890ff' : undefined,
+          backgroundColor: isDragging ? '#fafafa' : undefined
+        }}
+        title={
+          <Space>
+            <div {...attributes} {...listeners} style={{ cursor: 'grab' }}>
+              <HolderOutlined style={{ color: '#999' }} />
+            </div>
+            <Checkbox
+              checked={isSelected}
+              onChange={() => onToggleSelect(index)}
+            />
+            <Text strong>#{index + 1}</Text>
+            {property.id && <Text type="secondary">({property.id})</Text>}
+            {property.displayName && (
+              <Text type="secondary">- {property.displayName}</Text>
+            )}
+          </Space>
+        }
+        extra={
+          <Space>
+            <Button
+              type="text"
+              size="small"
+              icon={isExpanded ? <ShrinkOutlined /> : <ExpandAltOutlined />}
+              onClick={() => onToggleExpand(property._key || property.id)}
+            />
+            <Button
+              type="text"
+              danger
+              size="small"
+              icon={<DeleteOutlined />}
+              onClick={() => onRemove(index)}
+            />
+          </Space>
+        }
+      >
+        {isExpanded ? (
+          <>
+            <Row gutter={16}>
+              <Col span={8}>
+                <Form.Item label="プロパティID" required>
+                  <Input
+                    value={property.id}
+                    onChange={(e) => onUpdate(index, 'id', e.target.value)}
+                    placeholder="例: nemaki:customProperty"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="表示名">
+                  <Input
+                    value={property.displayName}
+                    onChange={(e) => onUpdate(index, 'displayName', e.target.value)}
+                    placeholder="プロパティの表示名"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="データ型" required>
+                  <Select
+                    value={property.propertyType}
+                    onChange={(value) => onUpdate(index, 'propertyType', value)}
+                    options={PROPERTY_TYPES}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={8}>
+                <Form.Item label="多重度" required>
+                  <Select
+                    value={property.cardinality}
+                    onChange={(value) => onUpdate(index, 'cardinality', value)}
+                    options={CARDINALITY_OPTIONS}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="更新可能性">
+                  <Select
+                    value={property.updatability}
+                    onChange={(value) => onUpdate(index, 'updatability', value)}
+                    options={UPDATABILITY_OPTIONS}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="説明">
+                  <Input
+                    value={property.description}
+                    onChange={(e) => onUpdate(index, 'description', e.target.value)}
+                    placeholder="プロパティの説明"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={8}>
+                <Form.Item label="必須">
+                  <Switch
+                    checked={property.required}
+                    onChange={(checked) => onUpdate(index, 'required', checked)}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="検索可能">
+                  <Switch
+                    checked={property.queryable}
+                    onChange={(checked) => onUpdate(index, 'queryable', checked)}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="オープンチョイス">
+                  <Switch
+                    checked={property.openChoice}
+                    onChange={(checked) => onUpdate(index, 'openChoice', checked)}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          </>
+        ) : (
+          <Row gutter={16}>
+            <Col span={6}>
+              <Text type="secondary">ID:</Text> {property.id || '-'}
+            </Col>
+            <Col span={6}>
+              <Text type="secondary">型:</Text> {PROPERTY_TYPES.find(t => t.value === property.propertyType)?.label || property.propertyType}
+            </Col>
+            <Col span={6}>
+              <Text type="secondary">多重度:</Text> {property.cardinality === 'multi' ? '複数' : '単一'}
+            </Col>
+            <Col span={6}>
+              <Text type="secondary">必須:</Text> {property.required ? 'はい' : 'いいえ'}
+            </Col>
+          </Row>
+        )}
+      </Card>
+    </div>
+  );
+};
+
 export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
   initialValue,
   existingTypes,
@@ -230,12 +448,32 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
 
+  // New states for enhanced UI
+  const [searchText, setSearchText] = useState<string>('');
+  const [selectedProperties, setSelectedProperties] = useState<Set<number>>(new Set());
+  const [expandedProperties, setExpandedProperties] = useState<Set<string>>(new Set());
+  const [allExpanded, setAllExpanded] = useState<boolean>(true);
+
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
   // Initialize form with initial value
   useEffect(() => {
     const data = typeDefinitionToFormData(initialValue);
     setFormData(data);
     form.setFieldsValue(data);
     setJsonText(JSON.stringify(formDataToJson(data), null, 2));
+    // Expand all properties by default
+    setExpandedProperties(new Set(data.propertyDefinitions.map(p => p._key || p.id)));
   }, [initialValue, form]);
 
   // Update JSON preview when form data changes
@@ -244,6 +482,19 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
       setJsonText(JSON.stringify(formDataToJson(formData), null, 2));
     }
   }, [formData, activeTab]);
+
+  // Filter properties based on search text
+  const filteredProperties = useMemo(() => {
+    if (!searchText.trim()) {
+      return formData.propertyDefinitions;
+    }
+    const search = searchText.toLowerCase();
+    return formData.propertyDefinitions.filter(prop =>
+      prop.id.toLowerCase().includes(search) ||
+      prop.displayName.toLowerCase().includes(search) ||
+      prop.description.toLowerCase().includes(search)
+    );
+  }, [formData.propertyDefinitions, searchText]);
 
   // Validate form data - returns { errors, warnings }
   const validateFormData = (data: TypeFormData): { errors: string[], warnings: string[] } => {
@@ -338,7 +589,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
     try {
       const parsed = JSON.parse(value);
       setJsonError('');
-      
+
       // Handle propertyDefinitions in both array and object format
       let propertyDefinitions: PropertyFormData[] = [];
       if (Array.isArray(parsed.propertyDefinitions)) {
@@ -351,7 +602,8 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
           updatability: prop.updatability || 'readwrite',
           required: prop.required || false,
           queryable: prop.queryable || false,
-          openChoice: prop.openChoice || false
+          openChoice: prop.openChoice || false,
+          _key: generatePropertyKey()
         }));
       } else if (parsed.propertyDefinitions && typeof parsed.propertyDefinitions === 'object') {
         propertyDefinitions = Object.entries(parsed.propertyDefinitions).map(([id, prop]: [string, any]) => ({
@@ -363,10 +615,11 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
           updatability: prop.updatability || 'readwrite',
           required: prop.required || false,
           queryable: prop.queryable || false,
-          openChoice: prop.openChoice || false
+          openChoice: prop.openChoice || false,
+          _key: generatePropertyKey()
         }));
       }
-      
+
       // Convert parsed JSON to form data
       const newFormData: TypeFormData = {
         id: parsed.id || '',
@@ -387,9 +640,10 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
         allowedSourceTypes: Array.isArray(parsed.allowedSourceTypes) ? parsed.allowedSourceTypes : undefined,
         allowedTargetTypes: Array.isArray(parsed.allowedTargetTypes) ? parsed.allowedTargetTypes : undefined
       };
-      
+
       setFormData(newFormData);
       form.setFieldsValue(newFormData);
+      setExpandedProperties(new Set(propertyDefinitions.map(p => p._key || p.id)));
       const { errors, warnings } = validateFormData(newFormData);
       setValidationErrors(errors);
       setValidationWarnings(warnings);
@@ -401,6 +655,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
   // Add new property with auto-prefix based on type ID
   const addProperty = () => {
     const prefix = extractPrefix(formData.id);
+    const newKey = generatePropertyKey();
     const newProperty: PropertyFormData = {
       id: prefix,
       displayName: '',
@@ -410,12 +665,15 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
       updatability: 'readwrite',
       required: false,
       queryable: true,
-      openChoice: false
+      openChoice: false,
+      _key: newKey
     };
     const newProperties = [...formData.propertyDefinitions, newProperty];
     const newFormData = { ...formData, propertyDefinitions: newProperties };
     setFormData(newFormData);
     form.setFieldsValue(newFormData);
+    // Expand the new property
+    setExpandedProperties(prev => new Set([...prev, newKey]));
   };
 
   // Remove property
@@ -424,6 +682,12 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
     const newFormData = { ...formData, propertyDefinitions: newProperties };
     setFormData(newFormData);
     form.setFieldsValue(newFormData);
+    // Remove from selection
+    setSelectedProperties(prev => {
+      const next = new Set(prev);
+      next.delete(index);
+      return next;
+    });
   };
 
   // Update property
@@ -435,6 +699,84 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
     const { errors, warnings } = validateFormData(newFormData);
     setValidationErrors(errors);
     setValidationWarnings(warnings);
+  };
+
+  // Handle drag end for reordering
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = formData.propertyDefinitions.findIndex(p => (p._key || p.id) === active.id);
+      const newIndex = formData.propertyDefinitions.findIndex(p => (p._key || p.id) === over.id);
+
+      const newProperties = arrayMove(formData.propertyDefinitions, oldIndex, newIndex);
+      const newFormData = { ...formData, propertyDefinitions: newProperties };
+      setFormData(newFormData);
+      form.setFieldsValue(newFormData);
+    }
+  };
+
+  // Toggle property selection
+  const togglePropertySelect = (index: number) => {
+    setSelectedProperties(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  // Toggle property expansion
+  const togglePropertyExpand = (key: string) => {
+    setExpandedProperties(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Toggle all properties expansion
+  const toggleAllExpanded = () => {
+    if (allExpanded) {
+      setExpandedProperties(new Set());
+    } else {
+      setExpandedProperties(new Set(formData.propertyDefinitions.map(p => p._key || p.id)));
+    }
+    setAllExpanded(!allExpanded);
+  };
+
+  // Select all visible properties
+  const selectAllVisible = () => {
+    const visibleIndices = formData.propertyDefinitions
+      .map((prop, index) => ({ prop, index }))
+      .filter(({ prop }) => {
+        if (!searchText.trim()) return true;
+        const search = searchText.toLowerCase();
+        return prop.id.toLowerCase().includes(search) ||
+          prop.displayName.toLowerCase().includes(search) ||
+          prop.description.toLowerCase().includes(search);
+      })
+      .map(({ index }) => index);
+
+    setSelectedProperties(new Set(visibleIndices));
+  };
+
+  // Delete selected properties
+  const deleteSelectedProperties = () => {
+    if (selectedProperties.size === 0) return;
+
+    const newProperties = formData.propertyDefinitions.filter((_, index) => !selectedProperties.has(index));
+    const newFormData = { ...formData, propertyDefinitions: newProperties };
+    setFormData(newFormData);
+    form.setFieldsValue(newFormData);
+    setSelectedProperties(new Set());
   };
 
   // Handle save
@@ -449,116 +791,6 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
     const jsonData = formDataToJson(formData);
     onSave(jsonData);
   };
-
-  // Render property editor
-  const renderPropertyEditor = (property: PropertyFormData, index: number) => (
-    <Card
-      key={index}
-      size="small"
-      style={{ marginBottom: 12 }}
-      title={
-        <Space>
-          <Text strong>プロパティ {index + 1}</Text>
-          {property.id && <Text type="secondary">({property.id})</Text>}
-        </Space>
-      }
-      extra={
-        <Button
-          type="text"
-          danger
-          icon={<DeleteOutlined />}
-          onClick={() => removeProperty(index)}
-        >
-          削除
-        </Button>
-      }
-    >
-      <Row gutter={16}>
-        <Col span={8}>
-          <Form.Item label="プロパティID" required>
-            <Input
-              value={property.id}
-              onChange={(e) => updateProperty(index, 'id', e.target.value)}
-              placeholder="例: nemaki:customProperty"
-            />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="表示名">
-            <Input
-              value={property.displayName}
-              onChange={(e) => updateProperty(index, 'displayName', e.target.value)}
-              placeholder="プロパティの表示名"
-            />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="データ型" required>
-            <Select
-              value={property.propertyType}
-              onChange={(value) => updateProperty(index, 'propertyType', value)}
-              options={PROPERTY_TYPES}
-            />
-          </Form.Item>
-        </Col>
-      </Row>
-      <Row gutter={16}>
-        <Col span={8}>
-          <Form.Item label="多重度" required>
-            <Select
-              value={property.cardinality}
-              onChange={(value) => updateProperty(index, 'cardinality', value)}
-              options={CARDINALITY_OPTIONS}
-            />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="更新可能性">
-            <Select
-              value={property.updatability}
-              onChange={(value) => updateProperty(index, 'updatability', value)}
-              options={UPDATABILITY_OPTIONS}
-            />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="説明">
-            <Input
-              value={property.description}
-              onChange={(e) => updateProperty(index, 'description', e.target.value)}
-              placeholder="プロパティの説明"
-            />
-          </Form.Item>
-        </Col>
-      </Row>
-      <Row gutter={16}>
-        <Col span={8}>
-          <Form.Item label="必須">
-            <Switch
-              checked={property.required}
-              onChange={(checked) => updateProperty(index, 'required', checked)}
-            />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="検索可能">
-            <Switch
-              checked={property.queryable}
-              onChange={(checked) => updateProperty(index, 'queryable', checked)}
-            />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="オープンチョイス">
-            <Switch
-              checked={property.openChoice}
-              onChange={(checked) => updateProperty(index, 'openChoice', checked)}
-            />
-          </Form.Item>
-        </Col>
-      </Row>
-    </Card>
-  );
 
   // GUI Editor Tab Content
   const guiEditorContent = (
@@ -866,7 +1098,52 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
           </Panel>
         )}
 
-        <Panel header="プロパティ定義" key="properties">
+        <Panel
+          header={
+            <Space>
+              プロパティ定義
+              <Badge count={formData.propertyDefinitions.length} style={{ backgroundColor: '#1890ff' }} />
+            </Space>
+          }
+          key="properties"
+        >
+          {/* Property toolbar */}
+          <div style={{ marginBottom: 16 }}>
+            <Row gutter={16} align="middle">
+              <Col flex="auto">
+                <Input
+                  prefix={<SearchOutlined />}
+                  placeholder="プロパティを検索 (ID、表示名、説明)"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  allowClear
+                />
+              </Col>
+              <Col>
+                <Space>
+                  <Button
+                    icon={allExpanded ? <ShrinkOutlined /> : <ExpandAltOutlined />}
+                    onClick={toggleAllExpanded}
+                  >
+                    {allExpanded ? '全て折りたたむ' : '全て展開'}
+                  </Button>
+                  <Button onClick={selectAllVisible}>
+                    表示中を全選択
+                  </Button>
+                  {selectedProperties.size > 0 && (
+                    <Button
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={deleteSelectedProperties}
+                    >
+                      選択削除 ({selectedProperties.size})
+                    </Button>
+                  )}
+                </Space>
+              </Col>
+            </Row>
+          </div>
+
           {formData.propertyDefinitions.length === 0 ? (
             <Alert
               message="プロパティが定義されていません"
@@ -876,7 +1153,53 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
               style={{ marginBottom: 16 }}
             />
           ) : (
-            formData.propertyDefinitions.map((prop, index) => renderPropertyEditor(prop, index))
+            <>
+              {searchText.trim() && filteredProperties.length === 0 ? (
+                <Alert
+                  message="検索結果がありません"
+                  description={`"${searchText}" に一致するプロパティが見つかりません`}
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                />
+              ) : (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={formData.propertyDefinitions.map(p => p._key || p.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {formData.propertyDefinitions.map((prop, index) => {
+                      // Hide if not matching search
+                      if (searchText.trim()) {
+                        const search = searchText.toLowerCase();
+                        const matches = prop.id.toLowerCase().includes(search) ||
+                          prop.displayName.toLowerCase().includes(search) ||
+                          prop.description.toLowerCase().includes(search);
+                        if (!matches) return null;
+                      }
+
+                      return (
+                        <SortablePropertyCard
+                          key={prop._key || prop.id}
+                          property={prop}
+                          index={index}
+                          isSelected={selectedProperties.has(index)}
+                          isExpanded={expandedProperties.has(prop._key || prop.id)}
+                          onToggleSelect={togglePropertySelect}
+                          onToggleExpand={togglePropertyExpand}
+                          onUpdate={updateProperty}
+                          onRemove={removeProperty}
+                        />
+                      );
+                    })}
+                  </SortableContext>
+                </DndContext>
+              )}
+            </>
           )}
           <Button
             type="dashed"
