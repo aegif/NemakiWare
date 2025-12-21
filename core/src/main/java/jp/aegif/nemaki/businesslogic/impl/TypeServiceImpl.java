@@ -414,6 +414,24 @@ public class TypeServiceImpl implements TypeService{
 			String repositoryId, NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
 		return contentDaoService.updatePropertyDefinitionDetail(repositoryId, propertyDefinitionDetail);
 	}
+	
+	@Override
+	public NemakiPropertyDefinitionCore updatePropertyDefinitionCore(
+			String repositoryId, NemakiPropertyDefinitionCore propertyDefinitionCore) {
+		log.info("Updating property definition core: " + propertyDefinitionCore.getPropertyId() + 
+			" (type: " + propertyDefinitionCore.getPropertyType() + 
+			", cardinality: " + propertyDefinitionCore.getCardinality() + ")");
+		
+		// Use the generic update method since NemakiPropertyDefinitionCore extends NodeBase
+		contentDaoService.update(repositoryId, propertyDefinitionCore);
+		
+		// Invalidate type cache since property definitions may have changed
+		if (typeManager != null) {
+			typeManager.invalidateTypeCache(repositoryId);
+		}
+		
+		return propertyDefinitionCore;
+	}
 
 
 

@@ -1017,26 +1017,44 @@ public class TypeResource extends ResourceBase {
 			NemakiPropertyDefinitionCore existingCore = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 			
 			if (existingCore != null) {
-					// Property exists - update detail only (NOT core)
-					log.debug("Updating existing property detail: " + propertyId);
+					// Property exists - update both core and detail
+					// Note: Core changes (propertyType, cardinality) are now allowed with failsafe mechanism
+					// in CompileServiceImpl.addProperty() that handles type/cardinality mismatches gracefully
+					log.debug("Updating existing property: " + propertyId);
 				
-					// IMPORTANT: We do NOT update core properties (propertyType, cardinality, queryName)
-					// because property cores may be globally shared across types. Changing core fields
-					// could have unintended side effects on other types that reference the same propertyId.
-					// If the user needs to change propertyType/cardinality, they should create a new
-					// property with a different ID.
+					// Check for core property changes and log warnings
+					boolean coreChanged = false;
 					if (!existingCore.getPropertyType().equals(newCore.getPropertyType())) {
-						log.warn("Property type change requested for " + propertyId + " but ignored. " +
-							"Core property type cannot be changed for existing properties. " +
-							"Create a new property with a different ID instead.");
+						log.warn("Property type change for " + propertyId + ": " + 
+							existingCore.getPropertyType() + " -> " + newCore.getPropertyType() + 
+							". Existing documents with incompatible values will be coerced or nullified on read.");
+						existingCore.setPropertyType(newCore.getPropertyType());
+						coreChanged = true;
 					}
 					if (!existingCore.getCardinality().equals(newCore.getCardinality())) {
-						log.warn("Cardinality change requested for " + propertyId + " but ignored. " +
-							"Core cardinality cannot be changed for existing properties. " +
-							"Create a new property with a different ID instead.");
+						log.warn("Cardinality change for " + propertyId + ": " + 
+							existingCore.getCardinality() + " -> " + newCore.getCardinality() + 
+							". Existing documents with incompatible values will be normalized on read.");
+						existingCore.setCardinality(newCore.getCardinality());
+						coreChanged = true;
 					}
 				
-					// Find and update the detail (detail-level changes are safe)
+					// Update queryName if changed
+					if (newCore.getQueryName() != null && !newCore.getQueryName().equals(existingCore.getQueryName())) {
+						existingCore.setQueryName(newCore.getQueryName());
+						coreChanged = true;
+					}
+				
+					// If core changed, we need to update it in the database
+						// Note: Property cores may be globally shared - this change affects all types using this propertyId
+						if (coreChanged) {
+							log.info("Updating property core for " + propertyId + 
+								". WARNING: This may affect other types that use the same propertyId.");
+							// Persist the core changes to the database
+							typeService.updatePropertyDefinitionCore(repositoryId, existingCore);
+						}
+				
+					// Find and update the detail
 					List<NemakiPropertyDefinitionDetail> existingDetails = 
 						typeService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, existingCore.getId());
 				
@@ -1052,7 +1070,7 @@ public class TypeResource extends ResourceBase {
 						newPropertyDetailIds.add(existingDetail.getId());
 						log.debug("Updated property detail: " + existingDetail.getId());
 					}
-				}else {
+				} else {
 				// Property doesn't exist - create it
 				log.debug("Creating new property: " + propertyId);
 				NemakiPropertyDefinition npd = new NemakiPropertyDefinition(newCore, newDetail);

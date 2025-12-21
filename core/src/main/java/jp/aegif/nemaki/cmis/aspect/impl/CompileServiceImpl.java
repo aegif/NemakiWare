@@ -1843,9 +1843,189 @@ public class CompileServiceImpl implements CompileService {
 		 */
 		return true;
 	}
+	
+	/**
+	 * Normalize value to match expected cardinality.
+	 * - single→multi: wrap scalar in 1-element list
+	 * - multi→single: unwrap if size<=1, return null if size>1 (with warning)
+	 * 
+	 * This is a failsafe mechanism for when property definitions change after
+	 * documents have been created with the old definition.
+	 * 
+	 * @param value The raw value from database
+	 * @param expectedCardinality The cardinality from current property definition
+	 * @param propertyId For logging purposes
+	 * @return Normalized value matching expected cardinality
+	 */
+	private Object normalizeCardinality(Object value, Cardinality expectedCardinality, String propertyId) {
+		if (value == null) {
+			return null;
+		}
+		
+		boolean valueIsList = value instanceof List<?>;
+		boolean expectMulti = expectedCardinality == Cardinality.MULTI;
+		
+		if (valueIsList && !expectMulti) {
+			// multi→single: unwrap if size<=1
+			List<?> list = (List<?>) value;
+			if (list.isEmpty()) {
+				return null;
+			} else if (list.size() == 1) {
+				log.debug("Cardinality normalization: unwrapping single-element list for property " + propertyId);
+				return list.get(0);
+			} else {
+				// size>1 is incompatible with single cardinality
+				log.warn("Cardinality mismatch for property " + propertyId + 
+					": stored value has " + list.size() + " elements but definition expects single value. " +
+					"Returning first element. Legacy data may need cleanup.");
+				return list.get(0);
+			}
+		} else if (!valueIsList && expectMulti) {
+			// single→multi: wrap in list
+			log.debug("Cardinality normalization: wrapping scalar in list for property " + propertyId);
+			List<Object> wrapped = new ArrayList<>();
+			wrapped.add(value);
+			return wrapped;
+		}
+		
+		// Cardinality already matches
+		return value;
+	}
+	
+	/**
+	 * Attempt to coerce a single element to the expected type.
+	 * Returns null if coercion is not possible.
+	 * 
+	 * Supported coercions:
+	 * - String → Boolean ("true"/"false", "1"/"0")
+	 * - String → Integer (parseable numbers)
+	 * - String → DateTime (via DataUtil.convertToCalender)
+	 * - Integer/Long → BigInteger
+	 * - Any → String (via toString)
+	 * 
+	 * @param element The element to coerce
+	 * @param expectedType The expected property type
+	 * @param propertyId For logging purposes
+	 * @return Coerced value or null if coercion failed
+	 */
+	private Object coerceElement(Object element, PropertyType expectedType, String propertyId) {
+		if (element == null) {
+			return null;
+		}
+		
+		try {
+			switch (expectedType) {
+			case BOOLEAN:
+				if (element instanceof Boolean) {
+					return element;
+				} else if (element instanceof String) {
+					String s = ((String) element).toLowerCase().trim();
+					if ("true".equals(s) || "1".equals(s)) {
+						log.debug("Type coercion: String '" + element + "' → Boolean true for property " + propertyId);
+						return Boolean.TRUE;
+					} else if ("false".equals(s) || "0".equals(s)) {
+						log.debug("Type coercion: String '" + element + "' → Boolean false for property " + propertyId);
+						return Boolean.FALSE;
+					}
+				} else if (element instanceof Number) {
+					int val = ((Number) element).intValue();
+					return val != 0;
+				}
+				break;
+				
+			case INTEGER:
+				if (element instanceof BigInteger) {
+					return element;
+				} else if (element instanceof Long) {
+					return BigInteger.valueOf((Long) element);
+				} else if (element instanceof Integer) {
+					return BigInteger.valueOf((Integer) element);
+				} else if (element instanceof String) {
+					try {
+						BigInteger parsed = new BigInteger((String) element);
+						log.debug("Type coercion: String '" + element + "' → Integer for property " + propertyId);
+						return parsed;
+					} catch (NumberFormatException e) {
+						// Not parseable
+					}
+				}
+				break;
+				
+			case DATETIME:
+				if (element instanceof GregorianCalendar) {
+					return element;
+				} else if (element instanceof String) {
+					try {
+						GregorianCalendar cal = DataUtil.convertToCalender((String) element);
+						log.debug("Type coercion: String → DateTime for property " + propertyId);
+						return cal;
+					} catch (ParseException e) {
+						// Not parseable
+					}
+				}
+				break;
+				
+			case STRING:
+				if (element instanceof String) {
+					return element;
+				} else {
+					// Any type can be converted to String
+					log.debug("Type coercion: " + element.getClass().getSimpleName() + " → String for property " + propertyId);
+					return element.toString();
+				}
+				
+			case ID:
+				if (element instanceof String) {
+					return element;
+				} else {
+					// IDs are strings, so convert
+					log.debug("Type coercion: " + element.getClass().getSimpleName() + " → ID (String) for property " + propertyId);
+					return element.toString();
+				}
+				
+			default:
+				break;
+			}
+		} catch (Exception e) {
+			log.warn("Type coercion failed for property " + propertyId + ": " + e.getMessage());
+		}
+		
+		return null; // Coercion not possible
+	}
+	
+	/**
+	 * Coerce a list of elements to the expected type.
+	 * Elements that cannot be coerced are skipped.
+	 * 
+	 * @param list The list of elements to coerce
+	 * @param expectedType The expected property type
+	 * @param propertyId For logging purposes
+	 * @return List of coerced values (may be smaller than input if some elements failed)
+	 */
+	@SuppressWarnings("unchecked")
+	private <T> List<T> coerceList(List<?> list, PropertyType expectedType, String propertyId) {
+		List<T> result = new ArrayList<>();
+		for (Object element : list) {
+			Object coerced = coerceElement(element, expectedType, propertyId);
+			if (coerced != null) {
+				result.add((T) coerced);
+			} else {
+				log.warn("Skipping incompatible element in list for property " + propertyId + 
+					": cannot coerce " + (element != null ? element.getClass().getSimpleName() : "null") + 
+					" to " + expectedType.value());
+			}
+		}
+		return result;
+	}
 
 	/**
 	 * Adds specified property in property set.
+	 * 
+	 * This method includes failsafe mechanisms for handling legacy data that may not
+	 * match the current property definition (type/cardinality mismatch). It will:
+	 * 1. Normalize cardinality (single↔multi conversion)
+	 * 2. Attempt type coercion when possible
+	 * 3. Return null/empty and log warnings when coercion fails (never throws)
 	 *
 	 * @param props
 	 *            property set
@@ -1856,124 +2036,145 @@ public class CompileServiceImpl implements CompileService {
 	 * @param value
 	 *            actual property value
 	 */
-	// TODO if cast fails, continue the operation
 	private void addProperty(PropertiesImpl props, TypeDefinition tdf, String id, Object value) {
 		try {
 			PropertyDefinition<?> pdf = tdf.getPropertyDefinitions().get(id);
 			if (!checkAddProperty(props, tdf, id))
 				return;
 
+			// Step 1: Normalize cardinality (single↔multi conversion)
+			Object normalizedValue = normalizeCardinality(value, pdf.getCardinality(), id);
+			
+			// Step 2: Process based on expected type with coercion support
 			switch (pdf.getPropertyType()) {
 			case BOOLEAN:
 				PropertyBooleanImpl propBoolean;
-				if (value instanceof List<?>) {
-					propBoolean = new PropertyBooleanImpl(id, (List<Boolean>) value);
-				} else if (value instanceof Boolean) {
-					propBoolean = new PropertyBooleanImpl(id, (Boolean) value);
+				if (pdf.getCardinality() == Cardinality.MULTI) {
+					if (normalizedValue instanceof List<?>) {
+						List<Boolean> coercedList = coerceList((List<?>) normalizedValue, PropertyType.BOOLEAN, id);
+						propBoolean = new PropertyBooleanImpl(id, coercedList);
+					} else {
+						propBoolean = new PropertyBooleanImpl(id, new ArrayList<Boolean>());
+					}
 				} else {
-					Boolean _null = null;
-					propBoolean = new PropertyBooleanImpl(id, _null);
-					if (value != null) {
-						String msg = buildCastErrMsg(tdf.getId(), id, pdf.getPropertyType(), value.getClass().getName(),
-								Boolean.class.getName());
-						log.warn("ObjectId=" + id + " Value=" + value.toString() + " Message=" + msg);
+					Object coerced = coerceElement(normalizedValue, PropertyType.BOOLEAN, id);
+					if (coerced instanceof Boolean) {
+						propBoolean = new PropertyBooleanImpl(id, (Boolean) coerced);
+					} else {
+						Boolean _null = null;
+						propBoolean = new PropertyBooleanImpl(id, _null);
+						if (normalizedValue != null) {
+							String msg = buildCastErrMsg(tdf.getId(), id, pdf.getPropertyType(), 
+								normalizedValue.getClass().getName(), Boolean.class.getName());
+							log.warn("PropertyId=" + id + " Value=" + normalizedValue.toString() + " Message=" + msg);
+						}
 					}
 				}
 				addPropertyBase(props, id, propBoolean, pdf);
 				break;
+				
 			case INTEGER:
 				PropertyIntegerImpl propInteger;
-				if (value instanceof List<?>) {
-					propInteger = new PropertyIntegerImpl(id, (List<BigInteger>) value);
-				} else if (value instanceof Long || value instanceof Integer) {
-					propInteger = new PropertyIntegerImpl(id, BigInteger.valueOf((Long) value));
+				if (pdf.getCardinality() == Cardinality.MULTI) {
+					if (normalizedValue instanceof List<?>) {
+						List<BigInteger> coercedList = coerceList((List<?>) normalizedValue, PropertyType.INTEGER, id);
+						propInteger = new PropertyIntegerImpl(id, coercedList);
+					} else {
+						propInteger = new PropertyIntegerImpl(id, new ArrayList<BigInteger>());
+					}
 				} else {
-					BigInteger _null = null;
-					propInteger = new PropertyIntegerImpl(id, _null);
-					if (value != null) {
-						String msg = buildCastErrMsg(tdf.getId(), id, pdf.getPropertyType(), value.getClass().getName(),
-								Long.class.getName());
-						log.warn("ObjectId=" + id + " Value=" + value.toString() + " Message=" + msg);
+					Object coerced = coerceElement(normalizedValue, PropertyType.INTEGER, id);
+					if (coerced instanceof BigInteger) {
+						propInteger = new PropertyIntegerImpl(id, (BigInteger) coerced);
+					} else {
+						BigInteger _null = null;
+						propInteger = new PropertyIntegerImpl(id, _null);
+						if (normalizedValue != null) {
+							String msg = buildCastErrMsg(tdf.getId(), id, pdf.getPropertyType(), 
+								normalizedValue.getClass().getName(), Long.class.getName());
+							log.warn("PropertyId=" + id + " Value=" + normalizedValue.toString() + " Message=" + msg);
+						}
 					}
 				}
 				addPropertyBase(props, id, propInteger, pdf);
 				break;
+				
 			case DATETIME:
 				PropertyDateTimeImpl propDate;
-				if (value instanceof List<?>) {
-					Stream<?> values = ((List<?>) value).stream();
-					List<GregorianCalendar> calList = new ArrayList<GregorianCalendar>();
-					values.forEach(p -> {
-						if (p instanceof GregorianCalendar) {
-							calList.add((GregorianCalendar) p);
-						} else if (value instanceof String) {
-							try {
-								GregorianCalendar cal = DataUtil.convertToCalender((String) value);
-								calList.add(cal);
-							} catch (ParseException ex) {
-								// skip
-							}
-						}
-					});
-					propDate = new PropertyDateTimeImpl(id, calList);
-				} else if (value instanceof GregorianCalendar) {
-					propDate = new PropertyDateTimeImpl(id, (GregorianCalendar) value);
-				} else if (value instanceof String) {
-					try {
-						propDate = new PropertyDateTimeImpl(id, DataUtil.convertToCalender((String) value));
-					} catch (ParseException ex) {
-						propDate = createNullDateTimeProperty(tdf, id, value, pdf);
+				if (pdf.getCardinality() == Cardinality.MULTI) {
+					if (normalizedValue instanceof List<?>) {
+						List<GregorianCalendar> coercedList = coerceList((List<?>) normalizedValue, PropertyType.DATETIME, id);
+						propDate = new PropertyDateTimeImpl(id, coercedList);
+					} else {
+						propDate = new PropertyDateTimeImpl(id, new ArrayList<GregorianCalendar>());
 					}
 				} else {
-					propDate = createNullDateTimeProperty(tdf, id, value, pdf);
+					Object coerced = coerceElement(normalizedValue, PropertyType.DATETIME, id);
+					if (coerced instanceof GregorianCalendar) {
+						propDate = new PropertyDateTimeImpl(id, (GregorianCalendar) coerced);
+					} else {
+						propDate = createNullDateTimeProperty(tdf, id, normalizedValue, pdf);
+					}
 				}
 				addPropertyBase(props, id, propDate, pdf);
 				break;
+				
 			case STRING:
 				PropertyStringImpl propString = new PropertyStringImpl();
 				propString.setId(id);
-				if (value instanceof List<?>) {
-					propString.setValues((List<String>) value);
-				} else if (value instanceof String) {
-					propString.setValue(String.valueOf(value));
+				if (pdf.getCardinality() == Cardinality.MULTI) {
+					if (normalizedValue instanceof List<?>) {
+						List<String> coercedList = coerceList((List<?>) normalizedValue, PropertyType.STRING, id);
+						propString.setValues(coercedList);
+					} else {
+						propString.setValues(new ArrayList<String>());
+					}
 				} else {
-					String _null = null;
-					propString = new PropertyStringImpl(id, _null);
-					if (value != null) {
-						String msg = buildCastErrMsg(tdf.getId(), id, pdf.getPropertyType(), value.getClass().getName(),
-								String.class.getName());
-						log.warn("ObjectId=" + id + " Value=" + value.toString() + " Message=" + msg);
+					Object coerced = coerceElement(normalizedValue, PropertyType.STRING, id);
+					if (coerced instanceof String) {
+						propString.setValue((String) coerced);
+					} else {
+						String _null = null;
+						propString = new PropertyStringImpl(id, _null);
+						if (normalizedValue != null) {
+							String msg = buildCastErrMsg(tdf.getId(), id, pdf.getPropertyType(), 
+								normalizedValue.getClass().getName(), String.class.getName());
+							log.warn("PropertyId=" + id + " Value=" + normalizedValue.toString() + " Message=" + msg);
+						}
 					}
 				}
 				addPropertyBase(props, id, propString, pdf);
 				break;
+				
 			case ID:
 				PropertyIdImpl propId = new PropertyIdImpl();
 				propId.setId(id);
-				if (value instanceof List<?>) {
-					List<String> values = (List<String>) value;
-					// CMIS 1.1 COMPLIANCE: Ensure multi-cardinality properties always have valid list
-					propId.setValues(values != null ? values : new ArrayList<String>());
-				} else if (value instanceof String) {
-					propId.setValue(String.valueOf(value));
-
-				} else {
-					// CMIS 1.1 COMPLIANCE: For multi-cardinality properties, provide empty list instead of null
-					if (pdf.getCardinality() == Cardinality.MULTI) {
+				if (pdf.getCardinality() == Cardinality.MULTI) {
+					if (normalizedValue instanceof List<?>) {
+						List<String> coercedList = coerceList((List<?>) normalizedValue, PropertyType.ID, id);
+						propId.setValues(coercedList != null ? coercedList : new ArrayList<String>());
+					} else {
 						propId.setValues(new ArrayList<String>());
+					}
+				} else {
+					Object coerced = coerceElement(normalizedValue, PropertyType.ID, id);
+					if (coerced instanceof String) {
+						propId.setValue((String) coerced);
 					} else {
 						String _null = null;
 						propId = new PropertyIdImpl(id, _null);
-						if (value != null) {
-							String msg = buildCastErrMsg(tdf.getId(), id, pdf.getPropertyType(), value.getClass().getName(),
-									String.class.getName());
-							log.warn("ObjectId=" + id + " Value=" + value.toString() + " Message=" + msg);
+						if (normalizedValue != null) {
+							String msg = buildCastErrMsg(tdf.getId(), id, pdf.getPropertyType(), 
+								normalizedValue.getClass().getName(), String.class.getName());
+							log.warn("PropertyId=" + id + " Value=" + normalizedValue.toString() + " Message=" + msg);
 						}
 					}
 				}
 				addPropertyBase(props, id, propId, pdf);
 				break;
+				
 			default:
+				log.warn("Unknown property type: " + pdf.getPropertyType() + " for property " + id);
 			}
 		} catch (Exception e) {
 			log.warn("typeId:" + tdf + ", propertyId:" + id + " Fail to add a property!", e);
