@@ -111,6 +111,7 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.util.CoercionAuditLogger;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
@@ -1149,82 +1150,95 @@ public class CompileServiceImpl implements CompileService {
 			log.error("Document AttachmentNodeId: " + doc.getAttachmentNodeId());
 		}
 		
-		String objectType = content.getObjectType();
-		if (objectType == null) {
-			log.error("ObjectType is null for content " + content.getId() + " in repository: " + repositoryId);
-			// Try to determine type from content instance
-			if (content.isFolder()) {
-				objectType = "cmis:folder";
-			} else if (content.isDocument()) {
-				objectType = "cmis:document";
-			} else {
-				objectType = "cmis:item";
-			}
-			log.warn("Using fallback objectType: " + objectType + " for content: " + content.getId());
-		}
+		// Set coercion audit context for structured logging of data loss events
+		CoercionAuditLogger.setContext(repositoryId, content.getId(), content.getObjectType());
 		
-		TypeDefinitionContainer tdfc = typeManager.getTypeById(repositoryId, objectType);
-		if (tdfc == null) {
-			log.error("TypeDefinitionContainer is null for objectType: " + objectType + " in repository: " + repositoryId);
-			return new PropertiesImpl();
-		}
-		
-		TypeDefinition tdf = tdfc.getTypeDefinition();
-		if (tdf == null) {
-			log.error("TypeDefinition is null for objectType: " + objectType + " in repository: " + repositoryId);
-			return new PropertiesImpl();
-		}
-
 		PropertiesImpl properties = new PropertiesImpl();
-		if (content.isFolder()) {
-			Folder folder = (Folder) content;
-			// Root folder
-			if (contentService.isRoot(repositoryId, folder)) {
-				properties = compileRootFolderProperties(repositoryId, folder, properties, tdf);
-				// Other than root folder
-			} else {
-				properties = compileFolderProperties(repositoryId, folder, properties, tdf);
+		try {
+			String objectType = content.getObjectType();
+			if (objectType == null) {
+				log.error("ObjectType is null for content " + content.getId() + " in repository: " + repositoryId);
+				// Try to determine type from content instance
+				if (content.isFolder()) {
+					objectType = "cmis:folder";
+				} else if (content.isDocument()) {
+					objectType = "cmis:document";
+				} else {
+					objectType = "cmis:item";
+				}
+				log.warn("Using fallback objectType: " + objectType + " for content: " + content.getId());
 			}
-		} else if (content.isDocument()) {
-			Document document = (Document) content;
-			properties = compileDocumentProperties(callContext, repositoryId, document, properties, tdf);
-		} else if (content.isRelationship()) {
-			Relationship relationship = (Relationship) content;
-			properties = compileRelationshipProperties(repositoryId, relationship, properties, tdf);
-		} else if (content.isPolicy()) {
-			Policy policy = (Policy) content;
-			properties = compilePolicyProperties(repositoryId, policy, properties, tdf);
-		} else if (content.isItem()) {
-			// CRITICAL FIX (2025-11-19): Handle CouchItem instances
-			// CouchItem (CouchUserItem, CouchGroupItem) does NOT extend Item class
-			// Must convert via convert() method before casting
-			// Use Object type to allow instanceof check at runtime
-			Item item;
-			log.error("!!! ITEM CAST DEBUG: content class = " + content.getClass().getName());
-			log.error("!!! ITEM CAST DEBUG: content type = " + content.getType());
-			try {
-				// Try to get convert() method from CouchItem class hierarchy
-				java.lang.reflect.Method convertMethod = content.getClass().getMethod("convert");
-				log.error("!!! ITEM CAST DEBUG: Found convert() method, invoking...");
-				item = (Item) convertMethod.invoke(content);
-				log.error("!!! ITEM CAST DEBUG: convert() succeeded, result class = " + item.getClass().getName());
-			} catch (NoSuchMethodException e) {
-				log.error("!!! ITEM CAST DEBUG: NoSuchMethodException - no convert() method found", e);
-				// No convert() method - direct cast
-				item = (Item) content;
-			} catch (IllegalAccessException e) {
-				log.error("!!! ITEM CAST DEBUG: IllegalAccessException during convert() invocation", e);
-				// Invocation failed - direct cast
-				item = (Item) content;
-			} catch (java.lang.reflect.InvocationTargetException e) {
-				log.error("!!! ITEM CAST DEBUG: InvocationTargetException during convert() invocation", e);
-				log.error("!!! ITEM CAST DEBUG: Target exception was: " + e.getTargetException());
-				// Invocation failed - direct cast
-				item = (Item) content;
+			
+			TypeDefinitionContainer tdfc = typeManager.getTypeById(repositoryId, objectType);
+			if (tdfc == null) {
+				log.error("TypeDefinitionContainer is null for objectType: " + objectType + " in repository: " + repositoryId);
+				return properties;
 			}
-			properties = compileItemProperties(repositoryId, item, properties, tdf);
-		}
+			
+			TypeDefinition tdf = tdfc.getTypeDefinition();
+			if (tdf == null) {
+				log.error("TypeDefinition is null for objectType: " + objectType + " in repository: " + repositoryId);
+				return properties;
+			}
 
+			if (content.isFolder()) {
+				Folder folder = (Folder) content;
+				// Root folder
+				if (contentService.isRoot(repositoryId, folder)) {
+					properties = compileRootFolderProperties(repositoryId, folder, properties, tdf);
+					// Other than root folder
+				} else {
+					properties = compileFolderProperties(repositoryId, folder, properties, tdf);
+				}
+			} else if (content.isDocument()) {
+				Document document = (Document) content;
+				properties = compileDocumentProperties(callContext, repositoryId, document, properties, tdf);
+			} else if (content.isRelationship()) {
+				Relationship relationship = (Relationship) content;
+				properties = compileRelationshipProperties(repositoryId, relationship, properties, tdf);
+			} else if (content.isPolicy()) {
+				Policy policy = (Policy) content;
+				properties = compilePolicyProperties(repositoryId, policy, properties, tdf);
+			} else if (content.isItem()) {
+				// CRITICAL FIX (2025-11-19): Handle CouchItem instances
+				// CouchItem (CouchUserItem, CouchGroupItem) does NOT extend Item class
+				// Must convert via convert() method before casting
+				// Use Object type to allow instanceof check at runtime
+				Item item;
+				log.error("!!! ITEM CAST DEBUG: content class = " + content.getClass().getName());
+				log.error("!!! ITEM CAST DEBUG: content type = " + content.getType());
+				try {
+					// Try to get convert() method from CouchItem class hierarchy
+					java.lang.reflect.Method convertMethod = content.getClass().getMethod("convert");
+					log.error("!!! ITEM CAST DEBUG: Found convert() method, invoking...");
+					item = (Item) convertMethod.invoke(content);
+					log.error("!!! ITEM CAST DEBUG: convert() succeeded, result class = " + item.getClass().getName());
+				} catch (NoSuchMethodException e) {
+					log.error("!!! ITEM CAST DEBUG: NoSuchMethodException - no convert() method found", e);
+					// No convert() method - direct cast
+					item = (Item) content;
+				} catch (IllegalAccessException e) {
+					log.error("!!! ITEM CAST DEBUG: IllegalAccessException during convert() invocation", e);
+					// Invocation failed - direct cast
+					item = (Item) content;
+				} catch (java.lang.reflect.InvocationTargetException e) {
+					log.error("!!! ITEM CAST DEBUG: InvocationTargetException during convert() invocation", e);
+					log.error("!!! ITEM CAST DEBUG: Target exception was: " + e.getTargetException());
+					// Invocation failed - direct cast
+					item = (Item) content;
+				}
+				properties = compileItemProperties(repositoryId, item, properties, tdf);
+			}
+
+			// Add CMIS Extension for coercion warnings if any occurred
+			if (CoercionAuditLogger.hasWarnings()) {
+				addCoercionWarningsExtension(properties);
+			}
+		} finally {
+			// Clear coercion audit context to prevent memory leaks (MUST be in finally block)
+			CoercionAuditLogger.clearContext();
+		}
+		
 		return properties;
 	}
 
@@ -1881,13 +1895,15 @@ public class CompileServiceImpl implements CompileService {
 				log.debug("Cardinality normalization: unwrapping single-element list for property " + propertyId);
 				return list.get(0);
 			} else {
-				// size>1 is incompatible with single cardinality - return null to avoid silent data loss
-				log.warn("CARDINALITY MISMATCH for property '" + propertyId + "': " +
-					"stored value has " + list.size() + " elements but definition expects SINGLE value. " +
-					"Returning null to avoid silent data loss. " +
-					"ACTION REQUIRED: Clean up legacy data or revert property definition to MULTI.");
-				return null;
-			}
+					// size>1 is incompatible with single cardinality - return null to avoid silent data loss
+					log.warn("CARDINALITY MISMATCH for property '" + propertyId + "': " +
+						"stored value has " + list.size() + " elements but definition expects SINGLE value. " +
+						"Returning null to avoid silent data loss. " +
+						"ACTION REQUIRED: Clean up legacy data or revert property definition to MULTI.");
+					// Emit structured audit event for monitoring/alerting
+					CoercionAuditLogger.logCardinalityMismatch(propertyId, list.size(), value);
+					return null;
+				}
 		} else if (!valueIsList && expectMulti) {
 			// single→multi: wrap in list
 			log.debug("Cardinality normalization: wrapping scalar in list for property " + propertyId);
@@ -1956,6 +1972,7 @@ public class CompileServiceImpl implements CompileService {
 					if (d.isNaN() || d.isInfinite()) {
 						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
 							"Cannot convert " + d + " (NaN/Infinite) to Integer.");
+						CoercionAuditLogger.logTypeCoercionRejected(propertyId, "Double", element, "INTEGER", "NaN/Infinite value");
 						return null;
 					}
 					if (d == Math.floor(d)) {
@@ -1967,6 +1984,7 @@ public class CompileServiceImpl implements CompileService {
 						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
 							"Cannot convert Double " + d + " to Integer (has fractional part " + 
 							(d - Math.floor(d)) + "). Returning null to avoid data loss.");
+						CoercionAuditLogger.logTypeCoercionRejected(propertyId, "Double", element, "INTEGER", "has fractional part");
 						return null;
 					}
 				} else if (element instanceof BigDecimal) {
@@ -1978,12 +1996,13 @@ public class CompileServiceImpl implements CompileService {
 						log.debug("Type coercion: BigDecimal → Integer for property " + propertyId);
 						return result;
 					} catch (ArithmeticException e) {
-						// Has fractional part - reject
-						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
-							"Cannot convert BigDecimal " + bd + " to Integer (has fractional part). " +
-							"Returning null to avoid data loss.");
-						return null;
-					}
+							// Has fractional part - reject
+							log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
+								"Cannot convert BigDecimal " + bd + " to Integer (has fractional part). " +
+								"Returning null to avoid data loss.");
+							CoercionAuditLogger.logTypeCoercionRejected(propertyId, "BigDecimal", element, "INTEGER", "has fractional part");
+							return null;
+						}
 				} else if (element instanceof String) {
 					try {
 						// Trim whitespace before parsing
@@ -2480,6 +2499,59 @@ public class CompileServiceImpl implements CompileService {
 			return Action.CAN_APPLY_ACL;
 
 		return null;
+	}
+
+	/**
+	 * Add CMIS Extension elements for coercion warnings to the properties.
+	 * This allows NemakiWare UI to display alerts when property values were
+	 * coerced or dropped due to type/cardinality mismatches.
+	 * 
+	 * Uses the standard CMIS Extension mechanism so other CMIS clients
+	 * will simply ignore these extensions.
+	 */
+	private void addCoercionWarningsExtension(PropertiesImpl properties) {
+		List<CoercionAuditLogger.CoercionWarning> warnings = CoercionAuditLogger.getWarnings();
+		if (warnings.isEmpty()) {
+			return;
+		}
+		
+		String namespace = DataUtil.NAMESPACE + "/coercion/";
+		List<CmisExtensionElement> warningElements = new ArrayList<>();
+		
+		for (CoercionAuditLogger.CoercionWarning warning : warnings) {
+			// Create attributes map for the warning element
+			Map<String, String> attributes = new HashMap<>();
+			attributes.put("propertyId", warning.propertyId);
+			attributes.put("type", warning.type);
+			attributes.put("reason", warning.reason);
+			if (warning.elementCount >= 0) {
+				attributes.put("elementCount", String.valueOf(warning.elementCount));
+			}
+			if (warning.elementIndex >= 0) {
+				attributes.put("elementIndex", String.valueOf(warning.elementIndex));
+			}
+			
+			CmisExtensionElementImpl warningElement = new CmisExtensionElementImpl(
+					namespace, "warning", attributes, null);
+			warningElements.add(warningElement);
+		}
+		
+		// Create the parent coercionWarnings element containing all warnings
+		CmisExtensionElementImpl coercionWarningsElement = new CmisExtensionElementImpl(
+				namespace, "coercionWarnings", null, warningElements);
+		
+		// Get existing extensions or create new list
+		List<CmisExtensionElement> extensions = properties.getExtensions();
+		if (extensions == null) {
+			extensions = new ArrayList<>();
+		} else {
+			// Create mutable copy if the list is immutable
+			extensions = new ArrayList<>(extensions);
+		}
+		extensions.add(coercionWarningsElement);
+		properties.setExtensions(extensions);
+		
+		log.warn("Added " + warnings.size() + " coercion warning(s) to CMIS response extensions");
 	}
 
 	@Override
