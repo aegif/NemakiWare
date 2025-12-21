@@ -974,6 +974,10 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
     expect(updateResponse.status()).toBe(200);
     console.log('Step 3 - UPDATE: Success');
 
+    // IMPROVEMENT (2025-12-21): Add wait time for server cache to update
+    // This improves test reliability by giving the server time to refresh its type cache
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     // Step 4: READ (verify update)
     // Note: Server may cache type definitions, so immediate read may return stale data
     const verifyUpdateResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeId)}`, {

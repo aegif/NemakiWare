@@ -137,6 +137,9 @@ public class TypeResource extends ResourceBase {
 			}
 
 			JSONArray typesArray = new JSONArray();
+			// CRITICAL FIX (2025-12-22): Track added type IDs to prevent duplicates
+			// This prevents nemaki:parentChildRelationship and other types from appearing twice
+			java.util.Set<String> addedTypeIds = new java.util.HashSet<>();
 
 			// Get base CMIS types via RepositoryService
 			if (repositoryService != null) {
@@ -148,8 +151,12 @@ public class TypeResource extends ResourceBase {
 					if (baseTypes != null && baseTypes.getList() != null) {
 						log.info("Found " + baseTypes.getList().size() + " base CMIS types");
 						for (org.apache.chemistry.opencmis.commons.definitions.TypeDefinition baseType : baseTypes.getList()) {
-							JSONObject typeJson = convertBaseTypeToJson(baseType);
-							typesArray.add(typeJson);
+							String typeId = baseType.getId();
+							if (!addedTypeIds.contains(typeId)) {
+								JSONObject typeJson = convertBaseTypeToJson(baseType);
+								typesArray.add(typeJson);
+								addedTypeIds.add(typeId);
+							}
 						}
 					}
 				} catch (Exception e) {
@@ -164,8 +171,15 @@ public class TypeResource extends ResourceBase {
 			log.info("Found " + customTypes.size() + " custom types");
 
 			for (NemakiTypeDefinition nemakiType : customTypes) {
-				JSONObject typeJson = convertTypeToJson(repositoryId, nemakiType);
-				typesArray.add(typeJson);
+				String typeId = nemakiType.getTypeId();
+				// CRITICAL FIX: Skip types already added from base types to prevent duplicates
+				if (!addedTypeIds.contains(typeId)) {
+					JSONObject typeJson = convertTypeToJson(repositoryId, nemakiType);
+					typesArray.add(typeJson);
+					addedTypeIds.add(typeId);
+				} else {
+					log.debug("Skipping duplicate type: " + typeId);
+				}
 			}
 
 			JSONObject result = new JSONObject();
