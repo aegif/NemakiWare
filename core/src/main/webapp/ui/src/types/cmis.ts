@@ -30,6 +30,9 @@ export interface TypeDefinition {
   fileable: boolean;
   queryable: boolean;
   deletable?: boolean;
+  // Relationship-specific fields (only for cmis:relationship types)
+  allowedSourceTypes?: string[];
+  allowedTargetTypes?: string[];
 }
 
 export interface Permission {
