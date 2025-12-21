@@ -444,6 +444,117 @@ npx playwright test --reporter=list
 
 ---
 
+## Type REST API Integration Tests (2025-12-21) ✅
+
+### テスト概要
+
+**ファイル**: `core/src/main/webapp/ui/tests/backend/type-rest-api.spec.ts`
+**テスト数**: 32テスト
+**カバレッジ**: CRUD操作、バリデーション、エラーハンドリング、並行操作
+
+### テストカテゴリ
+
+| カテゴリ | テスト数 | 内容 |
+|---------|---------|------|
+| Basic Health | 1 | APIエンドポイント疎通確認 |
+| List Operations | 4 | タイプ一覧・詳細取得 |
+| CRUD Operations | 5 | 作成・更新・削除操作 |
+| Base Type Protection | 2 | ベースタイプ保護検証 |
+| Input Validation | 2 | 入力値バリデーション |
+| Authentication | 2 | 認証エラーハンドリング |
+| Custom Type with Properties | 2 | プロパティ付きカスタムタイプ |
+| NemakiWare Custom Types | 2 | NemakiWare固有タイプ |
+| Secondary Types | 1 | セカンダリタイプ (cmis:secondary) |
+| Folder Types | 1 | フォルダタイプ (cmis:folder) |
+| All Property Types | 1 | 全CMISプロパティタイプ（8種類） |
+| Full CRUD Lifecycle | 1 | 完全なCRUDライフサイクル |
+| Edge Cases | 4 | 特殊文字・長文・空プロパティ |
+| Concurrent Operations | 1 | 並行操作（5件同時作成） |
+| Property Constraints | 3 | 必須フィールド・デフォルト値 |
+
+### 実行方法
+
+```bash
+# バックエンドAPIテストのみ実行
+cd core/src/main/webapp/ui
+npx playwright test tests/backend/type-rest-api.spec.ts --project=chromium
+
+# 全ブラウザで実行
+npx playwright test tests/backend/type-rest-api.spec.ts
+```
+
+### API仕様
+
+**ベースURL**: `/core/rest/repo/{repositoryId}/type`
+
+| エンドポイント | メソッド | 説明 |
+|---------------|---------|------|
+| `/test` | GET | API疎通確認 |
+| `/list` | GET | 全タイプ定義一覧 |
+| `/show/{typeId}` | GET | カスタムタイプ詳細（ベースタイプは404） |
+| `/create` | POST | タイプ定義作成 |
+| `/update/{typeId}` | PUT | タイプ定義更新（NemakiWare独自） |
+| `/delete/{typeId}` | DELETE | タイプ定義削除（NemakiWare独自） |
+
+### 既知の制限事項
+
+1. **サーバーキャッシュ**: UPDATE直後のGETが古いデータを返す場合がある
+2. **showエンドポイント**: カスタムタイプのみ対応（ベースCMISタイプは404）
+3. **JSON形式**: 作成時は`baseId`/`parentId`、取得時は`baseTypeId`/`parentTypeId`
+
+### CI/CD統合
+
+```yaml
+# GitHub Actions例
+- name: Run Type REST API Tests
+  run: |
+    cd core/src/main/webapp/ui
+    npx playwright test tests/backend/type-rest-api.spec.ts --project=chromium
+```
+
+---
+
+## UI Bug Fixes (2025-12-21) ✅
+
+### 1. FolderTree insertBeforeエラー修正
+
+**問題**: フォルダ選択後に「Failed to execute 'insertBefore' on 'Node'」エラーが発生
+
+**原因**: `buildTreeStructure`で`title`にJSX要素を設定し、`titleRender`でも同じ内容をレンダリングしていた
+
+**修正内容** (`FolderTree.tsx`):
+- `buildTreeStructure`: `title`にはプレーンな文字列のみを設定
+- `titleRender`: 全てのスタイリングをここに統一
+- `null`/`undefined`対策として空文字列のフォールバックを追加
+
+```typescript
+// Before（問題あり）
+title: (<span style={{...}}>{currentFolder.name}</span>)
+
+// After（修正後）
+title: currentFolder.name || 'Repository Root'
+```
+
+### 2. グレー画面問題の修正強化
+
+**問題**: ログイン直後にグレー画面で身動きが取れなくなる
+
+**原因**: Ant DesignのModal/Drawerのマスク要素がクリーンアップされていなかった
+
+**修正内容** (`AuthContext.tsx`):
+- オーバーレイクリーンアップの対象セレクタを拡充
+- `scheduleCleanup()`: 100ms/500ms/1000msの遅延で複数回クリーンアップ
+- `login()`成功時にもオーバーレイクリーンアップを実行
+- グレー背景（`rgba...0.45`）の検出と除去を追加
+
+**デバッグ方法**:
+```javascript
+// ブラウザコンソールでオーバーレイ要素を確認
+document.querySelectorAll('[class*="ant-"][class*="-mask"]')
+```
+
+---
+
 ## Recent Major Changes (2025-12-09 - UI Path Unification & External Auth) ✅
 
 ### UI Path Unification - `/core/ui/dist/` → `/core/ui/`

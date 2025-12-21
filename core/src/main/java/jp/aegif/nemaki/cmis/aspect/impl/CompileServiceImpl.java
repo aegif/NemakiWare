@@ -2532,7 +2532,7 @@ public class CompileServiceImpl implements CompileService {
 			}
 			
 			CmisExtensionElementImpl warningElement = new CmisExtensionElementImpl(
-					namespace, "warning", attributes, null);
+					namespace, "warning", attributes, (String) null);
 			warningElements.add(warningElement);
 		}
 		
