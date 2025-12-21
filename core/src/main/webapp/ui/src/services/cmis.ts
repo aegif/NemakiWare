@@ -2061,8 +2061,27 @@ export class CMISService {
         return;
       }
 
-      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
-      throw error;
+      // Parse error response to extract structured error data
+      // Backend returns JSON with: status, message, subtypes[], referencingRelationships[]
+      try {
+        const errorData = JSON.parse(response.responseText);
+        const error = new Error(errorData.message || 'Type deletion failed') as Error & {
+          subtypes?: string[];
+          referencingRelationships?: string[];
+          status?: string;
+        };
+        error.subtypes = errorData.subtypes;
+        error.referencingRelationships = errorData.referencingRelationships;
+        error.status = errorData.status;
+        throw error;
+      } catch (parseError) {
+        if (parseError instanceof Error && parseError.message !== 'Unexpected token') {
+          throw parseError;
+        }
+        // If JSON parsing fails, fall back to generic error
+        const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+        throw error;
+      }
     } catch (error) {
       if (error instanceof Error) {
         throw error;

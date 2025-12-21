@@ -515,23 +515,27 @@ public class TypeResource extends ResourceBase {
 	
 	/**
 	 * Get list of subtype IDs for a given type
+	 * This method fails closed - if there's an error checking subtypes, it throws an exception
+	 * to prevent accidental deletion of types that may have subtypes.
 	 * @param repositoryId Repository ID
 	 * @param typeId Type ID to check for subtypes
 	 * @return List of subtype IDs (empty if no subtypes)
+	 * @throws Exception if unable to check for subtypes (fail closed for safety)
 	 */
-	private List<String> getSubtypeIds(String repositoryId, String typeId) {
+	private List<String> getSubtypeIds(String repositoryId, String typeId) throws Exception {
 		List<String> subtypeIds = new ArrayList<String>();
 		
-		try {
-			// Get all type definitions and check which ones have this type as parent
-			List<NemakiTypeDefinition> allTypes = typeService.getTypeDefinitions(repositoryId);
-			for (NemakiTypeDefinition type : allTypes) {
-				if (typeId.equals(type.getParentId())) {
-					subtypeIds.add(type.getTypeId());
-				}
+		// Get all type definitions and check which ones have this type as parent
+		// Note: This method intentionally does NOT catch exceptions - if we can't check
+		// for subtypes, we should fail the deletion rather than risk deleting a parent type
+		List<NemakiTypeDefinition> allTypes = typeService.getTypeDefinitions(repositoryId);
+		if (allTypes == null) {
+			throw new Exception("Unable to retrieve type definitions to check for subtypes");
+		}
+		for (NemakiTypeDefinition type : allTypes) {
+			if (typeId.equals(type.getParentId())) {
+				subtypeIds.add(type.getTypeId());
 			}
-		} catch (Exception e) {
-			log.error("Error getting subtypes for type: " + typeId, e);
 		}
 		
 		return subtypeIds;
@@ -539,35 +543,39 @@ public class TypeResource extends ResourceBase {
 	
 	/**
 	 * Get list of relationship type IDs that reference a given type in allowedSourceTypes or allowedTargetTypes
+	 * This method fails closed - if there's an error checking references, it throws an exception
+	 * to prevent accidental deletion of types that may be referenced.
 	 * @param repositoryId Repository ID
 	 * @param typeId Type ID to check for references
 	 * @return List of relationship type IDs that reference this type (empty if none)
+	 * @throws Exception if unable to check for references (fail closed for safety)
 	 */
-	private List<String> getReferencingRelationshipTypes(String repositoryId, String typeId) {
+	private List<String> getReferencingRelationshipTypes(String repositoryId, String typeId) throws Exception {
 		List<String> referencingTypes = new ArrayList<String>();
 		
-		try {
-			// Get all type definitions and check relationship types
-			List<NemakiTypeDefinition> allTypes = typeService.getTypeDefinitions(repositoryId);
-			for (NemakiTypeDefinition type : allTypes) {
-				// Only check relationship types
-				if (BaseTypeId.CMIS_RELATIONSHIP.equals(type.getBaseId())) {
-					// Check allowedSourceTypes
-					List<String> allowedSourceTypes = type.getAllowedSourceTypes();
-					if (allowedSourceTypes != null && allowedSourceTypes.contains(typeId)) {
-						referencingTypes.add(type.getTypeId());
-						continue; // Don't add twice if both source and target reference the type
-					}
-					
-					// Check allowedTargetTypes
-					List<String> allowedTargetTypes = type.getAllowedTargetTypes();
-					if (allowedTargetTypes != null && allowedTargetTypes.contains(typeId)) {
-						referencingTypes.add(type.getTypeId());
-					}
+		// Get all type definitions and check relationship types
+		// Note: This method intentionally does NOT catch exceptions - if we can't check
+		// for references, we should fail the deletion rather than risk breaking relationships
+		List<NemakiTypeDefinition> allTypes = typeService.getTypeDefinitions(repositoryId);
+		if (allTypes == null) {
+			throw new Exception("Unable to retrieve type definitions to check for relationship references");
+		}
+		for (NemakiTypeDefinition type : allTypes) {
+			// Only check relationship types
+			if (BaseTypeId.CMIS_RELATIONSHIP.equals(type.getBaseId())) {
+				// Check allowedSourceTypes
+				List<String> allowedSourceTypes = type.getAllowedSourceTypes();
+				if (allowedSourceTypes != null && allowedSourceTypes.contains(typeId)) {
+					referencingTypes.add(type.getTypeId());
+					continue; // Don't add twice if both source and target reference the type
+				}
+				
+				// Check allowedTargetTypes
+				List<String> allowedTargetTypes = type.getAllowedTargetTypes();
+				if (allowedTargetTypes != null && allowedTargetTypes.contains(typeId)) {
+					referencingTypes.add(type.getTypeId());
 				}
 			}
-		} catch (Exception e) {
-			log.error("Error getting referencing relationship types for type: " + typeId, e);
 		}
 		
 		return referencingTypes;
@@ -1009,32 +1017,42 @@ public class TypeResource extends ResourceBase {
 			NemakiPropertyDefinitionCore existingCore = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 			
 			if (existingCore != null) {
-				// Property exists - update it
-				log.debug("Updating existing property: " + propertyId);
+					// Property exists - update detail only (NOT core)
+					log.debug("Updating existing property detail: " + propertyId);
 				
-				// Update core properties
-				existingCore.setPropertyType(newCore.getPropertyType());
-				existingCore.setCardinality(newCore.getCardinality());
-				existingCore.setQueryName(newCore.getQueryName());
-				// Note: We don't change propertyId as it's the identifier
+					// IMPORTANT: We do NOT update core properties (propertyType, cardinality, queryName)
+					// because property cores may be globally shared across types. Changing core fields
+					// could have unintended side effects on other types that reference the same propertyId.
+					// If the user needs to change propertyType/cardinality, they should create a new
+					// property with a different ID.
+					if (!existingCore.getPropertyType().equals(newCore.getPropertyType())) {
+						log.warn("Property type change requested for " + propertyId + " but ignored. " +
+							"Core property type cannot be changed for existing properties. " +
+							"Create a new property with a different ID instead.");
+					}
+					if (!existingCore.getCardinality().equals(newCore.getCardinality())) {
+						log.warn("Cardinality change requested for " + propertyId + " but ignored. " +
+							"Core cardinality cannot be changed for existing properties. " +
+							"Create a new property with a different ID instead.");
+					}
 				
-				// Find and update the detail
-				List<NemakiPropertyDefinitionDetail> existingDetails = 
-					typeService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, existingCore.getId());
+					// Find and update the detail (detail-level changes are safe)
+					List<NemakiPropertyDefinitionDetail> existingDetails = 
+						typeService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, existingCore.getId());
 				
-				if (!existingDetails.isEmpty()) {
-					NemakiPropertyDefinitionDetail existingDetail = existingDetails.get(0);
-					existingDetail.setUpdatability(newDetail.getUpdatability());
-					existingDetail.setRequired(newDetail.isRequired());
-					existingDetail.setQueryable(newDetail.isQueryable());
-					existingDetail.setOpenChoice(newDetail.isOpenChoice());
+					if (!existingDetails.isEmpty()) {
+						NemakiPropertyDefinitionDetail existingDetail = existingDetails.get(0);
+						existingDetail.setUpdatability(newDetail.getUpdatability());
+						existingDetail.setRequired(newDetail.isRequired());
+						existingDetail.setQueryable(newDetail.isQueryable());
+						existingDetail.setOpenChoice(newDetail.isOpenChoice());
 					
-					// Update detail in database
-					typeService.updatePropertyDefinitionDetail(repositoryId, existingDetail);
-					newPropertyDetailIds.add(existingDetail.getId());
-					log.debug("Updated property detail: " + existingDetail.getId());
-				}
-			} else {
+						// Update detail in database
+						typeService.updatePropertyDefinitionDetail(repositoryId, existingDetail);
+						newPropertyDetailIds.add(existingDetail.getId());
+						log.debug("Updated property detail: " + existingDetail.getId());
+					}
+				}else {
 				// Property doesn't exist - create it
 				log.debug("Creating new property: " + propertyId);
 				NemakiPropertyDefinition npd = new NemakiPropertyDefinition(newCore, newDetail);
