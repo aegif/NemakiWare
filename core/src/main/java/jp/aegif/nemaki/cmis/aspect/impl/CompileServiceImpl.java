@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.aspect.impl;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.text.MessageFormat;
 import java.text.ParseException;
@@ -73,6 +74,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PolicyIdListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
@@ -1847,7 +1849,7 @@ public class CompileServiceImpl implements CompileService {
 	/**
 	 * Normalize value to match expected cardinality.
 	 * - single→multi: wrap scalar in 1-element list
-	 * - multi→single: unwrap if size<=1, return null if size>1 (with warning)
+	 * - multi→single: unwrap if size<=1, return first element if size>1 (with warning)
 	 * 
 	 * This is a failsafe mechanism for when property definitions change after
 	 * documents have been created with the old definition.
@@ -1898,9 +1900,11 @@ public class CompileServiceImpl implements CompileService {
 	 * 
 	 * Supported coercions:
 	 * - String → Boolean ("true"/"false", "1"/"0")
-	 * - String → Integer (parseable numbers)
+	 * - String → Integer (parseable numbers, with trim)
+	 * - String → Decimal (parseable numbers, with trim)
 	 * - String → DateTime (via DataUtil.convertToCalender)
-	 * - Integer/Long → BigInteger
+	 * - Integer/Long/Double/BigDecimal → BigInteger (for INTEGER type)
+	 * - Integer/Long/Double/BigInteger → BigDecimal (for DECIMAL type)
 	 * - Any → String (via toString)
 	 * 
 	 * @param element The element to coerce
@@ -1940,10 +1944,43 @@ public class CompileServiceImpl implements CompileService {
 					return BigInteger.valueOf((Long) element);
 				} else if (element instanceof Integer) {
 					return BigInteger.valueOf((Integer) element);
+				} else if (element instanceof Double) {
+					// JSON numbers may come as Double - convert to BigInteger (truncates decimal)
+					log.debug("Type coercion: Double → Integer (truncated) for property " + propertyId);
+					return BigInteger.valueOf(((Double) element).longValue());
+				} else if (element instanceof BigDecimal) {
+					log.debug("Type coercion: BigDecimal → Integer (truncated) for property " + propertyId);
+					return ((BigDecimal) element).toBigInteger();
 				} else if (element instanceof String) {
 					try {
-						BigInteger parsed = new BigInteger((String) element);
+						// Trim whitespace before parsing
+						BigInteger parsed = new BigInteger(((String) element).trim());
 						log.debug("Type coercion: String '" + element + "' → Integer for property " + propertyId);
+						return parsed;
+					} catch (NumberFormatException e) {
+						// Not parseable
+					}
+				}
+				break;
+				
+			case DECIMAL:
+				if (element instanceof BigDecimal) {
+					return element;
+				} else if (element instanceof Double) {
+					log.debug("Type coercion: Double → Decimal for property " + propertyId);
+					return BigDecimal.valueOf((Double) element);
+				} else if (element instanceof Long) {
+					return BigDecimal.valueOf((Long) element);
+				} else if (element instanceof Integer) {
+					return BigDecimal.valueOf((Integer) element);
+				} else if (element instanceof BigInteger) {
+					log.debug("Type coercion: BigInteger → Decimal for property " + propertyId);
+					return new BigDecimal((BigInteger) element);
+				} else if (element instanceof String) {
+					try {
+						// Trim whitespace before parsing
+						BigDecimal parsed = new BigDecimal(((String) element).trim());
+						log.debug("Type coercion: String '" + element + "' → Decimal for property " + propertyId);
 						return parsed;
 					} catch (NumberFormatException e) {
 						// Not parseable
@@ -1962,6 +1999,12 @@ public class CompileServiceImpl implements CompileService {
 					} catch (ParseException e) {
 						// Not parseable
 					}
+				} else if (element instanceof Long) {
+					// Timestamps stored as Long (milliseconds since epoch)
+					GregorianCalendar cal = new GregorianCalendar();
+					cal.setTimeInMillis((Long) element);
+					log.debug("Type coercion: Long (timestamp) → DateTime for property " + propertyId);
+					return cal;
 				}
 				break;
 				
@@ -1980,6 +2023,16 @@ public class CompileServiceImpl implements CompileService {
 				} else {
 					// IDs are strings, so convert
 					log.debug("Type coercion: " + element.getClass().getSimpleName() + " → ID (String) for property " + propertyId);
+					return element.toString();
+				}
+				
+			case HTML:
+			case URI:
+				// HTML and URI are string-based types
+				if (element instanceof String) {
+					return element;
+				} else {
+					log.debug("Type coercion: " + element.getClass().getSimpleName() + " → " + expectedType.value() + " for property " + propertyId);
 					return element.toString();
 				}
 				
@@ -2096,7 +2149,33 @@ public class CompileServiceImpl implements CompileService {
 						}
 					}
 				}
-				addPropertyBase(props, id, propInteger, pdf);
+			addPropertyBase(props, id, propInteger, pdf);
+				break;
+				
+			case DECIMAL:
+				PropertyDecimalImpl propDecimal;
+				if (pdf.getCardinality() == Cardinality.MULTI) {
+					if (normalizedValue instanceof List<?>) {
+						List<BigDecimal> coercedList = coerceList((List<?>) normalizedValue, PropertyType.DECIMAL, id);
+						propDecimal = new PropertyDecimalImpl(id, coercedList);
+					} else {
+						propDecimal = new PropertyDecimalImpl(id, new ArrayList<BigDecimal>());
+					}
+				} else {
+					Object coerced = coerceElement(normalizedValue, PropertyType.DECIMAL, id);
+					if (coerced instanceof BigDecimal) {
+						propDecimal = new PropertyDecimalImpl(id, (BigDecimal) coerced);
+					} else {
+						BigDecimal _null = null;
+						propDecimal = new PropertyDecimalImpl(id, _null);
+						if (normalizedValue != null) {
+							String msg = buildCastErrMsg(tdf.getId(), id, pdf.getPropertyType(), 
+								normalizedValue.getClass().getName(), BigDecimal.class.getName());
+							log.warn("PropertyId=" + id + " Value=" + normalizedValue.toString() + " Message=" + msg);
+						}
+					}
+				}
+				addPropertyBase(props, id, propDecimal, pdf);
 				break;
 				
 			case DATETIME:
