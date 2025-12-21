@@ -93,12 +93,9 @@ describe('TypeGUIEditor', () => {
       expect(screen.getByText('プロパティ定義')).toBeInTheDocument();
     });
 
-    // TODO: Fix button rendering in jsdom - Ant Design primary buttons have timing issues
-    // The buttons work correctly in the browser, but jsdom doesn't render them reliably
-    // Manual verification: Deploy and test in browser (2025-12-21)
-    it.skip('renders update button for editing mode', async () => {
+    it('renders update button for editing mode', () => {
       const existingType = mockExistingTypes[2];
-      render(
+      const { container } = render(
         <TypeGUIEditor
           initialValue={existingType}
           existingTypes={mockExistingTypes}
@@ -108,14 +105,24 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      await waitFor(() => {
-        expect(screen.getByText('キャンセル')).toBeInTheDocument();
-        expect(screen.getByText('更新')).toBeInTheDocument();
-      });
+      // Find all buttons in the container
+      const allButtons = container.querySelectorAll('button');
+      const buttonTexts = Array.from(allButtons).map(btn => btn.textContent);
+
+      // Ant Design adds spaces between CJK characters, so we need to normalize
+      // '更 新' becomes '更新' after removing spaces
+      const normalizedTexts = buttonTexts.map(text => text?.replace(/\s/g, ''));
+
+      // Check that the update button exists
+      const hasUpdateButton = normalizedTexts.some(text => text?.includes('更新'));
+      const hasCancelButton = normalizedTexts.some(text => text?.includes('キャンセル'));
+
+      expect(hasCancelButton).toBe(true);
+      expect(hasUpdateButton).toBe(true);
     });
 
-    it.skip('renders create button for new type', async () => {
-      render(
+    it('renders create button for new type', () => {
+      const { container } = render(
         <TypeGUIEditor
           initialValue={null}
           existingTypes={mockExistingTypes}
@@ -125,17 +132,25 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      await waitFor(() => {
-        expect(screen.getByText('キャンセル')).toBeInTheDocument();
-        expect(screen.getByText('作成')).toBeInTheDocument();
-      });
+      // Find all buttons in the container
+      const allButtons = container.querySelectorAll('button');
+      const buttonTexts = Array.from(allButtons).map(btn => btn.textContent);
+
+      // Ant Design adds spaces between CJK characters
+      const normalizedTexts = buttonTexts.map(text => text?.replace(/\s/g, ''));
+
+      // Check that the create button exists
+      const hasCreateButton = normalizedTexts.some(text => text?.includes('作成'));
+      const hasCancelButton = normalizedTexts.some(text => text?.includes('キャンセル'));
+
+      expect(hasCancelButton).toBe(true);
+      expect(hasCreateButton).toBe(true);
     });
   });
 
   describe('Validation', () => {
-    // TODO: Fix validation test - depends on button rendering fix
-    it.skip('shows error when type ID is empty', async () => {
-      render(
+    it('shows error when type ID is empty', async () => {
+      const { container } = render(
         <TypeGUIEditor
           initialValue={null}
           existingTypes={mockExistingTypes}
@@ -145,13 +160,17 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      await waitFor(() => {
-        expect(screen.getByText('キャンセル')).toBeInTheDocument();
-        expect(screen.getByText('作成')).toBeInTheDocument();
-      });
+      // Find the create button (Ant Design adds spaces between CJK characters)
+      const allButtons = container.querySelectorAll('button');
+      const createButton = Array.from(allButtons).find(btn =>
+        btn.textContent?.replace(/\s/g, '').includes('作成')
+      );
 
-      const saveButton = screen.getByText('作成');
-      fireEvent.click(saveButton);
+      expect(createButton).toBeTruthy();
+
+      if (createButton) {
+        fireEvent.click(createButton);
+      }
 
       await waitFor(() => {
         expect(screen.getByText('タイプIDは必須です')).toBeInTheDocument();
