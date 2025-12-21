@@ -103,10 +103,75 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   const handleDelete = async (typeId: string) => {
     try {
       await cmisService.deleteType(repositoryId, typeId);
-      message.success('タイプを削除しました');
+      // Note: Type deletion is a NemakiWare-specific operation that goes beyond CMIS standard compliance
+      // Existing documents with this type will fall back to base type behavior
+      message.success('タイプを削除しました（注意: 既存ドキュメントはベースタイプとして扱われます）');
       loadTypes();
-    } catch (error) {
-      message.error('タイプの削除に失敗しました');
+    } catch (error: any) {
+      // Handle detailed error messages from backend
+      let errorMessage = 'タイプの削除に失敗しました';
+      
+      // Try to extract error details from the error message
+      // The backend returns JSON with subtypes/referencingRelationships arrays
+      try {
+        // Check if error message contains JSON data
+        const errorStr = error.message || '';
+        
+        // Check for subtypes in error message
+        if (errorStr.includes('subtypes') || errorStr.includes('サブタイプ')) {
+          const subtypeMatch = errorStr.match(/Delete the following subtypes first: ([^.]+)/);
+          if (subtypeMatch) {
+            const subtypes = subtypeMatch[1].split(', ');
+            Modal.error({
+              title: 'タイプを削除できません',
+              content: (
+                <div>
+                  <p>このタイプにはサブタイプが存在するため削除できません。</p>
+                  <p>先に以下のサブタイプを削除してください:</p>
+                  <ul>
+                    {subtypes.map((subtype: string) => (
+                      <li key={subtype}>{subtype}</li>
+                    ))}
+                  </ul>
+                </div>
+              ),
+            });
+            return;
+          }
+        }
+        
+        // Check for relationship references in error message
+        if (errorStr.includes('relationship') || errorStr.includes('リレーションシップ')) {
+          const relMatch = errorStr.match(/Update or delete the following relationship types first: ([^.]+)/);
+          if (relMatch) {
+            const relationships = relMatch[1].split(', ');
+            Modal.error({
+              title: 'タイプを削除できません',
+              content: (
+                <div>
+                  <p>このタイプはリレーションシップタイプから参照されているため削除できません。</p>
+                  <p>先に以下のリレーションシップタイプを更新または削除してください:</p>
+                  <ul>
+                    {relationships.map((rel: string) => (
+                      <li key={rel}>{rel}</li>
+                    ))}
+                  </ul>
+                </div>
+              ),
+            });
+            return;
+          }
+        }
+        
+        // Use the error message directly if it contains useful info
+        if (errorStr && errorStr !== 'Network error during type deletion') {
+          errorMessage = errorStr;
+        }
+      } catch {
+        // Ignore parsing errors
+      }
+      
+      message.error(errorMessage);
     }
   };
 

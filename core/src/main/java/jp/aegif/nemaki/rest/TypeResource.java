@@ -321,6 +321,8 @@ public class TypeResource extends ResourceBase {
 
 	/**
 	 * Update existing type definition
+	 * NOTE: This is a NemakiWare-specific operation that goes beyond CMIS standard compliance.
+	 * CMIS standard does not allow modification of type definitions after creation.
 	 */
 	@PUT
 	@Path("/update/{typeId}")
@@ -329,6 +331,7 @@ public class TypeResource extends ResourceBase {
 	@SuppressWarnings("unchecked")
 	public Response update(@PathParam("repositoryId") String repositoryId, @PathParam("typeId") String typeId, String jsonInput) {
 		log.info("TypeResource.update() called for repository: " + repositoryId + ", typeId: " + typeId);
+		log.warn("NOTE: Type update is a NemakiWare-specific operation that goes beyond CMIS standard compliance");
 
 		// Initialize services from Spring context if not already injected
 		ensureServicesInitialized();
@@ -344,11 +347,21 @@ public class TypeResource extends ResourceBase {
 			}
 
 			// Check if type exists
-			if (!existType(repositoryId, typeId)) {
+			NemakiTypeDefinition existingType = typeService.getTypeDefinition(repositoryId, typeId);
+			if (existingType == null) {
 				JSONObject errorResult = new JSONObject();
 				errorResult.put("status", "error");
 				errorResult.put("message", "Type definition not found: " + typeId);
 				return Response.status(Response.Status.NOT_FOUND)
+						.entity(errorResult.toJSONString()).build();
+			}
+			
+			// Check if type is a base type (cannot be updated)
+			if (isBaseType(typeId)) {
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "Cannot update base type: " + typeId);
+				return Response.status(Response.Status.BAD_REQUEST)
 						.entity(errorResult.toJSONString()).build();
 			}
 			
@@ -358,11 +371,11 @@ public class TypeResource extends ResourceBase {
 			detailMaps.clear();
 			typeProperties.clear();
 			
-			// Parse JSON input
-			parseJson(repositoryId, jsonInput);
+			// Parse JSON input with update mode enabled
+			parseJsonForUpdate(repositoryId, jsonInput);
 			
 			// Update type definition
-			create(repositoryId);
+			updateTypeDefinition(repositoryId, existingType);
 			
 			// Refresh type manager
 			if (typeManager != null) {
@@ -373,6 +386,7 @@ public class TypeResource extends ResourceBase {
 			result.put("status", "success");
 			result.put("message", "Type definition updated successfully");
 			result.put("typeId", typeId);
+			result.put("warning", "This operation is NemakiWare-specific and not CMIS-compliant. Existing documents may be affected.");
 			
 			return Response.status(Response.Status.OK)
 					.entity(result.toJSONString())
@@ -396,6 +410,9 @@ public class TypeResource extends ResourceBase {
 
 	/**
 	 * Delete type definition
+	 * NOTE: This is a NemakiWare-specific operation that goes beyond CMIS standard compliance.
+	 * Subtypes must be deleted first before deleting a parent type.
+	 * Relationship types referencing this type must be updated/deleted first.
 	 */
 	@DELETE
 	@Path("/delete/{typeId}")
@@ -403,6 +420,7 @@ public class TypeResource extends ResourceBase {
 	@SuppressWarnings("unchecked")
 	public Response delete(@PathParam("repositoryId") String repositoryId, @PathParam("typeId") String typeId) {
 		log.info("TypeResource.delete() called for repository: " + repositoryId + ", typeId: " + typeId);
+		log.warn("NOTE: Type deletion is a NemakiWare-specific operation that goes beyond CMIS standard compliance");
 
 		// Initialize services from Spring context if not already injected
 		ensureServicesInitialized();
@@ -435,6 +453,32 @@ public class TypeResource extends ResourceBase {
 						.entity(errorResult.toJSONString()).build();
 			}
 			
+			// Check for subtypes - subtypes must be deleted first
+			List<String> subtypeIds = getSubtypeIds(repositoryId, typeId);
+			if (!subtypeIds.isEmpty()) {
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "Cannot delete type '" + typeId + "' because it has subtypes. Delete the following subtypes first: " + String.join(", ", subtypeIds));
+				JSONArray subtypesArray = new JSONArray();
+				subtypesArray.addAll(subtypeIds);
+				errorResult.put("subtypes", subtypesArray);
+				return Response.status(Response.Status.CONFLICT)
+						.entity(errorResult.toJSONString()).build();
+			}
+			
+			// Check for relationship types referencing this type
+			List<String> referencingRelationshipTypes = getReferencingRelationshipTypes(repositoryId, typeId);
+			if (!referencingRelationshipTypes.isEmpty()) {
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "Cannot delete type '" + typeId + "' because it is referenced by relationship types. Update or delete the following relationship types first: " + String.join(", ", referencingRelationshipTypes));
+				JSONArray relationshipsArray = new JSONArray();
+				relationshipsArray.addAll(referencingRelationshipTypes);
+				errorResult.put("referencingRelationships", relationshipsArray);
+				return Response.status(Response.Status.CONFLICT)
+						.entity(errorResult.toJSONString()).build();
+			}
+			
 			// Delete type definition
 			typeService.deleteTypeDefinition(repositoryId, typeId);
 			
@@ -447,6 +491,7 @@ public class TypeResource extends ResourceBase {
 			result.put("status", "success");
 			result.put("message", "Type definition deleted successfully");
 			result.put("typeId", typeId);
+			result.put("warning", "This operation is NemakiWare-specific and not CMIS-compliant. Existing documents with this type will fall back to base type behavior.");
 			
 			return Response.status(Response.Status.OK)
 					.entity(result.toJSONString())
@@ -466,6 +511,66 @@ public class TypeResource extends ResourceBase {
 					.type(MediaType.APPLICATION_JSON)
 					.build();
 		}
+	}
+	
+	/**
+	 * Get list of subtype IDs for a given type
+	 * @param repositoryId Repository ID
+	 * @param typeId Type ID to check for subtypes
+	 * @return List of subtype IDs (empty if no subtypes)
+	 */
+	private List<String> getSubtypeIds(String repositoryId, String typeId) {
+		List<String> subtypeIds = new ArrayList<String>();
+		
+		try {
+			// Get all type definitions and check which ones have this type as parent
+			List<NemakiTypeDefinition> allTypes = typeService.getTypeDefinitions(repositoryId);
+			for (NemakiTypeDefinition type : allTypes) {
+				if (typeId.equals(type.getParentId())) {
+					subtypeIds.add(type.getTypeId());
+				}
+			}
+		} catch (Exception e) {
+			log.error("Error getting subtypes for type: " + typeId, e);
+		}
+		
+		return subtypeIds;
+	}
+	
+	/**
+	 * Get list of relationship type IDs that reference a given type in allowedSourceTypes or allowedTargetTypes
+	 * @param repositoryId Repository ID
+	 * @param typeId Type ID to check for references
+	 * @return List of relationship type IDs that reference this type (empty if none)
+	 */
+	private List<String> getReferencingRelationshipTypes(String repositoryId, String typeId) {
+		List<String> referencingTypes = new ArrayList<String>();
+		
+		try {
+			// Get all type definitions and check relationship types
+			List<NemakiTypeDefinition> allTypes = typeService.getTypeDefinitions(repositoryId);
+			for (NemakiTypeDefinition type : allTypes) {
+				// Only check relationship types
+				if (BaseTypeId.CMIS_RELATIONSHIP.equals(type.getBaseId())) {
+					// Check allowedSourceTypes
+					List<String> allowedSourceTypes = type.getAllowedSourceTypes();
+					if (allowedSourceTypes != null && allowedSourceTypes.contains(typeId)) {
+						referencingTypes.add(type.getTypeId());
+						continue; // Don't add twice if both source and target reference the type
+					}
+					
+					// Check allowedTargetTypes
+					List<String> allowedTargetTypes = type.getAllowedTargetTypes();
+					if (allowedTargetTypes != null && allowedTargetTypes.contains(typeId)) {
+						referencingTypes.add(type.getTypeId());
+					}
+				}
+			}
+		} catch (Exception e) {
+			log.error("Error getting referencing relationship types for type: " + typeId, e);
+		}
+		
+		return referencingTypes;
 	}
 
 	// Helper methods for JSON conversion
@@ -811,9 +916,170 @@ public class TypeResource extends ResourceBase {
 	}
 	
 	/**
+	 * Parse JSON type definition data for update operation
+	 * This method parses JSON with update mode enabled, allowing modification of existing types
+	 */
+	private void parseJsonForUpdate(String repositoryId, String jsonData) throws Exception {
+		log.debug("parseJsonForUpdate method called for repository: " + repositoryId);
+		
+		try {
+			org.json.simple.parser.JSONParser parser = new org.json.simple.parser.JSONParser();
+			Object parsed = parser.parse(jsonData);
+			
+			if (parsed instanceof JSONObject) {
+				JSONObject typeJson = (JSONObject) parsed;
+				log.debug("Parsing single type definition for update");
+				parseJsonTypeDefinition(repositoryId, typeJson, true);
+			} else if (parsed instanceof JSONArray) {
+				JSONArray typesArray = (JSONArray) parsed;
+				log.debug("Parsing multiple type definitions for update: " + typesArray.size());
+				for (Object typeObj : typesArray) {
+					if (typeObj instanceof JSONObject) {
+						parseJsonTypeDefinition(repositoryId, (JSONObject) typeObj, true);
+					}
+				}
+			} else {
+				throw new Exception("Invalid JSON format - expected object or array");
+			}
+			
+			log.debug("JSON parsing for update completed - typeMaps: " + typeMaps.size());
+			
+		} catch (Exception e) {
+			log.error("JSON parsing error for update: " + e.getMessage(), e);
+			throw new Exception("Failed to parse JSON type definition for update: " + e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * Update an existing type definition with new data from typeMaps
+	 * This method handles property definition updates (add new, update existing)
+	 * @param repositoryId Repository ID
+	 * @param existingType The existing type definition to update
+	 */
+	private void updateTypeDefinition(String repositoryId, NemakiTypeDefinition existingType) throws Exception {
+		log.info("updateTypeDefinition called for type: " + existingType.getTypeId());
+		
+		if (typeMaps.isEmpty()) {
+			throw new Exception("No type definition found in parsed data");
+		}
+		
+		// Get the new type definition from typeMaps
+		NemakiTypeDefinition newTypeDef = typeMaps.get(existingType.getTypeId());
+		if (newTypeDef == null) {
+			throw new Exception("Type definition not found in parsed data: " + existingType.getTypeId());
+		}
+		
+		// Update basic properties on existing type (preserve ID and revision)
+		existingType.setLocalName(newTypeDef.getLocalName());
+		existingType.setLocalNameSpace(newTypeDef.getLocalNameSpace());
+		existingType.setDisplayName(newTypeDef.getDisplayName());
+		existingType.setDescription(newTypeDef.getDescription());
+		existingType.setCreatable(newTypeDef.isCreatable());
+		existingType.setQueryable(newTypeDef.isQueryable());
+		existingType.setFulltextIndexed(newTypeDef.isFulltextIndexed());
+		existingType.setIncludedInSupertypeQuery(newTypeDef.isIncludedInSupertypeQuery());
+		existingType.setControllablePolicy(newTypeDef.isControllablePolicy());
+		existingType.setControllableACL(newTypeDef.isControllableACL());
+		
+		// Update relationship-specific attributes if applicable
+		if (BaseTypeId.CMIS_RELATIONSHIP.equals(existingType.getBaseId())) {
+			existingType.setAllowedSourceTypes(newTypeDef.getAllowedSourceTypes());
+			existingType.setAllowedTargetTypes(newTypeDef.getAllowedTargetTypes());
+		}
+		
+		// Handle property definitions
+		List<String> newPropertyDetailIds = new ArrayList<String>();
+		List<String> existingPropertyDetailIds = existingType.getProperties();
+		if (existingPropertyDetailIds == null) {
+			existingPropertyDetailIds = new ArrayList<String>();
+		}
+		
+		// Create new properties from coreMaps/detailMaps
+		for (Entry<String, NemakiPropertyDefinitionCore> coreEntry : coreMaps.entrySet()) {
+			String propertyId = coreEntry.getKey();
+			NemakiPropertyDefinitionCore newCore = coreEntry.getValue();
+			NemakiPropertyDefinitionDetail newDetail = detailMaps.get(propertyId);
+			
+			if (newDetail == null) {
+				log.warn("No detail found for property: " + propertyId + ", skipping");
+				continue;
+			}
+			
+			// Check if property already exists
+			NemakiPropertyDefinitionCore existingCore = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
+			
+			if (existingCore != null) {
+				// Property exists - update it
+				log.debug("Updating existing property: " + propertyId);
+				
+				// Update core properties
+				existingCore.setPropertyType(newCore.getPropertyType());
+				existingCore.setCardinality(newCore.getCardinality());
+				existingCore.setQueryName(newCore.getQueryName());
+				// Note: We don't change propertyId as it's the identifier
+				
+				// Find and update the detail
+				List<NemakiPropertyDefinitionDetail> existingDetails = 
+					typeService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, existingCore.getId());
+				
+				if (!existingDetails.isEmpty()) {
+					NemakiPropertyDefinitionDetail existingDetail = existingDetails.get(0);
+					existingDetail.setUpdatability(newDetail.getUpdatability());
+					existingDetail.setRequired(newDetail.isRequired());
+					existingDetail.setQueryable(newDetail.isQueryable());
+					existingDetail.setOpenChoice(newDetail.isOpenChoice());
+					
+					// Update detail in database
+					typeService.updatePropertyDefinitionDetail(repositoryId, existingDetail);
+					newPropertyDetailIds.add(existingDetail.getId());
+					log.debug("Updated property detail: " + existingDetail.getId());
+				}
+			} else {
+				// Property doesn't exist - create it
+				log.debug("Creating new property: " + propertyId);
+				NemakiPropertyDefinition npd = new NemakiPropertyDefinition(newCore, newDetail);
+				NemakiPropertyDefinitionDetail createdDetail = typeService.createPropertyDefinition(repositoryId, npd);
+				if (createdDetail != null) {
+					newPropertyDetailIds.add(createdDetail.getId());
+					log.debug("Created new property detail: " + createdDetail.getId());
+				}
+			}
+		}
+		
+		// Keep existing properties that are not in the new definition
+		// (This preserves properties that weren't included in the update)
+		for (String existingDetailId : existingPropertyDetailIds) {
+			if (!newPropertyDetailIds.contains(existingDetailId)) {
+				// Check if this property should be kept or removed
+				// For now, we keep all existing properties not explicitly updated
+				newPropertyDetailIds.add(existingDetailId);
+				log.debug("Keeping existing property detail: " + existingDetailId);
+			}
+		}
+		
+		// Update the properties list
+		existingType.setProperties(newPropertyDetailIds);
+		
+		// Save the updated type definition
+		typeService.updateTypeDefinition(repositoryId, existingType);
+		log.info("Type definition updated successfully: " + existingType.getTypeId());
+	}
+
+	/**
 	 * Parse individual JSON type definition and convert to internal format
+	 * Supports both creation of new types and update of existing types
 	 */
 	private void parseJsonTypeDefinition(String repositoryId, JSONObject typeJson) throws Exception {
+		parseJsonTypeDefinition(repositoryId, typeJson, false);
+	}
+	
+	/**
+	 * Parse individual JSON type definition and convert to internal format
+	 * @param repositoryId Repository ID
+	 * @param typeJson JSON object containing type definition
+	 * @param isUpdate If true, update existing type instead of skipping
+	 */
+	private void parseJsonTypeDefinition(String repositoryId, JSONObject typeJson, boolean isUpdate) throws Exception {
 		
 		// Extract basic type information
 		String typeId = (String) typeJson.get("id");
@@ -826,11 +1092,12 @@ public class TypeResource extends ResourceBase {
 			return;
 		}
 		
-		log.debug("Processing type: " + typeId);
+		log.debug("Processing type: " + typeId + ", isUpdate: " + isUpdate);
 		
 		// Check if type already exists
-		if (existType(repositoryId, typeId)) {
-			log.warn("Type " + typeId + " already exists, skipping");
+		boolean typeExists = existType(repositoryId, typeId);
+		if (typeExists && !isUpdate) {
+			log.warn("Type " + typeId + " already exists, skipping (use update mode to modify)");
 			return;
 		}
 		

@@ -943,6 +943,27 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
 
   return (
     <div>
+      {isEditing && (
+        <Alert
+          message="CMIS非準拠の操作"
+          description={
+            <div>
+              <p style={{ margin: '0 0 8px 0' }}>
+                <strong>注意:</strong> タイプ定義の編集はCMIS標準に準拠していないNemakiWare独自の操作です。
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                <li>既存のドキュメントに影響を与える可能性があります</li>
+                <li>プロパティ定義の変更は既存データとの整合性に注意が必要です</li>
+                <li>他のCMISクライアントとの互換性が保証されません</li>
+              </ul>
+            </div>
+          }
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
       {validationErrors.length > 0 && (
         <Alert
           message="入力エラー"
