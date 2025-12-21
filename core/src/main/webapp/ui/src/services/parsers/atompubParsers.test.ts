@@ -14,11 +14,15 @@ import {
   getPropertyValue,
   extractAllProperties,
   extractAllowableActions,
+  extractExtensions,
+  extractCoercionWarnings,
   parseAtomEntry,
   parseAtomFeed,
   parseAtomEntryResponse,
   ParsedAtomEntry,
-  ParsedAllowableActions
+  ParsedAllowableActions,
+  ParsedCmisExtension,
+  ParsedCoercionWarning
 } from './atompubParsers';
 
 // Sample AtomPub XML responses for testing
@@ -512,5 +516,106 @@ describe('Edge Cases', () => {
     
     expect(entry).not.toBeNull();
     expect(entry!.properties['custom:count']).toBeUndefined();
+  });
+});
+
+// Sample XML with coercion warnings extension
+const SAMPLE_ENTRY_WITH_COERCION_WARNINGS = `<?xml version="1.0" encoding="UTF-8"?>
+<entry xmlns="http://www.w3.org/2005/Atom" xmlns:cmisra="http://docs.oasis-open.org/ns/cmis/restatom/200908/" xmlns:cmis="http://docs.oasis-open.org/ns/cmis/core/200908/">
+  <title>Document with Coercion Warnings</title>
+  <id>urn:uuid:coercion-doc-123</id>
+  <cmisra:object>
+    <cmis:properties>
+      <cmis:propertyId propertyDefinitionId="cmis:objectId">
+        <cmis:value>coercion-doc-123</cmis:value>
+      </cmis:propertyId>
+      <cmis:propertyString propertyDefinitionId="cmis:name">
+        <cmis:value>Document with Coercion Warnings</cmis:value>
+      </cmis:propertyString>
+      <coercionWarnings xmlns="http://www.aegif.jp/nemakiware/coercion/">
+        <warning propertyId="nemaki:customProp" type="CARDINALITY_MISMATCH" reason="multi->single with 3 elements" elementCount="3"/>
+        <warning propertyId="nemaki:anotherProp" type="TYPE_COERCION_REJECTED" reason="Cannot convert 'abc' to integer"/>
+      </coercionWarnings>
+    </cmis:properties>
+    <cmis:allowableActions>
+      <cmis:canDeleteObject>true</cmis:canDeleteObject>
+    </cmis:allowableActions>
+  </cmisra:object>
+</entry>`;
+
+describe('extractExtensions', () => {
+  it('should extract coercion warnings extension from properties', () => {
+    const doc = parseXmlString(SAMPLE_ENTRY_WITH_COERCION_WARNINGS);
+    expect(doc).not.toBeNull();
+    const entry = doc!.documentElement;
+    const cmisObject = getCmisObject(entry);
+    const properties = getCmisProperties(cmisObject!);
+    
+    const extensions = extractExtensions(properties!);
+    
+    expect(extensions.length).toBeGreaterThan(0);
+    expect(extensions[0].name).toBe('coercionWarnings');
+  });
+
+  it('should return empty array when no extensions exist', () => {
+    const doc = parseXmlString(SAMPLE_ATOM_ENTRY);
+    expect(doc).not.toBeNull();
+    const entry = doc!.documentElement;
+    const cmisObject = getCmisObject(entry);
+    const properties = getCmisProperties(cmisObject!);
+    
+    const extensions = extractExtensions(properties!);
+    
+    expect(extensions).toHaveLength(0);
+  });
+});
+
+describe('extractCoercionWarnings', () => {
+  it('should extract coercion warnings from extensions', () => {
+    const doc = parseXmlString(SAMPLE_ENTRY_WITH_COERCION_WARNINGS);
+    expect(doc).not.toBeNull();
+    const entry = doc!.documentElement;
+    const cmisObject = getCmisObject(entry);
+    const properties = getCmisProperties(cmisObject!);
+    
+    const extensions = extractExtensions(properties!);
+    const warnings = extractCoercionWarnings(extensions);
+    
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0].propertyId).toBe('nemaki:customProp');
+    expect(warnings[0].type).toBe('CARDINALITY_MISMATCH');
+    expect(warnings[0].reason).toBe('multi->single with 3 elements');
+    expect(warnings[0].elementCount).toBe(3);
+    
+    expect(warnings[1].propertyId).toBe('nemaki:anotherProp');
+    expect(warnings[1].type).toBe('TYPE_COERCION_REJECTED');
+    expect(warnings[1].reason).toBe("Cannot convert 'abc' to integer");
+  });
+
+  it('should return empty array when no coercion warnings exist', () => {
+    const extensions: ParsedCmisExtension[] = [];
+    const warnings = extractCoercionWarnings(extensions);
+    
+    expect(warnings).toHaveLength(0);
+  });
+});
+
+describe('parseAtomEntry with coercion warnings', () => {
+  it('should include coercion warnings in parsed entry', () => {
+    const doc = parseXmlString(SAMPLE_ENTRY_WITH_COERCION_WARNINGS);
+    const entry = parseAtomEntry(doc!.documentElement);
+    
+    expect(entry.coercionWarnings).toBeDefined();
+    expect(entry.coercionWarnings.length).toBeGreaterThan(0);
+    expect(entry.coercionWarnings[0].propertyId).toBe('nemaki:customProp');
+    expect(entry.coercionWarnings[0].type).toBe('CARDINALITY_MISMATCH');
+  });
+
+  it('should have empty coercion warnings array when no warnings exist', () => {
+    const doc = parseXmlString(SAMPLE_ATOM_ENTRY);
+    const entry = parseAtomEntry(doc!.documentElement);
+    
+    expect(entry.coercionWarnings).toBeDefined();
+    expect(entry.coercionWarnings).toHaveLength(0);
   });
 });

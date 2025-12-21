@@ -638,3 +638,94 @@ mvn clean package -f core/pom.xml -Pdevelopment -DskipTests
 # Verify WAR file size (should be ~300MB)
 ls -lh core/target/core.war
 ```
+
+---
+
+## 🧪 タイプ更新・削除機能のテスト戦略 (2025-12-20)
+
+### テストレベルの分類
+
+NemakiWareのタイプ更新・削除機能には、以下の3レベルのテストが必要です：
+
+| レベル | 種類 | 担当 | 説明 |
+|--------|------|------|------|
+| **Level 1** | ユニットテスト（モック） | 現在のエージェント | サービス層のロジックをモックDAOでテスト |
+| **Level 2** | 統合テスト（インメモリDAO） | 現在のエージェント | REST→Service→DAO協調をインメモリスタブでテスト |
+| **Level 3** | E2Eテスト（実コンテナ） | **別のエージェント** | 実際のDocker環境でのフルスタックテスト |
+
+### Level 1: ユニットテスト（実装済み）
+
+**ファイル**: `core/src/test/java/jp/aegif/nemaki/rest/TypeResourceTests.java`
+
+**カバー範囲**:
+- タイプ作成のバリデーション
+- サブタイプ検出ロジック
+- リレーションシップ参照検出
+- プロパティ型/カーディナリティ変換ロジック
+
+### Level 2: 統合テスト（実装予定）
+
+**目的**: REST API→TypeService→ContentService/TypeService協調の検証
+
+**アプローチ**:
+- インメモリDAOスタブを使用（CouchDB不要）
+- Spring TestContextを使用してDI環境を構築
+- 実際のHTTPリクエスト/レスポンスをシミュレート
+
+**テスト対象シナリオ**:
+1. タイプ定義の作成→更新→削除のライフサイクル
+2. サブタイプが存在する場合の削除拒否
+3. リレーションシップ参照がある場合の削除拒否
+4. プロパティ型変更後の既存オブジェクト読み込み（coercion警告）
+5. カーディナリティ変更後の既存オブジェクト読み込み
+
+### Level 3: E2Eテスト（別エージェント担当）
+
+**重要**: 実際のDockerコンテナを使用したE2Eテストは、別のエージェントに委譲します。
+
+**委譲先エージェントへの指示**:
+```markdown
+タスク: タイプ更新・削除機能のE2Eテスト
+前提条件: 
+- PR #402 がマージ済み
+- Docker環境が起動済み（CouchDB, Solr, Core）
+
+テストシナリオ:
+1. カスタムタイプを作成
+2. そのタイプでドキュメントを作成
+3. タイプ定義のプロパティ型を変更
+4. ドキュメントを再読み込みし、coercion警告が表示されることを確認
+5. ドキュメントを再保存し、警告が消えることを確認
+6. タイプを削除しようとし、ドキュメントが存在するため削除できないことを確認
+
+期待成果:
+- Playwrightテストファイル: tests/admin/type-update-delete.spec.ts
+- 全シナリオの通過
+```
+
+### Coercion警告のテスト
+
+**バックエンド（CompileServiceImpl）**:
+- `normalizeCardinality()`: multi→single変換時の警告
+- `coerceElement()`: 型変換失敗時の警告
+- `addCoercionWarningsExtension()`: CMIS Extensionへの警告追加
+
+**フロントエンド（DocumentViewer）**:
+- coercion警告がある場合のAlert表示
+- 警告詳細のCollapse展開
+- プロパティタブでの警告表示
+
+### テスト実行コマンド
+
+```bash
+# Level 1: ユニットテスト
+cd /path/to/NemakiWare
+mvn test -pl core -Dtest=TypeResourceTests
+
+# Level 2: 統合テスト（実装後）
+mvn test -pl core -Dtest=TypeResourceIntegrationTests
+
+# Level 3: E2Eテスト（別エージェント）
+cd core/src/main/webapp/ui
+npx playwright test tests/admin/type-update-delete.spec.ts --project=chromium
+```

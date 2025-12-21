@@ -278,7 +278,7 @@ import { getCmisAuthHeaders } from './auth/CmisAuthHeaderProvider';
 import { CmisHttpClient } from './http';
 import { AtomPubClient } from './clients';
 import { ParsedAtomEntry } from './parsers';
-import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions } from '../types/cmis';
+import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions, CoercionWarning } from '../types/cmis';
 import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } from '../types/typeMigration';
 
 /**
@@ -286,6 +286,7 @@ import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } fr
  * 
  * This helper function bridges the new parser output format to the existing CMISObject interface.
  * It converts the allowableActions array to an object with boolean properties.
+ * It also extracts coercion warnings from CMIS extensions for UI display.
  */
 function convertParsedEntryToCmisObject(entry: ParsedAtomEntry): CMISObject {
   const props = entry.properties;
@@ -300,6 +301,15 @@ function convertParsedEntryToCmisObject(entry: ParsedAtomEntry): CMISObject {
   const objectType = String(props['cmis:objectTypeId'] || 'cmis:document');
   const baseTypeId = String(props['cmis:baseTypeId'] || '');
   const baseType = baseTypeId || (objectType.includes('folder') ? 'cmis:folder' : 'cmis:document');
+  
+  // Convert parsed coercion warnings to CMISObject format
+  const coercionWarnings: CoercionWarning[] = entry.coercionWarnings.map(w => ({
+    propertyId: w.propertyId,
+    type: w.type as CoercionWarning['type'],
+    reason: w.reason,
+    elementCount: w.elementCount,
+    elementIndex: w.elementIndex
+  }));
   
   return {
     id,
@@ -319,7 +329,8 @@ function convertParsedEntryToCmisObject(entry: ParsedAtomEntry): CMISObject {
     contentStreamMimeType: props['cmis:contentStreamMimeType'] as string | undefined,
     versionLabel: props['cmis:versionLabel'] as string | undefined,
     isLatestVersion: props['cmis:isLatestVersion'] as boolean | undefined,
-    isLatestMajorVersion: props['cmis:isLatestMajorVersion'] as boolean | undefined
+    isLatestMajorVersion: props['cmis:isLatestMajorVersion'] as boolean | undefined,
+    coercionWarnings: coercionWarnings.length > 0 ? coercionWarnings : undefined
   };
 }
 

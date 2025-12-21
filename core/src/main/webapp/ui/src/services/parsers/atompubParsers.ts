@@ -40,6 +40,28 @@ export interface ParsedAllowableActions {
 }
 
 /**
+ * Parsed CMIS extension element from XML
+ */
+export interface ParsedCmisExtension {
+  namespace: string;
+  name: string;
+  attributes: Record<string, string>;
+  value?: string;
+  children: ParsedCmisExtension[];
+}
+
+/**
+ * Parsed coercion warning from NemakiWare extensions
+ */
+export interface ParsedCoercionWarning {
+  propertyId: string;
+  type: string;
+  reason: string;
+  elementCount?: number;
+  elementIndex?: number;
+}
+
+/**
  * Parsed CMIS object from AtomPub entry
  */
 export interface ParsedAtomEntry {
@@ -47,6 +69,8 @@ export interface ParsedAtomEntry {
   atomId: string;
   properties: ParsedCmisProperties;
   allowableActions: ParsedAllowableActions;
+  extensions: ParsedCmisExtension[];
+  coercionWarnings: ParsedCoercionWarning[];
 }
 
 /**
@@ -205,6 +229,120 @@ export function extractAllProperties(properties: Element): ParsedCmisProperties 
 }
 
 /**
+ * Extract CMIS extensions from a parent element
+ * 
+ * CMIS extensions are vendor-specific elements that can be added to responses.
+ * NemakiWare uses extensions to include coercion warnings when property values
+ * don't match current type definitions.
+ * 
+ * @param parent Parent element (cmis:properties or cmisra:object)
+ * @returns Array of parsed extension elements
+ */
+export function extractExtensions(parent: Element): ParsedCmisExtension[] {
+  const extensions: ParsedCmisExtension[] = [];
+  
+  // Look for any elements that are not standard CMIS elements
+  // Extensions typically have a custom namespace
+  const children = parent.children;
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    const tagName = child.localName || child.tagName;
+    
+    // Skip standard CMIS elements
+    if (tagName.startsWith('cmis:') || tagName.startsWith('cmisra:') ||
+        ['properties', 'allowableActions', 'object', 'entry', 'title', 'id', 
+         'link', 'author', 'updated', 'published', 'content', 'summary'].includes(tagName)) {
+      continue;
+    }
+    
+    // This might be an extension element
+    const namespace = child.namespaceURI || '';
+    
+    // Check if this is a NemakiWare coercion extension
+    if (namespace.includes('nemakiware') || namespace.includes('coercion') || 
+        tagName === 'coercionWarnings' || tagName === 'warning') {
+      extensions.push(parseExtensionElement(child));
+    }
+  }
+  
+  return extensions;
+}
+
+/**
+ * Parse a single extension element recursively
+ * 
+ * @param element Extension element to parse
+ * @returns Parsed extension object
+ */
+export function parseExtensionElement(element: Element): ParsedCmisExtension {
+  const attributes: Record<string, string> = {};
+  
+  // Extract all attributes
+  for (let i = 0; i < element.attributes.length; i++) {
+    const attr = element.attributes[i];
+    attributes[attr.name] = attr.value;
+  }
+  
+  // Parse child elements recursively
+  const children: ParsedCmisExtension[] = [];
+  for (let i = 0; i < element.children.length; i++) {
+    children.push(parseExtensionElement(element.children[i]));
+  }
+  
+  return {
+    namespace: element.namespaceURI || '',
+    name: element.localName || element.tagName,
+    attributes,
+    value: element.children.length === 0 ? (element.textContent || undefined) : undefined,
+    children
+  };
+}
+
+/**
+ * Extract coercion warnings from extensions
+ * 
+ * NemakiWare adds coercion warnings as CMIS extensions when property values
+ * were coerced or dropped due to type/cardinality mismatches.
+ * 
+ * @param extensions Array of parsed extensions
+ * @returns Array of coercion warnings
+ */
+export function extractCoercionWarnings(extensions: ParsedCmisExtension[]): ParsedCoercionWarning[] {
+  const warnings: ParsedCoercionWarning[] = [];
+  
+  for (const ext of extensions) {
+    if (ext.name === 'coercionWarnings') {
+      // Process child warning elements - don't recurse further since we handle children here
+      for (const child of ext.children) {
+        if (child.name === 'warning') {
+          warnings.push({
+            propertyId: child.attributes['propertyId'] || '',
+            type: child.attributes['type'] || '',
+            reason: child.attributes['reason'] || '',
+            elementCount: child.attributes['elementCount'] ? parseInt(child.attributes['elementCount'], 10) : undefined,
+            elementIndex: child.attributes['elementIndex'] ? parseInt(child.attributes['elementIndex'], 10) : undefined
+          });
+        }
+      }
+    } else if (ext.name === 'warning') {
+      // Direct warning element (standalone, not inside coercionWarnings)
+      warnings.push({
+        propertyId: ext.attributes['propertyId'] || '',
+        type: ext.attributes['type'] || '',
+        reason: ext.attributes['reason'] || '',
+        elementCount: ext.attributes['elementCount'] ? parseInt(ext.attributes['elementCount'], 10) : undefined,
+        elementIndex: ext.attributes['elementIndex'] ? parseInt(ext.attributes['elementIndex'], 10) : undefined
+      });
+    } else if (ext.children.length > 0) {
+      // Only recurse for non-coercionWarnings elements to find nested warnings
+      warnings.push(...extractCoercionWarnings(ext.children));
+    }
+  }
+  
+  return warnings;
+}
+
+/**
  * Extract allowable actions from cmis:allowableActions element
  * 
  * IMPORTANT: This function preserves both true AND false values from the server.
@@ -282,11 +420,25 @@ export function parseAtomEntry(entry: Element): ParsedAtomEntry {
     ? extractAllowableActions(cmisObject)
     : extractAllowableActions(entry);
   
+  // Extract CMIS extensions (including NemakiWare coercion warnings)
+  let extensions: ParsedCmisExtension[] = [];
+  if (propertiesElem) {
+    extensions = extractExtensions(propertiesElem);
+  }
+  if (cmisObject && extensions.length === 0) {
+    extensions = extractExtensions(cmisObject);
+  }
+  
+  // Extract coercion warnings from extensions
+  const coercionWarnings = extractCoercionWarnings(extensions);
+  
   return {
     atomTitle,
     atomId,
     properties,
-    allowableActions
+    allowableActions,
+    extensions,
+    coercionWarnings
   };
 }
 

@@ -248,7 +248,9 @@ import {
   Input,
   Tag,
   Popconfirm,
-  Select
+  Select,
+  Alert,
+  Collapse
 } from 'antd';
 import {
   DownloadOutlined,
@@ -259,7 +261,8 @@ import {
   ArrowLeftOutlined,
   PlusOutlined,
   DeleteOutlined,
-  SwapOutlined
+  SwapOutlined,
+  WarningOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
@@ -892,6 +895,60 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               </Descriptions.Item>
             )}
           </Descriptions>
+
+          {/* Coercion Warning Alert - displays when property values don't match current type definition */}
+          {object.coercionWarnings && object.coercionWarnings.length > 0 && (
+            <Alert
+              type="warning"
+              icon={<WarningOutlined />}
+              showIcon
+              message={
+                <span>
+                  <strong>プロパティ値の不整合が検出されました</strong>
+                  <span style={{ marginLeft: 8 }}>
+                    ({object.coercionWarnings.length}件の警告)
+                  </span>
+                </span>
+              }
+              description={
+                <div>
+                  <p style={{ marginBottom: 8 }}>
+                    このドキュメントには、現在のタイプ定義と一致しないプロパティ値が含まれています。
+                    プロパティタブで値を確認し、正しい値で再保存してください。
+                  </p>
+                  <Collapse
+                    size="small"
+                    items={[
+                      {
+                        key: 'warnings',
+                        label: '警告の詳細を表示',
+                        children: (
+                          <ul style={{ margin: 0, paddingLeft: 20 }}>
+                            {object.coercionWarnings.map((warning, index) => (
+                              <li key={index} style={{ marginBottom: 4 }}>
+                                <strong>{warning.propertyId}</strong>: {' '}
+                                {warning.type === 'CARDINALITY_MISMATCH' && 'カーディナリティ不整合'}
+                                {warning.type === 'TYPE_COERCION_REJECTED' && '型変換失敗'}
+                                {warning.type === 'LIST_ELEMENT_DROPPED' && 'リスト要素の欠落'}
+                                {' - '}
+                                {warning.reason}
+                                {warning.elementCount !== undefined && (
+                                  <span style={{ color: '#666' }}>
+                                    {' '}(要素数: {warning.elementCount})
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        ),
+                      },
+                    ]}
+                  />
+                </div>
+              }
+              style={{ marginTop: 16, marginBottom: 16 }}
+            />
+          )}
 
           <Tabs items={tabItems} />
         </Space>

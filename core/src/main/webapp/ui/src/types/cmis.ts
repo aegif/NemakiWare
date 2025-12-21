@@ -101,6 +101,31 @@ export interface AllowableActions {
   canApplyACL?: boolean;
 }
 
+/**
+ * CMIS Extension element for vendor-specific data in responses.
+ * NemakiWare uses this for coercion warnings when property values
+ * don't match current type definitions.
+ */
+export interface CmisExtensionElement {
+  namespace: string;
+  name: string;
+  attributes?: Record<string, string>;
+  value?: string;
+  children?: CmisExtensionElement[];
+}
+
+/**
+ * Coercion warning from NemakiWare when property values were
+ * coerced or dropped due to type/cardinality mismatches.
+ */
+export interface CoercionWarning {
+  propertyId: string;
+  type: 'CARDINALITY_MISMATCH' | 'TYPE_COERCION_REJECTED' | 'LIST_ELEMENT_DROPPED';
+  reason: string;
+  elementCount?: number;
+  elementIndex?: number;
+}
+
 export interface CMISObject {
   id: string;
   name: string;
@@ -121,6 +146,10 @@ export interface CMISObject {
   lastModificationDate?: string;
   aclInherited?: boolean;
   secondaryTypeIds?: string[];
+  /** CMIS Extension elements (vendor-specific data) */
+  extensions?: CmisExtensionElement[];
+  /** Parsed coercion warnings from NemakiWare extensions */
+  coercionWarnings?: CoercionWarning[];
 }
 
 export interface SearchResult {
