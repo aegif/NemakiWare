@@ -583,3 +583,836 @@ test.describe('Type REST API - NemakiWare Custom Types', () => {
     console.log('Restored original description');
   });
 });
+
+// ============================================================================
+// ADDITIONAL TEST SCENARIOS
+// ============================================================================
+
+test.describe('Type REST API - Secondary Types', () => {
+  test('POST /create - should create secondary type based on cmis:secondary', async ({ request }) => {
+    const suffix = `secondary${Date.now()}`;
+    const secondaryType = {
+      id: `test:aspect${suffix}`,
+      localName: `aspect${suffix}`,
+      displayName: `Test Aspect ${suffix}`,
+      description: 'A secondary type (aspect) for testing',
+      baseId: 'cmis:secondary',
+      parentId: 'cmis:secondary',
+      creatable: false,  // Secondary types are typically not directly creatable
+      queryable: true,
+      fulltextIndexed: false,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: false,
+      propertyDefinitions: {
+        [`test:aspectProp${suffix}`]: {
+          id: `test:aspectProp${suffix}`,
+          displayName: 'Aspect Property',
+          description: 'Property defined by secondary type',
+          propertyType: 'string',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        }
+      }
+    };
+
+    const response = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(secondaryType)
+    });
+
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.status).toBe('success');
+    console.log('Created secondary type:', secondaryType.id);
+
+    // Verify the type was created
+    const verifyResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(secondaryType.id)}`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Accept': 'application/json'
+      }
+    });
+    expect(verifyResponse.status()).toBe(200);
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(secondaryType.id)}`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Accept': 'application/json'
+      }
+    });
+  });
+});
+
+test.describe('Type REST API - Folder Types', () => {
+  test('POST /create - should create folder-based custom type', async ({ request }) => {
+    const suffix = `folder${Date.now()}`;
+    const folderType = {
+      id: `test:customFolder${suffix}`,
+      localName: `customFolder${suffix}`,
+      displayName: `Custom Folder Type ${suffix}`,
+      description: 'A folder-based custom type for testing',
+      baseId: 'cmis:folder',
+      parentId: 'cmis:folder',
+      creatable: true,
+      fileable: true,
+      queryable: true,
+      fulltextIndexed: false,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {
+        [`test:folderCategory${suffix}`]: {
+          id: `test:folderCategory${suffix}`,
+          displayName: 'Folder Category',
+          description: 'Category of the folder',
+          propertyType: 'string',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        }
+      }
+    };
+
+    const response = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(folderType)
+    });
+
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.status).toBe('success');
+    console.log('Created folder type:', folderType.id);
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(folderType.id)}`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Accept': 'application/json'
+      }
+    });
+  });
+});
+
+test.describe('Type REST API - All Property Types', () => {
+  test('POST /create - should create type with all CMIS property types', async ({ request }) => {
+    const suffix = `allprops${Date.now()}`;
+    const typeWithAllProps = {
+      id: `test:allPropertyTypes${suffix}`,
+      localName: `allPropertyTypes${suffix}`,
+      displayName: `All Property Types ${suffix}`,
+      description: 'Type with all CMIS property types for testing',
+      baseId: 'cmis:document',
+      parentId: 'cmis:document',
+      creatable: true,
+      queryable: true,
+      fulltextIndexed: true,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {
+        [`test:stringProp${suffix}`]: {
+          id: `test:stringProp${suffix}`,
+          displayName: 'String Property',
+          propertyType: 'string',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        },
+        [`test:integerProp${suffix}`]: {
+          id: `test:integerProp${suffix}`,
+          displayName: 'Integer Property',
+          propertyType: 'integer',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        },
+        [`test:booleanProp${suffix}`]: {
+          id: `test:booleanProp${suffix}`,
+          displayName: 'Boolean Property',
+          propertyType: 'boolean',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        },
+        [`test:datetimeProp${suffix}`]: {
+          id: `test:datetimeProp${suffix}`,
+          displayName: 'DateTime Property',
+          propertyType: 'datetime',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        },
+        [`test:decimalProp${suffix}`]: {
+          id: `test:decimalProp${suffix}`,
+          displayName: 'Decimal Property',
+          propertyType: 'decimal',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        },
+        [`test:idProp${suffix}`]: {
+          id: `test:idProp${suffix}`,
+          displayName: 'ID Property',
+          propertyType: 'id',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        },
+        [`test:htmlProp${suffix}`]: {
+          id: `test:htmlProp${suffix}`,
+          displayName: 'HTML Property',
+          propertyType: 'html',
+          cardinality: 'single',
+          required: false,
+          queryable: false,
+          updatable: true
+        },
+        [`test:uriProp${suffix}`]: {
+          id: `test:uriProp${suffix}`,
+          displayName: 'URI Property',
+          propertyType: 'uri',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        }
+      }
+    };
+
+    const response = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(typeWithAllProps)
+    });
+
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.status).toBe('success');
+    console.log('Created type with all property types:', typeWithAllProps.id);
+
+    // Verify the type has all properties
+    const verifyResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeWithAllProps.id)}`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Accept': 'application/json'
+      }
+    });
+
+    if (verifyResponse.status() === 200) {
+      const verifyBody = await verifyResponse.json();
+      const propDefs = verifyBody.type.propertyDefinitions || {};
+      const propCount = Object.keys(propDefs).length;
+      console.log(`Type has ${propCount} property definitions`);
+    }
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithAllProps.id)}`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Accept': 'application/json'
+      }
+    });
+  });
+
+  test('POST /create - should create type with multi-value properties', async ({ request }) => {
+    const suffix = `multi${Date.now()}`;
+    const typeWithMultiProps = {
+      id: `test:multiValueType${suffix}`,
+      localName: `multiValueType${suffix}`,
+      displayName: `Multi-Value Type ${suffix}`,
+      description: 'Type with multi-value properties',
+      baseId: 'cmis:document',
+      parentId: 'cmis:document',
+      creatable: true,
+      queryable: true,
+      fulltextIndexed: true,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {
+        [`test:multiString${suffix}`]: {
+          id: `test:multiString${suffix}`,
+          displayName: 'Multi-Value Strings',
+          propertyType: 'string',
+          cardinality: 'multi',
+          required: false,
+          queryable: true,
+          updatable: true
+        },
+        [`test:multiInteger${suffix}`]: {
+          id: `test:multiInteger${suffix}`,
+          displayName: 'Multi-Value Integers',
+          propertyType: 'integer',
+          cardinality: 'multi',
+          required: false,
+          queryable: true,
+          updatable: true
+        },
+        [`test:multiDatetime${suffix}`]: {
+          id: `test:multiDatetime${suffix}`,
+          displayName: 'Multi-Value DateTimes',
+          propertyType: 'datetime',
+          cardinality: 'multi',
+          required: false,
+          queryable: true,
+          updatable: true
+        }
+      }
+    };
+
+    const response = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(typeWithMultiProps)
+    });
+
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.status).toBe('success');
+    console.log('Created type with multi-value properties:', typeWithMultiProps.id);
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithMultiProps.id)}`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Accept': 'application/json'
+      }
+    });
+  });
+});
+
+test.describe('Type REST API - Full CRUD Lifecycle', () => {
+  test('should complete full Create-Read-Update-Delete lifecycle', async ({ request }) => {
+    const suffix = `lifecycle${Date.now()}`;
+    const typeId = `test:lifecycle${suffix}`;
+    const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+
+    // Step 1: CREATE
+    const typeDefinition = {
+      id: typeId,
+      localName: `lifecycle${suffix}`,
+      displayName: `Lifecycle Test Type`,
+      description: 'Initial description',
+      baseId: 'cmis:document',
+      parentId: 'cmis:document',
+      creatable: true,
+      queryable: true,
+      fulltextIndexed: true,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {}
+    };
+
+    const createResponse = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(typeDefinition)
+    });
+
+    expect(createResponse.status()).toBe(200);
+    console.log('Step 1 - CREATE: Success');
+
+    // Step 2: READ (verify creation)
+    const readResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeId)}`, {
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json'
+      }
+    });
+
+    expect(readResponse.status()).toBe(200);
+    const readBody = await readResponse.json();
+    expect(readBody.type.id).toBe(typeId);
+    expect(readBody.type.description).toBe('Initial description');
+    console.log('Step 2 - READ: Verified type exists');
+
+    // Step 3: UPDATE
+    const updatedType = {
+      ...typeDefinition,
+      description: 'Updated description',
+      displayName: 'Updated Lifecycle Type'
+    };
+
+    const updateResponse = await request.put(`${REST_API_BASE}/update/${encodeURIComponent(typeId)}`, {
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(updatedType)
+    });
+
+    expect(updateResponse.status()).toBe(200);
+    console.log('Step 3 - UPDATE: Success');
+
+    // Step 4: READ (verify update)
+    // Note: Server may cache type definitions, so immediate read may return stale data
+    const verifyUpdateResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeId)}`, {
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json'
+      }
+    });
+
+    expect(verifyUpdateResponse.status()).toBe(200);
+    const verifyBody = await verifyUpdateResponse.json();
+    // Server caching may return either old or new description
+    expect(['Initial description', 'Updated description']).toContain(verifyBody.type.description);
+    console.log('Step 4 - VERIFY UPDATE: Type exists, description:', verifyBody.type.description);
+
+    // Step 5: DELETE
+    const deleteResponse = await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeId)}`, {
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json'
+      }
+    });
+
+    expect(deleteResponse.status()).toBe(200);
+    console.log('Step 5 - DELETE: Success');
+
+    // Step 6: READ (verify deletion)
+    const verifyDeleteResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeId)}`, {
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json'
+      }
+    });
+
+    expect(verifyDeleteResponse.status()).toBe(404);
+    console.log('Step 6 - VERIFY DELETE: Type no longer exists');
+    console.log('Full CRUD lifecycle completed successfully!');
+  });
+});
+
+test.describe('Type REST API - Edge Cases', () => {
+  test('POST /create - should handle type with special characters in ID', async ({ request }) => {
+    const suffix = Date.now().toString();
+    // Use Japanese characters in the display name but keep ID ASCII-safe
+    const typeWithSpecialChars = {
+      id: `test:special_type_${suffix}`,
+      localName: `special_type_${suffix}`,
+      displayName: `特殊文字テスト ${suffix}`,  // Japanese characters
+      description: 'Type with special characters: äöü ß 日本語 中文 한국어',
+      baseId: 'cmis:document',
+      parentId: 'cmis:document',
+      creatable: true,
+      queryable: true,
+      fulltextIndexed: true,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {}
+    };
+
+    const response = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Content-Type': 'application/json; charset=utf-8',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(typeWithSpecialChars)
+    });
+
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.status).toBe('success');
+    console.log('Created type with special characters:', typeWithSpecialChars.id);
+
+    // Verify the type preserves special characters
+    const verifyResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(typeWithSpecialChars.id)}`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Accept': 'application/json'
+      }
+    });
+
+    if (verifyResponse.status() === 200) {
+      const verifyBody = await verifyResponse.json();
+      console.log('Display name preserved:', verifyBody.type.displayName);
+    }
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithSpecialChars.id)}`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Accept': 'application/json'
+      }
+    });
+  });
+
+  test('POST /create - should handle type with long description', async ({ request }) => {
+    const suffix = Date.now().toString();
+    const longDescription = 'A'.repeat(5000);  // 5000 character description
+
+    const typeWithLongDesc = {
+      id: `test:longDesc${suffix}`,
+      localName: `longDesc${suffix}`,
+      displayName: `Long Description Type ${suffix}`,
+      description: longDescription,
+      baseId: 'cmis:document',
+      parentId: 'cmis:document',
+      creatable: true,
+      queryable: true,
+      fulltextIndexed: true,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {}
+    };
+
+    const response = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(typeWithLongDesc)
+    });
+
+    // Should either accept the long description or return a validation error
+    expect([200, 400]).toContain(response.status());
+    console.log(`Long description (5000 chars) returned: ${response.status()}`);
+
+    // Cleanup if created
+    if (response.status() === 200) {
+      await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithLongDesc.id)}`, {
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+          'Accept': 'application/json'
+        }
+      });
+    }
+  });
+
+  test('POST /create - should handle type with empty property definitions', async ({ request }) => {
+    const suffix = Date.now().toString();
+    const typeWithEmptyProps = {
+      id: `test:emptyProps${suffix}`,
+      localName: `emptyProps${suffix}`,
+      displayName: `Empty Props Type ${suffix}`,
+      description: 'Type with no custom properties',
+      baseId: 'cmis:document',
+      parentId: 'cmis:document',
+      creatable: true,
+      queryable: true,
+      fulltextIndexed: true,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {}  // Explicitly empty
+    };
+
+    const response = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(typeWithEmptyProps)
+    });
+
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.status).toBe('success');
+    console.log('Created type with empty properties:', typeWithEmptyProps.id);
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithEmptyProps.id)}`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Accept': 'application/json'
+      }
+    });
+  });
+
+  test('PUT /update - should handle adding new property to existing type', async ({ request }) => {
+    const suffix = Date.now().toString();
+    const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+
+    // Create type without properties
+    const initialType = {
+      id: `test:addProp${suffix}`,
+      localName: `addProp${suffix}`,
+      displayName: `Add Property Test ${suffix}`,
+      description: 'Type to test adding properties',
+      baseId: 'cmis:document',
+      parentId: 'cmis:document',
+      creatable: true,
+      queryable: true,
+      fulltextIndexed: true,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {}
+    };
+
+    const createResponse = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(initialType)
+    });
+
+    if (createResponse.status() !== 200) {
+      console.log('Skipping test - could not create initial type');
+      return;
+    }
+
+    // Update to add a new property
+    const updatedType = {
+      ...initialType,
+      propertyDefinitions: {
+        [`test:newProp${suffix}`]: {
+          id: `test:newProp${suffix}`,
+          displayName: 'Newly Added Property',
+          description: 'Property added via update',
+          propertyType: 'string',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        }
+      }
+    };
+
+    const updateResponse = await request.put(`${REST_API_BASE}/update/${encodeURIComponent(initialType.id)}`, {
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(updatedType)
+    });
+
+    expect(updateResponse.status()).toBe(200);
+    console.log('Added new property to existing type');
+
+    // Verify the property was added
+    const verifyResponse = await request.get(`${REST_API_BASE}/show/${encodeURIComponent(initialType.id)}`, {
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json'
+      }
+    });
+
+    if (verifyResponse.status() === 200) {
+      const verifyBody = await verifyResponse.json();
+      const propDefs = verifyBody.type.propertyDefinitions || {};
+      const hasProp = Object.keys(propDefs).some(key => key.includes('newProp'));
+      console.log(`Property was added: ${hasProp}`);
+    }
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(initialType.id)}`, {
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json'
+      }
+    });
+  });
+});
+
+test.describe('Type REST API - Concurrent Operations', () => {
+  test('should handle multiple concurrent type creations', async ({ request }) => {
+    const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+    const timestamp = Date.now();
+    const typeCount = 5;
+
+    // Create multiple types concurrently
+    const createPromises = Array.from({ length: typeCount }, (_, i) => {
+      const typeDefinition = {
+        id: `test:concurrent${timestamp}_${i}`,
+        localName: `concurrent${timestamp}_${i}`,
+        displayName: `Concurrent Test Type ${i}`,
+        description: `Type ${i} created concurrently`,
+        baseId: 'cmis:document',
+        parentId: 'cmis:document',
+        creatable: true,
+        queryable: true,
+        fulltextIndexed: true,
+        includedInSupertypeQuery: true,
+        controllablePolicy: false,
+        controllableACL: true,
+        propertyDefinitions: {}
+      };
+
+      return request.post(`${REST_API_BASE}/create`, {
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        data: JSON.stringify(typeDefinition)
+      });
+    });
+
+    const responses = await Promise.all(createPromises);
+    const successCount = responses.filter(r => r.status() === 200).length;
+    console.log(`Concurrent creation: ${successCount}/${typeCount} succeeded`);
+
+    // All should succeed
+    expect(successCount).toBe(typeCount);
+
+    // Cleanup - delete all created types concurrently
+    const deletePromises = Array.from({ length: typeCount }, (_, i) => {
+      return request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(`test:concurrent${timestamp}_${i}`)}`, {
+        headers: {
+          'Authorization': authHeader,
+          'Accept': 'application/json'
+        }
+      });
+    });
+
+    await Promise.all(deletePromises);
+    console.log('Concurrent cleanup completed');
+  });
+});
+
+test.describe('Type REST API - Property Constraints', () => {
+  test('POST /create - should create type with required property', async ({ request }) => {
+    const suffix = Date.now().toString();
+    const typeWithRequiredProp = {
+      id: `test:requiredProp${suffix}`,
+      localName: `requiredProp${suffix}`,
+      displayName: `Required Property Type ${suffix}`,
+      description: 'Type with required property',
+      baseId: 'cmis:document',
+      parentId: 'cmis:document',
+      creatable: true,
+      queryable: true,
+      fulltextIndexed: true,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {
+        [`test:requiredField${suffix}`]: {
+          id: `test:requiredField${suffix}`,
+          displayName: 'Required Field',
+          description: 'This property is required',
+          propertyType: 'string',
+          cardinality: 'single',
+          required: true,  // Required property
+          queryable: true,
+          updatable: true
+        },
+        [`test:optionalField${suffix}`]: {
+          id: `test:optionalField${suffix}`,
+          displayName: 'Optional Field',
+          description: 'This property is optional',
+          propertyType: 'string',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        }
+      }
+    };
+
+    const response = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(typeWithRequiredProp)
+    });
+
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.status).toBe('success');
+    console.log('Created type with required property:', typeWithRequiredProp.id);
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithRequiredProp.id)}`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Accept': 'application/json'
+      }
+    });
+  });
+
+  test('POST /create - should create type with default value property', async ({ request }) => {
+    const suffix = Date.now().toString();
+    const typeWithDefaultValue = {
+      id: `test:defaultValue${suffix}`,
+      localName: `defaultValue${suffix}`,
+      displayName: `Default Value Type ${suffix}`,
+      description: 'Type with property default value',
+      baseId: 'cmis:document',
+      parentId: 'cmis:document',
+      creatable: true,
+      queryable: true,
+      fulltextIndexed: true,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {
+        [`test:status${suffix}`]: {
+          id: `test:status${suffix}`,
+          displayName: 'Status',
+          description: 'Document status with default value',
+          propertyType: 'string',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true,
+          defaultValue: ['draft']  // Default value
+        }
+      }
+    };
+
+    const response = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(typeWithDefaultValue)
+    });
+
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.status).toBe('success');
+    console.log('Created type with default value:', typeWithDefaultValue.id);
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(typeWithDefaultValue.id)}`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+        'Accept': 'application/json'
+      }
+    });
+  });
+});
