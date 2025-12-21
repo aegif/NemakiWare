@@ -2852,32 +2852,14 @@ public class ContentServiceImpl implements ContentService {
 		NemakiCache<Acl> aclCache = nemakiCachePool.get(repositoryId).getAclCache();
 		Acl acl = aclCache.get(content.getId());
 
-		// CRITICAL DEBUG: Using System.err for guaranteed visibility
-		System.err.println("!!! ACL DEBUG ENTRY: objectId=" + content.getId() + ", cached=" + (acl != null));
-
 		if (acl == null) {
 			boolean iht = getAclInheritedWithDefault(repositoryId, content);
 			boolean isRootContent = isRoot(repositoryId, content);
-
-			// TEMPORARY: Use System.err for guaranteed visibility
-			System.err.println("!!! ACL DEBUG: calculateAcl: objectId=" + content.getId() +
-				", name=" + content.getName() +
-				", isRoot=" + isRootContent +
-				", aclInherited=" + iht +
-				", contentAcl.localAces=" + (content.getAcl() != null ? content.getAcl().getLocalAces().size() : "null"));
-			log.error("[ACL DEBUG] calculateAcl: objectId=" + content.getId() +
-				", name=" + content.getName() +
-				", isRoot=" + isRootContent +
-				", aclInherited=" + iht +
-				", contentAcl.localAces=" + (content.getAcl() != null ? content.getAcl().getLocalAces().size() : "null"));
 
 			if (!isRootContent && iht) {
 
 				List<Ace> aces = new ArrayList<Ace>();
 				List<Ace> result = calculateAclInternal(repositoryId, aces, content);
-
-				// TEMPORARY: Use log.error for visibility
-				log.error("[ACL DEBUG] calculateAclInternal returned " + result.size() + " ACEs");
 
 				// Convert result to Acl
 				acl = new Acl();
@@ -2888,15 +2870,8 @@ public class ContentServiceImpl implements ContentService {
 						acl.getInheritedAces().add(r);
 					}
 				}
-
-				// TEMPORARY: Use log.error for visibility
-				log.error("[ACL DEBUG] After split: localAces=" + acl.getLocalAces().size() +
-					", inheritedAces=" + acl.getInheritedAces().size());
 			} else {
 				acl = content.getAcl();
-				// TEMPORARY: Use log.error for visibility
-				log.error("[ACL DEBUG] Using content.getAcl() directly: localAces=" +
-					(acl != null ? acl.getLocalAces().size() : "null"));
 			}
 
 			// Convert anonymous and anyone
@@ -2904,9 +2879,6 @@ public class ContentServiceImpl implements ContentService {
 
 			// Caching the results of calculation
 			aclCache.put(content.getId(), acl);
-		} else {
-			// TEMPORARY: Use log.error for visibility
-			log.error("[ACL DEBUG] Using cached ACL for objectId=" + content.getId());
 		}
 		return acl;
 	}

@@ -820,22 +820,8 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	public Acl applyAcl(String repositoryId, String objectId, Acl addAces, Acl removeAces,
 			AclPropagation aclPropagation, ExtensionsData extension) {
 
-		System.err.println("!!! CMIS SERVICE applyAcl: objectId=" + objectId +
-							", addAces=" + (addAces != null ? addAces.getAces().size() + " ACEs" : "null") +
-							", removeAces=" + (removeAces != null ? removeAces.getAces().size() + " ACEs" : "null"));
-		
-		if (extension != null && extension.getExtensions() != null && !extension.getExtensions().isEmpty()) {
-			System.err.println("!!! CMIS SERVICE: Received " + extension.getExtensions().size() + " extension elements");
-			for (org.apache.chemistry.opencmis.commons.data.CmisExtensionElement ext : extension.getExtensions()) {
-				System.err.println("!!! CMIS SERVICE:   Extension - name: " + ext.getName() + ", value: " + ext.getValue());
-			}
-		} else {
-			System.err.println("!!! CMIS SERVICE: No extension elements received");
-		}
-
 		// CRITICAL FIX: Get current ACL first
 		Acl currentAcl = aclService.getAcl(getCallContext(), repositoryId, objectId, false, extension);
-		System.err.println("!!! CMIS SERVICE: Current ACL has " + currentAcl.getAces().size() + " ACEs");
 
 		// Build new ACL by applying add/remove operations
 		java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> newAces = new java.util.ArrayList<>();
@@ -844,7 +830,6 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		for (org.apache.chemistry.opencmis.commons.data.Ace ace : currentAcl.getAces()) {
 			if (ace.isDirect()) {
 				newAces.add(ace);
-				System.err.println("!!! CMIS SERVICE: Keeping direct ACE: " + ace.getPrincipalId());
 			}
 		}
 
@@ -853,7 +838,6 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 			for (org.apache.chemistry.opencmis.commons.data.Ace removeAce : removeAces.getAces()) {
 				String principalToRemove = removeAce.getPrincipalId();
 				newAces.removeIf(ace -> ace.getPrincipalId().equals(principalToRemove));
-				System.err.println("!!! CMIS SERVICE: Removed ACE for principal: " + principalToRemove);
 			}
 		}
 
@@ -863,22 +847,17 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 				// Remove existing ACE for same principal first (replace operation)
 				newAces.removeIf(ace -> ace.getPrincipalId().equals(addAce.getPrincipalId()));
 				newAces.add(addAce);
-				System.err.println("!!! CMIS SERVICE: Added ACE: " + addAce.getPrincipalId() +
-								  " with permissions " + addAce.getPermissions());
 			}
 		}
 
 		// Create final ACL with merged ACEs and extension elements
-		org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl finalAcl = 
+		org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl finalAcl =
 			new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(newAces);
-		
+
 		// CRITICAL: Copy extension elements from request to final ACL so they reach AclServiceImpl
 		if (extension != null && extension.getExtensions() != null && !extension.getExtensions().isEmpty()) {
 			finalAcl.setExtensions(extension.getExtensions());
-			System.err.println("!!! CMIS SERVICE: Copied " + extension.getExtensions().size() + " extension elements to final ACL");
 		}
-		
-		System.err.println("!!! CMIS SERVICE: Final ACL has " + finalAcl.getAces().size() + " ACEs, calling aclService.applyAcl()");
 
 		return aclService.applyAcl(getCallContext(), repositoryId, objectId, finalAcl, aclPropagation);
 	}

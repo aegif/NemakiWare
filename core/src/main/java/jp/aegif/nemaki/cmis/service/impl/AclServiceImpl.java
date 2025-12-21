@@ -89,14 +89,8 @@ public class AclServiceImpl implements AclService {
 			// //////////////////
 			// Body of the method
 			// //////////////////
-			System.err.println("!!! ACL SERVICE: getAcl() called for objectId=" + objectId + ", name=" + content.getName());
 			jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
-			System.err.println("!!! ACL SERVICE: calculateAcl() returned: localAces=" + acl.getLocalAces().size() + ", inheritedAces=" + acl.getInheritedAces().size());
 			Acl result = compileService.compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), onlyBasicPermissions);
-			System.err.println("!!! ACL SERVICE: compileAcl() returned " + result.getAces().size() + " ACEs");
-			for (Ace ace : result.getAces()) {
-				System.err.println("!!!   ACE: principalId=" + ace.getPrincipalId() + ", direct=" + ace.isDirect() + ", permissions=" + ace.getPermissions());
-			}
 			return result;
 		}finally{
 			lock.unlock();
@@ -155,21 +149,17 @@ public class AclServiceImpl implements AclService {
 			boolean objectOnly = (aclPropagation == AclPropagation.OBJECTONLY)? true : false;
 	
 			if(breakingInheritance){
-				System.err.println("!!! ACL SERVICE: Breaking inheritance for objectId=" + objectId);
 				jp.aegif.nemaki.model.Acl currentAcl = contentService.calculateAcl(repositoryId, content);
-				System.err.println("!!! ACL SERVICE: Current ACL has " + currentAcl.getLocalAces().size() + " local ACEs and " + currentAcl.getInheritedAces().size() + " inherited ACEs");
-		
+
 				for(jp.aegif.nemaki.model.Ace localAce : currentAcl.getLocalAces()){
 					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(localAce.getPrincipalId(), localAce.getPermissions(), objectOnly);
 					nemakiAcl.getLocalAces().add(nemakiAce);
 				}
-		
+
 				for(jp.aegif.nemaki.model.Ace inheritedAce : currentAcl.getInheritedAces()){
 					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(inheritedAce.getPrincipalId(), inheritedAce.getPermissions(), objectOnly);
 					nemakiAcl.getLocalAces().add(nemakiAce);
-					System.err.println("!!! ACL SERVICE: Converted inherited ACE to direct: principalId=" + inheritedAce.getPrincipalId() + ", permissions=" + inheritedAce.getPermissions());
 				}
-				System.err.println("!!! ACL SERVICE: After breaking inheritance, nemakiAcl has " + nemakiAcl.getLocalAces().size() + " local ACEs");
 			} else {
 				for(Ace ace : acl.getAces()){
 					if(ace.isDirect()){
@@ -185,7 +175,6 @@ public class AclServiceImpl implements AclService {
 			// CRITICAL: Set aclInherited flag AFTER building the ACL and BEFORE updating
 			if(inheritedExplicitlySet){
 				content.setAclInherited(inherited);
-				System.err.println("!!! ACL SERVICE: Set aclInherited=" + inherited + " for objectId=" + objectId);
 			}
 	
 			contentService.updateInternal(repositoryId, content);
@@ -194,7 +183,6 @@ public class AclServiceImpl implements AclService {
 			// CRITICAL FIX (2025-11-12): Clear BOTH CMIS and Content caches synchronously
 			// before calling getAcl() to return updated ACL. Without this, getAcl() returns stale cached data.
 			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
-			System.err.println("!!! ACL SERVICE: Cleared CMIS and Content caches for objectId=" + objectId);
 
 			clearCachesRecursively(Executors.newWorkStealingPool(), callContext, repositoryId, content, true);
 
