@@ -262,7 +262,8 @@ import {
   PlusOutlined,
   DeleteOutlined,
   SwapOutlined,
-  WarningOutlined
+  WarningOutlined,
+  InfoCircleOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
@@ -297,6 +298,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [selectedTargetObject, setSelectedTargetObject] = useState<CMISObject | null>(null);
   const [relationshipType, setRelationshipType] = useState<string>('nemaki:bidirectionalRelationship');
   const [typeMigrationModalVisible, setTypeMigrationModalVisible] = useState(false);
+  const [relationshipDetailModalVisible, setRelationshipDetailModalVisible] = useState(false);
+  const [selectedRelationship, setSelectedRelationship] = useState<Relationship | null>(null);
   const [form] = Form.useForm();
   const [relationshipForm] = Form.useForm();
 
@@ -380,10 +383,17 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
   const loadRelationships = async () => {
     if (!objectId) return;
-    
+
     try {
       const rels = await cmisService.getRelationships(repositoryId, objectId);
-      setRelationships(rels);
+      // Check each relationship type to determine if it's a parentChild type (for cascade delete indication)
+      const relsWithTypeInfo = await Promise.all(
+        rels.map(async (rel) => {
+          const isParentChild = await cmisService.isParentChildRelationshipType(repositoryId, rel.relationshipType);
+          return { ...rel, isParentChildType: isParentChild };
+        })
+      );
+      setRelationships(relsWithTypeInfo);
     } catch (error) {
       console.error('関係の読み込みに失敗しました');
     }
@@ -599,35 +609,77 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       title: 'タイプ',
       dataIndex: 'relationshipType',
       key: 'type',
+      render: (typeId: string, record: Relationship) => (
+        <Space direction="vertical" size={2}>
+          <span>{typeId}</span>
+          {record.isParentChildType && (
+            <Tag color="orange" style={{ fontSize: '10px' }}>
+              <WarningOutlined /> カスケード削除
+            </Tag>
+          )}
+        </Space>
+      ),
     },
     {
-      title: 'ソース',
-      dataIndex: 'sourceId',
-      key: 'source',
+      title: '役割',
+      key: 'role',
+      render: (_: any, record: Relationship) => {
+        const isSource = record.sourceId === objectId;
+        const isTarget = record.targetId === objectId;
+        return (
+          <Space>
+            {isSource && <Tag color="blue">ソース</Tag>}
+            {isTarget && <Tag color="green">ターゲット</Tag>}
+          </Space>
+        );
+      },
     },
     {
-      title: 'ターゲット',
-      dataIndex: 'targetId',
-      key: 'target',
+      title: '相手先',
+      key: 'other',
+      render: (_: any, record: Relationship) => {
+        const isSource = record.sourceId === objectId;
+        const otherId = isSource ? record.targetId : record.sourceId;
+        return (
+          <span
+            style={{ color: '#1890ff', cursor: 'pointer' }}
+            onClick={() => navigate(`/documents/${otherId}?repositoryId=${repositoryId}`)}
+          >
+            {otherId}
+          </span>
+        );
+      },
     },
     {
       title: 'アクション',
       key: 'actions',
       render: (_: any, record: Relationship) => (
-        <Popconfirm
-          title="この関係を削除しますか？"
-          onConfirm={() => handleDeleteRelationship(record.id)}
-          okText="はい"
-          cancelText="いいえ"
-        >
+        <Space>
           <Button
             size="small"
-            danger
-            icon={<DeleteOutlined />}
+            icon={<InfoCircleOutlined />}
+            onClick={() => {
+              setSelectedRelationship(record);
+              setRelationshipDetailModalVisible(true);
+            }}
           >
-            削除
+            詳細
           </Button>
-        </Popconfirm>
+          <Popconfirm
+            title="この関係を削除しますか？"
+            onConfirm={() => handleDeleteRelationship(record.id)}
+            okText="はい"
+            cancelText="いいえ"
+          >
+            <Button
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+            >
+              削除
+            </Button>
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -1083,6 +1135,121 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Relationship Detail Modal */}
+      <Modal
+        title="関連オブジェクト詳細"
+        open={relationshipDetailModalVisible}
+        onCancel={() => {
+          setRelationshipDetailModalVisible(false);
+          setSelectedRelationship(null);
+        }}
+        footer={[
+          <Button
+            key="close"
+            onClick={() => {
+              setRelationshipDetailModalVisible(false);
+              setSelectedRelationship(null);
+            }}
+          >
+            閉じる
+          </Button>
+        ]}
+        width={700}
+      >
+        {selectedRelationship && (
+          <div>
+            <Descriptions
+              bordered
+              column={1}
+              size="small"
+              style={{ marginBottom: 16 }}
+            >
+              <Descriptions.Item label="関連ID">
+                {selectedRelationship.id}
+              </Descriptions.Item>
+              <Descriptions.Item label="関連タイプ">
+                <Space>
+                  {selectedRelationship.relationshipType}
+                  {selectedRelationship.isParentChildType && (
+                    <Tag color="orange">
+                      <WarningOutlined /> カスケード削除対象
+                    </Tag>
+                  )}
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label="ソースID">
+                <span
+                  style={{ color: '#1890ff', cursor: 'pointer' }}
+                  onClick={() => {
+                    setRelationshipDetailModalVisible(false);
+                    navigate(`/documents/${selectedRelationship.sourceId}?repositoryId=${repositoryId}`);
+                  }}
+                >
+                  {selectedRelationship.sourceId}
+                  {selectedRelationship.sourceId === objectId && (
+                    <Tag color="blue" style={{ marginLeft: 8 }}>このオブジェクト</Tag>
+                  )}
+                </span>
+              </Descriptions.Item>
+              <Descriptions.Item label="ターゲットID">
+                <span
+                  style={{ color: '#1890ff', cursor: 'pointer' }}
+                  onClick={() => {
+                    setRelationshipDetailModalVisible(false);
+                    navigate(`/documents/${selectedRelationship.targetId}?repositoryId=${repositoryId}`);
+                  }}
+                >
+                  {selectedRelationship.targetId}
+                  {selectedRelationship.targetId === objectId && (
+                    <Tag color="green" style={{ marginLeft: 8 }}>このオブジェクト</Tag>
+                  )}
+                </span>
+              </Descriptions.Item>
+            </Descriptions>
+
+            {selectedRelationship.isParentChildType && (
+              <Alert
+                message="カスケード削除について"
+                description={
+                  selectedRelationship.sourceId === objectId
+                    ? "このオブジェクトがソースです。このオブジェクトを削除すると、ターゲット（子）オブジェクトも一緒に削除されます。"
+                    : "このオブジェクトはターゲット（子）です。ソース（親）オブジェクトが削除されると、このオブジェクトも一緒に削除されます。"
+                }
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+            )}
+
+            <Collapse
+              items={[
+                {
+                  key: 'properties',
+                  label: `プロパティ (${Object.keys(selectedRelationship.properties).length}件)`,
+                  children: (
+                    <Table
+                      dataSource={Object.entries(selectedRelationship.properties).map(([key, value]) => ({
+                        key,
+                        name: key,
+                        value: Array.isArray(value) ? value.join(', ') : String(value ?? '')
+                      }))}
+                      columns={[
+                        { title: 'プロパティ名', dataIndex: 'name', key: 'name', width: '40%' },
+                        { title: '値', dataIndex: 'value', key: 'value' }
+                      ]}
+                      size="small"
+                      pagination={false}
+                      scroll={{ y: 300 }}
+                    />
+                  )
+                }
+              ]}
+              defaultActiveKey={['properties']}
+            />
+          </div>
+        )}
       </Modal>
 
       <ObjectPicker

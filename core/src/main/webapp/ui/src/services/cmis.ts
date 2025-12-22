@@ -2166,11 +2166,43 @@ export class CMISService {
               return '';
             };
 
+            // Helper function to get ALL properties from CMIS XML
+            const getAllProperties = (): Record<string, any> => {
+              const allProps: Record<string, any> = {};
+              const properties = entry.getElementsByTagNameNS(CMIS_NS, 'properties')[0] ||
+                               entry.querySelector('cmis\\:properties, properties');
+              if (!properties) return allProps;
+
+              const propTypes = ['propertyId', 'propertyString', 'propertyDateTime', 'propertyBoolean', 'propertyInteger', 'propertyDecimal'];
+              for (const propType of propTypes) {
+                const propElements = properties.getElementsByTagNameNS(CMIS_NS, propType);
+                for (let j = 0; j < propElements.length; j++) {
+                  const elem = propElements[j];
+                  const propId = elem.getAttribute('propertyDefinitionId');
+                  if (propId) {
+                    const valueElems = elem.getElementsByTagNameNS(CMIS_NS, 'value');
+                    if (valueElems.length > 1) {
+                      // Multi-value property
+                      allProps[propId] = Array.from(valueElems).map(v => v.textContent || '');
+                    } else if (valueElems.length === 1) {
+                      allProps[propId] = valueElems[0].textContent || '';
+                    } else {
+                      // Fallback to querySelector
+                      const valueElem = elem.querySelector('cmis\\:value, value');
+                      allProps[propId] = valueElem?.textContent || '';
+                    }
+                  }
+                }
+              }
+              return allProps;
+            };
+
             // CRITICAL FIX: Get objectId from cmis:objectId property, not from <atom:id> which is base64 encoded
             const relationshipId = getPropertyValue('cmis:objectId');
             const sourceId = getPropertyValue('cmis:sourceId');
             const targetId = getPropertyValue('cmis:targetId');
             const objectTypeId = getPropertyValue('cmis:objectTypeId') || 'cmis:relationship';
+            const allProperties = getAllProperties();
 
             console.log(`[CMIS DEBUG] getRelationships entry ${i}: id=${relationshipId}, sourceId=${sourceId}, targetId=${targetId}, type=${objectTypeId}`);
 
@@ -2181,7 +2213,7 @@ export class CMISService {
                 sourceId: sourceId,
                 targetId: targetId,
                 relationshipType: objectTypeId,
-                properties: {}
+                properties: allProperties
               });
             } else {
               console.log(`[CMIS DEBUG] getRelationships entry ${i} skipped: missing sourceId or targetId`);
@@ -2275,11 +2307,69 @@ export class CMISService {
     }
   }
 
+  // Cache for type hierarchy checks to avoid repeated API calls
+  private parentChildTypeCache: Map<string, boolean> = new Map();
+
+  /**
+   * Check if a relationship type is nemaki:parentChildRelationship or a derived type.
+   *
+   * NemakiWare supports custom relationship types that inherit from parentChildRelationship.
+   * Any such derived type should also trigger cascade deletion behavior.
+   *
+   * @param repositoryId Repository ID
+   * @param typeId The relationship type ID to check
+   * @returns true if the type is parentChildRelationship or derived from it
+   */
+  async isParentChildRelationshipType(repositoryId: string, typeId: string): Promise<boolean> {
+    // Check exact match first
+    if (typeId === 'nemaki:parentChildRelationship') {
+      return true;
+    }
+
+    // Check cache
+    const cacheKey = `${repositoryId}:${typeId}`;
+    if (this.parentChildTypeCache.has(cacheKey)) {
+      return this.parentChildTypeCache.get(cacheKey)!;
+    }
+
+    try {
+      // Traverse the type hierarchy to check if it inherits from parentChildRelationship
+      let currentTypeId = typeId;
+      const visited = new Set<string>();
+
+      while (currentTypeId && !visited.has(currentTypeId)) {
+        visited.add(currentTypeId);
+
+        if (currentTypeId === 'nemaki:parentChildRelationship') {
+          this.parentChildTypeCache.set(cacheKey, true);
+          return true;
+        }
+
+        // Get parent type
+        try {
+          const typeDef = await this.getTypeDefinition(repositoryId, currentTypeId);
+          currentTypeId = typeDef.parentTypeId || '';
+        } catch (e) {
+          // Type not found, stop traversal
+          break;
+        }
+      }
+
+      this.parentChildTypeCache.set(cacheKey, false);
+      return false;
+    } catch (error) {
+      console.error(`[CMIS] Error checking type hierarchy for ${typeId}:`, error);
+      // Fallback: only exact match
+      return typeId === 'nemaki:parentChildRelationship';
+    }
+  }
+
   /**
    * Collect all descendant objects via nemaki:parentChildRelationship for cascade deletion.
    *
    * NemakiWare-specific feature: When deleting an object that is the SOURCE of a
-   * nemaki:parentChildRelationship, all TARGET objects (children) should also be deleted.
+   * nemaki:parentChildRelationship (or derived type), all TARGET objects (children)
+   * should also be deleted.
    * This recursively collects all descendants (children, grandchildren, etc.).
    *
    * @param repositoryId Repository ID
@@ -2305,11 +2395,16 @@ export class CMISService {
       // Get all relationships where this object is the SOURCE
       const relationships = await this.getRelationships(repositoryId, objectId);
 
-      // Filter for nemaki:parentChildRelationship where this object is SOURCE
-      const parentChildRels = relationships.filter(rel =>
-        rel.relationshipType === 'nemaki:parentChildRelationship' &&
-        rel.sourceId === objectId
-      );
+      // Filter for parentChildRelationship (or derived types) where this object is SOURCE
+      const parentChildRels: typeof relationships = [];
+      for (const rel of relationships) {
+        if (rel.sourceId === objectId) {
+          const isParentChild = await this.isParentChildRelationshipType(repositoryId, rel.relationshipType);
+          if (isParentChild) {
+            parentChildRels.push(rel);
+          }
+        }
+      }
 
       console.log(`[CASCADE DELETE] Object ${objectId} has ${parentChildRels.length} parentChild relationships as source`);
 

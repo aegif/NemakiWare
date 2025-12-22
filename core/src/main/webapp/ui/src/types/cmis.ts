@@ -169,6 +169,8 @@ export interface Relationship {
   targetId: string;
   relationshipType: string;
   properties: Record<string, any>;
+  /** True if this is a parentChildRelationship or derived type (triggers cascade deletion) */
+  isParentChildType?: boolean;
 }
 
 export interface ActionDefinition {
