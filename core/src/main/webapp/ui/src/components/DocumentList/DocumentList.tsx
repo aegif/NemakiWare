@@ -218,7 +218,6 @@ import {
   Input,
   Select,
   message,
-  Popconfirm,
   Tooltip,
   Row,
   Col,
@@ -292,6 +291,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Error states for inline Alert components (Error Recovery test fix)
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [folderError, setFolderError] = useState<string | null>(null);
+
+  // Delete confirmation modal states (2025-12-22)
+  // For showing cascade deletion warnings when parentChildRelationship descendants exist
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string>('');
+  const [deleteTargetName, setDeleteTargetName] = useState<string>('');
+  const [deleteDescendantCount, setDeleteDescendantCount] = useState(0);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Type selection states (2025-12-11)
   const [documentTypes, setDocumentTypes] = useState<TypeDefinition[]>([]);
@@ -475,21 +482,73 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
-  const handleDelete = async (objectId: string) => {
+  /**
+   * Show delete confirmation modal with cascade deletion info.
+   * Checks for parentChildRelationship descendants before deletion.
+   */
+  const handleDeleteClick = async (objectId: string, objectName: string) => {
+    setDeleteTargetId(objectId);
+    setDeleteTargetName(objectName);
+    setDeleteLoading(true);
+    setDeleteModalVisible(true);
+
+    try {
+      // Check for parentChildRelationship descendants
+      const descendantCount = await cmisService.getParentChildDescendantCount(repositoryId, objectId);
+      setDeleteDescendantCount(descendantCount);
+    } catch (error) {
+      console.error('Error checking descendants:', error);
+      setDeleteDescendantCount(0);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  /**
+   * Execute deletion after confirmation.
+   * Uses cascade deletion for parentChildRelationship descendants.
+   */
+  const handleDeleteConfirm = async () => {
+    if (!deleteTargetId) return;
+
     try {
       // Set loading state before starting deletion
       setLoading(true);
+      setDeleteModalVisible(false);
 
-      await cmisService.deleteObject(repositoryId, objectId);
+      // NemakiWare-specific: Use cascade deletion for parentChildRelationship
+      // This will delete all descendant objects linked via nemaki:parentChildRelationship
+      const result = await cmisService.deleteObjectWithCascade(repositoryId, deleteTargetId);
 
       // Reload objects from server after successful deletion
       await loadObjects();
 
-      message.success('削除しました');
+      // Show appropriate success message based on cascade deletion results
+      if (result.deletedCount > 1) {
+        message.success(`${result.deletedCount}件のオブジェクトを削除しました（親子関係の子を含む）`);
+      } else {
+        message.success('削除しました');
+      }
+
+      // Warn about any failures during cascade deletion
+      if (result.failedIds.length > 0) {
+        message.warning(`${result.failedIds.length}件のオブジェクトの削除に失敗しました`);
+      }
     } catch (error) {
       message.error('削除に失敗しました');
+    } finally {
       setLoading(false);
+      setDeleteTargetId('');
+      setDeleteTargetName('');
+      setDeleteDescendantCount(0);
     }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteModalVisible(false);
+    setDeleteTargetId('');
+    setDeleteTargetName('');
+    setDeleteDescendantCount(0);
   };
 
   const handleDownload = (objectId: string) => {
@@ -849,20 +908,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 権限管理
               </Button>
             </Tooltip>
-            <Popconfirm
-              title="削除しますか？"
-              onConfirm={() => handleDelete(record.id)}
-              okText="はい"
-              cancelText="いいえ"
-            >
-              <Tooltip title="削除">
-                <Button
-                  icon={<DeleteOutlined />}
-                  size="small"
-                  danger
-                />
-              </Tooltip>
-            </Popconfirm>
+            <Tooltip title="削除">
+              <Button
+                icon={<DeleteOutlined />}
+                size="small"
+                danger
+                onClick={() => handleDeleteClick(record.id, record.name)}
+              />
+            </Tooltip>
           </Space>
         );
       },
@@ -1308,6 +1361,47 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             },
           ]}
         />
+      </Modal>
+
+      {/* Delete Confirmation Modal with cascade deletion info */}
+      <Modal
+        title="削除の確認"
+        open={deleteModalVisible}
+        onOk={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+        okText="削除する"
+        cancelText="キャンセル"
+        okButtonProps={{ danger: true, loading: loading }}
+        maskClosable={false}
+      >
+        {deleteLoading ? (
+          <div style={{ textAlign: 'center', padding: '20px' }}>
+            関連オブジェクトを確認中...
+          </div>
+        ) : (
+          <div>
+            <p>
+              <strong>「{deleteTargetName}」</strong>を削除しますか？
+            </p>
+            {deleteDescendantCount > 0 && (
+              <div style={{
+                backgroundColor: '#fff7e6',
+                border: '1px solid #ffd591',
+                borderRadius: '4px',
+                padding: '12px',
+                marginTop: '12px'
+              }}>
+                <p style={{ margin: 0, color: '#d46b08' }}>
+                  <strong>⚠️ 注意:</strong> このオブジェクトには親子関係（nemaki:parentChildRelationship）で
+                  紐づいた<strong>{deleteDescendantCount}件</strong>の子オブジェクトがあります。
+                </p>
+                <p style={{ margin: '8px 0 0 0', color: '#d46b08' }}>
+                  削除すると、これらの子オブジェクトもすべて削除されます。
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );

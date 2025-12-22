@@ -2275,6 +2275,131 @@ export class CMISService {
     }
   }
 
+  /**
+   * Collect all descendant objects via nemaki:parentChildRelationship for cascade deletion.
+   *
+   * NemakiWare-specific feature: When deleting an object that is the SOURCE of a
+   * nemaki:parentChildRelationship, all TARGET objects (children) should also be deleted.
+   * This recursively collects all descendants (children, grandchildren, etc.).
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Root object ID to start collection from
+   * @param visited Set of already visited object IDs (for circular reference detection)
+   * @returns Array of object IDs to delete, ordered from leaves to root (deepest first)
+   */
+  async collectParentChildDescendants(
+    repositoryId: string,
+    objectId: string,
+    visited: Set<string> = new Set()
+  ): Promise<string[]> {
+    // Circular reference detection
+    if (visited.has(objectId)) {
+      console.log(`[CASCADE DELETE] Circular reference detected, skipping: ${objectId}`);
+      return [];
+    }
+    visited.add(objectId);
+
+    const descendants: string[] = [];
+
+    try {
+      // Get all relationships where this object is the SOURCE
+      const relationships = await this.getRelationships(repositoryId, objectId);
+
+      // Filter for nemaki:parentChildRelationship where this object is SOURCE
+      const parentChildRels = relationships.filter(rel =>
+        rel.relationshipType === 'nemaki:parentChildRelationship' &&
+        rel.sourceId === objectId
+      );
+
+      console.log(`[CASCADE DELETE] Object ${objectId} has ${parentChildRels.length} parentChild relationships as source`);
+
+      // Recursively collect descendants for each child
+      for (const rel of parentChildRels) {
+        const childId = rel.targetId;
+        if (childId && !visited.has(childId)) {
+          // Recursively get grandchildren first (depth-first)
+          const grandchildren = await this.collectParentChildDescendants(repositoryId, childId, visited);
+          descendants.push(...grandchildren);
+          // Add the child after its descendants (so it gets deleted after its children)
+          descendants.push(childId);
+        }
+      }
+    } catch (error) {
+      console.error(`[CASCADE DELETE] Error collecting descendants for ${objectId}:`, error);
+      // Continue with what we have, don't fail the entire operation
+    }
+
+    return descendants;
+  }
+
+  /**
+   * Delete an object with cascade deletion of parentChildRelationship descendants.
+   *
+   * NemakiWare-specific feature: Implements cascade deletion semantics for
+   * nemaki:parentChildRelationship. When deleting an object:
+   * 1. Collect all descendants via parentChildRelationship (children, grandchildren, etc.)
+   * 2. Delete from leaves to root (deepest descendants first)
+   * 3. Finally delete the original object
+   *
+   * Note: nemaki:bidirectionalRelationship does NOT trigger cascade deletion.
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Object ID to delete
+   * @param cascadeParentChild Whether to cascade delete parentChild descendants (default: true)
+   * @returns Object with deletion results: deletedCount, failedIds
+   */
+  async deleteObjectWithCascade(
+    repositoryId: string,
+    objectId: string,
+    cascadeParentChild: boolean = true
+  ): Promise<{ deletedCount: number; failedIds: string[] }> {
+    const failedIds: string[] = [];
+    let deletedCount = 0;
+
+    if (cascadeParentChild) {
+      // Collect all descendants to delete
+      const descendants = await this.collectParentChildDescendants(repositoryId, objectId);
+      console.log(`[CASCADE DELETE] Found ${descendants.length} descendants to delete for ${objectId}`);
+
+      // Delete descendants from leaves to root
+      for (const descendantId of descendants) {
+        try {
+          await this.deleteObject(repositoryId, descendantId);
+          deletedCount++;
+          console.log(`[CASCADE DELETE] Deleted descendant: ${descendantId}`);
+        } catch (error) {
+          console.error(`[CASCADE DELETE] Failed to delete descendant ${descendantId}:`, error);
+          failedIds.push(descendantId);
+          // Continue with other deletions
+        }
+      }
+    }
+
+    // Finally delete the root object
+    try {
+      await this.deleteObject(repositoryId, objectId);
+      deletedCount++;
+      console.log(`[CASCADE DELETE] Deleted root object: ${objectId}`);
+    } catch (error) {
+      console.error(`[CASCADE DELETE] Failed to delete root object ${objectId}:`, error);
+      failedIds.push(objectId);
+    }
+
+    return { deletedCount, failedIds };
+  }
+
+  /**
+   * Get count of parentChildRelationship descendants for preview before deletion.
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Object ID to check
+   * @returns Number of descendant objects that would be cascade deleted
+   */
+  async getParentChildDescendantCount(repositoryId: string, objectId: string): Promise<number> {
+    const descendants = await this.collectParentChildDescendants(repositoryId, objectId);
+    return descendants.length;
+  }
+
   async initSearchEngine(repositoryId: string): Promise<void> {
     try {
       const url = `${this.baseUrl}/${repositoryId}/search-engine/init`;
