@@ -47,6 +47,8 @@ import org.apache.solr.common.SolrInputDocument;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.Relationship;
+import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.AttachmentNode;
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -402,7 +404,37 @@ public class SolrUtil implements ApplicationContextAware {
 			Folder folder = (Folder) content;
 			// Folder specific fields - parent_id already added above for all content types
 		}
-		
+
+		// Relationship specific fields for CMIS query support
+		if (content instanceof Relationship) {
+			Relationship relationship = (Relationship) content;
+
+			// Source and target IDs - required for relationship queries
+			// Use dynamic.* naming convention to match Solr schema
+			if (relationship.getSourceId() != null) {
+				doc.addField("dynamic.source_id", relationship.getSourceId());
+				log.info("Added dynamic.source_id: {} for relationship: {}", relationship.getSourceId(), content.getId());
+			}
+			if (relationship.getTargetId() != null) {
+				doc.addField("dynamic.target_id", relationship.getTargetId());
+				log.info("Added dynamic.target_id: {} for relationship: {}", relationship.getTargetId(), content.getId());
+			}
+
+			// Index custom properties (subTypeProperties) for relationship type queries
+			List<Property> subTypeProperties = relationship.getSubTypeProperties();
+			if (subTypeProperties != null && !subTypeProperties.isEmpty()) {
+				for (Property prop : subTypeProperties) {
+					if (prop.getKey() != null && prop.getValue() != null) {
+						// Use dynamic field naming for custom properties
+						String fieldName = "dynamic.property." + prop.getKey();
+						doc.addField(fieldName, prop.getValue().toString());
+						log.info("Added custom property: {} = {} for relationship: {}",
+							fieldName, prop.getValue(), content.getId());
+					}
+				}
+			}
+		}
+
 		// Change token
 		if (content.getChangeToken() != null) {
 			doc.addField("change_token", content.getChangeToken());

@@ -954,6 +954,28 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					log.info("Final Item - ObjectType: " + content.getObjectType());
 					return content;
 				}
+			} else if ("relationship".equals(actualType) || "cmis:relationship".equals(actualType)) {
+				// CRITICAL FIX (2025-12-23): Handle relationship types for CMIS query support
+				// Without this, relationships are converted to generic CouchContent and lose
+				// sourceId/targetId fields, causing ClassCastException in CompileService
+				log.info("Converting to CouchRelationship for type: " + actualType);
+				CouchRelationship cr = mapper.convertValue(actualDocMap, CouchRelationship.class);
+				Content content = cr.convert();
+				if (content.getObjectType() == null) {
+					content.setObjectType(objectType != null ? objectType : actualType);
+				}
+				log.info("Final Relationship Content - ObjectType: " + content.getObjectType());
+				return content;
+			} else if ("policy".equals(actualType) || "cmis:policy".equals(actualType)) {
+				// Handle policy types
+				log.info("Converting to CouchPolicy for type: " + actualType);
+				CouchPolicy cp = mapper.convertValue(actualDocMap, CouchPolicy.class);
+				Content content = cp.convert();
+				if (content.getObjectType() == null) {
+					content.setObjectType(objectType != null ? objectType : actualType);
+				}
+				log.info("Final Policy Content - ObjectType: " + content.getObjectType());
+				return content;
 			} else {
 				log.info("Converting to generic CouchContent for type: " + actualType);
 				// Generic content - try to convert to CouchContent

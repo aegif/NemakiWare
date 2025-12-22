@@ -1904,13 +1904,18 @@ public class TypeResource extends ResourceBase {
 
 			// Remove orphan types
 			if (log.isDebugEnabled()) {
-				log.debug("Checking parent type for " + t.getTypeId() + 
-					", parentId: " + t.getParentId() + ", isBaseType: " + isBaseType(t.getParentId()) + 
-					", parentInTypeMaps: " + (typeMaps.get(t.getParentId()) != null));
+				log.debug("Checking parent type for " + t.getTypeId() +
+					", parentId: " + t.getParentId() + ", isBaseType: " + isBaseType(t.getParentId()) +
+					", parentInTypeMaps: " + (typeMaps.get(t.getParentId()) != null) +
+					", existsInDB: " + existType(repositoryId, t.getParentId()));
 			}
-			if (typeMaps.get(t.getParentId()) == null && !isBaseType(t.getParentId())) {
+			// Allow creation if parent is:
+			// 1. In the current batch (typeMaps), OR
+			// 2. A CMIS base type (isBaseType), OR
+			// 3. An existing type in the database (existType)
+			if (typeMaps.get(t.getParentId()) == null && !isBaseType(t.getParentId()) && !existType(repositoryId, t.getParentId())) {
 				log.warn(buildMsg(t.getId(), null,
-						"Skipped to create this type because it has an unknown parent type."));
+						"Skipped to create this type because it has an unknown parent type: " + t.getParentId()));
 				if (log.isDebugEnabled()) {
 					log.debug("SKIPPED type creation for " + t.getTypeId() + " due to unknown parent: " + t.getParentId());
 				}
