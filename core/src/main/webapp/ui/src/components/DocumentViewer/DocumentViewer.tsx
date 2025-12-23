@@ -605,10 +605,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       const typeDef = await cmisService.getType(repositoryId, selectedRelationship.relationshipType);
       setRelationshipTypeDefinition(typeDef);
 
-      // Set initial form values from current properties (exclude CMIS system properties)
+      // CRITICAL FIX (2025-12-23): Set initial form values for ALL editable properties
+      // Previously: excluded all cmis: prefixed properties
+      // Now: include properties with updatability === 'readwrite' (e.g., cmis:name, cmis:description)
       const initialValues: Record<string, any> = {};
       Object.entries(selectedRelationship.properties).forEach(([key, value]) => {
-        if (!key.startsWith('cmis:')) {
+        const propDef = typeDef.propertyDefinitions?.[key] as { updatability?: string } | undefined;
+        // Include property if it's editable (updatability === 'readwrite')
+        if (propDef?.updatability === 'readwrite') {
           initialValues[key] = value;
         }
       });
@@ -1428,13 +1432,19 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             {/* Conditional rendering: Edit mode with Form or Read-only mode with Table */}
             {relationshipEditMode && relationshipTypeDefinition ? (
               <div>
-                <h4 style={{ marginBottom: 16 }}>カスタムプロパティを編集</h4>
+                <h4 style={{ marginBottom: 16 }}>編集可能なプロパティ</h4>
                 <Form
                   form={relationshipEditForm}
                   layout="vertical"
                 >
+                  {/* CRITICAL FIX (2025-12-23): Use updatability attribute to determine editability
+                      Previously: filtered by !propId.startsWith('cmis:') which excluded cmis:name and cmis:description
+                      Now: filter by updatability === 'readwrite' as per CMIS 1.1 specification */}
                   {Object.entries(relationshipTypeDefinition.propertyDefinitions || {})
-                    .filter(([propId]) => !propId.startsWith('cmis:'))
+                    .filter(([, propDef]) => {
+                      const propDefTyped = propDef as { updatability?: string };
+                      return propDefTyped.updatability === 'readwrite';
+                    })
                     .map(([propId, propDef]) => {
                       const propDefTyped = propDef as {
                         displayName?: string;
@@ -1442,6 +1452,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                         propertyType?: string;
                         required?: boolean;
                         cardinality?: string;
+                        updatability?: string;
                       };
                       return (
                         <Form.Item
@@ -1470,10 +1481,13 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       );
                     })}
                   {Object.entries(relationshipTypeDefinition.propertyDefinitions || {})
-                    .filter(([propId]) => !propId.startsWith('cmis:')).length === 0 && (
+                    .filter(([, propDef]) => {
+                      const propDefTyped = propDef as { updatability?: string };
+                      return propDefTyped.updatability === 'readwrite';
+                    }).length === 0 && (
                     <Alert
                       type="info"
-                      message="このリレーションシップタイプには編集可能なカスタムプロパティがありません"
+                      message="このリレーションシップタイプには編集可能なプロパティがありません"
                       style={{ marginBottom: 16 }}
                     />
                   )}
@@ -1481,12 +1495,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 <Collapse
                   items={[
                     {
-                      key: 'system-properties',
-                      label: 'システムプロパティ（読み取り専用）',
+                      key: 'readonly-properties',
+                      label: '読み取り専用プロパティ',
                       children: (
                         <Table
                           dataSource={Object.entries(selectedRelationship.properties)
-                            .filter(([key]) => key.startsWith('cmis:'))
+                            .filter(([key]) => {
+                              // Show properties that are NOT readwrite (i.e., readonly or oncreate)
+                              const propDef = relationshipTypeDefinition.propertyDefinitions?.[key] as { updatability?: string } | undefined;
+                              return propDef?.updatability !== 'readwrite';
+                            })
                             .map(([key, value]) => ({
                               key,
                               name: key,
