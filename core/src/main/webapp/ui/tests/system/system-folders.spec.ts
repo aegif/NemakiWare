@@ -2,14 +2,17 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 
 /**
- * SKIP REASON (2025-12-16): System folder tests are skipped because:
- * 1. .system folder is intentionally hidden from UI document list for security
- * 2. System folders should only be accessed via admin management UI, not document browser
- * 3. These tests use API-level access which works, but UI display is by design
+ * System Folders Test Suite (2025-12-23)
  *
- * To re-enable: Remove test.describe.skip() when .system folder UI is implemented
+ * Tests .system folder visibility and navigation for admin users.
+ * The .system folder contains users and groups subfolders.
+ *
+ * ACL REQUIREMENT: admin user must have cmis:all permission on:
+ * - /.system folder (34169aaa-5d6f-4685-a1d0-66bb31948877)
+ * - /.system/users folder (6a672b7a-fbc3-4012-9da7-37cc7ad6a2fc)
+ * - /.system/groups folder (78a28100-44d1-4318-8194-54aabba74c0e)
  */
-test.describe.skip('System Folders (/.system)', () => {
+test.describe('System Folders (/.system)', () => {
   let authHelper: AuthHelper;
 
   test.beforeEach(async ({ page, browserName }) => {
@@ -42,12 +45,34 @@ test.describe.skip('System Folders (/.system)', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    // Navigate to /.system folder via URL
+    // Navigate to documents page
     await page.goto('http://localhost:8080/core/ui/index.html#/documents');
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
-    // Look for .system folder in document table
-    const systemFolderRow = page.locator('tr:has-text(".system")').first();
+    // Wait for table to load
+    await expect(page.locator('.ant-table-tbody')).toBeVisible({ timeout: 10000 });
+
+    // Navigate through pages or scroll to find .system folder
+    // The table might have pagination with 10 items per page
+    let systemFolderRow = page.locator('tr:has-text(".system")').first();
+    let found = false;
+
+    // Try to find .system on current page or navigate pages
+    for (let attempt = 0; attempt < 10 && !found; attempt++) {
+      if (await systemFolderRow.isVisible({ timeout: 1000 }).catch(() => false)) {
+        found = true;
+        break;
+      }
+      // Try next page if pagination exists
+      const nextButton = page.locator('.ant-pagination-next:not(.ant-pagination-disabled)');
+      if (await nextButton.isVisible({ timeout: 500 }).catch(() => false)) {
+        await nextButton.click();
+        await page.waitForTimeout(1000);
+      } else {
+        break;
+      }
+    }
+
     await expect(systemFolderRow).toBeVisible({ timeout: 10000 });
 
     console.log('✅ Found .system folder in document list');
@@ -237,11 +262,29 @@ test.describe.skip('System Folders (/.system)', () => {
 
     // Navigate to root documents page
     await page.goto('http://localhost:8080/core/ui/index.html#/documents');
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
-    // Find and click .system folder name button to navigate
-    // Note: Ant Design renders folder names as <Button type="link"> (not actual <a> tags)
-    const systemFolderRow = page.locator('tr:has-text(".system")').first();
+    // Wait for table to load
+    await expect(page.locator('.ant-table-tbody')).toBeVisible({ timeout: 10000 });
+
+    // Navigate through pages to find .system folder
+    let systemFolderRow = page.locator('tr:has-text(".system")').first();
+    let found = false;
+
+    for (let attempt = 0; attempt < 10 && !found; attempt++) {
+      if (await systemFolderRow.isVisible({ timeout: 1000 }).catch(() => false)) {
+        found = true;
+        break;
+      }
+      const nextButton = page.locator('.ant-pagination-next:not(.ant-pagination-disabled)');
+      if (await nextButton.isVisible({ timeout: 500 }).catch(() => false)) {
+        await nextButton.click();
+        await page.waitForTimeout(1000);
+      } else {
+        break;
+      }
+    }
+
     await expect(systemFolderRow).toBeVisible({ timeout: 10000 });
 
     const systemFolderButton = systemFolderRow.getByRole('button', { name: '.system' });
