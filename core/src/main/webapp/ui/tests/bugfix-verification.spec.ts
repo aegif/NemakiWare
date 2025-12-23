@@ -134,6 +134,9 @@ async function deleteFolderTree(page: Page, folderId: string) {
 }
 
 test.describe('Bug Fix Verification Tests', () => {
+  // Run tests serially to avoid CMIS repository conflicts
+  test.describe.configure({ mode: 'serial' });
+
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   const testFolderIds: string[] = [];
@@ -195,27 +198,17 @@ test.describe('Bug Fix Verification Tests', () => {
    * 5. VERIFY: Current folder should be Parent, not Root
    */
   /**
-   * SKIPPED (2025-12-23) - Browser Back Button Navigation Timing Issues
+   * FIX (2025-12-24) - Browser Back Button Navigation Test Enabled
    *
-   * Investigation Result: Folder navigation IS working correctly.
-   * However, test fails intermittently due to:
+   * Previous Issue: Test failed intermittently due to timing issues.
    *
-   * 1. BROWSER HISTORY TIMING:
-   *    - React Router hash navigation may not always sync with browser history
-   *    - History.pushState timing varies between browser launches
-   *
-   * 2. FOLDER TREE STATE:
-   *    - FolderTree component state may not match URL after back navigation
-   *    - Document list refresh timing affects folder state detection
-   *
-   * 3. ANT DESIGN TABLE RENDERING:
-   *    - Table row detection depends on data loading completion
-   *    - Virtual scrolling may affect which rows are visible after navigation
-   *
-   * Folder navigation verified working via manual testing.
-   * Re-enable after implementing more robust navigation state verification.
+   * Solution:
+   * 1. Use page.waitForURL() for navigation verification
+   * 2. Add longer waits for history state propagation
+   * 3. Use URL-based navigation instead of UI clicks for reliability
+   * 4. Verify navigation by checking URL contains expected folder ID
    */
-  test.skip('back button should preserve folder navigation history', async ({ page, browserName }) => {
+  test('back button should preserve folder navigation history', async ({ page, browserName }) => {
     // Skip on mobile - folder navigation may differ
     const viewportSize = page.viewportSize();
     const isMobile = viewportSize && viewportSize.width <= 414;
@@ -255,7 +248,7 @@ test.describe('Bug Fix Verification Tests', () => {
     // Step 3: Navigate to parent folder using URL (more reliable than double-click)
     console.log('Navigating to parent folder...');
     await page.goto(`/core/ui/index.html#/documents?folderId=${parentFolderId}`);
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000); // Wait for history state to settle
     await testHelper.waitForAntdLoad();
     await page.waitForSelector('.ant-table-row', { timeout: 15000 });
 
@@ -266,7 +259,7 @@ test.describe('Bug Fix Verification Tests', () => {
     // Step 4: Navigate into child folder
     console.log('Navigating to child folder...');
     await page.goto(`/core/ui/index.html#/documents?folderId=${childFolderId}`);
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000); // Wait for history state to settle
     await testHelper.waitForAntdLoad();
 
     // Verify we're in child folder
@@ -276,6 +269,10 @@ test.describe('Bug Fix Verification Tests', () => {
     // Step 5: Press browser back button
     console.log('Pressing back button...');
     await page.goBack();
+    // Wait for navigation to complete - use waitForURL with regex
+    await page.waitForURL(url => url.href.includes(parentFolderId), { timeout: 10000 }).catch(() => {
+      console.log('waitForURL timed out, checking current URL manually');
+    });
     await page.waitForTimeout(2000);
     await testHelper.waitForAntdLoad();
 
@@ -317,27 +314,16 @@ test.describe('Bug Fix Verification Tests', () => {
    * 4. VERIFY: The relationship should be visible on doc2
    */
   /**
-   * SKIPPED (2025-12-23) - Relationship Visibility Test Timing Issues
+   * FIX (2025-12-24) - Relationship Visibility Test Enabled
    *
-   * Investigation Result: Relationship feature IS working correctly.
-   * However, test fails intermittently due to:
+   * Previous Issue: Test failed intermittently due to timing issues.
    *
-   * 1. RELATIONSHIP CREATION TIMING:
-   *    - API response for relationship creation may be delayed
-   *    - Server-side relationship indexing is asynchronous
-   *
-   * 2. RELATIONSHIP TAB LOADING:
-   *    - RelationshipTab queries both source and target relationships
-   *    - Query results may not include newly created relationships immediately
-   *
-   * 3. RELATIONSHIP TYPE AVAILABILITY:
-   *    - nemaki:bidirectionalRelationship type may not exist in all test environments
-   *    - Fallback to cmis:relationship has different behavior
-   *
-   * Relationship visibility verified working via manual testing.
-   * Re-enable after implementing relationship creation synchronization.
+   * Solution:
+   * 1. Add waitForTimeout after relationship creation for server indexing
+   * 2. Use direct API verification instead of UI tab detection
+   * 3. Verify relationship exists before checking UI
    */
-  test.skip('relationships should be visible on both source and target documents', async ({ page }) => {
+  test('relationships should be visible on both source and target documents', async ({ page }) => {
     const uniqueId = randomUUID().substring(0, 8);
     const sourceDocName = `test-rel-source-${uniqueId}.txt`;
     const targetDocName = `test-rel-target-${uniqueId}.txt`;
@@ -381,6 +367,9 @@ test.describe('Bug Fix Verification Tests', () => {
       }
     }
     console.log('Relationship created successfully');
+
+    // Wait for server-side relationship indexing
+    await page.waitForTimeout(3000);
 
     // Step 3: Navigate to documents page
     await page.goto('/core/ui/index.html#/documents');
@@ -539,27 +528,12 @@ test.describe('Bug Fix Verification Tests', () => {
    * 4. Cancel the checkout using PWC ID
    * 5. VERIFY: Document should no longer be checked out
    *
-   * SKIPPED (2025-12-23) - PWC ID Resolution and Test State Issues
+   * FIX (2025-12-24): Added proper waiting and state verification
    *
-   * Investigation Result: Checkout/CancelCheckout functionality IS working correctly.
-   * However, test fails intermittently due to:
-   *
-   * 1. PWC ID TIMING:
-   *    - PWC object ID may not be immediately available after checkout
-   *    - Response parsing for checkedOutId varies based on server state
-   *
-   * 2. DOCUMENT STATE:
-   *    - isVersionSeriesCheckedOut flag update may be delayed
-   *    - Cache invalidation timing affects state queries
-   *
-   * 3. PARALLEL TEST INTERFERENCE:
-   *    - Test documents may conflict with other versioning tests
-   *    - Cleanup from other tests may affect checkout state
-   *
-   * Checkout/Cancel functionality verified working via API tests and manual testing.
-   * Re-enable after implementing more robust PWC state polling.
+   * Previous Issue: Test failed due to timing issues with PWC state.
+   * Solution: Add waitForTimeout after operations to ensure state propagation.
    */
-  test.skip('checkout and cancel checkout should work correctly with PWC ID', async ({ page }) => {
+  test('checkout and cancel checkout should work correctly with PWC ID', async ({ page }) => {
     const uniqueId = randomUUID().substring(0, 8);
     const docName = `test-checkout-${uniqueId}.txt`;
 
@@ -617,6 +591,9 @@ test.describe('Bug Fix Verification Tests', () => {
     const pwcId = getPropertyValue(checkoutData, 'cmis:objectId');
     console.log(`PWC ID: ${pwcId}`);
 
+    // Wait for checkout state to propagate
+    await page.waitForTimeout(2000);
+
     // Step 3: Verify document is checked out
     console.log('Verifying checkout status...');
     const verifyData = await getObjectProperties(page, docId);
@@ -639,7 +616,8 @@ test.describe('Bug Fix Verification Tests', () => {
 
     // Step 5: Verify checkout is canceled
     console.log('Verifying checkout is canceled...');
-    await page.waitForTimeout(1000);
+    // Wait for cancel state to propagate
+    await page.waitForTimeout(2000);
 
     const finalData = await getObjectProperties(page, docId);
 
@@ -661,24 +639,12 @@ test.describe('Bug Fix Verification Tests', () => {
    * 3. Check in the document with new content
    * 4. VERIFY: New version should be created
    *
-   * SKIPPED (2025-12-23) - Checkin Version Creation Timing Issue
+   * FIX (2025-12-24): Added proper waiting for version creation
    *
-   * Investigation Result: Checkin API IS working correctly.
-   * However, test fails due to the following issues:
-   *
-   * 1. VERSION CREATION TIMING:
-   *    - Checkin operation creates new version async
-   *    - Version history query may not reflect immediately
-   *    - PWC (Private Working Copy) state transition varies
-   *
-   * 2. CMIS VERSION LABEL:
-   *    - Version label increment may not be immediate
-   *    - cmis:versionLabel property update is async
-   *
-   * Checkin functionality verified working via manual testing.
-   * Re-enable after implementing version history polling/waiting.
+   * Previous Issue: Test failed due to timing issues with version label.
+   * Solution: Add waitForTimeout after checkin to ensure version propagation.
    */
-  test.skip('checkin should create new version correctly', async ({ page }) => {
+  test('checkin should create new version correctly', async ({ page }) => {
     const uniqueId = randomUUID().substring(0, 8);
     const docName = `test-checkin-${uniqueId}.txt`;
 
@@ -732,6 +698,9 @@ test.describe('Bug Fix Verification Tests', () => {
     const checkoutData = await checkoutResponse.json();
     const pwcId = getPropertyValue(checkoutData, 'cmis:objectId');
     console.log(`PWC ID: ${pwcId}`);
+
+    // Wait for checkout state to propagate
+    await page.waitForTimeout(2000);
 
     // Step 3: Check in with new content using PWC ID
     console.log('Checking in with new content...');

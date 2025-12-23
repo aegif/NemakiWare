@@ -155,32 +155,16 @@ async function waitForTableLoad(page: any, timeout: number = 30000) {
 test.describe.configure({ mode: 'serial' });
 
 /**
- * SKIPPED (2025-12-23) - Type Upload and JSON Editing Timing Issues
+ * FIX (2025-12-24) - Type Definition Upload Tests Enabled
  *
- * Investigation Result: Type upload and JSON editing ARE implemented.
- * However, tests fail due to the following issues:
+ * Previous Issue: Tests skipped due to file upload and timing issues.
  *
- * 1. FILE UPLOAD TIMING:
- *    - Upload.Dragger onChange event not triggered by setInputFiles
- *    - dispatchEvent('change') workaround has timing issues
- *    - Modal close timing after successful upload varies
- *
- * 2. CONFLICT DETECTION:
- *    - Conflict modal may not appear if upload fails silently
- *    - Conflict type list detection depends on async API response
- *
- * 3. SERIAL TEST MODE:
- *    - Tests depend on previous test success (type creation)
- *    - Cleanup via API may leave orphaned types
- *
- * 4. PAGINATION:
- *    - New types appear on last page (sorted alphabetically)
- *    - Pagination navigation adds test complexity
- *
- * Type management functionality is verified working via manual testing.
- * Re-enable after implementing more robust file upload handling.
+ * Solution:
+ * 1. Keep serial mode to avoid conflicts
+ * 2. Use graceful test.skip() for unimplemented features
+ * 3. Validate functionality via API when UI detection is unreliable
  */
-test.describe.skip('Type Definition Upload and JSON Editing', () => {
+test.describe('Type Definition Upload and JSON Editing', () => {
   test.beforeAll(async ({ request }) => {
     // SIMPLIFIED CLEANUP: Use direct API calls instead of UI navigation
     // This prevents the 90-second timeout caused by complex UI cleanup
@@ -549,8 +533,9 @@ test.describe.skip('Type Definition Upload and JSON Editing', () => {
     console.log(`Found type ${testTypeId} in table`);
     await expect(typeRow.first()).toBeVisible();
 
-    // Use Japanese text selector instead of aria-label (same as delete button)
-    const editButton = typeRow.locator('button:has-text("編集")');
+    // FIX (2025-12-24): Button text is "JSON" not "編集" for JSON editing
+    // "GUI編集" opens GUI editor, "JSON" opens JSON editor
+    const editButton = typeRow.locator('button:has-text("JSON")');
     await editButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
 
@@ -690,8 +675,8 @@ test.describe.skip('Type Definition Upload and JSON Editing', () => {
     console.log(`Found type ${newTypeId} in table`);
     await expect(newTypeRow.first()).toBeVisible();
 
-    // Use Japanese text selector instead of aria-label (same as delete button)
-    const editButton = newTypeRow.locator('button:has-text("編集")');
+    // FIX (2025-12-24): Button text is "JSON" not "編集" for JSON editing
+    const editButton = newTypeRow.locator('button:has-text("JSON")');
     await editButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
 
@@ -917,8 +902,8 @@ test.describe.skip('Type Definition Upload and JSON Editing', () => {
 
     // Open edit modal
     const typeRow = page.locator(`tr:has-text("${cancelTestTypeId}")`);
-    // Use Japanese text selector instead of aria-label (same as delete button)
-    const editButton = typeRow.locator('button:has-text("編集")');
+    // FIX (2025-12-24): Button text is "JSON" not "編集" for JSON editing
+    const editButton = typeRow.locator('button:has-text("JSON")');
     await editButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
 
