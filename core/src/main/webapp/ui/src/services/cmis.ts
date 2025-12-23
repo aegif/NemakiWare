@@ -1200,7 +1200,7 @@ export class CMISService {
       const formData = new URLSearchParams();
       formData.append('cmisaction', 'query');
       formData.append('statement', query);
-      const response = await this.httpClient.postForm(url, formData);
+      const response = await this.httpClient.postUrlEncoded(url, formData);
 
       if (response.status === 200) {
         try {
@@ -1969,6 +1969,36 @@ export class CMISService {
     }
   }
 
+  /**
+   * Get type descendants (all types that inherit from the specified base type)
+   * @param repositoryId Repository ID
+   * @param baseTypeId The base type ID to get descendants of (e.g., 'cmis:relationship')
+   * @param depth Depth of descendants to retrieve (-1 for all, default -1)
+   * @returns Array of type definitions that are descendants of the base type
+   */
+  async getTypeDescendants(repositoryId: string, baseTypeId: string, _depth: number = -1): Promise<TypeDefinition[]> {
+    // Note: _depth parameter is reserved for future use (CMIS spec supports depth limiting)
+    // Currently returns all descendants regardless of depth value
+    try {
+      // Get all types and filter by base type
+      const allTypes = await this.getTypes(repositoryId);
+
+      // Filter to types that have the specified baseTypeId
+      const descendants = allTypes.filter(type => {
+        // Include the base type itself and all types that inherit from it
+        return type.id === baseTypeId || type.baseTypeId === baseTypeId || type.parentTypeId === baseTypeId;
+      });
+
+      return descendants;
+    } catch (error) {
+      console.error(`[CMIS] Error getting type descendants for ${baseTypeId}:`, error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error getting type descendants');
+    }
+  }
+
   async createType(repositoryId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
     // First, create the type via REST API
     try {
@@ -2368,7 +2398,7 @@ export class CMISService {
 
         // Get parent type
         try {
-          const typeDef = await this.getTypeDefinition(repositoryId, currentTypeId);
+          const typeDef = await this.getType(repositoryId, currentTypeId);
           currentTypeId = typeDef.parentTypeId || '';
         } catch (e) {
           // Type not found, stop traversal
