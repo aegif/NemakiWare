@@ -315,6 +315,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
 
+  // Debug: Log component mount/unmount
+  useEffect(() => {
+    console.log('[DocumentList] Component MOUNTED, URL:', window.location.href);
+    return () => {
+      console.log('[DocumentList] Component UNMOUNTED');
+    };
+  }, []);
+
   // Initialize folder ID from URL parameter or default to root
   // CRITICAL FIX (2025-12-03): Separate initialization from navigation
   // - Only set currentFolderId on INITIAL load (when currentFolderId is empty)
@@ -322,16 +330,24 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // This prevents tree redraw when user clicks folders in the table
   useEffect(() => {
     const folderIdFromUrl = searchParams.get('folderId');
+    console.log('[DocumentList] URL useEffect triggered');
+    console.log('[DocumentList] folderIdFromUrl:', folderIdFromUrl);
+    console.log('[DocumentList] current selectedFolderId:', selectedFolderId);
+    console.log('[DocumentList] current currentFolderId:', currentFolderId);
+
     if (folderIdFromUrl) {
       // Always update selectedFolderId to show correct folder contents
+      console.log('[DocumentList] Setting selectedFolderId to:', folderIdFromUrl);
       setSelectedFolderId(folderIdFromUrl);
       // Only set currentFolderId if it hasn't been set yet (initial load)
       // This prevents tree redraw on every folder navigation
       if (!currentFolderId) {
+        console.log('[DocumentList] Setting currentFolderId to:', folderIdFromUrl);
         setCurrentFolderId(folderIdFromUrl);
       }
     } else if (!selectedFolderId) {
       // Default to root folder if no URL parameter and no selected folder
+      console.log('[DocumentList] No folderId in URL, defaulting to ROOT');
       setSelectedFolderId(ROOT_FOLDER_ID);
       setCurrentFolderId(ROOT_FOLDER_ID);
       setSearchParams({ folderId: ROOT_FOLDER_ID });
@@ -946,7 +962,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               <Button
                 icon={<LockOutlined />}
                 size="small"
-                onClick={() => navigate(`/permissions/${record.id}`)}
+                onClick={() => {
+                  // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to PermissionManagement
+                  const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
+                  navigate(`/permissions/${record.id}?folderId=${effectiveFolderId}`);
+                }}
               >
                 権限管理
               </Button>

@@ -311,6 +311,17 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   // CRITICAL FIX: Pass handleAuthError to CMISService to handle 401/403/404 errors
   const cmisService = new CMISService(handleAuthError);
 
+  // Debug: Log component mount with URL info
+  useEffect(() => {
+    console.log('[DocumentViewer] Component MOUNTED');
+    console.log('[DocumentViewer] URL:', window.location.href);
+    console.log('[DocumentViewer] objectId from route:', objectId);
+    console.log('[DocumentViewer] folderId from URL:', searchParams.get('folderId'));
+    return () => {
+      console.log('[DocumentViewer] Component UNMOUNTED');
+    };
+  }, []);
+
   useEffect(() => {
     if (objectId) {
       loadObject();
@@ -1006,7 +1017,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
               <Button
                 icon={<EditOutlined />}
-                onClick={() => navigate(`/permissions/${object.id}`)}
+                onClick={() => {
+                  // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to PermissionManagement
+                  const folderIdParam = currentFolderId ? `?folderId=${currentFolderId}` : '';
+                  navigate(`/permissions/${object.id}${folderIdParam}`);
+                }}
               >
                 権限管理
               </Button>
