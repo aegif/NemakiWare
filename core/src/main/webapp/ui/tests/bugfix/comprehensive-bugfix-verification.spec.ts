@@ -47,7 +47,7 @@ import { randomUUID } from 'crypto';
  * Bug fixes verified working via backend API tests.
  * Re-enable after implementing test data fixtures.
  */
-test.describe.skip('Comprehensive Bug Fix Verification (WebUI)', () => {
+test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
   test.describe.configure({ mode: 'serial' });
 
   let authHelper: AuthHelper;
@@ -482,7 +482,7 @@ test.describe.skip('Comprehensive Bug Fix Verification (WebUI)', () => {
  * Search tokenization fix verified working via API tests.
  * Re-enable after implementing test data fixtures.
  */
-test.describe.skip('Search Tokenization Bug Fix Verification', () => {
+test.describe('Search Tokenization Bug Fix Verification', () => {
   test.describe.configure({ mode: 'serial' });
 
   let authHelper: AuthHelper;

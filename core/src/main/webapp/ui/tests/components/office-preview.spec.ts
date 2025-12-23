@@ -23,7 +23,7 @@ import { TestHelper } from '../utils/test-helper';
  * Office preview verified working via manual testing.
  * Re-enable after implementing more robust auth wait utilities.
  */
-test.describe.skip('Office Preview Component', () => {
+test.describe('Office Preview Component', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
@@ -135,7 +135,7 @@ test.describe.skip('Office Preview Component', () => {
 /**
  * SKIPPED - Same authentication timing issues as Office Preview Component
  */
-test.describe.skip('Office Preview - File Type Support', () => {
+test.describe('Office Preview - File Type Support', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
@@ -222,7 +222,7 @@ test.describe.skip('Office Preview - File Type Support', () => {
 /**
  * SKIPPED - Same authentication timing issues as Office Preview Component
  */
-test.describe.skip('Office Preview - Error Handling', () => {
+test.describe('Office Preview - Error Handling', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
@@ -295,7 +295,7 @@ test.describe.skip('Office Preview - Error Handling', () => {
 /**
  * SKIPPED - Same authentication timing issues as Office Preview Component
  */
-test.describe.skip('Office Preview - Rendition Integration', () => {
+test.describe('Office Preview - Rendition Integration', () => {
   let authHelper: AuthHelper;
 
   test.beforeEach(async ({ page }) => {

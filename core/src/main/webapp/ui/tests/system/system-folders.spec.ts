@@ -34,7 +34,7 @@ import { AuthHelper } from '../utils/auth-helper';
  *
  * Re-enable after database cleanup or environment reset.
  */
-test.describe.skip('System Folders (/.system)', () => {
+test.describe('System Folders (/.system)', () => {
   let authHelper: AuthHelper;
 
   test.beforeEach(async ({ page, browserName }) => {

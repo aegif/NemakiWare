@@ -37,7 +37,7 @@ import { randomUUID } from 'crypto';
  * Internationalization verified working via CMIS API tests.
  * Re-enable after implementing more robust upload wait utilities.
  */
-test.describe.skip('Internationalization Tests', () => {
+test.describe('Internationalization Tests', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 

@@ -197,7 +197,7 @@ async function executeCmisQuery(request: any, query: string): Promise<any> {
 // ============================================================================
 // TEST 1: Aspect Property Preservation During Document Update
 // ============================================================================
-test.describe.skip('Aspect Property Preservation', () => {
+test.describe('Aspect Property Preservation', () => {
 
   test('nemaki:comment should persist when updating cmis:description', async ({ request }) => {
     const timestamp = Date.now();
@@ -324,7 +324,7 @@ test.describe.skip('Aspect Property Preservation', () => {
 // ============================================================================
 // TEST 2: Secondary Type Search (cmis:secondaryObjectTypeIds)
 // ============================================================================
-test.describe.skip('Secondary Type Search', () => {
+test.describe('Secondary Type Search', () => {
 
   test('CMIS SQL query with ANY cmis:secondaryObjectTypeIds IN should return results', async ({ request }) => {
     const timestamp = Date.now();
@@ -452,7 +452,7 @@ test.describe.skip('Secondary Type Search', () => {
 // ============================================================================
 // TEST 3: Office Document Preview
 // ============================================================================
-test.describe.skip('Office Document Preview', () => {
+test.describe('Office Document Preview', () => {
 
   test('Rendition API endpoint should be accessible', async ({ request }) => {
     // Check that the rendition API endpoint exists and responds
@@ -568,7 +568,7 @@ test.describe.skip('Office Document Preview', () => {
 // ============================================================================
 // Summary Test
 // ============================================================================
-test.describe.skip('Verification Summary', () => {
+test.describe('Verification Summary', () => {
   test('All bug fixes summary', async ({ request }) => {
     console.log('='.repeat(60));
     console.log('Bug Fix Verification Summary');

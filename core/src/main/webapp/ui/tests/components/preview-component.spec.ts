@@ -45,7 +45,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 
-test.describe.skip('PreviewComponent File Type Routing', () => {
+test.describe('PreviewComponent File Type Routing', () => {
   // Run tests sequentially to ensure uploaded files are available for subsequent tests
   test.describe.configure({ mode: 'serial' });
 
@@ -213,7 +213,7 @@ test.describe.skip('PreviewComponent File Type Routing', () => {
   });
 });
 
-test.describe.skip('PreviewComponent Image Preview', () => {
+test.describe('PreviewComponent Image Preview', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
@@ -321,7 +321,7 @@ test.describe.skip('PreviewComponent Image Preview', () => {
   });
 });
 
-test.describe.skip('PreviewComponent Text Preview', () => {
+test.describe('PreviewComponent Text Preview', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
@@ -418,7 +418,7 @@ test.describe.skip('PreviewComponent Text Preview', () => {
   });
 });
 
-test.describe.skip('PreviewComponent Error Handling', () => {
+test.describe('PreviewComponent Error Handling', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
@@ -595,7 +595,7 @@ test.describe.skip('PreviewComponent Error Handling', () => {
   });
 });
 
-test.describe.skip('PreviewComponent PDF Preview', () => {
+test.describe('PreviewComponent PDF Preview', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
@@ -715,7 +715,7 @@ startxref
   });
 });
 
-test.describe.skip('PreviewComponent Video Preview', () => {
+test.describe('PreviewComponent Video Preview', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 

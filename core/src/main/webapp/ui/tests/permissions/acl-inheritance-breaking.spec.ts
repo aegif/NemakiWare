@@ -108,7 +108,7 @@ async function waitForTableRow(page: any, folderName: string, maxAttempts = 10):
  * ACL inheritance functionality is verified via backend TCK tests.
  * Re-enable after implementing more robust ACL state detection.
  */
-test.describe.skip('ACL Inheritance Breaking', () => {
+test.describe('ACL Inheritance Breaking', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   let rootFolderId: string;

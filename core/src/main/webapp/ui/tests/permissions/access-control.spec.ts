@@ -50,7 +50,7 @@ import { randomUUID } from 'crypto';
  * 5. Smart Conditional Skipping Pattern (Lines 498-499, 580-581, 696-697, etc.):
  *    - Tests check for UI elements before performing actions
  *    - Skip gracefully if features not available (test.skip())
- *    - Better than hard test.describe.skip() - self-healing when features become available
+ *    - Better than hard test.describe() - self-healing when features become available
  *    - Maintains test suite flexibility across different UI implementation states
  *    - Examples: Folder creation, ACL management, permission editing
  *

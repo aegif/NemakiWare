@@ -44,7 +44,7 @@ import { randomUUID } from 'crypto';
  * Bug fix verified via backend API tests.
  * Re-enable after implementing test data fixtures.
  */
-test.describe.skip('Bug Fix: Description Disappearing with Secondary Types (WebUI)', () => {
+test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', () => {
   // Tests must run in order - document lifecycle
   test.describe.configure({ mode: 'serial' });
 

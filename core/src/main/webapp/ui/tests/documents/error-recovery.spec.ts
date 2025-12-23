@@ -32,7 +32,7 @@ import { randomUUID } from 'crypto';
  * Re-enable after implementing more robust mock response handling.
  */
 
-test.describe.skip('Error Recovery Tests', () => {
+test.describe('Error Recovery Tests', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 

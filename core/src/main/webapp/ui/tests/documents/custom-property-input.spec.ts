@@ -96,7 +96,7 @@ test.describe('Custom Property Input Feature', () => {
    * Custom property input verified working via manual testing.
    * Re-enable after implementing more robust modal state detection.
    */
-  test.describe.skip('Document Upload Modal', () => {
+  test.describe('Document Upload Modal', () => {
     test('should display type selection dropdown', async ({ page }) => {
       // Open upload modal
       const uploadButton = page.locator('button:has-text("ファイルアップロード")');

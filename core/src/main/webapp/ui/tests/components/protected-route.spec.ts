@@ -157,7 +157,7 @@ import { TestHelper } from '../utils/test-helper';
  * ProtectedRoute verified working via manual testing.
  * Re-enable after implementing more robust auth state detection.
  */
-test.describe.skip('ProtectedRoute Component - Authentication Wrapper', () => {
+test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 

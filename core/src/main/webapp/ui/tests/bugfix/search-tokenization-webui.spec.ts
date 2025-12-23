@@ -43,7 +43,7 @@ import { randomUUID } from 'crypto';
  * Search tokenization fix verified working via API tests.
  * Re-enable after implementing more robust upload wait utilities.
  */
-test.describe.skip('Bug Fix: Search Tokenization Issue (WebUI)', () => {
+test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
   // Tests must run in order - document lifecycle
   test.describe.configure({ mode: 'serial' });
 

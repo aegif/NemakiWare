@@ -105,7 +105,7 @@ import { randomUUID } from 'crypto';
  * Bulk operations verified working via manual testing.
  * Re-enable after implementing more robust selection wait utilities.
  */
-test.describe.skip('Bulk Operations', () => {
+test.describe('Bulk Operations', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   const testDocumentNames: string[] = [];

@@ -27,7 +27,7 @@ import { setupPreviewTestData, cleanupPreviewTestData, type TestContext } from '
 
 let testContext: TestContext;
 
-test.describe.skip('Excel Preview Tests', () => {
+test.describe('Excel Preview Tests', () => {
   test.beforeAll(async () => {
     console.log('Setting up Excel preview test data...');
     testContext = await setupPreviewTestData();

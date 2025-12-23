@@ -398,7 +398,7 @@ test.describe('ACL Operations - API Direct Tests', () => {
  * Error cases verified manually via API testing.
  * Re-enable after implementing more robust ACL error handling assertions.
  */
-test.describe.skip('ACL Operations - Error Cases', () => {
+test.describe('ACL Operations - Error Cases', () => {
   const repositoryId = 'bedroom';
   const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
 
@@ -744,7 +744,7 @@ test.describe('ACL Operations - Multiple Users', () => {
  * Permission combinations verified working via manual API testing.
  * Re-enable after implementing more robust cleanup handling.
  */
-test.describe.skip('ACL Operations - Permission Combinations', () => {
+test.describe('ACL Operations - Permission Combinations', () => {
   const repositoryId = 'bedroom';
   const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
 

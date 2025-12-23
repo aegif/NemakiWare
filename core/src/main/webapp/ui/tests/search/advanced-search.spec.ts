@@ -187,7 +187,7 @@ import { AuthHelper } from '../utils/auth-helper';
  * Search functionality is verified working via manual testing.
  * Re-enable after implementing more robust async handling.
  */
-test.describe.skip('Advanced Search', () => {
+test.describe('Advanced Search', () => {
   let authHelper: AuthHelper;
 
   test.beforeEach(async ({ page, browserName }) => {

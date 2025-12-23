@@ -206,7 +206,7 @@ async function executeCmisQuery(request: any, query: string): Promise<any> {
  * Gray overlay issue verified fixed via manual testing.
  * Re-enable after implementing more robust overlay detection mechanism.
  */
-test.describe.skip('Bug Fix 1: Gray Overlay After Login', () => {
+test.describe('Bug Fix 1: Gray Overlay After Login', () => {
 
   test('Login should not leave gray overlay blocking input', async ({ page }) => {
     // Use the common auth helper for reliable login
@@ -341,7 +341,7 @@ test.describe.skip('Bug Fix 1: Gray Overlay After Login', () => {
  * Relationship bidirectional display verified working via manual API testing.
  * Re-enable after implementing more robust relationship assertion helpers.
  */
-test.describe.skip('Bug Fix 2: Relationship Bidirectional Display', () => {
+test.describe('Bug Fix 2: Relationship Bidirectional Display', () => {
 
   test('Relationship should be visible from both source and target objects', async ({ request }) => {
     const timestamp = Date.now();
@@ -452,7 +452,7 @@ test.describe.skip('Bug Fix 2: Relationship Bidirectional Display', () => {
  * Description property verified working via manual testing.
  * Re-enable after implementing proper wait conditions.
  */
-test.describe.skip('Bug Fix 3: Description Property Disappearing on Re-edit', () => {
+test.describe('Bug Fix 3: Description Property Disappearing on Re-edit', () => {
 
   test('Description should persist after save and re-edit via API', async ({ request }) => {
     const timestamp = Date.now();

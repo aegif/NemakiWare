@@ -37,7 +37,7 @@ import { TestHelper } from '../utils/test-helper';
  * Layout navigation verified working via manual testing.
  * Re-enable after implementing more robust auth wait utilities.
  */
-test.describe.skip('Layout Navigation', () => {
+test.describe('Layout Navigation', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
@@ -422,7 +422,7 @@ test.describe.skip('Layout Navigation', () => {
  * Sidebar collapse verified working via manual testing.
  * Re-enable after implementing more robust auth wait utilities.
  */
-test.describe.skip('Layout Sidebar Collapse', () => {
+test.describe('Layout Sidebar Collapse', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 

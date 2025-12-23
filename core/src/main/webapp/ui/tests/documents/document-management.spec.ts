@@ -70,7 +70,7 @@ import { randomUUID } from 'crypto';
  *    - Tests check for feature availability before execution: if (await element.count() > 0)
  *    - Graceful skip with informative messages: test.skip('Feature not found')
  *    - Self-healing: Tests automatically pass when UI features become available
- *    - Better than test.describe.skip() which requires manual re-enable
+ *    - Better than test.describe() which requires manual re-enable
  *    - Rationale: UI features may not be implemented or temporarily unavailable
  *    - Example messages: "Upload functionality not found", "Search not available"
  *

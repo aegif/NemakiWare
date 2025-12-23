@@ -138,7 +138,7 @@ async function deleteDocument(request: any, objectId: string): Promise<void> {
   });
 }
 
-test.describe.skip('Secondary Type Management', () => {
+test.describe('Secondary Type Management', () => {
 
   test('should display secondary type tab in document viewer', async ({ page }) => {
     await login(page);
@@ -296,7 +296,7 @@ test.describe.skip('Secondary Type Management', () => {
   });
 });
 
-test.describe.skip('Relationship Management', () => {
+test.describe('Relationship Management', () => {
 
   test('should create relationship between documents via API', async ({ request }) => {
     // Create two test documents
@@ -409,7 +409,7 @@ test.describe.skip('Relationship Management', () => {
   });
 });
 
-test.describe.skip('UI Integration Tests', () => {
+test.describe('UI Integration Tests', () => {
 
   test('should navigate to secondary type tab and show content', async ({ page }) => {
     await login(page);

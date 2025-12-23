@@ -181,7 +181,7 @@ async function navigateToFolderViaTable(page: Page, folderName: string, options?
  * TODO: Fix the timing issue in DocumentList.tsx to ensure selectedFolderId is
  * properly synchronized after table navigation before folder creation.
  */
-test.describe.skip('Folder Hierarchy Operations', () => {
+test.describe('Folder Hierarchy Operations', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   let testFolderIds: { parent: string; child: string; grandchild: string } = {

@@ -96,7 +96,7 @@ async function deleteDocument(request: any, objectId: string): Promise<void> {
  * Description persistence verified working via manual testing and API verification.
  * Re-enable after implementing more robust property update assertions.
  */
-test.describe.skip('Description Disappearing Bug Verification', () => {
+test.describe('Description Disappearing Bug Verification', () => {
 
   test('REPRO: Description should persist when saving with secondary type properties', async ({ request }) => {
     // Step 1: Create test document with initial description

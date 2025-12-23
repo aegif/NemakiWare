@@ -56,7 +56,7 @@ import { AuthHelper } from '../utils/auth-helper';
  * The Solr indexing code paths are verified working via backend tests.
  * Re-enable after implementing more robust UI state detection.
  */
-test.describe.skip('Solr Indexing Regression Tests', () => {
+test.describe('Solr Indexing Regression Tests', () => {
   let authHelper: AuthHelper;
   const uniqueId = Date.now().toString();
 
