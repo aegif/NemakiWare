@@ -204,10 +204,12 @@ test.describe.configure({ mode: 'serial' });
  *    - Dropdown must close before form can be submitted
  *    - Submit button click timing after dropdown close
  *
+ * FIX (2025-12-24): Enabled tests with serial mode
  * Group management verified working via manual testing.
- * Re-enable after implementing more robust dropdown close waits.
  */
-test.describe.skip('Group Management CRUD Operations', () => {
+test.describe('Group Management CRUD Operations', () => {
+  // Run tests serially to avoid conflicts
+  test.describe.configure({ mode: 'serial' });
   let authHelper: AuthHelper;
 
   test.beforeEach(async ({ page, browserName }) => {

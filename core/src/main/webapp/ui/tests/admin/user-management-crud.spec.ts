@@ -176,10 +176,12 @@ test.describe.configure({ mode: 'serial' });
  *    - Sidebar overlay may block button clicks
  *    - Force click may not trigger form submission
  *
+ * FIX (2025-12-24): Enabled tests with serial mode
  * User management verified working via manual testing.
- * Re-enable after implementing more robust form submission waits.
  */
-test.describe.skip('User Management CRUD Operations', () => {
+test.describe('User Management CRUD Operations', () => {
+  // Run tests serially to avoid conflicts
+  test.describe.configure({ mode: 'serial' });
   let authHelper: AuthHelper;
   const testUsername = `testuser_${randomUUID().substring(0, 8)}`;
   const testUserEmail = `${testUsername}@test.local`;

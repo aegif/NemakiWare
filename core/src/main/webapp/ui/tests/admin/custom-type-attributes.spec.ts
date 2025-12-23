@@ -179,6 +179,8 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
 
+// SKIPPED: TypeManager cache issue - type created but not visible in table without page refresh
+// Re-enable when TypeManager cache invalidation is improved
 test.describe.skip('Custom Type and Custom Attributes', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
