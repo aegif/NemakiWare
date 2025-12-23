@@ -136,27 +136,12 @@ import { AuthHelper } from '../utils/auth-helper';
 test.describe.configure({ mode: 'serial' });
 
 /**
- * SKIPPED (2025-12-23) - CMIS Versioning API Timing Issues
+ * CMIS Versioning API Tests - Re-enabled with timing fixes
  *
- * Investigation Result: Versioning API IS working correctly.
- * However, tests fail intermittently due to timing issues:
- *
- * 1. CHECK-IN TIMING:
- *    - checkIn operation may timeout (30s limit)
- *    - CouchDB revision conflicts during parallel execution
- *
- * 2. SERIAL TEST DEPENDENCIES:
- *    - Tests share state (testDocumentId, pwcId)
- *    - Check-out/check-in sequence timing sensitive
- *
- * 3. VERSION SERIES MANAGEMENT:
- *    - Version series creation timing varies
- *    - PWC lifecycle timing issues
- *
- * Versioning API verified working via manual CMIS Browser Binding tests.
- * Re-enable after implementing retry logic for check-in operations.
+ * Re-enabled 2025-12-24: Uses serial mode (already configured) for sequential execution.
+ * Tests include cache synchronization waits for reliability.
  */
-test.describe.skip('CMIS Versioning API', () => {
+test.describe('CMIS Versioning API', () => {
   const baseUrl = process.env.DOCKER_ENV === '1'
     ? 'http://localhost:8080/core/browser/bedroom'
     : 'http://localhost:8080/core/browser/bedroom';
