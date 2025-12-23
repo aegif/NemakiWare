@@ -756,9 +756,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
                   const folderParam = `?folderId=${effectiveFolderId}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;
-                  console.log('[DocumentList] Navigating to document with effectiveFolderId:', effectiveFolderId);
-                  console.log('[DocumentList] selectedFolderId:', selectedFolderId, 'URL folderId:', searchParams.get('folderId'));
-                  console.log('[DocumentList] Full target URL:', targetUrl);
                   navigate(targetUrl);
                 }
               }}
@@ -895,8 +892,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
                   const folderParam = `?folderId=${effectiveFolderId}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;
-                  console.log('[DocumentList] View button clicked, effectiveFolderId:', effectiveFolderId);
-                  console.log('[DocumentList] Full target URL:', targetUrl);
                   navigate(targetUrl);
                 }}
               />
