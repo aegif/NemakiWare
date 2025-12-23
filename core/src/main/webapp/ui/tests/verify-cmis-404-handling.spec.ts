@@ -134,28 +134,30 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * SKIPPED (2025-12-23) - Document Row Detection Timing Issues
+ * SELECTOR FIX (2025-12-24) - Document Row Detection Fixed
  *
- * Investigation Result: CMIS 404 error handling IS implemented correctly.
- * However, tests fail due to the following issues:
+ * Previous Issue: Selector '.ant-table-tbody tr:has([aria-label="file"]) button' failed
+ * because aria-label="file" is not used by Ant Design icons.
  *
- * 1. DOCUMENT ROW DETECTION:
- *    - Selector '.ant-table-tbody tr:has([aria-label="file"]) button' times out
- *    - Document list may not have rows with aria-label="file"
- *    - Row structure varies depending on document types present
+ * Fix Applied: Use .anticon-file class selector instead of aria-label attribute.
+ * Ant Design FileOutlined component renders as: <span class="anticon anticon-file">
  *
- * 2. ROUTE INTERCEPTION TIMING:
- *    - Route must be set before navigation
- *    - Document click timing affects interception success
- *
- * 3. ERROR HANDLING WORKS:
- *    - Manual testing confirms 404 → login redirect works
- *    - UI shows appropriate error messages
- *
- * Re-enable after implementing more robust document row selectors.
+ * New Selectors:
+ * - Document rows: '.ant-table-tbody tr:has(.anticon-file)'
+ * - All rows with buttons: '.ant-table-tbody tr button.ant-btn-link' (more flexible)
  */
-test.describe.skip('CMIS API 404 Error Handling', () => {
-  test('should handle document access 404 error gracefully', async ({ page, browserName }) => {
+test.describe('CMIS API 404 Error Handling', () => {
+  /**
+   * SKIPPED: Route interception timing issue
+   *
+   * This test intercepts ALL getObject requests including the root folder request,
+   * which causes the document list to fail to load (no documents to click).
+   * The route pattern "/core/atom/bedroom/id?id=" is too broad.
+   *
+   * The second test ("should not break UI when accessing deleted content") verifies
+   * 404 error handling more reliably without this timing issue.
+   */
+  test.skip('should handle document access 404 error gracefully', async ({ page, browserName }) => {
     // Enable console logging to trace execution flow
     page.on('console', msg => {
       console.log('BROWSER:', msg.type(), msg.text());
@@ -220,10 +222,18 @@ test.describe.skip('CMIS API 404 Error Handling', () => {
     console.log('📍 Testing 404 error handling by clicking document...');
 
     // Click on the first DOCUMENT in the table (not folder - documents trigger getObject which we intercept)
-    // Use img[alt="file"] to ensure we're clicking a document row, not a folder row
-    const firstDocument = page.locator('.ant-table-tbody tr:has([aria-label="file"]) button').first();
+    // FIX: Use .anticon-file class instead of aria-label="file" attribute
+    // Ant Design FileOutlined renders as <span class="anticon anticon-file">
+    let firstDocument = page.locator('.ant-table-tbody tr:has(.anticon-file) button.ant-btn-link').first();
+
+    // Fallback: if no documents found, try clicking any button link in table rows
+    const documentCount = await firstDocument.count();
+    if (documentCount === 0) {
+      firstDocument = page.locator('.ant-table-tbody tr button.ant-btn-link').first();
+    }
 
     // Use force click to bypass sidebar overlay in test environment
+    await expect(firstDocument).toBeVisible({ timeout: 10000 });
     await firstDocument.click({ force: true });
 
     // Wait for 404 error handling and potential redirect
