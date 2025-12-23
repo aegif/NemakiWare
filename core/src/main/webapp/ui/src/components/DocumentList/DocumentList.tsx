@@ -305,6 +305,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [folderTypes, setFolderTypes] = useState<TypeDefinition[]>([]);
   const [typesLoading, setTypesLoading] = useState(false);
 
+  // Custom property input states (2025-12-23)
+  const [selectedDocumentTypeDefinition, setSelectedDocumentTypeDefinition] = useState<TypeDefinition | null>(null);
+  const [selectedFolderTypeDefinition, setSelectedFolderTypeDefinition] = useState<TypeDefinition | null>(null);
+
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -356,6 +360,30 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     };
     loadTypes();
   }, [repositoryId]);
+
+  // Handle document type selection change - load type definition for custom properties
+  const handleDocumentTypeChange = async (typeId: string) => {
+    form.setFieldsValue({ objectTypeId: typeId });
+    try {
+      const typeDef = await cmisService.getType(repositoryId, typeId);
+      setSelectedDocumentTypeDefinition(typeDef);
+    } catch (error) {
+      console.error('Failed to load document type definition:', error);
+      setSelectedDocumentTypeDefinition(null);
+    }
+  };
+
+  // Handle folder type selection change - load type definition for custom properties
+  const handleFolderTypeChange = async (typeId: string) => {
+    form.setFieldsValue({ objectTypeId: typeId });
+    try {
+      const typeDef = await cmisService.getType(repositoryId, typeId);
+      setSelectedFolderTypeDefinition(typeDef);
+    } catch (error) {
+      console.error('Failed to load folder type definition:', error);
+      setSelectedFolderTypeDefinition(null);
+    }
+  };
 
   // Load objects when selectedFolderId changes (the folder displayed in list pane)
   useEffect(() => {
@@ -433,17 +461,27 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         return;
       }
 
-      // Build properties with selected type (2025-12-11)
+      // Build properties with selected type and custom properties (2025-12-23)
       const properties: Record<string, any> = {
         'cmis:name': name,
         'cmis:objectTypeId': objectTypeId || 'cmis:document'
       };
+
+      // Add custom properties from form values
+      for (const [key, value] of Object.entries(values)) {
+        if (!key.startsWith('cmis:') && key !== 'file' && key !== 'name' && key !== 'objectTypeId') {
+          if (value !== undefined && value !== null && value !== '') {
+            properties[key] = value;
+          }
+        }
+      }
 
       await cmisService.createDocument(repositoryId, selectedFolderId, actualFile, properties);
 
       message.success('ファイルをアップロードしました');
       setUploadModalVisible(false);
       setUploadError(null);
+      setSelectedDocumentTypeDefinition(null);
       form.resetFields();
 
       // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
@@ -461,16 +499,26 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setFolderError(null);
 
     try {
-      // Build properties with selected type (2025-12-11)
+      // Build properties with selected type and custom properties (2025-12-23)
       const properties: Record<string, any> = {
         'cmis:name': values.name,
         'cmis:objectTypeId': values.objectTypeId || 'cmis:folder'
       };
 
+      // Add custom properties from form values
+      for (const [key, value] of Object.entries(values)) {
+        if (!key.startsWith('cmis:') && key !== 'name' && key !== 'objectTypeId') {
+          if (value !== undefined && value !== null && value !== '') {
+            properties[key] = value;
+          }
+        }
+      }
+
       await cmisService.createFolder(repositoryId, selectedFolderId, values.name, properties);
       message.success('フォルダを作成しました');
       setFolderModalVisible(false);
       setFolderError(null);
+      setSelectedFolderTypeDefinition(null);
       form.resetFields();
       // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
       await loadObjects();
@@ -1086,9 +1134,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         onCancel={() => {
           setUploadModalVisible(false);
           setUploadError(null);
+          setSelectedDocumentTypeDefinition(null);
+          form.resetFields();
         }}
         footer={null}
         maskClosable={false}
+        width={700}
       >
         <Form form={form} onFinish={handleUpload} layout="vertical">
           {uploadError && (
@@ -1145,6 +1196,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               placeholder="ドキュメントタイプを選択"
               showSearch
               optionFilterProp="label"
+              onChange={handleDocumentTypeChange}
             >
               {documentTypes.map(type => (
                 <Select.Option key={type.id} value={type.id} label={type.displayName || type.id}>
@@ -1158,6 +1210,45 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               ))}
             </Select>
           </Form.Item>
+
+          {/* Custom Properties Section for Document Upload (2025-12-23) */}
+          {selectedDocumentTypeDefinition &&
+           Object.entries(selectedDocumentTypeDefinition.propertyDefinitions || {})
+             .filter(([propId]) => !propId.startsWith('cmis:')).length > 0 && (
+            <div style={{ marginBottom: 16, padding: 16, backgroundColor: '#fafafa', borderRadius: 8 }}>
+              <h4 style={{ marginTop: 0, marginBottom: 12 }}>カスタムプロパティ</h4>
+              {Object.entries(selectedDocumentTypeDefinition.propertyDefinitions || {})
+                .filter(([propId]) => !propId.startsWith('cmis:'))
+                .map(([propId, propDef]: [string, any]) => (
+                  <Form.Item
+                    key={propId}
+                    name={propId}
+                    label={
+                      <span>
+                        {propDef.displayName || propId}
+                        {propDef.required && <span style={{ color: 'red', marginLeft: 4 }}>*</span>}
+                      </span>
+                    }
+                    tooltip={propDef.description}
+                    rules={propDef.required ? [{ required: true, message: `${propDef.displayName || propId}を入力してください` }] : []}
+                  >
+                    {propDef.propertyType === 'boolean' ? (
+                      <Select placeholder="選択してください" allowClear>
+                        <Select.Option value="true">はい</Select.Option>
+                        <Select.Option value="false">いいえ</Select.Option>
+                      </Select>
+                    ) : propDef.propertyType === 'integer' || propDef.propertyType === 'decimal' ? (
+                      <Input type="number" placeholder={propDef.description || `${propDef.displayName || propId}を入力`} />
+                    ) : propDef.propertyType === 'datetime' ? (
+                      <Input type="datetime-local" />
+                    ) : (
+                      <Input placeholder={propDef.description || `${propDef.displayName || propId}を入力`} />
+                    )}
+                  </Form.Item>
+                ))}
+            </div>
+          )}
+
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
@@ -1179,10 +1270,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         open={folderModalVisible}
         onCancel={() => {
           setFolderModalVisible(false);
-          setFolderError(null);  // Clear error on cancel
+          setFolderError(null);
+          setSelectedFolderTypeDefinition(null);
+          form.resetFields();
         }}
         footer={null}
         maskClosable={false}
+        width={700}
       >
         <Form form={form} onFinish={handleCreateFolder} layout="vertical">
           {folderError && (  // Inline Alert component
@@ -1212,6 +1306,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               placeholder="フォルダタイプを選択"
               showSearch
               optionFilterProp="label"
+              onChange={handleFolderTypeChange}
             >
               {folderTypes.map(type => (
                 <Select.Option key={type.id} value={type.id} label={type.displayName || type.id}>
@@ -1225,12 +1320,55 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               ))}
             </Select>
           </Form.Item>
+
+          {/* Custom Properties Section for Folder Creation (2025-12-23) */}
+          {selectedFolderTypeDefinition &&
+           Object.entries(selectedFolderTypeDefinition.propertyDefinitions || {})
+             .filter(([propId]) => !propId.startsWith('cmis:')).length > 0 && (
+            <div style={{ marginBottom: 16, padding: 16, backgroundColor: '#fafafa', borderRadius: 8 }}>
+              <h4 style={{ marginTop: 0, marginBottom: 12 }}>カスタムプロパティ</h4>
+              {Object.entries(selectedFolderTypeDefinition.propertyDefinitions || {})
+                .filter(([propId]) => !propId.startsWith('cmis:'))
+                .map(([propId, propDef]: [string, any]) => (
+                  <Form.Item
+                    key={propId}
+                    name={propId}
+                    label={
+                      <span>
+                        {propDef.displayName || propId}
+                        {propDef.required && <span style={{ color: 'red', marginLeft: 4 }}>*</span>}
+                      </span>
+                    }
+                    tooltip={propDef.description}
+                    rules={propDef.required ? [{ required: true, message: `${propDef.displayName || propId}を入力してください` }] : []}
+                  >
+                    {propDef.propertyType === 'boolean' ? (
+                      <Select placeholder="選択してください" allowClear>
+                        <Select.Option value="true">はい</Select.Option>
+                        <Select.Option value="false">いいえ</Select.Option>
+                      </Select>
+                    ) : propDef.propertyType === 'integer' || propDef.propertyType === 'decimal' ? (
+                      <Input type="number" placeholder={propDef.description || `${propDef.displayName || propId}を入力`} />
+                    ) : propDef.propertyType === 'datetime' ? (
+                      <Input type="datetime-local" />
+                    ) : (
+                      <Input placeholder={propDef.description || `${propDef.displayName || propId}を入力`} />
+                    )}
+                  </Form.Item>
+                ))}
+            </div>
+          )}
+
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
                 作成
               </Button>
-              <Button onClick={() => setFolderModalVisible(false)}>
+              <Button onClick={() => {
+                setFolderModalVisible(false);
+                setSelectedFolderTypeDefinition(null);
+                form.resetFields();
+              }}>
                 キャンセル
               </Button>
             </Space>

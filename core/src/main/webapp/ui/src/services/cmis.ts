@@ -2237,7 +2237,7 @@ export class CMISService {
     }
   }
 
-  async createRelationship(repositoryId: string, relationship: Partial<Relationship>): Promise<Relationship> {
+  async createRelationship(repositoryId: string, relationship: Partial<Relationship>, customProperties?: Record<string, any>): Promise<Relationship> {
     try {
       // CRITICAL FIX: Use CMIS Browser Binding standard endpoint instead of custom REST endpoint
       const url = `${this.baseUrl}/${repositoryId}`;
@@ -2251,6 +2251,18 @@ export class CMISService {
       formData.append('propertyValue[1]', relationship.sourceId || '');
       formData.append('propertyId[2]', 'cmis:targetId');
       formData.append('propertyValue[2]', relationship.targetId || '');
+
+      // Add custom properties if provided
+      if (customProperties) {
+        let propIndex = 3;
+        for (const [propId, propValue] of Object.entries(customProperties)) {
+          if (propValue !== undefined && propValue !== null && propValue !== '') {
+            formData.append(`propertyId[${propIndex}]`, propId);
+            formData.append(`propertyValue[${propIndex}]`, String(propValue));
+            propIndex++;
+          }
+        }
+      }
 
       const response = await this.httpClient.postFormData(url, formData);
 

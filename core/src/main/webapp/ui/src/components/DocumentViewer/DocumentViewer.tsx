@@ -297,6 +297,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [objectPickerVisible, setObjectPickerVisible] = useState(false);
   const [selectedTargetObject, setSelectedTargetObject] = useState<CMISObject | null>(null);
   const [relationshipType, setRelationshipType] = useState<string>('nemaki:bidirectionalRelationship');
+  const [relationshipCreateTypeDefinition, setRelationshipCreateTypeDefinition] = useState<TypeDefinition | null>(null);
+  const [relationshipTypes, setRelationshipTypes] = useState<TypeDefinition[]>([]);
   const [typeMigrationModalVisible, setTypeMigrationModalVisible] = useState(false);
   const [relationshipDetailModalVisible, setRelationshipDetailModalVisible] = useState(false);
   const [selectedRelationship, setSelectedRelationship] = useState<Relationship | null>(null);
@@ -402,6 +404,39 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     }
   };
 
+  // Load all relationship types for the dropdown
+  const loadRelationshipTypes = async () => {
+    try {
+      const types = await cmisService.getTypeDescendants(repositoryId, 'cmis:relationship', -1);
+      setRelationshipTypes(types);
+    } catch (error) {
+      console.error('Failed to load relationship types:', error);
+    }
+  };
+
+  // Handle relationship type change - load type definition for property input
+  const handleRelationshipTypeChange = async (typeId: string) => {
+    setRelationshipType(typeId);
+    relationshipForm.resetFields();
+    try {
+      const typeDef = await cmisService.getType(repositoryId, typeId);
+      setRelationshipCreateTypeDefinition(typeDef);
+    } catch (error) {
+      console.error('Failed to load relationship type definition:', error);
+      setRelationshipCreateTypeDefinition(null);
+    }
+  };
+
+  // Initialize relationship types when modal opens
+  const openRelationshipModal = async () => {
+    setRelationshipModalVisible(true);
+    await loadRelationshipTypes();
+    // Load default type definition
+    if (relationshipType) {
+      await handleRelationshipTypeChange(relationshipType);
+    }
+  };
+
   const handleDownload = async () => {
     if (object && object.baseType === 'cmis:document') {
       try {
@@ -497,14 +532,25 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     }
 
     try {
+      // Get custom properties from form
+      const formValues = await relationshipForm.validateFields();
+      // Filter out non-custom properties (anything starting with cmis: or system fields)
+      const customProperties: Record<string, any> = {};
+      for (const [key, value] of Object.entries(formValues)) {
+        if (!key.startsWith('cmis:') && key !== 'targetObject') {
+          customProperties[key] = value;
+        }
+      }
+
       await cmisService.createRelationship(repositoryId, {
         sourceId: object.id,
         targetId: selectedTargetObject.id,
         relationshipType: relationshipType
-      });
+      }, customProperties);
       message.success('関係を作成しました');
       setRelationshipModalVisible(false);
       setSelectedTargetObject(null);
+      setRelationshipCreateTypeDefinition(null);
       relationshipForm.resetFields();
       await loadRelationships();
     } catch (error) {
@@ -860,7 +906,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             <Button
               type="primary"
               icon={<PlusOutlined />}
-              onClick={() => setRelationshipModalVisible(true)}
+              onClick={openRelationshipModal}
             >
               関係を追加
             </Button>
@@ -1119,10 +1165,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         onCancel={() => {
           setRelationshipModalVisible(false);
           setSelectedTargetObject(null);
+          setRelationshipCreateTypeDefinition(null);
           relationshipForm.resetFields();
         }}
         footer={null}
-        width={600}
+        width={700}
       >
         <Form
           form={relationshipForm}
@@ -1135,11 +1182,17 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           >
             <Select
               value={relationshipType}
-              onChange={setRelationshipType}
-              options={[
-                { label: '双方向関係 (nemaki:bidirectionalRelationship)', value: 'nemaki:bidirectionalRelationship' },
-                { label: '親子関係 (nemaki:parentChildRelationship)', value: 'nemaki:parentChildRelationship' },
-              ]}
+              onChange={handleRelationshipTypeChange}
+              options={relationshipTypes.length > 0
+                ? relationshipTypes.map(t => ({
+                    label: `${t.displayName || t.id} (${t.id})`,
+                    value: t.id
+                  }))
+                : [
+                    { label: '双方向関係 (nemaki:bidirectionalRelationship)', value: 'nemaki:bidirectionalRelationship' },
+                    { label: '親子関係 (nemaki:parentChildRelationship)', value: 'nemaki:parentChildRelationship' },
+                  ]
+              }
             />
           </Form.Item>
 
@@ -1164,6 +1217,59 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             </Space>
           </Form.Item>
 
+          {/* Custom Properties Section */}
+          {relationshipCreateTypeDefinition &&
+           Object.entries(relationshipCreateTypeDefinition.propertyDefinitions || {})
+             .filter(([propId]) => !propId.startsWith('cmis:')).length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <h4 style={{ marginBottom: 12, borderBottom: '1px solid #f0f0f0', paddingBottom: 8 }}>
+                カスタムプロパティ
+              </h4>
+              {Object.entries(relationshipCreateTypeDefinition.propertyDefinitions || {})
+                .filter(([propId]) => !propId.startsWith('cmis:'))
+                .map(([propId, propDef]) => {
+                  const propDefTyped = propDef as {
+                    displayName?: string;
+                    description?: string;
+                    propertyType?: string;
+                    required?: boolean;
+                    cardinality?: string;
+                  };
+                  return (
+                    <Form.Item
+                      key={propId}
+                      name={propId}
+                      label={
+                        <span>
+                          {propDefTyped.displayName || propId}
+                          {propDefTyped.required && <span style={{ color: '#ff4d4f', marginLeft: 4 }}>*</span>}
+                        </span>
+                      }
+                      tooltip={propDefTyped.description}
+                      rules={propDefTyped.required ? [{ required: true, message: `${propDefTyped.displayName || propId}は必須です` }] : undefined}
+                    >
+                      {propDefTyped.propertyType === 'boolean' ? (
+                        <Select
+                          options={[
+                            { label: 'true', value: true },
+                            { label: 'false', value: false }
+                          ]}
+                          allowClear
+                          placeholder="値を選択"
+                        />
+                      ) : propDefTyped.propertyType === 'integer' || propDefTyped.propertyType === 'decimal' ? (
+                        <Input type="number" placeholder="数値を入力" />
+                      ) : propDefTyped.propertyType === 'datetime' ? (
+                        <Input type="datetime-local" />
+                      ) : (
+                        <Input placeholder="値を入力" />
+                      )}
+                    </Form.Item>
+                  );
+                })}
+            </div>
+          )}
+
           <Form.Item>
             <Space>
               <Button
@@ -1176,6 +1282,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               <Button onClick={() => {
                 setRelationshipModalVisible(false);
                 setSelectedTargetObject(null);
+                setRelationshipCreateTypeDefinition(null);
                 relationshipForm.resetFields();
               }}>
                 キャンセル
