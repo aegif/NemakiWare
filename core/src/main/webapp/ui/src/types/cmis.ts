@@ -150,6 +150,10 @@ export interface CMISObject {
   extensions?: CmisExtensionElement[];
   /** Parsed coercion warnings from NemakiWare extensions */
   coercionWarnings?: CoercionWarning[];
+  /** Relationship-specific: Source object ID (2025-12-23) */
+  sourceId?: string;
+  /** Relationship-specific: Target object ID (2025-12-23) */
+  targetId?: string;
 }
 
 export interface SearchResult {

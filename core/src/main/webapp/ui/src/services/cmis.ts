@@ -1185,7 +1185,10 @@ export class CMISService {
    *
    * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
    * which provides better separation of concerns and testability.
-   * Uses GET request with JSON response for Browser Binding query operations.
+   *
+   * CRITICAL FIX (2025-12-23): Changed from GET to POST for CMIS query operations.
+   * GET with cmisselector=query does not work for relationship types.
+   * POST with cmisaction=query is the correct CMIS Browser Binding approach.
    *
    * @param repositoryId Repository ID
    * @param query CMIS query string
@@ -1193,8 +1196,11 @@ export class CMISService {
    */
   async search(repositoryId: string, query: string): Promise<SearchResult> {
     try {
-      const url = `${this.baseUrl}/${repositoryId}?cmisselector=query&q=${encodeURIComponent(query)}`;
-      const response = await this.httpClient.getJson(url);
+      const url = `${this.baseUrl}/${repositoryId}`;
+      const formData = new URLSearchParams();
+      formData.append('cmisaction', 'query');
+      formData.append('statement', query);
+      const response = await this.httpClient.postForm(url, formData);
 
       if (response.status === 200) {
         try {
@@ -1221,7 +1227,10 @@ export class CMISService {
               contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
               contentStreamMimeType: this.getSafeStringProperty(props, 'cmis:contentStreamMimeType'),
               path: this.getSafeStringProperty(props, 'cmis:path'),
-              secondaryTypeIds: this.getSafeArrayProperty(props, 'cmis:secondaryObjectTypeIds')
+              secondaryTypeIds: this.getSafeArrayProperty(props, 'cmis:secondaryObjectTypeIds'),
+              // Relationship-specific properties (2025-12-23)
+              sourceId: this.getSafeStringProperty(props, 'cmis:sourceId'),
+              targetId: this.getSafeStringProperty(props, 'cmis:targetId')
             };
           });
 
