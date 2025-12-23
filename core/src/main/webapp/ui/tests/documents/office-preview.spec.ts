@@ -27,12 +27,10 @@
  * - Japanese fonts (fonts-noto-cjk) installed in container
  * - Rendition API endpoint configured
  *
- * SKIP REASON (2025-12-16): Office preview tests are skipped due to:
- * 1. PDF rendition generation timing is non-deterministic (LibreOffice conversion time varies)
- * 2. CI environment may not have LibreOffice properly configured
- * 3. Tests pass locally but may fail in CI due to resource constraints
+ * RE-ENABLED (2025-12-23): Office preview tests
  *
- * To re-enable: Remove test.describe.skip() when rendition generation is more reliable
+ * Docker container has LibreOffice installed (/usr/bin/libreoffice)
+ * Tests include wait mechanisms for rendition generation timing.
  */
 
 import { test, expect } from '@playwright/test';
@@ -43,7 +41,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import JSZip from 'jszip';
 
-test.describe.skip('Office Document Preview', () => {
+test.describe('Office Document Preview', () => {
   // Run tests sequentially so that Test 4 can find Office documents uploaded by earlier tests
   test.describe.configure({ mode: 'serial' });
 

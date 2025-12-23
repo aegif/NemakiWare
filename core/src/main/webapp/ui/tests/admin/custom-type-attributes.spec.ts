@@ -1,14 +1,12 @@
 /**
- * WORK IN PROGRESS - MANUAL FORM UI NOT IMPLEMENTED (2025-10-26)
+ * ENABLED (2025-12-23) - Manual Form UI IS IMPLEMENTED
  *
- * Investigation Finding: These tests expect manual form-based type creation UI,
- * but the actual implementation uses file upload + JSON editing approach (Priority 3/4).
+ * Investigation Result: The form-based type creation UI is fully implemented in TypeManagement.tsx:
+ * - "新規タイプ" button → Opens modal with form-based tabs
+ * - 基本情報 tab: タイプID, 表示名, 説明, ベースタイプ, 親タイプ, switches (作成可能, ファイル可能, 検索可能)
+ * - プロパティ定義 tab: PropertyDefinitionForm component for property definitions
  *
- * Expected UI (not implemented): "新規タイプ" button → Manual form
- * Implemented UI: "ファイルからインポート" button → Upload + JSON editing
- *
- * Recommendation: Use type-definition-upload.spec.ts for file upload + JSON editing tests.
- * See HANDOFF-DOCUMENT.md "既存スキップテストの調査結果" for details.
+ * The tests are now enabled to verify the form-based type creation workflow.
  *
  * ---
  *
@@ -159,7 +157,7 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
 
-test.describe.skip('Custom Type and Custom Attributes (WIP - Manual Form UI not implemented)', () => {
+test.describe('Custom Type and Custom Attributes', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   const customTypeId = `test:customDoc${randomUUID().substring(0, 8)}`;
