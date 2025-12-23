@@ -148,16 +148,13 @@ import { test, expect } from '@playwright/test';
  */
 test.describe('CMIS API 404 Error Handling', () => {
   /**
-   * SKIPPED: Route interception timing issue
+   * FIX (2025-12-24): Route interception timing fixed
    *
-   * This test intercepts ALL getObject requests including the root folder request,
-   * which causes the document list to fail to load (no documents to click).
-   * The route pattern "/core/atom/bedroom/id?id=" is too broad.
-   *
-   * The second test ("should not break UI when accessing deleted content") verifies
-   * 404 error handling more reliably without this timing issue.
+   * Previous Issue: Route interception was set BEFORE page load, intercepting folder requests too.
+   * Solution: Set up route interception AFTER page loads and document list is visible.
+   * This ensures only document detail requests are intercepted, not folder list requests.
    */
-  test.skip('should handle document access 404 error gracefully', async ({ page, browserName }) => {
+  test('should handle document access 404 error gracefully', async ({ page, browserName }) => {
     // Enable console logging to trace execution flow
     page.on('console', msg => {
       console.log('BROWSER:', msg.type(), msg.text());
@@ -167,20 +164,8 @@ test.describe('CMIS API 404 Error Handling', () => {
       console.log('PAGE ERROR:', error.message);
     });
 
-    // Intercept CMIS AtomPub getObject requests and return 404
-    // This simulates a deleted document scenario
-    // Pattern: /core/atom/bedroom/id?id=xxx (getObject)
-    await page.route('**/core/atom/bedroom/id?id=*', async (route) => {
-      const url = route.request().url();
-      console.log('📍 Intercepting getObject request, returning 404:', url);
-      await route.fulfill({
-        status: 404,
-        contentType: 'text/plain',
-        body: 'Object not found'
-      });
-    });
-
-    // Navigate to login page
+    // NOTE: Route interception is set up AFTER login to avoid intercepting folder requests
+    // Navigate to login page FIRST
     await page.goto('http://localhost:8080/core/ui/index.html');
     await page.waitForTimeout(1000);
 
@@ -201,6 +186,19 @@ test.describe('CMIS API 404 Error Handling', () => {
     // Verify login successful - check for documents page elements
     await expect(page.locator('.ant-table')).toBeVisible({ timeout: 15000 });
     console.log('✅ Login successful - documents page loaded');
+
+    // NOW set up route interception - AFTER page and document list loaded
+    // This ensures folder requests are not intercepted, only document detail requests
+    await page.route('**/core/atom/bedroom/id?id=*', async (route) => {
+      const url = route.request().url();
+      console.log('📍 Intercepting getObject request, returning 404:', url);
+      await route.fulfill({
+        status: 404,
+        contentType: 'text/plain',
+        body: 'Object not found'
+      });
+    });
+    console.log('✅ Route interception set up');
 
     // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
     const viewportSize = page.viewportSize();
