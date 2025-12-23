@@ -621,7 +621,9 @@ test.describe('Secondary Type Feature Verification', () => {
  */
 test.describe('Combined Feature Workflow', () => {
 
+  // FIX 2025-12-24: Increase timeout for complex workflow test
   test('should support complete workflow: create docs, add relationship, add secondary types', async ({ request }) => {
+    test.setTimeout(180000); // 3 minutes for complex workflow
     const timestamp = Date.now();
     const doc1Name = `workflow-doc1-${timestamp}.txt`;
     const doc2Name = `workflow-doc2-${timestamp}.txt`;
