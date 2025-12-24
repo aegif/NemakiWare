@@ -408,42 +408,63 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       await page.waitForTimeout(2000);
 
       // Find and open the uploaded document
-      const documentLink = page.locator(`a:has-text("${testDocName}")`);
-      if (await documentLink.count() > 0) {
+      // Reload page to ensure document list is refreshed
+      await page.reload();
+      await page.waitForTimeout(3000);
+
+      console.log(`🔍 Looking for document link with text: "${testDocName}"`);
+      let documentLink = page.locator(`a:has-text("${testDocName}")`);
+      let linkCount = await documentLink.count();
+      console.log(`🔍 Document link count after reload: ${linkCount}`);
+
+      // If not found, try scrolling or alternative selectors
+      if (linkCount === 0) {
+        // Try finding by partial text match
+        documentLink = page.locator(`text=${testDocName}`);
+        linkCount = await documentLink.count();
+        console.log(`🔍 Document link count with text= selector: ${linkCount}`);
+      }
+
+      if (linkCount > 0) {
         await documentLink.click(isMobile ? { force: true } : {});
         await page.waitForTimeout(2000);
 
         // Extract document ID from URL
         const url = page.url();
+        console.log(`🔍 Current URL after click: ${url}`);
         const match = url.match(/\/documents\/([a-f0-9]+)/);
         if (match) {
           testDocumentId = match[1];
           console.log('✅ Document created with ID:', testDocumentId);
+        } else {
+          console.log('⚠️ URL does not match /documents/{id} pattern');
+        }
 
-          // Verify document type in details
-          const typeDescription = page.locator('.ant-descriptions-item').filter({ has: page.locator(':has-text("タイプ")') });
-          if (await typeDescription.count() > 0) {
-            const typeValue = await typeDescription.locator('.ant-descriptions-item-content').textContent();
-            console.log('Document type:', typeValue);
-          }
+        // Verify document type in details (regardless of ID extraction)
+        const typeDescription = page.locator('.ant-descriptions-item').filter({ has: page.locator(':has-text("タイプ")') });
+        if (await typeDescription.count() > 0) {
+          const typeValue = await typeDescription.locator('.ant-descriptions-item-content').textContent();
+          console.log('Document type:', typeValue);
+        }
 
-          // Click on properties tab
-          const propertiesTab = page.locator('.ant-tabs-tab:has-text("プロパティ")');
-          if (await propertiesTab.count() > 0) {
-            await propertiesTab.click(isMobile ? { force: true } : {});
-            await page.waitForTimeout(1000);
+        // Click on properties tab
+        const propertiesTab = page.locator('.ant-tabs-tab:has-text("プロパティ")');
+        if (await propertiesTab.count() > 0) {
+          await propertiesTab.click(isMobile ? { force: true } : {});
+          await page.waitForTimeout(1000);
 
-            // Look for custom property field
-            const customPropField = page.locator(`.ant-form-item-label:has-text("${customPropName}")`);
+          // Look for custom property field
+          const customPropField = page.locator(`.ant-form-item-label:has-text("${customPropName}")`);
 
-            if (await customPropField.count() > 0) {
-              await expect(customPropField).toBeVisible();
-              console.log('✅ Custom attribute field displayed in PropertyEditor');
-            } else {
-              console.log('⚠️ Custom attribute not visible (may require custom type assignment)');
-            }
+          if (await customPropField.count() > 0) {
+            await expect(customPropField).toBeVisible();
+            console.log('✅ Custom attribute field displayed in PropertyEditor');
+          } else {
+            console.log('⚠️ Custom attribute not visible (may require custom type assignment)');
           }
         }
+      } else {
+        console.log('⚠️ Document link not found in table');
       }
     } else {
       test.skip('Upload functionality not available');
