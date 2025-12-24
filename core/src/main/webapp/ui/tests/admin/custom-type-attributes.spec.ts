@@ -179,9 +179,11 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
 
-// SKIPPED: TypeManager cache issue - type created but not visible in table without page refresh
-// Re-enable when TypeManager cache invalidation is improved
-test.describe.skip('Custom Type and Custom Attributes', () => {
+// FIXED (2025-12-24): TypeManager cache issue resolved
+// Root cause: TypeManagement.tsx handleSubmit() was not awaiting loadTypes()
+// Fix: Added await to loadTypes() calls to ensure table refreshes before control returns
+// Note: Using serial() because tests share state (testDocumentId)
+test.describe.serial('Custom Type and Custom Attributes', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   const customTypeId = `test:customDoc${randomUUID().substring(0, 8)}`;
