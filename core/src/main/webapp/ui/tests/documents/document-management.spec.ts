@@ -728,31 +728,31 @@ test.describe('Document Management', () => {
       if (await deleteButton.count() > 0) {
         await deleteButton.click(isMobile ? { force: true } : {});
 
-        // CRITICAL FIX (2025-12-24): UI uses Modal for delete confirmation, not Popconfirm
-        // Wait for delete confirmation modal to appear (title: "削除の確認")
-        await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
+        // CRITICAL FIX (2025-12-24): Wait for delete confirmation modal specifically
+        // Use text content to identify the correct modal (avoids conflict with other modals)
+        const deleteModal = page.locator('.ant-modal').filter({ hasText: '削除' });
+        await expect(deleteModal).toBeVisible({ timeout: 10000 });
         await page.waitForTimeout(500);
 
-        // Click "削除する" button in the modal (okText)
-        const confirmButton = page.locator('.ant-modal button').filter({ hasText: '削除する' });
+        // Click "削除する" or "はい" button in the modal (okText)
+        let confirmButton = deleteModal.locator('button').filter({ hasText: '削除する' });
+        if (await confirmButton.count() === 0) {
+          confirmButton = deleteModal.locator('button').filter({ hasText: 'はい' });
+        }
+        if (await confirmButton.count() === 0) {
+          confirmButton = deleteModal.locator('button.ant-btn-primary');
+        }
         if (await confirmButton.count() > 0) {
           await confirmButton.click(isMobile ? { force: true } : {});
 
-          // CRITICAL: Wait for modal to close and loading to complete
-          // NOTE: Server-side deletion takes 10-15 seconds (includes database operations, cache invalidation, Solr updates)
-          await page.waitForFunction(() => {
-            const modal = document.querySelector('.ant-modal:not(.ant-modal-hidden)');
-            return modal === null;
-          }, { timeout: 30000 });
+          // CRITICAL FIX (2025-12-24): Wait for delete modal specifically to close
+          // Don't use generic modal selector as it may match other modals (like DocumentViewer)
+          await expect(deleteModal).not.toBeVisible({ timeout: 30000 });
 
           // Wait for success message (after deletion completes)
           await page.waitForSelector('.ant-message-success', { timeout: 15000 });
 
-          // Wait for modal to close
-          await page.waitForTimeout(1000);
-
-          // IMPROVED: Wait for table to refresh after deletion
-          // The table should re-render with updated data
+          // Wait for table to refresh after deletion
           await page.waitForTimeout(2000); // Give React time to update state
 
           // Wait for any loading indicators to disappear
