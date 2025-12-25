@@ -293,6 +293,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [folderError, setFolderError] = useState<string | null>(null);
 
+  // Upload progress states (2025-12-26)
+  const [isUploading, setIsUploading] = useState(false);
+
   // Delete confirmation modal states (2025-12-22)
   // For showing cascade deletion warnings when parentChildRelationship descendants exist
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -484,6 +487,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         return;
       }
 
+      // Set uploading state (2025-12-26)
+      setIsUploading(true);
+
       // Build properties with selected type and custom properties (2025-12-23)
       const properties: Record<string, any> = {
         'cmis:name': name,
@@ -514,6 +520,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       const errorMsg = 'ファイルのアップロードに失敗しました';
       setUploadError(errorMsg);
       message.error(errorMsg);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -1231,9 +1239,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       </Row>
 
       <Modal
-        title="ファイルアップロード"
+        title={isUploading ? 'ファイルアップロード中...' : 'ファイルアップロード'}
         open={uploadModalVisible}
         onCancel={() => {
+          if (isUploading) return; // Prevent closing during upload
           setUploadModalVisible(false);
           setUploadError(null);
           setSelectedDocumentTypeDefinition(null);
@@ -1241,6 +1250,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         }}
         footer={null}
         maskClosable={false}
+        closable={!isUploading}
         width={700}
       >
         <Form form={form} onFinish={handleUpload} layout="vertical">
@@ -1353,13 +1363,23 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
           <Form.Item>
             <Space>
-              <Button type="primary" htmlType="submit">
-                アップロード
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={isUploading}
+                disabled={isUploading}
+              >
+                {isUploading ? 'アップロード中...' : 'アップロード'}
               </Button>
-              <Button onClick={() => {
-                setUploadModalVisible(false);
-                form.resetFields();
-              }}>
+              <Button
+                onClick={() => {
+                  setUploadModalVisible(false);
+                  setUploadError(null);
+                  setSelectedDocumentTypeDefinition(null);
+                  form.resetFields();
+                }}
+                disabled={isUploading}
+              >
                 キャンセル
               </Button>
             </Space>
