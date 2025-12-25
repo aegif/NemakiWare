@@ -310,7 +310,8 @@ test.describe('PreviewComponent Image Preview', () => {
           }
         }
       } else {
-        test.skip('Upload button not found');
+        // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
+        test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
       }
     } finally {
       // Cleanup temp file
@@ -407,7 +408,8 @@ test.describe('PreviewComponent Text Preview', () => {
           }
         }
       } else {
-        test.skip('Upload button not found');
+        // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
+        test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
       }
     } finally {
       // Cleanup temp file
@@ -517,7 +519,8 @@ test.describe('PreviewComponent Error Handling', () => {
           }
         }
       } else {
-        test.skip('Upload button not found');
+        // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
+        test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
       }
     } finally {
       // Cleanup temp file

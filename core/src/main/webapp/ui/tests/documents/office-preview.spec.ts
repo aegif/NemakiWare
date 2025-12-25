@@ -145,7 +145,8 @@ test.describe('Office Document Preview', () => {
       const uploadButton = page.locator('button').filter({ hasText: /ファイルアップロード|アップロード|Upload/ }).first();
 
       if (await uploadButton.count() === 0) {
-        test.skip('Upload button not found');
+        // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
+        test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
         return;
       }
 
@@ -308,7 +309,8 @@ test.describe('Office Document Preview', () => {
       const uploadButton = page.locator('button').filter({ hasText: /ファイルアップロード|アップロード|Upload/ }).first();
 
       if (await uploadButton.count() === 0) {
-        test.skip('Upload button not found');
+        // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
+        test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
         return;
       }
 
