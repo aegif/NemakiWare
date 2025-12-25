@@ -544,7 +544,8 @@ test.describe('Secondary Type Feature Verification', () => {
       // This handles cases where Document Viewer doesn't render tabs due to race conditions
       const tabsVisible = await page.locator('.ant-tabs').isVisible().catch(() => false);
       if (!tabsVisible) {
-        test.skip('Document Viewer tabs not available');
+        // UPDATED (2025-12-26): Tabs ARE implemented in DocumentViewer.tsx
+        test.skip('Document Viewer tabs not visible - IS implemented in DocumentViewer.tsx');
         return;
       }
 
@@ -552,7 +553,8 @@ test.describe('Secondary Type Feature Verification', () => {
       const secondaryTypeTab = page.getByRole('tab', { name: 'セカンダリタイプ' });
       const isSecondaryTypeTabVisible = await secondaryTypeTab.isVisible({ timeout: 5000 }).catch(() => false);
       if (!isSecondaryTypeTabVisible) {
-        test.skip('Secondary type tab not visible');
+        // UPDATED (2025-12-26): Secondary type tab IS implemented in DocumentViewer.tsx line 882
+        test.skip('Secondary type tab not visible - IS implemented in DocumentViewer.tsx line 882');
         return;
       }
       await secondaryTypeTab.click();

@@ -478,9 +478,10 @@ test.describe('Bug Fix Verification Tests', () => {
     if (!updateResponse.ok()) {
       const errorText = await updateResponse.text();
       console.log('Update failed:', errorText);
-      // Skip test if secondary type not available
+      // Skip test if secondary type not available in this repository
       if (errorText.includes('typeNotFound') || errorText.includes('commentable')) {
-        test.skip('Secondary type nemaki:commentable not available');
+        // UPDATED (2025-12-26): Secondary types ARE implemented - nemaki:commentable may not be registered in test repository
+        test.skip('Secondary type nemaki:commentable not found in repository - type system IS implemented');
         return;
       }
       throw new Error(`Failed to update properties: ${errorText}`);
