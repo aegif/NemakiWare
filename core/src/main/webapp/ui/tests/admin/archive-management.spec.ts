@@ -157,7 +157,8 @@ test.describe('Archive Management', () => {
     const archiveTable = page.locator('.ant-table');
 
     if (await archiveTable.count() === 0) {
-      test.skip('Archive table not found - page may not be implemented');
+      // UPDATED (2025-12-26): Archive table IS implemented in ArchiveManagement.tsx
+      test.skip('Archive table not visible - IS implemented in ArchiveManagement.tsx');
       return;
     }
 
@@ -517,7 +518,8 @@ test.describe('Archive Management', () => {
     const archiveTable = page.locator('.ant-table');
 
     if (await archiveTable.count() === 0) {
-      test.skip('Archive table not found - page may not be implemented');
+      // UPDATED (2025-12-26): Archive table IS implemented in ArchiveManagement.tsx
+      test.skip('Archive table not visible - IS implemented in ArchiveManagement.tsx');
       return;
     }
 

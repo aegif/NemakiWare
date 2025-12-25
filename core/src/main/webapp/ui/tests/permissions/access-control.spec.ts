@@ -2089,8 +2089,10 @@ test.describe('Access Control and Permissions', () => {
                   test.skip('ACL add functionality not available');
                 }
             } else {
-              console.log('Test: Delete button not found in ACL entry');
-              test.skip('ACL deletion UI not available');
+              // UPDATED (2025-12-26): Delete button IS implemented in PermissionManagement.tsx lines 504-521
+              // Only shown for direct permissions (record.direct && ...), not inherited permissions
+              console.log('Test: Delete button not found - ACL entry may be inherited');
+              test.skip('Delete button not visible - only direct permissions have delete button (PermissionManagement.tsx lines 504-521)');
             }
           } else {
             test.skip('Test user ACL entry not found');
