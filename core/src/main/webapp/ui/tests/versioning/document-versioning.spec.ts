@@ -189,8 +189,7 @@ test.describe('Document Versioning', () => {
     const filename = `versioning-test-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 content', isMobile);
     if (!uploadSuccess) {
-      console.log('Test: Upload failed - skipping test');
-      test.skip();
+      test.skip('Upload failed');
       return;
     }
 
@@ -258,26 +257,12 @@ test.describe('Document Versioning', () => {
         if (checkinButtonVisible) {
           console.log('Test: Document successfully checked out - checkin button is now visible');
         } else {
-          console.log('Test: Checkout may have failed - neither PWC tag nor checkin button found');
-          await page.screenshot({ path: 'test-results/checkout-failed.png', fullPage: true });
-          console.log('Test: Screenshot saved to test-results/checkout-failed.png');
-          
-          const allRows = await page.locator('.ant-table-tbody tr').count();
-          console.log(`Test: Total rows in table: ${allRows}`);
-          
-          for (let i = 0; i < Math.min(allRows, 10); i++) {
-            const row = page.locator('.ant-table-tbody tr').nth(i);
-            const rowName = await row.locator('td').nth(1).textContent();
-            const hasPWCTag = await row.locator('.ant-tag').filter({ hasText: '作業中' }).count() > 0;
-            console.log(`Test: Row ${i}: ${rowName}, has PWC tag: ${hasPWCTag}`);
-          }
-          
-          test.skip();
+          test.skip('Checkout failed - neither PWC tag nor checkin button found');
         }
       }
     } else {
-      console.log('Check-out button not found - versioning feature may not be implemented in UI');
-      test.skip();
+      test.skip('Check-out button not found - versioning feature may not be implemented in UI');
+      return;
     }
 
     // Cleanup: Delete the test document
@@ -312,8 +297,7 @@ test.describe('Document Versioning', () => {
     const filename = `checkin-test-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 content', isMobile);
     if (!uploadSuccess) {
-      console.log('Test: Upload failed - skipping test');
-      test.skip();
+      test.skip('Upload failed');
       return;
     }
 
@@ -364,8 +348,8 @@ test.describe('Document Versioning', () => {
         await expect(pwcIndicator).toHaveCount(0, { timeout: 5000 });
       }
     } else {
-      console.log('Versioning buttons not found - feature may not be implemented in UI');
-      test.skip();
+      test.skip('Versioning buttons not found - feature may not be implemented in UI');
+      return;
     }
 
     // Cleanup: Delete the test document
@@ -406,8 +390,7 @@ test.describe('Document Versioning', () => {
     const filename = `cancel-checkout-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Original content', isMobile);
     if (!uploadSuccess) {
-      console.log('Test: Upload failed - skipping test');
-      test.skip();
+      test.skip('Upload failed');
       return;
     }
 
@@ -441,8 +424,8 @@ test.describe('Document Versioning', () => {
         await expect(pwcIndicator).toHaveCount(0, { timeout: 5000 });
       }
     } else {
-      console.log('Check-out cancel button not found - feature may not be implemented in UI');
-      test.skip();
+      test.skip('Check-out cancel button not found - feature may not be implemented in UI');
+      return;
     }
 
     // Cleanup: Delete the test document
@@ -483,8 +466,7 @@ test.describe('Document Versioning', () => {
     const filename = `version-history-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0', isMobile);
     if (!uploadSuccess) {
-      console.log('Test: Upload failed - skipping test');
-      test.skip();
+      test.skip('Upload failed');
       return;
     }
 
@@ -527,8 +509,8 @@ test.describe('Document Versioning', () => {
         console.log('Version history modal not found - UI implementation may differ');
       }
     } else {
-      console.log('Version history button not found - feature may not be implemented in UI');
-      test.skip();
+      test.skip('Version history button not found - feature may not be implemented in UI');
+      return;
     }
 
     // Cleanup: Delete the test document
@@ -568,8 +550,7 @@ test.describe('Document Versioning', () => {
     const filename = `version-download-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 for download', isMobile);
     if (!uploadSuccess) {
-      console.log('Test: Upload failed - skipping test');
-      test.skip();
+      test.skip('Upload failed');
       return;
     }
 
@@ -622,12 +603,12 @@ test.describe('Document Versioning', () => {
           await closeButton.click();
         }
       } else {
-        console.log('Version download button not found - feature may not be implemented in UI');
-        test.skip();
+        test.skip('Version download button not found - feature may not be implemented in UI');
+        return;
       }
     } else {
-      console.log('Version history not accessible - skipping download test');
-      test.skip();
+      test.skip('Version history not accessible');
+      return;
     }
 
     // Cleanup: Delete the test document

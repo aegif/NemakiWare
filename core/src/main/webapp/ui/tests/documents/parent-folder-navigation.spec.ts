@@ -320,8 +320,7 @@ test.describe('Parent Folder Navigation', () => {
     const isFolderVisible = await folderIcon.isVisible().catch(() => false);
 
     if (!isFolderVisible) {
-      console.log('No folder found in repository - test skipped');
-      test.skip();
+      test.skip('No folder found in repository');
       return;
     }
 
@@ -368,8 +367,7 @@ test.describe('Parent Folder Navigation', () => {
     const isFolderVisible = await folderIcon.isVisible().catch(() => false);
 
     if (!isFolderVisible) {
-      console.log('No folder found in repository - test skipped');
-      test.skip();
+      test.skip('No folder found in repository');
       return;
     }
 
@@ -412,8 +410,7 @@ test.describe('Parent Folder Navigation', () => {
     const isFolderVisible = await folderRow.isVisible().catch(() => false);
 
     if (!isFolderVisible) {
-      console.log('No folder found in repository - test skipped');
-      test.skip();
+      test.skip('No folder found in repository');
       return;
     }
 
@@ -446,8 +443,7 @@ test.describe('Parent Folder Navigation', () => {
       } else if (await techDocsFolder.isVisible().catch(() => false)) {
         await techDocsFolder.locator('button.ant-btn-link').first().click();
       } else {
-        console.log('No folder with subfolders found - test skipped');
-        test.skip();
+        test.skip('No folder with subfolders found');
         return;
       }
       await page.waitForTimeout(2000);
@@ -487,8 +483,7 @@ test.describe('Parent Folder Navigation', () => {
 
       console.log('Multi-level navigation test completed successfully');
     } else {
-      console.log('Current folder has no subfolders - cannot test multi-level navigation, skipping');
-      test.skip();
+      test.skip('Current folder has no subfolders for multi-level navigation');
     }
   });
 
@@ -498,8 +493,7 @@ test.describe('Parent Folder Navigation', () => {
     const isFolderVisible = await folderIcon.isVisible().catch(() => false);
 
     if (!isFolderVisible) {
-      console.log('No folder found in repository - test skipped');
-      test.skip();
+      test.skip('No folder found in repository');
       return;
     }
 
@@ -543,8 +537,7 @@ test.describe('Parent Folder Navigation', () => {
     const isFolderVisible = await folderIcon.isVisible().catch(() => false);
 
     if (!isFolderVisible) {
-      console.log('No folder found in repository - test skipped');
-      test.skip();
+      test.skip('No folder found in repository');
       return;
     }
 

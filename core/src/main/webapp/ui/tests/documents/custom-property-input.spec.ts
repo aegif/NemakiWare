@@ -134,15 +134,14 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!typesResponse.ok()) {
-        test.skip();
+        test.skip('Type API request failed');
         return;
       }
 
       const typesData = await typesResponse.json();
       const types = typesData.types || typesData;
       if (!Array.isArray(types)) {
-        console.log('Types response is not an array, skipping test');
-        test.skip();
+        test.skip('Types response is not an array');
         return;
       }
       const customDocType = types.find((t: any) =>
@@ -154,8 +153,7 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!customDocType) {
-        console.log('No custom document type with custom properties found, skipping test');
-        test.skip();
+        test.skip('No custom document type with custom properties found');
         return;
       }
 
@@ -272,15 +270,14 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!typesResponse.ok()) {
-        test.skip();
+        test.skip('Type API request failed');
         return;
       }
 
       const typesData = await typesResponse.json();
       const types = typesData.types || typesData;
       if (!Array.isArray(types)) {
-        console.log('Types response is not an array, skipping test');
-        test.skip();
+        test.skip('Types response is not an array');
         return;
       }
       const customDocType = types.find((t: any) =>
@@ -292,8 +289,7 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!customDocType) {
-        console.log('No custom document type with custom properties found, skipping test');
-        test.skip();
+        test.skip('No custom document type with custom properties found');
         return;
       }
 
@@ -380,15 +376,14 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!typesResponse.ok()) {
-        test.skip();
+        test.skip('Type API request failed');
         return;
       }
 
       const typesData = await typesResponse.json();
       const types = typesData.types || typesData;
       if (!Array.isArray(types)) {
-        console.log('Types response is not an array, skipping test');
-        test.skip();
+        test.skip('Types response is not an array');
         return;
       }
       const customFolderType = types.find((t: any) =>
@@ -400,8 +395,7 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!customFolderType) {
-        console.log('No custom folder type with custom properties found, skipping test');
-        test.skip();
+        test.skip('No custom folder type with custom properties found');
         return;
       }
 
@@ -530,8 +524,7 @@ test.describe('Custom Property Input Feature', () => {
       const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) button[type="link"]').first();
 
       if (await documentLink.count() === 0) {
-        console.log('No documents found in list, skipping test');
-        test.skip();
+        test.skip('No documents found in list');
         return;
       }
 
@@ -544,8 +537,7 @@ test.describe('Custom Property Input Feature', () => {
       const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
 
       if (await relationshipTab.count() === 0) {
-        console.log('Relationship tab not found, skipping test');
-        test.skip();
+        test.skip('Relationship tab not found');
         return;
       }
 
@@ -557,7 +549,7 @@ test.describe('Custom Property Input Feature', () => {
       const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) button[type="link"]').first();
 
       if (await documentLink.count() === 0) {
-        test.skip();
+        test.skip('No documents found in list');
         return;
       }
 
@@ -567,7 +559,7 @@ test.describe('Custom Property Input Feature', () => {
       // Click relationship tab
       const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
       if (await relationshipTab.count() === 0) {
-        test.skip();
+        test.skip('Relationship tab not found');
         return;
       }
       await relationshipTab.click();
@@ -576,8 +568,7 @@ test.describe('Custom Property Input Feature', () => {
       // Look for "Add Relationship" button
       const addButton = page.locator('button:has-text("関連を追加")');
       if (await addButton.count() === 0) {
-        console.log('Add relationship button not found, skipping test');
-        test.skip();
+        test.skip('Add relationship button not found');
         return;
       }
 
@@ -612,15 +603,14 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!typesResponse.ok()) {
-        test.skip();
+        test.skip('Type API request failed');
         return;
       }
 
       const typesData = await typesResponse.json();
       const types = typesData.types || typesData;
       if (!Array.isArray(types)) {
-        console.log('Types response is not an array, skipping test');
-        test.skip();
+        test.skip('Types response is not an array');
         return;
       }
       const customRelType = types.find((t: any) =>
@@ -632,15 +622,14 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!customRelType) {
-        console.log('No custom relationship type with custom properties found, skipping test');
-        test.skip();
+        test.skip('No custom relationship type with custom properties found');
         return;
       }
 
       // Find a document
       const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) button[type="link"]').first();
       if (await documentLink.count() === 0) {
-        test.skip();
+        test.skip('No documents found in list');
         return;
       }
 
@@ -650,7 +639,7 @@ test.describe('Custom Property Input Feature', () => {
       // Click relationship tab
       const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
       if (await relationshipTab.count() === 0) {
-        test.skip();
+        test.skip('Relationship tab not found');
         return;
       }
       await relationshipTab.click();
@@ -659,7 +648,7 @@ test.describe('Custom Property Input Feature', () => {
       // Open add relationship modal
       const addButton = page.locator('button:has-text("関連を追加")');
       if (await addButton.count() === 0) {
-        test.skip();
+        test.skip('Add relationship button not found');
         return;
       }
       await addButton.click();
@@ -695,7 +684,7 @@ test.describe('Custom Property Input Feature', () => {
       // Find a document
       const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) button[type="link"]').first();
       if (await documentLink.count() === 0) {
-        test.skip();
+        test.skip('No documents found in list');
         return;
       }
 
@@ -705,7 +694,7 @@ test.describe('Custom Property Input Feature', () => {
       // Click relationship tab
       const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
       if (await relationshipTab.count() === 0) {
-        test.skip();
+        test.skip('Relationship tab not found');
         return;
       }
       await relationshipTab.click();
@@ -714,7 +703,7 @@ test.describe('Custom Property Input Feature', () => {
       // Open add relationship modal
       const addButton = page.locator('button:has-text("関連を追加")');
       if (await addButton.count() === 0) {
-        test.skip();
+        test.skip('Add relationship button not found');
         return;
       }
       await addButton.click();
@@ -761,15 +750,14 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!typesResponse.ok()) {
-        test.skip();
+        test.skip('Type API request failed');
         return;
       }
 
       const typesData = await typesResponse.json();
       const types = typesData.types || typesData;
       if (!Array.isArray(types)) {
-        console.log('Types response is not an array, skipping test');
-        test.skip();
+        test.skip('Types response is not an array');
         return;
       }
 

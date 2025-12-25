@@ -38,8 +38,7 @@ test.describe('Property Display Tests', () => {
     const isDocumentVisible = await documentRow.isVisible().catch(() => false);
 
     if (!isDocumentVisible) {
-      console.log('No document found in repository - test skipped');
-      test.skip();
+      test.skip('No document found in repository');
       return;
     }
 
@@ -85,8 +84,7 @@ test.describe('Property Display Tests', () => {
     const isDocumentVisible = await documentRow.isVisible().catch(() => false);
 
     if (!isDocumentVisible) {
-      console.log('No document found in repository - test skipped');
-      test.skip();
+      test.skip('No document found in repository');
       return;
     }
 
@@ -147,8 +145,7 @@ test.describe('Property Display Tests', () => {
     const isDocumentVisible = await documentRow.isVisible().catch(() => false);
 
     if (!isDocumentVisible) {
-      console.log('No document found in repository - test skipped');
-      test.skip();
+      test.skip('No document found in repository');
       return;
     }
 
@@ -196,8 +193,7 @@ test.describe('Property Display Tests', () => {
     const isDocumentVisible = await documentRow.isVisible().catch(() => false);
 
     if (!isDocumentVisible) {
-      console.log('No document found in repository - test skipped');
-      test.skip();
+      test.skip('No document found in repository');
       return;
     }
 
@@ -227,8 +223,7 @@ test.describe('Property Display Tests', () => {
     const isDocumentVisible = await documentRow.isVisible().catch(() => false);
 
     if (!isDocumentVisible) {
-      console.log('No document found in repository - test skipped');
-      test.skip();
+      test.skip('No document found in repository');
       return;
     }
 

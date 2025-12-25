@@ -39,7 +39,7 @@ test.describe('Type Migration Features', () => {
       const rowCount = await docRows.count();
 
       if (rowCount === 0) {
-        test.skip();
+        test.skip('No document rows found');
         return;
       }
 
@@ -62,8 +62,7 @@ test.describe('Type Migration Features', () => {
       }
 
       if (!found) {
-        console.log('No document found, skipping test');
-        test.skip();
+        test.skip('No document found');
         return;
       }
 
@@ -84,7 +83,7 @@ test.describe('Type Migration Features', () => {
       const rowCount = await docRows.count();
 
       if (rowCount === 0) {
-        test.skip();
+        test.skip('No document rows found');
         return;
       }
 
@@ -107,8 +106,7 @@ test.describe('Type Migration Features', () => {
       }
 
       if (!found) {
-        console.log('No document found, skipping test');
-        test.skip();
+        test.skip('No document found');
         return;
       }
 
@@ -135,7 +133,7 @@ test.describe('Type Migration Features', () => {
       const rowCount = await docRows.count();
 
       if (rowCount === 0) {
-        test.skip();
+        test.skip('No document rows found');
         return;
       }
 
@@ -160,7 +158,7 @@ test.describe('Type Migration Features', () => {
       }
 
       if (!found) {
-        test.skip();
+        test.skip('No document found');
         return;
       }
 
@@ -194,7 +192,7 @@ test.describe('Type Migration Features', () => {
       const rowCount = await docRows.count();
 
       if (rowCount === 0) {
-        test.skip();
+        test.skip('No document rows found');
         return;
       }
 
@@ -216,7 +214,7 @@ test.describe('Type Migration Features', () => {
       }
 
       if (!found) {
-        test.skip();
+        test.skip('No document found');
         return;
       }
 
@@ -241,7 +239,7 @@ test.describe('Type Migration Features', () => {
       const rowCount = await docRows.count();
 
       if (rowCount === 0) {
-        test.skip();
+        test.skip('No document rows found');
         return;
       }
 
@@ -263,7 +261,7 @@ test.describe('Type Migration Features', () => {
       }
 
       if (!found) {
-        test.skip();
+        test.skip('No document found');
         return;
       }
 
@@ -295,7 +293,7 @@ test.describe('Type Migration Features', () => {
       const rowCount = await docRows.count();
 
       if (rowCount === 0) {
-        test.skip();
+        test.skip('No document rows found');
         return;
       }
 
@@ -317,7 +315,7 @@ test.describe('Type Migration Features', () => {
       }
 
       if (!found) {
-        test.skip();
+        test.skip('No document found');
         return;
       }
 
@@ -343,7 +341,7 @@ test.describe('Type Migration Features', () => {
       const rowCount = await docRows.count();
 
       if (rowCount === 0) {
-        test.skip();
+        test.skip('No document rows found');
         return;
       }
 
@@ -365,7 +363,7 @@ test.describe('Type Migration Features', () => {
       }
 
       if (!found) {
-        test.skip();
+        test.skip('No document found');
         return;
       }
 
@@ -410,7 +408,7 @@ test.describe('Type Migration - Error Handling', () => {
     const rowCount = await docRows.count();
 
     if (rowCount === 0) {
-      test.skip();
+      test.skip('No document rows found');
       return;
     }
 
@@ -432,7 +430,7 @@ test.describe('Type Migration - Error Handling', () => {
     }
 
     if (!found) {
-      test.skip();
+      test.skip('No document found');
       return;
     }
 

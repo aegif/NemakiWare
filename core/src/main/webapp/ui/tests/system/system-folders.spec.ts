@@ -84,8 +84,7 @@ test.describe('System Folders (/.system)', () => {
     );
 
     if (!systemFolder) {
-      console.log('⚠️ No .system folder found via API');
-      test.skip();
+      test.skip('No .system folder found via API');
       return;
     }
 
@@ -133,8 +132,7 @@ test.describe('System Folders (/.system)', () => {
       obj.object?.properties?.['cmis:name']?.value === '.system'
     );
     if (!systemFolder) {
-      console.log('⚠️ No .system folder found in root');
-      test.skip();
+      test.skip('No .system folder found in root');
       return;
     }
     const systemFolderId = systemFolder.object?.properties?.['cmis:objectId']?.value;
@@ -156,8 +154,7 @@ test.describe('System Folders (/.system)', () => {
       obj.object?.properties?.['cmis:name']?.value === 'users'
     );
     if (!usersFolder) {
-      console.log('⚠️ No users folder found in .system');
-      test.skip();
+      test.skip('No users folder found in .system');
       return;
     }
     const usersObjectId = usersFolder.object?.properties?.['cmis:objectId']?.value;
@@ -212,8 +209,7 @@ test.describe('System Folders (/.system)', () => {
       obj.object?.properties?.['cmis:name']?.value === '.system'
     );
     if (!systemFolder) {
-      console.log('⚠️ No .system folder found in root');
-      test.skip();
+      test.skip('No .system folder found in root');
       return;
     }
     const systemFolderId = systemFolder.object?.properties?.['cmis:objectId']?.value;
@@ -234,8 +230,7 @@ test.describe('System Folders (/.system)', () => {
       obj.object?.properties?.['cmis:name']?.value === 'groups'
     );
     if (!groupsFolder) {
-      console.log('⚠️ No groups folder found in .system');
-      test.skip();
+      test.skip('No groups folder found in .system');
       return;
     }
     const groupsObjectId = groupsFolder.object?.properties?.['cmis:objectId']?.value;
@@ -294,8 +289,7 @@ test.describe('System Folders (/.system)', () => {
     );
 
     if (!systemFolder) {
-      console.log('⚠️ No .system folder found via API');
-      test.skip();
+      test.skip('No .system folder found via API');
       return;
     }
 
@@ -318,8 +312,7 @@ test.describe('System Folders (/.system)', () => {
     );
 
     if (!usersFolder) {
-      console.log('⚠️ No users folder found in .system');
-      test.skip();
+      test.skip('No users folder found in .system');
       return;
     }
 

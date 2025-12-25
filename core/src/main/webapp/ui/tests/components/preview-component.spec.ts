@@ -310,7 +310,7 @@ test.describe('PreviewComponent Image Preview', () => {
           }
         }
       } else {
-        test.skip();
+        test.skip('Upload button not found');
       }
     } finally {
       // Cleanup temp file
@@ -407,7 +407,7 @@ test.describe('PreviewComponent Text Preview', () => {
           }
         }
       } else {
-        test.skip();
+        test.skip('Upload button not found');
       }
     } finally {
       // Cleanup temp file
@@ -517,7 +517,7 @@ test.describe('PreviewComponent Error Handling', () => {
           }
         }
       } else {
-        test.skip();
+        test.skip('Upload button not found');
       }
     } finally {
       // Cleanup temp file

@@ -389,8 +389,7 @@ test.describe('Type Management - Custom Types Display', () => {
     // Click JSON edit button in the row (not GUI編集)
     const jsonEditButton = typeRow.locator('button:has-text("JSON")');
     if (await jsonEditButton.count() === 0) {
-      console.log('ℹ️ JSON edit button not found - type editing may use GUI editor only');
-      test.skip();
+      test.skip('JSON edit button not found - type editing may use GUI editor only');
       return;
     }
     await expect(jsonEditButton).toBeVisible({ timeout: 5000 });
@@ -417,8 +416,7 @@ test.describe('Type Management - Custom Types Display', () => {
     }
 
     if (!modalFound) {
-      console.log('ℹ️ JSON edit modal not found - UI implementation may differ');
-      test.skip();
+      test.skip('JSON edit modal not found - UI implementation may differ');
       return;
     }
     console.log('✅ JSON edit modal opened');

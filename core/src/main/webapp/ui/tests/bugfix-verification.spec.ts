@@ -213,7 +213,7 @@ test.describe('Bug Fix Verification Tests', () => {
     const viewportSize = page.viewportSize();
     const isMobile = viewportSize && viewportSize.width <= 414;
     if (isMobile) {
-      test.skip();
+      test.skip('Folder navigation differs on mobile');
       return;
     }
 
@@ -480,8 +480,7 @@ test.describe('Bug Fix Verification Tests', () => {
       console.log('Update failed:', errorText);
       // Skip test if secondary type not available
       if (errorText.includes('typeNotFound') || errorText.includes('commentable')) {
-        console.log('Secondary type nemaki:commentable not available - skipping test');
-        test.skip();
+        test.skip('Secondary type nemaki:commentable not available');
         return;
       }
       throw new Error(`Failed to update properties: ${errorText}`);
@@ -580,8 +579,7 @@ test.describe('Bug Fix Verification Tests', () => {
       const errorText = await checkoutResponse.text();
       console.log('Checkout failed:', errorText);
       if (errorText.includes('not versionable')) {
-        console.log('Document type not versionable - skipping test');
-        test.skip();
+        test.skip('Document type not versionable');
         return;
       }
       throw new Error(`Failed to checkout: ${errorText}`);
@@ -688,8 +686,7 @@ test.describe('Bug Fix Verification Tests', () => {
     if (!checkoutResponse.ok()) {
       const errorText = await checkoutResponse.text();
       if (errorText.includes('not versionable')) {
-        console.log('Document type not versionable - skipping test');
-        test.skip();
+        test.skip('Document type not versionable');
         return;
       }
       throw new Error(`Failed to checkout: ${errorText}`);

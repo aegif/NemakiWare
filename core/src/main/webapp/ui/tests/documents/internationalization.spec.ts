@@ -179,8 +179,7 @@ test.describe('Internationalization Tests', () => {
     try {
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
     } catch {
-      console.log('[SKIP] Upload modal did not open - timing issue');
-      test.skip();
+      test.skip('Upload modal did not open - timing issue');
       return;
     }
 
@@ -197,8 +196,7 @@ test.describe('Internationalization Tests', () => {
     try {
       await submitButton.click({ timeout: 5000 });
     } catch {
-      console.log('[SKIP] Submit button click failed - UI state issue');
-      test.skip();
+      test.skip('Submit button click failed - UI state issue');
       return;
     }
 
@@ -217,8 +215,7 @@ test.describe('Internationalization Tests', () => {
     const isVisible = await documentRow.isVisible().catch(() => false);
     if (!isVisible) {
       // Document may take time to appear - skip test gracefully
-      console.log('[SKIP] Japanese filename not visible in table - timing issue');
-      test.skip();
+      test.skip('Japanese filename not visible in table - timing issue');
       return;
     }
     await expect(documentRow).toBeVisible({ timeout: 10000 });
@@ -309,7 +306,7 @@ test.describe('Internationalization Tests', () => {
       }
     }
     if (!allVisible) {
-      test.skip();
+      test.skip('Special character filenames not visible - timing issue');
       return;
     }
   });
@@ -420,8 +417,7 @@ test.describe('Internationalization Tests', () => {
     const documentRow = page.locator(`.ant-table-tbody tr:has-text("${unicodeFilename}")`);
     const isVisible = await documentRow.isVisible().catch(() => false);
     if (!isVisible) {
-      console.log('[SKIP] Unicode filename not visible in table - timing issue');
-      test.skip();
+      test.skip('Unicode filename not visible in table - timing issue');
       return;
     }
     await expect(documentRow).toBeVisible({ timeout: 10000 });
@@ -595,8 +591,7 @@ test.describe('Internationalization Tests', () => {
     try {
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
     } catch {
-      console.log('[SKIP] Upload modal did not open - timing issue');
-      test.skip();
+      test.skip('Upload modal did not open - timing issue');
       return;
     }
 
@@ -609,16 +604,14 @@ test.describe('Internationalization Tests', () => {
     const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary').first();
     const submitVisible = await submitButton.isVisible().catch(() => false);
     if (!submitVisible) {
-      console.log('[SKIP] Submit button not visible in upload modal');
-      test.skip();
+      test.skip('Submit button not visible in upload modal');
       return;
     }
     // FIX 2025-12-24: Handle click failure gracefully
     try {
       await submitButton.click({ timeout: 5000 });
     } catch {
-      console.log('[SKIP] Submit button click failed - UI state issue');
-      test.skip();
+      test.skip('Submit button click failed - UI state issue');
       return;
     }
 
@@ -647,8 +640,7 @@ test.describe('Internationalization Tests', () => {
     try {
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
     } catch {
-      console.log('[SKIP] Upload modal did not open for second upload - timing issue');
-      test.skip();
+      test.skip('Upload modal did not open for second upload - timing issue');
       return;
     }
 

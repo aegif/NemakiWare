@@ -145,8 +145,7 @@ test.describe('Office Document Preview', () => {
       const uploadButton = page.locator('button').filter({ hasText: /ファイルアップロード|アップロード|Upload/ }).first();
 
       if (await uploadButton.count() === 0) {
-        console.log('Upload button not found, skipping test');
-        test.skip();
+        test.skip('Upload button not found');
         return;
       }
 
@@ -309,7 +308,7 @@ test.describe('Office Document Preview', () => {
       const uploadButton = page.locator('button').filter({ hasText: /ファイルアップロード|アップロード|Upload/ }).first();
 
       if (await uploadButton.count() === 0) {
-        test.skip();
+        test.skip('Upload button not found');
         return;
       }
 
@@ -438,8 +437,7 @@ test.describe('Office Document Preview', () => {
     }).first();
 
     if (await excelRow.count() === 0) {
-      console.log('⊘ No existing Excel file found, skipping test');
-      test.skip();
+      test.skip('No existing Excel file found');
       return;
     }
 

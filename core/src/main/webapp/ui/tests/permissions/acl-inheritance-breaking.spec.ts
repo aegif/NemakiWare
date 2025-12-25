@@ -380,13 +380,11 @@ test.describe('ACL Inheritance Breaking', () => {
     try {
       aclInherited = await getAclInheritedViaRest(page, 'bedroom', folderId);
     } catch {
-      console.log('[SKIP] Could not verify ACL inheritance via REST API');
-      test.skip();
+      test.skip('Could not verify ACL inheritance via REST API');
       return;
     }
     if (aclInherited !== false) {
-      console.log(`[SKIP] ACL inheritance is still ${aclInherited} - operation may have failed`);
-      test.skip();
+      test.skip(`ACL inheritance is still ${aclInherited} - operation may have failed`);
       return;
     }
     console.log('✅ ACL inheritance is broken (verified via REST API)');
@@ -481,8 +479,7 @@ test.describe('ACL Inheritance Breaking', () => {
 
     // FIX 2025-12-24: Handle ACL response failure gracefully
     if (!aclAfterResponse.ok()) {
-      console.log('[SKIP] ACL response failed after breaking inheritance - folder may have been deleted');
-      test.skip();
+      test.skip('ACL response failed after breaking inheritance - folder may have been deleted');
       return;
     }
     const aclAfter = await aclAfterResponse.json();
