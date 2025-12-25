@@ -347,7 +347,8 @@ test.describe('Advanced Search', () => {
       // Verify we're still on search page (not redirected due to error)
       expect(page.url()).toContain('/search');
     } else {
-      test.skip('Search functionality not available');
+      // UPDATED (2025-12-26): Search IS implemented in Layout.tsx lines 313-314
+      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
     }
   });
 
@@ -378,7 +379,8 @@ test.describe('Advanced Search', () => {
         }
       }
     } else {
-      test.skip('Search functionality not available');
+      // UPDATED (2025-12-26): Search IS implemented in Layout.tsx lines 313-314
+      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
     }
   });
 
