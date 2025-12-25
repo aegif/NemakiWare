@@ -785,82 +785,113 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         );
       },
     },
-    // Path column - only visible in search mode
-    ...(isSearchMode ? [{
-      title: 'パス',
-      dataIndex: 'path',
-      key: 'path',
-      width: 250,
-      render: (path: string) => {
-        if (!path || path === '/') {
-          return '/';
-        }
-
-        const segments = path.split('/').filter(Boolean);
-        return (
-          <span>
-            <span
-              style={{ color: '#1890ff', cursor: 'pointer', textDecoration: 'underline' }}
-              onClick={async (e) => {
-                e.stopPropagation();
-                try {
-                  setSelectedFolderId(ROOT_FOLDER_ID);
-                  setCurrentFolderId(ROOT_FOLDER_ID);
-                  setCurrentFolderPath('/');
-                  setSearchParams({ folderId: ROOT_FOLDER_ID });
-                  setIsSearchMode(false);
-                  setSearchQuery('');
-                } catch (error) {
-                  console.error('Navigation error:', error);
-                  message.error('ナビゲーションに失敗しました');
-                }
-              }}
-            >
-              /
-            </span>
-            {segments.map((segment, index) => {
-              const segmentPath = '/' + segments.slice(0, index + 1).join('/');
-              const isLast = index === segments.length - 1;
-
-              return (
-                <span key={index}>
-                  <span
-                    style={{
-                      color: isLast ? 'inherit' : '#1890ff',
-                      cursor: isLast ? 'default' : 'pointer',
-                      textDecoration: isLast ? 'none' : 'underline'
-                    }}
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      if (!isLast) {
-                        try {
-                          const folderObject = await cmisService.getObjectByPath(repositoryId, segmentPath);
-                          if (folderObject && folderObject.id) {
-                            // Note: Path segment navigation updates both selected and current folder IDs
-                            setSelectedFolderId(folderObject.id);
-                            setCurrentFolderId(folderObject.id);
-                            setCurrentFolderPath(segmentPath);
-                            setSearchParams({ folderId: folderObject.id });
-                            setIsSearchMode(false);
-                            setSearchQuery('');
-                          }
-                        } catch (error) {
-                          console.error('Path navigation error:', error);
-                          message.error('フォルダへのナビゲーションに失敗しました');
-                        }
-                      }
-                    }}
-                  >
-                    {segment}
-                  </span>
-                  {!isLast && <span>/</span>}
-                </span>
-              );
-            })}
-          </span>
-        );
+    // Search mode columns: objectType, path, createdBy, creationDate
+    // FEATURE: Added 2025-12-25 per user request for search result metadata
+    ...(isSearchMode ? [
+      {
+        title: 'オブジェクトタイプ',
+        dataIndex: 'objectType',
+        key: 'objectType',
+        width: 150,
+        render: (objectType: string) => {
+          // Display friendly name for common types
+          const typeLabels: Record<string, string> = {
+            'cmis:document': 'ドキュメント',
+            'cmis:folder': 'フォルダ',
+          };
+          return typeLabels[objectType] || objectType || '-';
+        },
       },
-    }] : []),
+      {
+        title: 'パス',
+        dataIndex: 'path',
+        key: 'path',
+        width: 200,
+        render: (path: string) => {
+          if (!path || path === '/') {
+            return '/';
+          }
+
+          const segments = path.split('/').filter(Boolean);
+          return (
+            <span>
+              <span
+                style={{ color: '#1890ff', cursor: 'pointer', textDecoration: 'underline' }}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    setSelectedFolderId(ROOT_FOLDER_ID);
+                    setCurrentFolderId(ROOT_FOLDER_ID);
+                    setCurrentFolderPath('/');
+                    setSearchParams({ folderId: ROOT_FOLDER_ID });
+                    setIsSearchMode(false);
+                    setSearchQuery('');
+                  } catch (error) {
+                    console.error('Navigation error:', error);
+                    message.error('ナビゲーションに失敗しました');
+                  }
+                }}
+              >
+                /
+              </span>
+              {segments.map((segment, index) => {
+                const segmentPath = '/' + segments.slice(0, index + 1).join('/');
+                const isLast = index === segments.length - 1;
+
+                return (
+                  <span key={index}>
+                    <span
+                      style={{
+                        color: isLast ? 'inherit' : '#1890ff',
+                        cursor: isLast ? 'default' : 'pointer',
+                        textDecoration: isLast ? 'none' : 'underline'
+                      }}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!isLast) {
+                          try {
+                            const folderObject = await cmisService.getObjectByPath(repositoryId, segmentPath);
+                            if (folderObject && folderObject.id) {
+                              // Note: Path segment navigation updates both selected and current folder IDs
+                              setSelectedFolderId(folderObject.id);
+                              setCurrentFolderId(folderObject.id);
+                              setCurrentFolderPath(segmentPath);
+                              setSearchParams({ folderId: folderObject.id });
+                              setIsSearchMode(false);
+                              setSearchQuery('');
+                            }
+                          } catch (error) {
+                            console.error('Path navigation error:', error);
+                            message.error('フォルダへのナビゲーションに失敗しました');
+                          }
+                        }
+                      }}
+                    >
+                      {segment}
+                    </span>
+                    {!isLast && <span>/</span>}
+                  </span>
+                );
+              })}
+            </span>
+          );
+        },
+      },
+      {
+        title: '作成者',
+        dataIndex: 'createdBy',
+        key: 'createdBy',
+        width: 100,
+        render: (createdBy: string) => createdBy || '-',
+      },
+      {
+        title: '作成日時',
+        dataIndex: 'creationDate',
+        key: 'creationDate',
+        width: 150,
+        render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+      },
+    ] : []),
     {
       title: 'サイズ',
       dataIndex: 'contentStreamLength',
