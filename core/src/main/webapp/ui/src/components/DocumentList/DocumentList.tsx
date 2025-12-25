@@ -241,7 +241,8 @@ import {
   EditOutlined,
   CheckOutlined,
   CloseOutlined,
-  UpOutlined
+  UpOutlined,
+  FormOutlined
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
@@ -299,6 +300,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [deleteTargetName, setDeleteTargetName] = useState<string>('');
   const [deleteDescendantCount, setDeleteDescendantCount] = useState(0);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Rename modal states (2025-12-26)
+  const [renameModalVisible, setRenameModalVisible] = useState(false);
+  const [renameTargetId, setRenameTargetId] = useState<string>('');
+  const [renameTargetName, setRenameTargetName] = useState<string>('');
+  const [renameForm] = Form.useForm();
 
   // Type selection states (2025-12-11)
   const [documentTypes, setDocumentTypes] = useState<TypeDefinition[]>([]);
@@ -613,6 +620,48 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setDeleteTargetId('');
     setDeleteTargetName('');
     setDeleteDescendantCount(0);
+  };
+
+  /**
+   * Show rename modal with current name prefilled.
+   */
+  const handleRenameClick = (objectId: string, objectName: string) => {
+    setRenameTargetId(objectId);
+    setRenameTargetName(objectName);
+    renameForm.setFieldsValue({ newName: objectName });
+    setRenameModalVisible(true);
+  };
+
+  /**
+   * Execute rename operation using CMIS updateProperties.
+   */
+  const handleRename = async (values: { newName: string }) => {
+    if (!renameTargetId || !values.newName.trim()) return;
+
+    try {
+      setLoading(true);
+      await cmisService.updateProperties(repositoryId, renameTargetId, {
+        'cmis:name': values.newName.trim()
+      });
+      message.success('名前を変更しました');
+      setRenameModalVisible(false);
+      renameForm.resetFields();
+      await loadObjects();
+    } catch (error) {
+      console.error('Rename error:', error);
+      message.error('名前の変更に失敗しました');
+    } finally {
+      setLoading(false);
+      setRenameTargetId('');
+      setRenameTargetName('');
+    }
+  };
+
+  const handleRenameCancel = () => {
+    setRenameModalVisible(false);
+    renameForm.resetFields();
+    setRenameTargetId('');
+    setRenameTargetName('');
   };
 
   const handleDownload = (objectId: string) => {
@@ -941,6 +990,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   const targetUrl = `/documents/${record.id}${folderParam}`;
                   navigate(targetUrl);
                 }}
+              />
+            </Tooltip>
+            <Tooltip title="名前変更">
+              <Button
+                icon={<FormOutlined />}
+                size="small"
+                onClick={() => handleRenameClick(record.id, record.name)}
               />
             </Tooltip>
             {record.baseType === 'cmis:document' && (
@@ -1586,6 +1642,36 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             )}
           </div>
         )}
+      </Modal>
+
+      {/* Rename Modal */}
+      <Modal
+        title={`「${renameTargetName}」の名前を変更`}
+        open={renameModalVisible}
+        onOk={() => renameForm.submit()}
+        onCancel={handleRenameCancel}
+        okText="変更"
+        cancelText="キャンセル"
+        okButtonProps={{ loading: loading }}
+        maskClosable={false}
+      >
+        <Form
+          form={renameForm}
+          layout="vertical"
+          onFinish={handleRename}
+        >
+          <Form.Item
+            name="newName"
+            label="新しい名前"
+            rules={[
+              { required: true, message: '名前を入力してください' },
+              { min: 1, message: '名前を入力してください' },
+              { max: 255, message: '名前は255文字以内で入力してください' }
+            ]}
+          >
+            <Input placeholder="新しい名前を入力" autoFocus />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );
