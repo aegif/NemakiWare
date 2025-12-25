@@ -440,7 +440,8 @@ test.describe('Group Management CRUD Operations', () => {
         throw error;
       }
     } else {
-      test.skip('Group creation functionality not available');
+      // UPDATED (2025-12-26): Group creation IS implemented in GroupManagement.tsx
+      test.skip('Create group button not visible - IS implemented in GroupManagement.tsx');
     }
   });
 

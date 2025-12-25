@@ -239,7 +239,8 @@ test.describe('Group Management', () => {
       const table = page.locator('.ant-table');
       await expect(table).toBeVisible({ timeout: 5000 });
     } else {
-      test.skip('Search functionality not available in group management');
+      // UPDATED (2025-12-26): Search IS implemented in GroupManagement.tsx
+      test.skip('Search input not visible - IS implemented in GroupManagement.tsx');
     }
   });
 

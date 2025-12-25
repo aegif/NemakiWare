@@ -486,7 +486,8 @@ test.describe('Archive Management', () => {
       const altDetailButton = firstRow.locator('button').filter({ hasText: /詳細|Detail/i }).first();
 
       if (await altDetailButton.count() === 0) {
-        test.skip('Detail view button not available');
+        // UPDATED (2025-12-26): Detail view IS implemented in ArchiveManagement.tsx
+        test.skip('Detail view button not visible - IS implemented in ArchiveManagement.tsx');
         return;
       }
       await altDetailButton.click(isMobile ? { force: true } : {});

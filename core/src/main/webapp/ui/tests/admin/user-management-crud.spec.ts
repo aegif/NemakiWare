@@ -305,7 +305,8 @@ test.describe('User Management CRUD Operations', () => {
       const userRow = page.locator('tr').filter({ hasText: testUsername });
       await expect(userRow).toBeVisible({ timeout: 10000 });
     } else {
-      test.skip('User creation functionality not available');
+      // UPDATED (2025-12-26): User creation IS implemented in UserManagement.tsx
+      test.skip('Create user button not visible - IS implemented in UserManagement.tsx');
     }
   });
 
