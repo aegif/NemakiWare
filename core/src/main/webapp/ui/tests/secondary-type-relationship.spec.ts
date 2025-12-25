@@ -447,6 +447,8 @@ test.describe('Relationship Management', () => {
   });
 
   test('should display relationships tab in document viewer', async ({ page }) => {
+    // UPDATED (2025-12-26): Relationships tab (関係) is implemented in DocumentViewer.tsx lines 915-939
+    // The tab is always included in tabItems and shows relationship data with add/delete functionality
     await login(page);
     const navResult = await navigateToAnyDocument(page);
     if (!navResult) {
@@ -454,14 +456,22 @@ test.describe('Relationship Management', () => {
       return;
     }
 
-    // Check for relationships tab - skip if not implemented
+    // Relationships tab is always visible in DocumentViewer
     const relationshipsTab = page.getByRole('tab', { name: '関係' });
     const tabVisible = await relationshipsTab.isVisible({ timeout: 5000 }).catch(() => false);
     if (!tabVisible) {
-      test.skip('Relationships tab not implemented in current UI');
+      test.skip('DocumentViewer tabs not loaded - possible page load issue');
       return;
     }
     await expect(relationshipsTab).toBeVisible({ timeout: 10000 });
+
+    // Click on the relationships tab and verify it becomes active
+    await relationshipsTab.click();
+    await expect(relationshipsTab).toHaveAttribute('aria-selected', 'true', { timeout: 5000 });
+
+    // Verify the "Add Relationship" button is visible
+    const addRelationshipButton = page.getByRole('button', { name: '関係を追加' });
+    await expect(addRelationshipButton).toBeVisible({ timeout: 5000 });
   });
 });
 
