@@ -105,9 +105,9 @@ import { randomUUID } from 'crypto';
  * Bulk operations verified working via manual testing.
  * Re-enable after implementing more robust selection wait utilities.
  */
-// SKIPPED (2025-12-24): Modal overlay timing issues in createTestDocuments
-// Bulk operations functionality works correctly but tests have flaky UI interactions
-test.describe.skip('Bulk Operations', () => {
+// FIXED (2025-12-25): Enabled with extended timeout and improved error handling
+test.describe('Bulk Operations', () => {
+  test.setTimeout(180000); // 3 minutes for bulk operations
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   const testDocumentNames: string[] = [];

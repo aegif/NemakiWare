@@ -43,11 +43,11 @@ import { randomUUID } from 'crypto';
  * Search tokenization fix verified working via API tests.
  * Re-enable after implementing more robust upload wait utilities.
  */
-// SKIPPED (2025-12-24): Serial test with upload timing issues
-// Search tokenization fix verified via API tests in search-tokenization.spec.ts
-test.describe.skip('Bug Fix: Search Tokenization Issue (WebUI)', () => {
+// FIXED (2025-12-25): Enabled with extended timeout for serial test execution
+test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
   // Tests must run in order - document lifecycle
   test.describe.configure({ mode: 'serial' });
+  test.setTimeout(180000); // 3 minutes for serial execution
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;

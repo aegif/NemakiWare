@@ -47,10 +47,11 @@ import { randomUUID } from 'crypto';
  * Bug fixes verified working via backend API tests.
  * Re-enable after implementing test data fixtures.
  */
-test.describe.skip('Comprehensive Bug Fix Verification (WebUI)', () => {
-  // SKIPPED: Serial test with document lifecycle dependencies
-  // Bug fixes are verified via API tests in other test files
+// FIXED (2025-12-25): Enabled with extended timeout for serial test execution
+test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
+  // Tests must run in order - document lifecycle
   test.describe.configure({ mode: 'serial' });
+  test.setTimeout(180000); // 3 minutes for serial execution
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
@@ -484,10 +485,10 @@ test.describe.skip('Comprehensive Bug Fix Verification (WebUI)', () => {
  * Search tokenization fix verified working via API tests.
  * Re-enable after implementing test data fixtures.
  */
-// SKIPPED (2025-12-24): Serial test with UI timing dependencies
-// Search tokenization fix verified via API tests in search-tokenization tests
-test.describe.skip('Search Tokenization Bug Fix Verification', () => {
+// FIXED (2025-12-25): Enabled with extended timeout for serial test execution
+test.describe('Search Tokenization Bug Fix Verification', () => {
   test.describe.configure({ mode: 'serial' });
+  test.setTimeout(180000); // 3 minutes for serial execution
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
