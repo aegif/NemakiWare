@@ -448,7 +448,110 @@ export class TestHelper {
     console.log(`TestHelper: Document ${fileName} not found in table`);
     const allRows = await this.page.locator('.ant-table-tbody tr').count();
     console.log(`TestHelper: Total rows in table: ${allRows}`);
-    
+
+    return false;
+  }
+
+  /**
+   * Ensure a test document exists, creating it if necessary
+   * This method is idempotent - safe to call multiple times
+   *
+   * @param fileName Name of the file to ensure exists
+   * @param content Content of the file (used only if creating)
+   * @param isMobile Whether the browser is in mobile mode
+   * @returns true if document exists (or was created), false if creation failed
+   */
+  async ensureTestDocument(fileName: string, content: string = 'Test content', isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Ensuring test document ${fileName} exists...`);
+
+    // First check if document already exists in table
+    const existingDoc = this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).first();
+    if (await existingDoc.count() > 0) {
+      console.log(`TestHelper: Document ${fileName} already exists`);
+      return true;
+    }
+
+    // Document doesn't exist, try to create it
+    console.log(`TestHelper: Document ${fileName} not found, creating...`);
+
+    // Check if upload button is available
+    let uploadButton = this.page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = this.page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
+    if (await uploadButton.count() === 0) {
+      uploadButton = this.page.locator('button').filter({ has: this.page.locator('[data-icon="upload"]') }).first();
+    }
+
+    if (await uploadButton.count() === 0) {
+      console.log('TestHelper: Upload button not found - cannot create document');
+      return false;
+    }
+
+    // Use the uploadDocument method
+    return await this.uploadDocument(fileName, content, isMobile);
+  }
+
+  /**
+   * Navigate to documents page if not already there
+   */
+  async navigateToDocuments(): Promise<void> {
+    const currentUrl = this.page.url();
+    if (currentUrl.includes('/documents')) {
+      console.log('TestHelper: Already on documents page');
+      return;
+    }
+
+    console.log('TestHelper: Navigating to documents page...');
+    const documentsMenuItem = this.page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
+    if (await documentsMenuItem.count() > 0) {
+      await documentsMenuItem.click();
+      await this.page.waitForTimeout(2000);
+    }
+  }
+
+  /**
+   * Delete a test document if it exists
+   *
+   * @param fileName Name of the file to delete
+   * @param isMobile Whether the browser is in mobile mode
+   * @returns true if deleted (or didn't exist), false if deletion failed
+   */
+  async deleteTestDocument(fileName: string, isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Deleting test document ${fileName}...`);
+
+    // Find document row
+    const docRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).first();
+    if (await docRow.count() === 0) {
+      console.log(`TestHelper: Document ${fileName} not found - already deleted or never existed`);
+      return true;
+    }
+
+    // Find delete button
+    const deleteButton = docRow.locator('button').filter({ has: this.page.locator('[data-icon="delete"]') }).first();
+    if (await deleteButton.count() === 0) {
+      console.log(`TestHelper: Delete button not found for ${fileName}`);
+      return false;
+    }
+
+    await deleteButton.click(isMobile ? { force: true } : {});
+    await this.page.waitForTimeout(500);
+
+    // Confirm deletion
+    const confirmButton = this.page.locator('.ant-popconfirm button, .ant-popover button').filter({ hasText: /OK|はい|確認/ }).first();
+    if (await confirmButton.count() > 0) {
+      await confirmButton.click();
+      await this.page.waitForTimeout(3000);
+    }
+
+    // Verify deleted
+    const stillExists = await this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).count() > 0;
+    if (!stillExists) {
+      console.log(`TestHelper: Document ${fileName} deleted successfully`);
+      return true;
+    }
+
+    console.log(`TestHelper: Document ${fileName} still exists after deletion attempt`);
     return false;
   }
 }
