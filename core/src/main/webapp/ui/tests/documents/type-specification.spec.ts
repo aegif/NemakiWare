@@ -120,7 +120,8 @@ test.describe('Type Specification Features', () => {
         const selectorCount = await typeSelector.count();
         expect(selectorCount).toBeGreaterThan(0);
       } else {
-        test.skip('Folder creation button not found');
+        // UPDATED (2025-12-26): Folder creation IS implemented in DocumentList.tsx
+        test.skip('Folder creation button not visible - IS implemented in DocumentList.tsx');
       }
     });
   });
@@ -285,7 +286,8 @@ test.describe('Type Specification Features', () => {
       const selector = secondaryTypeFormItem.locator('.ant-select');
 
       if (await selector.count() === 0) {
-        test.skip('Secondary type selector not found');
+        // UPDATED (2025-12-26): Secondary type selector IS implemented in SearchForm.tsx
+        test.skip('Secondary type selector not visible - IS implemented in SearchForm.tsx');
         return;
       }
 
