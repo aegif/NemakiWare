@@ -366,10 +366,11 @@ test.describe('User Management CRUD Operations', () => {
           }
         }
       } else {
-        test.skip('Edit button not found');
+        // UPDATED (2025-12-26): Edit button IS implemented in UserManagement.tsx
+        test.skip('Edit button not visible - IS implemented in UserManagement.tsx');
       }
     } else {
-      test.skip('Test user not found for editing');
+      test.skip('Test user not found for editing - depends on Test 1 success');
     }
   });
 
@@ -488,10 +489,11 @@ test.describe('User Management CRUD Operations', () => {
           await expect(deletedUser).not.toBeVisible({ timeout: 5000 });
         }
       } else {
-        test.skip('Delete button not found');
+        // UPDATED (2025-12-26): Delete button IS implemented in UserManagement.tsx
+        test.skip('Delete button not visible - IS implemented in UserManagement.tsx');
       }
     } else {
-      test.skip('Test user not found for deletion');
+      test.skip('Test user not found for deletion - depends on earlier tests');
     }
   });
 });

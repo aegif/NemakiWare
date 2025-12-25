@@ -252,15 +252,17 @@ test.describe('PropertyEditor Component Tests', () => {
               await page.waitForTimeout(2000);
             }
           } else {
+            // PropertyEditor IS implemented - property may not be editable
             console.log('PropertyEditor Test: String property field not found - skipping');
-            test.skip('String property field not found');
+            test.skip('String property not editable - PropertyEditor IS implemented in PropertyEditor.tsx');
           }
         } else {
-          test.skip('Properties tab not found');
+          // UPDATED (2025-12-26): Properties tab IS implemented in DocumentViewer.tsx
+          test.skip('Properties tab not visible - IS implemented in DocumentViewer.tsx');
         }
       }
     } else {
-      test.skip('Test document not found');
+      test.skip('Test document not found - depends on document upload');
     }
   });
 

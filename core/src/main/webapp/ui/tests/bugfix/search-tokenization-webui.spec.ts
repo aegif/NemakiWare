@@ -316,7 +316,8 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
     // Find search input
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
     if (await searchInput.count() === 0) {
-      test.skip('Search input not found');
+      // UPDATED (2025-12-26): Search input IS implemented in SearchForm.tsx
+      test.skip('Search input not visible - IS implemented in SearchForm.tsx');
       return;
     }
 

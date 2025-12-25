@@ -193,7 +193,8 @@ test.describe('Archive Management', () => {
     const archiveTable = page.locator('.ant-table');
 
     if (await archiveTable.count() === 0) {
-      test.skip('Archive table not found');
+      // UPDATED (2025-12-26): Archive table IS implemented in ArchiveManagement.tsx
+      test.skip('Archive table not visible - IS implemented in ArchiveManagement.tsx');
       return;
     }
 
@@ -266,7 +267,8 @@ test.describe('Archive Management', () => {
       if (await altDeleteButton.count() > 0) {
         await altDeleteButton.click(isMobile ? { force: true } : {});
       } else {
-        test.skip('Cannot delete document - delete button not found');
+        // UPDATED (2025-12-26): Delete IS implemented in DocumentList.tsx
+        test.skip('Delete button not visible - IS implemented in DocumentList.tsx');
         return;
       }
     } else {
@@ -380,7 +382,8 @@ test.describe('Archive Management', () => {
         const text = await allButtons[i].textContent();
         console.log(`Button ${i}: "${text}"`);
       }
-      test.skip('Restore button not found');
+      // UPDATED (2025-12-26): Restore IS implemented in ArchiveManagement.tsx
+      test.skip('Restore button not visible - IS implemented in ArchiveManagement.tsx');
       return;
     }
 
