@@ -145,12 +145,9 @@ test.describe('PropertyEditor Component Tests', () => {
     await authHelper.login();
     await testHelper.waitForAntdLoad();
 
-    // Navigate to documents
-    const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-    if (await documentsMenuItem.count() > 0) {
-      await documentsMenuItem.click();
-      await page.waitForTimeout(2000);
-    }
+    // Navigate to documents using helper
+    await testHelper.navigateToDocuments();
+    await page.waitForTimeout(1000);
 
     // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
     const viewportSize = page.viewportSize();
@@ -168,42 +165,45 @@ test.describe('PropertyEditor Component Tests', () => {
         }
       }
     }
+
+    // CRITICAL FIX (2025-12-26): Ensure test document exists before each test
+    // This eliminates data-dependent test skips
+    const isMobile = isMobileChrome;
+    const docExists = await testHelper.ensureTestDocument(
+      testDocName,
+      'Test content for PropertyEditor testing',
+      isMobile
+    );
+    if (!docExists) {
+      console.log('PropertyEditor: Could not ensure test document exists');
+    }
   });
 
-  test('should upload test document and open properties tab', async ({ page, browserName }) => {
+  test('should verify test document exists and open properties tab', async ({ page, browserName }) => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
-    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
-    if (await uploadButton.count() === 0) {
-      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
-    }
+    // Test document should be ensured by beforeEach hook
+    // Verify it exists in table
+    const docRow = page.locator('tr').filter({ hasText: testDocName });
+    await expect(docRow).toBeVisible({ timeout: 10000 });
 
-    if (await uploadButton.count() > 0) {
-      await uploadButton.click(isMobile ? { force: true } : {});
-      await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
+    // Open detail view and verify properties tab
+    const detailButton = docRow.locator('button').filter({
+      has: page.locator('[data-icon="eye"]')
+    });
 
-      await testHelper.uploadTestFile(
-        '.ant-modal input[type="file"]',
-        testDocName,
-        'Test content for PropertyEditor testing'
-      );
-
+    if (await detailButton.count() > 0) {
+      await detailButton.first().click(isMobile ? { force: true } : {});
       await page.waitForTimeout(1000);
 
-      const submitBtn = page.locator('.ant-modal button[type="submit"]');
-      await submitBtn.click();
-
-      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-      await page.waitForTimeout(2000);
-
-      // Verify document appears
-      const uploadedDoc = page.locator(`text=${testDocName}`);
-      await expect(uploadedDoc).toBeVisible({ timeout: 5000 });
-    } else {
-      // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
+      // Click properties tab
+      const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+      if (await propertiesTab.count() > 0) {
+        await propertiesTab.click();
+        await page.waitForTimeout(1000);
+        console.log('PropertyEditor Test: Properties tab opened successfully');
+      }
     }
   });
 
@@ -213,56 +213,52 @@ test.describe('PropertyEditor Component Tests', () => {
 
     await page.waitForTimeout(2000);
 
-    // Find test document row
+    // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
+    await expect(docRow).toBeVisible({ timeout: 10000 });
 
-    if (await docRow.count() > 0) {
-      // Open detail view
-      const detailButton = docRow.locator('button').filter({
-        has: page.locator('[data-icon="eye"]')
-      });
+    // Open detail view
+    const detailButton = docRow.locator('button').filter({
+      has: page.locator('[data-icon="eye"]')
+    });
 
-      if (await detailButton.count() > 0) {
-        await detailButton.first().click(isMobile ? { force: true } : {});
+    if (await detailButton.count() > 0) {
+      await detailButton.first().click(isMobile ? { force: true } : {});
+      await page.waitForTimeout(1000);
+
+      // Click properties tab
+      const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+      if (await propertiesTab.count() > 0) {
+        await propertiesTab.click();
         await page.waitForTimeout(1000);
 
-        // Click properties tab
-        const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-        if (await propertiesTab.count() > 0) {
-          await propertiesTab.click();
-          await page.waitForTimeout(1000);
+        // Look for cmis:name property (string type)
+        const nameInput = page.locator('input[id*="cmis:name"], input[placeholder*="名前"]');
 
-          // Look for cmis:name property (string type)
-          const nameInput = page.locator('input[id*="cmis:name"], input[placeholder*="名前"]');
+        if (await nameInput.count() > 0) {
+          console.log('PropertyEditor Test: Found string property field (cmis:name)');
 
-          if (await nameInput.count() > 0) {
-            console.log('PropertyEditor Test: Found string property field (cmis:name)');
+          // Verify it's an input field
+          await expect(nameInput.first()).toBeVisible();
 
-            // Verify it's an input field
-            await expect(nameInput.first()).toBeVisible();
+          // Try editing
+          const currentValue = await nameInput.first().inputValue();
+          await nameInput.first().fill('Updated name for testing');
 
-            // Try editing
-            const currentValue = await nameInput.first().inputValue();
-            await nameInput.first().fill('Updated name for testing');
-
-            // Save changes
-            const saveButton = page.locator('button:has-text("保存")');
-            if (await saveButton.count() > 0) {
-              await saveButton.click();
-              await page.waitForTimeout(2000);
-            }
-          } else {
-            // PropertyEditor IS implemented - property may not be editable
-            console.log('PropertyEditor Test: String property field not found - skipping');
-            test.skip('String property not editable - PropertyEditor IS implemented in PropertyEditor.tsx');
+          // Save changes
+          const saveButton = page.locator('button:has-text("保存")');
+          if (await saveButton.count() > 0) {
+            await saveButton.click();
+            await page.waitForTimeout(2000);
           }
         } else {
-          // UPDATED (2025-12-26): Properties tab IS implemented in DocumentViewer.tsx
-          test.skip('Properties tab not visible - IS implemented in DocumentViewer.tsx');
+          // PropertyEditor IS implemented - property may not be editable
+          console.log('PropertyEditor Test: String property field not found');
+          test.skip('String property not editable - PropertyEditor IS implemented in PropertyEditor.tsx');
         }
+      } else {
+        test.skip('Properties tab not visible - IS implemented in DocumentViewer.tsx');
       }
-    } else {
-      test.skip('Test document not found - depends on document upload');
     }
   });
 
@@ -272,32 +268,32 @@ test.describe('PropertyEditor Component Tests', () => {
 
     await page.waitForTimeout(2000);
 
+    // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
+    await expect(docRow).toBeVisible({ timeout: 10000 });
 
-    if (await docRow.count() > 0) {
-      const detailButton = docRow.locator('button').filter({
-        has: page.locator('[data-icon="eye"]')
-      });
+    const detailButton = docRow.locator('button').filter({
+      has: page.locator('[data-icon="eye"]')
+    });
 
-      if (await detailButton.count() > 0) {
-        await detailButton.first().click(isMobile ? { force: true } : {});
+    if (await detailButton.count() > 0) {
+      await detailButton.first().click(isMobile ? { force: true } : {});
+      await page.waitForTimeout(1000);
+
+      const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+      if (await propertiesTab.count() > 0) {
+        await propertiesTab.click();
         await page.waitForTimeout(1000);
 
-        const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-        if (await propertiesTab.count() > 0) {
-          await propertiesTab.click();
-          await page.waitForTimeout(1000);
+        // Look for InputNumber components (integer/decimal properties)
+        const numberInputs = page.locator('.ant-input-number');
 
-          // Look for InputNumber components (integer/decimal properties)
-          const numberInputs = page.locator('.ant-input-number');
-
-          if (await numberInputs.count() > 0) {
-            console.log(`PropertyEditor Test: Found ${await numberInputs.count()} number input fields`);
-            await expect(numberInputs.first()).toBeVisible();
-          } else {
-            console.log('PropertyEditor Test: No number input fields found - may not have integer/decimal custom properties');
-            test.skip('Integer/decimal properties not found');
-          }
+        if (await numberInputs.count() > 0) {
+          console.log(`PropertyEditor Test: Found ${await numberInputs.count()} number input fields`);
+          await expect(numberInputs.first()).toBeVisible();
+        } else {
+          console.log('PropertyEditor Test: No number input fields found - may not have integer/decimal custom properties');
+          test.skip('Integer/decimal properties not found - standard CMIS documents do not have numeric properties');
         }
       }
     }
@@ -309,42 +305,42 @@ test.describe('PropertyEditor Component Tests', () => {
 
     await page.waitForTimeout(2000);
 
+    // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
+    await expect(docRow).toBeVisible({ timeout: 10000 });
 
-    if (await docRow.count() > 0) {
-      const detailButton = docRow.locator('button').filter({
-        has: page.locator('[data-icon="eye"]')
-      });
+    const detailButton = docRow.locator('button').filter({
+      has: page.locator('[data-icon="eye"]')
+    });
 
-      if (await detailButton.count() > 0) {
-        await detailButton.first().click(isMobile ? { force: true } : {});
+    if (await detailButton.count() > 0) {
+      await detailButton.first().click(isMobile ? { force: true } : {});
+      await page.waitForTimeout(1000);
+
+      const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+      if (await propertiesTab.count() > 0) {
+        await propertiesTab.click();
         await page.waitForTimeout(1000);
 
-        const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-        if (await propertiesTab.count() > 0) {
-          await propertiesTab.click();
-          await page.waitForTimeout(1000);
+        // Look for Switch components (boolean properties)
+        const switches = page.locator('.ant-switch');
 
-          // Look for Switch components (boolean properties)
-          const switches = page.locator('.ant-switch');
+        if (await switches.count() > 0) {
+          console.log(`PropertyEditor Test: Found ${await switches.count()} switch components`);
 
-          if (await switches.count() > 0) {
-            console.log(`PropertyEditor Test: Found ${await switches.count()} switch components`);
+          // Verify switch is visible and interactable
+          const firstSwitch = switches.first();
+          await expect(firstSwitch).toBeVisible();
 
-            // Verify switch is visible and interactable
-            const firstSwitch = switches.first();
-            await expect(firstSwitch).toBeVisible();
-
-            // Test toggle (if updatable)
-            const isDisabled = await firstSwitch.getAttribute('class');
-            if (!isDisabled?.includes('ant-switch-disabled')) {
-              await firstSwitch.click();
-              await page.waitForTimeout(500);
-            }
-          } else {
-            console.log('PropertyEditor Test: No boolean properties found');
-            test.skip('Boolean properties not found');
+          // Test toggle (if updatable)
+          const isDisabled = await firstSwitch.getAttribute('class');
+          if (!isDisabled?.includes('ant-switch-disabled')) {
+            await firstSwitch.click();
+            await page.waitForTimeout(500);
           }
+        } else {
+          console.log('PropertyEditor Test: No boolean properties found');
+          test.skip('Boolean properties not found - standard CMIS documents do not have boolean properties');
         }
       }
     }
@@ -356,44 +352,44 @@ test.describe('PropertyEditor Component Tests', () => {
 
     await page.waitForTimeout(2000);
 
+    // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
+    await expect(docRow).toBeVisible({ timeout: 10000 });
 
-    if (await docRow.count() > 0) {
-      const detailButton = docRow.locator('button').filter({
-        has: page.locator('[data-icon="eye"]')
-      });
+    const detailButton = docRow.locator('button').filter({
+      has: page.locator('[data-icon="eye"]')
+    });
 
-      if (await detailButton.count() > 0) {
-        await detailButton.first().click(isMobile ? { force: true } : {});
+    if (await detailButton.count() > 0) {
+      await detailButton.first().click(isMobile ? { force: true } : {});
+      await page.waitForTimeout(1000);
+
+      const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+      if (await propertiesTab.count() > 0) {
+        await propertiesTab.click();
         await page.waitForTimeout(1000);
 
-        const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-        if (await propertiesTab.count() > 0) {
-          await propertiesTab.click();
-          await page.waitForTimeout(1000);
+        // Look for DatePicker components (datetime properties)
+        // Standard CMIS datetime properties: cmis:creationDate, cmis:lastModificationDate
+        const datePickers = page.locator('.ant-picker');
 
-          // Look for DatePicker components (datetime properties)
-          // Standard CMIS datetime properties: cmis:creationDate, cmis:lastModificationDate
-          const datePickers = page.locator('.ant-picker');
+        if (await datePickers.count() > 0) {
+          console.log(`PropertyEditor Test: Found ${await datePickers.count()} date picker components`);
+          await expect(datePickers.first()).toBeVisible();
 
-          if (await datePickers.count() > 0) {
-            console.log(`PropertyEditor Test: Found ${await datePickers.count()} date picker components`);
-            await expect(datePickers.first()).toBeVisible();
-
-            // Verify these are for datetime properties (should have showTime)
-            // Click to open and check if time selection is available
-            const firstPicker = datePickers.first();
-            const isDisabled = await firstPicker.locator('input').getAttribute('disabled');
-            if (!isDisabled) {
-              // DatePickers for creation/modification dates are typically read-only
-              console.log('PropertyEditor Test: DateTime property is editable (likely custom property)');
-            } else {
-              console.log('PropertyEditor Test: DateTime property is read-only (likely cmis:creationDate or cmis:lastModificationDate)');
-            }
+          // Verify these are for datetime properties (should have showTime)
+          // Click to open and check if time selection is available
+          const firstPicker = datePickers.first();
+          const isDisabled = await firstPicker.locator('input').getAttribute('disabled');
+          if (!isDisabled) {
+            // DatePickers for creation/modification dates are typically read-only
+            console.log('PropertyEditor Test: DateTime property is editable (likely custom property)');
           } else {
-            console.log('PropertyEditor Test: No datetime properties found in editable form');
-            test.skip('DateTime properties not found');
+            console.log('PropertyEditor Test: DateTime property is read-only (likely cmis:creationDate or cmis:lastModificationDate)');
           }
+        } else {
+          console.log('PropertyEditor Test: No datetime properties found in editable form');
+          test.skip('DateTime properties not found - may be displayed as text instead of DatePicker');
         }
       }
     }
@@ -405,49 +401,49 @@ test.describe('PropertyEditor Component Tests', () => {
 
     await page.waitForTimeout(2000);
 
+    // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
+    await expect(docRow).toBeVisible({ timeout: 10000 });
 
-    if (await docRow.count() > 0) {
-      const detailButton = docRow.locator('button').filter({
-        has: page.locator('[data-icon="eye"]')
-      });
+    const detailButton = docRow.locator('button').filter({
+      has: page.locator('[data-icon="eye"]')
+    });
 
-      if (await detailButton.count() > 0) {
-        await detailButton.first().click(isMobile ? { force: true } : {});
+    if (await detailButton.count() > 0) {
+      await detailButton.first().click(isMobile ? { force: true } : {});
+      await page.waitForTimeout(1000);
+
+      const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+      if (await propertiesTab.count() > 0) {
+        await propertiesTab.click();
         await page.waitForTimeout(1000);
 
-        const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-        if (await propertiesTab.count() > 0) {
-          await propertiesTab.click();
-          await page.waitForTimeout(1000);
+        // Look for disabled fields with "(読み取り専用)" label
+        // Standard CMIS read-only properties: cmis:objectId, cmis:baseTypeId, cmis:createdBy, cmis:creationDate, etc.
+        const readOnlyLabels = page.locator('text=(読み取り専用)');
 
-          // Look for disabled fields with "(読み取り専用)" label
-          // Standard CMIS read-only properties: cmis:objectId, cmis:baseTypeId, cmis:createdBy, cmis:creationDate, etc.
-          const readOnlyLabels = page.locator('text=(読み取り専用)');
+        if (await readOnlyLabels.count() > 0) {
+          console.log(`PropertyEditor Test: Found ${await readOnlyLabels.count()} read-only property indicators`);
+          await expect(readOnlyLabels.first()).toBeVisible();
 
-          if (await readOnlyLabels.count() > 0) {
-            console.log(`PropertyEditor Test: Found ${await readOnlyLabels.count()} read-only property indicators`);
-            await expect(readOnlyLabels.first()).toBeVisible();
+          // Verify corresponding fields are disabled or displayed as text
+          // CRITICAL FIX (2025-12-15): Read-only properties may be shown as:
+          // 1. Disabled inputs (input[disabled], .ant-*-disabled)
+          // 2. Ant Design Descriptions component (static text display)
+          // 3. Text elements with no input control
+          const disabledInputs = page.locator('input[disabled], .ant-input-number-disabled, .ant-select-disabled, .ant-switch-disabled, .ant-picker-disabled');
+          const descriptionItems = page.locator('.ant-descriptions-item, .ant-form-item-control-input-content');
+          const disabledCount = await disabledInputs.count();
+          const descriptionCount = await descriptionItems.count();
 
-            // Verify corresponding fields are disabled or displayed as text
-            // CRITICAL FIX (2025-12-15): Read-only properties may be shown as:
-            // 1. Disabled inputs (input[disabled], .ant-*-disabled)
-            // 2. Ant Design Descriptions component (static text display)
-            // 3. Text elements with no input control
-            const disabledInputs = page.locator('input[disabled], .ant-input-number-disabled, .ant-select-disabled, .ant-switch-disabled, .ant-picker-disabled');
-            const descriptionItems = page.locator('.ant-descriptions-item, .ant-form-item-control-input-content');
-            const disabledCount = await disabledInputs.count();
-            const descriptionCount = await descriptionItems.count();
+          console.log(`PropertyEditor Test: Found ${disabledCount} disabled fields and ${descriptionCount} description items`);
 
-            console.log(`PropertyEditor Test: Found ${disabledCount} disabled fields and ${descriptionCount} description items`);
-
-            // Success if read-only labels exist - they indicate the property is marked as read-only
-            // The actual display method (disabled input vs text) is an implementation detail
-            console.log('PropertyEditor Test: Read-only indicators found - test passed');
-          } else {
-            console.log('PropertyEditor Test: No read-only indicators found - all properties may be updatable');
-            test.skip('Read-only properties not found');
-          }
+          // Success if read-only labels exist - they indicate the property is marked as read-only
+          // The actual display method (disabled input vs text) is an implementation detail
+          console.log('PropertyEditor Test: Read-only indicators found - test passed');
+        } else {
+          console.log('PropertyEditor Test: No read-only indicators found - all properties may be updatable');
+          test.skip('Read-only property indicators not found - PropertyEditor may display read-only as plain text');
         }
       }
     }
@@ -459,56 +455,56 @@ test.describe('PropertyEditor Component Tests', () => {
 
     await page.waitForTimeout(2000);
 
+    // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
+    await expect(docRow).toBeVisible({ timeout: 10000 });
 
-    if (await docRow.count() > 0) {
-      const detailButton = docRow.locator('button').filter({
-        has: page.locator('[data-icon="eye"]')
-      });
+    const detailButton = docRow.locator('button').filter({
+      has: page.locator('[data-icon="eye"]')
+    });
 
-      if (await detailButton.count() > 0) {
-        await detailButton.first().click(isMobile ? { force: true } : {});
+    if (await detailButton.count() > 0) {
+      await detailButton.first().click(isMobile ? { force: true } : {});
+      await page.waitForTimeout(1000);
+
+      const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+      if (await propertiesTab.count() > 0) {
+        await propertiesTab.click();
         await page.waitForTimeout(1000);
 
-        const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-        if (await propertiesTab.count() > 0) {
-          await propertiesTab.click();
-          await page.waitForTimeout(1000);
+        // Look for required field indicators (red asterisk)
+        const requiredIndicators = page.locator('span[style*="color: red"], .ant-form-item-required');
 
-          // Look for required field indicators (red asterisk)
-          const requiredIndicators = page.locator('span[style*="color: red"], .ant-form-item-required');
+        if (await requiredIndicators.count() > 0) {
+          console.log(`PropertyEditor Test: Found ${await requiredIndicators.count()} required field indicators`);
 
-          if (await requiredIndicators.count() > 0) {
-            console.log(`PropertyEditor Test: Found ${await requiredIndicators.count()} required field indicators`);
+          // Standard CMIS required properties: cmis:name, cmis:objectTypeId
+          // Find a required field that is updatable
+          const nameField = page.locator('input[id*="cmis:name"]');
+          if (await nameField.count() > 0) {
+            const isDisabled = await nameField.first().getAttribute('disabled');
+            if (!isDisabled) {
+              // Clear the field to test validation
+              await nameField.first().clear();
 
-            // Standard CMIS required properties: cmis:name, cmis:objectTypeId
-            // Find a required field that is updatable
-            const nameField = page.locator('input[id*="cmis:name"]');
-            if (await nameField.count() > 0) {
-              const isDisabled = await nameField.first().getAttribute('disabled');
-              if (!isDisabled) {
-                // Clear the field to test validation
-                await nameField.first().clear();
+              // Try to save
+              const saveButton = page.locator('button:has-text("保存")');
+              if (await saveButton.count() > 0) {
+                await saveButton.click();
+                await page.waitForTimeout(1000);
 
-                // Try to save
-                const saveButton = page.locator('button:has-text("保存")');
-                if (await saveButton.count() > 0) {
-                  await saveButton.click();
-                  await page.waitForTimeout(1000);
-
-                  // Check for validation error message
-                  const errorMessage = page.locator('.ant-form-item-explain-error, .ant-message-error');
-                  if (await errorMessage.count() > 0) {
-                    console.log('PropertyEditor Test: Required field validation working - error message displayed');
-                    await expect(errorMessage.first()).toBeVisible();
-                  }
+                // Check for validation error message
+                const errorMessage = page.locator('.ant-form-item-explain-error, .ant-message-error');
+                if (await errorMessage.count() > 0) {
+                  console.log('PropertyEditor Test: Required field validation working - error message displayed');
+                  await expect(errorMessage.first()).toBeVisible();
                 }
               }
             }
-          } else {
-            console.log('PropertyEditor Test: No required field indicators found');
-            test.skip('Required properties not found');
           }
+        } else {
+          console.log('PropertyEditor Test: No required field indicators found');
+          test.skip('Required field indicators not found - PropertyEditor may use different validation display');
         }
       }
     }
@@ -520,40 +516,40 @@ test.describe('PropertyEditor Component Tests', () => {
 
     await page.waitForTimeout(2000);
 
+    // Test document ensured by beforeEach
     const docRow = page.locator('tr').filter({ hasText: testDocName });
+    await expect(docRow).toBeVisible({ timeout: 10000 });
 
-    if (await docRow.count() > 0) {
-      const detailButton = docRow.locator('button').filter({
-        has: page.locator('[data-icon="eye"]')
-      });
+    const detailButton = docRow.locator('button').filter({
+      has: page.locator('[data-icon="eye"]')
+    });
 
-      if (await detailButton.count() > 0) {
-        await detailButton.first().click(isMobile ? { force: true } : {});
+    if (await detailButton.count() > 0) {
+      await detailButton.first().click(isMobile ? { force: true } : {});
+      await page.waitForTimeout(1000);
+
+      const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+      if (await propertiesTab.count() > 0) {
+        await propertiesTab.click();
         await page.waitForTimeout(1000);
 
-        const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-        if (await propertiesTab.count() > 0) {
-          await propertiesTab.click();
-          await page.waitForTimeout(1000);
+        // Look for Select components with mode="tags" or mode="multiple"
+        // Standard CMIS multi-value property: cmis:secondaryObjectTypeIds
+        const selectComponents = page.locator('.ant-select');
 
-          // Look for Select components with mode="tags" or mode="multiple"
-          // Standard CMIS multi-value property: cmis:secondaryObjectTypeIds
-          const selectComponents = page.locator('.ant-select');
+        if (await selectComponents.count() > 0) {
+          console.log(`PropertyEditor Test: Found ${await selectComponents.count()} select components`);
 
-          if (await selectComponents.count() > 0) {
-            console.log(`PropertyEditor Test: Found ${await selectComponents.count()} select components`);
-
-            // Check if any have tags mode (allows free text input)
-            // Tags mode selects have class "ant-select-multiple"
-            const multipleSelects = page.locator('.ant-select-multiple');
-            if (await multipleSelects.count() > 0) {
-              console.log(`PropertyEditor Test: Found ${await multipleSelects.count()} multi-value select components`);
-              await expect(multipleSelects.first()).toBeVisible();
-            }
-          } else {
-            console.log('PropertyEditor Test: No select components found - may not have choice-based or multi-value properties');
-            test.skip('Multi-value properties not found');
+          // Check if any have tags mode (allows free text input)
+          // Tags mode selects have class "ant-select-multiple"
+          const multipleSelects = page.locator('.ant-select-multiple');
+          if (await multipleSelects.count() > 0) {
+            console.log(`PropertyEditor Test: Found ${await multipleSelects.count()} multi-value select components`);
+            await expect(multipleSelects.first()).toBeVisible();
           }
+        } else {
+          console.log('PropertyEditor Test: No select components found - may not have choice-based or multi-value properties');
+          test.skip('Multi-value properties not found - standard CMIS documents may not have multi-value properties');
         }
       }
     }
@@ -563,42 +559,15 @@ test.describe('PropertyEditor Component Tests', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    console.log(`PropertyEditor Cleanup: Looking for document: ${testDocName}`);
-    await page.waitForTimeout(2000);
+    console.log(`PropertyEditor Cleanup: Cleaning up document: ${testDocName}`);
 
-    const docRow = page.locator('tr').filter({ hasText: testDocName });
+    // Use helper method for cleanup
+    const deleted = await testHelper.deleteTestDocument(testDocName, isMobile);
 
-    if (await docRow.count() > 0) {
-      console.log(`PropertyEditor Cleanup: Found document row`);
-      const deleteButton = docRow.locator('button').filter({
-        has: page.locator('[data-icon="delete"]')
-      });
-
-      if (await deleteButton.count() > 0) {
-        console.log(`PropertyEditor Cleanup: Found delete button, clicking...`);
-        await deleteButton.click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(500);
-
-        const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button:has-text("OK")');
-        if (await confirmButton.count() > 0) {
-          console.log(`PropertyEditor Cleanup: Clicking confirm button...`);
-          await confirmButton.click(isMobile ? { force: true } : {});
-
-          console.log(`PropertyEditor Cleanup: Waiting for response message...`);
-          try {
-            await page.waitForSelector('.ant-message-success, .ant-message-error', { timeout: 30000 });
-
-            const successMsg = await page.locator('.ant-message-success').count();
-            const errorMsg = await page.locator('.ant-message-error').count();
-
-            console.log(`PropertyEditor Cleanup: Success: ${successMsg > 0}, Error: ${errorMsg > 0}`);
-          } catch (e) {
-            console.log(`PropertyEditor Cleanup: No response message - timeout`);
-          }
-        }
-      }
+    if (deleted) {
+      console.log('PropertyEditor Cleanup: Document deleted successfully');
     } else {
-      console.log(`PropertyEditor Cleanup: Document row not found`);
+      console.log('PropertyEditor Cleanup: Could not delete document (may not exist or delete failed)');
     }
   });
 });
