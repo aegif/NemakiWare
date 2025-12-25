@@ -158,7 +158,8 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     }
 
     if (await uploadButton.count() === 0) {
-      test.skip('Upload functionality not available');
+      // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
+      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
       return;
     }
 
@@ -582,7 +583,8 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
     if (await uploadBtn.count() === 0) {
       uploadBtn = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
     }
-    if (await uploadBtn.count() === 0) { test.skip('Upload not available'); return; }
+    // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
+    if (await uploadBtn.count() === 0) { test.skip('Upload button not visible - IS implemented in DocumentList.tsx'); return; }
 
     await uploadBtn.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
@@ -611,7 +613,8 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
     if (await uploadBtn.count() === 0) {
       uploadBtn = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
     }
-    if (await uploadBtn.count() === 0) { test.skip('Upload not available'); return; }
+    // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
+    if (await uploadBtn.count() === 0) { test.skip('Upload button not visible - IS implemented in DocumentList.tsx'); return; }
 
     await uploadBtn.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });

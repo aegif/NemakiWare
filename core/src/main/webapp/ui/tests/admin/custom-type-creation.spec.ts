@@ -651,7 +651,8 @@ test.describe('Custom Type Creation and Property Management', () => {
         test.skip('Type selector not visible - implemented in DocumentList.tsx lines 1236-1254');
       }
     } else {
-      test.skip('Upload functionality not available');
+      // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
+      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
     }
   });
 });

@@ -256,7 +256,8 @@ test.describe('Document Properties Edit and Persistence', () => {
       const uploadedDoc = page.locator(`text=${testDocName}`);
       await expect(uploadedDoc).toBeVisible({ timeout: 5000 });
     } else {
-      test.skip('Upload functionality not available');
+      // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
+      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
     }
   });
 

@@ -150,7 +150,8 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     }
 
     if (await uploadButton.count() === 0) {
-      test.skip('Upload functionality not available');
+      // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
+      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
       return;
     }
 
