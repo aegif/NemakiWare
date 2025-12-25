@@ -473,8 +473,7 @@ test.describe('Office Document Preview', () => {
     const result = await executeCmisQuery(request, query);
 
     if (result.numItems === 0) {
-      console.log('No Office/PDF documents found, skipping rendition test');
-      test.skip();
+      test.skip('No Office/PDF documents found for rendition test');
       return;
     }
 
@@ -515,8 +514,7 @@ test.describe('Office Document Preview', () => {
     const tableExists = await page.waitForSelector('.ant-table-tbody', { timeout: 10000 }).catch(() => null);
 
     if (!tableExists) {
-      console.log('[INFO] No document table found - folder may be empty');
-      test.skip();
+      test.skip('No document table found - folder may be empty');
       return;
     }
     await page.waitForTimeout(1000);
@@ -525,8 +523,7 @@ test.describe('Office Document Preview', () => {
     const fileLink = page.locator('.ant-table-tbody a').filter({ hasText: /\.txt|\.pdf|\.docx|\.pptx/ }).first();
 
     if (await fileLink.count() === 0) {
-      console.log('No files found in document list');
-      test.skip();
+      test.skip('No files found in document list');
       return;
     }
 

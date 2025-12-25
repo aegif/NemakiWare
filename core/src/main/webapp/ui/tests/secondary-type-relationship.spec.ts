@@ -146,6 +146,42 @@ async function deleteDocument(request: any, objectId: string): Promise<void> {
 }
 
 test.describe('Secondary Type Management', () => {
+  // FIXED (2025-12-25): Add afterAll hook for API-based cleanup
+  test.afterAll(async ({ request }) => {
+    console.log('[CLEANUP] Cleaning up secondary type test documents');
+    const patterns = ['test-secondary-type-%'];
+
+    for (const pattern of patterns) {
+      try {
+        const queryUrl = `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=query&q=${encodeURIComponent(`SELECT cmis:objectId, cmis:name FROM cmis:document WHERE cmis:name LIKE '${pattern}'`)}&succinct=true`;
+        const response = await request.get(queryUrl, {
+          headers: {
+            'Authorization': `Basic ${Buffer.from(`${TEST_USER}:${TEST_PASSWORD}`).toString('base64')}`,
+          }
+        });
+
+        if (response.ok()) {
+          const data = await response.json();
+          const results = data.results || [];
+          console.log(`[CLEANUP] Found ${results.length} documents matching ${pattern}`);
+
+          for (const result of results) {
+            const objectId = result.succinctProperties?.['cmis:objectId'];
+            if (objectId) {
+              try {
+                await deleteDocument(request, objectId);
+                console.log(`[CLEANUP] Deleted: ${result.succinctProperties?.['cmis:name']}`);
+              } catch (e) {
+                console.log(`[CLEANUP] Failed to delete ${objectId}:`, e);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.log(`[CLEANUP] Query failed for ${pattern}:`, e);
+      }
+    }
+  });
 
   test('should display secondary type tab in document viewer', async ({ page }) => {
     await login(page);
@@ -153,7 +189,7 @@ test.describe('Secondary Type Management', () => {
     // FIX 2025-12-24: Use shared helper with graceful skip
     const navResult = await navigateToAnyDocument(page);
     if (!navResult) {
-      test.skip();
+      test.skip('No document found in table for navigation');
       return;
     }
 
@@ -272,6 +308,42 @@ test.describe('Secondary Type Management', () => {
 });
 
 test.describe('Relationship Management', () => {
+  // FIXED (2025-12-25): Add afterAll hook for API-based cleanup
+  test.afterAll(async ({ request }) => {
+    console.log('[CLEANUP] Cleaning up relationship test documents');
+    const patterns = ['test-rel-source-%', 'test-rel-target-%'];
+
+    for (const pattern of patterns) {
+      try {
+        const queryUrl = `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=query&q=${encodeURIComponent(`SELECT cmis:objectId, cmis:name FROM cmis:document WHERE cmis:name LIKE '${pattern}'`)}&succinct=true`;
+        const response = await request.get(queryUrl, {
+          headers: {
+            'Authorization': `Basic ${Buffer.from(`${TEST_USER}:${TEST_PASSWORD}`).toString('base64')}`,
+          }
+        });
+
+        if (response.ok()) {
+          const data = await response.json();
+          const results = data.results || [];
+          console.log(`[CLEANUP] Found ${results.length} documents matching ${pattern}`);
+
+          for (const result of results) {
+            const objectId = result.succinctProperties?.['cmis:objectId'];
+            if (objectId) {
+              try {
+                await deleteDocument(request, objectId);
+                console.log(`[CLEANUP] Deleted: ${result.succinctProperties?.['cmis:name']}`);
+              } catch (e) {
+                console.log(`[CLEANUP] Failed to delete ${objectId}:`, e);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.log(`[CLEANUP] Query failed for ${pattern}:`, e);
+      }
+    }
+  });
 
   test('should create relationship between documents via API', async ({ request }) => {
     // Create two test documents
@@ -378,7 +450,7 @@ test.describe('Relationship Management', () => {
     await login(page);
     const navResult = await navigateToAnyDocument(page);
     if (!navResult) {
-      test.skip();
+      test.skip('No document found in table for navigation');
       return;
     }
 
@@ -400,7 +472,7 @@ test.describe('UI Integration Tests', () => {
     // FIX 2025-12-24: Handle graceful skip if no document found
     const navResult = await navigateToAnyDocument(page);
     if (!navResult) {
-      test.skip();
+      test.skip('No document found in table for navigation');
       return;
     }
 
@@ -421,7 +493,7 @@ test.describe('UI Integration Tests', () => {
     // FIX 2025-12-24: Handle graceful skip if no document found
     const navResult = await navigateToAnyDocument(page);
     if (!navResult) {
-      test.skip();
+      test.skip('No document found in table for navigation');
       return;
     }
 

@@ -56,6 +56,54 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
   const testDescription = 'Test description that should persist';
   const testComment = 'Test comment for secondary type';
 
+  // FIXED (2025-12-25): Add afterAll hook for API-based cleanup
+  // This ensures cleanup even if UI tests fail
+  test.afterAll(async () => {
+    console.log(`[CLEANUP] Cleaning up test documents matching: desc-bug-test-*`);
+    const baseUrl = 'http://localhost:8080/core/browser/bedroom';
+    const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+
+    // Query for documents matching our test pattern
+    try {
+      const queryUrl = `${baseUrl}?cmisselector=query&q=${encodeURIComponent(`SELECT cmis:objectId, cmis:name FROM cmis:document WHERE cmis:name LIKE 'desc-bug-test-%'`)}&succinct=true`;
+      const queryResponse = await fetch(queryUrl, {
+        headers: { 'Authorization': authHeader }
+      });
+
+      if (queryResponse.ok) {
+        const queryData = await queryResponse.json();
+        const results = queryData.results || [];
+        console.log(`[CLEANUP] Found ${results.length} test documents to delete`);
+
+        for (const result of results) {
+          const objectId = result.succinctProperties?.['cmis:objectId'];
+          const name = result.succinctProperties?.['cmis:name'];
+          if (objectId) {
+            try {
+              const formData = new URLSearchParams();
+              formData.append('cmisaction', 'delete');
+              formData.append('objectId', objectId);
+
+              await fetch(baseUrl, {
+                method: 'POST',
+                headers: {
+                  'Authorization': authHeader,
+                  'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: formData.toString()
+              });
+              console.log(`[CLEANUP] Deleted: ${name} (${objectId})`);
+            } catch (e) {
+              console.log(`[CLEANUP] Failed to delete ${name}:`, e);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.log(`[CLEANUP] Query failed:`, e);
+    }
+  });
+
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);

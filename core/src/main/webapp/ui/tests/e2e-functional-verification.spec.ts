@@ -187,6 +187,41 @@ async function navigateToDocument(page: any, documentName: string): Promise<void
  * Re-enable after implementing UI state wait utilities.
  */
 test.describe('Relationship Feature Verification', () => {
+  // FIXED (2025-12-25): Add afterAll hook for API-based cleanup
+  // This ensures cleanup even if tests fail mid-execution
+  test.afterAll(async ({ request }) => {
+    console.log('[CLEANUP] Cleaning up relationship test documents');
+    const patterns = ['rel-source-%', 'rel-target-%', 'ui-rel-source-%', 'ui-rel-target-%'];
+
+    for (const pattern of patterns) {
+      try {
+        const queryUrl = `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=query&q=${encodeURIComponent(`SELECT cmis:objectId, cmis:name FROM cmis:document WHERE cmis:name LIKE '${pattern}'`)}&succinct=true`;
+        const response = await request.get(queryUrl, {
+          headers: { 'Authorization': getAuthHeader() }
+        });
+
+        if (response.ok()) {
+          const data = await response.json();
+          const results = data.results || [];
+          console.log(`[CLEANUP] Found ${results.length} documents matching ${pattern}`);
+
+          for (const result of results) {
+            const objectId = result.succinctProperties?.['cmis:objectId'];
+            if (objectId) {
+              try {
+                await deleteDocument(request, objectId);
+                console.log(`[CLEANUP] Deleted: ${result.succinctProperties?.['cmis:name']}`);
+              } catch (e) {
+                console.log(`[CLEANUP] Failed to delete ${objectId}:`, e);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.log(`[CLEANUP] Query failed for ${pattern}:`, e);
+      }
+    }
+  });
 
   test('should create relationship and verify it appears in relationships list via AtomPub', async ({ request }) => {
     const timestamp = Date.now();
@@ -300,7 +335,7 @@ test.describe('Relationship Feature Verification', () => {
       await login(page);
       const navResult = await navigateToDocument(page, sourceName);
       if (navResult === null) {
-        test.skip();
+        test.skip('Document not found in table');
         return;
       }
 
@@ -359,6 +394,40 @@ test.describe('Relationship Feature Verification', () => {
  * Re-enable after implementing document table wait utilities.
  */
 test.describe('Secondary Type Feature Verification', () => {
+  // FIXED (2025-12-25): Add afterAll hook for API-based cleanup
+  test.afterAll(async ({ request }) => {
+    console.log('[CLEANUP] Cleaning up secondary type test documents');
+    const patterns = ['secondary-test-%', 'ui-secondary-%', 'remove-secondary-%'];
+
+    for (const pattern of patterns) {
+      try {
+        const queryUrl = `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=query&q=${encodeURIComponent(`SELECT cmis:objectId, cmis:name FROM cmis:document WHERE cmis:name LIKE '${pattern}'`)}&succinct=true`;
+        const response = await request.get(queryUrl, {
+          headers: { 'Authorization': getAuthHeader() }
+        });
+
+        if (response.ok()) {
+          const data = await response.json();
+          const results = data.results || [];
+          console.log(`[CLEANUP] Found ${results.length} documents matching ${pattern}`);
+
+          for (const result of results) {
+            const objectId = result.succinctProperties?.['cmis:objectId'];
+            if (objectId) {
+              try {
+                await deleteDocument(request, objectId);
+                console.log(`[CLEANUP] Deleted: ${result.succinctProperties?.['cmis:name']}`);
+              } catch (e) {
+                console.log(`[CLEANUP] Failed to delete ${objectId}:`, e);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.log(`[CLEANUP] Query failed for ${pattern}:`, e);
+      }
+    }
+  });
 
   test('should add secondary type, set property, and verify property is persisted', async ({ request }) => {
     const timestamp = Date.now();
@@ -467,7 +536,7 @@ test.describe('Secondary Type Feature Verification', () => {
       await login(page);
       const navResult = await navigateToDocument(page, docName);
       if (navResult === null) {
-        test.skip();
+        test.skip('Document not found in table');
         return;
       }
 
@@ -475,8 +544,7 @@ test.describe('Secondary Type Feature Verification', () => {
       // This handles cases where Document Viewer doesn't render tabs due to race conditions
       const tabsVisible = await page.locator('.ant-tabs').isVisible().catch(() => false);
       if (!tabsVisible) {
-        console.log('Document Viewer tabs not available - skipping UI verification test');
-        test.skip();
+        test.skip('Document Viewer tabs not available');
         return;
       }
 
@@ -484,8 +552,7 @@ test.describe('Secondary Type Feature Verification', () => {
       const secondaryTypeTab = page.getByRole('tab', { name: 'セカンダリタイプ' });
       const isSecondaryTypeTabVisible = await secondaryTypeTab.isVisible({ timeout: 5000 }).catch(() => false);
       if (!isSecondaryTypeTabVisible) {
-        console.log('Secondary type tab not visible - skipping test');
-        test.skip();
+        test.skip('Secondary type tab not visible');
         return;
       }
       await secondaryTypeTab.click();
@@ -620,6 +687,40 @@ test.describe('Secondary Type Feature Verification', () => {
  * Re-enable after implementing comprehensive UI state wait utilities.
  */
 test.describe('Combined Feature Workflow', () => {
+  // FIXED (2025-12-25): Add afterAll hook for API-based cleanup
+  test.afterAll(async ({ request }) => {
+    console.log('[CLEANUP] Cleaning up workflow test documents');
+    const patterns = ['workflow-doc1-%', 'workflow-doc2-%'];
+
+    for (const pattern of patterns) {
+      try {
+        const queryUrl = `${BASE_URL}/core/browser/${REPOSITORY_ID}?cmisselector=query&q=${encodeURIComponent(`SELECT cmis:objectId, cmis:name FROM cmis:document WHERE cmis:name LIKE '${pattern}'`)}&succinct=true`;
+        const response = await request.get(queryUrl, {
+          headers: { 'Authorization': getAuthHeader() }
+        });
+
+        if (response.ok()) {
+          const data = await response.json();
+          const results = data.results || [];
+          console.log(`[CLEANUP] Found ${results.length} documents matching ${pattern}`);
+
+          for (const result of results) {
+            const objectId = result.succinctProperties?.['cmis:objectId'];
+            if (objectId) {
+              try {
+                await deleteDocument(request, objectId);
+                console.log(`[CLEANUP] Deleted: ${result.succinctProperties?.['cmis:name']}`);
+              } catch (e) {
+                console.log(`[CLEANUP] Failed to delete ${objectId}:`, e);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.log(`[CLEANUP] Query failed for ${pattern}:`, e);
+      }
+    }
+  });
 
   // FIX 2025-12-24: Increase timeout for complex workflow test
   test('should support complete workflow: create docs, add relationship, add secondary types', async ({ request }) => {
