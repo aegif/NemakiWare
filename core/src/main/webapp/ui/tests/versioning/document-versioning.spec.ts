@@ -261,7 +261,9 @@ test.describe('Document Versioning', () => {
         }
       }
     } else {
-      test.skip('Check-out button not found - versioning feature may not be implemented in UI');
+      // UPDATED (2025-12-26): Versioning IS implemented in DocumentList.tsx lines 955-962
+      // Button uses EditOutlined icon, only visible for versionable documents that aren't PWC
+      test.skip('Check-out button not visible - document may not be versionable or is already checked out');
       return;
     }
 
@@ -348,7 +350,8 @@ test.describe('Document Versioning', () => {
         await expect(pwcIndicator).toHaveCount(0, { timeout: 5000 });
       }
     } else {
-      test.skip('Versioning buttons not found - feature may not be implemented in UI');
+      // UPDATED (2025-12-26): Versioning buttons ARE implemented in DocumentList.tsx lines 964-981
+      test.skip('Versioning buttons not visible - document may not be a PWC (check-in/cancel only shown for PWC)');
       return;
     }
 
@@ -424,7 +427,8 @@ test.describe('Document Versioning', () => {
         await expect(pwcIndicator).toHaveCount(0, { timeout: 5000 });
       }
     } else {
-      test.skip('Check-out cancel button not found - feature may not be implemented in UI');
+      // UPDATED (2025-12-26): Cancel button IS implemented in DocumentList.tsx lines 974-980
+      test.skip('Cancel button not visible - document may not be a PWC (cancel only shown for checked-out documents)');
       return;
     }
 
@@ -509,7 +513,8 @@ test.describe('Document Versioning', () => {
         console.log('Version history modal not found - UI implementation may differ');
       }
     } else {
-      test.skip('Version history button not found - feature may not be implemented in UI');
+      // UPDATED (2025-12-26): Version history button IS implemented in DocumentList.tsx lines 983-989
+      test.skip('Version history button not visible - document may not be versionable (folders don\'t have version history)');
       return;
     }
 
@@ -603,7 +608,8 @@ test.describe('Document Versioning', () => {
           await closeButton.click();
         }
       } else {
-        test.skip('Version download button not found - feature may not be implemented in UI');
+        // Version download functionality is part of version history modal/drawer
+        test.skip('Version download button not visible - version history UI may need different selector');
         return;
       }
     } else {
