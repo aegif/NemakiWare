@@ -19,18 +19,33 @@
 
 import { test, expect, Page } from '@playwright/test';
 import { AuthHelper } from './utils/auth-helper';
+import { TestHelper } from './utils/test-helper';
+import { randomUUID } from 'crypto';
 
 test.describe('User Scenario Tests', () => {
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
+  const testDocName = `test-scenario-${randomUUID().substring(0, 8)}.txt`;
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
+
+    // Login and navigate to documents
+    await authHelper.login();
+    await testHelper.waitForAntdLoad();
+    await testHelper.navigateToDocuments();
+
+    // CRITICAL FIX (2025-12-26): Ensure test document exists before each test
+    // This eliminates data-dependent test skips
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    await testHelper.ensureTestDocument(testDocName, 'Test content for user scenario testing', isMobile);
   });
 
   test.describe('Login and Document Navigation Flow', () => {
     test('should login and see document list', async ({ page }) => {
-      await authHelper.login();
-
+      // Login is done in beforeEach
       // Verify we're on documents page
       await expect(page).toHaveURL(/documents/);
 
@@ -44,13 +59,12 @@ test.describe('User Scenario Tests', () => {
     });
 
     test('should display documents in table', async ({ page }) => {
-      await authHelper.login();
-
+      // Login is done in beforeEach, and document is ensured
       // Wait for document list to load
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(2000); // Wait for data to load
+      await page.waitForTimeout(1000);
 
-      // Verify table has rows
+      // Verify table has rows (ensured by beforeEach)
       const rows = page.locator('.ant-table-row');
       const rowCount = await rows.count();
 
@@ -61,168 +75,157 @@ test.describe('User Scenario Tests', () => {
 
   test.describe('Document Viewer Tab Navigation', () => {
     test('should open document detail and view tabs without errors', async ({ page }) => {
-      await authHelper.login();
-
-      // Wait for document list
+      // Login is done in beforeEach, document ensured
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(1000);
 
-      // Find a document row
-      const documentRow = page.locator('.ant-table-row').first();
+      // Find the test document row (ensured by beforeEach)
+      const documentRow = page.locator('.ant-table-row').filter({ hasText: testDocName }).first();
+      await expect(documentRow).toBeVisible({ timeout: 10000 });
 
-      if (await documentRow.count() > 0) {
-        // Click detail view button (詳細表示 - eye icon)
-        const detailButton = documentRow.locator('button').filter({ has: page.locator('.anticon-eye') });
+      // Click detail view button (詳細表示 - eye icon)
+      const detailButton = documentRow.locator('button').filter({ has: page.locator('.anticon-eye') });
 
-        if (await detailButton.count() > 0) {
-          // Track JavaScript errors
-          const jsErrors: string[] = [];
-          page.on('pageerror', error => {
-            jsErrors.push(error.message);
-          });
+      if (await detailButton.count() > 0) {
+        // Track JavaScript errors
+        const jsErrors: string[] = [];
+        page.on('pageerror', error => {
+          jsErrors.push(error.message);
+        });
 
-          await detailButton.click();
-          await page.waitForTimeout(2000);
+        await detailButton.click();
+        await page.waitForTimeout(2000);
 
-          // Verify we navigated to document detail page
-          const currentUrl = page.url();
-          console.log('Document detail URL:', currentUrl);
-          expect(currentUrl).toMatch(/\/documents\/[a-f0-9]+/);
+        // Verify we navigated to document detail page
+        const currentUrl = page.url();
+        console.log('Document detail URL:', currentUrl);
+        expect(currentUrl).toMatch(/\/documents\/[a-f0-9]+/);
 
-          // Verify tabs are visible
-          const tabs = page.locator('.ant-tabs-nav');
-          await expect(tabs).toBeVisible({ timeout: 10000 });
+        // Verify tabs are visible
+        const tabs = page.locator('.ant-tabs-nav');
+        await expect(tabs).toBeVisible({ timeout: 10000 });
 
-          // Get all tabs
-          const tabItems = page.locator('.ant-tabs-tab');
-          const tabCount = await tabItems.count();
-          console.log(`Found ${tabCount} tabs in DocumentViewer`);
+        // Get all tabs
+        const tabItems = page.locator('.ant-tabs-tab');
+        const tabCount = await tabItems.count();
+        console.log(`Found ${tabCount} tabs in DocumentViewer`);
 
-          // Click through each tab
-          for (let i = 0; i < tabCount; i++) {
-            const tab = tabItems.nth(i);
-            const tabText = await tab.textContent();
-            console.log(`Clicking tab: ${tabText}`);
+        // Click through each tab
+        for (let i = 0; i < tabCount; i++) {
+          const tab = tabItems.nth(i);
+          const tabText = await tab.textContent();
+          console.log(`Clicking tab: ${tabText}`);
 
-            await tab.click();
-            await page.waitForTimeout(500);
-          }
-
-          // Check for critical errors
-          const criticalErrors = jsErrors.filter(e =>
-            e.includes('includes is not a function') ||
-            e.includes('Cannot read properties')
-          );
-
-          if (criticalErrors.length > 0) {
-            console.error('Critical errors detected:', criticalErrors);
-          }
-          expect(criticalErrors).toHaveLength(0);
-        } else {
-          test.skip(true, 'Detail button not found');
+          await tab.click();
+          await page.waitForTimeout(500);
         }
+
+        // Check for critical errors
+        const criticalErrors = jsErrors.filter(e =>
+          e.includes('includes is not a function') ||
+          e.includes('Cannot read properties')
+        );
+
+        if (criticalErrors.length > 0) {
+          console.error('Critical errors detected:', criticalErrors);
+        }
+        expect(criticalErrors).toHaveLength(0);
       } else {
-        test.skip(true, 'No documents found');
+        test.skip('Detail button not found for test document');
       }
     });
 
     test('should display secondary types tab without errors', async ({ page }) => {
-      await authHelper.login();
-
+      // Login is done in beforeEach, document ensured
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(1000);
 
-      const documentRow = page.locator('.ant-table-row').first();
+      // Find the test document row (ensured by beforeEach)
+      const documentRow = page.locator('.ant-table-row').filter({ hasText: testDocName }).first();
+      await expect(documentRow).toBeVisible({ timeout: 10000 });
 
-      if (await documentRow.count() > 0) {
-        const detailButton = documentRow.locator('button').filter({ has: page.locator('.anticon-eye') });
+      const detailButton = documentRow.locator('button').filter({ has: page.locator('.anticon-eye') });
 
-        if (await detailButton.count() > 0) {
-          const errors: string[] = [];
-          page.on('pageerror', error => {
-            errors.push(error.message);
-          });
+      if (await detailButton.count() > 0) {
+        const errors: string[] = [];
+        page.on('pageerror', error => {
+          errors.push(error.message);
+        });
 
-          await detailButton.click();
-          await page.waitForTimeout(2000);
+        await detailButton.click();
+        await page.waitForTimeout(2000);
 
-          // Find and click セカンダリタイプ tab
-          const secondaryTypeTab = page.locator('.ant-tabs-tab').filter({ hasText: 'セカンダリタイプ' });
+        // Find and click セカンダリタイプ tab
+        const secondaryTypeTab = page.locator('.ant-tabs-tab').filter({ hasText: 'セカンダリタイプ' });
 
-          if (await secondaryTypeTab.count() > 0) {
-            await secondaryTypeTab.click();
-            await page.waitForTimeout(1000);
+        if (await secondaryTypeTab.count() > 0) {
+          await secondaryTypeTab.click();
+          await page.waitForTimeout(1000);
 
-            // Verify tab content rendered
-            const tabContent = page.locator('.ant-tabs-tabpane-active');
-            await expect(tabContent).toBeVisible();
+          // Verify tab content rendered
+          const tabContent = page.locator('.ant-tabs-tabpane-active');
+          await expect(tabContent).toBeVisible();
 
-            // Check for the specific error that was reported
-            const includesErrors = errors.filter(e => e.includes('includes is not a function'));
-            expect(includesErrors).toHaveLength(0);
+          // Check for the specific error that was reported
+          const includesErrors = errors.filter(e => e.includes('includes is not a function'));
+          expect(includesErrors).toHaveLength(0);
 
-            console.log('Secondary types tab loaded successfully without errors');
-          } else {
-            // UPDATED (2025-12-26): Tab IS implemented in DocumentViewer.tsx line 882
-            console.log('Secondary types tab not found in DOM - IS implemented in DocumentViewer.tsx line 882');
-          }
+          console.log('Secondary types tab loaded successfully without errors');
         } else {
-          test.skip(true, 'Detail button not found');
+          // UPDATED (2025-12-26): Tab IS implemented in DocumentViewer.tsx line 882
+          console.log('Secondary types tab not found in DOM - IS implemented in DocumentViewer.tsx line 882');
         }
       } else {
-        test.skip(true, 'No documents found');
+        test.skip('Detail button not found for test document');
       }
     });
 
     test('should display relationships tab without errors', async ({ page }) => {
-      await authHelper.login();
-
+      // Login is done in beforeEach, document ensured
       await page.waitForSelector('.ant-table', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(1000);
 
-      const documentRow = page.locator('.ant-table-row').first();
+      // Find the test document row (ensured by beforeEach)
+      const documentRow = page.locator('.ant-table-row').filter({ hasText: testDocName }).first();
+      await expect(documentRow).toBeVisible({ timeout: 10000 });
 
-      if (await documentRow.count() > 0) {
-        const detailButton = documentRow.locator('button').filter({ has: page.locator('.anticon-eye') });
+      const detailButton = documentRow.locator('button').filter({ has: page.locator('.anticon-eye') });
 
-        if (await detailButton.count() > 0) {
-          const errors: string[] = [];
-          page.on('pageerror', error => {
-            errors.push(error.message);
-          });
+      if (await detailButton.count() > 0) {
+        const errors: string[] = [];
+        page.on('pageerror', error => {
+          errors.push(error.message);
+        });
 
-          await detailButton.click();
-          await page.waitForTimeout(2000);
+        await detailButton.click();
+        await page.waitForTimeout(2000);
 
-          // Find and click 関係 tab (FIXED 2025-12-26: Was incorrectly looking for '関連' instead of '関係')
-          // Implemented in DocumentViewer.tsx line 917
-          const relationshipTab = page.locator('.ant-tabs-tab').filter({ hasText: '関係' });
+        // Find and click 関係 tab (FIXED 2025-12-26: Was incorrectly looking for '関連' instead of '関係')
+        // Implemented in DocumentViewer.tsx line 917
+        const relationshipTab = page.locator('.ant-tabs-tab').filter({ hasText: '関係' });
 
-          if (await relationshipTab.count() > 0) {
-            await relationshipTab.click();
-            await page.waitForTimeout(1000);
+        if (await relationshipTab.count() > 0) {
+          await relationshipTab.click();
+          await page.waitForTimeout(1000);
 
-            // Verify tab content rendered
-            const tabContent = page.locator('.ant-tabs-tabpane-active');
-            await expect(tabContent).toBeVisible();
+          // Verify tab content rendered
+          const tabContent = page.locator('.ant-tabs-tabpane-active');
+          await expect(tabContent).toBeVisible();
 
-            // No critical errors should occur
-            const criticalErrors = errors.filter(e =>
-              e.includes('TypeError') ||
-              e.includes('Cannot read properties')
-            );
-            expect(criticalErrors).toHaveLength(0);
+          // No critical errors should occur
+          const criticalErrors = errors.filter(e =>
+            e.includes('TypeError') ||
+            e.includes('Cannot read properties')
+          );
+          expect(criticalErrors).toHaveLength(0);
 
-            console.log('Relationships tab loaded successfully without errors');
-          } else {
-            // UPDATED (2025-12-26): Tab IS implemented in DocumentViewer.tsx line 917
-            console.log('Relationships tab not found in DOM - IS implemented in DocumentViewer.tsx line 917');
-          }
+          console.log('Relationships tab loaded successfully without errors');
         } else {
-          test.skip(true, 'Detail button not found');
+          // UPDATED (2025-12-26): Tab IS implemented in DocumentViewer.tsx line 917
+          console.log('Relationships tab not found in DOM - IS implemented in DocumentViewer.tsx line 917');
         }
       } else {
-        test.skip(true, 'No documents found');
+        test.skip('Detail button not found for test document');
       }
     });
 
