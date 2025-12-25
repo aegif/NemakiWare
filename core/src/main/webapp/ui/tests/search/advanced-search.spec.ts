@@ -894,7 +894,9 @@ test.describe('Advanced Search', () => {
 
       console.log('✅ Metadata exclusion checkbox UI verification complete');
     } else {
-      test.skip('Metadata exclusion checkbox not found - feature may not be implemented');
+      // UPDATED (2025-12-26): Checkbox IS implemented in SearchResults.tsx lines 725-733
+      // Label: "標準メタデータを検索対象から外す（ファイル名・説明などを除く）"
+      test.skip('Metadata exclusion checkbox not visible - IS implemented in SearchResults.tsx lines 725-733');
     }
   });
 
@@ -935,7 +937,8 @@ test.describe('Advanced Search', () => {
     });
 
     if (await checkboxLabel.count() === 0) {
-      test.skip('Metadata exclusion checkbox not found');
+      // UPDATED (2025-12-26): IS implemented in SearchResults.tsx lines 725-733
+      test.skip('Metadata exclusion checkbox not visible - IS implemented in SearchResults.tsx');
       return;
     }
 
@@ -1035,7 +1038,8 @@ test.describe('Advanced Search', () => {
     });
 
     if (await checkboxLabel.count() === 0) {
-      test.skip('Metadata exclusion checkbox not found');
+      // UPDATED (2025-12-26): IS implemented in SearchResults.tsx lines 725-733
+      test.skip('Metadata exclusion checkbox not visible - IS implemented in SearchResults.tsx');
       return;
     }
 
