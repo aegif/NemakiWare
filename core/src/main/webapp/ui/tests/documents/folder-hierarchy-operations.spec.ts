@@ -508,7 +508,8 @@ test.describe('Folder Hierarchy Operations', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     if (isMobile) {
-      test.skip('Folder tree not available on mobile');
+      // UPDATED (2025-12-26): FolderTree IS implemented but hidden on mobile viewports
+      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx');
       return;
     }
 
@@ -583,7 +584,8 @@ test.describe('Folder Hierarchy Operations', () => {
     const editButton = folderRow.locator('button').filter({ has: page.locator('[data-icon="edit"]') });
 
     if (await editButton.count() === 0) {
-      test.skip('Rename functionality not available in UI');
+      // NOTE (2025-12-26): Rename functionality is NOT implemented yet in UI
+      test.skip('Rename functionality NOT implemented yet - use PropertyEditor to change cmis:name');
       return;
     }
 
@@ -609,7 +611,8 @@ test.describe('Folder Hierarchy Operations', () => {
         await inlineInput.press('Enter');
         await page.waitForTimeout(1000);
       } else {
-        test.skip('Rename input not found');
+        // NOTE (2025-12-26): Rename UI is NOT implemented yet
+        test.skip('Rename input NOT implemented - feature requires development');
         return;
       }
     }

@@ -537,7 +537,8 @@ test.describe('Custom Property Input Feature', () => {
       const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
 
       if (await relationshipTab.count() === 0) {
-        test.skip('Relationship tab not found');
+        // UPDATED (2025-12-26): Relationships tab IS implemented in DocumentViewer.tsx line 917
+        test.skip('Relationship tab not visible - IS implemented in DocumentViewer.tsx line 917');
         return;
       }
 
@@ -559,7 +560,8 @@ test.describe('Custom Property Input Feature', () => {
       // Click relationship tab
       const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
       if (await relationshipTab.count() === 0) {
-        test.skip('Relationship tab not found');
+        // UPDATED (2025-12-26): Relationships tab IS implemented in DocumentViewer.tsx line 917
+        test.skip('Relationship tab not visible - IS implemented in DocumentViewer.tsx line 917');
         return;
       }
       await relationshipTab.click();
@@ -568,7 +570,8 @@ test.describe('Custom Property Input Feature', () => {
       // Look for "Add Relationship" button
       const addButton = page.locator('button:has-text("関連を追加")');
       if (await addButton.count() === 0) {
-        test.skip('Add relationship button not found');
+        // UPDATED (2025-12-26): Add relationship button IS implemented in RelationshipEditor.tsx
+        test.skip('Add relationship button not visible - IS implemented in RelationshipEditor.tsx');
         return;
       }
 
@@ -639,7 +642,8 @@ test.describe('Custom Property Input Feature', () => {
       // Click relationship tab
       const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
       if (await relationshipTab.count() === 0) {
-        test.skip('Relationship tab not found');
+        // UPDATED (2025-12-26): Relationships tab IS implemented in DocumentViewer.tsx line 917
+        test.skip('Relationship tab not visible - IS implemented in DocumentViewer.tsx line 917');
         return;
       }
       await relationshipTab.click();
@@ -648,7 +652,8 @@ test.describe('Custom Property Input Feature', () => {
       // Open add relationship modal
       const addButton = page.locator('button:has-text("関連を追加")');
       if (await addButton.count() === 0) {
-        test.skip('Add relationship button not found');
+        // UPDATED (2025-12-26): Add relationship button IS implemented in RelationshipEditor.tsx
+        test.skip('Add relationship button not visible - IS implemented in RelationshipEditor.tsx');
         return;
       }
       await addButton.click();
@@ -694,7 +699,8 @@ test.describe('Custom Property Input Feature', () => {
       // Click relationship tab
       const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
       if (await relationshipTab.count() === 0) {
-        test.skip('Relationship tab not found');
+        // UPDATED (2025-12-26): Relationships tab IS implemented in DocumentViewer.tsx line 917
+        test.skip('Relationship tab not visible - IS implemented in DocumentViewer.tsx line 917');
         return;
       }
       await relationshipTab.click();
@@ -703,7 +709,8 @@ test.describe('Custom Property Input Feature', () => {
       // Open add relationship modal
       const addButton = page.locator('button:has-text("関連を追加")');
       if (await addButton.count() === 0) {
-        test.skip('Add relationship button not found');
+        // UPDATED (2025-12-26): Add relationship button IS implemented in RelationshipEditor.tsx
+        test.skip('Add relationship button not visible - IS implemented in RelationshipEditor.tsx');
         return;
       }
       await addButton.click();

@@ -99,7 +99,8 @@ test.describe('FolderTree Navigation', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     if (isMobile) {
-      test.skip('Folder tree not available on mobile');
+      // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
+      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
       return;
     }
 
@@ -126,7 +127,8 @@ test.describe('FolderTree Navigation', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     if (isMobile) {
-      test.skip('Folder tree not available on mobile');
+      // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
+      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
       return;
     }
 
@@ -158,7 +160,8 @@ test.describe('FolderTree Navigation', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     if (isMobile) {
-      test.skip('Folder tree not available on mobile');
+      // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
+      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
       return;
     }
 
@@ -214,7 +217,8 @@ test.describe('FolderTree Navigation', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     if (isMobile) {
-      test.skip('Folder tree not available on mobile');
+      // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
+      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
       return;
     }
 
@@ -264,7 +268,8 @@ test.describe('FolderTree Navigation', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     if (isMobile) {
-      test.skip('Folder tree not available on mobile');
+      // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
+      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
       return;
     }
 
@@ -330,7 +335,8 @@ test.describe('FolderTree Navigation', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     if (isMobile) {
-      test.skip('Folder tree not available on mobile');
+      // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
+      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
       return;
     }
 
@@ -409,7 +415,8 @@ test.describe('FolderTree Navigation', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     if (isMobile) {
-      test.skip('Folder tree not available on mobile');
+      // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
+      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
       return;
     }
 
@@ -521,7 +528,8 @@ test.describe('FolderTree Navigation', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     if (isMobile) {
-      test.skip('Folder tree not available on mobile');
+      // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
+      test.skip('Folder tree hidden on mobile - IS implemented in FolderTree.tsx (responsive design)');
       return;
     }
 
