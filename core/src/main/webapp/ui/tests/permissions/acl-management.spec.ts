@@ -292,7 +292,8 @@ test.describe('Advanced ACL Management', () => {
           }
         }
       } else {
-        test.skip('ACL management interface not found');
+        // UPDATED (2025-12-26): ACL management IS implemented in PermissionManagement.tsx
+        test.skip('ACL management interface not visible - IS implemented in PermissionManagement.tsx');
       }
     }
 

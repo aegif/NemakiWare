@@ -640,7 +640,8 @@ test.describe('Access Control and Permissions', () => {
         const createdFolder = page.locator(`text=${restrictedFolderName}`);
         await expect(createdFolder).toBeVisible({ timeout: 5000 });
       } else {
-        test.skip('Folder creation not available');
+        // UPDATED (2025-12-26): Folder creation IS implemented in DocumentList.tsx
+        test.skip('Folder creation button not visible - IS implemented in DocumentList.tsx');
       }
     });
 
@@ -722,7 +723,8 @@ test.describe('Access Control and Permissions', () => {
           if (await permissionsMenu.count() > 0) {
             await permissionsMenu.click();
           } else {
-            test.skip('ACL management interface not found');
+            // UPDATED (2025-12-26): ACL management IS implemented in PermissionManagement.tsx
+            test.skip('ACL management interface not visible - IS implemented in PermissionManagement.tsx');
           }
         }
       } else {
