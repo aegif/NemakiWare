@@ -552,10 +552,47 @@ await expect(deletedItem).not.toBeVisible({ timeout: 10000 });
 ### 修正結果
 
 **修正前**: 約7テスト失敗（Chromiumプロジェクト）
-**修正後**:
+**修正後**（成功メッセージ待機問題のみ）:
 - ✅ **13テスト成功** (ユーザー管理、グループ管理、バグ修正検証、カスタムタイプ)
 - ⊘ **4テストスキップ** (機能未実装 or バックエンド問題)
 - ❌ **0テスト失敗**
+
+### 全体テスト結果 (2025-12-26 Chromium 480テスト)
+
+| カテゴリ | 件数 | 備考 |
+|---------|------|------|
+| ✅ 成功 | **303** | 63.1% |
+| ⊘ スキップ | 103 | 機能未実装/WIP |
+| ⏭️ 未実行 | 21 | 依存テストスキップ |
+| ❌ 失敗 | 53 | 下記参照 |
+| **合計** | **480** | 実行時間: 43.9分 |
+
+### 失敗テストの分類 (53件)
+
+| カテゴリ | 件数 | 原因 | 優先度 |
+|---------|------|------|--------|
+| バックエンドHTTP 500 | ~20 | TypeDefinition.isControllableAcl() null | HIGH |
+| ドキュメント表示同期 | ~10 | CMIS children view sync | MEDIUM |
+| フォルダ操作 | 7 | Submit button not found | MEDIUM |
+| PropertyEditor | 8 | テストドキュメント表示失敗 | LOW |
+| Permission/ACL | 8 | フォルダ作成失敗の連鎖 | LOW |
+
+### バックエンドバグ: TypeDefinition null (要調査)
+
+**エラーメッセージ**:
+```
+HTTP Status 500 - runtime
+Cannot invoke "org.apache.chemistry.opencmis.commons.definitions.TypeDefinition.isControllableAcl()" because "tdf" is null
+```
+
+**影響範囲**:
+- アクセス制御テスト
+- パーミッション管理テスト
+- 一部のユーザーシナリオテスト
+
+**推奨対応**:
+1. バックエンドでTypeDefinition取得時のnullチェック追加
+2. ACL操作前のtype validation強化
 
 ### 既知の問題（スキップ扱い）
 
@@ -563,6 +600,10 @@ await expect(deletedItem).not.toBeVisible({ timeout: 10000 });
    - 問題: APIで作成したドキュメントがUIに表示されない
    - 原因: バックエンドのCMIS children viewの同期問題（CouchDBには存在する）
    - 対応: テスト環境依存の問題として `test.skip` でスキップ
+
+2. **フォルダ作成ボタン** (`folder-hierarchy-operations.spec.ts`)
+   - 問題: "作成"ボタンが見つからない
+   - 対応: UIの変更確認が必要
 
 ### ベストプラクティス
 
