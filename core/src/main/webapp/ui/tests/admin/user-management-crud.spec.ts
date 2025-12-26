@@ -292,18 +292,22 @@ test.describe('User Management CRUD Operations', () => {
       // FIX (2025-11-10): Always use force click - Ant Design modal overlay blocks clicks on all browsers
       await submitButton.first().click({ force: true });
 
-      // Wait for success message (30s timeout to match type definition upload tests)
-      // FIX (2025-11-10): Use same selector pattern as type definition tests for consistency
-      const successMessage = page.locator('.ant-message:has-text("ユーザー"), .ant-message:has-text("作成"), .ant-message-success');
-      await expect(successMessage.first()).toBeVisible({ timeout: 30000 });
-      await page.waitForTimeout(2000);
+      // FIX (2025-12-26): Wait for modal to close first - more reliable than catching transient success message
+      // The success message fades out in 3 seconds, but modal closing is more reliable
+      console.log(`Create test: Waiting for modal to close...`);
+      await expect(modal).not.toBeVisible({ timeout: 30000 });
+      console.log(`Create test: Modal closed`);
 
-      // Verify user appears in list
+      // Small wait for table refresh
+      await page.waitForTimeout(1000);
+
+      // Verify user appears in list - this is the definitive success indicator
       // FIX (2025-11-10): Use table row selector to avoid strict mode violation
       // Username appears in multiple cells (ID, display name part, email part)
       console.log(`Create test: Verifying user ${testUsername} appears in table`);
       const userRow = page.locator('tr').filter({ hasText: testUsername });
       await expect(userRow).toBeVisible({ timeout: 10000 });
+      console.log(`Create test: User ${testUsername} successfully created and visible in table`);
     } else {
       // UPDATED (2025-12-26): User creation IS implemented in UserManagement.tsx
       test.skip('Create user button not visible - IS implemented in UserManagement.tsx');
@@ -460,33 +464,16 @@ test.describe('User Management CRUD Operations', () => {
           console.log(`Delete test: Clicking confirm button...`);
           await confirmButton.first().click(isMobile ? { force: true } : {});
 
-          // Check for both success and error messages (30s timeout for consistency)
-          // FIX (2025-11-10): Use consistent timeout and selector pattern
-          console.log(`Delete test: Waiting for response message...`);
-          try {
-            const responseMessage = page.locator('.ant-message:has-text("削除"), .ant-message-success, .ant-message-error');
-            await expect(responseMessage.first()).toBeVisible({ timeout: 30000 });
-
-            // Check which message appeared
-            const successMsg = await page.locator('.ant-message-success, .ant-message:has-text("削除しました")').count();
-            const errorMsg = await page.locator('.ant-message-error').count();
-
-            console.log(`Delete test: Success message: ${successMsg > 0}, Error message: ${errorMsg > 0}`);
-
-            if (errorMsg > 0) {
-              const errorText = await page.locator('.ant-message-error').textContent();
-              console.log(`Delete test: ERROR - ${errorText}`);
-            }
-          } catch (e) {
-            console.log(`Delete test: No success or error message appeared - timeout`);
-            throw e;
-          }
-
+          // FIX (2025-12-26): Wait for API completion and table refresh instead of transient success message
+          // Success messages fade out in ~3 seconds, but the definitive verification is that the user disappears from the list
+          console.log(`Delete test: Waiting for deletion to complete...`);
           await page.waitForTimeout(2000);
 
-          // Verify user is removed from list
-          const deletedUser = page.locator(`text=${testUsername}`);
-          await expect(deletedUser).not.toBeVisible({ timeout: 5000 });
+          // Verify user is removed from list - this is the definitive success indicator
+          console.log(`Delete test: Verifying user ${testUsername} is removed from table...`);
+          const deletedUser = page.locator('tr').filter({ hasText: testUsername });
+          await expect(deletedUser).not.toBeVisible({ timeout: 10000 });
+          console.log(`Delete test: User ${testUsername} successfully deleted and removed from table`);
         }
       } else {
         // UPDATED (2025-12-26): Delete button IS implemented in UserManagement.tsx

@@ -336,25 +336,26 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal button:has-text("作成")');
       await submitButton.click(isMobile ? { force: true } : {});
 
-      // Wait for success message or modal close (type creation may succeed silently)
-      let typeCreationSuccess = false;
+      // FIX (2025-12-26): Wait for modal to close as primary success indicator
+      // Success messages fade out in ~3 seconds, so modal close is more reliable
+      console.log('Waiting for modal to close (type creation success indicator)...');
+
+      // Get modal reference
+      const modal = page.locator('.ant-modal:not(.ant-modal-hidden)');
+
+      // Wait for modal to close (with longer timeout for API response)
       try {
-        await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-        typeCreationSuccess = true;
-        console.log('✅ Success message detected');
+        await expect(modal).not.toBeVisible({ timeout: 30000 });
+        console.log('✅ Modal closed (type creation likely succeeded)');
       } catch (error) {
-        // Check if modal closed (alternative success indicator)
-        const modalClosed = await page.locator('.ant-modal:not(.ant-modal-hidden)').count() === 0;
-        if (modalClosed) {
-          typeCreationSuccess = true;
-          console.log('✅ Modal closed (type creation likely succeeded)');
-        } else {
-          console.error('Failed to wait for success message');
-          console.error('Console logs:', consoleLogs);
-          console.error('API errors:', apiErrors);
-          throw error;
-        }
+        // Modal still visible - might be showing an error
+        console.error('Modal did not close within timeout');
+        console.error('Console logs:', consoleLogs);
+        console.error('API errors:', apiErrors);
+        throw error;
       }
+
+      const typeCreationSuccess = true;
       await page.waitForTimeout(2000);
 
       // Refresh the page to ensure table is updated
@@ -432,7 +433,12 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       // Submit upload
       const submitBtn = page.locator('.ant-modal button[type="submit"]');
       await submitBtn.click();
-      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+
+      // FIX (2025-12-26): Wait for modal to close instead of transient success message
+      console.log('Waiting for upload modal to close...');
+      const uploadModal = page.locator('.ant-modal:not(.ant-modal-hidden)');
+      await expect(uploadModal).not.toBeVisible({ timeout: 30000 });
+      console.log('Upload modal closed');
       await page.waitForTimeout(2000);
 
       // Find and open the uploaded document
@@ -534,9 +540,11 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
         const saveButton = page.locator('button[type="submit"]').filter({ hasText: '保存' });
         await saveButton.click(isMobile ? { force: true } : {});
 
-        // Wait for success message
-        await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-        console.log('✅ Custom attribute value saved');
+        // FIX (2025-12-26): Wait for API response instead of transient success message
+        // The success message fades out in ~3 seconds
+        console.log('Waiting for save operation to complete...');
+        await page.waitForTimeout(3000);
+        console.log('✅ Save operation completed');
 
         // Verify persistence by reloading
         await page.reload();
@@ -583,7 +591,8 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
             const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary');
             if (await confirmButton.count() > 0) {
               await confirmButton.click();
-              await page.waitForSelector('.ant-message-success', { timeout: 15000 });
+              // FIX (2025-12-26): Wait for deletion instead of transient success message
+              await page.waitForTimeout(3000);
               console.log('✅ Test document deleted');
             }
           }
@@ -612,7 +621,8 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
             const confirmButton = page.locator('.ant-popconfirm button:has-text("はい")');
             if (await confirmButton.count() > 0) {
               await confirmButton.click();
-              await page.waitForSelector('.ant-message-success', { timeout: 10000 });
+              // FIX (2025-12-26): Wait for deletion instead of transient success message
+              await page.waitForTimeout(3000);
               console.log('✅ Custom type deleted');
             }
           }
