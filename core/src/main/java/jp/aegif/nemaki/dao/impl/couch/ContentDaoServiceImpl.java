@@ -847,18 +847,36 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// CRITICAL FIX (2025-12-18): Always explicitly retrieve aspects and secondaryIds
 			// These fields are essential for Solr indexing of secondary type properties
 			// The getProperties() method may not include these complex nested fields
-			if (!actualDocMap.containsKey("aspects")) {
+			// NOTE (2025-12-27): Must always overwrite, because getProperties() may return null values
+			{
 				Object aspectsObj = doc.get("aspects");
 				if (aspectsObj != null) {
 					actualDocMap.put("aspects", aspectsObj);
-					log.info("CLOUDANT FIX: Explicitly added aspects field to actualDocMap");
+					log.info("CLOUDANT FIX: Explicitly set aspects field in actualDocMap");
+				} else {
+					log.info("CLOUDANT FIX: aspects field is null in CouchDB document");
 				}
 			}
-			if (!actualDocMap.containsKey("secondaryIds")) {
+			{
 				Object secondaryIdsObj = doc.get("secondaryIds");
 				if (secondaryIdsObj != null) {
 					actualDocMap.put("secondaryIds", secondaryIdsObj);
-					log.info("CLOUDANT FIX: Explicitly added secondaryIds field to actualDocMap");
+					log.info("CLOUDANT FIX: Explicitly set secondaryIds field in actualDocMap");
+				} else {
+					log.info("CLOUDANT FIX: secondaryIds field is null in CouchDB document");
+				}
+			}
+			// CRITICAL FIX (2025-12-27): Always explicitly retrieve description field
+			// The description field was missing from getProperties() causing null values after update
+			// even though the data was correctly saved to CouchDB
+			// NOTE: Must check for null value too, because getProperties() may return {description: null}
+			{
+				Object descriptionObj = doc.get("description");
+				if (descriptionObj != null) {
+					actualDocMap.put("description", descriptionObj);
+					log.info("CLOUDANT FIX: Explicitly set description field in actualDocMap: " + descriptionObj);
+				} else {
+					log.info("CLOUDANT FIX: description field is null in CouchDB document");
 				}
 			}
 			// Log the aspects/secondaryIds status for debugging

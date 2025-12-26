@@ -1032,7 +1032,11 @@ public class ObjectServiceImpl implements ObjectService {
 		} else {
 		}
 
-		nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());
+		// CRITICAL FIX (2025-12-27): Use removeCmisAndContentCache instead of removeCmisCache
+		// to ensure both CMIS and Content caches are invalidated after property update.
+		// Without this fix, getObject returns stale data from ContentCache even though
+		// the update was successful and data is correct in CouchDB.
+		nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId.getValue());
 		} finally {
 			lock.unlock();
 		}
