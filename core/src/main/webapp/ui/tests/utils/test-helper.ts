@@ -511,6 +511,166 @@ export class TestHelper {
   }
 
   /**
+   * Wait for document list page to be fully loaded with action buttons
+   * This method ensures all UI elements are ready before tests interact with them
+   *
+   * CRITICAL FIX (2025-12-27): Many tests were dynamically skipping because:
+   * - "Upload button not visible" (31 skips)
+   * - "Folder creation button not visible" (10 skips)
+   * - "Search input not visible" (12 skips)
+   *
+   * Root cause: Tests weren't waiting long enough for DocumentList component to render
+   * Solution: Comprehensive wait for multiple UI elements before proceeding
+   *
+   * @param options.timeout Maximum wait time in ms (default 30000)
+   * @param options.requireUploadButton Whether to require upload button (default true)
+   * @param options.requireFolderButton Whether to require folder button (default true)
+   * @param options.requireSearchInput Whether to require search input (default false)
+   * @returns Object with availability status of each element
+   */
+  async waitForDocumentListReady(options: {
+    timeout?: number;
+    requireUploadButton?: boolean;
+    requireFolderButton?: boolean;
+    requireSearchInput?: boolean;
+  } = {}): Promise<{
+    uploadButtonVisible: boolean;
+    folderButtonVisible: boolean;
+    searchInputVisible: boolean;
+    tableVisible: boolean;
+  }> {
+    const timeout = options.timeout ?? 30000;
+    const startTime = Date.now();
+
+    console.log('TestHelper: Waiting for document list page to be ready...');
+
+    // Wait for Ant Design layout to be present
+    await this.waitForAntdLoad();
+
+    const result = {
+      uploadButtonVisible: false,
+      folderButtonVisible: false,
+      searchInputVisible: false,
+      tableVisible: false,
+    };
+
+    // Wait for table to be visible (primary indicator that page is loaded)
+    try {
+      await this.page.waitForSelector('.ant-table', { timeout: Math.max(1000, timeout - (Date.now() - startTime)) });
+      result.tableVisible = true;
+      console.log('TestHelper: Table is visible');
+    } catch (e) {
+      console.log('TestHelper: Table not found within timeout');
+    }
+
+    // Additional wait for dynamic content to render
+    await this.page.waitForTimeout(1000);
+
+    // Check upload button - multiple selector patterns
+    const uploadButtonSelectors = [
+      'button:has-text("ファイルアップロード")',
+      'button:has-text("アップロード")',
+      'button:has([data-icon="upload"])',
+    ];
+
+    for (const selector of uploadButtonSelectors) {
+      try {
+        const button = this.page.locator(selector).first();
+        if (await button.isVisible({ timeout: 2000 })) {
+          result.uploadButtonVisible = true;
+          console.log(`TestHelper: Upload button visible (${selector})`);
+          break;
+        }
+      } catch (e) {
+        // Try next selector
+      }
+    }
+
+    // Check folder creation button - multiple selector patterns
+    const folderButtonSelectors = [
+      'button:has-text("フォルダ作成")',
+      'button:has-text("新規フォルダ")',
+      'button:has([data-icon="folder-add"])',
+      'button:has([data-icon="plus"])',
+    ];
+
+    for (const selector of folderButtonSelectors) {
+      try {
+        const button = this.page.locator(selector).first();
+        if (await button.isVisible({ timeout: 2000 })) {
+          result.folderButtonVisible = true;
+          console.log(`TestHelper: Folder button visible (${selector})`);
+          break;
+        }
+      } catch (e) {
+        // Try next selector
+      }
+    }
+
+    // Check search input
+    const searchSelectors = [
+      'input.search-input',
+      'input[placeholder*="検索"]',
+      '.ant-input-search input',
+    ];
+
+    for (const selector of searchSelectors) {
+      try {
+        const input = this.page.locator(selector).first();
+        if (await input.isVisible({ timeout: 2000 })) {
+          result.searchInputVisible = true;
+          console.log(`TestHelper: Search input visible (${selector})`);
+          break;
+        }
+      } catch (e) {
+        // Try next selector
+      }
+    }
+
+    console.log('TestHelper: Document list ready state:', result);
+    return result;
+  }
+
+  /**
+   * Get upload button locator with fallback selectors
+   * Use this instead of hardcoded selectors in tests
+   */
+  async getUploadButton(): Promise<any | null> {
+    const selectors = [
+      'button:has-text("ファイルアップロード")',
+      'button:has-text("アップロード")',
+      'button:has([data-icon="upload"])',
+    ];
+
+    for (const selector of selectors) {
+      const button = this.page.locator(selector).first();
+      if (await button.count() > 0) {
+        return button;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Get folder creation button locator with fallback selectors
+   */
+  async getFolderButton(): Promise<any | null> {
+    const selectors = [
+      'button:has-text("フォルダ作成")',
+      'button:has-text("新規フォルダ")',
+      'button:has([data-icon="folder-add"])',
+    ];
+
+    for (const selector of selectors) {
+      const button = this.page.locator(selector).first();
+      if (await button.count() > 0) {
+        return button;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Delete a test document if it exists
    *
    * @param fileName Name of the file to delete

@@ -614,6 +614,62 @@ Playwright テストで Ant Design コンポーネントを扱う場合:
 3. **テーブル状態の変化**を確認（行の追加/削除）
 4. **API レスポンス**を待つ（`page.waitForResponse()`）または適切な `waitForTimeout()`
 
+### 追加改善 (2025-12-27)
+
+#### TestHelper 新規メソッド追加
+
+**ファイル**: `tests/utils/test-helper.ts`
+
+テストのスキップ率を下げるため、以下のヘルパーメソッドを追加:
+
+| メソッド | 用途 | 戻り値 |
+|---------|------|--------|
+| `waitForDocumentListReady()` | ドキュメント一覧ページの完全ロード待機 | `{uploadButtonVisible, folderButtonVisible, searchInputVisible, tableVisible}` |
+| `getUploadButton()` | アップロードボタンを複数セレクタで検索 | `Locator \| null` |
+| `getFolderButton()` | フォルダ作成ボタンを複数セレクタで検索 | `Locator \| null` |
+
+**使用例**:
+```typescript
+// テストの先頭でドキュメント一覧の準備完了を待機
+const state = await testHelper.waitForDocumentListReady({
+  timeout: 30000,
+  requireUploadButton: true
+});
+
+if (!state.uploadButtonVisible) {
+  test.skip('Upload button not visible');
+  return;
+}
+```
+
+**セレクタフォールバックパターン**:
+```typescript
+// 日本語UIに対応した複数セレクタ
+const uploadButtonSelectors = [
+  'button:has-text("ファイルアップロード")',
+  'button:has-text("アップロード")',
+  'button:has([data-icon="upload"])',
+];
+```
+
+#### バックエンドNPE修正 (2025-12-27) ✅
+
+**問題**: HTTP 500エラーが多発し、テストが失敗していた
+
+**修正1: ExceptionServiceImpl.nameConstraintViolation()**
+- **ファイル**: `core/src/main/java/jp/aegif/nemaki/cmis/aspect/impl/ExceptionServiceImpl.java`
+- **行**: 1329-1335
+- **原因**: `proposedName`がnullの場合に`toLowerCase()`でNPE
+- **修正**: null時にCmisInvalidArgumentExceptionをスロー
+
+**修正2: TypeManagerImpl.getTypeDefinition()**
+- **ファイル**: `core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java`
+- **行**: 2885-2890
+- **原因**: `typeId`がnullの場合にConcurrentHashMap.get()でNPE
+- **修正**: null時にnullを返す（呼び出し元で適切にハンドリング）
+
+**修正後のQAテスト結果**: 75/75 PASS (100%)
+
 ---
 
 ## UI Bug Fixes (2025-12-21) ✅

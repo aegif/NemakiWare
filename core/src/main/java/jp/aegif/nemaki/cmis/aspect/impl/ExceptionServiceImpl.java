@@ -1326,6 +1326,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 			return;
 		}
 
+		// CRITICAL FIX (2025-12-27): Add null check for proposedName to prevent NPE
+		// When creating documents without cmis:name property, proposedName can be null
+		if (proposedName == null) {
+			throw new CmisInvalidArgumentException(
+					"Object name (cmis:name) is required but was not provided",
+					HTTP_STATUS_CODE_400);
+		}
+
 		if (parentFolder == null) {
 
 		} else {

@@ -2882,6 +2882,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	@Override
 	public TypeDefinition getTypeDefinition(String repositoryId, String typeId) {
+		// CRITICAL FIX (2025-12-27): Add null check for typeId to prevent NPE in ConcurrentHashMap.get()
+		// When typeId is null, ConcurrentHashMap.get() throws NPE because it cannot compute hashCode of null
+		if (typeId == null) {
+			log.warn("getTypeDefinition called with null typeId for repository: " + repositoryId);
+			return null;
+		}
+
 		// CRITICAL DEBUG: Entry point logging
 		if (log.isDebugEnabled()) {
 				log.debug("*** THIS INSTANCE: " + this.hashCode() + " ***");
