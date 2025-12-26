@@ -818,6 +818,34 @@ public class CompileServiceImpl implements CompileService {
 			Acl acl) {
 		// Get parameters to calculate AllowableActions
 		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content.getObjectType());
+
+		// CRITICAL FIX (2025-12-26): Handle orphaned documents with deleted type definitions
+		// When a custom type is deleted but documents using that type still exist,
+		// TypeDefinition will be null. Instead of crashing, return minimal AllowableActions
+		// that only allow reading and deleting the orphaned document for cleanup purposes.
+		if (tdf == null) {
+			log.warn("ORPHANED DOCUMENT DETECTED: Document '" + content.getName() + "' (id=" + content.getId() +
+					") references non-existent type '" + content.getObjectType() + "'. " +
+					"Returning minimal AllowableActions for cleanup.");
+
+			// Return minimal AllowableActions for orphaned documents:
+			// - CAN_GET_PROPERTIES: Allow reading the document
+			// - CAN_DELETE_OBJECT: Allow deleting the orphaned document
+			// - CAN_GET_OBJECT_PARENTS: Allow navigating to parent
+			Set<Action> minimalActions = new HashSet<Action>();
+			minimalActions.add(Action.CAN_GET_PROPERTIES);
+			minimalActions.add(Action.CAN_DELETE_OBJECT);
+			minimalActions.add(Action.CAN_GET_OBJECT_PARENTS);
+			if (content.isFolder()) {
+				minimalActions.add(Action.CAN_GET_CHILDREN);
+				minimalActions.add(Action.CAN_GET_FOLDER_PARENT);
+				minimalActions.add(Action.CAN_DELETE_TREE);
+			}
+			AllowableActionsImpl orphanedActions = new AllowableActionsImpl();
+			orphanedActions.setAllowableActions(minimalActions);
+			return orphanedActions;
+		}
+
 		Acl contentAcl = content.getAcl();
 		if (tdf.isControllableAcl() && contentAcl == null)
 			return null;
@@ -1471,6 +1499,13 @@ public class CompileServiceImpl implements CompileService {
 		}
 
 		DocumentTypeDefinition type = (DocumentTypeDefinition) typeManager.getTypeDefinition(repositoryId, tdf.getId());
+		// CRITICAL FIX (2025-12-26): Handle case where type definition is not found
+		// This can happen if the type was deleted but documents still exist
+		if (type == null) {
+			log.warn("ORPHANED TYPE REFERENCE: Cannot find DocumentTypeDefinition for type '" +
+					tdf.getId() + "'. Skipping versioning properties.");
+			return;
+		}
 		if (type.isVersionable()) {
 			// Production-ready debug logging for versioning properties (only when debug is enabled)
 			if (log.isDebugEnabled()) {
@@ -1809,6 +1844,14 @@ public class CompileServiceImpl implements CompileService {
 
 			SecondaryTypeDefinition stdf = (SecondaryTypeDefinition) typeManager.getTypeDefinition(repositoryId,
 					secondaryId);
+			// CRITICAL FIX (2025-12-26): Handle orphaned secondary types
+			// When a secondary type is deleted but still referenced by documents,
+			// skip processing this secondary type rather than crashing
+			if (stdf == null) {
+				log.warn("ORPHANED SECONDARY TYPE: Document references non-existent secondary type '" +
+						secondaryId + "'. Skipping secondary type properties.");
+				continue;
+			}
 			for (PropertyDefinition<?> secondaryPropertyDefinition : secondaryPropertyDefinitions) {
 				Property property = extractProperty(properties, secondaryPropertyDefinition.getId());
 				Object value = (property == null) ? null : property.getValue();
