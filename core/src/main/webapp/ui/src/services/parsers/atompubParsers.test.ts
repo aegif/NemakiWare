@@ -19,7 +19,10 @@ import {
   parseAtomEntry,
   parseAtomFeed,
   parseAtomEntryResponse,
-  ParsedCmisExtension
+  ParsedAtomEntry,
+  ParsedAllowableActions,
+  ParsedCmisExtension,
+  ParsedCoercionWarning
 } from './atompubParsers';
 
 // Sample AtomPub XML responses for testing
