@@ -1272,194 +1272,132 @@ test.describe('Access Control and Permissions', () => {
       }
     });
 
-    // NOTE: CMIS Browser Binding ACL API test removed
-    // Reason: Server does not support cmisaction=getObject or cmisselector=acl operations (returns HTTP 405)
-    // ACL functionality is verified through actual permission tests below:
-    // - "should NOT be able to delete document (read-only)" - Test #1
-    // - "should NOT be able to upload to restricted folder" - Test #2
-    // These tests confirm that permissions are correctly enforced at the application level.
-
-    test('should be able to view restricted folder as test user', async ({ page, browserName }) => {
-      const viewportSize = page.viewportSize();
-      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-      // Debug: Check CMIS API response for root folder children
-      console.log('Test: Checking CMIS API response for root folder children as test user');
+    // CONVERTED (2025-12-27): Changed from UI-based to API-based test for reliability
+    // Previous UI-based test had flaky issues with folder navigation and document visibility
+    // API-based approach tests permission enforcement directly via CMIS API
+    // Uses the dynamic testUsername created by the test suite
+    test('should be able to view restricted folder as test user via API', async ({ page }) => {
+      const adminAuth = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
+      // Use the dynamically created test user credentials from the test suite
+      const testUserAuth = `Basic ${Buffer.from(`${testUsername}:${testUserPassword}`).toString('base64')}`;
       const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
-      const apiResponse = await page.request.get(
-        `http://localhost:8080/core/atom/bedroom/children?id=${rootFolderId}`,
-        {
-          headers: {
-            'Authorization': `Basic ${Buffer.from(`${testUsername}:${testUserPassword}`).toString('base64')}`,
-            'Accept': 'application/atom+xml'
-          }
+      const testFolderName = `view-test-folder-${Date.now()}`;
+      const testDocumentName = `test-doc-${Date.now()}.txt`;
+
+      console.log(`Test: Using test user: ${testUsername}`);
+
+      // Step 1: Create a test folder via CMIS API (as admin)
+      console.log('Test: Creating folder via CMIS API');
+      const createFolderResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+        headers: { 'Authorization': adminAuth },
+        form: {
+          'cmisaction': 'createFolder',
+          'folderId': rootFolderId,
+          'propertyId[0]': 'cmis:objectTypeId',
+          'propertyValue[0]': 'cmis:folder',
+          'propertyId[1]': 'cmis:name',
+          'propertyValue[1]': testFolderName
         }
+      });
+
+      expect(createFolderResponse.ok()).toBe(true);
+      const folderResult = await createFolderResponse.json();
+      const folderId = folderResult.properties?.['cmis:objectId']?.value || folderResult.succinctProperties?.['cmis:objectId'];
+      expect(folderId).toBeTruthy();
+      console.log(`Test: Folder created with ID: ${folderId}`);
+
+      // Step 2: Add dynamic testuser read permission via CMIS applyACL API
+      console.log(`Test: Adding ${testUsername} read permission`);
+      const setAclResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+        headers: { 'Authorization': adminAuth },
+        form: {
+          'cmisaction': 'applyACL',
+          'objectId': folderId,
+          'addACEPrincipal[0]': testUsername,
+          'addACEPermission[0][0]': 'cmis:read'
+        }
+      });
+      expect(setAclResponse.ok()).toBe(true);
+      console.log(`Test: ${testUsername} read permission set`);
+
+      // Step 3: Create a test document in the folder (as admin)
+      // Use multipart format for document creation with content
+      console.log('Test: Creating test document in folder');
+      const createDocResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+        headers: { 'Authorization': adminAuth },
+        multipart: {
+          'cmisaction': 'createDocument',
+          'folderId': folderId,
+          'propertyId[0]': 'cmis:objectTypeId',
+          'propertyValue[0]': 'cmis:document',
+          'propertyId[1]': 'cmis:name',
+          'propertyValue[1]': testDocumentName,
+          'content': 'Test document content for permission verification'
+        }
+      });
+      if (!createDocResponse.ok()) {
+        const errorText = await createDocResponse.text();
+        console.log(`Test: Document creation failed: ${createDocResponse.status()} - ${errorText}`);
+      }
+      expect(createDocResponse.ok()).toBe(true);
+      const docResult = await createDocResponse.json();
+      const docId = docResult.properties?.['cmis:objectId']?.value || docResult.succinctProperties?.['cmis:objectId'];
+      console.log(`Test: Document created with ID: ${docId}`);
+
+      // Step 4: Verify testuser can read the folder via CMIS API
+      console.log(`Test: Verifying ${testUsername} can read folder`);
+      const readFolderResponse = await page.request.get(
+        `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=object`,
+        { headers: { 'Authorization': testUserAuth } }
       );
-      console.log('Test: CMIS API response status:', apiResponse.status());
-      if (apiResponse.ok()) {
-        const responseText = await apiResponse.text();
-        console.log('Test: CMIS API response (first 500 chars):', responseText.substring(0, 500));
-
-        // Count entries in XML response
-        const entryCount = (responseText.match(/<entry/g) || []).length;
-        console.log(`Test: CMIS API returned ${entryCount} entries`);
-      } else {
-        console.log('Test: CMIS API error:', await apiResponse.text());
+      if (!readFolderResponse.ok()) {
+        const errorText = await readFolderResponse.text();
+        console.log(`Test: Folder read failed: ${readFolderResponse.status()} - ${errorText}`);
       }
+      expect(readFolderResponse.ok()).toBe(true);
+      const folderData = await readFolderResponse.json();
+      expect(folderData.properties?.['cmis:name']?.value || folderData.succinctProperties?.['cmis:name']).toBe(testFolderName);
+      console.log(`Test: ${testUsername} can read folder successfully`);
 
-      console.log(`Test: Looking for folder ${restrictedFolderName} in test user view`);
-      console.log(`Test: Current URL: ${page.url()}`);
+      // Step 5: Verify testuser can read folder children (see the document)
+      console.log(`Test: Verifying ${testUsername} can see document in folder`);
+      const childrenResponse = await page.request.get(
+        `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=children`,
+        { headers: { 'Authorization': testUserAuth } }
+      );
+      expect(childrenResponse.ok()).toBe(true);
+      const childrenData = await childrenResponse.json();
+      const objects = childrenData.objects || [];
+      const foundDoc = objects.find((obj: any) => {
+        const name = obj.object?.properties?.['cmis:name']?.value || obj.object?.succinctProperties?.['cmis:name'];
+        return name === testDocumentName;
+      });
+      expect(foundDoc).toBeTruthy();
+      console.log(`Test: ${testUsername} can see document in folder`);
 
-      // Check page content
-      const pageContent = await page.content();
-      console.log(`Test: Page title: ${await page.title()}`);
-      console.log(`Test: Body text (first 200 chars): ${await page.locator('body').textContent().then(t => t?.substring(0, 200))}`);
-
-      // Try to navigate to documents page explicitly if not there
-      if (!page.url().includes('/documents')) {
-        console.log('Test: Not on documents page, navigating...');
-        await page.goto('http://localhost:8080/core/ui/documents');
-        await page.waitForTimeout(2000);
-      }
-
-      // Wait for page to load
-      await testHelper.waitForAntdLoad();
-      console.log('Test: Ant Design loaded');
-
-      // Check for folder table with multiple selectors
-      const folderTableSelectors = [
-        '.ant-table-tbody',
-        '.ant-table',
-        '[class*="table"]',
-        'table'
-      ];
-
-      let tableFound = false;
-      for (const selector of folderTableSelectors) {
-        const element = page.locator(selector);
-        const count = await element.count();
-        console.log(`Test: Selector "${selector}" found ${count} matches`);
-        if (count > 0) {
-          tableFound = true;
-          break;
-        }
-      }
-
-      if (!tableFound) {
-        console.log('Test: No table found - test user may not have list view');
-        test.skip('Folder table not visible - UI may differ for test user');
-        return;
-      }
-
-      // Wait for folder table to be visible
-      const folderTable = page.locator('.ant-table-tbody, .ant-table, table').first();
-      await folderTable.waitFor({ state: 'visible', timeout: 10000 });
-      console.log('Test: Folder table visible');
-
-      // Log all visible folders for debugging
-      const allRows = page.locator('.ant-table-tbody tr');
-      const rowCount = await allRows.count();
-      console.log(`Test: Found ${rowCount} rows in folder table`);
-
-      for (let i = 0; i < Math.min(rowCount, 10); i++) {
-        const rowText = await allRows.nth(i).textContent();
-        console.log(`Test: Row ${i}: ${rowText?.substring(0, 50)}`);
-      }
-
-      // Try multiple selectors to find the folder IN TABLE (not in folder tree)
-      // FIX: Strict mode violation - folder name appears in both tree and table
-      // FIX (2025-11-24): Folder name is implemented as <Button type="link">, not <a> tag
-      // UI Implementation: DocumentList.tsx line 523-534 uses Ant Design Button component
-      const folderSelectors = [
-        `.ant-table-tbody tr:has-text("${restrictedFolderName}") button[type="link"]`,  // Folder name button (correct!)
-        `.ant-table-tbody button:has-text("${restrictedFolderName}")`,  // Button with folder name
-        `.ant-table-tbody tr:has-text("${restrictedFolderName}") .ant-btn-link`,  // Ant Design link button
-        `.ant-table-tbody tr:has-text("${restrictedFolderName}") span`  // Fallback to span (icon)
-      ];
-
-      let folderFound = false;
-      let folderLink = null;
-
-      for (const selector of folderSelectors) {
-        const element = page.locator(selector);
-        const count = await element.count();
-        console.log(`Test: Selector "${selector}" found ${count} matches`);
-
-        if (count > 0) {
-          folderLink = element;
-          folderFound = true;
-          break;
-        }
-      }
-
-      if (folderFound && folderLink) {
-        console.log(`Test: Folder ${restrictedFolderName} found - proceeding with visibility test`);
-
-        // DIAGNOSTIC: Check element state before visibility assertion
-        const firstElement = folderLink.first();
-        const elementCount = await folderLink.count();
-        console.log(`Test: DEBUG - folderLink count: ${elementCount}`);
-
-        try {
-          const boundingBox = await firstElement.boundingBox();
-          console.log(`Test: DEBUG - folderLink bounding box:`, boundingBox);
-        } catch (e) {
-          console.log(`Test: DEBUG - Could not get bounding box:`, e);
-        }
-
-        // Try scrolling into view before visibility check
-        try {
-          await firstElement.scrollIntoViewIfNeeded({ timeout: 3000 });
-          console.log(`Test: DEBUG - Scrolled folder link into view`);
-        } catch (e) {
-          console.log(`Test: DEBUG - Could not scroll into view:`, e);
-        }
-
-        console.log(`Test: DEBUG - Attempting visibility check...`);
-        await expect(folderLink.first()).toBeVisible({ timeout: 5000 });
-        console.log(`Test: DEBUG - Visibility check PASSED`);
-
-        // Navigate into folder
-        console.log(`Test: DEBUG - Attempting to click folder link...`);
-        await folderLink.first().click(isMobile ? { force: true } : {});
-        console.log(`Test: DEBUG - Folder link clicked successfully`);
-
-        // Wait longer for folder content to load
-        await page.waitForTimeout(5000);
-
-        // DIAGNOSTIC: Check page state after folder click
-        const currentUrl = page.url();
-        console.log(`Test: DEBUG - Current URL after folder click: ${currentUrl}`);
-
-        // Check if document table is visible
-        const tableBody = page.locator('.ant-table-tbody');
-        const tableVisible = await tableBody.isVisible().catch(() => false);
-        console.log(`Test: DEBUG - Document table visible: ${tableVisible}`);
-
-        if (tableVisible) {
-          const rowCount = await tableBody.locator('tr').count();
-          console.log(`Test: DEBUG - Document table has ${rowCount} rows`);
-
-          // Log first few rows to see what's there
-          for (let i = 0; i < Math.min(3, rowCount); i++) {
-            const rowText = await tableBody.locator('tr').nth(i).textContent();
-            console.log(`Test: DEBUG - Row ${i}: ${rowText}`);
+      // Step 6: Cleanup - delete folder and document (as admin)
+      // Cleanup failure should not fail the test since verification already passed
+      console.log('Test: Cleaning up - deleting test folder and contents');
+      try {
+        const deleteResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+          headers: { 'Authorization': adminAuth },
+          form: {
+            'cmisaction': 'deleteTree',
+            'objectId': folderId,
+            'allVersions': 'true',
+            'continueOnFailure': 'true'
           }
+        });
+        if (deleteResponse.ok()) {
+          console.log('Test: Cleanup completed successfully');
+        } else {
+          console.log(`Test: Cleanup warning - deleteTree returned ${deleteResponse.status()}`);
         }
-
-        // Try to find document with text selector
-        console.log(`Test: DEBUG - Looking for document with name: ${testDocName}`);
-        const document = page.locator(`text=${testDocName}`);
-        const docCount = await document.count();
-        console.log(`Test: DEBUG - Found ${docCount} elements matching document name`);
-
-        // Verify can see the document
-        await expect(document).toBeVisible({ timeout: 10000 });
-        console.log(`Test: Document ${testDocName} visible in folder`);
-      } else {
-        console.log(`Test: Folder ${restrictedFolderName} NOT FOUND - skipping test`);
-        test.skip('Restricted folder not visible to test user - permission issue or UI refresh needed');
+      } catch (cleanupError) {
+        console.log(`Test: Cleanup warning - ${cleanupError}`);
       }
+
+      console.log('Test: testuser permission verification completed successfully!');
     });
 
     test('should NOT be able to delete document (read-only)', async ({ page, browserName }) => {
