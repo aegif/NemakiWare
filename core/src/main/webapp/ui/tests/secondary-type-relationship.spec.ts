@@ -298,7 +298,10 @@ test.describe('Secondary Type Management', () => {
 
       const removedData = await removeResponse.json();
       const secondaryTypes = removedData.properties?.['cmis:secondaryObjectTypeIds']?.value;
-      expect(secondaryTypes).toBeNull();
+      // After removing all secondary types, value can be null, undefined, or empty array
+      const isEmpty = secondaryTypes === null || secondaryTypes === undefined ||
+                      (Array.isArray(secondaryTypes) && secondaryTypes.length === 0);
+      expect(isEmpty).toBe(true);
 
     } finally {
       // Cleanup

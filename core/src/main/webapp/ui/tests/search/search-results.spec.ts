@@ -155,7 +155,8 @@ test.describe('Search Results Detailed Verification', () => {
 
     // Verify objectType column shows Japanese label (ドキュメント or フォルダ) or CMIS type
     const firstRow = rows.first();
-    const objectTypeCell = firstRow.locator('td').nth(0); // objectType is first column in search mode
+    // Search mode columns: タイプ(0), 名前(1), オブジェクトタイプ(2), パス(3), 作成者(4), 作成日時(5)
+    const objectTypeCell = firstRow.locator('td').nth(2); // objectType is 3rd column (index 2)
 
     const objectTypeText = await objectTypeCell.textContent();
     // Check for Japanese labels or CMIS type prefix
@@ -192,14 +193,14 @@ test.describe('Search Results Detailed Verification', () => {
 
     const firstRow = rows.first();
 
-    // Search mode columns: objectType(0), name(1), path(2), createdBy(3), creationDate(4)
+    // Search mode columns: タイプ(0), 名前(1), オブジェクトタイプ(2), パス(3), 作成者(4), 作成日時(5)
     // Verify createdBy column
-    const createdByCell = firstRow.locator('td').nth(3);
+    const createdByCell = firstRow.locator('td').nth(4);
     const createdByText = await createdByCell.textContent();
     expect(createdByText).toBeTruthy();
 
     // Verify creationDate column has date format
-    const creationDateCell = firstRow.locator('td').nth(4);
+    const creationDateCell = firstRow.locator('td').nth(5);
     const creationDateText = await creationDateCell.textContent();
     expect(creationDateText).toBeTruthy();
     // Verify it contains date-like content (year or slash for date separator)
