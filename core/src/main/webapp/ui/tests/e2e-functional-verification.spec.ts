@@ -238,15 +238,17 @@ test.describe('Relationship Feature Verification', () => {
       expect(target.id).toBeTruthy();
       console.log(`Created source: ${source.id}, target: ${target.id}`);
 
-      // Step 2: Create relationship
+      // Step 2: Create relationship (cmis:name is required for NemakiWare)
       const relFormData = new URLSearchParams();
       relFormData.append('cmisaction', 'createRelationship');
       relFormData.append('propertyId[0]', 'cmis:objectTypeId');
       relFormData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
-      relFormData.append('propertyId[1]', 'cmis:sourceId');
-      relFormData.append('propertyValue[1]', source.id);
-      relFormData.append('propertyId[2]', 'cmis:targetId');
-      relFormData.append('propertyValue[2]', target.id);
+      relFormData.append('propertyId[1]', 'cmis:name');
+      relFormData.append('propertyValue[1]', `rel-${Date.now()}`);
+      relFormData.append('propertyId[2]', 'cmis:sourceId');
+      relFormData.append('propertyValue[2]', source.id);
+      relFormData.append('propertyId[3]', 'cmis:targetId');
+      relFormData.append('propertyValue[3]', target.id);
 
       const createRelResponse = await request.post(`${BASE_URL}/core/browser/${REPOSITORY_ID}`, {
         headers: {
@@ -310,15 +312,17 @@ test.describe('Relationship Feature Verification', () => {
     let relationshipId: string | null = null;
 
     try {
-      // Create relationship
+      // Create relationship (cmis:name is required for NemakiWare)
       const relFormData = new URLSearchParams();
       relFormData.append('cmisaction', 'createRelationship');
       relFormData.append('propertyId[0]', 'cmis:objectTypeId');
       relFormData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
-      relFormData.append('propertyId[1]', 'cmis:sourceId');
-      relFormData.append('propertyValue[1]', source.id);
-      relFormData.append('propertyId[2]', 'cmis:targetId');
-      relFormData.append('propertyValue[2]', target.id);
+      relFormData.append('propertyId[1]', 'cmis:name');
+      relFormData.append('propertyValue[1]', `rel-ui-${Date.now()}`);
+      relFormData.append('propertyId[2]', 'cmis:sourceId');
+      relFormData.append('propertyValue[2]', source.id);
+      relFormData.append('propertyId[3]', 'cmis:targetId');
+      relFormData.append('propertyValue[3]', target.id);
 
       const createRelResponse = await request.post(`${BASE_URL}/core/browser/${REPOSITORY_ID}`, {
         headers: {
@@ -758,15 +762,17 @@ test.describe('Combined Feature Workflow', () => {
       }
       console.log('✓ Secondary types added to both documents');
 
-      // Step 2: Create relationship between documents
+      // Step 2: Create relationship between documents (cmis:name is required for NemakiWare)
       const relFormData = new URLSearchParams();
       relFormData.append('cmisaction', 'createRelationship');
       relFormData.append('propertyId[0]', 'cmis:objectTypeId');
       relFormData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
-      relFormData.append('propertyId[1]', 'cmis:sourceId');
-      relFormData.append('propertyValue[1]', doc1.id);
-      relFormData.append('propertyId[2]', 'cmis:targetId');
-      relFormData.append('propertyValue[2]', doc2.id);
+      relFormData.append('propertyId[1]', 'cmis:name');
+      relFormData.append('propertyValue[1]', `rel-workflow-${Date.now()}`);
+      relFormData.append('propertyId[2]', 'cmis:sourceId');
+      relFormData.append('propertyValue[2]', doc1.id);
+      relFormData.append('propertyId[3]', 'cmis:targetId');
+      relFormData.append('propertyValue[3]', doc2.id);
 
       const relResponse = await request.post(`${BASE_URL}/core/browser/${REPOSITORY_ID}`, {
         headers: {

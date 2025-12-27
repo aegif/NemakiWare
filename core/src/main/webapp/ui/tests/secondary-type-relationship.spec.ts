@@ -356,14 +356,17 @@ test.describe('Relationship Management', () => {
 
     try {
       // Create relationship using CMIS Browser Binding
+      // NOTE: cmis:name is required for NemakiWare relationship creation
       const formData = new URLSearchParams();
       formData.append('cmisaction', 'createRelationship');
       formData.append('propertyId[0]', 'cmis:objectTypeId');
       formData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
-      formData.append('propertyId[1]', 'cmis:sourceId');
-      formData.append('propertyValue[1]', sourceId);
-      formData.append('propertyId[2]', 'cmis:targetId');
-      formData.append('propertyValue[2]', targetId);
+      formData.append('propertyId[1]', 'cmis:name');
+      formData.append('propertyValue[1]', `rel-${Date.now()}`);
+      formData.append('propertyId[2]', 'cmis:sourceId');
+      formData.append('propertyValue[2]', sourceId);
+      formData.append('propertyId[3]', 'cmis:targetId');
+      formData.append('propertyValue[3]', targetId);
 
       const createResponse = await request.post(`${BASE_URL}/core/browser/${REPOSITORY_ID}`, {
         headers: {
@@ -403,15 +406,17 @@ test.describe('Relationship Management', () => {
     const targetId = await createTestDocument(request, targetDocName);
 
     try {
-      // Create relationship
+      // Create relationship (cmis:name is required for NemakiWare)
       const createFormData = new URLSearchParams();
       createFormData.append('cmisaction', 'createRelationship');
       createFormData.append('propertyId[0]', 'cmis:objectTypeId');
       createFormData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
-      createFormData.append('propertyId[1]', 'cmis:sourceId');
-      createFormData.append('propertyValue[1]', sourceId);
-      createFormData.append('propertyId[2]', 'cmis:targetId');
-      createFormData.append('propertyValue[2]', targetId);
+      createFormData.append('propertyId[1]', 'cmis:name');
+      createFormData.append('propertyValue[1]', `rel-delete-${Date.now()}`);
+      createFormData.append('propertyId[2]', 'cmis:sourceId');
+      createFormData.append('propertyValue[2]', sourceId);
+      createFormData.append('propertyId[3]', 'cmis:targetId');
+      createFormData.append('propertyValue[3]', targetId);
 
       const createResponse = await request.post(`${BASE_URL}/core/browser/${REPOSITORY_ID}`, {
         headers: {

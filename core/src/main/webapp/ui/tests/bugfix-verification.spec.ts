@@ -346,32 +346,23 @@ test.describe('Bug Fix Verification Tests', () => {
     console.log(`Created: ${sourceDocName} (${sourceDocId}), ${targetDocName} (${targetDocId})`);
 
     // Step 2: Create relationship via API
+    // NOTE: cmis:name is required for NemakiWare relationship creation
     console.log('Creating relationship...');
     const relResponse = await apiRequest(page, 'POST', `/core/browser/${REPOSITORY_ID}`, {
       'cmisaction': 'createRelationship',
       'propertyId[0]': 'cmis:objectTypeId',
       'propertyValue[0]': 'nemaki:bidirectionalRelationship',
-      'propertyId[1]': 'cmis:sourceId',
-      'propertyValue[1]': sourceDocId,
-      'propertyId[2]': 'cmis:targetId',
-      'propertyValue[2]': targetDocId
+      'propertyId[1]': 'cmis:name',
+      'propertyValue[1]': `rel-${Date.now()}`,
+      'propertyId[2]': 'cmis:sourceId',
+      'propertyValue[2]': sourceDocId,
+      'propertyId[3]': 'cmis:targetId',
+      'propertyValue[3]': targetDocId
     });
 
     if (!relResponse.ok()) {
       console.log('Relationship creation response:', await relResponse.text());
-      // Try alternative relationship type
-      const altRelResponse = await apiRequest(page, 'POST', `/core/browser/${REPOSITORY_ID}`, {
-        'cmisaction': 'createRelationship',
-        'propertyId[0]': 'cmis:objectTypeId',
-        'propertyValue[0]': 'cmis:relationship',
-        'propertyId[1]': 'cmis:sourceId',
-        'propertyValue[1]': sourceDocId,
-        'propertyId[2]': 'cmis:targetId',
-        'propertyValue[2]': targetDocId
-      });
-      if (!altRelResponse.ok()) {
-        throw new Error(`Failed to create relationship: ${await altRelResponse.text()}`);
-      }
+      throw new Error(`Failed to create relationship`);
     }
     console.log('Relationship created successfully');
 

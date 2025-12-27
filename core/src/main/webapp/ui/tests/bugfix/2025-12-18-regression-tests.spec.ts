@@ -127,6 +127,7 @@ async function updateDocumentProperties(
 }
 
 // Helper: Create relationship between two objects
+// NOTE: cmis:name is required for NemakiWare relationship creation
 async function createRelationship(
   request: any,
   sourceId: string,
@@ -135,11 +136,13 @@ async function createRelationship(
   const formData = new URLSearchParams();
   formData.append('cmisaction', 'createRelationship');
   formData.append('propertyId[0]', 'cmis:objectTypeId');
-  formData.append('propertyValue[0]', 'cmis:relationship');
-  formData.append('propertyId[1]', 'cmis:sourceId');
-  formData.append('propertyValue[1]', sourceId);
-  formData.append('propertyId[2]', 'cmis:targetId');
-  formData.append('propertyValue[2]', targetId);
+  formData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
+  formData.append('propertyId[1]', 'cmis:name');
+  formData.append('propertyValue[1]', `rel-${Date.now()}`);
+  formData.append('propertyId[2]', 'cmis:sourceId');
+  formData.append('propertyValue[2]', sourceId);
+  formData.append('propertyId[3]', 'cmis:targetId');
+  formData.append('propertyValue[3]', targetId);
 
   const response = await request.post(`${BASE_URL}/core/browser/${REPOSITORY_ID}`, {
     headers: {
