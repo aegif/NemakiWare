@@ -4,6 +4,8 @@ import App from './App'
 import { AuthService } from './services/auth'
 import 'antd/dist/reset.css'
 import './index.css'
+// Initialize i18n before rendering the app
+import './i18n'
 
 const authService = AuthService.getInstance();
 (window as any).authService = authService;

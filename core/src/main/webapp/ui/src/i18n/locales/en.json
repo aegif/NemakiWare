@@ -1,0 +1,213 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "cancel": "Cancel",
+    "save": "Save",
+    "create": "Create",
+    "update": "Update",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "confirm": "Confirm",
+    "yes": "Yes",
+    "no": "No",
+    "search": "Search",
+    "actions": "Actions",
+    "name": "Name",
+    "description": "Description",
+    "type": "Type",
+    "required": "Required",
+    "optional": "Optional",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "single": "Single",
+    "multi": "Multi",
+    "direct": "Direct",
+    "inherited": "Inherited",
+    "repository": "Repository"
+  },
+  "navigation": {
+    "home": "Home",
+    "documents": "Documents",
+    "folders": "Folders",
+    "admin": "Admin",
+    "settings": "Settings",
+    "logout": "Logout",
+    "search": "Search",
+    "archive": "Archive"
+  },
+  "typeManagement": {
+    "title": "Type Management",
+    "customTypes": "Custom Types",
+    "newType": "New Type",
+    "editType": "Edit Type",
+    "deleteType": "Delete Type",
+    "guiEditor": "GUI Editor",
+    "jsonEditor": "JSON Editor",
+    "importFile": "Import File",
+    "exportFile": "Export File",
+    "basicInfo": "Basic Information",
+    "typeOptions": "Type Options",
+    "propertyDefinitions": "Property Definitions",
+    "addProperty": "Add Property",
+    "noProperties": "No properties defined",
+    "displayName": "Display Name",
+    "parentType": "Parent Type",
+    "propertyCount": "Property Count",
+    "typeId": "Type ID",
+    "localName": "Local Name",
+    "localNamespace": "Local Namespace",
+    "baseType": "Base Type",
+    "creatable": "Creatable",
+    "queryable": "Queryable",
+    "fulltextIndexed": "Fulltext Indexed",
+    "includedInSupertypeQuery": "Included in Supertype Query",
+    "controllablePolicy": "Controllable Policy",
+    "controllableACL": "Controllable ACL",
+    "cardinality": "Cardinality",
+    "updatability": "Updatability",
+    "readwrite": "Read/Write",
+    "readonly": "Read Only",
+    "oncreate": "On Create Only",
+    "openChoice": "Open Choice",
+    "expandAll": "Expand All",
+    "collapseAll": "Collapse All",
+    "messages": {
+      "loadError": "Failed to load types",
+      "createSuccess": "Type created successfully",
+      "updateSuccess": "Type updated successfully",
+      "deleteSuccess": "Type deleted successfully",
+      "createError": "Failed to create type",
+      "updateError": "Failed to update type",
+      "deleteError": "Failed to delete type",
+      "cannotDelete": "Cannot delete type",
+      "hasSubtypes": "This type has subtypes",
+      "hasRelationships": "This type is referenced by relationships",
+      "fileRequired": "Please select a file",
+      "parseError": "Failed to parse file",
+      "readError": "Failed to read file",
+      "definitionUpdated": "Type definition updated"
+    },
+    "validation": {
+      "typeIdRequired": "Type ID is required",
+      "displayNameRequired": "Please enter a display name",
+      "cardinalityRequired": "Please select cardinality",
+      "invalidTypeIdFormat": "Invalid type ID format"
+    },
+    "warnings": {
+      "nonCmisCompliant": "This operation is not CMIS compliant",
+      "existingDocuments": "Existing documents of this type may be affected"
+    }
+  },
+  "propertyEditor": {
+    "propertyId": "Property ID",
+    "propertyType": "Property Type",
+    "string": "String",
+    "integer": "Integer",
+    "decimal": "Decimal",
+    "boolean": "Boolean",
+    "datetime": "DateTime",
+    "id": "ID"
+  },
+  "documentViewer": {
+    "properties": "Properties",
+    "versions": "Versions",
+    "permissions": "Permissions",
+    "relationships": "Relationships",
+    "download": "Download",
+    "upload": "Upload",
+    "checkout": "Check Out",
+    "checkin": "Check In",
+    "cancelCheckout": "Cancel Check Out",
+    "coercionWarning": {
+      "title": "Property value mismatch detected",
+      "warningCount": "{{count}} warning(s)",
+      "description": "This document contains property values that do not match the current type definition. Please review the values in the Properties tab and re-save with correct values.",
+      "showDetails": "Show warning details",
+      "cardinalityMismatch": "Cardinality mismatch",
+      "typeCoercionRejected": "Type coercion failed",
+      "listElementDropped": "List element dropped",
+      "elementCount": "Element count: {{count}}"
+    }
+  },
+  "folderBrowser": {
+    "newFolder": "New Folder",
+    "uploadFile": "Upload File",
+    "refresh": "Refresh",
+    "parentFolder": "Parent Folder",
+    "emptyFolder": "This folder is empty"
+  },
+  "userManagement": {
+    "title": "User Management",
+    "newUser": "New User",
+    "editUser": "Edit User",
+    "deleteUser": "Delete User",
+    "userId": "User ID",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "groups": "Groups",
+    "messages": {
+      "createSuccess": "User created successfully",
+      "updateSuccess": "User updated successfully",
+      "deleteSuccess": "User deleted successfully",
+      "createError": "Failed to create user",
+      "updateError": "Failed to update user",
+      "deleteError": "Failed to delete user"
+    }
+  },
+  "groupManagement": {
+    "title": "Group Management",
+    "newGroup": "New Group",
+    "editGroup": "Edit Group",
+    "deleteGroup": "Delete Group",
+    "groupId": "Group ID",
+    "groupName": "Group Name",
+    "members": "Members",
+    "messages": {
+      "createSuccess": "Group created successfully",
+      "updateSuccess": "Group updated successfully",
+      "deleteSuccess": "Group deleted successfully",
+      "createError": "Failed to create group",
+      "updateError": "Failed to update group",
+      "deleteError": "Failed to delete group"
+    }
+  },
+  "permissionManagement": {
+    "title": "Permission Management",
+    "addPermission": "Add Permission",
+    "removePermission": "Remove Permission",
+    "principal": "Principal",
+    "permission": "Permission",
+    "directPermission": "Direct Permission",
+    "inheritedPermission": "Inherited Permission",
+    "breakInheritance": "Break Inheritance",
+    "restoreInheritance": "Restore Inheritance",
+    "messages": {
+      "addSuccess": "Permission added successfully",
+      "removeSuccess": "Permission removed successfully",
+      "addError": "Failed to add permission",
+      "removeError": "Failed to remove permission"
+    },
+    "validation": {
+      "permissionRequired": "Please select a permission"
+    }
+  },
+  "preview": {
+    "officeDocument": "Office Document",
+    "noPreview": "Preview not available",
+    "loadError": "Missing required information to load file",
+    "renditionError": "Failed to get rendition",
+    "renditionInfoMissing": "Missing required information to get rendition"
+  },
+  "language": {
+    "title": "Language",
+    "japanese": "Japanese",
+    "english": "English"
+  }
+}

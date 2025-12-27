@@ -222,7 +222,9 @@ import {
   InfoCircleOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
+import LanguageSwitcher from '../LanguageSwitcher';
 
 // Build-time constants from vite.config.ts
 declare const __UI_BUILD_TIME__: string;
@@ -247,6 +249,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, authToken } = useAuth();
+  const { t } = useTranslation();
 
   // CRITICAL FIX (2025-12-17): Clean up any stale overlays on Layout mount
   // This runs after successful login when the Layout component first mounts
@@ -306,38 +309,38 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
     {
       key: '/documents',
       icon: <FolderOutlined />,
-      label: 'ドキュメント',
+      label: t('navigation.documents'),
     },
     {
       key: '/search',
       icon: <SearchOutlined />,
-      label: '検索',
+      label: t('navigation.search'),
     },
     // Only include admin menu for admin users
     ...(isAdmin ? [{
       key: 'admin',
       icon: <SettingOutlined />,
-      label: '管理',
+      label: t('navigation.admin'),
       children: [
         {
           key: '/users',
           icon: <UserOutlined />,
-          label: 'ユーザー管理',
+          label: t('userManagement.title'),
         },
         {
           key: '/groups',
           icon: <TeamOutlined />,
-          label: 'グループ管理',
+          label: t('groupManagement.title'),
         },
         {
           key: '/types',
           icon: <FileOutlined />,
-          label: 'タイプ管理',
+          label: t('typeManagement.title'),
         },
         {
           key: '/archive',
           icon: <InboxOutlined />,
-          label: 'アーカイブ',
+          label: t('navigation.archive'),
         },
       ],
     }] : []),
@@ -357,7 +360,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
     {
       key: 'logout',
       icon: <LogoutOutlined />,
-      label: 'ログアウト',
+      label: t('navigation.logout'),
       onClick: handleLogout,
     },
   ];
@@ -490,8 +493,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           
           <Space>
             <span style={{ color: '#666' }}>
-              Repository: <strong>{repositoryId}</strong>
+              {t('common.repository')}: <strong>{repositoryId}</strong>
             </span>
+            <LanguageSwitcher size="small" />
             <Dropdown
               menu={{ items: userMenuItems }}
               placement="bottomRight"

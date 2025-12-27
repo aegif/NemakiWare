@@ -1,0 +1,213 @@
+{
+  "common": {
+    "loading": "読み込み中...",
+    "error": "エラー",
+    "success": "成功",
+    "warning": "警告",
+    "cancel": "キャンセル",
+    "save": "保存",
+    "create": "作成",
+    "update": "更新",
+    "delete": "削除",
+    "edit": "編集",
+    "close": "閉じる",
+    "confirm": "確認",
+    "yes": "はい",
+    "no": "いいえ",
+    "search": "検索",
+    "actions": "アクション",
+    "name": "名前",
+    "description": "説明",
+    "type": "タイプ",
+    "required": "必須",
+    "optional": "任意",
+    "enabled": "有効",
+    "disabled": "無効",
+    "single": "単一",
+    "multi": "複数",
+    "direct": "直接",
+    "inherited": "継承",
+    "repository": "リポジトリ"
+  },
+  "navigation": {
+    "home": "ホーム",
+    "documents": "ドキュメント",
+    "folders": "フォルダ",
+    "admin": "管理",
+    "settings": "設定",
+    "logout": "ログアウト",
+    "search": "検索",
+    "archive": "アーカイブ"
+  },
+  "typeManagement": {
+    "title": "タイプ管理",
+    "customTypes": "カスタムタイプ",
+    "newType": "新規タイプ作成",
+    "editType": "タイプ編集",
+    "deleteType": "タイプ削除",
+    "guiEditor": "GUIエディタ",
+    "jsonEditor": "JSONエディタ",
+    "importFile": "ファイルインポート",
+    "exportFile": "ファイルエクスポート",
+    "basicInfo": "基本情報",
+    "typeOptions": "タイプオプション",
+    "propertyDefinitions": "プロパティ定義",
+    "addProperty": "プロパティを追加",
+    "noProperties": "プロパティが定義されていません",
+    "displayName": "表示名",
+    "parentType": "親タイプ",
+    "propertyCount": "プロパティ数",
+    "typeId": "タイプID",
+    "localName": "ローカル名",
+    "localNamespace": "ローカル名前空間",
+    "baseType": "ベースタイプ",
+    "creatable": "作成可能",
+    "queryable": "クエリ可能",
+    "fulltextIndexed": "全文インデックス",
+    "includedInSupertypeQuery": "スーパータイプクエリに含める",
+    "controllablePolicy": "ポリシー制御可能",
+    "controllableACL": "ACL制御可能",
+    "cardinality": "多重度",
+    "updatability": "更新可能性",
+    "readwrite": "読み書き可能",
+    "readonly": "読み取り専用",
+    "oncreate": "作成時のみ",
+    "openChoice": "オープンチョイス",
+    "expandAll": "全て展開",
+    "collapseAll": "全て折りたたむ",
+    "messages": {
+      "loadError": "タイプの読み込みに失敗しました",
+      "createSuccess": "タイプを作成しました",
+      "updateSuccess": "タイプを更新しました",
+      "deleteSuccess": "タイプを削除しました",
+      "createError": "タイプの作成に失敗しました",
+      "updateError": "タイプの更新に失敗しました",
+      "deleteError": "タイプの削除に失敗しました",
+      "cannotDelete": "タイプを削除できません",
+      "hasSubtypes": "このタイプにはサブタイプがあります",
+      "hasRelationships": "このタイプはリレーションシップで参照されています",
+      "fileRequired": "ファイルを選択してください",
+      "parseError": "ファイルの解析に失敗しました",
+      "readError": "ファイルの読み込みに失敗しました",
+      "definitionUpdated": "型定義を更新しました"
+    },
+    "validation": {
+      "typeIdRequired": "タイプIDは必須です",
+      "displayNameRequired": "表示名を入力してください",
+      "cardinalityRequired": "多重度を選択してください",
+      "invalidTypeIdFormat": "タイプIDの形式が不正です"
+    },
+    "warnings": {
+      "nonCmisCompliant": "この操作はCMIS規格に準拠していません",
+      "existingDocuments": "このタイプのドキュメントが存在する場合、影響を受ける可能性があります"
+    }
+  },
+  "propertyEditor": {
+    "propertyId": "プロパティID",
+    "propertyType": "プロパティタイプ",
+    "string": "文字列",
+    "integer": "整数",
+    "decimal": "小数",
+    "boolean": "真偽値",
+    "datetime": "日時",
+    "id": "ID"
+  },
+  "documentViewer": {
+    "properties": "プロパティ",
+    "versions": "バージョン",
+    "permissions": "権限",
+    "relationships": "リレーションシップ",
+    "download": "ダウンロード",
+    "upload": "アップロード",
+    "checkout": "チェックアウト",
+    "checkin": "チェックイン",
+    "cancelCheckout": "チェックアウト取消",
+    "coercionWarning": {
+      "title": "プロパティ値の不整合が検出されました",
+      "warningCount": "{{count}}件の警告",
+      "description": "このドキュメントには、現在のタイプ定義と一致しないプロパティ値が含まれています。プロパティタブで値を確認し、正しい値で再保存してください。",
+      "showDetails": "警告の詳細を表示",
+      "cardinalityMismatch": "カーディナリティ不整合",
+      "typeCoercionRejected": "型変換失敗",
+      "listElementDropped": "リスト要素の欠落",
+      "elementCount": "要素数: {{count}}"
+    }
+  },
+  "folderBrowser": {
+    "newFolder": "新規フォルダ",
+    "uploadFile": "ファイルアップロード",
+    "refresh": "更新",
+    "parentFolder": "親フォルダ",
+    "emptyFolder": "このフォルダは空です"
+  },
+  "userManagement": {
+    "title": "ユーザー管理",
+    "newUser": "新規ユーザー",
+    "editUser": "ユーザー編集",
+    "deleteUser": "ユーザー削除",
+    "userId": "ユーザーID",
+    "firstName": "名",
+    "lastName": "姓",
+    "email": "メールアドレス",
+    "password": "パスワード",
+    "confirmPassword": "パスワード確認",
+    "groups": "グループ",
+    "messages": {
+      "createSuccess": "ユーザーを作成しました",
+      "updateSuccess": "ユーザーを更新しました",
+      "deleteSuccess": "ユーザーを削除しました",
+      "createError": "ユーザーの作成に失敗しました",
+      "updateError": "ユーザーの更新に失敗しました",
+      "deleteError": "ユーザーの削除に失敗しました"
+    }
+  },
+  "groupManagement": {
+    "title": "グループ管理",
+    "newGroup": "新規グループ",
+    "editGroup": "グループ編集",
+    "deleteGroup": "グループ削除",
+    "groupId": "グループID",
+    "groupName": "グループ名",
+    "members": "メンバー",
+    "messages": {
+      "createSuccess": "グループを作成しました",
+      "updateSuccess": "グループを更新しました",
+      "deleteSuccess": "グループを削除しました",
+      "createError": "グループの作成に失敗しました",
+      "updateError": "グループの更新に失敗しました",
+      "deleteError": "グループの削除に失敗しました"
+    }
+  },
+  "permissionManagement": {
+    "title": "権限管理",
+    "addPermission": "権限追加",
+    "removePermission": "権限削除",
+    "principal": "プリンシパル",
+    "permission": "権限",
+    "directPermission": "直接権限",
+    "inheritedPermission": "継承権限",
+    "breakInheritance": "継承を切断",
+    "restoreInheritance": "継承を復元",
+    "messages": {
+      "addSuccess": "権限を追加しました",
+      "removeSuccess": "権限を削除しました",
+      "addError": "権限の追加に失敗しました",
+      "removeError": "権限の削除に失敗しました"
+    },
+    "validation": {
+      "permissionRequired": "権限を選択してください"
+    }
+  },
+  "preview": {
+    "officeDocument": "オフィス文書",
+    "noPreview": "プレビューを表示できません",
+    "loadError": "ファイルの読み込みに必要な情報が不足しています",
+    "renditionError": "レンディションの取得に失敗しました",
+    "renditionInfoMissing": "レンディション取得に必要な情報が不足しています"
+  },
+  "language": {
+    "title": "言語",
+    "japanese": "日本語",
+    "english": "English"
+  }
+}
