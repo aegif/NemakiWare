@@ -149,7 +149,7 @@ test.describe('Access Control and Permissions', () => {
       await page.waitForTimeout(2000);
 
       // Navigate to documents
-      const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+      const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
       if (await documentsMenu.count() > 0) {
         await documentsMenu.click();
         await page.waitForTimeout(2000);
@@ -277,7 +277,7 @@ test.describe('Access Control and Permissions', () => {
 
       // Navigate to user management
       console.log('Setup: Navigating to user management');
-      const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
+      const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
       if (await adminMenu.count() > 0) {
         console.log('Setup: Found 管理 menu, clicking...');
         await adminMenu.click();
@@ -431,7 +431,7 @@ test.describe('Access Control and Permissions', () => {
 
               // Refresh user list via UI navigation instead of page.reload() to avoid breaking React Router
               // Navigate away to Documents
-              const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+              const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
               if (await documentsMenu.count() > 0) {
                 await documentsMenu.click();
                 await page.waitForTimeout(1000);
@@ -439,7 +439,7 @@ test.describe('Access Control and Permissions', () => {
               }
 
               // Navigate back to User Management to refresh the list
-              const adminMenuRefresh = page.locator('.ant-menu-submenu:has-text("管理")');
+              const adminMenuRefresh = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
               if (await adminMenuRefresh.count() > 0) {
                 await adminMenuRefresh.click();
                 await page.waitForTimeout(500);

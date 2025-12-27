@@ -195,7 +195,7 @@ test.describe('Group Management CRUD Operations', () => {
 
     // Navigate to group management
     await page.waitForTimeout(2000);
-    const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
+    const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
       await page.waitForTimeout(1000);

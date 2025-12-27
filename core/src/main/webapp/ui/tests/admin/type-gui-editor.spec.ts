@@ -42,13 +42,13 @@ test.describe('Type GUI Editor', () => {
     await testHelper.waitForAntdLoad();
 
     // Navigate to type management
-    const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
+    const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
       await page.waitForTimeout(1000);
     }
 
-    const typeManagementItem = page.locator('.ant-menu-item:has-text("タイプ管理")');
+    const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
     if (await typeManagementItem.count() > 0) {
       await typeManagementItem.click();
       await page.waitForTimeout(2000);

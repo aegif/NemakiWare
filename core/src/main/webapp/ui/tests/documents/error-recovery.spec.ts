@@ -30,7 +30,7 @@ test.describe('Error Recovery Tests', () => {
     await testHelper.waitForAntdLoad();
 
     // Navigate to Documents section
-    const documentsLink = page.locator('.ant-menu-item:has-text("ドキュメント")');
+    const documentsLink = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     await documentsLink.click();
     await page.waitForLoadState('networkidle');
 
@@ -336,7 +336,7 @@ test.describe('Error Recovery Tests', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Verify initial authenticated state
-    const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+    const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     await expect(documentsMenu).toBeVisible();
 
     // Simulate network loss by blocking all requests for 5 seconds
@@ -487,7 +487,7 @@ test.describe('Error Recovery Tests', () => {
 
     // Verify app is still functional (not in error state)
     await page.waitForTimeout(2000);
-    const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+    const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     await expect(documentsMenu).toBeVisible();
 
     // Unroute

@@ -213,7 +213,7 @@ test.describe('404 Error Handling Verification', () => {
     console.log('📍 Auth token cleared - next API call should trigger 401');
 
     // Try to navigate to documents - this should trigger 401 and redirect to login
-    const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+    const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     if (await documentsMenu.count() > 0) {
       await documentsMenu.click();
       await page.waitForTimeout(3000);

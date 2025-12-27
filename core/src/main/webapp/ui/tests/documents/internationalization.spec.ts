@@ -30,7 +30,7 @@ test.describe('Internationalization Tests', () => {
     await testHelper.waitForAntdLoad();
 
     // Navigate to Documents section
-    const documentsLink = page.locator('.ant-menu-item:has-text("ドキュメント")');
+    const documentsLink = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     await documentsLink.click();
     await page.waitForLoadState('networkidle');
 

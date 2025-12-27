@@ -419,7 +419,7 @@ test.describe('Document Properties Edit and Persistence', () => {
 
     // Refresh via UI navigation instead of page.reload() to avoid breaking React Router
     // Navigate away to User Management
-    const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
+    const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
       await page.waitForTimeout(1000);

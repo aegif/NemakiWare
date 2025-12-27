@@ -96,7 +96,7 @@ import { AuthHelper } from '../utils/auth-helper';
  * - User Table: .ant-table component
  * - Admin User: text=admin (anywhere on page)
  * - Search Input: input[placeholder*="検索"], input[placeholder*="search"], .ant-input-search input
- * - Documents Menu: .ant-menu-item:has-text("ドキュメント")
+ * - Documents Menu: .ant-menu-item').filter({ hasText: /ドキュメント|Documents/i })
  *
  * Expected Test Results:
  * - User management page accessible at /users URL
@@ -147,7 +147,7 @@ test.describe('User Management', () => {
 
     // Navigate to user management
     await page.waitForTimeout(2000);
-    const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
+    const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
       await page.waitForTimeout(1000);
@@ -238,7 +238,7 @@ test.describe('User Management', () => {
     await page.waitForTimeout(1000);
 
     // Click on Documents menu item
-    const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+    const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     await documentsMenu.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
 

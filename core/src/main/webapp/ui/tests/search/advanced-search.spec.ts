@@ -360,7 +360,7 @@ test.describe('Advanced Search', () => {
     await page.waitForTimeout(1000);
 
     // Click on Documents menu item
-    const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+    const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     await documentsMenu.click();
     await page.waitForTimeout(2000);
 

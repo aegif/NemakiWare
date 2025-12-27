@@ -406,6 +406,43 @@ npx playwright show-report
 
 **Current Known Issues**: See "Playwright UI Test Status (2025-11-09)" section for latest test results and known issues
 
+### i18n Testing Strategy (2025-12-20)
+
+**Internationalization Support**: The UI now supports multiple languages (Japanese and English) using react-i18next.
+
+**Test Selector Guidelines**:
+- Use flexible regex patterns for menu/navigation selectors to support both languages
+- Example: `.filter({ hasText: /管理|Admin/i })` instead of `:has-text("管理")`
+- This ensures tests work regardless of the user's language preference
+
+**Supported Patterns**:
+```typescript
+// Good: Flexible regex pattern supporting both languages
+const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
+const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
+const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
+
+// Avoid: Hardcoded single-language selectors
+const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');  // Not recommended
+```
+
+**Translation Files**:
+- Japanese: `src/i18n/locales/ja.json`
+- English: `src/i18n/locales/en.json`
+- Default language: Japanese (fallback)
+- Language detection order: localStorage → navigator → htmlTag
+
+**Adding New Languages**:
+1. Create new translation file: `src/i18n/locales/{lang}.json`
+2. Import in `src/i18n/index.ts`
+3. Add to `languages` object and `supportedLngs` array
+4. Update test selectors to include new language patterns
+
+**Container-based Integration Tests**:
+- Actual container-based integration tests are delegated to a separate agent
+- Current tests use mocks and in-memory stubs for unit/integration testing
+- See TypeResourceTest.java for REST API test examples
+
 ## Commit & Pull Request Guidelines
 - Use concise, imperative subjects. Conventional prefixes are common: `feat:`, `fix:`, `refactor:`, `chore:` (optionally add module tag, e.g., `[core] fix: ...`).
 - Include context and rationale in the body; reference issues (`Fixes #123`).

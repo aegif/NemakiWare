@@ -199,13 +199,13 @@ test.describe.skip('Custom Type and Custom Attributes (WIP - Manual Form UI not 
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Navigate to Type Management
-    const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
+    const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click(isMobile ? { force: true } : {});
       await page.waitForTimeout(1000);
     }
 
-    const typeManagementItem = page.locator('.ant-menu-item:has-text("タイプ管理")');
+    const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
     if (await typeManagementItem.count() > 0) {
       await typeManagementItem.click(isMobile ? { force: true } : {});
       await page.waitForTimeout(2000);
@@ -228,7 +228,7 @@ test.describe.skip('Custom Type and Custom Attributes (WIP - Manual Form UI not 
       ).first();
       await baseTypeCombobox.click({ timeout: 10000 });
       await page.waitForTimeout(500);
-      const documentOption = page.locator('.ant-select-item-option:has-text("ドキュメント")').first();
+      const documentOption = page.locator('.ant-select-item-option').filter({ hasText: /ドキュメント|Documents/i })').first();
       await documentOption.click();
 
       // Switch to properties tab
@@ -517,13 +517,13 @@ test.describe.skip('Custom Type and Custom Attributes (WIP - Manual Form UI not 
       }
 
       // Delete custom type
-      const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
+      const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
       if (await adminMenu.count() > 0) {
         await adminMenu.click();
         await page.waitForTimeout(1000);
       }
 
-      const typeManagementItem = page.locator('.ant-menu-item:has-text("タイプ管理")');
+      const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
       if (await typeManagementItem.count() > 0) {
         await typeManagementItem.click();
         await page.waitForTimeout(2000);

@@ -304,7 +304,7 @@ test.describe('CMIS API 404 Error Handling', () => {
     console.log('API call result:', result);
 
     // After API 404 error, verify UI is still responsive
-    const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+    const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     if (await documentsMenu.count() > 0) {
       // Use force click to bypass sidebar overlay in test environment
       await documentsMenu.click({ force: true });

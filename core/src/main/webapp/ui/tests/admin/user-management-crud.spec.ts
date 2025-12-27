@@ -169,7 +169,7 @@ test.describe('User Management CRUD Operations', () => {
 
     // Navigate to user management
     await page.waitForTimeout(2000);
-    const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
+    const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
       await page.waitForTimeout(1000);
@@ -347,14 +347,14 @@ test.describe('User Management CRUD Operations', () => {
 
     // Refresh via UI navigation instead of page.reload() to avoid breaking React Router
     // Navigate away to Documents
-    const documentsMenu = page.locator('.ant-menu-item:has-text("ドキュメント")');
+    const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     if (await documentsMenu.count() > 0) {
       await documentsMenu.click();
       await page.waitForTimeout(1000);
     }
 
     // Navigate back to user management
-    const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');
+    const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
     if (await adminMenu.count() > 0) {
       await adminMenu.click();
       await page.waitForTimeout(1000);

@@ -353,8 +353,8 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
 
       // Navigate to different protected routes
       const routes = [
-        { name: 'ドキュメント', selector: '.ant-menu-item:has-text("ドキュメント")' },
-        { name: '管理', selector: '.ant-menu-submenu:has-text("管理")' },
+        { name: 'ドキュメント', selector: '.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i })' },
+        { name: '管理', selector: '.ant-menu-submenu').filter({ hasText: /管理|Admin/i })' },
       ];
 
       for (const route of routes) {
