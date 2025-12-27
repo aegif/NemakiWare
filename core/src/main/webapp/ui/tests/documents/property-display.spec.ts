@@ -72,9 +72,19 @@ async function openTestDocument(page: Page, objectId: string, documentName: stri
   await page.waitForTimeout(1000);
 
   const headerTitle = page.locator('.ant-page-header-heading-title').first();
-  if (await headerTitle.count() > 0) {
-    await expect(headerTitle).toContainText(documentName, { timeout: 5000 });
-  }
+  await expect(headerTitle, 'document header should render the object name').toHaveCount(1);
+  await expect(headerTitle).toContainText(documentName, { timeout: 5000 });
+}
+
+async function openPropertiesTab(page: Page) {
+  const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
+  await expect(propertiesTab, 'Properties tab should be available').toHaveCount(1);
+  await propertiesTab.click();
+  await test.step('wait for properties table', async () => {
+    const propertyTable = page.locator('.ant-table').first();
+    await expect(propertyTable).toBeVisible({ timeout: 15000 });
+    await page.waitForTimeout(500);
+  });
 }
 
 test.describe('Property Display Tests', () => {
@@ -150,16 +160,8 @@ test.describe('Property Display Tests', () => {
   });
 
   test('should display all properties in PropertyEditor table with pagination', async ({ page }) => {
-    // Click on Properties tab
-    const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-    if (await propertiesTab.count() > 0) {
-      await propertiesTab.click();
-    }
-    await page.waitForTimeout(1000);
-
-    // Verify property table is visible (may be nested inside tab)
+    await openPropertiesTab(page);
     const propertyTable = page.locator('.ant-table').first();
-    await expect(propertyTable).toBeVisible({ timeout: 10000 });
 
     // Get all property rows
     const propertyRows = propertyTable.locator('tbody tr');
@@ -171,21 +173,15 @@ test.describe('Property Display Tests', () => {
     expect(rowCount).toBeGreaterThan(0);
 
     // Verify at least some standard CMIS properties are displayed
-    const standardProperties = [
-      'cmis:name',
-      'cmis:objectId',
-      'cmis:objectTypeId'
-    ];
+    const standardProperties = ['cmis:name', 'cmis:objectId', 'cmis:objectTypeId'];
 
     for (const propName of standardProperties) {
       const propRow = propertyTable.locator(`tr:has-text("${propName}")`);
-
-      if (await propRow.count() > 0) {
-        const valueCell = propRow.locator('td').nth(1);
-        const valueText = await valueCell.textContent();
-        console.log(`${propName} value:`, valueText);
-        expect(valueText).toBeTruthy();
-      }
+      await expect(propRow, `${propName} row should be present`).toHaveCount(1);
+      const valueCell = propRow.locator('td').nth(1);
+      const valueText = await valueCell.textContent();
+      console.log(`${propName} value:`, valueText);
+      expect(valueText).toBeTruthy();
     }
 
     // Verify pagination controls are present if there are many properties
@@ -195,59 +191,43 @@ test.describe('Property Display Tests', () => {
   });
 
   test('should display property values with correct formatting', async ({ page }) => {
-    const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-    if (await propertiesTab.count() > 0) {
-      await propertiesTab.click();
-    }
-    await page.waitForTimeout(1000);
+    await openPropertiesTab(page);
 
     // Test DateTime properties formatting
     const creationDateRow = page.locator('tr:has-text("cmis:creationDate")');
-    if (await creationDateRow.count() > 0) {
-      const dateValue = await creationDateRow.locator('td').nth(1).textContent();
-      console.log('Creation date format:', dateValue);
+    await expect(creationDateRow, 'cmis:creationDate should exist').toHaveCount(1);
+    const dateValue = await creationDateRow.locator('td').nth(1).textContent();
+    console.log('Creation date format:', dateValue);
 
-      if (dateValue && dateValue !== '-') {
-        // Accept various date formats
-        expect(dateValue).toMatch(/\d{4}[-\/]\d{2}[-\/]\d{2}/);
-      }
+    if (dateValue && dateValue !== '-') {
+      // Accept various date formats
+      expect(dateValue).toMatch(/\d{4}[-\/]\d{2}[-\/]\d{2}/);
     }
 
     // Test Boolean properties formatting
     const booleanRow = page.locator('tr:has-text("cmis:isLatestVersion")');
-    if (await booleanRow.count() > 0) {
-      const boolValue = await booleanRow.locator('td').nth(1).textContent();
-      console.log('Boolean value:', boolValue);
+    await expect(booleanRow, 'cmis:isLatestVersion should exist').toHaveCount(1);
+    const boolValue = await booleanRow.locator('td').nth(1).textContent();
+    console.log('Boolean value:', boolValue);
 
-      if (boolValue && boolValue !== '-') {
-        // Accept various boolean representations
-        expect(['はい', 'いいえ', 'true', 'false', 'Yes', 'No']).toContain(boolValue?.trim());
-      }
+    if (boolValue && boolValue !== '-') {
+      // Accept various boolean representations
+      expect(['はい', 'いいえ', 'true', 'false', 'Yes', 'No']).toContain(boolValue?.trim());
     }
   });
 
   test('should show read-only indicators correctly', async ({ page }) => {
     // ENABLED (2025-12-25): Read-only indicators (読み取り専用) are implemented in PropertyEditor.tsx line 278-279
-    const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-    if (await propertiesTab.count() > 0) {
-      await propertiesTab.click();
-    }
-    await page.waitForTimeout(1000);
+    await openPropertiesTab(page);
 
     // Verify read-only indicators exist (PropertyEditor shows "(読み取り専用)" for readonly properties)
     const readOnlyIndicator = page.locator('text=(読み取り専用)');
     const indicatorCount = await readOnlyIndicator.count();
-
-    console.log('Read-only properties count:', indicatorCount);
-    expect(indicatorCount).toBeGreaterThan(0);
+    await expect(indicatorCount, 'at least one read-only indicator should be shown').toBeGreaterThan(0);
   });
 
   test('should handle pagination correctly', async ({ page }) => {
-    const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-    if (await propertiesTab.count() > 0) {
-      await propertiesTab.click();
-    }
-    await page.waitForTimeout(1000);
+    await openPropertiesTab(page);
 
     // Get total property count from pagination
     const totalText = page.locator('.ant-pagination-total-text');
@@ -266,33 +246,19 @@ test.describe('Property Display Tests', () => {
           // Click next page
           const nextButton = page.locator('.ant-pagination-next');
           await nextButton.click();
-          await page.waitForTimeout(500);
-
-          // Verify we're on page 2
-          const activePage = page.locator('.ant-pagination-item-active');
-          const pageNumber = await activePage.textContent();
-          expect(pageNumber).toBe('2');
+          await expect(page.locator('.ant-pagination-item-active')).toContainText('2', { timeout: 3000 });
 
           // Click previous page
           const prevButton = page.locator('.ant-pagination-prev');
           await prevButton.click();
-          await page.waitForTimeout(500);
-
-          // Back to page 1
-          const activePageAfter = page.locator('.ant-pagination-item-active');
-          const pageNumberAfter = await activePageAfter.textContent();
-          expect(pageNumberAfter).toBe('1');
+          await expect(page.locator('.ant-pagination-item-active')).toContainText('1', { timeout: 3000 });
         }
       }
     }
   });
 
   test('should switch between display and edit mode correctly', async ({ page }) => {
-    const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-    if (await propertiesTab.count() > 0) {
-      await propertiesTab.click();
-    }
-    await page.waitForTimeout(1000);
+    await openPropertiesTab(page);
 
     // Initially in display mode with table
     const propertyTable = page.locator('.ant-table');
@@ -300,60 +266,55 @@ test.describe('Property Display Tests', () => {
 
     // Click edit button
     const editButton = page.locator('button:has-text("編集")');
-    if (await editButton.count() > 0) {
-      await editButton.click();
-      await page.waitForTimeout(1000);
+    await expect(editButton, 'Edit button should be present').toBeVisible();
+    await editButton.click();
+    await page.waitForTimeout(1000);
 
-      // Now in edit mode with form
-      const propertyForm = page.locator('form');
-      await expect(propertyForm).toBeVisible();
+    // Now in edit mode with form
+    const propertyForm = page.locator('form');
+    await expect(propertyForm).toBeVisible();
 
-      // Table should not be visible
-      await expect(propertyTable).not.toBeVisible();
+    // Table should not be visible
+    await expect(propertyTable).not.toBeVisible();
 
-      // Verify only updatable properties are shown in form
-      const formItems = page.locator('.ant-form-item');
-      const formItemCount = await formItems.count();
+    // Verify only updatable properties are shown in form
+    const formItems = page.locator('.ant-form-item');
+    const formItemCount = await formItems.count();
 
-      console.log('Editable properties count:', formItemCount);
+    console.log('Editable properties count:', formItemCount);
 
-      // Should have at least some editable properties
-      expect(formItemCount).toBeGreaterThan(0);
+    // Should have at least some editable properties
+    expect(formItemCount).toBeGreaterThan(0);
 
-      // Click cancel to return to display mode
-      const cancelButton = page.locator('button:has-text("キャンセル")');
-      await cancelButton.click();
-      await page.waitForTimeout(500);
+    // Click cancel to return to display mode
+    const cancelButton = page.locator('button:has-text("キャンセル")');
+    await expect(cancelButton, 'Cancel button should be visible in edit mode').toBeVisible();
+    await cancelButton.click();
+    await page.waitForTimeout(500);
 
-      // Back to display mode
-      await expect(propertyTable).toBeVisible();
-      await expect(propertyForm).not.toBeVisible();
-    }
+    // Back to display mode
+    await expect(propertyTable).toBeVisible();
+    await expect(propertyForm).not.toBeVisible();
   });
 
   test('should display required field indicators in edit mode', async ({ page }) => {
-    const propertiesTab = page.locator('.ant-tabs-tab').filter({ hasText: 'プロパティ' });
-    if (await propertiesTab.count() > 0) {
-      await propertiesTab.click();
-    }
-    await page.waitForTimeout(1000);
+    await openPropertiesTab(page);
 
     const editButton = page.locator('button:has-text("編集")');
-    if (await editButton.count() > 0) {
-      await editButton.click();
-      await page.waitForTimeout(1000);
+    await expect(editButton, 'Edit button should be present').toBeVisible();
+    await editButton.click();
+    await page.waitForTimeout(1000);
 
-      // Verify required fields have asterisk indicator
-      const requiredIndicators = page.locator('.ant-form-item-required');
-      const requiredCount = await requiredIndicators.count();
+    // Verify required fields have asterisk indicator
+    const requiredIndicators = page.locator('.ant-form-item-required');
+    const requiredCount = await requiredIndicators.count();
 
-      console.log('Required fields count:', requiredCount);
+    console.log('Required fields count:', requiredCount);
+    expect(requiredCount).toBeGreaterThan(0);
 
-      // cmis:name is always required for documents
-      const nameField = page.locator('.ant-form-item-label:has-text("cmis:name")');
-      if (await nameField.count() > 0) {
-        await expect(nameField.locator('.ant-form-item-required-mark')).toBeVisible();
-      }
-    }
+    // cmis:name is always required for documents
+    const nameField = page.locator('.ant-form-item-label:has-text("cmis:name")');
+    await expect(nameField, 'cmis:name field should be present').toHaveCount(1);
+    await expect(nameField.locator('.ant-form-item-required-mark')).toBeVisible();
   });
 });
