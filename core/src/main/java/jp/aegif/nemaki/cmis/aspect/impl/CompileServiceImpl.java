@@ -1200,13 +1200,17 @@ public class CompileServiceImpl implements CompileService {
 			TypeDefinitionContainer tdfc = typeManager.getTypeById(repositoryId, objectType);
 			if (tdfc == null) {
 				log.error("TypeDefinitionContainer is null for objectType: " + objectType + " in repository: " + repositoryId);
-				return properties;
+				// CRITICAL FIX (2025-12-27): Add fallback basic properties for orphaned objects
+				// When type definition is not found (e.g., custom type was deleted), we still need
+				// to return basic CMIS properties to prevent "objectId must be set" errors in AtomPub responses
+				return compileBasicFallbackProperties(content, objectType);
 			}
-			
+
 			TypeDefinition tdf = tdfc.getTypeDefinition();
 			if (tdf == null) {
 				log.error("TypeDefinition is null for objectType: " + objectType + " in repository: " + repositoryId);
-				return properties;
+				// CRITICAL FIX (2025-12-27): Add fallback basic properties for orphaned objects
+				return compileBasicFallbackProperties(content, objectType);
 			}
 
 			if (content.isFolder()) {
@@ -2766,6 +2770,56 @@ public class CompileServiceImpl implements CompileService {
 				   PermissionMapping.CAN_REMOVE_FROM_FOLDER_OBJECT.equals(key);
 		}
 		return false;
+	}
+
+	/**
+	 * CRITICAL FIX (2025-12-27): Compile basic fallback properties for orphaned objects.
+	 *
+	 * When a content object references a type definition that no longer exists
+	 * (e.g., a custom type was deleted but documents using it still exist),
+	 * we need to return at least the basic CMIS properties to prevent
+	 * "objectId must be set" errors in AtomPub response generation.
+	 *
+	 * Without these properties, the AtomPub servlet fails when trying to write
+	 * object entries because getObjectInfo() cannot find the object by null ID.
+	 *
+	 * @param content The content object with missing type definition
+	 * @param objectType The original objectType value from the content
+	 * @return PropertiesImpl with basic required CMIS properties
+	 */
+	private PropertiesImpl compileBasicFallbackProperties(Content content, String objectType) {
+		PropertiesImpl properties = new PropertiesImpl();
+
+		// CRITICAL: cmis:objectId is required for AtomPub response serialization
+		properties.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_ID, content.getId()));
+
+		// Determine base type from content class
+		String baseTypeId;
+		if (content.isFolder()) {
+			baseTypeId = "cmis:folder";
+		} else if (content.isDocument()) {
+			baseTypeId = "cmis:document";
+		} else if (content.isRelationship()) {
+			baseTypeId = "cmis:relationship";
+		} else if (content.isPolicy()) {
+			baseTypeId = "cmis:policy";
+		} else {
+			baseTypeId = "cmis:item";
+		}
+
+		properties.addProperty(new PropertyIdImpl(PropertyIds.BASE_TYPE_ID, baseTypeId));
+		properties.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, objectType != null ? objectType : baseTypeId));
+		properties.addProperty(new PropertyStringImpl(PropertyIds.NAME, content.getName()));
+
+		// Add parent ID if available (important for folder navigation)
+		if (content.getParentId() != null) {
+			properties.addProperty(new PropertyIdImpl(PropertyIds.PARENT_ID, content.getParentId()));
+		}
+
+		log.warn("Compiled fallback properties for orphaned object: id=" + content.getId()
+				+ ", name=" + content.getName() + ", type=" + objectType);
+
+		return properties;
 	}
 
 }

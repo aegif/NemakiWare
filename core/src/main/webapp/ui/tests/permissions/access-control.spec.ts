@@ -621,20 +621,32 @@ test.describe('Access Control and Permissions', () => {
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
       // Create test folder
+      // CRITICAL FIX (2025-12-27): Use modal closure instead of success message
       const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
 
       if (await createFolderButton.count() > 0) {
         await createFolderButton.click(isMobile ? { force: true } : {});
-        await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
 
-        const nameInput = page.locator('.ant-modal input[placeholder*="名前"], .ant-modal input[id*="name"]');
+        const modal = page.locator('.ant-modal:not(.ant-modal-hidden)');
+        await modal.waitFor({ state: 'visible', timeout: 10000 });
+        await page.waitForTimeout(500);
+
+        let nameInput = modal.locator('input[placeholder*="フォルダ名"]').first();
+        if (await nameInput.count() === 0) {
+          nameInput = modal.locator('input').first();
+        }
         await nameInput.fill(restrictedFolderName);
 
-        const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary');
-        await submitButton.click();
+        const submitButton = modal.locator('button[type="submit"]');
+        if (await submitButton.count() > 0) {
+          await submitButton.first().click();
+        } else {
+          await modal.locator('button.ant-btn-primary').first().click();
+        }
 
-        await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-        await page.waitForTimeout(2000);
+        // Wait for modal to close instead of success message
+        await expect(modal).not.toBeVisible({ timeout: 15000 });
+        await page.waitForTimeout(1000);
 
         // Verify folder created
         const createdFolder = page.locator(`text=${restrictedFolderName}`);

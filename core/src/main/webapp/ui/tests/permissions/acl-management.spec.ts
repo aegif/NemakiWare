@@ -199,6 +199,7 @@ test.describe('Advanced ACL Management', () => {
     }
 
     // Step 2: Create a test folder
+    // CRITICAL FIX (2025-12-27): Use modal closure instead of success message
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
@@ -206,16 +207,27 @@ test.describe('Advanced ACL Management', () => {
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
     if (await createFolderButton.count() > 0) {
       await createFolderButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
 
       const folderModal = page.locator('.ant-modal:not(.ant-modal-hidden)');
-      const nameInput = folderModal.locator('input[placeholder*="名前"], input[id*="name"]');
+      await folderModal.waitFor({ state: 'visible', timeout: 10000 });
+      await page.waitForTimeout(500);
+
+      let nameInput = folderModal.locator('input[placeholder*="フォルダ名"]').first();
+      if (await nameInput.count() === 0) {
+        nameInput = folderModal.locator('input').first();
+      }
       await nameInput.fill(testFolderName);
 
-      const submitButton = folderModal.locator('button[type="submit"], button.ant-btn-primary');
-      await submitButton.click();
-      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      const submitButton = folderModal.locator('button[type="submit"]');
+      if (await submitButton.count() > 0) {
+        await submitButton.first().click();
+      } else {
+        await folderModal.locator('button.ant-btn-primary').first().click();
+      }
+
+      // Wait for modal to close instead of success message
+      await expect(folderModal).not.toBeVisible({ timeout: 15000 });
+      await page.waitForTimeout(1000);
     }
 
     // Step 3: Add group permission to folder

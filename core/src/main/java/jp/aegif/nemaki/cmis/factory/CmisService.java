@@ -286,20 +286,32 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 			 */
 		} else {
 			String objecTypeId = getIdProperty(object, PropertyIds.OBJECT_TYPE_ID);
-			TypeDefinition typeDefinition = getTypeDefinition(repositoryId, objecTypeId, null);
+			// CRITICAL FIX (2025-12-27): Handle orphaned objects with missing TypeDefinition
+			// Orphaned objects (e.g., test:customDoc44acd8be) may exist in CouchDB but their
+			// TypeDefinition was deleted. Without this try-catch, getTypeDefinition() throws
+			// CmisObjectNotFoundException which breaks getChildren() for the entire folder.
+			try {
+				TypeDefinition typeDefinition = getTypeDefinition(repositoryId, objecTypeId, null);
 
-			if (typeDefinition.isFileable()) {
-				boolean unfiling = (repositoryInfo.getCapabilities().isUnfilingSupported() == null) ? false
-						: repositoryInfo.getCapabilities().isUnfilingSupported();
-				if (unfiling) {
-					List<ObjectParentData> parents = getObjectParents(repositoryId, object.getId(), null, Boolean.FALSE,
-							IncludeRelationships.NONE, "cmis:none", Boolean.FALSE, null);
-					info.setHasParent(parents != null && parents.size() >= 0);
+				if (typeDefinition != null && typeDefinition.isFileable()) {
+					boolean unfiling = (repositoryInfo.getCapabilities().isUnfilingSupported() == null) ? false
+							: repositoryInfo.getCapabilities().isUnfilingSupported();
+					if (unfiling) {
+						List<ObjectParentData> parents = getObjectParents(repositoryId, object.getId(), null, Boolean.FALSE,
+								IncludeRelationships.NONE, "cmis:none", Boolean.FALSE, null);
+						info.setHasParent(parents != null && parents.size() >= 0);
+					} else {
+						info.setHasParent(true);
+					}
 				} else {
-					info.setHasParent(true);
+					info.setHasParent(false);
 				}
-			} else {
-				info.setHasParent(false);
+			} catch (CmisObjectNotFoundException e) {
+				// Orphaned object with missing type definition - assume hasParent based on parentId property
+				String parentId = getIdProperty(object, PropertyIds.PARENT_ID);
+				info.setHasParent(parentId != null && !parentId.isEmpty());
+				log.warn("Orphaned object with missing TypeDefinition: objectId=" + object.getId()
+						+ ", typeId=" + objecTypeId + ", assuming hasParent=" + info.hasParent());
 			}
 		}
 		// // Nemaki Cusomization END ////

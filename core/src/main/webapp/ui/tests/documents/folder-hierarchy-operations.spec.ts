@@ -197,61 +197,99 @@ async function createFolder(page: Page, folderName: string, isMobile: boolean): 
 
   await createFolderButton.click(isMobile ? { force: true } : {});
 
-  // Wait for modal to appear
+  // Wait for modal to appear with extended timeout
+  // CRITICAL FIX (2025-12-27): Increased timeout and added visibility wait
+  const modal = page.locator('.ant-modal:not(.ant-modal-hidden)');
   try {
-    await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
+    await modal.waitFor({ state: 'visible', timeout: 10000 });
+    console.log('[FOLDER] Modal appeared');
   } catch {
     console.log('[FOLDER] ❌ Modal did not appear');
     return false;
   }
 
-  // Wait for modal to fully render
-  await page.waitForTimeout(500);
+  // Wait for modal content to fully render
+  await page.waitForTimeout(1000);
 
-  // Find and fill the name input
-  const nameInput = page.locator('.ant-modal input').first();
-  await nameInput.fill(folderName);
-
-  // Verify the input was filled
-  const filledValue = await nameInput.inputValue();
-  console.log(`[FOLDER] Input value: ${filledValue}`);
-
-  // Click the submit button
-  const submitButton = page.locator('.ant-modal button:has-text("作成")');
-  if (await submitButton.count() === 0) {
-    console.log('[FOLDER] ❌ Submit button not found, trying alternative');
-    const altSubmit = page.locator('.ant-modal .ant-btn-primary');
-    if (await altSubmit.count() > 0) {
-      await altSubmit.first().click();
-    } else {
-      console.log('[FOLDER] ❌ No submit button found');
-      return false;
-    }
+  // Find and fill the name input - be more specific
+  const nameInput = modal.locator('input[placeholder*="フォルダ名"]').first();
+  if (await nameInput.count() === 0) {
+    // Fallback to first input in modal
+    const fallbackInput = modal.locator('input').first();
+    await fallbackInput.fill(folderName);
+    console.log(`[FOLDER] Used fallback input, value: ${await fallbackInput.inputValue()}`);
   } else {
-    await submitButton.click();
+    await nameInput.fill(folderName);
+    console.log(`[FOLDER] Input value: ${await nameInput.inputValue()}`);
   }
 
-  // Wait for result - check multiple indicators
+  // Click the submit button - try multiple selectors
+  // CRITICAL FIX (2025-12-27): Use more robust button detection
+  const submitButton = modal.locator('button[type="submit"]');
+  const primaryButton = modal.locator('button.ant-btn-primary');
+
+  let buttonClicked = false;
+
+  if (await submitButton.count() > 0) {
+    console.log('[FOLDER] Found submit button by type="submit"');
+    await submitButton.first().click();
+    buttonClicked = true;
+  } else if (await primaryButton.count() > 0) {
+    console.log('[FOLDER] Found primary button');
+    await primaryButton.first().click();
+    buttonClicked = true;
+  } else {
+    // Last resort: find button with exact text
+    const textButton = modal.getByRole('button', { name: '作成' });
+    if (await textButton.count() > 0) {
+      console.log('[FOLDER] Found button by role with name "作成"');
+      await textButton.click();
+      buttonClicked = true;
+    }
+  }
+
+  if (!buttonClicked) {
+    console.log('[FOLDER] ❌ No submit button found');
+    // Debug: log all buttons in modal
+    const allButtons = await modal.locator('button').all();
+    console.log(`[FOLDER] Buttons in modal: ${allButtons.length}`);
+    for (const btn of allButtons) {
+      const text = await btn.textContent().catch(() => 'N/A');
+      const type = await btn.getAttribute('type').catch(() => 'N/A');
+      console.log(`[FOLDER]   - "${text}" (type=${type})`);
+    }
+    return false;
+  }
+
+  // Wait for result - CRITICAL FIX (2025-12-27): Don't rely on success message
+  // Success message fades out in 3 seconds, so check modal closure instead
   let success = false;
 
-  // Strategy 1: Wait for success message
   try {
-    await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-    console.log(`[FOLDER] ✅ Created: ${folderName} (success message)`);
+    // Wait for modal to close (primary success indicator)
+    await expect(modal).not.toBeVisible({ timeout: 15000 });
+    console.log(`[FOLDER] ✅ Created: ${folderName} (modal closed)`);
     success = true;
   } catch {
-    // Strategy 2: Check if modal closed (indicates success even without message)
-    const modalHidden = await page.locator('.ant-modal:not(.ant-modal-hidden)').count() === 0;
-    if (modalHidden) {
-      console.log(`[FOLDER] ✅ Created: ${folderName} (modal closed)`);
-      success = true;
+    // Check for error messages
+    const errorMsg = await page.locator('.ant-message-error').textContent().catch(() => null);
+    const formError = await modal.locator('.ant-form-item-explain-error').textContent().catch(() => null);
+
+    if (errorMsg || formError) {
+      console.log(`[FOLDER] ❌ Failed: ${errorMsg || formError}`);
+    } else {
+      // Modal might still be open but could be processing
+      const modalStillOpen = await modal.isVisible().catch(() => false);
+      if (!modalStillOpen) {
+        console.log(`[FOLDER] ✅ Created: ${folderName} (modal no longer visible)`);
+        success = true;
+      } else {
+        console.log(`[FOLDER] ❌ Failed: Modal still open, unknown error`);
+      }
     }
   }
 
   if (!success) {
-    const errorMsg = await page.locator('.ant-message-error').textContent().catch(() => null);
-    const formError = await page.locator('.ant-form-item-explain-error').textContent().catch(() => null);
-    console.log(`[FOLDER] ❌ Failed: ${errorMsg || formError || 'Unknown error'}`);
     return false;
   }
 
@@ -272,7 +310,22 @@ async function createFolder(page: Page, folderName: string, isMobile: boolean): 
   }
 
   if (!folderInTable) {
-    console.log(`[FOLDER] Folder "${folderName}" NOT visible in table after ${maxWaitTime}ms (may still be created)`);
+    console.log(`[FOLDER] Folder "${folderName}" NOT visible in table after ${maxWaitTime}ms`);
+
+    // CRITICAL FIX (2025-12-27): If folder not visible, try to force refresh by reloading the page
+    // This handles cases where the table state didn't update properly after folder creation
+    console.log(`[FOLDER] Attempting page reload to force refresh...`);
+    await page.reload();
+    await page.waitForSelector('.ant-table', { timeout: 10000 }).catch(() => null);
+    await page.waitForTimeout(2000);
+
+    // Check again after reload
+    folderInTable = await page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).isVisible().catch(() => false);
+    if (folderInTable) {
+      console.log(`[FOLDER] Folder "${folderName}" visible after page reload`);
+    } else {
+      console.log(`[FOLDER] Folder "${folderName}" still NOT visible after page reload`);
+    }
   }
 
   return true;

@@ -201,19 +201,32 @@ test.describe('Permission Management UI - ACL Display', () => {
     await page.waitForTimeout(2000);
 
     // Create a test folder
+    // CRITICAL FIX (2025-12-27): Don't rely on success message (fades out in 3 seconds)
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
     if (await createFolderButton.count() > 0) {
       await createFolderButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
 
       const modal = page.locator('.ant-modal:not(.ant-modal-hidden)');
-      const nameInput = modal.locator('input[placeholder*="名前"], input[id*="name"]');
+      await modal.waitFor({ state: 'visible', timeout: 10000 });
+      await page.waitForTimeout(500);
+
+      // Use more specific input selector
+      let nameInput = modal.locator('input[placeholder*="フォルダ名"]').first();
+      if (await nameInput.count() === 0) {
+        nameInput = modal.locator('input').first();
+      }
       await nameInput.fill(testFolderName);
 
-      const submitButton = modal.locator('button[type="submit"], button.ant-btn-primary');
-      await submitButton.click();
-      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-      await page.waitForTimeout(2000);
+      const submitButton = modal.locator('button[type="submit"]');
+      if (await submitButton.count() > 0) {
+        await submitButton.first().click();
+      } else {
+        await modal.locator('button.ant-btn-primary').first().click();
+      }
+
+      // Wait for modal to close instead of success message
+      await expect(modal).not.toBeVisible({ timeout: 15000 });
+      await page.waitForTimeout(1000);
 
       console.log(`Test: Created test folder: ${testFolderName}`);
     }

@@ -714,4 +714,192 @@ export class TestHelper {
     console.log(`TestHelper: Document ${fileName} still exists after deletion attempt`);
     return false;
   }
+
+  /**
+   * Create a folder with proper waiting and error handling
+   *
+   * CRITICAL FIX (2025-12-27): This method addresses common folder creation failures:
+   * - Don't rely on success message (fades out in 3 seconds)
+   * - Use modal closure as primary success indicator
+   * - Use robust button detection with multiple selectors
+   * - Proper visibility waits for modal content
+   *
+   * @param folderName Name of the folder to create
+   * @param isMobile Whether the browser is in mobile mode
+   * @returns true if folder was created successfully, false otherwise
+   */
+  async createFolder(folderName: string, isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Creating folder: ${folderName}`);
+
+    // Get folder creation button
+    const folderButton = await this.getFolderButton();
+    if (!folderButton) {
+      console.log('TestHelper: ❌ Folder creation button not found');
+      return false;
+    }
+
+    await folderButton.click(isMobile ? { force: true } : {});
+
+    // Wait for modal to appear with extended timeout
+    const modal = this.page.locator('.ant-modal:not(.ant-modal-hidden)');
+    try {
+      await modal.waitFor({ state: 'visible', timeout: 10000 });
+      console.log('TestHelper: Modal appeared');
+    } catch {
+      console.log('TestHelper: ❌ Modal did not appear');
+      return false;
+    }
+
+    // Wait for modal content to fully render
+    await this.page.waitForTimeout(1000);
+
+    // Find and fill the name input - try specific placeholder first
+    let nameInput = modal.locator('input[placeholder*="フォルダ名"]').first();
+    if (await nameInput.count() === 0) {
+      // Fallback to first input in modal
+      nameInput = modal.locator('input').first();
+      console.log('TestHelper: Using fallback input selector');
+    }
+    await nameInput.fill(folderName);
+    console.log(`TestHelper: Input value: ${await nameInput.inputValue()}`);
+
+    // Click the submit button - try multiple selectors
+    const submitButton = modal.locator('button[type="submit"]');
+    const primaryButton = modal.locator('button.ant-btn-primary');
+
+    let buttonClicked = false;
+
+    if (await submitButton.count() > 0) {
+      console.log('TestHelper: Found submit button by type="submit"');
+      await submitButton.first().click();
+      buttonClicked = true;
+    } else if (await primaryButton.count() > 0) {
+      console.log('TestHelper: Found primary button');
+      await primaryButton.first().click();
+      buttonClicked = true;
+    } else {
+      // Last resort: find button with exact text
+      const textButton = modal.getByRole('button', { name: '作成' });
+      if (await textButton.count() > 0) {
+        console.log('TestHelper: Found button by role with name "作成"');
+        await textButton.click();
+        buttonClicked = true;
+      }
+    }
+
+    if (!buttonClicked) {
+      console.log('TestHelper: ❌ No submit button found');
+      return false;
+    }
+
+    // Wait for modal to close (primary success indicator)
+    // Don't rely on success message (fades out in 3 seconds)
+    let success = false;
+
+    try {
+      await expect(modal).not.toBeVisible({ timeout: 15000 });
+      console.log(`TestHelper: ✅ Folder created: ${folderName} (modal closed)`);
+      success = true;
+    } catch {
+      // Check for error messages
+      const errorMsg = await this.page.locator('.ant-message-error').textContent().catch(() => null);
+      const formError = await modal.locator('.ant-form-item-explain-error').textContent().catch(() => null);
+
+      if (errorMsg || formError) {
+        console.log(`TestHelper: ❌ Folder creation failed: ${errorMsg || formError}`);
+      } else {
+        // Modal might have closed but expect failed
+        const modalStillOpen = await modal.isVisible().catch(() => false);
+        if (!modalStillOpen) {
+          console.log(`TestHelper: ✅ Folder created: ${folderName} (modal no longer visible)`);
+          success = true;
+        } else {
+          console.log('TestHelper: ❌ Folder creation failed: Modal still open');
+        }
+      }
+    }
+
+    if (!success) {
+      return false;
+    }
+
+    // Wait for table to refresh with new folder
+    const maxWaitTime = 10000;
+    const startTime = Date.now();
+    let folderInTable = false;
+
+    while (Date.now() - startTime < maxWaitTime) {
+      folderInTable = await this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).isVisible().catch(() => false);
+      if (folderInTable) {
+        console.log(`TestHelper: Folder "${folderName}" visible in table (after ${Date.now() - startTime}ms)`);
+        break;
+      }
+      await this.page.waitForTimeout(500);
+    }
+
+    if (!folderInTable) {
+      console.log(`TestHelper: Folder "${folderName}" NOT visible in table after ${maxWaitTime}ms`);
+
+      // CRITICAL FIX (2025-12-27): If folder not visible, try to force refresh by reloading the page
+      console.log(`TestHelper: Attempting page reload to force refresh...`);
+      await this.page.reload();
+      await this.page.waitForSelector('.ant-table', { timeout: 10000 }).catch(() => null);
+      await this.page.waitForTimeout(2000);
+
+      // Check again after reload
+      folderInTable = await this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).isVisible().catch(() => false);
+      if (folderInTable) {
+        console.log(`TestHelper: Folder "${folderName}" visible after page reload`);
+      } else {
+        console.log(`TestHelper: Folder "${folderName}" still NOT visible after page reload`);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Delete a test folder if it exists
+   *
+   * @param folderName Name of the folder to delete
+   * @param isMobile Whether the browser is in mobile mode
+   * @returns true if deleted (or didn't exist), false if deletion failed
+   */
+  async deleteTestFolder(folderName: string, isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Deleting test folder ${folderName}...`);
+
+    // Find folder row
+    const folderRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).first();
+    if (await folderRow.count() === 0) {
+      console.log(`TestHelper: Folder ${folderName} not found - already deleted or never existed`);
+      return true;
+    }
+
+    // Find delete button
+    const deleteButton = folderRow.locator('button').filter({ has: this.page.locator('[data-icon="delete"]') }).first();
+    if (await deleteButton.count() === 0) {
+      console.log(`TestHelper: Delete button not found for ${folderName}`);
+      return false;
+    }
+
+    await deleteButton.click(isMobile ? { force: true } : {});
+    await this.page.waitForTimeout(500);
+
+    // Confirm deletion
+    const confirmButton = this.page.locator('.ant-popconfirm button, .ant-popover button').filter({ hasText: /OK|はい|確認/ }).first();
+    if (await confirmButton.count() > 0) {
+      await confirmButton.click();
+      await this.page.waitForTimeout(3000);
+    }
+
+    // Verify deleted
+    const stillExists = await this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).count() > 0;
+    if (!stillExists) {
+      console.log(`TestHelper: Folder ${folderName} deleted successfully`);
+      return true;
+    }
+
+    console.log(`TestHelper: Folder ${folderName} still exists after deletion attempt`);
+    return false;
+  }
 }
