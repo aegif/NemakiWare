@@ -859,6 +859,109 @@ export class TestHelper {
   }
 
   /**
+   * Close all open modals, drawers, and overlay elements
+   *
+   * CRITICAL FIX (2025-12-27): This method addresses the "ant-modal-wrap intercepts pointer events" issue
+   * that occurs during test cleanup. Modals left open from failed tests can block subsequent interactions.
+   *
+   * This method:
+   * 1. Closes all visible Ant Design modals (clicks X button or Cancel)
+   * 2. Closes all visible Ant Design drawers
+   * 3. Removes orphaned overlay elements via JavaScript
+   * 4. Waits for DOM to stabilize
+   *
+   * @returns Number of overlays closed
+   */
+  async closeAllOverlays(): Promise<number> {
+    let closedCount = 0;
+    console.log('TestHelper: Closing all overlays...');
+
+    // Step 1: Close visible modals by clicking close button
+    const modalCloseButtons = this.page.locator('.ant-modal:not(.ant-modal-hidden) .ant-modal-close');
+    const modalCloseCount = await modalCloseButtons.count();
+    for (let i = 0; i < modalCloseCount; i++) {
+      try {
+        await modalCloseButtons.nth(i).click({ timeout: 1000 });
+        closedCount++;
+        await this.page.waitForTimeout(300);
+      } catch (e) {
+        // Button might have already been closed by previous action
+      }
+    }
+
+    // Step 2: Close drawers by clicking close button or mask
+    const drawerCloseButtons = this.page.locator('.ant-drawer:not(.ant-drawer-hidden) .ant-drawer-close');
+    const drawerCloseCount = await drawerCloseButtons.count();
+    for (let i = 0; i < drawerCloseCount; i++) {
+      try {
+        await drawerCloseButtons.nth(i).click({ timeout: 1000 });
+        closedCount++;
+        await this.page.waitForTimeout(300);
+      } catch (e) {
+        // Drawer might have already closed
+      }
+    }
+
+    // Step 3: Press Escape key to close any remaining modals/popovers
+    await this.page.keyboard.press('Escape');
+    await this.page.waitForTimeout(300);
+
+    // Step 4: Force remove orphaned overlay elements via JavaScript
+    const removedCount = await this.page.evaluate(() => {
+      let removed = 0;
+
+      // Remove orphaned modal wrappers
+      document.querySelectorAll('.ant-modal-wrap').forEach((el) => {
+        if (el.parentNode) {
+          el.parentNode.removeChild(el);
+          removed++;
+        }
+      });
+
+      // Remove orphaned modal masks
+      document.querySelectorAll('.ant-modal-mask').forEach((el) => {
+        if (el.parentNode) {
+          el.parentNode.removeChild(el);
+          removed++;
+        }
+      });
+
+      // Remove orphaned drawer wrappers
+      document.querySelectorAll('.ant-drawer-wrapper-body').forEach((el) => {
+        const drawer = el.closest('.ant-drawer');
+        if (drawer && drawer.parentNode) {
+          drawer.parentNode.removeChild(drawer);
+          removed++;
+        }
+      });
+
+      // Remove orphaned popconfirms
+      document.querySelectorAll('.ant-popconfirm, .ant-popover').forEach((el) => {
+        if (el.parentNode) {
+          el.parentNode.removeChild(el);
+          removed++;
+        }
+      });
+
+      // Reset body overflow style (modals set overflow: hidden)
+      document.body.style.overflow = '';
+
+      return removed;
+    });
+
+    closedCount += removedCount;
+
+    if (closedCount > 0) {
+      console.log(`TestHelper: Closed ${closedCount} overlay elements`);
+    }
+
+    // Wait for DOM to stabilize
+    await this.page.waitForTimeout(500);
+
+    return closedCount;
+  }
+
+  /**
    * Delete a test folder if it exists
    *
    * @param folderName Name of the folder to delete

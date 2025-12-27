@@ -106,6 +106,10 @@ test.describe('Advanced ACL Management', () => {
   });
 
   test.afterEach(async ({ page }) => {
+    // CRITICAL FIX (2025-12-27): Close all overlays before cleanup to prevent
+    // "ant-modal-wrap intercepts pointer events" errors
+    await testHelper.closeAllOverlays();
+
     // Cleanup: Delete any test folders via CMIS API to prevent accumulation
     console.log('afterEach: Cleaning up test folders');
 

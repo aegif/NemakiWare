@@ -109,6 +109,10 @@ async function waitForTableRow(page: any, folderName: string, maxAttempts = 10):
  * Re-enable after implementing more robust ACL state detection.
  */
 test.describe('ACL Inheritance Breaking', () => {
+  // CRITICAL FIX (2025-12-27): Serial mode prevents parallel execution race conditions
+  // Tests modify ACL state which can cause conflicts when running in parallel
+  test.describe.configure({ mode: 'serial' });
+
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   let rootFolderId: string;
@@ -143,6 +147,10 @@ test.describe('ACL Inheritance Breaking', () => {
   });
 
   test.afterEach(async ({ page }) => {
+    // CRITICAL FIX (2025-12-27): Close all overlays before cleanup to prevent
+    // "ant-modal-wrap intercepts pointer events" errors
+    await testHelper.closeAllOverlays();
+
     // Cleanup: Delete any test folders via CMIS API
     console.log('afterEach: Cleaning up test folders');
 
@@ -478,8 +486,37 @@ test.describe('ACL Inheritance Breaking', () => {
     );
 
     // FIX 2025-12-24: Handle ACL response failure gracefully
+    // FIX 2025-12-27: Add retry logic for ACL response to handle cache timing issues
     if (!aclAfterResponse.ok()) {
-      test.skip('ACL response failed after breaking inheritance - folder may have been deleted');
+      console.log(`⚠️ First ACL response failed: ${aclAfterResponse.status()}, retrying after 2s...`);
+      await page.waitForTimeout(2000);
+      const retryResponse = await page.request.get(
+        `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=acl`,
+        { headers: getAuthHeader() }
+      );
+      if (!retryResponse.ok()) {
+        console.log(`❌ ACL retry also failed: ${retryResponse.status()}`);
+        test.skip(`ACL response failed after breaking inheritance - status: ${retryResponse.status()}`);
+        return;
+      }
+      // Use retry response
+      const retryAcl = await retryResponse.json();
+      const retryInheritedCount = retryAcl.aces?.filter((ace: any) => !ace.direct).length || 0;
+      const retryDirectCount = retryAcl.aces?.filter((ace: any) => ace.direct).length || 0;
+      console.log(`Retry - Inherited: ${retryInheritedCount}, Direct: ${retryDirectCount}`);
+
+      expect(retryInheritedCount).toBe(0);
+      console.log('✅ No inherited permissions remain after breaking (retry)');
+
+      expect(retryDirectCount).toBeGreaterThan(0);
+      console.log('✅ Direct permissions exist after breaking inheritance (retry)');
+
+      // Navigate back to documents
+      const backButton = page.locator('button').filter({ hasText: /戻る|Back/i });
+      if (await backButton.count() > 0) {
+        await backButton.first().click();
+        await page.waitForTimeout(500);
+      }
       return;
     }
     const aclAfter = await aclAfterResponse.json();

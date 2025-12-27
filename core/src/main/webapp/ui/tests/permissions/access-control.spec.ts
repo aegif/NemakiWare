@@ -2667,9 +2667,11 @@ test.describe('Access Control and Permissions', () => {
     });
   });
 
-  // Cleanup: Remove accumulated test folders to prevent performance degradation
+  // Cleanup: Remove accumulated test folders via CMIS API to prevent performance degradation
+  // CRITICAL FIX (2025-12-27): Changed from UI-based to API-based cleanup to avoid
+  // "ant-modal-wrap intercepts pointer events" errors
   test.afterAll(async ({ browser }) => {
-    test.setTimeout(300000); // Set 300-second timeout for cleanup (extended for large number of test folders)
+    test.setTimeout(60000); // Set 60-second timeout for API-based cleanup
 
     // Allow skipping cleanup via environment variable for faster test execution
     if (process.env.SKIP_CLEANUP === 'true') {
@@ -2677,122 +2679,50 @@ test.describe('Access Control and Permissions', () => {
       return;
     }
 
-    console.log('Cleanup: Starting test folder cleanup');
+    console.log('Cleanup: Starting API-based test folder cleanup');
     const context = await browser.newContext();
     const page = await context.newPage();
-    const cleanupAuthHelper = new AuthHelper(page);
 
     try {
-      // Login as admin for cleanup operations
-      await cleanupAuthHelper.login();
-      await page.waitForTimeout(2000);
-
-      // Navigate to documents page
-      const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-      if (await documentsMenuItem.count() > 0) {
-        await documentsMenuItem.click();
-        await page.waitForTimeout(3000); // Wait for folder list to load
-      }
-
+      const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
       let deletedCount = 0;
-      const maxDeletions = 10; // Reduced limit to avoid timeout
-      const failedFolders = new Set<string>(); // Track folders that failed to delete
 
-      // Delete test folders in batches - re-query after each deletion to avoid stale elements
-      for (let batch = 0; batch < maxDeletions; batch++) {
-        try {
-          // Re-query folder rows after each deletion
-          const folderRows = page.locator('tr').filter({
-            has: page.locator('[data-icon="folder"]')
-          });
-          const folderCount = await folderRows.count();
+      // Query for folders starting with restricted-folder- or test-folder-
+      const folderPatterns = ['restricted-folder-%', 'test-folder-%'];
 
-          if (batch === 0) {
-            console.log(`Cleanup: Found ${folderCount} folders on current page`);
+      for (const pattern of folderPatterns) {
+        const queryResponse = await page.request.get(
+          `http://localhost:8080/core/browser/bedroom?cmisselector=query&q=SELECT%20cmis:objectId%20FROM%20cmis:folder%20WHERE%20cmis:name%20LIKE%20'${encodeURIComponent(pattern)}'`,
+          {
+            headers: { 'Authorization': authHeader }
           }
+        );
 
-          // Find first test folder on current page (skip previously failed ones)
-          let foundTestFolder = false;
-          for (let i = 0; i < folderCount; i++) {
-            const row = folderRows.nth(i);
-            const folderNameButton = row.locator('td').nth(1).locator('button');
-            const folderName = await folderNameButton.textContent();
+        if (queryResponse.ok()) {
+          const queryResult = await queryResponse.json();
+          const folders = queryResult.results || [];
 
-            if (folderName && (folderName.startsWith('restricted-folder-') || folderName.startsWith('test-folder-'))) {
-              // Skip folders that already failed to delete
-              if (failedFolders.has(folderName)) {
-                console.log(`Cleanup: Skipping previously failed folder: ${folderName}`);
-                continue;
-              }
-              console.log(`Cleanup: Deleting folder: ${folderName}`);
-
-              const deleteButton = row.locator('button').filter({
-                has: page.locator('[data-icon="delete"]')
-              });
-
-              if (await deleteButton.count() > 0) {
-                await deleteButton.first().click({ timeout: 3000 });
-
-                // Wait for popconfirm to appear
-                await page.waitForTimeout(1500);
-
-                // Try to find and click visible confirm button with multiple strategies
-                try {
-                  // Strategy 1: Wait for visible popconfirm container first
-                  const popconfirm = page.locator('.ant-popconfirm:visible, .ant-popover:visible');
-                  await popconfirm.waitFor({ state: 'visible', timeout: 3000 });
-
-                  // Strategy 2: Find confirm button within visible popconfirm
-                  const confirmButton = popconfirm.locator('button.ant-btn-primary, button:has-text("OK"), button:has-text("確認")');
-
-                  // Try clicking with force if button exists but not perfectly visible
-                  if (await confirmButton.count() > 0) {
-                    await confirmButton.first().click({ force: true, timeout: 3000 });
-
-                    // Wait for folder to disappear from table (verify deletion completed)
-                    // Extended to 10 attempts (10 seconds) for folders with contents
-                    let deletionConfirmed = false;
-                    for (let attempt = 0; attempt < 10; attempt++) {
-                      await page.waitForTimeout(1000);
-                      const stillExists = page.locator('tr').filter({ hasText: folderName });
-                      if (await stillExists.count() === 0) {
-                        deletionConfirmed = true;
-                        break;
-                      }
-                    }
-
-                    if (deletionConfirmed) {
-                      console.log(`Cleanup: Folder ${folderName} deletion confirmed`);
-                      deletedCount++;
-                      foundTestFolder = true;
-                      break; // Exit inner loop after successful deletion
-                    } else {
-                      console.log(`Cleanup: Warning - Folder ${folderName} still exists after deletion attempt`);
-                      failedFolders.add(folderName); // Mark as failed to skip in future iterations
-                      // Don't increment deletedCount, try next folder
-                    }
-                  } else {
-                    console.log(`Cleanup: Confirm button not found in visible popconfirm for ${folderName}`);
-                    failedFolders.add(folderName); // Mark as failed
+          for (const folder of folders) {
+            const folderId = folder.properties?.['cmis:objectId']?.value;
+            if (folderId) {
+              try {
+                const deleteResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+                  headers: { 'Authorization': authHeader },
+                  form: {
+                    'cmisaction': 'delete',
+                    'objectId': folderId,
+                    'allVersions': 'true'
                   }
-                } catch (confirmError) {
-                  console.log(`Cleanup: Confirm button error for ${folderName}:`, confirmError.message);
-                  failedFolders.add(folderName); // Mark as failed to skip in future iterations
-                  // Skip this folder and try next one
+                });
+                if (deleteResponse.ok()) {
+                  deletedCount++;
+                  console.log(`Cleanup: Deleted folder ${folderId}`);
                 }
+              } catch (deleteError) {
+                console.log(`Cleanup: Failed to delete folder ${folderId}`);
               }
             }
           }
-
-          // No more test folders found on current page
-          if (!foundTestFolder) {
-            console.log(`Cleanup: No more test folders found on current page after ${deletedCount} deletions`);
-            break;
-          }
-
-        } catch (error) {
-          console.log(`Cleanup: Error deleting folder in batch ${batch}:`, error);
-          break; // Stop on error to avoid cascading failures
         }
       }
 
