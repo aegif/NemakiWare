@@ -1599,6 +1599,9 @@ public class ContentServiceImpl implements ContentService {
 
 		Relationship relationship = contentDaoService.create(repositoryId, rel);
 
+		// Index relationship in Solr for CMIS query support
+		solrUtil.indexDocument(repositoryId, relationship);
+
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, relationship, ChangeType.CREATED);
 

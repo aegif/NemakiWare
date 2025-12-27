@@ -491,6 +491,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 		String objectTypeId = DataUtil.getObjectTypeId(properties);
 		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, objectTypeId);
 
+		// CRITICAL FIX (2025-12-26): Handle orphaned type references
+		if (td == null) {
+			constraint(null, "Type definition not found for objectTypeId: " + objectTypeId);
+			return;
+		}
 		if (!td.getBaseTypeId().equals(baseTypeId))
 			constraint(null,
 					"cmis:objectTypeId is not an object type whose base tyep is "
@@ -808,6 +813,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void constraintVersionable(String repositoryId, String typeId) {
 		DocumentTypeDefinition type = (DocumentTypeDefinition) typeManager
 				.getTypeDefinition(repositoryId, typeId);
+		// CRITICAL FIX (2025-12-26): Handle orphaned type references
+		if (type == null) {
+			String msg = "Type definition not found for typeId: " + typeId;
+			throw new CmisConstraintException(msg, HTTP_STATUS_CODE_409);
+		}
 		if (!type.isVersionable()) {
 			String msg = "Object type: " + type.getId() + " is not versionbale";
 			throw new CmisConstraintException(msg, HTTP_STATUS_CODE_409);
@@ -863,6 +873,12 @@ public class ExceptionServiceImpl implements ExceptionService,
 		String objectTypeId = document.getObjectType();
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
 				.getTypeDefinition(repositoryId, objectTypeId);
+		// CRITICAL FIX (2025-12-26): Handle orphaned type references
+		if (td == null) {
+			log.warn("ORPHANED DOCUMENT: Type definition not found for document '" +
+					document.getId() + "' (type=" + objectTypeId + ")");
+			return; // Cannot validate content stream requirement without type definition
+		}
 		if (td.getContentStreamAllowed() == ContentStreamAllowed.REQUIRED) {
 			if (document.getAttachmentNodeId() == null
 					|| contentService.getAttachment(repositoryId, document
@@ -1176,6 +1192,12 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void constraintContentStreamDownload(String repositoryId, Document document) {
 		DocumentTypeDefinition documentTypeDefinition = (DocumentTypeDefinition) typeManager
 				.getTypeDefinition(repositoryId, document);
+		// CRITICAL FIX (2025-12-26): Handle orphaned type references
+		if (documentTypeDefinition == null) {
+			log.warn("ORPHANED DOCUMENT: Type definition not found for document '" +
+					document.getId() + "' (type=" + document.getObjectType() + ")");
+			return; // Cannot validate content stream download without type definition
+		}
 		ContentStreamAllowed csa = documentTypeDefinition
 				.getContentStreamAllowed();
 		
@@ -1302,6 +1324,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 		boolean mustUnique = propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_UNIQUE_NAME_CHECK);
 		if (!mustUnique) {
 			return;
+		}
+
+		// CRITICAL FIX (2025-12-27): Add null check for proposedName to prevent NPE
+		// When creating documents without cmis:name property, proposedName can be null
+		if (proposedName == null) {
+			throw new CmisInvalidArgumentException(
+					"Object name (cmis:name) is required but was not provided",
+					HTTP_STATUS_CODE_400);
 		}
 
 		if (parentFolder == null) {

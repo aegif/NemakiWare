@@ -550,6 +550,18 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
           </Form.Item>
 
           <Form.Item
+            name="description"
+            label="説明"
+          >
+            <Input.TextArea
+              placeholder="グループの説明を入力（任意）"
+              rows={3}
+              maxLength={1000}
+              showCount
+            />
+          </Form.Item>
+
+          <Form.Item
             name="members"
             label="メンバー"
           >

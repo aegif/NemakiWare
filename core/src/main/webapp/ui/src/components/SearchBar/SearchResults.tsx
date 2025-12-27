@@ -247,12 +247,13 @@ import {
   Tooltip,
   Checkbox
 } from 'antd';
-import { 
-  SearchOutlined, 
-  FileOutlined, 
+import {
+  SearchOutlined,
+  FileOutlined,
   FolderOutlined,
   DownloadOutlined,
-  EyeOutlined
+  EyeOutlined,
+  LinkOutlined
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
@@ -556,11 +557,14 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       dataIndex: 'baseType',
       key: 'type',
       width: 60,
-      render: (baseType: string) => (
-        baseType === 'cmis:folder' ? 
-          <FolderOutlined style={{ color: '#1890ff', fontSize: '16px' }} /> :
-          <FileOutlined style={{ color: '#52c41a', fontSize: '16px' }} />
-      ),
+      render: (baseType: string) => {
+        if (baseType === 'cmis:folder') {
+          return <FolderOutlined style={{ color: '#1890ff', fontSize: '16px' }} />;
+        } else if (baseType === 'cmis:relationship') {
+          return <LinkOutlined style={{ color: '#722ed1', fontSize: '16px' }} />;
+        }
+        return <FileOutlined style={{ color: '#52c41a', fontSize: '16px' }} />;
+      },
     },
     {
       title: '名前',
@@ -580,6 +584,51 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       dataIndex: 'path',
       key: 'path',
       ellipsis: true,
+      render: (path: string, record: CMISObject) => {
+        // Relationships don't have paths, show source/target info instead
+        if (record.baseType === 'cmis:relationship') {
+          return <span style={{ color: '#999' }}>-</span>;
+        }
+        return path || '-';
+      },
+    },
+    {
+      title: 'ソースID',
+      dataIndex: 'sourceId',
+      key: 'sourceId',
+      width: 200,
+      ellipsis: true,
+      render: (sourceId: string, record: CMISObject) => {
+        if (record.baseType !== 'cmis:relationship') {
+          return <span style={{ color: '#999' }}>-</span>;
+        }
+        return sourceId ? (
+          <Tooltip title={sourceId}>
+            <Button type="link" size="small" onClick={() => navigate(`/documents/${sourceId}`)}>
+              {sourceId.substring(0, 12)}...
+            </Button>
+          </Tooltip>
+        ) : '-';
+      },
+    },
+    {
+      title: 'ターゲットID',
+      dataIndex: 'targetId',
+      key: 'targetId',
+      width: 200,
+      ellipsis: true,
+      render: (targetId: string, record: CMISObject) => {
+        if (record.baseType !== 'cmis:relationship') {
+          return <span style={{ color: '#999' }}>-</span>;
+        }
+        return targetId ? (
+          <Tooltip title={targetId}>
+            <Button type="link" size="small" onClick={() => navigate(`/documents/${targetId}`)}>
+              {targetId.substring(0, 12)}...
+            </Button>
+          </Tooltip>
+        ) : '-';
+      },
     },
     {
       title: 'オブジェクトタイプ',
@@ -691,6 +740,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
               <Select placeholder="ベースタイプを選択">
                 <Select.Option value="cmis:document">ドキュメント</Select.Option>
                 <Select.Option value="cmis:folder">フォルダ</Select.Option>
+                <Select.Option value="cmis:relationship">関連</Select.Option>
               </Select>
             </Form.Item>
             

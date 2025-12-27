@@ -262,7 +262,8 @@ import {
   PlusOutlined,
   DeleteOutlined,
   SwapOutlined,
-  WarningOutlined
+  WarningOutlined,
+  InfoCircleOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
@@ -296,12 +297,30 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [objectPickerVisible, setObjectPickerVisible] = useState(false);
   const [selectedTargetObject, setSelectedTargetObject] = useState<CMISObject | null>(null);
   const [relationshipType, setRelationshipType] = useState<string>('nemaki:bidirectionalRelationship');
+  const [relationshipCreateTypeDefinition, setRelationshipCreateTypeDefinition] = useState<TypeDefinition | null>(null);
+  const [relationshipTypes, setRelationshipTypes] = useState<TypeDefinition[]>([]);
   const [typeMigrationModalVisible, setTypeMigrationModalVisible] = useState(false);
+  const [relationshipDetailModalVisible, setRelationshipDetailModalVisible] = useState(false);
+  const [selectedRelationship, setSelectedRelationship] = useState<Relationship | null>(null);
+  const [relationshipEditMode, setRelationshipEditMode] = useState(false);
+  const [relationshipTypeDefinition, setRelationshipTypeDefinition] = useState<TypeDefinition | null>(null);
   const [form] = Form.useForm();
   const [relationshipForm] = Form.useForm();
+  const [relationshipEditForm] = Form.useForm();
 
   // CRITICAL FIX: Pass handleAuthError to CMISService to handle 401/403/404 errors
   const cmisService = new CMISService(handleAuthError);
+
+  // Debug: Log component mount with URL info
+  useEffect(() => {
+    console.log('[DocumentViewer] Component MOUNTED');
+    console.log('[DocumentViewer] URL:', window.location.href);
+    console.log('[DocumentViewer] objectId from route:', objectId);
+    console.log('[DocumentViewer] folderId from URL:', searchParams.get('folderId'));
+    return () => {
+      console.log('[DocumentViewer] Component UNMOUNTED');
+    };
+  }, []);
 
   useEffect(() => {
     if (objectId) {
@@ -380,12 +399,52 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
   const loadRelationships = async () => {
     if (!objectId) return;
-    
+
     try {
       const rels = await cmisService.getRelationships(repositoryId, objectId);
-      setRelationships(rels);
+      // Check each relationship type to determine if it's a parentChild type (for cascade delete indication)
+      const relsWithTypeInfo = await Promise.all(
+        rels.map(async (rel) => {
+          const isParentChild = await cmisService.isParentChildRelationshipType(repositoryId, rel.relationshipType);
+          return { ...rel, isParentChildType: isParentChild };
+        })
+      );
+      setRelationships(relsWithTypeInfo);
     } catch (error) {
       console.error('関係の読み込みに失敗しました');
+    }
+  };
+
+  // Load all relationship types for the dropdown
+  const loadRelationshipTypes = async () => {
+    try {
+      const types = await cmisService.getTypeDescendants(repositoryId, 'cmis:relationship', -1);
+      setRelationshipTypes(types);
+    } catch (error) {
+      console.error('Failed to load relationship types:', error);
+    }
+  };
+
+  // Handle relationship type change - load type definition for property input
+  const handleRelationshipTypeChange = async (typeId: string) => {
+    setRelationshipType(typeId);
+    relationshipForm.resetFields();
+    try {
+      const typeDef = await cmisService.getType(repositoryId, typeId);
+      setRelationshipCreateTypeDefinition(typeDef);
+    } catch (error) {
+      console.error('Failed to load relationship type definition:', error);
+      setRelationshipCreateTypeDefinition(null);
+    }
+  };
+
+  // Initialize relationship types when modal opens
+  const openRelationshipModal = async () => {
+    setRelationshipModalVisible(true);
+    await loadRelationshipTypes();
+    // Load default type definition
+    if (relationshipType) {
+      await handleRelationshipTypeChange(relationshipType);
     }
   };
 
@@ -484,14 +543,25 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     }
 
     try {
+      // Get custom properties from form
+      const formValues = await relationshipForm.validateFields();
+      // Filter out non-custom properties (anything starting with cmis: or system fields)
+      const customProperties: Record<string, any> = {};
+      for (const [key, value] of Object.entries(formValues)) {
+        if (!key.startsWith('cmis:') && key !== 'targetObject') {
+          customProperties[key] = value;
+        }
+      }
+
       await cmisService.createRelationship(repositoryId, {
         sourceId: object.id,
         targetId: selectedTargetObject.id,
         relationshipType: relationshipType
-      });
+      }, customProperties);
       message.success('関係を作成しました');
       setRelationshipModalVisible(false);
       setSelectedTargetObject(null);
+      setRelationshipCreateTypeDefinition(null);
       relationshipForm.resetFields();
       await loadRelationships();
     } catch (error) {
@@ -524,6 +594,55 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       message.success('プロパティを更新しました');
     } catch (error) {
       message.error('プロパティの更新に失敗しました');
+    }
+  };
+
+  // Load relationship type definition and enter edit mode
+  const handleEditRelationship = async () => {
+    if (!selectedRelationship) return;
+
+    try {
+      const typeDef = await cmisService.getType(repositoryId, selectedRelationship.relationshipType);
+      setRelationshipTypeDefinition(typeDef);
+
+      // CRITICAL FIX (2025-12-23): Set initial form values for ALL editable properties
+      // Previously: excluded all cmis: prefixed properties
+      // Now: include properties with updatability === 'readwrite' (e.g., cmis:name, cmis:description)
+      const initialValues: Record<string, any> = {};
+      Object.entries(selectedRelationship.properties).forEach(([key, value]) => {
+        const propDef = typeDef.propertyDefinitions?.[key] as { updatability?: string } | undefined;
+        // Include property if it's editable (updatability === 'readwrite')
+        if (propDef?.updatability === 'readwrite') {
+          initialValues[key] = value;
+        }
+      });
+      relationshipEditForm.setFieldsValue(initialValues);
+      setRelationshipEditMode(true);
+    } catch (error) {
+      console.error('Failed to load relationship type:', error);
+      message.error('関連タイプの読み込みに失敗しました');
+    }
+  };
+
+  // Save relationship properties
+  const handleSaveRelationshipProperties = async () => {
+    if (!selectedRelationship) return;
+
+    try {
+      const values = await relationshipEditForm.validateFields();
+      const changeToken = getSafeStringValue(selectedRelationship.properties?.['cmis:changeToken']);
+
+      await cmisService.updateProperties(repositoryId, selectedRelationship.id, values, changeToken);
+      message.success('関連プロパティを更新しました');
+
+      // Reload relationships to get updated data
+      await loadRelationships();
+      setRelationshipEditMode(false);
+      setRelationshipDetailModalVisible(false);
+      setSelectedRelationship(null);
+    } catch (error) {
+      console.error('Failed to update relationship properties:', error);
+      message.error('関連プロパティの更新に失敗しました');
     }
   };
 
@@ -599,35 +718,79 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       title: 'タイプ',
       dataIndex: 'relationshipType',
       key: 'type',
+      render: (typeId: string, record: Relationship) => (
+        <Space direction="vertical" size={2}>
+          <span>{typeId}</span>
+          {record.isParentChildType && (
+            <Tag color="orange" style={{ fontSize: '10px' }}>
+              <WarningOutlined /> カスケード削除
+            </Tag>
+          )}
+        </Space>
+      ),
     },
     {
-      title: 'ソース',
-      dataIndex: 'sourceId',
-      key: 'source',
+      title: '役割',
+      key: 'role',
+      render: (_: any, record: Relationship) => {
+        const isSource = record.sourceId === objectId;
+        const isTarget = record.targetId === objectId;
+        return (
+          <Space>
+            {isSource && <Tag color="blue">ソース</Tag>}
+            {isTarget && <Tag color="green">ターゲット</Tag>}
+          </Space>
+        );
+      },
     },
     {
-      title: 'ターゲット',
-      dataIndex: 'targetId',
-      key: 'target',
+      title: '相手先',
+      key: 'other',
+      render: (_: any, record: Relationship) => {
+        const isSource = record.sourceId === objectId;
+        const otherId = isSource ? record.targetId : record.sourceId;
+        // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to related objects
+        const folderIdParam = currentFolderId ? `&folderId=${currentFolderId}` : '';
+        return (
+          <span
+            style={{ color: '#1890ff', cursor: 'pointer' }}
+            onClick={() => navigate(`/documents/${otherId}?repositoryId=${repositoryId}${folderIdParam}`)}
+          >
+            {otherId}
+          </span>
+        );
+      },
     },
     {
       title: 'アクション',
       key: 'actions',
       render: (_: any, record: Relationship) => (
-        <Popconfirm
-          title="この関係を削除しますか？"
-          onConfirm={() => handleDeleteRelationship(record.id)}
-          okText="はい"
-          cancelText="いいえ"
-        >
+        <Space>
           <Button
             size="small"
-            danger
-            icon={<DeleteOutlined />}
+            icon={<InfoCircleOutlined />}
+            onClick={() => {
+              setSelectedRelationship(record);
+              setRelationshipDetailModalVisible(true);
+            }}
           >
-            削除
+            詳細
           </Button>
-        </Popconfirm>
+          <Popconfirm
+            title="この関係を削除しますか？"
+            onConfirm={() => handleDeleteRelationship(record.id)}
+            okText="はい"
+            cancelText="いいえ"
+          >
+            <Button
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+            >
+              削除
+            </Button>
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -758,7 +921,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             <Button
               type="primary"
               icon={<PlusOutlined />}
-              onClick={() => setRelationshipModalVisible(true)}
+              onClick={openRelationshipModal}
             >
               関係を追加
             </Button>
@@ -785,18 +948,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               <Button
                 icon={<ArrowLeftOutlined />}
                 onClick={() => {
-                  // CRITICAL FIX (2025-12-17): Use document's parentId as primary source for back navigation
-                  // Priority: 1. URL folderId param, 2. object's cmis:parentId, 3. ROOT_FOLDER_ID
+                  // CRITICAL FIX (2025-12-23): Use URL folderId as primary source for back navigation
+                  // NemakiWare's CMIS implementation does NOT return cmis:parentId property
+                  // Priority: 1. URL folderId param (passed from DocumentList), 2. ROOT_FOLDER_ID
                   const urlFolderId = currentFolderId;
-                  const documentParentId = getSafeStringValue(object.properties?.['cmis:parentId']);
 
                   console.log('[DocumentViewer] Back button clicked');
                   console.log('[DocumentViewer] URL folderId:', urlFolderId);
-                  console.log('[DocumentViewer] Document parentId:', documentParentId);
 
-                  // Use document's parentId as the most reliable source
-                  // This ensures we return to the document's actual parent folder
-                  const effectiveFolderId = documentParentId || urlFolderId || 'e02f784f8360a02cc14d1314c10038ff';
+                  // Use URL folderId which was passed when navigating to this document
+                  const effectiveFolderId = urlFolderId || 'e02f784f8360a02cc14d1314c10038ff';
                   const targetUrl = `/documents?folderId=${effectiveFolderId}`;
                   console.log('[DocumentViewer] Navigating to:', targetUrl);
                   navigate(targetUrl);
@@ -860,7 +1021,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
               <Button
                 icon={<EditOutlined />}
-                onClick={() => navigate(`/permissions/${object.id}`)}
+                onClick={() => {
+                  // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to PermissionManagement
+                  const folderIdParam = currentFolderId ? `?folderId=${currentFolderId}` : '';
+                  navigate(`/permissions/${object.id}${folderIdParam}`);
+                }}
               >
                 権限管理
               </Button>
@@ -1019,10 +1184,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         onCancel={() => {
           setRelationshipModalVisible(false);
           setSelectedTargetObject(null);
+          setRelationshipCreateTypeDefinition(null);
           relationshipForm.resetFields();
         }}
         footer={null}
-        width={600}
+        width={700}
       >
         <Form
           form={relationshipForm}
@@ -1035,11 +1201,17 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           >
             <Select
               value={relationshipType}
-              onChange={setRelationshipType}
-              options={[
-                { label: '双方向関係 (nemaki:bidirectionalRelationship)', value: 'nemaki:bidirectionalRelationship' },
-                { label: '親子関係 (nemaki:parentChildRelationship)', value: 'nemaki:parentChildRelationship' },
-              ]}
+              onChange={handleRelationshipTypeChange}
+              options={relationshipTypes.length > 0
+                ? relationshipTypes.map(t => ({
+                    label: `${t.displayName || t.id} (${t.id})`,
+                    value: t.id
+                  }))
+                : [
+                    { label: '双方向関係 (nemaki:bidirectionalRelationship)', value: 'nemaki:bidirectionalRelationship' },
+                    { label: '親子関係 (nemaki:parentChildRelationship)', value: 'nemaki:parentChildRelationship' },
+                  ]
+              }
             />
           </Form.Item>
 
@@ -1064,6 +1236,59 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             </Space>
           </Form.Item>
 
+          {/* Custom Properties Section */}
+          {relationshipCreateTypeDefinition &&
+           Object.entries(relationshipCreateTypeDefinition.propertyDefinitions || {})
+             .filter(([propId]) => !propId.startsWith('cmis:')).length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <h4 style={{ marginBottom: 12, borderBottom: '1px solid #f0f0f0', paddingBottom: 8 }}>
+                カスタムプロパティ
+              </h4>
+              {Object.entries(relationshipCreateTypeDefinition.propertyDefinitions || {})
+                .filter(([propId]) => !propId.startsWith('cmis:'))
+                .map(([propId, propDef]) => {
+                  const propDefTyped = propDef as {
+                    displayName?: string;
+                    description?: string;
+                    propertyType?: string;
+                    required?: boolean;
+                    cardinality?: string;
+                  };
+                  return (
+                    <Form.Item
+                      key={propId}
+                      name={propId}
+                      label={
+                        <span>
+                          {propDefTyped.displayName || propId}
+                          {propDefTyped.required && <span style={{ color: '#ff4d4f', marginLeft: 4 }}>*</span>}
+                        </span>
+                      }
+                      tooltip={propDefTyped.description}
+                      rules={propDefTyped.required ? [{ required: true, message: `${propDefTyped.displayName || propId}は必須です` }] : undefined}
+                    >
+                      {propDefTyped.propertyType === 'boolean' ? (
+                        <Select
+                          options={[
+                            { label: 'true', value: true },
+                            { label: 'false', value: false }
+                          ]}
+                          allowClear
+                          placeholder="値を選択"
+                        />
+                      ) : propDefTyped.propertyType === 'integer' || propDefTyped.propertyType === 'decimal' ? (
+                        <Input type="number" placeholder="数値を入力" />
+                      ) : propDefTyped.propertyType === 'datetime' ? (
+                        <Input type="datetime-local" />
+                      ) : (
+                        <Input placeholder="値を入力" />
+                      )}
+                    </Form.Item>
+                  );
+                })}
+            </div>
+          )}
+
           <Form.Item>
             <Space>
               <Button
@@ -1076,6 +1301,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               <Button onClick={() => {
                 setRelationshipModalVisible(false);
                 setSelectedTargetObject(null);
+                setRelationshipCreateTypeDefinition(null);
                 relationshipForm.resetFields();
               }}>
                 キャンセル
@@ -1083,6 +1309,249 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Relationship Detail Modal */}
+      <Modal
+        title={relationshipEditMode ? "関連プロパティを編集" : "関連オブジェクト詳細"}
+        open={relationshipDetailModalVisible}
+        onCancel={() => {
+          setRelationshipDetailModalVisible(false);
+          setSelectedRelationship(null);
+          setRelationshipEditMode(false);
+          setRelationshipTypeDefinition(null);
+          relationshipEditForm.resetFields();
+        }}
+        footer={relationshipEditMode ? [
+          <Button
+            key="cancel"
+            onClick={() => {
+              setRelationshipEditMode(false);
+              relationshipEditForm.resetFields();
+            }}
+          >
+            キャンセル
+          </Button>,
+          <Button
+            key="save"
+            type="primary"
+            onClick={handleSaveRelationshipProperties}
+          >
+            保存
+          </Button>
+        ] : [
+          <Button
+            key="edit"
+            type="primary"
+            icon={<EditOutlined />}
+            onClick={handleEditRelationship}
+          >
+            編集
+          </Button>,
+          <Button
+            key="close"
+            onClick={() => {
+              setRelationshipDetailModalVisible(false);
+              setSelectedRelationship(null);
+            }}
+          >
+            閉じる
+          </Button>
+        ]}
+        width={700}
+      >
+        {selectedRelationship && (
+          <div>
+            <Descriptions
+              bordered
+              column={1}
+              size="small"
+              style={{ marginBottom: 16 }}
+            >
+              <Descriptions.Item label="関連ID">
+                {selectedRelationship.id}
+              </Descriptions.Item>
+              <Descriptions.Item label="関連タイプ">
+                <Space>
+                  {selectedRelationship.relationshipType}
+                  {selectedRelationship.isParentChildType && (
+                    <Tag color="orange">
+                      <WarningOutlined /> カスケード削除対象
+                    </Tag>
+                  )}
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label="ソースID">
+                <span
+                  style={{ color: '#1890ff', cursor: 'pointer' }}
+                  onClick={() => {
+                    setRelationshipDetailModalVisible(false);
+                    // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to related objects
+                    const folderIdParam = currentFolderId ? `&folderId=${currentFolderId}` : '';
+                    navigate(`/documents/${selectedRelationship.sourceId}?repositoryId=${repositoryId}${folderIdParam}`);
+                  }}
+                >
+                  {selectedRelationship.sourceId}
+                  {selectedRelationship.sourceId === objectId && (
+                    <Tag color="blue" style={{ marginLeft: 8 }}>このオブジェクト</Tag>
+                  )}
+                </span>
+              </Descriptions.Item>
+              <Descriptions.Item label="ターゲットID">
+                <span
+                  style={{ color: '#1890ff', cursor: 'pointer' }}
+                  onClick={() => {
+                    setRelationshipDetailModalVisible(false);
+                    // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to related objects
+                    const folderIdParam = currentFolderId ? `&folderId=${currentFolderId}` : '';
+                    navigate(`/documents/${selectedRelationship.targetId}?repositoryId=${repositoryId}${folderIdParam}`);
+                  }}
+                >
+                  {selectedRelationship.targetId}
+                  {selectedRelationship.targetId === objectId && (
+                    <Tag color="green" style={{ marginLeft: 8 }}>このオブジェクト</Tag>
+                  )}
+                </span>
+              </Descriptions.Item>
+            </Descriptions>
+
+            {selectedRelationship.isParentChildType && (
+              <Alert
+                message="カスケード削除について"
+                description={
+                  selectedRelationship.sourceId === objectId
+                    ? "このオブジェクトがソースです。このオブジェクトを削除すると、ターゲット（子）オブジェクトも一緒に削除されます。"
+                    : "このオブジェクトはターゲット（子）です。ソース（親）オブジェクトが削除されると、このオブジェクトも一緒に削除されます。"
+                }
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+            )}
+
+            {/* Conditional rendering: Edit mode with Form or Read-only mode with Table */}
+            {relationshipEditMode && relationshipTypeDefinition ? (
+              <div>
+                <h4 style={{ marginBottom: 16 }}>編集可能なプロパティ</h4>
+                <Form
+                  form={relationshipEditForm}
+                  layout="vertical"
+                >
+                  {/* CRITICAL FIX (2025-12-23): Use updatability attribute to determine editability
+                      Previously: filtered by !propId.startsWith('cmis:') which excluded cmis:name and cmis:description
+                      Now: filter by updatability === 'readwrite' as per CMIS 1.1 specification */}
+                  {Object.entries(relationshipTypeDefinition.propertyDefinitions || {})
+                    .filter(([, propDef]) => {
+                      const propDefTyped = propDef as { updatability?: string };
+                      return propDefTyped.updatability === 'readwrite';
+                    })
+                    .map(([propId, propDef]) => {
+                      const propDefTyped = propDef as {
+                        displayName?: string;
+                        description?: string;
+                        propertyType?: string;
+                        required?: boolean;
+                        cardinality?: string;
+                        updatability?: string;
+                      };
+                      return (
+                        <Form.Item
+                          key={propId}
+                          name={propId}
+                          label={propDefTyped.displayName || propId}
+                          tooltip={propDefTyped.description}
+                          rules={propDefTyped.required ? [{ required: true, message: `${propDefTyped.displayName || propId}は必須です` }] : undefined}
+                        >
+                          {propDefTyped.propertyType === 'boolean' ? (
+                            <Select
+                              options={[
+                                { label: 'true', value: true },
+                                { label: 'false', value: false }
+                              ]}
+                              allowClear
+                            />
+                          ) : propDefTyped.propertyType === 'integer' || propDefTyped.propertyType === 'decimal' ? (
+                            <Input type="number" />
+                          ) : propDefTyped.propertyType === 'datetime' ? (
+                            <Input type="datetime-local" />
+                          ) : (
+                            <Input />
+                          )}
+                        </Form.Item>
+                      );
+                    })}
+                  {Object.entries(relationshipTypeDefinition.propertyDefinitions || {})
+                    .filter(([, propDef]) => {
+                      const propDefTyped = propDef as { updatability?: string };
+                      return propDefTyped.updatability === 'readwrite';
+                    }).length === 0 && (
+                    <Alert
+                      type="info"
+                      message="このリレーションシップタイプには編集可能なプロパティがありません"
+                      style={{ marginBottom: 16 }}
+                    />
+                  )}
+                </Form>
+                <Collapse
+                  items={[
+                    {
+                      key: 'readonly-properties',
+                      label: '読み取り専用プロパティ',
+                      children: (
+                        <Table
+                          dataSource={Object.entries(selectedRelationship.properties)
+                            .filter(([key]) => {
+                              // Show properties that are NOT readwrite (i.e., readonly or oncreate)
+                              const propDef = relationshipTypeDefinition.propertyDefinitions?.[key] as { updatability?: string } | undefined;
+                              return propDef?.updatability !== 'readwrite';
+                            })
+                            .map(([key, value]) => ({
+                              key,
+                              name: key,
+                              value: Array.isArray(value) ? value.join(', ') : String(value ?? '')
+                            }))}
+                          columns={[
+                            { title: 'プロパティ名', dataIndex: 'name', key: 'name', width: '40%' },
+                            { title: '値', dataIndex: 'value', key: 'value' }
+                          ]}
+                          size="small"
+                          pagination={false}
+                          scroll={{ y: 200 }}
+                        />
+                      )
+                    }
+                  ]}
+                />
+              </div>
+            ) : (
+              <Collapse
+                items={[
+                  {
+                    key: 'properties',
+                    label: `プロパティ (${Object.keys(selectedRelationship.properties).length}件)`,
+                    children: (
+                      <Table
+                        dataSource={Object.entries(selectedRelationship.properties).map(([key, value]) => ({
+                          key,
+                          name: key,
+                          value: Array.isArray(value) ? value.join(', ') : String(value ?? '')
+                        }))}
+                        columns={[
+                          { title: 'プロパティ名', dataIndex: 'name', key: 'name', width: '40%' },
+                          { title: '値', dataIndex: 'value', key: 'value' }
+                        ]}
+                        size="small"
+                        pagination={false}
+                        scroll={{ y: 300 }}
+                      />
+                    )
+                  }
+                ]}
+                defaultActiveKey={['properties']}
+              />
+            )}
+          </div>
+        )}
       </Modal>
 
       <ObjectPicker

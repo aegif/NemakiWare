@@ -1712,7 +1712,21 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			if (typeParentId != null) {
 				TypeDefinitionContainer parentContainer = types.get(typeParentId);
 				if (parentContainer != null) {
-					parentContainer.getChildren().add(container);
+					// CRITICAL FIX (2025-12-22): Prevent duplicate children in type hierarchy
+					// Check if this type is already a child of the parent to avoid TCK failure:
+					// "Type fetched via getTypeDescendants() does not match type fetched via getTypeDefinition()"
+					boolean alreadyAdded = false;
+					for (TypeDefinitionContainer existingChild : parentContainer.getChildren()) {
+						if (existingChild.getTypeDefinition().getId().equals(typeId)) {
+							alreadyAdded = true;
+							break;
+						}
+					}
+					if (!alreadyAdded) {
+						parentContainer.getChildren().add(container);
+					} else {
+						log.debug("Type '" + typeId + "' already exists as child of '" + typeParentId + "', skipping duplicate");
+					}
 				}
 			}
 			
@@ -2868,6 +2882,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	@Override
 	public TypeDefinition getTypeDefinition(String repositoryId, String typeId) {
+		// CRITICAL FIX (2025-12-27): Add null check for typeId to prevent NPE in ConcurrentHashMap.get()
+		// When typeId is null, ConcurrentHashMap.get() throws NPE because it cannot compute hashCode of null
+		if (typeId == null) {
+			log.warn("getTypeDefinition called with null typeId for repository: " + repositoryId);
+			return null;
+		}
+
 		// CRITICAL DEBUG: Entry point logging
 		if (log.isDebugEnabled()) {
 				log.debug("*** THIS INSTANCE: " + this.hashCode() + " ***");

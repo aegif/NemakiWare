@@ -106,6 +106,10 @@ test.describe('Advanced ACL Management', () => {
   });
 
   test.afterEach(async ({ page }) => {
+    // CRITICAL FIX (2025-12-27): Close all overlays before cleanup to prevent
+    // "ant-modal-wrap intercepts pointer events" errors
+    await testHelper.closeAllOverlays();
+
     // Cleanup: Delete any test folders via CMIS API to prevent accumulation
     console.log('afterEach: Cleaning up test folders');
 
@@ -145,171 +149,79 @@ test.describe('Advanced ACL Management', () => {
     }
   });
 
-  test.skip('should add group permission to folder', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+  test('should add group permission to folder via API', async ({ page }) => {
+    // CONVERTED (2025-12-27): Changed from UI-based to API-based test for reliability
+    // This test verifies that group permissions can be applied via CMIS Browser Binding API
 
-    // Step 1: Create a test group first
-    console.log('Test: Creating test group for ACL management');
+    const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
+    const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff'; // bedroom root folder ID
 
-    const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: '管理' });
-    if (await adminMenu.count() > 0) {
-      await adminMenu.click();
-      await page.waitForTimeout(1000);
-
-      const groupMgmtItem = page.locator('.ant-menu-item').filter({ hasText: 'グループ管理' });
-      if (await groupMgmtItem.count() > 0) {
-        await groupMgmtItem.click();
-        await page.waitForTimeout(2000);
-
-        // Create new group
-        const createGroupButton = page.locator('button').filter({ hasText: /新規グループ|グループ作成|追加/i });
-        if (await createGroupButton.count() > 0) {
-          await createGroupButton.first().click();
-          await page.waitForTimeout(1000);
-
-          const modal = page.locator('.ant-modal:not(.ant-modal-hidden), .ant-drawer:not(.ant-drawer-hidden)');
-          await modal.waitFor({ state: 'visible', timeout: 5000 });
-
-          // Fill group name
-          const groupNameInput = modal.locator('input[id*="name"], input[placeholder*="グループ名"]').first();
-          if (await groupNameInput.count() > 0) {
-            await groupNameInput.fill(testGroupName);
-          }
-
-          // Submit
-          const submitButton = modal.locator('button[type="submit"], button.ant-btn-primary').first();
-          if (await submitButton.count() > 0) {
-            await submitButton.click();
-            // Wait for success message
-            await page.waitForSelector('.ant-message-success', { timeout: 10000 }).catch(() => {
-              console.log('Test: Success message not shown for group creation');
-            });
-            // Wait for modal to close
-            await modal.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {
-              console.log('Test: Modal did not close automatically');
-            });
-            await page.waitForTimeout(1000);
-            console.log(`Test: Group ${testGroupName} created`);
-          }
-        } else {
-          console.log('Test: Group creation button not found - skipping group creation');
-        }
+    // Step 1: Create a test folder via CMIS API
+    console.log('Test: Creating folder via CMIS API');
+    const createFolderResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+      headers: { 'Authorization': authHeader },
+      form: {
+        'cmisaction': 'createFolder',
+        'folderId': rootFolderId,
+        'propertyId[0]': 'cmis:objectTypeId',
+        'propertyValue[0]': 'cmis:folder',
+        'propertyId[1]': 'cmis:name',
+        'propertyValue[1]': testFolderName
       }
-    }
+    });
 
-    // Step 2: Create a test folder
-    const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-    await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    expect(createFolderResponse.ok()).toBe(true);
+    const createResult = await createFolderResponse.json();
+    const folderId = createResult.properties?.['cmis:objectId']?.value || createResult.succinctProperties?.['cmis:objectId'];
+    expect(folderId).toBeTruthy();
+    console.log(`Test: Folder created with ID: ${folderId}`);
 
-    const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
-    if (await createFolderButton.count() > 0) {
-      await createFolderButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(1000);
-
-      const folderModal = page.locator('.ant-modal:not(.ant-modal-hidden)');
-      const nameInput = folderModal.locator('input[placeholder*="名前"], input[id*="name"]');
-      await nameInput.fill(testFolderName);
-
-      const submitButton = folderModal.locator('button[type="submit"], button.ant-btn-primary');
-      await submitButton.click();
-      await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-      await page.waitForTimeout(2000);
-    }
-
-    // Step 3: Add group permission to folder
-    const folderRow = page.locator('tr').filter({ hasText: testFolderName });
-    if (await folderRow.count() > 0) {
-      // Look for permissions/ACL button
-      const permissionsButton = folderRow.locator('button').filter({
-        has: page.locator('[data-icon="lock"], [data-icon="safety"], [data-icon="setting"]')
-      });
-
-      if (await permissionsButton.count() > 0) {
-        await permissionsButton.first().click(isMobile ? { force: true } : {});
-        await page.waitForTimeout(1000);
-
-        // Look for ACL modal/drawer
-        const aclModal = page.locator('.ant-modal, .ant-drawer').last();
-        if (await aclModal.count() > 0) {
-          // Add group permission
-          const addButton = page.locator('button').filter({ hasText: /追加|Add/ });
-          if (await addButton.count() > 0) {
-            await addButton.first().click();
-            await page.waitForTimeout(1000);
-
-            // Select principal type as "Group"
-            const principalTypeSelect = page.locator('.ant-select, select').filter({ hasText: /種別|Type/ }).first();
-            if (await principalTypeSelect.count() > 0) {
-              await principalTypeSelect.click();
-              await page.waitForTimeout(500);
-
-              const groupOption = page.locator('.ant-select-item').filter({ hasText: /グループ|Group/ });
-              if (await groupOption.count() > 0) {
-                await groupOption.first().click();
-                await page.waitForTimeout(500);
-              }
-            }
-
-            // Select the test group
-            const groupSelect = page.locator('.ant-select, input[placeholder*="グループ"]').first();
-            if (await groupSelect.count() > 0) {
-              await groupSelect.click();
-              await page.keyboard.type(testGroupName);
-              await page.waitForTimeout(500);
-
-              const testGroupOption = page.locator(`.ant-select-item`).filter({ hasText: testGroupName });
-              if (await testGroupOption.count() > 0) {
-                await testGroupOption.first().click();
-                console.log(`Test: Selected group ${testGroupName}`);
-              }
-            }
-
-            // Set permission level
-            const permissionSelect = page.locator('.ant-select').filter({ hasText: /権限|Permission/ });
-            if (await permissionSelect.count() > 0) {
-              await permissionSelect.first().click();
-              await page.waitForTimeout(500);
-
-              const readOption = page.locator('.ant-select-item').filter({ hasText: /読み取り|Read/ });
-              if (await readOption.count() > 0) {
-                await readOption.first().click();
-              }
-            }
-
-            // Save
-            const saveButton = page.locator('button[type="submit"], button.ant-btn-primary').filter({ hasText: /保存|OK/ });
-            if (await saveButton.count() > 0) {
-              await saveButton.first().click();
-              await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-              console.log('Test: Group permission added successfully');
-
-              // Verify group appears in ACL list
-              const groupRow = page.locator('tr').filter({ hasText: testGroupName });
-              await expect(groupRow).toBeVisible({ timeout: 5000 });
-            }
-          }
-        }
-      } else {
-        test.skip('ACL management interface not found');
+    // Step 2: Add group permission via CMIS applyACL API
+    // Use GROUP_EVERYONE as a reliable group that always exists
+    console.log('Test: Adding group permission via CMIS API');
+    const applyAclResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+      headers: { 'Authorization': authHeader },
+      form: {
+        'cmisaction': 'applyACL',
+        'objectId': folderId,
+        'addACEPrincipal[0]': 'GROUP_EVERYONE',
+        'addACEPermission[0][0]': 'cmis:read'
       }
-    }
+    });
 
-    // Cleanup: Delete test folder
-    await page.locator('tr').filter({ hasText: testFolderName }).first().click();
-    await page.waitForTimeout(500);
+    expect(applyAclResponse.ok()).toBe(true);
+    console.log('Test: Group permission applied via API');
 
-    const deleteButton = page.locator('button').filter({ has: page.locator('[data-icon="delete"]') });
-    if (await deleteButton.count() > 0) {
-      await deleteButton.first().click();
-      await page.waitForTimeout(500);
+    // Step 3: Verify ACL via CMIS API
+    const aclResponse = await page.request.get(
+      `http://localhost:8080/core/browser/bedroom/${folderId}?cmisselector=acl`,
+      { headers: { 'Authorization': authHeader } }
+    );
 
-      const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary, button').filter({ hasText: /OK|確認/ });
-      if (await confirmButton.count() > 0) {
-        await confirmButton.first().click();
-        await page.waitForTimeout(2000);
+    expect(aclResponse.ok()).toBe(true);
+    const aclData = await aclResponse.json();
+    console.log('Test: ACL retrieved:', JSON.stringify(aclData).substring(0, 500));
+
+    // Verify GROUP_EVERYONE is in the ACL
+    const aces = aclData.aces || aclData.acl?.aces || [];
+    const groupEveryoneAce = aces.find((ace: any) =>
+      ace.principal?.principalId === 'GROUP_EVERYONE' ||
+      ace.principalId === 'GROUP_EVERYONE'
+    );
+    expect(groupEveryoneAce).toBeTruthy();
+    console.log('Test: Verified GROUP_EVERYONE in ACL');
+
+    // Cleanup: Delete test folder via API
+    const deleteResponse = await page.request.post('http://localhost:8080/core/browser/bedroom', {
+      headers: { 'Authorization': authHeader },
+      form: {
+        'cmisaction': 'delete',
+        'objectId': folderId
       }
+    });
+
+    if (deleteResponse.ok()) {
+      console.log('Test: Folder deleted successfully');
     }
   });
 

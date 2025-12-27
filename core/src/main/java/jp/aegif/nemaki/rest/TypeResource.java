@@ -137,6 +137,9 @@ public class TypeResource extends ResourceBase {
 			}
 
 			JSONArray typesArray = new JSONArray();
+			// CRITICAL FIX (2025-12-22): Track added type IDs to prevent duplicates
+			// This prevents nemaki:parentChildRelationship and other types from appearing twice
+			java.util.Set<String> addedTypeIds = new java.util.HashSet<>();
 
 			// Get base CMIS types via RepositoryService
 			if (repositoryService != null) {
@@ -148,8 +151,12 @@ public class TypeResource extends ResourceBase {
 					if (baseTypes != null && baseTypes.getList() != null) {
 						log.info("Found " + baseTypes.getList().size() + " base CMIS types");
 						for (org.apache.chemistry.opencmis.commons.definitions.TypeDefinition baseType : baseTypes.getList()) {
-							JSONObject typeJson = convertBaseTypeToJson(baseType);
-							typesArray.add(typeJson);
+							String typeId = baseType.getId();
+							if (!addedTypeIds.contains(typeId)) {
+								JSONObject typeJson = convertBaseTypeToJson(baseType);
+								typesArray.add(typeJson);
+								addedTypeIds.add(typeId);
+							}
 						}
 					}
 				} catch (Exception e) {
@@ -164,8 +171,15 @@ public class TypeResource extends ResourceBase {
 			log.info("Found " + customTypes.size() + " custom types");
 
 			for (NemakiTypeDefinition nemakiType : customTypes) {
-				JSONObject typeJson = convertTypeToJson(repositoryId, nemakiType);
-				typesArray.add(typeJson);
+				String typeId = nemakiType.getTypeId();
+				// CRITICAL FIX: Skip types already added from base types to prevent duplicates
+				if (!addedTypeIds.contains(typeId)) {
+					JSONObject typeJson = convertTypeToJson(repositoryId, nemakiType);
+					typesArray.add(typeJson);
+					addedTypeIds.add(typeId);
+				} else {
+					log.debug("Skipping duplicate type: " + typeId);
+				}
 			}
 
 			JSONObject result = new JSONObject();
@@ -1890,13 +1904,18 @@ public class TypeResource extends ResourceBase {
 
 			// Remove orphan types
 			if (log.isDebugEnabled()) {
-				log.debug("Checking parent type for " + t.getTypeId() + 
-					", parentId: " + t.getParentId() + ", isBaseType: " + isBaseType(t.getParentId()) + 
-					", parentInTypeMaps: " + (typeMaps.get(t.getParentId()) != null));
+				log.debug("Checking parent type for " + t.getTypeId() +
+					", parentId: " + t.getParentId() + ", isBaseType: " + isBaseType(t.getParentId()) +
+					", parentInTypeMaps: " + (typeMaps.get(t.getParentId()) != null) +
+					", existsInDB: " + existType(repositoryId, t.getParentId()));
 			}
-			if (typeMaps.get(t.getParentId()) == null && !isBaseType(t.getParentId())) {
+			// Allow creation if parent is:
+			// 1. In the current batch (typeMaps), OR
+			// 2. A CMIS base type (isBaseType), OR
+			// 3. An existing type in the database (existType)
+			if (typeMaps.get(t.getParentId()) == null && !isBaseType(t.getParentId()) && !existType(repositoryId, t.getParentId())) {
 				log.warn(buildMsg(t.getId(), null,
-						"Skipped to create this type because it has an unknown parent type."));
+						"Skipped to create this type because it has an unknown parent type: " + t.getParentId()));
 				if (log.isDebugEnabled()) {
 					log.debug("SKIPPED type creation for " + t.getTypeId() + " due to unknown parent: " + t.getParentId());
 				}

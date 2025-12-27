@@ -293,7 +293,7 @@ import {
   TeamOutlined,
   ArrowLeftOutlined
 } from '@ant-design/icons';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, ACL, Permission, User, Group } from '../../types/cmis';
 
@@ -305,6 +305,9 @@ import { useAuth } from '../../contexts/AuthContext';
 export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repositoryId }) => {
   const { objectId } = useParams<{ objectId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // CRITICAL FIX (2025-12-23): Preserve folderId for back navigation
+  const folderId = searchParams.get('folderId');
   const [object, setObject] = useState<CMISObject | null>(null);
   const [acl, setACL] = useState<ACL | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -541,9 +544,13 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       <Space direction="vertical" style={{ width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Space>
-            <Button 
+            <Button
               icon={<ArrowLeftOutlined />}
-              onClick={() => navigate(`/documents/${objectId}`)}
+              onClick={() => {
+                // CRITICAL FIX (2025-12-23): Preserve folderId when navigating back to DocumentViewer
+                const folderIdParam = folderId ? `?folderId=${folderId}` : '';
+                navigate(`/documents/${objectId}${folderIdParam}`);
+              }}
             >
               戻る
             </Button>

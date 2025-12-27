@@ -213,8 +213,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize authentication state from localStorage
   React.useEffect(() => {
-    // CRITICAL FIX (2025-12-17): Comprehensive cleanup of ALL possible overlay elements
+    // CRITICAL FIX (2025-12-21): Comprehensive cleanup of ALL possible overlay elements
     // This prevents the gray screen issue after login
+    // Enhanced version with more aggressive cleanup and retry mechanism
     const cleanupStaleOverlays = () => {
       // List of ALL selectors that could cause gray overlay or block input
       const overlaySelectors = [
@@ -223,13 +224,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         '.ant-modal-root',
         '.ant-drawer-mask',
         '.ant-drawer-wrap',
+        '.ant-drawer-root',
         '.ant-image-preview-mask',
         '.ant-image-preview-wrap',
         '.ant-spin-nested-loading > .ant-spin-blur',
+        '.ant-spin-container.ant-spin-blur',
+        '.ant-notification',
+        '.ant-message',
+        '.ant-popover',
+        '.ant-tooltip',
+        '.ant-dropdown',
         '[class*="ant-"][class*="-mask"]',
         '[class*="ant-"][class*="-wrap"]:empty',
+        // Also clean up potential loading overlays
+        '[style*="position: fixed"][style*="z-index"]',
       ];
 
+      let removedCount = 0;
       overlaySelectors.forEach(selector => {
         try {
           const elements = document.querySelectorAll(selector);
@@ -241,14 +252,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const isOverlay = el.classList.contains('ant-modal-mask') ||
                              el.classList.contains('ant-drawer-mask') ||
                              el.classList.contains('ant-spin-blur');
+            const hasGrayBackground = style.backgroundColor.includes('rgba') &&
+                                      style.backgroundColor.includes('0.45');
 
-            if (isBlocking || hasHighZIndex || isOverlay) {
-              console.log('AuthContext: Removing potential overlay element:', el.className);
+            if (isBlocking || hasHighZIndex || isOverlay || hasGrayBackground) {
+              console.log('AuthContext: Removing potential overlay element:', el.className || el.tagName);
               if (el.classList.contains('ant-spin-blur')) {
+                el.classList.remove('ant-spin-blur');
+              } else if (el.classList.contains('ant-spin-container')) {
                 el.classList.remove('ant-spin-blur');
               } else {
                 el.remove();
               }
+              removedCount++;
             }
           });
         } catch (e) {
@@ -264,13 +280,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       document.body.style.top = '';
       document.body.classList.remove('ant-scrolling-effect');
 
+      // Remove any inline styles on body that might block scrolling
+      if (document.body.style.cssText.includes('overflow')) {
+        document.body.style.cssText = document.body.style.cssText
+          .replace(/overflow\s*:\s*[^;]+;?/gi, '')
+          .replace(/padding-right\s*:\s*[^;]+;?/gi, '');
+      }
+
       // Reset root element styles
       const root = document.getElementById('root');
       if (root) {
         root.style.pointerEvents = '';
         root.style.filter = '';
         root.style.opacity = '';
+        root.style.transform = '';
       }
+
+      // Also reset html element
+      document.documentElement.style.overflow = '';
+      document.documentElement.style.paddingRight = '';
+
+      if (removedCount > 0) {
+        console.log(`AuthContext: Cleaned up ${removedCount} overlay elements`);
+      }
+    };
+
+    // Schedule multiple cleanup attempts to catch delayed overlays
+    const scheduleCleanup = () => {
+      cleanupStaleOverlays();
+      // Retry cleanup after short delays to catch any delayed rendering
+      setTimeout(cleanupStaleOverlays, 100);
+      setTimeout(cleanupStaleOverlays, 500);
+      setTimeout(cleanupStaleOverlays, 1000);
     };
 
     const checkAuthState = () => {
@@ -281,7 +322,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthToken(currentAuth);
         setIsAuthenticated(true);
         // Clean up any stale overlays when auth state changes to authenticated
-        cleanupStaleOverlays();
+        // Use scheduled cleanup for more thorough removal
+        scheduleCleanup();
       } else {
         setAuthToken(null);
         setIsAuthenticated(false);
@@ -291,8 +333,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     };
 
-    // Clean up stale overlays on mount
-    cleanupStaleOverlays();
+    // Clean up stale overlays on mount with retry mechanism
+    scheduleCleanup();
 
     // Initial check
     checkAuthState();
@@ -325,6 +367,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const auth = await authService.login(username, password, repositoryId);
       setAuthToken(auth);
       setIsAuthenticated(true);
+
+      // CRITICAL FIX (2025-12-21): Clean up overlays after successful login
+      // Delayed cleanup to catch any overlays created during login process
+      const cleanupAfterLogin = () => {
+        const overlaySelectors = [
+          '.ant-modal-mask', '.ant-modal-wrap', '.ant-modal-root',
+          '.ant-drawer-mask', '.ant-drawer-wrap', '.ant-spin-blur',
+          '[class*="ant-"][class*="-mask"]'
+        ];
+        overlaySelectors.forEach(selector => {
+          try {
+            document.querySelectorAll(selector).forEach(el => {
+              console.log('Login cleanup: Removing overlay:', (el as HTMLElement).className);
+              el.remove();
+            });
+          } catch (e) { /* ignore */ }
+        });
+        document.body.style.overflow = '';
+        document.body.classList.remove('ant-scrolling-effect');
+      };
+
+      // Multiple cleanup attempts
+      setTimeout(cleanupAfterLogin, 100);
+      setTimeout(cleanupAfterLogin, 500);
+      setTimeout(cleanupAfterLogin, 1000);
+
     } catch (error) {
       console.error('Login failed:', error);
       throw error;

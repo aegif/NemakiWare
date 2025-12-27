@@ -60,6 +60,7 @@ export interface User {
 export interface Group {
   id: string;
   name: string;
+  description?: string;
   members: string[];
 }
 
@@ -150,6 +151,10 @@ export interface CMISObject {
   extensions?: CmisExtensionElement[];
   /** Parsed coercion warnings from NemakiWare extensions */
   coercionWarnings?: CoercionWarning[];
+  /** Relationship-specific: Source object ID (2025-12-23) */
+  sourceId?: string;
+  /** Relationship-specific: Target object ID (2025-12-23) */
+  targetId?: string;
 }
 
 export interface SearchResult {
@@ -169,6 +174,8 @@ export interface Relationship {
   targetId: string;
   relationshipType: string;
   properties: Record<string, any>;
+  /** True if this is a parentChildRelationship or derived type (triggers cascade deletion) */
+  isParentChildType?: boolean;
 }
 
 export interface ActionDefinition {

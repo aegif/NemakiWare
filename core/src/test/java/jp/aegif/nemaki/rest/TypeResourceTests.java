@@ -13,6 +13,7 @@ import jakarta.ws.rs.core.Response;
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
+import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 
@@ -251,65 +252,70 @@ public class TypeResourceTests {
                 }
                 return null;
             }
-            
+
             @Override
             public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
                 return new ArrayList<>();
             }
-            
+
             @Override
             public NemakiTypeDefinition createTypeDefinition(String repositoryId, NemakiTypeDefinition typeDefinition) {
                 return typeDefinition;
             }
-            
+
             @Override
             public NemakiTypeDefinition updateTypeDefinition(String repositoryId, NemakiTypeDefinition typeDefinition) {
                 return typeDefinition;
             }
-            
+
             @Override
             public void deleteTypeDefinition(String repositoryId, String typeId) {
                 // No-op for mock
             }
-            
+
             @Override
-            public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String repositoryId, String propertyId) {
+            public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String repositoryId, String coreId) {
                 return null;
             }
-            
+
             @Override
-            public NemakiPropertyDefinitionCore createPropertyDefinitionCore(String repositoryId, NemakiPropertyDefinitionCore propertyDefinitionCore) {
-                return propertyDefinitionCore;
-            }
-            
-            @Override
-            public NemakiPropertyDefinitionCore updatePropertyDefinitionCore(String repositoryId, NemakiPropertyDefinitionCore propertyDefinitionCore) {
-                return propertyDefinitionCore;
-            }
-            
-            @Override
-            public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String repositoryId, String detailNodeId) {
+            public NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(String repositoryId, String propertyId) {
                 return null;
             }
-            
+
             @Override
-            public NemakiPropertyDefinitionDetail createPropertyDefinitionDetail(String repositoryId, NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
-                return propertyDefinitionDetail;
+            public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores(String repositoryId) {
+                return new ArrayList<>();
             }
-            
+
+            @Override
+            public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String repositoryId, String detailId) {
+                return null;
+            }
+
+            @Override
+            public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(String repositoryId, String coreNodeId) {
+                return new ArrayList<>();
+            }
+
+            @Override
+            public NemakiPropertyDefinition getPropertyDefinition(String repositoryId, String detailNodeId) {
+                return null;
+            }
+
+            @Override
+            public NemakiPropertyDefinitionDetail createPropertyDefinition(String repositoryId, NemakiPropertyDefinition propertyDefinition) {
+                return new NemakiPropertyDefinitionDetail();
+            }
+
             @Override
             public NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(String repositoryId, NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
                 return propertyDefinitionDetail;
             }
-            
+
             @Override
-            public void deletePropertyDefinitionDetail(String repositoryId, String detailNodeId) {
-                // No-op for mock
-            }
-            
-            @Override
-            public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(String repositoryId, String coreNodeId) {
-                return new ArrayList<>();
+            public NemakiPropertyDefinitionCore updatePropertyDefinitionCore(String repositoryId, NemakiPropertyDefinitionCore propertyDefinitionCore) {
+                return propertyDefinitionCore;
             }
         };
     }

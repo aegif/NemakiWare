@@ -218,7 +218,6 @@ import {
   Input,
   Select,
   message,
-  Popconfirm,
   Tooltip,
   Row,
   Col,
@@ -242,7 +241,8 @@ import {
   EditOutlined,
   CheckOutlined,
   CloseOutlined,
-  UpOutlined
+  UpOutlined,
+  FormOutlined
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
@@ -293,16 +293,45 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [folderError, setFolderError] = useState<string | null>(null);
 
+  // Upload progress states (2025-12-26)
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Delete confirmation modal states (2025-12-22)
+  // For showing cascade deletion warnings when parentChildRelationship descendants exist
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string>('');
+  const [deleteTargetName, setDeleteTargetName] = useState<string>('');
+  const [deleteDescendantCount, setDeleteDescendantCount] = useState(0);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Rename modal states (2025-12-26)
+  const [renameModalVisible, setRenameModalVisible] = useState(false);
+  const [renameTargetId, setRenameTargetId] = useState<string>('');
+  const [renameTargetName, setRenameTargetName] = useState<string>('');
+  const [renameForm] = Form.useForm();
+
   // Type selection states (2025-12-11)
   const [documentTypes, setDocumentTypes] = useState<TypeDefinition[]>([]);
   const [folderTypes, setFolderTypes] = useState<TypeDefinition[]>([]);
   const [typesLoading, setTypesLoading] = useState(false);
+
+  // Custom property input states (2025-12-23)
+  const [selectedDocumentTypeDefinition, setSelectedDocumentTypeDefinition] = useState<TypeDefinition | null>(null);
+  const [selectedFolderTypeDefinition, setSelectedFolderTypeDefinition] = useState<TypeDefinition | null>(null);
 
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
+
+  // Debug: Log component mount/unmount
+  useEffect(() => {
+    console.log('[DocumentList] Component MOUNTED, URL:', window.location.href);
+    return () => {
+      console.log('[DocumentList] Component UNMOUNTED');
+    };
+  }, []);
 
   // Initialize folder ID from URL parameter or default to root
   // CRITICAL FIX (2025-12-03): Separate initialization from navigation
@@ -311,16 +340,24 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // This prevents tree redraw when user clicks folders in the table
   useEffect(() => {
     const folderIdFromUrl = searchParams.get('folderId');
+    console.log('[DocumentList] URL useEffect triggered');
+    console.log('[DocumentList] folderIdFromUrl:', folderIdFromUrl);
+    console.log('[DocumentList] current selectedFolderId:', selectedFolderId);
+    console.log('[DocumentList] current currentFolderId:', currentFolderId);
+
     if (folderIdFromUrl) {
       // Always update selectedFolderId to show correct folder contents
+      console.log('[DocumentList] Setting selectedFolderId to:', folderIdFromUrl);
       setSelectedFolderId(folderIdFromUrl);
       // Only set currentFolderId if it hasn't been set yet (initial load)
       // This prevents tree redraw on every folder navigation
       if (!currentFolderId) {
+        console.log('[DocumentList] Setting currentFolderId to:', folderIdFromUrl);
         setCurrentFolderId(folderIdFromUrl);
       }
     } else if (!selectedFolderId) {
       // Default to root folder if no URL parameter and no selected folder
+      console.log('[DocumentList] No folderId in URL, defaulting to ROOT');
       setSelectedFolderId(ROOT_FOLDER_ID);
       setCurrentFolderId(ROOT_FOLDER_ID);
       setSearchParams({ folderId: ROOT_FOLDER_ID });
@@ -349,6 +386,30 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     };
     loadTypes();
   }, [repositoryId]);
+
+  // Handle document type selection change - load type definition for custom properties
+  const handleDocumentTypeChange = async (typeId: string) => {
+    form.setFieldsValue({ objectTypeId: typeId });
+    try {
+      const typeDef = await cmisService.getType(repositoryId, typeId);
+      setSelectedDocumentTypeDefinition(typeDef);
+    } catch (error) {
+      console.error('Failed to load document type definition:', error);
+      setSelectedDocumentTypeDefinition(null);
+    }
+  };
+
+  // Handle folder type selection change - load type definition for custom properties
+  const handleFolderTypeChange = async (typeId: string) => {
+    form.setFieldsValue({ objectTypeId: typeId });
+    try {
+      const typeDef = await cmisService.getType(repositoryId, typeId);
+      setSelectedFolderTypeDefinition(typeDef);
+    } catch (error) {
+      console.error('Failed to load folder type definition:', error);
+      setSelectedFolderTypeDefinition(null);
+    }
+  };
 
   // Load objects when selectedFolderId changes (the folder displayed in list pane)
   useEffect(() => {
@@ -426,17 +487,30 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         return;
       }
 
-      // Build properties with selected type (2025-12-11)
+      // Set uploading state (2025-12-26)
+      setIsUploading(true);
+
+      // Build properties with selected type and custom properties (2025-12-23)
       const properties: Record<string, any> = {
         'cmis:name': name,
         'cmis:objectTypeId': objectTypeId || 'cmis:document'
       };
+
+      // Add custom properties from form values
+      for (const [key, value] of Object.entries(values)) {
+        if (!key.startsWith('cmis:') && key !== 'file' && key !== 'name' && key !== 'objectTypeId') {
+          if (value !== undefined && value !== null && value !== '') {
+            properties[key] = value;
+          }
+        }
+      }
 
       await cmisService.createDocument(repositoryId, selectedFolderId, actualFile, properties);
 
       message.success('ファイルをアップロードしました');
       setUploadModalVisible(false);
       setUploadError(null);
+      setSelectedDocumentTypeDefinition(null);
       form.resetFields();
 
       // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
@@ -446,6 +520,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       const errorMsg = 'ファイルのアップロードに失敗しました';
       setUploadError(errorMsg);
       message.error(errorMsg);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -454,16 +530,26 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setFolderError(null);
 
     try {
-      // Build properties with selected type (2025-12-11)
+      // Build properties with selected type and custom properties (2025-12-23)
       const properties: Record<string, any> = {
         'cmis:name': values.name,
         'cmis:objectTypeId': values.objectTypeId || 'cmis:folder'
       };
 
+      // Add custom properties from form values
+      for (const [key, value] of Object.entries(values)) {
+        if (!key.startsWith('cmis:') && key !== 'name' && key !== 'objectTypeId') {
+          if (value !== undefined && value !== null && value !== '') {
+            properties[key] = value;
+          }
+        }
+      }
+
       await cmisService.createFolder(repositoryId, selectedFolderId, values.name, properties);
       message.success('フォルダを作成しました');
       setFolderModalVisible(false);
       setFolderError(null);
+      setSelectedFolderTypeDefinition(null);
       form.resetFields();
       // FIXED: Await loadObjects() to ensure table updates before UI tests proceed
       await loadObjects();
@@ -475,21 +561,115 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
-  const handleDelete = async (objectId: string) => {
+  /**
+   * Show delete confirmation modal with cascade deletion info.
+   * Checks for parentChildRelationship descendants before deletion.
+   */
+  const handleDeleteClick = async (objectId: string, objectName: string) => {
+    setDeleteTargetId(objectId);
+    setDeleteTargetName(objectName);
+    setDeleteLoading(true);
+    setDeleteModalVisible(true);
+
+    try {
+      // Check for parentChildRelationship descendants
+      const descendantCount = await cmisService.getParentChildDescendantCount(repositoryId, objectId);
+      setDeleteDescendantCount(descendantCount);
+    } catch (error) {
+      console.error('Error checking descendants:', error);
+      setDeleteDescendantCount(0);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  /**
+   * Execute deletion after confirmation.
+   * Uses cascade deletion for parentChildRelationship descendants.
+   */
+  const handleDeleteConfirm = async () => {
+    if (!deleteTargetId) return;
+
     try {
       // Set loading state before starting deletion
       setLoading(true);
+      setDeleteModalVisible(false);
 
-      await cmisService.deleteObject(repositoryId, objectId);
+      // NemakiWare-specific: Use cascade deletion for parentChildRelationship
+      // This will delete all descendant objects linked via nemaki:parentChildRelationship
+      const result = await cmisService.deleteObjectWithCascade(repositoryId, deleteTargetId);
 
       // Reload objects from server after successful deletion
       await loadObjects();
 
-      message.success('削除しました');
+      // Show appropriate success message based on cascade deletion results
+      if (result.deletedCount > 1) {
+        message.success(`${result.deletedCount}件のオブジェクトを削除しました（親子関係の子を含む）`);
+      } else {
+        message.success('削除しました');
+      }
+
+      // Warn about any failures during cascade deletion
+      if (result.failedIds.length > 0) {
+        message.warning(`${result.failedIds.length}件のオブジェクトの削除に失敗しました`);
+      }
     } catch (error) {
       message.error('削除に失敗しました');
+    } finally {
       setLoading(false);
+      setDeleteTargetId('');
+      setDeleteTargetName('');
+      setDeleteDescendantCount(0);
     }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteModalVisible(false);
+    setDeleteTargetId('');
+    setDeleteTargetName('');
+    setDeleteDescendantCount(0);
+  };
+
+  /**
+   * Show rename modal with current name prefilled.
+   */
+  const handleRenameClick = (objectId: string, objectName: string) => {
+    setRenameTargetId(objectId);
+    setRenameTargetName(objectName);
+    renameForm.setFieldsValue({ newName: objectName });
+    setRenameModalVisible(true);
+  };
+
+  /**
+   * Execute rename operation using CMIS updateProperties.
+   */
+  const handleRename = async (values: { newName: string }) => {
+    if (!renameTargetId || !values.newName.trim()) return;
+
+    try {
+      setLoading(true);
+      await cmisService.updateProperties(repositoryId, renameTargetId, {
+        'cmis:name': values.newName.trim()
+      });
+      message.success('名前を変更しました');
+      setRenameModalVisible(false);
+      renameForm.resetFields();
+      await loadObjects();
+    } catch (error) {
+      console.error('Rename error:', error);
+      message.error('名前の変更に失敗しました');
+    } finally {
+      setLoading(false);
+      setRenameTargetId('');
+      setRenameTargetName('');
+    }
+  };
+
+  const handleRenameCancel = () => {
+    setRenameModalVisible(false);
+    renameForm.resetFields();
+    setRenameTargetId('');
+    setRenameTargetName('');
   };
 
   const handleDownload = (objectId: string) => {
@@ -649,9 +829,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
                   const folderParam = `?folderId=${effectiveFolderId}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;
-                  console.log('[DocumentList] Navigating to document with effectiveFolderId:', effectiveFolderId);
-                  console.log('[DocumentList] selectedFolderId:', selectedFolderId, 'URL folderId:', searchParams.get('folderId'));
-                  console.log('[DocumentList] Full target URL:', targetUrl);
                   navigate(targetUrl);
                 }
               }}
@@ -665,82 +842,113 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         );
       },
     },
-    // Path column - only visible in search mode
-    ...(isSearchMode ? [{
-      title: 'パス',
-      dataIndex: 'path',
-      key: 'path',
-      width: 250,
-      render: (path: string) => {
-        if (!path || path === '/') {
-          return '/';
-        }
-
-        const segments = path.split('/').filter(Boolean);
-        return (
-          <span>
-            <span
-              style={{ color: '#1890ff', cursor: 'pointer', textDecoration: 'underline' }}
-              onClick={async (e) => {
-                e.stopPropagation();
-                try {
-                  setSelectedFolderId(ROOT_FOLDER_ID);
-                  setCurrentFolderId(ROOT_FOLDER_ID);
-                  setCurrentFolderPath('/');
-                  setSearchParams({ folderId: ROOT_FOLDER_ID });
-                  setIsSearchMode(false);
-                  setSearchQuery('');
-                } catch (error) {
-                  console.error('Navigation error:', error);
-                  message.error('ナビゲーションに失敗しました');
-                }
-              }}
-            >
-              /
-            </span>
-            {segments.map((segment, index) => {
-              const segmentPath = '/' + segments.slice(0, index + 1).join('/');
-              const isLast = index === segments.length - 1;
-
-              return (
-                <span key={index}>
-                  <span
-                    style={{
-                      color: isLast ? 'inherit' : '#1890ff',
-                      cursor: isLast ? 'default' : 'pointer',
-                      textDecoration: isLast ? 'none' : 'underline'
-                    }}
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      if (!isLast) {
-                        try {
-                          const folderObject = await cmisService.getObjectByPath(repositoryId, segmentPath);
-                          if (folderObject && folderObject.id) {
-                            // Note: Path segment navigation updates both selected and current folder IDs
-                            setSelectedFolderId(folderObject.id);
-                            setCurrentFolderId(folderObject.id);
-                            setCurrentFolderPath(segmentPath);
-                            setSearchParams({ folderId: folderObject.id });
-                            setIsSearchMode(false);
-                            setSearchQuery('');
-                          }
-                        } catch (error) {
-                          console.error('Path navigation error:', error);
-                          message.error('フォルダへのナビゲーションに失敗しました');
-                        }
-                      }
-                    }}
-                  >
-                    {segment}
-                  </span>
-                  {!isLast && <span>/</span>}
-                </span>
-              );
-            })}
-          </span>
-        );
+    // Search mode columns: objectType, path, createdBy, creationDate
+    // FEATURE: Added 2025-12-25 per user request for search result metadata
+    ...(isSearchMode ? [
+      {
+        title: 'オブジェクトタイプ',
+        dataIndex: 'objectType',
+        key: 'objectType',
+        width: 150,
+        render: (objectType: string) => {
+          // Display friendly name for common types
+          const typeLabels: Record<string, string> = {
+            'cmis:document': 'ドキュメント',
+            'cmis:folder': 'フォルダ',
+          };
+          return typeLabels[objectType] || objectType || '-';
+        },
       },
-    }] : []),
+      {
+        title: 'パス',
+        dataIndex: 'path',
+        key: 'path',
+        width: 200,
+        render: (path: string) => {
+          if (!path || path === '/') {
+            return '/';
+          }
+
+          const segments = path.split('/').filter(Boolean);
+          return (
+            <span>
+              <span
+                style={{ color: '#1890ff', cursor: 'pointer', textDecoration: 'underline' }}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    setSelectedFolderId(ROOT_FOLDER_ID);
+                    setCurrentFolderId(ROOT_FOLDER_ID);
+                    setCurrentFolderPath('/');
+                    setSearchParams({ folderId: ROOT_FOLDER_ID });
+                    setIsSearchMode(false);
+                    setSearchQuery('');
+                  } catch (error) {
+                    console.error('Navigation error:', error);
+                    message.error('ナビゲーションに失敗しました');
+                  }
+                }}
+              >
+                /
+              </span>
+              {segments.map((segment, index) => {
+                const segmentPath = '/' + segments.slice(0, index + 1).join('/');
+                const isLast = index === segments.length - 1;
+
+                return (
+                  <span key={index}>
+                    <span
+                      style={{
+                        color: isLast ? 'inherit' : '#1890ff',
+                        cursor: isLast ? 'default' : 'pointer',
+                        textDecoration: isLast ? 'none' : 'underline'
+                      }}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!isLast) {
+                          try {
+                            const folderObject = await cmisService.getObjectByPath(repositoryId, segmentPath);
+                            if (folderObject && folderObject.id) {
+                              // Note: Path segment navigation updates both selected and current folder IDs
+                              setSelectedFolderId(folderObject.id);
+                              setCurrentFolderId(folderObject.id);
+                              setCurrentFolderPath(segmentPath);
+                              setSearchParams({ folderId: folderObject.id });
+                              setIsSearchMode(false);
+                              setSearchQuery('');
+                            }
+                          } catch (error) {
+                            console.error('Path navigation error:', error);
+                            message.error('フォルダへのナビゲーションに失敗しました');
+                          }
+                        }
+                      }}
+                    >
+                      {segment}
+                    </span>
+                    {!isLast && <span>/</span>}
+                  </span>
+                );
+              })}
+            </span>
+          );
+        },
+      },
+      {
+        title: '作成者',
+        dataIndex: 'createdBy',
+        key: 'createdBy',
+        width: 100,
+        render: (createdBy: string) => createdBy || '-',
+      },
+      {
+        title: '作成日時',
+        dataIndex: 'creationDate',
+        key: 'creationDate',
+        width: 150,
+        render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+      },
+    ] : []),
     {
       title: 'サイズ',
       dataIndex: 'contentStreamLength',
@@ -788,10 +996,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
                   const folderParam = `?folderId=${effectiveFolderId}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;
-                  console.log('[DocumentList] View button clicked, effectiveFolderId:', effectiveFolderId);
-                  console.log('[DocumentList] Full target URL:', targetUrl);
                   navigate(targetUrl);
                 }}
+              />
+            </Tooltip>
+            <Tooltip title="名前変更">
+              <Button
+                icon={<FormOutlined />}
+                size="small"
+                onClick={() => handleRenameClick(record.id, record.name)}
               />
             </Tooltip>
             {record.baseType === 'cmis:document' && (
@@ -844,25 +1057,23 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               <Button
                 icon={<LockOutlined />}
                 size="small"
-                onClick={() => navigate(`/permissions/${record.id}`)}
+                onClick={() => {
+                  // CRITICAL FIX (2025-12-23): Preserve folderId when navigating to PermissionManagement
+                  const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
+                  navigate(`/permissions/${record.id}?folderId=${effectiveFolderId}`);
+                }}
               >
                 権限管理
               </Button>
             </Tooltip>
-            <Popconfirm
-              title="削除しますか？"
-              onConfirm={() => handleDelete(record.id)}
-              okText="はい"
-              cancelText="いいえ"
-            >
-              <Tooltip title="削除">
-                <Button
-                  icon={<DeleteOutlined />}
-                  size="small"
-                  danger
-                />
-              </Tooltip>
-            </Popconfirm>
+            <Tooltip title="削除">
+              <Button
+                icon={<DeleteOutlined />}
+                size="small"
+                danger
+                onClick={() => handleDeleteClick(record.id, record.name)}
+              />
+            </Tooltip>
           </Space>
         );
       },
@@ -1028,14 +1239,19 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       </Row>
 
       <Modal
-        title="ファイルアップロード"
+        title={isUploading ? 'ファイルアップロード中...' : 'ファイルアップロード'}
         open={uploadModalVisible}
         onCancel={() => {
+          if (isUploading) return; // Prevent closing during upload
           setUploadModalVisible(false);
           setUploadError(null);
+          setSelectedDocumentTypeDefinition(null);
+          form.resetFields();
         }}
         footer={null}
         maskClosable={false}
+        closable={!isUploading}
+        width={700}
       >
         <Form form={form} onFinish={handleUpload} layout="vertical">
           {uploadError && (
@@ -1092,6 +1308,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               placeholder="ドキュメントタイプを選択"
               showSearch
               optionFilterProp="label"
+              onChange={handleDocumentTypeChange}
             >
               {documentTypes.map(type => (
                 <Select.Option key={type.id} value={type.id} label={type.displayName || type.id}>
@@ -1105,15 +1322,64 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               ))}
             </Select>
           </Form.Item>
+
+          {/* Custom Properties Section for Document Upload (2025-12-23) */}
+          {selectedDocumentTypeDefinition &&
+           Object.entries(selectedDocumentTypeDefinition.propertyDefinitions || {})
+             .filter(([propId]) => !propId.startsWith('cmis:')).length > 0 && (
+            <div style={{ marginBottom: 16, padding: 16, backgroundColor: '#fafafa', borderRadius: 8 }}>
+              <h4 style={{ marginTop: 0, marginBottom: 12 }}>カスタムプロパティ</h4>
+              {Object.entries(selectedDocumentTypeDefinition.propertyDefinitions || {})
+                .filter(([propId]) => !propId.startsWith('cmis:'))
+                .map(([propId, propDef]: [string, any]) => (
+                  <Form.Item
+                    key={propId}
+                    name={propId}
+                    label={
+                      <span>
+                        {propDef.displayName || propId}
+                        {propDef.required && <span style={{ color: 'red', marginLeft: 4 }}>*</span>}
+                      </span>
+                    }
+                    tooltip={propDef.description}
+                    rules={propDef.required ? [{ required: true, message: `${propDef.displayName || propId}を入力してください` }] : []}
+                  >
+                    {propDef.propertyType === 'boolean' ? (
+                      <Select placeholder="選択してください" allowClear>
+                        <Select.Option value="true">はい</Select.Option>
+                        <Select.Option value="false">いいえ</Select.Option>
+                      </Select>
+                    ) : propDef.propertyType === 'integer' || propDef.propertyType === 'decimal' ? (
+                      <Input type="number" placeholder={propDef.description || `${propDef.displayName || propId}を入力`} />
+                    ) : propDef.propertyType === 'datetime' ? (
+                      <Input type="datetime-local" />
+                    ) : (
+                      <Input placeholder={propDef.description || `${propDef.displayName || propId}を入力`} />
+                    )}
+                  </Form.Item>
+                ))}
+            </div>
+          )}
+
           <Form.Item>
             <Space>
-              <Button type="primary" htmlType="submit">
-                アップロード
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={isUploading}
+                disabled={isUploading}
+              >
+                {isUploading ? 'アップロード中...' : 'アップロード'}
               </Button>
-              <Button onClick={() => {
-                setUploadModalVisible(false);
-                form.resetFields();
-              }}>
+              <Button
+                onClick={() => {
+                  setUploadModalVisible(false);
+                  setUploadError(null);
+                  setSelectedDocumentTypeDefinition(null);
+                  form.resetFields();
+                }}
+                disabled={isUploading}
+              >
                 キャンセル
               </Button>
             </Space>
@@ -1126,10 +1392,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         open={folderModalVisible}
         onCancel={() => {
           setFolderModalVisible(false);
-          setFolderError(null);  // Clear error on cancel
+          setFolderError(null);
+          setSelectedFolderTypeDefinition(null);
+          form.resetFields();
         }}
         footer={null}
         maskClosable={false}
+        width={700}
       >
         <Form form={form} onFinish={handleCreateFolder} layout="vertical">
           {folderError && (  // Inline Alert component
@@ -1159,6 +1428,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               placeholder="フォルダタイプを選択"
               showSearch
               optionFilterProp="label"
+              onChange={handleFolderTypeChange}
             >
               {folderTypes.map(type => (
                 <Select.Option key={type.id} value={type.id} label={type.displayName || type.id}>
@@ -1172,12 +1442,55 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               ))}
             </Select>
           </Form.Item>
+
+          {/* Custom Properties Section for Folder Creation (2025-12-23) */}
+          {selectedFolderTypeDefinition &&
+           Object.entries(selectedFolderTypeDefinition.propertyDefinitions || {})
+             .filter(([propId]) => !propId.startsWith('cmis:')).length > 0 && (
+            <div style={{ marginBottom: 16, padding: 16, backgroundColor: '#fafafa', borderRadius: 8 }}>
+              <h4 style={{ marginTop: 0, marginBottom: 12 }}>カスタムプロパティ</h4>
+              {Object.entries(selectedFolderTypeDefinition.propertyDefinitions || {})
+                .filter(([propId]) => !propId.startsWith('cmis:'))
+                .map(([propId, propDef]: [string, any]) => (
+                  <Form.Item
+                    key={propId}
+                    name={propId}
+                    label={
+                      <span>
+                        {propDef.displayName || propId}
+                        {propDef.required && <span style={{ color: 'red', marginLeft: 4 }}>*</span>}
+                      </span>
+                    }
+                    tooltip={propDef.description}
+                    rules={propDef.required ? [{ required: true, message: `${propDef.displayName || propId}を入力してください` }] : []}
+                  >
+                    {propDef.propertyType === 'boolean' ? (
+                      <Select placeholder="選択してください" allowClear>
+                        <Select.Option value="true">はい</Select.Option>
+                        <Select.Option value="false">いいえ</Select.Option>
+                      </Select>
+                    ) : propDef.propertyType === 'integer' || propDef.propertyType === 'decimal' ? (
+                      <Input type="number" placeholder={propDef.description || `${propDef.displayName || propId}を入力`} />
+                    ) : propDef.propertyType === 'datetime' ? (
+                      <Input type="datetime-local" />
+                    ) : (
+                      <Input placeholder={propDef.description || `${propDef.displayName || propId}を入力`} />
+                    )}
+                  </Form.Item>
+                ))}
+            </div>
+          )}
+
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
                 作成
               </Button>
-              <Button onClick={() => setFolderModalVisible(false)}>
+              <Button onClick={() => {
+                setFolderModalVisible(false);
+                setSelectedFolderTypeDefinition(null);
+                form.resetFields();
+              }}>
                 キャンセル
               </Button>
             </Space>
@@ -1308,6 +1621,77 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             },
           ]}
         />
+      </Modal>
+
+      {/* Delete Confirmation Modal with cascade deletion info */}
+      <Modal
+        title="削除の確認"
+        open={deleteModalVisible}
+        onOk={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+        okText="削除する"
+        cancelText="キャンセル"
+        okButtonProps={{ danger: true, loading: loading }}
+        maskClosable={false}
+      >
+        {deleteLoading ? (
+          <div style={{ textAlign: 'center', padding: '20px' }}>
+            関連オブジェクトを確認中...
+          </div>
+        ) : (
+          <div>
+            <p>
+              <strong>「{deleteTargetName}」</strong>を削除しますか？
+            </p>
+            {deleteDescendantCount > 0 && (
+              <div style={{
+                backgroundColor: '#fff7e6',
+                border: '1px solid #ffd591',
+                borderRadius: '4px',
+                padding: '12px',
+                marginTop: '12px'
+              }}>
+                <p style={{ margin: 0, color: '#d46b08' }}>
+                  <strong>⚠️ 注意:</strong> このオブジェクトには親子関係（nemaki:parentChildRelationship）で
+                  紐づいた<strong>{deleteDescendantCount}件</strong>の子オブジェクトがあります。
+                </p>
+                <p style={{ margin: '8px 0 0 0', color: '#d46b08' }}>
+                  削除すると、これらの子オブジェクトもすべて削除されます。
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Rename Modal */}
+      <Modal
+        title={`「${renameTargetName}」の名前を変更`}
+        open={renameModalVisible}
+        onOk={() => renameForm.submit()}
+        onCancel={handleRenameCancel}
+        okText="変更"
+        cancelText="キャンセル"
+        okButtonProps={{ loading: loading }}
+        maskClosable={false}
+      >
+        <Form
+          form={renameForm}
+          layout="vertical"
+          onFinish={handleRename}
+        >
+          <Form.Item
+            name="newName"
+            label="新しい名前"
+            rules={[
+              { required: true, message: '名前を入力してください' },
+              { min: 1, message: '名前を入力してください' },
+              { max: 255, message: '名前は255文字以内で入力してください' }
+            ]}
+          >
+            <Input placeholder="新しい名前を入力" autoFocus />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

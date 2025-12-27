@@ -87,11 +87,13 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         await cmisService.createType(repositoryId, values);
         message.success('タイプを作成しました');
       }
-      
+
       setModalVisible(false);
       setEditingType(null);
       form.resetFields();
-      loadTypes();
+      // CRITICAL FIX (2025-12-24): Await loadTypes() to ensure table is refreshed before control returns
+      // This fixes the issue where success message appears but type doesn't appear in table immediately
+      await loadTypes();
     } catch (error) {
       message.error(editingType ? 'タイプの更新に失敗しました' : 'タイプの作成に失敗しました');
     }
@@ -106,7 +108,8 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       // Note: Type deletion is a NemakiWare-specific operation that goes beyond CMIS standard compliance
       // Existing documents with this type will fall back to base type behavior
       message.success('タイプを削除しました（注意: 既存ドキュメントはベースタイプとして扱われます）');
-      loadTypes();
+      // CRITICAL FIX (2025-12-24): Await loadTypes() to ensure table is refreshed after delete
+      await loadTypes();
     } catch (error: any) {
       // Handle detailed error messages from backend
       // CMISService.deleteType() now attaches structured data to the error object
@@ -225,7 +228,8 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       setConflictModalVisible(false);
       setUploadFileList([]);
       setPendingTypeDefinition(null);
-      loadTypes();
+      // CRITICAL FIX (2025-12-24): Await loadTypes() to ensure table is refreshed after import
+      await loadTypes();
     } catch (error) {
       // Failed to create type definition
       message.error('型定義の作成に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
@@ -291,7 +295,8 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       setEditingTypeJson('');
       setOriginalTypeId('');
       setEditBeforeAfter(null);
-      loadTypes();
+      // CRITICAL FIX (2025-12-24): Await loadTypes() to ensure table is refreshed after update
+      await loadTypes();
     } catch (error) {
       message.error('型定義の更新に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
     }
@@ -333,7 +338,8 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       setGuiEditorModalVisible(false);
       setGuiEditorType(null);
       setGuiEditorIsEditing(false);
-      loadTypes();
+      // CRITICAL FIX (2025-12-24): Await loadTypes() to ensure table is refreshed after GUI editor save
+      await loadTypes();
     } catch (error) {
       message.error(guiEditorIsEditing ? 'タイプの更新に失敗しました' : 'タイプの作成に失敗しました');
     }

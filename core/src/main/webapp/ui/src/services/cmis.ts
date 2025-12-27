@@ -1185,7 +1185,10 @@ export class CMISService {
    *
    * MIGRATION NOTE: This method has been migrated to use the new CmisHttpClient
    * which provides better separation of concerns and testability.
-   * Uses GET request with JSON response for Browser Binding query operations.
+   *
+   * CRITICAL FIX (2025-12-23): Changed from GET to POST for CMIS query operations.
+   * GET with cmisselector=query does not work for relationship types.
+   * POST with cmisaction=query is the correct CMIS Browser Binding approach.
    *
    * @param repositoryId Repository ID
    * @param query CMIS query string
@@ -1193,8 +1196,11 @@ export class CMISService {
    */
   async search(repositoryId: string, query: string): Promise<SearchResult> {
     try {
-      const url = `${this.baseUrl}/${repositoryId}?cmisselector=query&q=${encodeURIComponent(query)}`;
-      const response = await this.httpClient.getJson(url);
+      const url = `${this.baseUrl}/${repositoryId}`;
+      const formData = new URLSearchParams();
+      formData.append('cmisaction', 'query');
+      formData.append('statement', query);
+      const response = await this.httpClient.postUrlEncoded(url, formData);
 
       if (response.status === 200) {
         try {
@@ -1221,7 +1227,10 @@ export class CMISService {
               contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
               contentStreamMimeType: this.getSafeStringProperty(props, 'cmis:contentStreamMimeType'),
               path: this.getSafeStringProperty(props, 'cmis:path'),
-              secondaryTypeIds: this.getSafeArrayProperty(props, 'cmis:secondaryObjectTypeIds')
+              secondaryTypeIds: this.getSafeArrayProperty(props, 'cmis:secondaryObjectTypeIds'),
+              // Relationship-specific properties (2025-12-23)
+              sourceId: this.getSafeStringProperty(props, 'cmis:sourceId'),
+              targetId: this.getSafeStringProperty(props, 'cmis:targetId')
             };
           });
 
@@ -1960,6 +1969,36 @@ export class CMISService {
     }
   }
 
+  /**
+   * Get type descendants (all types that inherit from the specified base type)
+   * @param repositoryId Repository ID
+   * @param baseTypeId The base type ID to get descendants of (e.g., 'cmis:relationship')
+   * @param depth Depth of descendants to retrieve (-1 for all, default -1)
+   * @returns Array of type definitions that are descendants of the base type
+   */
+  async getTypeDescendants(repositoryId: string, baseTypeId: string, _depth: number = -1): Promise<TypeDefinition[]> {
+    // Note: _depth parameter is reserved for future use (CMIS spec supports depth limiting)
+    // Currently returns all descendants regardless of depth value
+    try {
+      // Get all types and filter by base type
+      const allTypes = await this.getTypes(repositoryId);
+
+      // Filter to types that have the specified baseTypeId
+      const descendants = allTypes.filter(type => {
+        // Include the base type itself and all types that inherit from it
+        return type.id === baseTypeId || type.baseTypeId === baseTypeId || type.parentTypeId === baseTypeId;
+      });
+
+      return descendants;
+    } catch (error) {
+      console.error(`[CMIS] Error getting type descendants for ${baseTypeId}:`, error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error getting type descendants');
+    }
+  }
+
   async createType(repositoryId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
     // First, create the type via REST API
     try {
@@ -2166,11 +2205,43 @@ export class CMISService {
               return '';
             };
 
+            // Helper function to get ALL properties from CMIS XML
+            const getAllProperties = (): Record<string, any> => {
+              const allProps: Record<string, any> = {};
+              const properties = entry.getElementsByTagNameNS(CMIS_NS, 'properties')[0] ||
+                               entry.querySelector('cmis\\:properties, properties');
+              if (!properties) return allProps;
+
+              const propTypes = ['propertyId', 'propertyString', 'propertyDateTime', 'propertyBoolean', 'propertyInteger', 'propertyDecimal'];
+              for (const propType of propTypes) {
+                const propElements = properties.getElementsByTagNameNS(CMIS_NS, propType);
+                for (let j = 0; j < propElements.length; j++) {
+                  const elem = propElements[j];
+                  const propId = elem.getAttribute('propertyDefinitionId');
+                  if (propId) {
+                    const valueElems = elem.getElementsByTagNameNS(CMIS_NS, 'value');
+                    if (valueElems.length > 1) {
+                      // Multi-value property
+                      allProps[propId] = Array.from(valueElems).map(v => v.textContent || '');
+                    } else if (valueElems.length === 1) {
+                      allProps[propId] = valueElems[0].textContent || '';
+                    } else {
+                      // Fallback to querySelector
+                      const valueElem = elem.querySelector('cmis\\:value, value');
+                      allProps[propId] = valueElem?.textContent || '';
+                    }
+                  }
+                }
+              }
+              return allProps;
+            };
+
             // CRITICAL FIX: Get objectId from cmis:objectId property, not from <atom:id> which is base64 encoded
             const relationshipId = getPropertyValue('cmis:objectId');
             const sourceId = getPropertyValue('cmis:sourceId');
             const targetId = getPropertyValue('cmis:targetId');
             const objectTypeId = getPropertyValue('cmis:objectTypeId') || 'cmis:relationship';
+            const allProperties = getAllProperties();
 
             console.log(`[CMIS DEBUG] getRelationships entry ${i}: id=${relationshipId}, sourceId=${sourceId}, targetId=${targetId}, type=${objectTypeId}`);
 
@@ -2181,7 +2252,7 @@ export class CMISService {
                 sourceId: sourceId,
                 targetId: targetId,
                 relationshipType: objectTypeId,
-                properties: {}
+                properties: allProperties
               });
             } else {
               console.log(`[CMIS DEBUG] getRelationships entry ${i} skipped: missing sourceId or targetId`);
@@ -2205,7 +2276,7 @@ export class CMISService {
     }
   }
 
-  async createRelationship(repositoryId: string, relationship: Partial<Relationship>): Promise<Relationship> {
+  async createRelationship(repositoryId: string, relationship: Partial<Relationship>, customProperties?: Record<string, any>): Promise<Relationship> {
     try {
       // CRITICAL FIX: Use CMIS Browser Binding standard endpoint instead of custom REST endpoint
       const url = `${this.baseUrl}/${repositoryId}`;
@@ -2219,6 +2290,18 @@ export class CMISService {
       formData.append('propertyValue[1]', relationship.sourceId || '');
       formData.append('propertyId[2]', 'cmis:targetId');
       formData.append('propertyValue[2]', relationship.targetId || '');
+
+      // Add custom properties if provided
+      if (customProperties) {
+        let propIndex = 3;
+        for (const [propId, propValue] of Object.entries(customProperties)) {
+          if (propValue !== undefined && propValue !== null && propValue !== '') {
+            formData.append(`propertyId[${propIndex}]`, propId);
+            formData.append(`propertyValue[${propIndex}]`, String(propValue));
+            propIndex++;
+          }
+        }
+      }
 
       const response = await this.httpClient.postFormData(url, formData);
 
@@ -2273,6 +2356,194 @@ export class CMISService {
       }
       throw new Error('Network error during relationship deletion');
     }
+  }
+
+  // Cache for type hierarchy checks to avoid repeated API calls
+  private parentChildTypeCache: Map<string, boolean> = new Map();
+
+  /**
+   * Check if a relationship type is nemaki:parentChildRelationship or a derived type.
+   *
+   * NemakiWare supports custom relationship types that inherit from parentChildRelationship.
+   * Any such derived type should also trigger cascade deletion behavior.
+   *
+   * @param repositoryId Repository ID
+   * @param typeId The relationship type ID to check
+   * @returns true if the type is parentChildRelationship or derived from it
+   */
+  async isParentChildRelationshipType(repositoryId: string, typeId: string): Promise<boolean> {
+    // Check exact match first
+    if (typeId === 'nemaki:parentChildRelationship') {
+      return true;
+    }
+
+    // Check cache
+    const cacheKey = `${repositoryId}:${typeId}`;
+    if (this.parentChildTypeCache.has(cacheKey)) {
+      return this.parentChildTypeCache.get(cacheKey)!;
+    }
+
+    try {
+      // Traverse the type hierarchy to check if it inherits from parentChildRelationship
+      let currentTypeId = typeId;
+      const visited = new Set<string>();
+
+      while (currentTypeId && !visited.has(currentTypeId)) {
+        visited.add(currentTypeId);
+
+        if (currentTypeId === 'nemaki:parentChildRelationship') {
+          this.parentChildTypeCache.set(cacheKey, true);
+          return true;
+        }
+
+        // Get parent type
+        try {
+          const typeDef = await this.getType(repositoryId, currentTypeId);
+          currentTypeId = typeDef.parentTypeId || '';
+        } catch (e) {
+          // Type not found, stop traversal
+          break;
+        }
+      }
+
+      this.parentChildTypeCache.set(cacheKey, false);
+      return false;
+    } catch (error) {
+      console.error(`[CMIS] Error checking type hierarchy for ${typeId}:`, error);
+      // Fallback: only exact match
+      return typeId === 'nemaki:parentChildRelationship';
+    }
+  }
+
+  /**
+   * Collect all descendant objects via nemaki:parentChildRelationship for cascade deletion.
+   *
+   * NemakiWare-specific feature: When deleting an object that is the SOURCE of a
+   * nemaki:parentChildRelationship (or derived type), all TARGET objects (children)
+   * should also be deleted.
+   * This recursively collects all descendants (children, grandchildren, etc.).
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Root object ID to start collection from
+   * @param visited Set of already visited object IDs (for circular reference detection)
+   * @returns Array of object IDs to delete, ordered from leaves to root (deepest first)
+   */
+  async collectParentChildDescendants(
+    repositoryId: string,
+    objectId: string,
+    visited: Set<string> = new Set()
+  ): Promise<string[]> {
+    // Circular reference detection
+    if (visited.has(objectId)) {
+      console.log(`[CASCADE DELETE] Circular reference detected, skipping: ${objectId}`);
+      return [];
+    }
+    visited.add(objectId);
+
+    const descendants: string[] = [];
+
+    try {
+      // Get all relationships where this object is the SOURCE
+      const relationships = await this.getRelationships(repositoryId, objectId);
+
+      // Filter for parentChildRelationship (or derived types) where this object is SOURCE
+      const parentChildRels: typeof relationships = [];
+      for (const rel of relationships) {
+        if (rel.sourceId === objectId) {
+          const isParentChild = await this.isParentChildRelationshipType(repositoryId, rel.relationshipType);
+          if (isParentChild) {
+            parentChildRels.push(rel);
+          }
+        }
+      }
+
+      console.log(`[CASCADE DELETE] Object ${objectId} has ${parentChildRels.length} parentChild relationships as source`);
+
+      // Recursively collect descendants for each child
+      for (const rel of parentChildRels) {
+        const childId = rel.targetId;
+        if (childId && !visited.has(childId)) {
+          // Recursively get grandchildren first (depth-first)
+          const grandchildren = await this.collectParentChildDescendants(repositoryId, childId, visited);
+          descendants.push(...grandchildren);
+          // Add the child after its descendants (so it gets deleted after its children)
+          descendants.push(childId);
+        }
+      }
+    } catch (error) {
+      console.error(`[CASCADE DELETE] Error collecting descendants for ${objectId}:`, error);
+      // Continue with what we have, don't fail the entire operation
+    }
+
+    return descendants;
+  }
+
+  /**
+   * Delete an object with cascade deletion of parentChildRelationship descendants.
+   *
+   * NemakiWare-specific feature: Implements cascade deletion semantics for
+   * nemaki:parentChildRelationship. When deleting an object:
+   * 1. Collect all descendants via parentChildRelationship (children, grandchildren, etc.)
+   * 2. Delete from leaves to root (deepest descendants first)
+   * 3. Finally delete the original object
+   *
+   * Note: nemaki:bidirectionalRelationship does NOT trigger cascade deletion.
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Object ID to delete
+   * @param cascadeParentChild Whether to cascade delete parentChild descendants (default: true)
+   * @returns Object with deletion results: deletedCount, failedIds
+   */
+  async deleteObjectWithCascade(
+    repositoryId: string,
+    objectId: string,
+    cascadeParentChild: boolean = true
+  ): Promise<{ deletedCount: number; failedIds: string[] }> {
+    const failedIds: string[] = [];
+    let deletedCount = 0;
+
+    if (cascadeParentChild) {
+      // Collect all descendants to delete
+      const descendants = await this.collectParentChildDescendants(repositoryId, objectId);
+      console.log(`[CASCADE DELETE] Found ${descendants.length} descendants to delete for ${objectId}`);
+
+      // Delete descendants from leaves to root
+      for (const descendantId of descendants) {
+        try {
+          await this.deleteObject(repositoryId, descendantId);
+          deletedCount++;
+          console.log(`[CASCADE DELETE] Deleted descendant: ${descendantId}`);
+        } catch (error) {
+          console.error(`[CASCADE DELETE] Failed to delete descendant ${descendantId}:`, error);
+          failedIds.push(descendantId);
+          // Continue with other deletions
+        }
+      }
+    }
+
+    // Finally delete the root object
+    try {
+      await this.deleteObject(repositoryId, objectId);
+      deletedCount++;
+      console.log(`[CASCADE DELETE] Deleted root object: ${objectId}`);
+    } catch (error) {
+      console.error(`[CASCADE DELETE] Failed to delete root object ${objectId}:`, error);
+      failedIds.push(objectId);
+    }
+
+    return { deletedCount, failedIds };
+  }
+
+  /**
+   * Get count of parentChildRelationship descendants for preview before deletion.
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Object ID to check
+   * @returns Number of descendant objects that would be cascade deleted
+   */
+  async getParentChildDescendantCount(repositoryId: string, objectId: string): Promise<number> {
+    const descendants = await this.collectParentChildDescendants(repositoryId, objectId);
+    return descendants.length;
   }
 
   async initSearchEngine(repositoryId: string): Promise<void> {

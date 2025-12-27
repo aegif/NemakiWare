@@ -119,6 +119,14 @@ public class AclServiceImpl implements AclService {
 			// Specific Exception
 			// //////////////////
 			TypeDefinition td = typeManager.getTypeDefinition(repositoryId, content);
+			// CRITICAL FIX (2025-12-26): Handle orphaned documents with deleted type definitions
+			// When a custom type is deleted but documents using that type still exist,
+			// TypeDefinition will be null. In this case, deny ACL operations on orphaned documents.
+			if (td == null) {
+				log.warn("ORPHANED DOCUMENT ACL: Cannot apply ACL to document '" + content.getName() +
+						"' (id=" + objectId + ") - type '" + content.getObjectType() + "' no longer exists.");
+				exceptionService.constraint(objectId, "applyAcl cannot be performed on orphaned document - type definition not found");
+			}
 			if(!td.isControllableAcl()) exceptionService.constraint(objectId, "applyAcl cannot be performed on the object whose controllableAcl = false");
 			exceptionService.constraintAclPropagationDoesNotMatch(aclPropagation);
 			exceptionService.constraintPermissionDefined(repositoryId, acl, objectId);

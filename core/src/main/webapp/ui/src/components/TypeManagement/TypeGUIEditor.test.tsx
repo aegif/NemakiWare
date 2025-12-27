@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { TypeGUIEditor } from './TypeGUIEditor';
 import { TypeDefinition } from '../../types/cmis';
 
@@ -95,7 +95,7 @@ describe('TypeGUIEditor', () => {
 
     it('renders update button for editing mode', () => {
       const existingType = mockExistingTypes[2];
-      const { container } = render(
+      render(
         <TypeGUIEditor
           initialValue={existingType}
           existingTypes={mockExistingTypes}
@@ -105,24 +105,15 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      // Find all buttons in the container
-      const allButtons = container.querySelectorAll('button');
-      const buttonTexts = Array.from(allButtons).map(btn => btn.textContent);
-
-      // Ant Design adds spaces between CJK characters, so we need to normalize
-      // '更 新' becomes '更新' after removing spaces
-      const normalizedTexts = buttonTexts.map(text => text?.replace(/\s/g, ''));
-
-      // Check that the update button exists
-      const hasUpdateButton = normalizedTexts.some(text => text?.includes('更新'));
-      const hasCancelButton = normalizedTexts.some(text => text?.includes('キャンセル'));
-
-      expect(hasCancelButton).toBe(true);
-      expect(hasUpdateButton).toBe(true);
+      // Use getByRole with regex to handle Ant Design's CJK character spacing
+      // Ant Design adds spaces between CJK characters (e.g., '更新' → '更 新')
+      // Regex /更\s*新/ matches both '更新' and '更 新'
+      expect(screen.getByRole('button', { name: /キャンセル/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /更\s*新/ })).toBeInTheDocument();
     });
 
     it('renders create button for new type', () => {
-      const { container } = render(
+      render(
         <TypeGUIEditor
           initialValue={null}
           existingTypes={mockExistingTypes}
@@ -132,25 +123,16 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      // Find all buttons in the container
-      const allButtons = container.querySelectorAll('button');
-      const buttonTexts = Array.from(allButtons).map(btn => btn.textContent);
-
-      // Ant Design adds spaces between CJK characters
-      const normalizedTexts = buttonTexts.map(text => text?.replace(/\s/g, ''));
-
-      // Check that the create button exists
-      const hasCreateButton = normalizedTexts.some(text => text?.includes('作成'));
-      const hasCancelButton = normalizedTexts.some(text => text?.includes('キャンセル'));
-
-      expect(hasCancelButton).toBe(true);
-      expect(hasCreateButton).toBe(true);
+      // Use getByRole with regex to handle Ant Design's CJK character spacing
+      // Regex /作\s*成/ matches both '作成' and '作 成'
+      expect(screen.getByRole('button', { name: /キャンセル/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /作\s*成/ })).toBeInTheDocument();
     });
   });
 
   describe('Validation', () => {
     it('shows error when type ID is empty', async () => {
-      const { container } = render(
+      render(
         <TypeGUIEditor
           initialValue={null}
           existingTypes={mockExistingTypes}
@@ -160,17 +142,9 @@ describe('TypeGUIEditor', () => {
         />
       );
 
-      // Find the create button (Ant Design adds spaces between CJK characters)
-      const allButtons = container.querySelectorAll('button');
-      const createButton = Array.from(allButtons).find(btn =>
-        btn.textContent?.replace(/\s/g, '').includes('作成')
-      );
-
-      expect(createButton).toBeTruthy();
-
-      if (createButton) {
-        fireEvent.click(createButton);
-      }
+      // Use getByRole with regex to handle Ant Design's CJK character spacing
+      const createButton = screen.getByRole('button', { name: /作\s*成/ });
+      fireEvent.click(createButton);
 
       await waitFor(() => {
         expect(screen.getByText('タイプIDは必須です')).toBeInTheDocument();

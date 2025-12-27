@@ -229,6 +229,10 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
 
   /**
    * Build tree structure from ancestors, current folder, and children
+   *
+   * CRITICAL FIX (2025-12-21): Use plain strings for title, not JSX elements
+   * All styling is handled by titleRender to prevent React DOM reconciliation errors
+   * ("Failed to execute 'insertBefore' on 'Node'" error)
    */
   const buildTreeStructure = (
     ancestors: CMISObject[],
@@ -236,17 +240,14 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
     children: CMISObject[]
   ): TreeDataNode[] => {
     // Build current folder node with children
+    // Use plain string for title - styling handled by titleRender
     const currentNode: TreeDataNode = {
       key: currentFolder.id,
-      title: (
-        <span style={{ fontWeight: currentFolder.id === currentFolderId ? 'bold' : 'normal' }}>
-          {currentFolder.name || 'Repository Root'}
-        </span>
-      ),
+      title: currentFolder.name || 'Repository Root',
       icon: <FolderOpenOutlined style={{ color: '#1890ff' }} />,
       children: children.map(child => ({
         key: child.id,
-        title: child.name,
+        title: child.name || '',
         icon: <FolderOutlined style={{ color: '#faad14' }} />,
         isLeaf: false, // Allow expansion for drill-down
       })),
@@ -264,7 +265,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
     for (const ancestor of ancestors) {
       const node: TreeDataNode = {
         key: ancestor.id,
-        title: ancestor.name,
+        title: ancestor.name || '', // Plain string for title
         icon: <FolderOutlined style={{ color: '#faad14' }} />,
         children: [],
       };
@@ -359,6 +360,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
 
       if (children.length > 0) {
         // Update tree data with new children
+        // Use plain strings for title to prevent React DOM reconciliation errors
         const updateTreeData = (nodes: TreeDataNode[]): TreeDataNode[] => {
           return nodes.map(n => {
             if (n.key === folderId) {
@@ -366,7 +368,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
                 ...n,
                 children: children.map(child => ({
                   key: child.id,
-                  title: child.name,
+                  title: child.name || '', // Plain string for title
                   icon: <FolderOutlined style={{ color: '#faad14' }} />,
                   isLeaf: false,
                 })),
@@ -409,29 +411,38 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
         showIcon
         blockNode
         style={{ background: 'transparent' }}
-        titleRender={(nodeData) => (
-          <span
-            style={{
-              padding: '2px 8px',
-              borderRadius: '4px',
-              backgroundColor:
-                nodeData.key === selectedFolderId
-                  ? '#e6f7ff'
-                  : nodeData.key === currentFolderId
-                  ? '#f0f0f0'
-                  : 'transparent',
-              border:
-                nodeData.key === currentFolderId
-                  ? '1px solid #1890ff'
-                  : nodeData.key === selectedFolderId
-                  ? '1px solid #91d5ff'
-                  : '1px solid transparent',
-              display: 'inline-block',
-            }}
-          >
-            {nodeData.title as React.ReactNode}
-          </span>
-        )}
+        titleRender={(nodeData) => {
+          // CRITICAL FIX (2025-12-21): Safe title rendering
+          // Always treat title as string to prevent React DOM reconciliation errors
+          const titleText = typeof nodeData.title === 'string'
+            ? nodeData.title
+            : String(nodeData.title || '');
+
+          return (
+            <span
+              style={{
+                padding: '2px 8px',
+                borderRadius: '4px',
+                fontWeight: nodeData.key === currentFolderId ? 'bold' : 'normal',
+                backgroundColor:
+                  nodeData.key === selectedFolderId
+                    ? '#e6f7ff'
+                    : nodeData.key === currentFolderId
+                    ? '#f0f0f0'
+                    : 'transparent',
+                border:
+                  nodeData.key === currentFolderId
+                    ? '1px solid #1890ff'
+                    : nodeData.key === selectedFolderId
+                    ? '1px solid #91d5ff'
+                    : '1px solid transparent',
+                display: 'inline-block',
+              }}
+            >
+              {titleText}
+            </span>
+          );
+        }}
       />
       <div style={{ marginTop: '8px', fontSize: '11px', color: '#999' }}>
         <span style={{

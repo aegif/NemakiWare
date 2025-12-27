@@ -19,10 +19,7 @@ import {
   parseAtomEntry,
   parseAtomFeed,
   parseAtomEntryResponse,
-  ParsedAtomEntry,
-  ParsedAllowableActions,
   ParsedCmisExtension,
-  ParsedCoercionWarning
 } from './atompubParsers';
 
 // Sample AtomPub XML responses for testing
@@ -111,23 +108,6 @@ const SAMPLE_ATOM_FEED = `<?xml version="1.0" encoding="UTF-8"?>
     </cmisra:object>
   </entry>
 </feed>`;
-
-// XML without namespace prefixes (some servers return this format)
-const SAMPLE_ENTRY_NO_PREFIX = `<?xml version="1.0" encoding="UTF-8"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <title>No Prefix Doc</title>
-  <id>urn:uuid:no-prefix-123</id>
-  <object xmlns="http://docs.oasis-open.org/ns/cmis/restatom/200908/">
-    <properties xmlns="http://docs.oasis-open.org/ns/cmis/core/200908/">
-      <propertyId propertyDefinitionId="cmis:objectId">
-        <value>no-prefix-123</value>
-      </propertyId>
-      <propertyString propertyDefinitionId="cmis:name">
-        <value>No Prefix Doc</value>
-      </propertyString>
-    </properties>
-  </object>
-</entry>`;
 
 describe('parseXmlString', () => {
   it('should parse valid XML string', () => {

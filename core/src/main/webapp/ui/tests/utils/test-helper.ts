@@ -448,7 +448,561 @@ export class TestHelper {
     console.log(`TestHelper: Document ${fileName} not found in table`);
     const allRows = await this.page.locator('.ant-table-tbody tr').count();
     console.log(`TestHelper: Total rows in table: ${allRows}`);
-    
+
+    return false;
+  }
+
+  /**
+   * Ensure a test document exists, creating it if necessary
+   * This method is idempotent - safe to call multiple times
+   *
+   * @param fileName Name of the file to ensure exists
+   * @param content Content of the file (used only if creating)
+   * @param isMobile Whether the browser is in mobile mode
+   * @returns true if document exists (or was created), false if creation failed
+   */
+  async ensureTestDocument(fileName: string, content: string = 'Test content', isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Ensuring test document ${fileName} exists...`);
+
+    // First check if document already exists in table
+    const existingDoc = this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).first();
+    if (await existingDoc.count() > 0) {
+      console.log(`TestHelper: Document ${fileName} already exists`);
+      return true;
+    }
+
+    // Document doesn't exist, try to create it
+    console.log(`TestHelper: Document ${fileName} not found, creating...`);
+
+    // Check if upload button is available
+    let uploadButton = this.page.locator('button').filter({ hasText: 'アップロード' }).first();
+    if (await uploadButton.count() === 0) {
+      uploadButton = this.page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+    }
+    if (await uploadButton.count() === 0) {
+      uploadButton = this.page.locator('button').filter({ has: this.page.locator('[data-icon="upload"]') }).first();
+    }
+
+    if (await uploadButton.count() === 0) {
+      console.log('TestHelper: Upload button not found - cannot create document');
+      return false;
+    }
+
+    // Use the uploadDocument method
+    return await this.uploadDocument(fileName, content, isMobile);
+  }
+
+  /**
+   * Navigate to documents page if not already there
+   */
+  async navigateToDocuments(): Promise<void> {
+    const currentUrl = this.page.url();
+    if (currentUrl.includes('/documents')) {
+      console.log('TestHelper: Already on documents page');
+      return;
+    }
+
+    console.log('TestHelper: Navigating to documents page...');
+    const documentsMenuItem = this.page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
+    if (await documentsMenuItem.count() > 0) {
+      await documentsMenuItem.click();
+      await this.page.waitForTimeout(2000);
+    }
+  }
+
+  /**
+   * Wait for document list page to be fully loaded with action buttons
+   * This method ensures all UI elements are ready before tests interact with them
+   *
+   * CRITICAL FIX (2025-12-27): Many tests were dynamically skipping because:
+   * - "Upload button not visible" (31 skips)
+   * - "Folder creation button not visible" (10 skips)
+   * - "Search input not visible" (12 skips)
+   *
+   * Root cause: Tests weren't waiting long enough for DocumentList component to render
+   * Solution: Comprehensive wait for multiple UI elements before proceeding
+   *
+   * @param options.timeout Maximum wait time in ms (default 30000)
+   * @param options.requireUploadButton Whether to require upload button (default true)
+   * @param options.requireFolderButton Whether to require folder button (default true)
+   * @param options.requireSearchInput Whether to require search input (default false)
+   * @returns Object with availability status of each element
+   */
+  async waitForDocumentListReady(options: {
+    timeout?: number;
+    requireUploadButton?: boolean;
+    requireFolderButton?: boolean;
+    requireSearchInput?: boolean;
+  } = {}): Promise<{
+    uploadButtonVisible: boolean;
+    folderButtonVisible: boolean;
+    searchInputVisible: boolean;
+    tableVisible: boolean;
+  }> {
+    const timeout = options.timeout ?? 30000;
+    const startTime = Date.now();
+
+    console.log('TestHelper: Waiting for document list page to be ready...');
+
+    // Wait for Ant Design layout to be present
+    await this.waitForAntdLoad();
+
+    const result = {
+      uploadButtonVisible: false,
+      folderButtonVisible: false,
+      searchInputVisible: false,
+      tableVisible: false,
+    };
+
+    // Wait for table to be visible (primary indicator that page is loaded)
+    try {
+      await this.page.waitForSelector('.ant-table', { timeout: Math.max(1000, timeout - (Date.now() - startTime)) });
+      result.tableVisible = true;
+      console.log('TestHelper: Table is visible');
+    } catch (e) {
+      console.log('TestHelper: Table not found within timeout');
+    }
+
+    // Additional wait for dynamic content to render
+    await this.page.waitForTimeout(1000);
+
+    // Check upload button - multiple selector patterns
+    const uploadButtonSelectors = [
+      'button:has-text("ファイルアップロード")',
+      'button:has-text("アップロード")',
+      'button:has([data-icon="upload"])',
+    ];
+
+    for (const selector of uploadButtonSelectors) {
+      try {
+        const button = this.page.locator(selector).first();
+        if (await button.isVisible({ timeout: 2000 })) {
+          result.uploadButtonVisible = true;
+          console.log(`TestHelper: Upload button visible (${selector})`);
+          break;
+        }
+      } catch (e) {
+        // Try next selector
+      }
+    }
+
+    // Check folder creation button - multiple selector patterns
+    const folderButtonSelectors = [
+      'button:has-text("フォルダ作成")',
+      'button:has-text("新規フォルダ")',
+      'button:has([data-icon="folder-add"])',
+      'button:has([data-icon="plus"])',
+    ];
+
+    for (const selector of folderButtonSelectors) {
+      try {
+        const button = this.page.locator(selector).first();
+        if (await button.isVisible({ timeout: 2000 })) {
+          result.folderButtonVisible = true;
+          console.log(`TestHelper: Folder button visible (${selector})`);
+          break;
+        }
+      } catch (e) {
+        // Try next selector
+      }
+    }
+
+    // Check search input
+    const searchSelectors = [
+      'input.search-input',
+      'input[placeholder*="検索"]',
+      '.ant-input-search input',
+    ];
+
+    for (const selector of searchSelectors) {
+      try {
+        const input = this.page.locator(selector).first();
+        if (await input.isVisible({ timeout: 2000 })) {
+          result.searchInputVisible = true;
+          console.log(`TestHelper: Search input visible (${selector})`);
+          break;
+        }
+      } catch (e) {
+        // Try next selector
+      }
+    }
+
+    console.log('TestHelper: Document list ready state:', result);
+    return result;
+  }
+
+  /**
+   * Get upload button locator with fallback selectors
+   * Use this instead of hardcoded selectors in tests
+   */
+  async getUploadButton(): Promise<any | null> {
+    const selectors = [
+      'button:has-text("ファイルアップロード")',
+      'button:has-text("アップロード")',
+      'button:has([data-icon="upload"])',
+    ];
+
+    for (const selector of selectors) {
+      const button = this.page.locator(selector).first();
+      if (await button.count() > 0) {
+        return button;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Get folder creation button locator with fallback selectors
+   */
+  async getFolderButton(): Promise<any | null> {
+    const selectors = [
+      'button:has-text("フォルダ作成")',
+      'button:has-text("新規フォルダ")',
+      'button:has([data-icon="folder-add"])',
+    ];
+
+    for (const selector of selectors) {
+      const button = this.page.locator(selector).first();
+      if (await button.count() > 0) {
+        return button;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Delete a test document if it exists
+   *
+   * @param fileName Name of the file to delete
+   * @param isMobile Whether the browser is in mobile mode
+   * @returns true if deleted (or didn't exist), false if deletion failed
+   */
+  async deleteTestDocument(fileName: string, isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Deleting test document ${fileName}...`);
+
+    // Find document row
+    const docRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).first();
+    if (await docRow.count() === 0) {
+      console.log(`TestHelper: Document ${fileName} not found - already deleted or never existed`);
+      return true;
+    }
+
+    // Find delete button
+    const deleteButton = docRow.locator('button').filter({ has: this.page.locator('[data-icon="delete"]') }).first();
+    if (await deleteButton.count() === 0) {
+      console.log(`TestHelper: Delete button not found for ${fileName}`);
+      return false;
+    }
+
+    await deleteButton.click(isMobile ? { force: true } : {});
+    await this.page.waitForTimeout(500);
+
+    // Confirm deletion
+    const confirmButton = this.page.locator('.ant-popconfirm button, .ant-popover button').filter({ hasText: /OK|はい|確認/ }).first();
+    if (await confirmButton.count() > 0) {
+      await confirmButton.click();
+      await this.page.waitForTimeout(3000);
+    }
+
+    // Verify deleted
+    const stillExists = await this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).count() > 0;
+    if (!stillExists) {
+      console.log(`TestHelper: Document ${fileName} deleted successfully`);
+      return true;
+    }
+
+    console.log(`TestHelper: Document ${fileName} still exists after deletion attempt`);
+    return false;
+  }
+
+  /**
+   * Create a folder with proper waiting and error handling
+   *
+   * CRITICAL FIX (2025-12-27): This method addresses common folder creation failures:
+   * - Don't rely on success message (fades out in 3 seconds)
+   * - Use modal closure as primary success indicator
+   * - Use robust button detection with multiple selectors
+   * - Proper visibility waits for modal content
+   *
+   * @param folderName Name of the folder to create
+   * @param isMobile Whether the browser is in mobile mode
+   * @returns true if folder was created successfully, false otherwise
+   */
+  async createFolder(folderName: string, isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Creating folder: ${folderName}`);
+
+    // Get folder creation button
+    const folderButton = await this.getFolderButton();
+    if (!folderButton) {
+      console.log('TestHelper: ❌ Folder creation button not found');
+      return false;
+    }
+
+    await folderButton.click(isMobile ? { force: true } : {});
+
+    // Wait for modal to appear with extended timeout
+    const modal = this.page.locator('.ant-modal:not(.ant-modal-hidden)');
+    try {
+      await modal.waitFor({ state: 'visible', timeout: 10000 });
+      console.log('TestHelper: Modal appeared');
+    } catch {
+      console.log('TestHelper: ❌ Modal did not appear');
+      return false;
+    }
+
+    // Wait for modal content to fully render
+    await this.page.waitForTimeout(1000);
+
+    // Find and fill the name input - try specific placeholder first
+    let nameInput = modal.locator('input[placeholder*="フォルダ名"]').first();
+    if (await nameInput.count() === 0) {
+      // Fallback to first input in modal
+      nameInput = modal.locator('input').first();
+      console.log('TestHelper: Using fallback input selector');
+    }
+    await nameInput.fill(folderName);
+    console.log(`TestHelper: Input value: ${await nameInput.inputValue()}`);
+
+    // Click the submit button - try multiple selectors
+    const submitButton = modal.locator('button[type="submit"]');
+    const primaryButton = modal.locator('button.ant-btn-primary');
+
+    let buttonClicked = false;
+
+    if (await submitButton.count() > 0) {
+      console.log('TestHelper: Found submit button by type="submit"');
+      await submitButton.first().click();
+      buttonClicked = true;
+    } else if (await primaryButton.count() > 0) {
+      console.log('TestHelper: Found primary button');
+      await primaryButton.first().click();
+      buttonClicked = true;
+    } else {
+      // Last resort: find button with exact text
+      const textButton = modal.getByRole('button', { name: '作成' });
+      if (await textButton.count() > 0) {
+        console.log('TestHelper: Found button by role with name "作成"');
+        await textButton.click();
+        buttonClicked = true;
+      }
+    }
+
+    if (!buttonClicked) {
+      console.log('TestHelper: ❌ No submit button found');
+      return false;
+    }
+
+    // Wait for modal to close (primary success indicator)
+    // Don't rely on success message (fades out in 3 seconds)
+    let success = false;
+
+    try {
+      await expect(modal).not.toBeVisible({ timeout: 15000 });
+      console.log(`TestHelper: ✅ Folder created: ${folderName} (modal closed)`);
+      success = true;
+    } catch {
+      // Check for error messages
+      const errorMsg = await this.page.locator('.ant-message-error').textContent().catch(() => null);
+      const formError = await modal.locator('.ant-form-item-explain-error').textContent().catch(() => null);
+
+      if (errorMsg || formError) {
+        console.log(`TestHelper: ❌ Folder creation failed: ${errorMsg || formError}`);
+      } else {
+        // Modal might have closed but expect failed
+        const modalStillOpen = await modal.isVisible().catch(() => false);
+        if (!modalStillOpen) {
+          console.log(`TestHelper: ✅ Folder created: ${folderName} (modal no longer visible)`);
+          success = true;
+        } else {
+          console.log('TestHelper: ❌ Folder creation failed: Modal still open');
+        }
+      }
+    }
+
+    if (!success) {
+      return false;
+    }
+
+    // Wait for table to refresh with new folder
+    const maxWaitTime = 10000;
+    const startTime = Date.now();
+    let folderInTable = false;
+
+    while (Date.now() - startTime < maxWaitTime) {
+      folderInTable = await this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).isVisible().catch(() => false);
+      if (folderInTable) {
+        console.log(`TestHelper: Folder "${folderName}" visible in table (after ${Date.now() - startTime}ms)`);
+        break;
+      }
+      await this.page.waitForTimeout(500);
+    }
+
+    if (!folderInTable) {
+      console.log(`TestHelper: Folder "${folderName}" NOT visible in table after ${maxWaitTime}ms`);
+
+      // CRITICAL FIX (2025-12-27): If folder not visible, try to force refresh by reloading the page
+      console.log(`TestHelper: Attempting page reload to force refresh...`);
+      await this.page.reload();
+      await this.page.waitForSelector('.ant-table', { timeout: 10000 }).catch(() => null);
+      await this.page.waitForTimeout(2000);
+
+      // Check again after reload
+      folderInTable = await this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).isVisible().catch(() => false);
+      if (folderInTable) {
+        console.log(`TestHelper: Folder "${folderName}" visible after page reload`);
+      } else {
+        console.log(`TestHelper: Folder "${folderName}" still NOT visible after page reload`);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Close all open modals, drawers, and overlay elements
+   *
+   * CRITICAL FIX (2025-12-27): This method addresses the "ant-modal-wrap intercepts pointer events" issue
+   * that occurs during test cleanup. Modals left open from failed tests can block subsequent interactions.
+   *
+   * This method:
+   * 1. Closes all visible Ant Design modals (clicks X button or Cancel)
+   * 2. Closes all visible Ant Design drawers
+   * 3. Removes orphaned overlay elements via JavaScript
+   * 4. Waits for DOM to stabilize
+   *
+   * @returns Number of overlays closed
+   */
+  async closeAllOverlays(): Promise<number> {
+    let closedCount = 0;
+    console.log('TestHelper: Closing all overlays...');
+
+    // Step 1: Close visible modals by clicking close button
+    const modalCloseButtons = this.page.locator('.ant-modal:not(.ant-modal-hidden) .ant-modal-close');
+    const modalCloseCount = await modalCloseButtons.count();
+    for (let i = 0; i < modalCloseCount; i++) {
+      try {
+        await modalCloseButtons.nth(i).click({ timeout: 1000 });
+        closedCount++;
+        await this.page.waitForTimeout(300);
+      } catch (e) {
+        // Button might have already been closed by previous action
+      }
+    }
+
+    // Step 2: Close drawers by clicking close button or mask
+    const drawerCloseButtons = this.page.locator('.ant-drawer:not(.ant-drawer-hidden) .ant-drawer-close');
+    const drawerCloseCount = await drawerCloseButtons.count();
+    for (let i = 0; i < drawerCloseCount; i++) {
+      try {
+        await drawerCloseButtons.nth(i).click({ timeout: 1000 });
+        closedCount++;
+        await this.page.waitForTimeout(300);
+      } catch (e) {
+        // Drawer might have already closed
+      }
+    }
+
+    // Step 3: Press Escape key to close any remaining modals/popovers
+    await this.page.keyboard.press('Escape');
+    await this.page.waitForTimeout(300);
+
+    // Step 4: Force remove orphaned overlay elements via JavaScript
+    const removedCount = await this.page.evaluate(() => {
+      let removed = 0;
+
+      // Remove orphaned modal wrappers
+      document.querySelectorAll('.ant-modal-wrap').forEach((el) => {
+        if (el.parentNode) {
+          el.parentNode.removeChild(el);
+          removed++;
+        }
+      });
+
+      // Remove orphaned modal masks
+      document.querySelectorAll('.ant-modal-mask').forEach((el) => {
+        if (el.parentNode) {
+          el.parentNode.removeChild(el);
+          removed++;
+        }
+      });
+
+      // Remove orphaned drawer wrappers
+      document.querySelectorAll('.ant-drawer-wrapper-body').forEach((el) => {
+        const drawer = el.closest('.ant-drawer');
+        if (drawer && drawer.parentNode) {
+          drawer.parentNode.removeChild(drawer);
+          removed++;
+        }
+      });
+
+      // Remove orphaned popconfirms
+      document.querySelectorAll('.ant-popconfirm, .ant-popover').forEach((el) => {
+        if (el.parentNode) {
+          el.parentNode.removeChild(el);
+          removed++;
+        }
+      });
+
+      // Reset body overflow style (modals set overflow: hidden)
+      document.body.style.overflow = '';
+
+      return removed;
+    });
+
+    closedCount += removedCount;
+
+    if (closedCount > 0) {
+      console.log(`TestHelper: Closed ${closedCount} overlay elements`);
+    }
+
+    // Wait for DOM to stabilize
+    await this.page.waitForTimeout(500);
+
+    return closedCount;
+  }
+
+  /**
+   * Delete a test folder if it exists
+   *
+   * @param folderName Name of the folder to delete
+   * @param isMobile Whether the browser is in mobile mode
+   * @returns true if deleted (or didn't exist), false if deletion failed
+   */
+  async deleteTestFolder(folderName: string, isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Deleting test folder ${folderName}...`);
+
+    // Find folder row
+    const folderRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).first();
+    if (await folderRow.count() === 0) {
+      console.log(`TestHelper: Folder ${folderName} not found - already deleted or never existed`);
+      return true;
+    }
+
+    // Find delete button
+    const deleteButton = folderRow.locator('button').filter({ has: this.page.locator('[data-icon="delete"]') }).first();
+    if (await deleteButton.count() === 0) {
+      console.log(`TestHelper: Delete button not found for ${folderName}`);
+      return false;
+    }
+
+    await deleteButton.click(isMobile ? { force: true } : {});
+    await this.page.waitForTimeout(500);
+
+    // Confirm deletion
+    const confirmButton = this.page.locator('.ant-popconfirm button, .ant-popover button').filter({ hasText: /OK|はい|確認/ }).first();
+    if (await confirmButton.count() > 0) {
+      await confirmButton.click();
+      await this.page.waitForTimeout(3000);
+    }
+
+    // Verify deleted
+    const stillExists = await this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).count() > 0;
+    if (!stillExists) {
+      console.log(`TestHelper: Folder ${folderName} deleted successfully`);
+      return true;
+    }
+
+    console.log(`TestHelper: Folder ${folderName} still exists after deletion attempt`);
     return false;
   }
 }
