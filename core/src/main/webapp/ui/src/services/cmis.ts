@@ -858,7 +858,11 @@ export class CMISService {
           const error = this.handleHttpError(result.status, result.error || 'Unauthorized', '');
           throw error;
         }
-        throw new Error(result.error || `HTTP ${result.status}`);
+        // CRITICAL FIX (2025-12-28): Include status in error for proper error handling in UI
+        // This allows DocumentViewer to show specific messages for 404 (deleted) vs other errors
+        const error: any = new Error(result.error || `HTTP ${result.status}`);
+        error.status = result.status;
+        throw error;
       }
 
       if (!result.data) {

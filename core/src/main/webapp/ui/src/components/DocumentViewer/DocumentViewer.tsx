@@ -292,6 +292,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [versionHistory, setVersionHistory] = useState<VersionHistory | null>(null);
   const [relationships, setRelationships] = useState<Relationship[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
   const [relationshipModalVisible, setRelationshipModalVisible] = useState(false);
   const [objectPickerVisible, setObjectPickerVisible] = useState(false);
@@ -333,6 +334,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const loadObject = async () => {
     if (!objectId) return;
 
+    setLoadError(null);
     try {
       const obj = await cmisService.getObject(repositoryId, objectId);
       setObject(obj);
@@ -379,7 +381,19 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
       // Expose propertyDefinitions for test verification
       (window as any).__NEMAKI_PROPERTY_DEFINITIONS__ = mergedTypeDef.propertyDefinitions;
-    } catch (error) {
+    } catch (error: any) {
+      console.error('[DocumentViewer] loadObject error:', error);
+      // CRITICAL FIX (2025-12-28): Set error state to show proper error UI instead of loading spinner
+      // This handles cases where the object has been deleted or user doesn't have permission
+      const errorMessage = error?.message || 'オブジェクトの読み込みに失敗しました';
+      const statusCode = error?.status;
+      if (statusCode === 404) {
+        setLoadError('オブジェクトが見つかりません。削除された可能性があります。');
+      } else if (statusCode === 403) {
+        setLoadError('このオブジェクトへのアクセス権限がありません。');
+      } else {
+        setLoadError(errorMessage);
+      }
       message.error('オブジェクトの読み込みに失敗しました');
     } finally {
       setLoading(false);
@@ -645,6 +659,30 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       message.error('関連プロパティの更新に失敗しました');
     }
   };
+
+  // CRITICAL FIX (2025-12-28): Show proper error UI with back button when object load fails
+  // Previously, failed loads showed "読み込み中..." indefinitely
+  if (loadError) {
+    const errorFolderId = searchParams.get('folderId') || 'e02f784f8360a02cc14d1314c10038ff';
+    return (
+      <Card>
+        <Alert
+          message="エラー"
+          description={loadError}
+          type="error"
+          showIcon
+          action={
+            <Button
+              icon={<ArrowLeftOutlined />}
+              onClick={() => navigate(`/documents?folderId=${errorFolderId}`)}
+            >
+              フォルダに戻る
+            </Button>
+          }
+        />
+      </Card>
+    );
+  }
 
   if (loading || !object || !typeDefinition) {
     return <div>読み込み中...</div>;
