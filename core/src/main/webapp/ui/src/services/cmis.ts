@@ -673,19 +673,19 @@ export class CMISService {
       message: `HTTP ${status}: ${statusText}`
     };
 
-    // CRITICAL FIX (2025-10-22): Only handle authentication errors (401, 403)
-    // DO NOT handle 404 Not Found errors - these are not authentication failures
-    // 404 errors should be handled by components as normal API failures
+    // CRITICAL FIX (2025-12-28): Only handle 401 as authentication error
+    // 401 Unauthorized = authentication failed (session expired, invalid credentials)
+    // 403 Forbidden = permission denied (valid user but no access rights)
+    //
+    // IMPORTANT: 403 should NOT trigger logout - it means the user IS authenticated
+    // but lacks permission for this specific operation. Show error message instead.
     if (status === 401) {
       if (this.onAuthError) {
         this.onAuthError(error);
       }
-    } else if (status === 403) {
-      if (this.onAuthError) {
-        this.onAuthError(error);
-      }
     }
-    // REMOVED: 404 handling - not an authentication error, should be handled by components
+    // 403 is NOT an auth error - user is authenticated but lacks permission
+    // Let components handle 403 as a normal operation failure
 
     return error;
   }
