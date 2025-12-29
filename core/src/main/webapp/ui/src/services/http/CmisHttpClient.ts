@@ -250,11 +250,14 @@ export class CmisHttpClient {
       // Use onload for successful HTTP completion (fires when request completes at network layer)
       // This includes HTTP 4xx/5xx responses - we resolve those and let callers handle status
       xhr.onload = () => {
+        // CRITICAL FIX (2025-12-29): Only read responseText when responseType allows text access
+        // Reading responseText when responseType is 'arraybuffer' or 'blob' throws InvalidStateError
+        const canReadText = xhr.responseType === '' || xhr.responseType === 'text';
         safeResolve({
           status: xhr.status,
           statusText: xhr.statusText,
           responseURL: xhr.responseURL || options.url,
-          responseText: xhr.responseText,
+          responseText: canReadText ? xhr.responseText : '',
           response: xhr.response,
           getResponseHeader: (name: string) => xhr.getResponseHeader(name)
         });

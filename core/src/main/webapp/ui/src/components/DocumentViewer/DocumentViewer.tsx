@@ -266,6 +266,7 @@ import {
   InfoCircleOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, VersionHistory, TypeDefinition, Relationship } from '../../types/cmis';
 import { PropertyEditor } from '../PropertyEditor/PropertyEditor';
@@ -308,6 +309,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [form] = Form.useForm();
   const [relationshipForm] = Form.useForm();
   const [relationshipEditForm] = Form.useForm();
+  const { t } = useTranslation();
 
   // CRITICAL FIX: Pass handleAuthError to CMISService to handle 401/403/404 errors
   const cmisService = new CMISService(handleAuthError);
@@ -385,16 +387,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       console.error('[DocumentViewer] loadObject error:', error);
       // CRITICAL FIX (2025-12-28): Set error state to show proper error UI instead of loading spinner
       // This handles cases where the object has been deleted or user doesn't have permission
-      const errorMessage = error?.message || 'オブジェクトの読み込みに失敗しました';
+      const errorMessage = error?.message || t('documentViewer.messages.loadError');
       const statusCode = error?.status;
       if (statusCode === 404) {
-        setLoadError('オブジェクトが見つかりません。削除された可能性があります。');
+        setLoadError(t('documentViewer.messages.objectNotFound'));
       } else if (statusCode === 403) {
-        setLoadError('このオブジェクトへのアクセス権限がありません。');
+        setLoadError(t('documentViewer.messages.accessDenied'));
       } else {
         setLoadError(errorMessage);
       }
-      message.error('オブジェクトの読み込みに失敗しました');
+      message.error(t('documentViewer.messages.loadError'));
     } finally {
       setLoading(false);
     }
@@ -407,7 +409,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       const history = await cmisService.getVersionHistory(repositoryId, objectId);
       setVersionHistory(history);
     } catch (error) {
-      console.error('バージョン履歴の読み込みに失敗しました');
+      console.error(t('documentViewer.messages.loadVersionHistoryError'));
     }
   };
 
@@ -425,7 +427,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       );
       setRelationships(relsWithTypeInfo);
     } catch (error) {
-      console.error('関係の読み込みに失敗しました');
+      console.error(t('documentViewer.messages.loadRelationshipsError'));
     }
   };
 
@@ -478,7 +480,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         window.URL.revokeObjectURL(url);
       } catch (error) {
         console.error('Download error:', error);
-        message.error('ダウンロードに失敗しました');
+        message.error(t('documentViewer.messages.downloadError'));
       }
     }
   };
@@ -489,10 +491,10 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     try {
       setLoading(true);
       await cmisService.checkOut(repositoryId, object.id);
-      message.success('チェックアウトしました');
+      message.success(t('documentViewer.messages.checkoutSuccess'));
       await loadObject();
     } catch (error) {
-      message.error('チェックアウトに失敗しました');
+      message.error(t('documentViewer.messages.checkoutError'));
     } finally {
       setLoading(false);
     }
@@ -513,14 +515,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       setLoading(true);
       const file = values.file?.file;
       await cmisService.checkIn(repositoryId, effectiveObjectId, file, values);
-      message.success('チェックインしました');
+      message.success(t('documentViewer.messages.checkinSuccess'));
       setCheckoutModalVisible(false);
       form.resetFields();
       await loadObject();
       await loadVersionHistory();
     } catch (error) {
       console.error('[DocumentViewer] handleCheckIn error:', error);
-      message.error('チェックインに失敗しました');
+      message.error(t('documentViewer.messages.checkinError'));
     } finally {
       setLoading(false);
     }
@@ -540,11 +542,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     try {
       setLoading(true);
       await cmisService.cancelCheckOut(repositoryId, effectiveObjectId);
-      message.success('チェックアウトをキャンセルしました');
+      message.success(t('documentViewer.messages.cancelCheckoutSuccess'));
       await loadObject();
     } catch (error) {
       console.error('[DocumentViewer] handleCancelCheckOut error:', error);
-      message.error('チェックアウトのキャンセルに失敗しました');
+      message.error(t('documentViewer.messages.cancelCheckoutError'));
     } finally {
       setLoading(false);
     }
@@ -552,7 +554,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
   const handleCreateRelationship = async () => {
     if (!object || !selectedTargetObject) {
-      message.warning('ターゲットオブジェクトを選択してください');
+      message.warning(t('documentViewer.messages.selectTargetFirst'));
       return;
     }
 
@@ -572,7 +574,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         targetId: selectedTargetObject.id,
         relationshipType: relationshipType
       }, customProperties);
-      message.success('関係を作成しました');
+      message.success(t('documentViewer.messages.createRelationshipSuccess'));
       setRelationshipModalVisible(false);
       setSelectedTargetObject(null);
       setRelationshipCreateTypeDefinition(null);
@@ -580,18 +582,18 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       await loadRelationships();
     } catch (error) {
       console.error('Relationship creation error:', error);
-      message.error('関係の作成に失敗しました');
+      message.error(t('documentViewer.messages.createRelationshipError'));
     }
   };
 
   const handleDeleteRelationship = async (relationshipId: string) => {
     try {
       await cmisService.deleteRelationship(repositoryId, relationshipId);
-      message.success('関係を削除しました');
+      message.success(t('documentViewer.messages.deleteRelationshipSuccess'));
       await loadRelationships();
     } catch (error) {
       console.error('Relationship deletion error:', error);
-      message.error('関係の削除に失敗しました');
+      message.error(t('documentViewer.messages.deleteRelationshipError'));
     }
   };
 
@@ -605,9 +607,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     try {
       const updatedObject = await cmisService.updateProperties(repositoryId, object.id, properties, changeToken);
       setObject(updatedObject);
-      message.success('プロパティを更新しました');
+      message.success(t('documentViewer.messages.updatePropertiesSuccess'));
     } catch (error) {
-      message.error('プロパティの更新に失敗しました');
+      message.error(t('documentViewer.messages.updatePropertiesError'));
     }
   };
 
@@ -634,7 +636,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       setRelationshipEditMode(true);
     } catch (error) {
       console.error('Failed to load relationship type:', error);
-      message.error('関連タイプの読み込みに失敗しました');
+      message.error(t('documentViewer.messages.loadRelationshipTypesError'));
     }
   };
 
@@ -647,7 +649,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       const changeToken = getSafeStringValue(selectedRelationship.properties?.['cmis:changeToken']);
 
       await cmisService.updateProperties(repositoryId, selectedRelationship.id, values, changeToken);
-      message.success('関連プロパティを更新しました');
+      message.success(t('documentViewer.messages.updateRelationshipSuccess'));
 
       // Reload relationships to get updated data
       await loadRelationships();
@@ -656,7 +658,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       setSelectedRelationship(null);
     } catch (error) {
       console.error('Failed to update relationship properties:', error);
-      message.error('関連プロパティの更新に失敗しました');
+      message.error(t('documentViewer.messages.updateRelationshipError'));
     }
   };
 
@@ -667,7 +669,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     return (
       <Card>
         <Alert
-          message="エラー"
+          message={t('common.error')}
           description={loadError}
           type="error"
           showIcon
@@ -676,7 +678,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               icon={<ArrowLeftOutlined />}
               onClick={() => navigate(`/documents?folderId=${errorFolderId}`)}
             >
-              フォルダに戻る
+              {t('documentViewer.backToFolder')}
             </Button>
           }
         />
@@ -685,7 +687,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   }
 
   if (loading || !object || !typeDefinition) {
-    return <div>読み込み中...</div>;
+    return <div>{t('common.loading')}</div>;
   }
 
   // Check-out status detection - handle both boolean and string values
@@ -701,32 +703,32 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
   const versionColumns = [
     {
-      title: 'バージョン',
+      title: t('documentViewer.version'),
       dataIndex: 'versionLabel',
       key: 'version',
     },
     {
-      title: '作成者',
+      title: t('documentViewer.createdBy'),
       dataIndex: 'createdBy',
       key: 'createdBy',
     },
     {
-      title: '作成日時',
+      title: t('documentViewer.createdAt'),
       dataIndex: 'creationDate',
       key: 'creationDate',
       render: (date: string) => new Date(date).toLocaleString('ja-JP'),
     },
     {
-      title: 'コメント',
+      title: t('documentViewer.comment'),
       dataIndex: 'properties',
       key: 'comment',
       render: (properties: Record<string, any>) => properties['cmis:checkinComment'] || '-',
     },
     {
-      title: 'アクション',
+      title: t('common.actions'),
       key: 'actions',
       render: (_: any, record: CMISObject) => (
-        <Button 
+        <Button
           size="small"
           onClick={async () => {
             try {
@@ -741,11 +743,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               document.body.removeChild(a);
               window.URL.revokeObjectURL(url);
             } catch (error) {
-              message.error('ダウンロードに失敗しました');
+              message.error(t('documentViewer.messages.downloadError'));
             }
           }}
         >
-          ダウンロード
+          {t('documentViewer.download')}
         </Button>
       ),
     },
@@ -753,7 +755,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
   const relationshipColumns = [
     {
-      title: 'タイプ',
+      title: t('common.type'),
       dataIndex: 'relationshipType',
       key: 'type',
       render: (typeId: string, record: Relationship) => (
@@ -761,28 +763,28 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           <span>{typeId}</span>
           {record.isParentChildType && (
             <Tag color="orange" style={{ fontSize: '10px' }}>
-              <WarningOutlined /> カスケード削除
+              <WarningOutlined /> {t('documentViewer.cascadeDelete')}
             </Tag>
           )}
         </Space>
       ),
     },
     {
-      title: '役割',
+      title: t('documentViewer.role'),
       key: 'role',
       render: (_: any, record: Relationship) => {
         const isSource = record.sourceId === objectId;
         const isTarget = record.targetId === objectId;
         return (
           <Space>
-            {isSource && <Tag color="blue">ソース</Tag>}
-            {isTarget && <Tag color="green">ターゲット</Tag>}
+            {isSource && <Tag color="blue">{t('documentViewer.source')}</Tag>}
+            {isTarget && <Tag color="green">{t('documentViewer.target')}</Tag>}
           </Space>
         );
       },
     },
     {
-      title: '相手先',
+      title: t('documentViewer.counterpart'),
       key: 'other',
       render: (_: any, record: Relationship) => {
         const isSource = record.sourceId === objectId;
@@ -800,7 +802,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       },
     },
     {
-      title: 'アクション',
+      title: t('common.actions'),
       key: 'actions',
       render: (_: any, record: Relationship) => (
         <Space>
@@ -812,20 +814,20 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               setRelationshipDetailModalVisible(true);
             }}
           >
-            詳細
+            {t('documentViewer.details')}
           </Button>
           <Popconfirm
-            title="この関係を削除しますか？"
+            title={t('documentViewer.confirmDeleteRelationship')}
             onConfirm={() => handleDeleteRelationship(record.id)}
-            okText="はい"
-            cancelText="いいえ"
+            okText={t('common.yes')}
+            cancelText={t('common.no')}
           >
             <Button
               size="small"
               danger
               icon={<DeleteOutlined />}
             >
-              削除
+              {t('common.delete')}
             </Button>
           </Popconfirm>
         </Space>
@@ -905,7 +907,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const tabItems = [
     {
       key: 'properties',
-      label: 'プロパティ',
+      label: t('documentViewer.properties'),
       children: (
         <PropertyEditor
           object={object}
@@ -917,7 +919,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     },
     {
       key: 'secondaryTypes',
-      label: 'セカンダリタイプ',
+      label: t('documentViewer.secondaryTypes'),
       children: (
         <SecondaryTypeSelector
           repositoryId={repositoryId}
@@ -929,7 +931,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     },
     ...(canPreview(object) ? [{
       key: 'preview',
-      label: 'プレビュー',
+      label: t('documentViewer.preview'),
       children: (
         <PreviewComponent
           repositoryId={repositoryId}
@@ -939,7 +941,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     }] : []),
     {
       key: 'versions',
-      label: 'バージョン履歴',
+      label: t('documentViewer.versionHistory'),
       children: (
         <Table
           columns={versionColumns}
@@ -952,7 +954,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     },
     {
       key: 'relationships',
-      label: '関係',
+      label: t('documentViewer.relationships'),
       children: (
         <Space direction="vertical" style={{ width: '100%' }}>
           <div style={{ marginBottom: 16 }}>
@@ -961,7 +963,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               icon={<PlusOutlined />}
               onClick={openRelationshipModal}
             >
-              関係を追加
+              {t('documentViewer.addRelationship')}
             </Button>
           </div>
           <Table
@@ -970,7 +972,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             rowKey="id"
             size="small"
             pagination={false}
-            locale={{ emptyText: '関係がありません' }}
+            locale={{ emptyText: t('documentViewer.noRelationships') }}
           />
         </Space>
       ),
@@ -1001,60 +1003,60 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                   navigate(targetUrl);
                 }}
               >
-                戻る
+                {t('documentViewer.back')}
               </Button>
               <h2 style={{ margin: 0 }}>{object.name}</h2>
               {isCheckedOut && (
                 <Tag color="orange">
-                  <LockOutlined /> チェックアウト中 ({checkedOutBy})
+                  <LockOutlined /> {t('documentViewer.checkedOut')} ({checkedOutBy})
                 </Tag>
               )}
             </Space>
-            
+
             <Space>
               {object.baseType === 'cmis:document' && (
-                <Button 
+                <Button
                   icon={<DownloadOutlined />}
                   onClick={handleDownload}
                 >
-                  ダウンロード
+                  {t('documentViewer.download')}
                 </Button>
               )}
-              
+
               {!isCheckedOut ? (
-                <Button 
+                <Button
                   icon={<LockOutlined />}
                   onClick={handleCheckOut}
                 >
-                  チェックアウト
+                  {t('documentViewer.checkout')}
                 </Button>
               ) : (
                 <Space>
-                  <Button 
+                  <Button
                     type="primary"
                     icon={<UnlockOutlined />}
                     onClick={() => setCheckoutModalVisible(true)}
                   >
-                    チェックイン
+                    {t('documentViewer.checkin')}
                   </Button>
                   <Popconfirm
-                    title="チェックアウトをキャンセルしますか？"
+                    title={t('documentViewer.cancelCheckout') + '?'}
                     onConfirm={handleCancelCheckOut}
-                    okText="はい"
-                    cancelText="いいえ"
+                    okText={t('common.yes')}
+                    cancelText={t('common.no')}
                   >
                     <Button danger>
-                      キャンセル
+                      {t('common.cancel')}
                     </Button>
                   </Popconfirm>
                 </Space>
               )}
-              
+
               <Button
                 icon={<SwapOutlined />}
                 onClick={() => setTypeMigrationModalVisible(true)}
               >
-                タイプを変更
+                {t('documentViewer.changeType')}
               </Button>
 
               <Button
@@ -1065,27 +1067,27 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                   navigate(`/permissions/${object.id}${folderIdParam}`);
                 }}
               >
-                権限管理
+                {t('documentViewer.permissionManagement')}
               </Button>
             </Space>
           </div>
 
           <Descriptions bordered size="small">
-            <Descriptions.Item label="ID">{object.id}</Descriptions.Item>
-            <Descriptions.Item label="タイプ">{object.objectType}</Descriptions.Item>
-            <Descriptions.Item label="ベースタイプ">{object.baseType}</Descriptions.Item>
-            <Descriptions.Item label="パス">
+            <Descriptions.Item label={t('documentViewer.objectId')}>{object.id}</Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.objectType')}>{object.objectType}</Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.baseType')}>{object.baseType}</Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.path')}>
               {object.path ? renderClickablePath(object.path) : '-'}
             </Descriptions.Item>
-            <Descriptions.Item label="作成者">{object.createdBy}</Descriptions.Item>
-            <Descriptions.Item label="作成日時">
+            <Descriptions.Item label={t('documentViewer.createdBy')}>{object.createdBy}</Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.createdAt')}>
               {object.creationDate ? new Date(object.creationDate).toLocaleString('ja-JP') : '-'}
             </Descriptions.Item>
-            <Descriptions.Item label="更新者">{object.lastModifiedBy}</Descriptions.Item>
-            <Descriptions.Item label="更新日時">
+            <Descriptions.Item label={t('documentViewer.lastModifiedBy')}>{object.lastModifiedBy}</Descriptions.Item>
+            <Descriptions.Item label={t('documentViewer.lastModifiedAt')}>
               {object.lastModificationDate ? new Date(object.lastModificationDate).toLocaleString('ja-JP') : '-'}
             </Descriptions.Item>
-            <Descriptions.Item label="サイズ">
+            <Descriptions.Item label={t('documentViewer.size')}>
               {object.contentStreamLength
                 ? (object.contentStreamLength < 1024
                     ? `${object.contentStreamLength} B`
@@ -1093,7 +1095,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 : '-'}
             </Descriptions.Item>
             {object.contentStreamMimeType && (
-              <Descriptions.Item label="MIMEタイプ">
+              <Descriptions.Item label={t('documentViewer.mimeType')}>
                 {object.contentStreamMimeType}
               </Descriptions.Item>
             )}
@@ -1107,37 +1109,36 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               showIcon
               message={
                 <span>
-                  <strong>プロパティ値の不整合が検出されました</strong>
+                  <strong>{t('documentViewer.coercionWarning.title')}</strong>
                   <span style={{ marginLeft: 8 }}>
-                    ({object.coercionWarnings.length}件の警告)
+                    ({t('documentViewer.coercionWarning.warningCount', { count: object.coercionWarnings.length })})
                   </span>
                 </span>
               }
               description={
                 <div>
                   <p style={{ marginBottom: 8 }}>
-                    このドキュメントには、現在のタイプ定義と一致しないプロパティ値が含まれています。
-                    プロパティタブで値を確認し、正しい値で再保存してください。
+                    {t('documentViewer.coercionWarning.description')}
                   </p>
                   <Collapse
                     size="small"
                     items={[
                       {
                         key: 'warnings',
-                        label: '警告の詳細を表示',
+                        label: t('documentViewer.coercionWarning.showDetails'),
                         children: (
                           <ul style={{ margin: 0, paddingLeft: 20 }}>
                             {object.coercionWarnings.map((warning, index) => (
                               <li key={index} style={{ marginBottom: 4 }}>
                                 <strong>{warning.propertyId}</strong>: {' '}
-                                {warning.type === 'CARDINALITY_MISMATCH' && 'カーディナリティ不整合'}
-                                {warning.type === 'TYPE_COERCION_REJECTED' && '型変換失敗'}
-                                {warning.type === 'LIST_ELEMENT_DROPPED' && 'リスト要素の欠落'}
+                                {warning.type === 'CARDINALITY_MISMATCH' && t('documentViewer.coercionWarning.cardinalityMismatch')}
+                                {warning.type === 'TYPE_COERCION_REJECTED' && t('documentViewer.coercionWarning.typeCoercionRejected')}
+                                {warning.type === 'LIST_ELEMENT_DROPPED' && t('documentViewer.coercionWarning.listElementDropped')}
                                 {' - '}
                                 {warning.reason}
                                 {warning.elementCount !== undefined && (
                                   <span style={{ color: '#666' }}>
-                                    {' '}(要素数: {warning.elementCount})
+                                    {' '}({t('documentViewer.coercionWarning.elementCount', { count: warning.elementCount })})
                                   </span>
                                 )}
                               </li>
@@ -1158,7 +1159,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       </Card>
 
       <Modal
-        title="チェックイン"
+        title={t('documentViewer.checkinModal.title')}
         open={checkoutModalVisible}
         onCancel={() => setCheckoutModalVisible(false)}
         footer={null}
@@ -1168,7 +1169,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         <Form form={form} onFinish={handleCheckIn} layout="vertical" initialValues={{ major: true }}>
           <Form.Item
             name="file"
-            label="新しいファイル（オプション）"
+            label={t('documentViewer.checkinModal.newFile')}
           >
             <Upload.Dragger
               beforeUpload={() => false}
@@ -1177,39 +1178,38 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               <p className="ant-upload-drag-icon">
                 <UploadOutlined />
               </p>
-              <p className="ant-upload-text">新しいバージョンのファイルをアップロード（オプション）</p>
+              <p className="ant-upload-text">{t('documentViewer.checkinModal.uploadNewVersion')}</p>
             </Upload.Dragger>
           </Form.Item>
 
           <Form.Item
             name="major"
-            label="バージョンタイプ"
-            tooltip="メジャーバージョン（1.0 → 2.0）またはマイナーバージョン（1.0 → 1.1）を選択してください"
-            rules={[{ required: true, message: 'バージョンタイプを選択してください' }]}
+            label={t('documentViewer.checkinModal.versionType')}
+            rules={[{ required: true, message: t('documentViewer.checkinModal.selectVersionType') }]}
           >
             <Select
               options={[
-                { label: 'メジャーバージョン（例: 1.0 → 2.0）', value: true },
-                { label: 'マイナーバージョン（例: 1.0 → 1.1）', value: false }
+                { label: t('documentViewer.checkinModal.majorVersion'), value: true },
+                { label: t('documentViewer.checkinModal.minorVersion'), value: false }
               ]}
-              placeholder="バージョンタイプを選択"
+              placeholder={t('documentViewer.checkinModal.selectVersionType')}
             />
           </Form.Item>
 
           <Form.Item
             name="checkinComment"
-            label="チェックインコメント"
+            label={t('documentViewer.checkinModal.checkinComment')}
           >
-            <Input.TextArea rows={3} placeholder="変更内容を入力してください" />
+            <Input.TextArea rows={3} placeholder={t('documentViewer.checkinModal.enterChanges')} />
           </Form.Item>
 
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
-                チェックイン
+                {t('documentViewer.checkin')}
               </Button>
               <Button onClick={() => setCheckoutModalVisible(false)}>
-                キャンセル
+                {t('common.cancel')}
               </Button>
             </Space>
           </Form.Item>
@@ -1217,7 +1217,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       </Modal>
 
       <Modal
-        title="関係を追加"
+        title={t('documentViewer.relationshipModal.title')}
         open={relationshipModalVisible}
         onCancel={() => {
           setRelationshipModalVisible(false);
@@ -1234,42 +1234,42 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           onFinish={handleCreateRelationship}
         >
           <Form.Item
-            label="関係タイプ"
+            label={t('documentViewer.relationshipType')}
             required
           >
             <Select
               value={relationshipType}
               onChange={handleRelationshipTypeChange}
               options={relationshipTypes.length > 0
-                ? relationshipTypes.map(t => ({
-                    label: `${t.displayName || t.id} (${t.id})`,
-                    value: t.id
+                ? relationshipTypes.map(type => ({
+                    label: `${type.displayName || type.id} (${type.id})`,
+                    value: type.id
                   }))
                 : [
-                    { label: '双方向関係 (nemaki:bidirectionalRelationship)', value: 'nemaki:bidirectionalRelationship' },
-                    { label: '親子関係 (nemaki:parentChildRelationship)', value: 'nemaki:parentChildRelationship' },
+                    { label: 'Bidirectional (nemaki:bidirectionalRelationship)', value: 'nemaki:bidirectionalRelationship' },
+                    { label: 'Parent-Child (nemaki:parentChildRelationship)', value: 'nemaki:parentChildRelationship' },
                   ]
               }
             />
           </Form.Item>
 
           <Form.Item
-            label="ターゲットオブジェクト"
+            label={t('documentViewer.selectTarget')}
             required
           >
             <Space direction="vertical" style={{ width: '100%' }}>
               {selectedTargetObject ? (
                 <div style={{ padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
-                  <strong>選択中: </strong>
+                  <strong>{t('documentViewer.relationshipModal.selected')}: </strong>
                   {selectedTargetObject.name} (ID: {selectedTargetObject.id})
                 </div>
               ) : (
                 <div style={{ padding: '8px', backgroundColor: '#fafafa', borderRadius: '4px', color: '#999' }}>
-                  オブジェクトを選択してください
+                  {t('documentViewer.relationshipModal.selectObjectPlaceholder')}
                 </div>
               )}
               <Button onClick={() => setObjectPickerVisible(true)}>
-                オブジェクトを選択
+                {t('documentViewer.relationshipModal.selectObject')}
               </Button>
             </Space>
           </Form.Item>
@@ -1280,7 +1280,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
              .filter(([propId]) => !propId.startsWith('cmis:')).length > 0 && (
             <div style={{ marginBottom: 16 }}>
               <h4 style={{ marginBottom: 12, borderBottom: '1px solid #f0f0f0', paddingBottom: 8 }}>
-                カスタムプロパティ
+                {t('documentViewer.relationshipModal.customProperties')}
               </h4>
               {Object.entries(relationshipCreateTypeDefinition.propertyDefinitions || {})
                 .filter(([propId]) => !propId.startsWith('cmis:'))
@@ -1319,7 +1319,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       ) : propDefTyped.propertyType === 'datetime' ? (
                         <Input type="datetime-local" />
                       ) : (
-                        <Input placeholder="値を入力" />
+                        <Input />
                       )}
                     </Form.Item>
                   );
@@ -1334,7 +1334,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 htmlType="submit"
                 disabled={!selectedTargetObject}
               >
-                作成
+                {t('common.create')}
               </Button>
               <Button onClick={() => {
                 setRelationshipModalVisible(false);
@@ -1342,7 +1342,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 setRelationshipCreateTypeDefinition(null);
                 relationshipForm.resetFields();
               }}>
-                キャンセル
+                {t('common.cancel')}
               </Button>
             </Space>
           </Form.Item>
@@ -1351,7 +1351,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
       {/* Relationship Detail Modal */}
       <Modal
-        title={relationshipEditMode ? "関連プロパティを編集" : "関連オブジェクト詳細"}
+        title={relationshipEditMode ? t('documentViewer.relationshipDetail.editTitle') : t('documentViewer.relationshipDetail.title')}
         open={relationshipDetailModalVisible}
         onCancel={() => {
           setRelationshipDetailModalVisible(false);
@@ -1368,14 +1368,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               relationshipEditForm.resetFields();
             }}
           >
-            キャンセル
+            {t('common.cancel')}
           </Button>,
           <Button
             key="save"
             type="primary"
             onClick={handleSaveRelationshipProperties}
           >
-            保存
+            {t('common.save')}
           </Button>
         ] : [
           <Button
@@ -1384,7 +1384,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             icon={<EditOutlined />}
             onClick={handleEditRelationship}
           >
-            編集
+            {t('common.edit')}
           </Button>,
           <Button
             key="close"
@@ -1393,7 +1393,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               setSelectedRelationship(null);
             }}
           >
-            閉じる
+            {t('common.close')}
           </Button>
         ]}
         width={700}
@@ -1406,20 +1406,20 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               size="small"
               style={{ marginBottom: 16 }}
             >
-              <Descriptions.Item label="関連ID">
+              <Descriptions.Item label={t('documentViewer.relationshipDetail.relationshipId')}>
                 {selectedRelationship.id}
               </Descriptions.Item>
-              <Descriptions.Item label="関連タイプ">
+              <Descriptions.Item label={t('documentViewer.relationshipType')}>
                 <Space>
                   {selectedRelationship.relationshipType}
                   {selectedRelationship.isParentChildType && (
                     <Tag color="orange">
-                      <WarningOutlined /> カスケード削除対象
+                      <WarningOutlined /> {t('documentViewer.cascadeDelete')}
                     </Tag>
                   )}
                 </Space>
               </Descriptions.Item>
-              <Descriptions.Item label="ソースID">
+              <Descriptions.Item label={t('documentViewer.sourceId')}>
                 <span
                   style={{ color: '#1890ff', cursor: 'pointer' }}
                   onClick={() => {
@@ -1431,11 +1431,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 >
                   {selectedRelationship.sourceId}
                   {selectedRelationship.sourceId === objectId && (
-                    <Tag color="blue" style={{ marginLeft: 8 }}>このオブジェクト</Tag>
+                    <Tag color="blue" style={{ marginLeft: 8 }}>{t('documentViewer.relationshipDetail.thisObject')}</Tag>
                   )}
                 </span>
               </Descriptions.Item>
-              <Descriptions.Item label="ターゲットID">
+              <Descriptions.Item label={t('documentViewer.targetId')}>
                 <span
                   style={{ color: '#1890ff', cursor: 'pointer' }}
                   onClick={() => {
@@ -1447,7 +1447,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 >
                   {selectedRelationship.targetId}
                   {selectedRelationship.targetId === objectId && (
-                    <Tag color="green" style={{ marginLeft: 8 }}>このオブジェクト</Tag>
+                    <Tag color="green" style={{ marginLeft: 8 }}>{t('documentViewer.relationshipDetail.thisObject')}</Tag>
                   )}
                 </span>
               </Descriptions.Item>
@@ -1455,11 +1455,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
 
             {selectedRelationship.isParentChildType && (
               <Alert
-                message="カスケード削除について"
+                message={t('documentViewer.relationshipDetail.cascadeWarning')}
                 description={
                   selectedRelationship.sourceId === objectId
-                    ? "このオブジェクトがソースです。このオブジェクトを削除すると、ターゲット（子）オブジェクトも一緒に削除されます。"
-                    : "このオブジェクトはターゲット（子）です。ソース（親）オブジェクトが削除されると、このオブジェクトも一緒に削除されます。"
+                    ? t('documentViewer.relationshipDetail.cascadeWarningSource')
+                    : t('documentViewer.relationshipDetail.cascadeWarningTarget')
                 }
                 type="warning"
                 showIcon
@@ -1470,7 +1470,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
             {/* Conditional rendering: Edit mode with Form or Read-only mode with Table */}
             {relationshipEditMode && relationshipTypeDefinition ? (
               <div>
-                <h4 style={{ marginBottom: 16 }}>編集可能なプロパティ</h4>
+                <h4 style={{ marginBottom: 16 }}>{t('documentViewer.relationshipDetail.editableProperties')}</h4>
                 <Form
                   form={relationshipEditForm}
                   layout="vertical"
@@ -1498,7 +1498,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                           name={propId}
                           label={propDefTyped.displayName || propId}
                           tooltip={propDefTyped.description}
-                          rules={propDefTyped.required ? [{ required: true, message: `${propDefTyped.displayName || propId}は必須です` }] : undefined}
+                          rules={propDefTyped.required ? [{ required: true, message: t('documentViewer.relationshipDetail.fieldRequired', { field: propDefTyped.displayName || propId }) }] : undefined}
                         >
                           {propDefTyped.propertyType === 'boolean' ? (
                             <Select
@@ -1525,7 +1525,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                     }).length === 0 && (
                     <Alert
                       type="info"
-                      message="このリレーションシップタイプには編集可能なプロパティがありません"
+                      message={t('documentViewer.relationshipDetail.noEditableProperties')}
                       style={{ marginBottom: 16 }}
                     />
                   )}
@@ -1534,7 +1534,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                   items={[
                     {
                       key: 'readonly-properties',
-                      label: '読み取り専用プロパティ',
+                      label: t('documentViewer.relationshipDetail.readonlyProperties'),
                       children: (
                         <Table
                           dataSource={Object.entries(selectedRelationship.properties)
@@ -1549,8 +1549,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                               value: Array.isArray(value) ? value.join(', ') : String(value ?? '')
                             }))}
                           columns={[
-                            { title: 'プロパティ名', dataIndex: 'name', key: 'name', width: '40%' },
-                            { title: '値', dataIndex: 'value', key: 'value' }
+                            { title: t('documentViewer.relationshipDetail.propertyName'), dataIndex: 'name', key: 'name', width: '40%' },
+                            { title: t('documentViewer.relationshipDetail.value'), dataIndex: 'value', key: 'value' }
                           ]}
                           size="small"
                           pagination={false}
@@ -1566,7 +1566,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                 items={[
                   {
                     key: 'properties',
-                    label: `プロパティ (${Object.keys(selectedRelationship.properties).length}件)`,
+                    label: t('documentViewer.relationshipDetail.propertiesCount', { count: Object.keys(selectedRelationship.properties).length }),
                     children: (
                       <Table
                         dataSource={Object.entries(selectedRelationship.properties).map(([key, value]) => ({
@@ -1575,8 +1575,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                           value: Array.isArray(value) ? value.join(', ') : String(value ?? '')
                         }))}
                         columns={[
-                          { title: 'プロパティ名', dataIndex: 'name', key: 'name', width: '40%' },
-                          { title: '値', dataIndex: 'value', key: 'value' }
+                          { title: t('documentViewer.relationshipDetail.propertyName'), dataIndex: 'name', key: 'name', width: '40%' },
+                          { title: t('documentViewer.relationshipDetail.value'), dataIndex: 'value', key: 'value' }
                         ]}
                         size="small"
                         pagination={false}
@@ -1600,7 +1600,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           setObjectPickerVisible(false);
         }}
         onCancel={() => setObjectPickerVisible(false)}
-        title="ターゲットオブジェクトを選択"
+        title={t('documentViewer.selectTargetObject')}
         filterType="all"
       />
 
@@ -1612,7 +1612,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         currentType={object.objectType}
         onClose={() => setTypeMigrationModalVisible(false)}
         onSuccess={async (newTypeId) => {
-          message.success(`タイプを ${newTypeId} に変更しました`);
+          message.success(t('documentViewer.messages.typeChangedSuccess', { newTypeId }));
           await loadObject(); // Reload object to get updated type
         }}
       />

@@ -325,13 +325,14 @@ run_test "Create Document with Content" "
     echo 'Test content for QA document creation' > /tmp/qa-test-content.txt
     
     # Use React UI proven Browser Binding pattern: /root endpoint with timestamp-based unique name
+    # CRITICAL FIX (2025-12-29): Use 'content=@file' not 'filename=@file' for CMIS Browser Binding
     response=\$(curl -s -u admin:admin -X POST \\
         -F 'cmisaction=createDocument' \\
         -F 'propertyId[0]=cmis:objectTypeId' \\
         -F 'propertyValue[0]=cmis:document' \\
         -F 'propertyId[1]=cmis:name' \\
         -F \"propertyValue[1]=test-qa-document-\$timestamp.txt\" \\
-        -F 'filename=@/tmp/qa-test-content.txt;filename=test-qa-document.txt' \\
+        -F 'content=@/tmp/qa-test-content.txt;filename=test-qa-document.txt' \\
         -F '_charset_=UTF-8' \\
         \"$BASE_URL/browser/bedroom/root\")
     

@@ -2,6 +2,11 @@
 
 日本語で対話してください。
 ファイルの読み込みは100行毎などではなく、常に一気にまとめて読み込むようにしてください。
+---
+## Tool Execution Safety
+
+- Run tools **sequentially only**; do not issue a new `tool_use` until the previous `tool_result` arrives.
+- If an API error reports a missing `tool_result`, pause immediately and ask for user direction—never retry automatically.
 
 ---
 

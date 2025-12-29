@@ -275,11 +275,30 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [loading, setLoading] = useState(false);
   // selectedFolderId: The folder whose contents are displayed in the list pane
   // Changes on any folder click in tree
-  const [selectedFolderId, setSelectedFolderId] = useState<string>('');
+  // Initialize synchronously from URL to show correct folder contents on return from DocumentViewer
+  const [selectedFolderId, setSelectedFolderId] = useState<string>(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('folderId') || '';
+  });
   // currentFolderId: The tree pivot point - ancestors are calculated from this folder
   // Only changes when clicking an already-selected folder (second click)
-  const [currentFolderId, setCurrentFolderId] = useState<string>('');
+  // CRITICAL FIX (2025-12-29): Initialize from sessionStorage to preserve across page navigation
+  // This allows returning from DocumentViewer to the same tree pivot point
+  const [currentFolderId, setCurrentFolderId] = useState<string>(() => {
+    const saved = sessionStorage.getItem(`nemakiware_currentFolderId_${repositoryId}`);
+    console.log('[DocumentList] Initial currentFolderId from sessionStorage:', saved);
+    return saved || '';
+  });
   const [currentFolderPath, setCurrentFolderPath] = useState<string>('/');
+
+  // CRITICAL FIX (2025-12-29): Persist currentFolderId to sessionStorage when it changes
+  // This allows preserving the tree pivot point across page navigations (e.g., returning from DocumentViewer)
+  useEffect(() => {
+    if (currentFolderId) {
+      console.log('[DocumentList] Saving currentFolderId to sessionStorage:', currentFolderId);
+      sessionStorage.setItem(`nemakiware_currentFolderId_${repositoryId}`, currentFolderId);
+    }
+  }, [currentFolderId, repositoryId]);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [folderModalVisible, setFolderModalVisible] = useState(false);
   const [checkInModalVisible, setCheckInModalVisible] = useState(false);
@@ -334,10 +353,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   }, []);
 
   // Initialize folder ID from URL parameter or default to root
-  // CRITICAL FIX (2025-12-29): Sync both selectedFolderId and currentFolderId from URL
-  // - When returning from DocumentViewer, user expects tree to show the folder they were viewing
-  // - This provides better UX even though it may cause tree redraws
-  // - The "current folder" (tree pivot) should match the folder being displayed
+  // CRITICAL FIX (2025-12-29): URL only affects selectedFolderId (folder being displayed)
+  // currentFolderId (tree pivot point) is preserved in sessionStorage and should NOT be set from URL
+  // This allows the tree pivot to be preserved even when viewing different folders
   useEffect(() => {
     const folderIdFromUrl = searchParams.get('folderId');
     console.log('[DocumentList] URL useEffect triggered');
@@ -346,21 +364,23 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     console.log('[DocumentList] current currentFolderId:', currentFolderId);
 
     if (folderIdFromUrl) {
-      // Always update selectedFolderId to show correct folder contents
-      console.log('[DocumentList] Setting selectedFolderId to:', folderIdFromUrl);
-      setSelectedFolderId(folderIdFromUrl);
-      // CRITICAL FIX (2025-12-29): Also update currentFolderId to sync tree pivot
-      // This ensures that when returning from DocumentViewer, the tree shows the correct folder
-      // Previously only updated on initial load, causing tree to show root after navigating back
-      if (currentFolderId !== folderIdFromUrl) {
-        console.log('[DocumentList] Setting currentFolderId to:', folderIdFromUrl);
-        setCurrentFolderId(folderIdFromUrl);
+      // URL determines which folder's contents to display (selectedFolderId)
+      // Do NOT change currentFolderId - it should only change when user explicitly clicks an already-selected folder
+      if (folderIdFromUrl !== selectedFolderId) {
+        console.log('[DocumentList] Setting selectedFolderId to:', folderIdFromUrl);
+        setSelectedFolderId(folderIdFromUrl);
       }
+      // REMOVED: Do not set currentFolderId from URL
+      // currentFolderId is preserved via sessionStorage and user action only
     } else if (!selectedFolderId) {
       // Default to root folder if no URL parameter and no selected folder
       console.log('[DocumentList] No folderId in URL, defaulting to ROOT');
       setSelectedFolderId(ROOT_FOLDER_ID);
-      setCurrentFolderId(ROOT_FOLDER_ID);
+      // Only set currentFolderId to ROOT if not already set (from sessionStorage)
+      if (!currentFolderId) {
+        console.log('[DocumentList] Setting currentFolderId to ROOT (no sessionStorage value)');
+        setCurrentFolderId(ROOT_FOLDER_ID);
+      }
       setSearchParams({ folderId: ROOT_FOLDER_ID });
     }
   }, [repositoryId, searchParams, setSearchParams]); // Include searchParams to react to URL changes
@@ -956,9 +976,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       key: 'size',
       width: 100,
       render: (size: number) => {
-        if (!size) return '-';
+        // CMIS returns -1 for unknown/no content, null/undefined for folders
+        if (size === null || size === undefined || size < 0) return '-';
+        if (size === 0) return '0 B';
         if (size < 1024) return `${size} B`;
-        return `${Math.round(size / 1024)} KB`;
+        if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+        return `${(size / (1024 * 1024)).toFixed(1)} MB`;
       },
     },
     {

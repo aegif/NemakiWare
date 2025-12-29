@@ -93,20 +93,37 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   }, [externalSelectedFolderId]);
 
   // Sync with external current folder
+  // CRITICAL FIX (2025-12-29): Properly handle external currentFolderId when returning from DocumentViewer
   useEffect(() => {
+    console.log('[FolderTree] External sync effect - externalCurrentFolderId:', externalCurrentFolderId, 'internal:', currentFolderId);
     if (externalCurrentFolderId && externalCurrentFolderId !== currentFolderId) {
+      console.log('[FolderTree] Syncing to external currentFolderId:', externalCurrentFolderId);
       setCurrentFolderId(externalCurrentFolderId);
       loadTreeFromFolder(externalCurrentFolderId);
     }
-  }, [externalCurrentFolderId]);
+  }, [externalCurrentFolderId, currentFolderId]);
 
   // Initial load - get root folder and build tree
+  // Only load root if no external currentFolderId is provided
   useEffect(() => {
-    loadRootFolder();
-  }, [repositoryId]);
+    console.log('[FolderTree] Initial load effect - externalCurrentFolderId:', externalCurrentFolderId);
+    if (!externalCurrentFolderId) {
+      loadRootFolder();
+    } else {
+      // External currentFolderId provided - load tree from that folder
+      console.log('[FolderTree] Using external currentFolderId:', externalCurrentFolderId);
+      loadTreeFromFolder(externalCurrentFolderId);
+    }
+  }, [repositoryId, externalCurrentFolderId]);
 
   /**
    * Load root folder and initialize tree
+   * CRITICAL FIX (2025-12-29): Respect external selectedFolderId and currentFolderId
+   * - If externalSelectedFolderId is provided (from URL), don't overwrite internal selectedFolderId
+   * - If externalCurrentFolderId is provided (from sessionStorage), don't overwrite internal currentFolderId
+   * This allows:
+   * - Single-click on non-selected folder: Only changes selectedFolderId (shows contents)
+   * - Single-click on already-selected folder: Changes currentFolderId (redraws tree)
    */
   const loadRootFolder = async () => {
     const authData = localStorage.getItem('nemakiware_auth');
@@ -124,11 +141,35 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
       newCache.set(rootFolder.id, rootFolder);
       setFolderCache(newCache);
 
-      setCurrentFolderId(rootFolder.id);
-      setSelectedFolderId(rootFolder.id);
+      // CRITICAL FIX (2025-12-29): Only set currentFolderId to root if not externally provided
+      // externalCurrentFolderId comes from sessionStorage (preserved tree pivot point)
+      if (!externalCurrentFolderId) {
+        console.log('[FolderTree] loadRootFolder: Setting currentFolderId to root (no external)');
+        setCurrentFolderId(rootFolder.id);
+      } else {
+        console.log('[FolderTree] loadRootFolder: Keeping external currentFolderId:', externalCurrentFolderId);
+      }
 
-      await loadTreeFromFolder(rootFolder.id);
-      onSelect(rootFolder.id, rootFolder.path || '/');
+      // CRITICAL FIX (2025-12-29): Only set selectedFolderId to root if not externally provided
+      // externalSelectedFolderId comes from URL (folder being viewed)
+      if (!externalSelectedFolderId) {
+        console.log('[FolderTree] loadRootFolder: Setting selectedFolderId to root (no external)');
+        setSelectedFolderId(rootFolder.id);
+      } else {
+        console.log('[FolderTree] loadRootFolder: Keeping external selectedFolderId:', externalSelectedFolderId);
+      }
+
+      // Build tree around the effective current folder
+      const effectiveCurrentFolderId = externalCurrentFolderId || rootFolder.id;
+      await loadTreeFromFolder(effectiveCurrentFolderId);
+
+      // Only call onSelect if NO folderId in URL AND no external selectedFolderId
+      // When returning from DocumentViewer, URL already has the correct folderId
+      const urlParams = new URLSearchParams(window.location.search);
+      const folderIdFromUrl = urlParams.get('folderId');
+      if (!folderIdFromUrl && !externalSelectedFolderId) {
+        onSelect(rootFolder.id, rootFolder.path || '/');
+      }
     } catch (error) {
       console.error('Failed to load root folder:', error);
       message.error('ルートフォルダの読み込みに失敗しました');
