@@ -334,10 +334,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   }, []);
 
   // Initialize folder ID from URL parameter or default to root
-  // CRITICAL FIX (2025-12-03): Separate initialization from navigation
-  // - Only set currentFolderId on INITIAL load (when currentFolderId is empty)
-  // - For subsequent navigation, only update selectedFolderId
-  // This prevents tree redraw when user clicks folders in the table
+  // CRITICAL FIX (2025-12-29): Sync both selectedFolderId and currentFolderId from URL
+  // - When returning from DocumentViewer, user expects tree to show the folder they were viewing
+  // - This provides better UX even though it may cause tree redraws
+  // - The "current folder" (tree pivot) should match the folder being displayed
   useEffect(() => {
     const folderIdFromUrl = searchParams.get('folderId');
     console.log('[DocumentList] URL useEffect triggered');
@@ -349,9 +349,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       // Always update selectedFolderId to show correct folder contents
       console.log('[DocumentList] Setting selectedFolderId to:', folderIdFromUrl);
       setSelectedFolderId(folderIdFromUrl);
-      // Only set currentFolderId if it hasn't been set yet (initial load)
-      // This prevents tree redraw on every folder navigation
-      if (!currentFolderId) {
+      // CRITICAL FIX (2025-12-29): Also update currentFolderId to sync tree pivot
+      // This ensures that when returning from DocumentViewer, the tree shows the correct folder
+      // Previously only updated on initial load, causing tree to show root after navigating back
+      if (currentFolderId !== folderIdFromUrl) {
         console.log('[DocumentList] Setting currentFolderId to:', folderIdFromUrl);
         setCurrentFolderId(folderIdFromUrl);
       }
