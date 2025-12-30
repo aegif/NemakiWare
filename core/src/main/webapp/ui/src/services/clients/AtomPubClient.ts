@@ -511,7 +511,9 @@ export class AtomPubClient {
   async getRootFolder(
     repositoryId: string
   ): Promise<AtomPubResult<ParsedAtomEntry>> {
-    const url = `${this.baseUrl}/${repositoryId}/root`;
+    // CMIS AtomPub uses objectbypath template for path-based access
+    // /root is not a valid CMIS AtomPub endpoint - use /path?path=/ instead
+    const url = `${this.baseUrl}/${repositoryId}/path?path=/`;
 
     try {
       const response = await this.httpClient.getXml(url);
