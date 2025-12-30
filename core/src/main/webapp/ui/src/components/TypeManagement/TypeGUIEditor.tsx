@@ -47,6 +47,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { TypeDefinition } from '../../types/cmis';
+import { useTranslation } from 'react-i18next';
 
 const { TextArea } = Input;
 const { Panel } = Collapse;
@@ -267,6 +268,7 @@ const SortablePropertyCard: React.FC<SortablePropertyCardProps> = ({
   onUpdate,
   onRemove
 }) => {
+  const { t } = useTranslation();
   const {
     attributes,
     listeners,
@@ -329,65 +331,65 @@ const SortablePropertyCard: React.FC<SortablePropertyCardProps> = ({
           <>
             <Row gutter={16}>
               <Col span={8}>
-                <Form.Item label="プロパティID" required>
+                <Form.Item label={t('typeManagement.guiEditor.propertyIdLabel')} required>
                   <Input
                     value={property.id}
                     onChange={(e) => onUpdate(index, 'id', e.target.value)}
-                    placeholder="例: nemaki:customProperty"
+                    placeholder={t('typeManagement.guiEditor.propertyIdPlaceholder')}
                   />
                 </Form.Item>
               </Col>
               <Col span={8}>
-                <Form.Item label="表示名">
+                <Form.Item label={t('typeManagement.guiEditor.propertyDisplayNameLabel')}>
                   <Input
                     value={property.displayName}
                     onChange={(e) => onUpdate(index, 'displayName', e.target.value)}
-                    placeholder="プロパティの表示名"
+                    placeholder={t('typeManagement.guiEditor.propertyDisplayNamePlaceholder')}
                   />
                 </Form.Item>
               </Col>
               <Col span={8}>
-                <Form.Item label="データ型" required>
+                <Form.Item label={t('typeManagement.guiEditor.propertyDataTypeLabel')} required>
                   <Select
                     value={property.propertyType}
                     onChange={(value) => onUpdate(index, 'propertyType', value)}
-                    options={PROPERTY_TYPES}
+                    options={PROPERTY_TYPES.map(pt => ({ value: pt.value, label: t(`typeManagement.propertyTypes.${pt.value}`) }))}
                   />
                 </Form.Item>
               </Col>
             </Row>
             <Row gutter={16}>
               <Col span={8}>
-                <Form.Item label="多重度" required>
+                <Form.Item label={t('typeManagement.guiEditor.propertyCardinalityLabel')} required>
                   <Select
                     value={property.cardinality}
                     onChange={(value) => onUpdate(index, 'cardinality', value)}
-                    options={CARDINALITY_OPTIONS}
+                    options={CARDINALITY_OPTIONS.map(co => ({ value: co.value, label: t(`typeManagement.cardinalityOptions.${co.value}`) }))}
                   />
                 </Form.Item>
               </Col>
               <Col span={8}>
-                <Form.Item label="更新可能性">
+                <Form.Item label={t('typeManagement.guiEditor.propertyUpdatabilityLabel')}>
                   <Select
                     value={property.updatability}
                     onChange={(value) => onUpdate(index, 'updatability', value)}
-                    options={UPDATABILITY_OPTIONS}
+                    options={UPDATABILITY_OPTIONS.map(uo => ({ value: uo.value, label: t(`typeManagement.updatabilityOptions.${uo.value}`) }))}
                   />
                 </Form.Item>
               </Col>
               <Col span={8}>
-                <Form.Item label="説明">
+                <Form.Item label={t('typeManagement.guiEditor.propertyDescriptionLabel')}>
                   <Input
                     value={property.description}
                     onChange={(e) => onUpdate(index, 'description', e.target.value)}
-                    placeholder="プロパティの説明"
+                    placeholder={t('typeManagement.guiEditor.propertyDescriptionPlaceholder')}
                   />
                 </Form.Item>
               </Col>
             </Row>
             <Row gutter={16}>
               <Col span={8}>
-                <Form.Item label="必須">
+                <Form.Item label={t('typeManagement.guiEditor.propertyRequiredLabel')}>
                   <Switch
                     checked={property.required}
                     onChange={(checked) => onUpdate(index, 'required', checked)}
@@ -395,7 +397,7 @@ const SortablePropertyCard: React.FC<SortablePropertyCardProps> = ({
                 </Form.Item>
               </Col>
               <Col span={8}>
-                <Form.Item label="検索可能">
+                <Form.Item label={t('typeManagement.guiEditor.propertyQueryableLabel')}>
                   <Switch
                     checked={property.queryable}
                     onChange={(checked) => onUpdate(index, 'queryable', checked)}
@@ -403,7 +405,7 @@ const SortablePropertyCard: React.FC<SortablePropertyCardProps> = ({
                 </Form.Item>
               </Col>
               <Col span={8}>
-                <Form.Item label="オープンチョイス">
+                <Form.Item label={t('typeManagement.guiEditor.propertyOpenChoiceLabel')}>
                   <Switch
                     checked={property.openChoice}
                     onChange={(checked) => onUpdate(index, 'openChoice', checked)}
@@ -415,16 +417,16 @@ const SortablePropertyCard: React.FC<SortablePropertyCardProps> = ({
         ) : (
           <Row gutter={16}>
             <Col span={6}>
-              <Text type="secondary">ID:</Text> {property.id || '-'}
+              <Text type="secondary">{t('typeManagement.guiEditor.collapsedIdLabel')}</Text> {property.id || '-'}
             </Col>
             <Col span={6}>
-              <Text type="secondary">型:</Text> {PROPERTY_TYPES.find(t => t.value === property.propertyType)?.label || property.propertyType}
+              <Text type="secondary">{t('typeManagement.guiEditor.collapsedTypeLabel')}</Text> {t(`typeManagement.propertyTypes.${property.propertyType}`)}
             </Col>
             <Col span={6}>
-              <Text type="secondary">多重度:</Text> {property.cardinality === 'multi' ? '複数' : '単一'}
+              <Text type="secondary">{t('typeManagement.guiEditor.collapsedCardinalityLabel')}</Text> {property.cardinality === 'multi' ? t('typeManagement.guiEditor.collapsedCardinalityMulti') : t('typeManagement.guiEditor.collapsedCardinalitySingle')}
             </Col>
             <Col span={6}>
-              <Text type="secondary">必須:</Text> {property.required ? 'はい' : 'いいえ'}
+              <Text type="secondary">{t('typeManagement.guiEditor.collapsedRequiredLabel')}</Text> {property.required ? t('typeManagement.guiEditor.collapsedRequiredYes') : t('typeManagement.guiEditor.collapsedRequiredNo')}
             </Col>
           </Row>
         )}
@@ -440,6 +442,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
   onCancel,
   isEditing = false
 }) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [formData, setFormData] = useState<TypeFormData>(typeDefinitionToFormData(initialValue));
   const [activeTab, setActiveTab] = useState<string>('gui');
@@ -502,44 +505,44 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
     const warnings: string[] = [];
 
     if (!data.id || data.id.trim() === '') {
-      errors.push('タイプIDは必須です');
+      errors.push(t('typeManagement.validation.typeIdRequired'));
     } else if (!/^[a-zA-Z][a-zA-Z0-9_:]*$/.test(data.id)) {
-      errors.push('タイプIDは英字で始まり、英数字、アンダースコア、コロンのみ使用できます');
+      errors.push(t('typeManagement.validation.typeIdInvalidFormat'));
     }
 
     if (!data.baseId) {
-      errors.push('ベースタイプは必須です');
+      errors.push(t('typeManagement.validation.baseTypeRequired'));
     }
 
     // Check for duplicate type ID (only for new types)
     if (!isEditing && existingTypes.some(t => t.id === data.id)) {
-      errors.push('このタイプIDは既に存在します');
+      errors.push(t('typeManagement.validation.typeIdExists'));
     }
 
     // Check for duplicate display name (warning level)
     if (data.displayName && existingTypes.some(t => t.displayName === data.displayName && t.id !== data.id)) {
-      warnings.push(`表示名 "${data.displayName}" は既に他のタイプで使用されています`);
+      warnings.push(t('typeManagement.validation.displayNameDuplicate', { name: data.displayName }));
     }
 
     // Validate property definitions
     const propertyIds = new Set<string>();
     data.propertyDefinitions.forEach((prop, index) => {
       if (!prop.id || prop.id.trim() === '') {
-        errors.push(`プロパティ ${index + 1}: IDは必須です`);
+        errors.push(t('typeManagement.validation.propertyIdRequired', { index: index + 1 }));
       } else {
         // Validate property ID format
         if (!/^[a-zA-Z][a-zA-Z0-9_:]*$/.test(prop.id)) {
-          errors.push(`プロパティ ${index + 1}: IDは英字で始まり、英数字、アンダースコア、コロンのみ使用できます`);
+          errors.push(t('typeManagement.validation.propertyIdInvalidFormat', { index: index + 1 }));
         }
         if (propertyIds.has(prop.id)) {
-          errors.push(`プロパティ ${index + 1}: ID "${prop.id}" は重複しています`);
+          errors.push(t('typeManagement.validation.propertyIdDuplicate', { index: index + 1, id: prop.id }));
         } else {
           propertyIds.add(prop.id);
         }
       }
 
       if (!prop.propertyType) {
-        errors.push(`プロパティ ${index + 1}: データ型は必須です`);
+        errors.push(t('typeManagement.validation.propertyDataTypeRequired', { index: index + 1 }));
       }
 
       // Check for duplicate property display name within the type (warning)
@@ -547,7 +550,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
         (p, i) => i !== index && p.displayName && p.displayName === prop.displayName
       );
       if (prop.displayName && duplicateDisplayName.length > 0) {
-        warnings.push(`プロパティ ${index + 1}: 表示名 "${prop.displayName}" は重複しています`);
+        warnings.push(t('typeManagement.validation.propertyDisplayNameDuplicate', { index: index + 1, name: prop.displayName }));
       }
     });
 
@@ -557,7 +560,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
       if (data.allowedSourceTypes) {
         data.allowedSourceTypes.forEach(typeId => {
           if (!existingTypes.some(t => t.id === typeId)) {
-            warnings.push(`ソースタイプ "${typeId}" は未定義です`);
+            warnings.push(t('typeManagement.validation.sourceTypeUndefined', { typeId }));
           }
         });
       }
@@ -565,7 +568,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
       if (data.allowedTargetTypes) {
         data.allowedTargetTypes.forEach(typeId => {
           if (!existingTypes.some(t => t.id === typeId)) {
-            warnings.push(`ターゲットタイプ "${typeId}" は未定義です`);
+            warnings.push(t('typeManagement.validation.targetTypeUndefined', { typeId }));
           }
         });
       }
@@ -648,7 +651,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
       setValidationErrors(errors);
       setValidationWarnings(warnings);
     } catch (e) {
-      setJsonError('JSONの形式が正しくありません');
+      setJsonError(t('typeManagement.validation.jsonInvalid'));
     }
   };
 
@@ -801,23 +804,23 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
       initialValues={formData}
     >
       <Collapse defaultActiveKey={['basic', 'properties']} style={{ marginBottom: 16 }}>
-        <Panel header="基本情報" key="basic">
+        <Panel header={t('typeManagement.guiEditor.basicInfo')} key="basic">
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
                 label={
                   <Space>
-                    タイプID
-                    <Tooltip title="タイプの一意識別子。例: nemaki:customDocument">
+                    {t('typeManagement.guiEditor.typeIdLabel')}
+                    <Tooltip title={t('typeManagement.guiEditor.typeIdTooltip')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
                 }
                 name="id"
-                rules={[{ required: true, message: 'タイプIDを入力してください' }]}
+                rules={[{ required: true, message: t('typeManagement.guiEditor.typeIdRequired') }]}
               >
                 <Input
-                  placeholder="例: nemaki:customDocument"
+                  placeholder={t('typeManagement.guiEditor.typeIdPlaceholder')}
                   disabled={isEditing}
                   onChange={(e) => {
                     const newFormData = { ...formData, id: e.target.value };
@@ -831,11 +834,11 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
             </Col>
             <Col span={12}>
               <Form.Item
-                label="表示名"
+                label={t('typeManagement.guiEditor.displayNameLabel')}
                 name="displayName"
               >
                 <Input
-                  placeholder="タイプの表示名"
+                  placeholder={t('typeManagement.guiEditor.displayNamePlaceholder')}
                   onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
                 />
               </Form.Item>
@@ -846,17 +849,17 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
               <Form.Item
                 label={
                   <Space>
-                    ベースタイプ
-                    <Tooltip title="CMISの基本タイプ。ドキュメント、フォルダなどから選択">
+                    {t('typeManagement.guiEditor.baseTypeLabel')}
+                    <Tooltip title={t('typeManagement.guiEditor.baseTypeTooltip')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
                 }
                 name="baseId"
-                rules={[{ required: true, message: 'ベースタイプを選択してください' }]}
+                rules={[{ required: true, message: t('typeManagement.guiEditor.baseTypeRequired') }]}
               >
                 <Select
-                  options={BASE_TYPES}
+                  options={BASE_TYPES.map(bt => ({ value: bt.value, label: t(`typeManagement.baseTypes.${bt.value.split(':')[1]}`) + ` (${bt.value})` }))}
                   onChange={(value) => setFormData({ ...formData, baseId: value })}
                 />
               </Form.Item>
@@ -865,8 +868,8 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
               <Form.Item
                 label={
                   <Space>
-                    親タイプ
-                    <Tooltip title="継承元のタイプ。空の場合はベースタイプが使用されます">
+                    {t('typeManagement.guiEditor.parentTypeLabel')}
+                    <Tooltip title={t('typeManagement.guiEditor.parentTypeTooltip')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
@@ -875,7 +878,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
               >
                 <Select
                   allowClear
-                  placeholder="親タイプを選択（オプション）"
+                  placeholder={t('typeManagement.guiEditor.parentTypePlaceholder')}
                   onChange={(value) => setFormData({ ...formData, parentId: value || '' })}
                 >
                   {existingTypes.map(type => (
@@ -888,25 +891,25 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
             </Col>
           </Row>
           <Form.Item
-            label="説明"
+            label={t('typeManagement.guiEditor.descriptionLabel')}
             name="description"
           >
             <TextArea
               rows={2}
-              placeholder="タイプの説明"
+              placeholder={t('typeManagement.guiEditor.descriptionPlaceholder')}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             />
           </Form.Item>
         </Panel>
 
-        <Panel header="タイプオプション" key="options">
+        <Panel header={t('typeManagement.guiEditor.typeOptions')} key="options">
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item
                 label={
                   <Space>
-                    作成可能
-                    <Tooltip title="このタイプのオブジェクトを作成できるかどうか">
+                    {t('typeManagement.guiEditor.creatableLabel')}
+                    <Tooltip title={t('typeManagement.guiEditor.creatableTooltip')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
@@ -923,8 +926,8 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
               <Form.Item
                 label={
                   <Space>
-                    検索可能
-                    <Tooltip title="このタイプのオブジェクトをクエリで検索できるかどうか">
+                    {t('typeManagement.guiEditor.queryableLabel')}
+                    <Tooltip title={t('typeManagement.guiEditor.queryableTooltip')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
@@ -941,8 +944,8 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
               <Form.Item
                 label={
                   <Space>
-                    全文検索対象
-                    <Tooltip title="全文検索インデックスに含めるかどうか">
+                    {t('typeManagement.guiEditor.fulltextIndexedLabel')}
+                    <Tooltip title={t('typeManagement.guiEditor.fulltextIndexedTooltip')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
@@ -961,8 +964,8 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
               <Form.Item
                 label={
                   <Space>
-                    スーパータイプクエリに含める
-                    <Tooltip title="親タイプのクエリ結果に含めるかどうか">
+                    {t('typeManagement.guiEditor.includedInSupertypeQueryLabel')}
+                    <Tooltip title={t('typeManagement.guiEditor.includedInSupertypeQueryTooltip')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
@@ -979,8 +982,8 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
               <Form.Item
                 label={
                   <Space>
-                    ポリシー制御可能
-                    <Tooltip title="ポリシーを適用できるかどうか">
+                    {t('typeManagement.guiEditor.controllablePolicyLabel')}
+                    <Tooltip title={t('typeManagement.guiEditor.controllablePolicyTooltip')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
@@ -997,8 +1000,8 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
               <Form.Item
                 label={
                   <Space>
-                    ACL制御可能
-                    <Tooltip title="アクセス制御リストを適用できるかどうか">
+                    {t('typeManagement.guiEditor.controllableACLLabel')}
+                    <Tooltip title={t('typeManagement.guiEditor.controllableACLTooltip')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
@@ -1015,10 +1018,10 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
         </Panel>
 
         {formData.baseId === 'cmis:relationship' && (
-          <Panel header="リレーションシップ設定" key="relationship">
+          <Panel header={t('typeManagement.guiEditor.relationshipSettings')} key="relationship">
             <Alert
-              message="リレーションシップタイプの設定"
-              description="ソースタイプとターゲットタイプを指定して、どのタイプ間のリレーションシップを許可するかを定義します。"
+              message={t('typeManagement.guiEditor.relationshipSettingsTitle')}
+              description={t('typeManagement.guiEditor.relationshipSettingsDescription')}
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
@@ -1028,8 +1031,8 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
                 <Form.Item
                   label={
                     <Space>
-                      許可されるソースタイプ
-                      <Tooltip title="このリレーションシップのソースとして許可されるタイプを選択します">
+                      {t('typeManagement.guiEditor.allowedSourceTypesLabel')}
+                      <Tooltip title={t('typeManagement.guiEditor.allowedSourceTypesTooltip')}>
                         <QuestionCircleOutlined />
                       </Tooltip>
                     </Space>
@@ -1038,7 +1041,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
                   <Select
                     mode="multiple"
                     allowClear
-                    placeholder="ソースタイプを選択"
+                    placeholder={t('typeManagement.guiEditor.allowedSourceTypesPlaceholder')}
                     value={formData.allowedSourceTypes}
                     onChange={(values) => {
                       const newFormData = { ...formData, allowedSourceTypes: values };
@@ -1063,8 +1066,8 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
                 <Form.Item
                   label={
                     <Space>
-                      許可されるターゲットタイプ
-                      <Tooltip title="このリレーションシップのターゲットとして許可されるタイプを選択します">
+                      {t('typeManagement.guiEditor.allowedTargetTypesLabel')}
+                      <Tooltip title={t('typeManagement.guiEditor.allowedTargetTypesTooltip')}>
                         <QuestionCircleOutlined />
                       </Tooltip>
                     </Space>
@@ -1073,7 +1076,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
                   <Select
                     mode="multiple"
                     allowClear
-                    placeholder="ターゲットタイプを選択"
+                    placeholder={t('typeManagement.guiEditor.allowedTargetTypesPlaceholder')}
                     value={formData.allowedTargetTypes}
                     onChange={(values) => {
                       const newFormData = { ...formData, allowedTargetTypes: values };
@@ -1101,7 +1104,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
         <Panel
           header={
             <Space>
-              プロパティ定義
+              {t('typeManagement.guiEditor.propertyDefinitions')}
               <Badge count={formData.propertyDefinitions.length} style={{ backgroundColor: '#1890ff' }} />
             </Space>
           }
@@ -1113,7 +1116,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
               <Col flex="auto">
                 <Input
                   prefix={<SearchOutlined />}
-                  placeholder="プロパティを検索 (ID、表示名、説明)"
+                  placeholder={t('typeManagement.guiEditor.searchProperties')}
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   allowClear
@@ -1125,10 +1128,10 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
                     icon={allExpanded ? <ShrinkOutlined /> : <ExpandAltOutlined />}
                     onClick={toggleAllExpanded}
                   >
-                    {allExpanded ? '全て折りたたむ' : '全て展開'}
+                    {allExpanded ? t('typeManagement.guiEditor.collapseAll') : t('typeManagement.guiEditor.expandAll')}
                   </Button>
                   <Button onClick={selectAllVisible}>
-                    表示中を全選択
+                    {t('typeManagement.guiEditor.selectAllVisible')}
                   </Button>
                   {selectedProperties.size > 0 && (
                     <Button
@@ -1136,7 +1139,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
                       icon={<DeleteOutlined />}
                       onClick={deleteSelectedProperties}
                     >
-                      選択削除 ({selectedProperties.size})
+                      {t('typeManagement.guiEditor.deleteSelected', { count: selectedProperties.size })}
                     </Button>
                   )}
                 </Space>
@@ -1146,8 +1149,8 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
 
           {formData.propertyDefinitions.length === 0 ? (
             <Alert
-              message="プロパティが定義されていません"
-              description="「プロパティを追加」ボタンをクリックしてプロパティを追加してください"
+              message={t('typeManagement.guiEditor.noPropertiesTitle')}
+              description={t('typeManagement.guiEditor.noPropertiesDescription')}
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
@@ -1156,8 +1159,8 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
             <>
               {searchText.trim() && filteredProperties.length === 0 ? (
                 <Alert
-                  message="検索結果がありません"
-                  description={`"${searchText}" に一致するプロパティが見つかりません`}
+                  message={t('typeManagement.guiEditor.noSearchResults')}
+                  description={t('typeManagement.guiEditor.noSearchResultsDescription', { searchText })}
                   type="info"
                   showIcon
                   style={{ marginBottom: 16 }}
@@ -1207,7 +1210,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
             block
             icon={<PlusOutlined />}
           >
-            プロパティを追加
+            {t('typeManagement.guiEditor.addProperty')}
           </Button>
         </Panel>
       </Collapse>
@@ -1218,8 +1221,8 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
   const jsonEditorContent = (
     <div>
       <Alert
-        message="JSON形式で直接編集"
-        description="型定義をJSON形式で直接編集できます。変更はGUIエディタと同期されます。"
+        message={t('typeManagement.guiEditor.jsonEditorTitle')}
+        description={t('typeManagement.guiEditor.jsonEditorDescription')}
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
@@ -1247,7 +1250,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
       label: (
         <Space>
           <FormOutlined />
-          GUIエディタ
+          {t('typeManagement.guiEditor.guiEditorTab')}
         </Space>
       ),
       children: guiEditorContent
@@ -1257,7 +1260,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
       label: (
         <Space>
           <CodeOutlined />
-          JSONエディタ
+          {t('typeManagement.guiEditor.jsonEditorTab')}
         </Space>
       ),
       children: jsonEditorContent
@@ -1268,16 +1271,16 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
     <div>
       {isEditing && (
         <Alert
-          message="CMIS非準拠の操作"
+          message={t('typeManagement.guiEditor.nonCmisWarningTitle')}
           description={
             <div>
               <p style={{ margin: '0 0 8px 0' }}>
-                <strong>注意:</strong> タイプ定義の編集はCMIS標準に準拠していないNemakiWare独自の操作です。
+                <strong>{t('typeManagement.guiEditor.nonCmisWarningNote')}</strong> {t('typeManagement.guiEditor.nonCmisWarningDescription')}
               </p>
               <ul style={{ margin: 0, paddingLeft: 20 }}>
-                <li>既存のドキュメントに影響を与える可能性があります</li>
-                <li>プロパティ定義の変更は既存データとの整合性に注意が必要です</li>
-                <li>他のCMISクライアントとの互換性が保証されません</li>
+                <li>{t('typeManagement.guiEditor.nonCmisWarningItem1')}</li>
+                <li>{t('typeManagement.guiEditor.nonCmisWarningItem2')}</li>
+                <li>{t('typeManagement.guiEditor.nonCmisWarningItem3')}</li>
               </ul>
             </div>
           }
@@ -1289,7 +1292,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
 
       {validationErrors.length > 0 && (
         <Alert
-          message="入力エラー"
+          message={t('typeManagement.guiEditor.inputError')}
           description={
             <ul style={{ margin: 0, paddingLeft: 20 }}>
               {validationErrors.map((error, index) => (
@@ -1305,7 +1308,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
 
       {validationWarnings.length > 0 && (
         <Alert
-          message="警告"
+          message={t('typeManagement.guiEditor.warning')}
           description={
             <ul style={{ margin: 0, paddingLeft: 20 }}>
               {validationWarnings.map((warning, index) => (
@@ -1329,14 +1332,14 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
         <Button onClick={onCancel}>
-          キャンセル
+          {t('typeManagement.guiEditor.cancel')}
         </Button>
         <Button
           type="primary"
           onClick={handleSave}
           disabled={validationErrors.length > 0 || (activeTab === 'json' && !!jsonError)}
         >
-          {isEditing ? '更新' : '作成'}
+          {isEditing ? t('typeManagement.guiEditor.update') : t('typeManagement.guiEditor.create')}
         </Button>
       </div>
     </div>
