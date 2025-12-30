@@ -250,6 +250,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Select, DatePicker, InputNumber, Button, message } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { ActionForm, ActionFormField } from '../../types/cmis';
 import { ActionService } from '../../services/action';
 
@@ -266,6 +267,7 @@ export const ActionFormRenderer: React.FC<ActionFormRendererProps> = ({
   actionId,
   onComplete
 }) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [actionForm, setActionForm] = useState<ActionForm | null>(null);
   const [loading, setLoading] = useState(false);
@@ -292,7 +294,7 @@ export const ActionFormRenderer: React.FC<ActionFormRendererProps> = ({
       form.setFieldsValue(defaultValues);
     } catch (error) {
       // Failed to load action form
-      message.error('フォームの読み込みに失敗しました');
+      message.error(t('actionForm.messages.loadError'));
     } finally {
       setLoading(false);
     }
@@ -303,14 +305,14 @@ export const ActionFormRenderer: React.FC<ActionFormRendererProps> = ({
     try {
       const result = await actionService.executeAction(repositoryId, actionId, objectId, values);
       if (result.success) {
-        message.success(result.message || 'アクションが正常に実行されました');
+        message.success(result.message || t('actionForm.messages.executeSuccess'));
         onComplete();
       } else {
-        message.error(result.message || 'アクションの実行に失敗しました');
+        message.error(result.message || t('actionForm.messages.executeFailed'));
       }
     } catch (error) {
       // Action execution failed
-      message.error('アクションの実行中にエラーが発生しました');
+      message.error(t('actionForm.messages.executeError'));
     } finally {
       setExecuting(false);
     }
@@ -320,7 +322,7 @@ export const ActionFormRenderer: React.FC<ActionFormRendererProps> = ({
     switch (field.type) {
       case 'select':
         return (
-          <Select placeholder={`${field.label}を選択`}>
+          <Select placeholder={t('actionForm.selectPlaceholder', { label: field.label })}>
             {field.options?.map(option => (
               <Select.Option key={option.value} value={option.value}>
                 {option.label}
@@ -340,7 +342,7 @@ export const ActionFormRenderer: React.FC<ActionFormRendererProps> = ({
   };
 
   if (loading || !actionForm) {
-    return <div>読み込み中...</div>;
+    return <div>{t('common.loading')}</div>;
   }
 
   return (
@@ -354,7 +356,7 @@ export const ActionFormRenderer: React.FC<ActionFormRendererProps> = ({
           key={field.name}
           name={field.name}
           label={field.label}
-          rules={[{ required: field.required, message: `${field.label}は必須です` }]}
+          rules={[{ required: field.required, message: t('actionForm.validation.required', { label: field.label }) }]}
         >
           {renderFormField(field)}
         </Form.Item>
@@ -362,7 +364,7 @@ export const ActionFormRenderer: React.FC<ActionFormRendererProps> = ({
       
       <Form.Item>
         <Button type="primary" htmlType="submit" loading={executing}>
-          実行
+          {t('actionForm.execute')}
         </Button>
       </Form.Item>
     </Form>

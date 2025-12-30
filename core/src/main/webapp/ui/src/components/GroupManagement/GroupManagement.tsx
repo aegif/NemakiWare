@@ -271,6 +271,7 @@ import {
 } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
 import { Group, User } from '../../types/cmis';
+import { useTranslation } from 'react-i18next';
 
 interface GroupManagementProps {
   repositoryId: string;
@@ -285,6 +286,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
+  const { t } = useTranslation();
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
@@ -301,17 +303,17 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       setGroups(groupList);
     } catch (error: any) {
       // Failed to load groups
-      let errorMessage = 'グループの読み込みに失敗しました';
+      let errorMessage = t('groupManagement.messages.loadError');
       
       if (error.status === 500) {
-        errorMessage = 'サーバー側でエラーが発生しています';
+        errorMessage = t('common.errors.serverError');
         if (error.details) {
-          errorMessage += `\n詳細: ${error.details}`;
+          errorMessage += `\n${t('common.errors.details', { details: error.details })}`;
         }
       } else if (error.status === 401) {
-        errorMessage = '認証エラー: ログインし直してください';
+        errorMessage = t('common.errors.authError');
       } else if (error.status === 403) {
-        errorMessage = '権限エラー: グループ管理の権限がありません';
+        errorMessage = t('groupManagement.messages.permissionError');
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -335,10 +337,10 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
     try {
       if (editingGroup) {
         await cmisService.updateGroup(repositoryId, editingGroup.id, values);
-        message.success('グループを更新しました');
+        message.success(t('groupManagement.messages.updateSuccess'));
       } else {
         await cmisService.createGroup(repositoryId, values);
-        message.success('グループを作成しました');
+        message.success(t('groupManagement.messages.createSuccess'));
       }
       
       setModalVisible(false);
@@ -347,17 +349,17 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       loadGroups();
     } catch (error: any) {
       // Failed to create/update group
-      let errorMessage = editingGroup ? 'グループの更新に失敗しました' : 'グループの作成に失敗しました';
+      let errorMessage = editingGroup ? t('groupManagement.messages.updateError') : t('groupManagement.messages.createError');
       
       if (error.status === 500) {
-        errorMessage = 'サーバー側でエラーが発生しています';
+        errorMessage = t('common.errors.serverError');
         if (error.details) {
-          errorMessage += `\n詳細: ${error.details}`;
+          errorMessage += `\n${t('common.errors.details', { details: error.details })}`;
         }
       } else if (error.status === 401) {
-        errorMessage = '認証エラー: ログインし直してください';
+        errorMessage = t('common.errors.authError');
       } else if (error.status === 403) {
-        errorMessage = '権限エラー: この操作の権限がありません';
+        errorMessage = t('common.errors.permissionError');
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -375,21 +377,21 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
   const handleDelete = async (groupId: string) => {
     try {
       await cmisService.deleteGroup(repositoryId, groupId);
-      message.success('グループを削除しました');
+      message.success(t('groupManagement.messages.deleteSuccess'));
       loadGroups();
     } catch (error: any) {
       // Failed to delete group
-      let errorMessage = 'グループの削除に失敗しました';
+      let errorMessage = t('groupManagement.messages.deleteError');
       
       if (error.status === 500) {
-        errorMessage = 'サーバー側でエラーが発生しています';
+        errorMessage = t('common.errors.serverError');
         if (error.details) {
-          errorMessage += `\n詳細: ${error.details}`;
+          errorMessage += `\n${t('common.errors.details', { details: error.details })}`;
         }
       } else if (error.status === 401) {
-        errorMessage = '認証エラー: ログインし直してください';
+        errorMessage = t('common.errors.authError');
       } else if (error.status === 403) {
-        errorMessage = '権限エラー: グループ削除の権限がありません';
+        errorMessage = t('groupManagement.messages.deletePermissionError');
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -417,18 +419,18 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
 
   const columns = [
     {
-      title: 'グループID',
+      title: t('groupManagement.columns.groupId'),
       dataIndex: 'id',
       key: 'id',
     },
     {
-      title: 'グループ名',
+      title: t('groupManagement.columns.groupName'),
       dataIndex: 'name',
       key: 'name',
       render: (name: string) => name && name.trim() !== '' ? name : '-',
     },
     {
-      title: 'メンバー',
+      title: t('groupManagement.columns.members'),
       dataIndex: 'members',
       key: 'members',
       render: (members: string[]) => {
@@ -443,14 +445,14 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
               </Tag>
             ))}
             {members.length > 3 && (
-              <Tag color="default">+{members.length - 3} more</Tag>
+              <Tag color="default">+{members.length - 3} {t('common.more')}</Tag>
             )}
           </Space>
         );
       },
     },
     {
-      title: 'アクション',
+      title: t('common.actions'),
       key: 'actions',
       width: 150,
       render: (_: any, record: Group) => (
@@ -460,20 +462,20 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
             size="small"
             onClick={() => handleEdit(record)}
           >
-            編集
+            {t('common.edit')}
           </Button>
           <Popconfirm
-            title="このグループを削除しますか？"
+            title={t('groupManagement.confirmDelete')}
             onConfirm={() => handleDelete(record.id)}
-            okText="はい"
-            cancelText="いいえ"
+            okText={t('common.yes')}
+            cancelText={t('common.no')}
           >
             <Button 
               icon={<DeleteOutlined />} 
               size="small"
               danger
             >
-              削除
+              {t('common.delete')}
             </Button>
           </Popconfirm>
         </Space>
@@ -485,19 +487,19 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>
-          <TeamOutlined /> グループ管理
+          <TeamOutlined /> {t('groupManagement.title')}
         </h2>
         <Button
           type="primary"
           icon={<PlusOutlined />}
           onClick={() => setModalVisible(true)}
         >
-          新規作成
+          {t('common.create')}
         </Button>
       </div>
 
       <Input.Search
-        placeholder="グループを検索 (ID、名前、メンバー)"
+        placeholder={t('groupManagement.searchPlaceholder')}
         allowClear
         value={searchText}
         onChange={(e) => setSearchText(e.target.value)}
@@ -515,7 +517,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       />
 
       <Modal
-        title={editingGroup ? 'グループ編集' : '新規グループ作成'}
+        title={editingGroup ? t('groupManagement.editGroup') : t('groupManagement.createGroup')}
         open={modalVisible}
         onCancel={handleCancel}
         footer={null}
@@ -529,32 +531,32 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
         >
           <Form.Item
             name="id"
-            label="グループID"
+            label={t('groupManagement.columns.groupId')}
             rules={[
-              { required: true, message: 'グループIDを入力してください' },
-              { pattern: /^[a-zA-Z0-9_-]+$/, message: '英数字、アンダースコア、ハイフンのみ使用可能です' }
+              { required: true, message: t('groupManagement.validation.groupIdRequired') },
+              { pattern: /^[a-zA-Z0-9_-]+$/, message: t('common.validation.alphanumericOnly') }
             ]}
           >
             <Input 
-              placeholder="グループIDを入力"
+              placeholder={t('groupManagement.placeholders.groupId')}
               disabled={!!editingGroup}
             />
           </Form.Item>
 
           <Form.Item
             name="name"
-            label="グループ名"
-            rules={[{ required: true, message: 'グループ名を入力してください' }]}
+            label={t('groupManagement.columns.groupName')}
+            rules={[{ required: true, message: t('groupManagement.validation.groupNameRequired') }]}
           >
-            <Input placeholder="グループ名を入力" />
+            <Input placeholder={t('groupManagement.placeholders.groupName')} />
           </Form.Item>
 
           <Form.Item
             name="description"
-            label="説明"
+            label={t('groupManagement.description')}
           >
             <Input.TextArea
-              placeholder="グループの説明を入力（任意）"
+              placeholder={t('groupManagement.placeholders.description')}
               rows={3}
               maxLength={1000}
               showCount
@@ -563,11 +565,11 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
 
           <Form.Item
             name="members"
-            label="メンバー"
+            label={t('groupManagement.columns.members')}
           >
             <Select
               mode="multiple"
-              placeholder="メンバーを選択"
+              placeholder={t('groupManagement.placeholders.members')}
               options={users.map(user => {
                 // nameがnullまたは空の場合、firstName + lastNameを使用
                 let displayName = user.name;
@@ -588,10 +590,10 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
-                {editingGroup ? '更新' : '作成'}
+                {editingGroup ? t('common.update') : t('common.create')}
               </Button>
               <Button onClick={handleCancel}>
-                キャンセル
+                {t('common.cancel')}
               </Button>
             </Space>
           </Form.Item>

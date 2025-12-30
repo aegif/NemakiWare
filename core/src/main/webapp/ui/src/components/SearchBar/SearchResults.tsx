@@ -256,6 +256,7 @@ import {
   LinkOutlined
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, SearchResult, TypeDefinition, PropertyDefinition } from '../../types/cmis';
 import { InputNumber } from 'antd';
@@ -266,6 +267,7 @@ interface SearchResultsProps {
 
 import { useAuth } from '../../contexts/AuthContext';
 export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) => {
+  const { t, i18n } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -410,7 +412,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       // accidentally searching with the CMIS query string as a keyword
       form.setFieldsValue({ query: '' });
     } catch (error) {
-      message.error('検索に失敗しました');
+      message.error(t('searchResults.messages.searchFailed'));
     } finally {
       setLoading(false);
     }
@@ -553,7 +555,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
   const columns = [
     {
-      title: 'タイプ',
+      title: t('searchResults.columns.type'),
       dataIndex: 'baseType',
       key: 'type',
       width: 60,
@@ -567,7 +569,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       },
     },
     {
-      title: '名前',
+      title: t('searchResults.columns.name'),
       dataIndex: 'name',
       key: 'name',
       render: (name: string, record: CMISObject) => (
@@ -580,7 +582,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       ),
     },
     {
-      title: 'パス',
+      title: t('searchResults.columns.path'),
       dataIndex: 'path',
       key: 'path',
       ellipsis: true,
@@ -593,7 +595,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       },
     },
     {
-      title: 'ソースID',
+      title: t('searchResults.columns.sourceId'),
       dataIndex: 'sourceId',
       key: 'sourceId',
       width: 200,
@@ -612,7 +614,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       },
     },
     {
-      title: 'ターゲットID',
+      title: t('searchResults.columns.targetId'),
       dataIndex: 'targetId',
       key: 'targetId',
       width: 200,
@@ -631,13 +633,13 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       },
     },
     {
-      title: 'オブジェクトタイプ',
+      title: t('searchResults.columns.objectType'),
       dataIndex: 'objectType',
       key: 'objectType',
       width: 150,
     },
     {
-      title: 'セカンダリタイプ',
+      title: t('searchResults.columns.secondaryTypes'),
       dataIndex: 'secondaryTypeIds',
       key: 'secondaryTypes',
       width: 180,
@@ -650,39 +652,39 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
             <span style={{ color: '#1890ff' }}>
               {secondaryTypeIds.length === 1
                 ? secondaryTypeIds[0].replace(/^.*:/, '')
-                : `${secondaryTypeIds.length}個`}
+                : t('common.items', { count: secondaryTypeIds.length })}
             </span>
           </Tooltip>
         );
       },
     },
     {
-      title: 'サイズ',
+      title: t('searchResults.columns.size'),
       dataIndex: 'contentStreamLength',
       key: 'size',
       width: 100,
       render: (size: number) => size ? `${Math.round(size / 1024)} KB` : '-',
     },
     {
-      title: '作成日時',
+      title: t('searchResults.columns.createdAt'),
       dataIndex: 'creationDate',
       key: 'created',
       width: 180,
-      render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+      render: (date: string) => date ? new Date(date).toLocaleString(i18n.language === 'ja' ? 'ja-JP' : 'en-US') : '-',
     },
     {
-      title: '作成者',
+      title: t('searchResults.columns.createdBy'),
       dataIndex: 'createdBy',
       key: 'createdBy',
       width: 120,
     },
     {
-      title: 'アクション',
+      title: t('common.actions'),
       key: 'actions',
       width: 120,
       render: (_: any, record: CMISObject) => (
         <Space>
-          <Tooltip title="詳細表示">
+          <Tooltip title={t('searchResults.tooltips.viewDetails')}>
             <Button 
               icon={<EyeOutlined />} 
               size="small"
@@ -690,7 +692,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
             />
           </Tooltip>
           {record.baseType === 'cmis:document' && (
-            <Tooltip title="ダウンロード">
+            <Tooltip title={t('common.download')}>
               <Button 
                 icon={<DownloadOutlined />} 
                 size="small"
@@ -705,7 +707,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
   return (
     <div>
-      <Card title="検索" style={{ marginBottom: 16 }}>
+      <Card title={t('searchResults.title')} style={{ marginBottom: 16 }}>
         <Form
           form={form}
           onFinish={handleSearch}
@@ -713,10 +715,10 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
         >
           <Form.Item
             name="query"
-            label="全文検索"
+            label={t('searchResults.fullTextSearch')}
           >
             <Input.Search
-              placeholder="検索キーワードを入力"
+              placeholder={t('searchResults.placeholders.searchKeyword')}
               enterButton={<SearchOutlined />}
               onSearch={(value) => handleSearch({ query: value, excludeMetadata: form.getFieldValue('excludeMetadata') })}
             />
@@ -728,28 +730,28 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
             style={{ marginBottom: 8 }}
           >
             <Checkbox>
-              標準メタデータを検索対象から外す（ファイル名・説明などを除く）
+              {t('searchResults.excludeMetadata')}
             </Checkbox>
           </Form.Item>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
             <Form.Item
               name="baseType"
-              label="ベースタイプ"
+              label={t('searchResults.baseType')}
             >
-              <Select placeholder="ベースタイプを選択">
-                <Select.Option value="cmis:document">ドキュメント</Select.Option>
-                <Select.Option value="cmis:folder">フォルダ</Select.Option>
-                <Select.Option value="cmis:relationship">関連</Select.Option>
+              <Select placeholder={t('searchResults.placeholders.selectBaseType')}>
+                <Select.Option value="cmis:document">{t('searchResults.baseTypes.document')}</Select.Option>
+                <Select.Option value="cmis:folder">{t('searchResults.baseTypes.folder')}</Select.Option>
+                <Select.Option value="cmis:relationship">{t('searchResults.baseTypes.relationship')}</Select.Option>
               </Select>
             </Form.Item>
             
             <Form.Item
               name="objectType"
-              label="オブジェクトタイプ"
+              label={t('searchResults.objectType')}
             >
               <Select
-                placeholder="オブジェクトタイプを選択"
+                placeholder={t('searchResults.placeholders.selectObjectType')}
                 allowClear
                 onChange={(value) => handleTypeSelect(value)}
                 loading={loadingProperties}
@@ -764,10 +766,10 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
             <Form.Item
               name="secondaryType"
-              label="セカンダリタイプ"
+              label={t('searchResults.secondaryType')}
             >
               <Select
-                placeholder="セカンダリタイプを選択"
+                placeholder={t('searchResults.placeholders.selectSecondaryType')}
                 allowClear
                 onChange={(value) => handleSecondaryTypeSelect(value)}
                 loading={loadingSecondaryProperties}
@@ -782,28 +784,28 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
             <Form.Item
               name="name"
-              label="名前"
+              label={t('common.name')}
             >
-              <Input placeholder="名前で検索" />
+              <Input placeholder={t('searchResults.placeholders.searchByName')} />
             </Form.Item>
             
             <Form.Item
               name="createdBy"
-              label="作成者"
+              label={t('searchResults.createdBy')}
             >
-              <Input placeholder="作成者で検索" />
+              <Input placeholder={t('searchResults.placeholders.searchByCreator')} />
             </Form.Item>
             
             <Form.Item
               name="createdFrom"
-              label="作成日（開始）"
+              label={t('searchResults.createdFrom')}
             >
               <DatePicker style={{ width: '100%' }} />
             </Form.Item>
             
             <Form.Item
               name="createdTo"
-              label="作成日（終了）"
+              label={t('searchResults.createdTo')}
             >
               <DatePicker style={{ width: '100%' }} />
             </Form.Item>
@@ -813,7 +815,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
           {selectedTypeProperties.length > 0 && (
             <Card
               size="small"
-              title="カスタムプロパティで検索"
+              title={t('searchResults.customPropertySearch')}
               style={{ marginTop: 16, marginBottom: 16 }}
             >
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
@@ -828,7 +830,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                           // If property has choices, show Select dropdown
                           return (
                             <Select
-                              placeholder={`${propDef.displayName}を選択`}
+                              placeholder={t('searchResults.placeholders.selectProperty', { name: propDef.displayName })}
                               allowClear
                             >
                               {propDef.choices.map((choice, index) => (
@@ -839,13 +841,13 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                             </Select>
                           );
                         }
-                        return <Input placeholder={`${propDef.displayName}を入力`} />;
+                        return <Input placeholder={t('searchResults.placeholders.enterProperty', { name: propDef.displayName })} />;
 
                       case 'integer':
                         return (
                           <InputNumber
                             style={{ width: '100%' }}
-                            placeholder={`${propDef.displayName}を入力`}
+                            placeholder={t('searchResults.placeholders.enterProperty', { name: propDef.displayName })}
                             precision={0}
                             min={propDef.minValue}
                             max={propDef.maxValue}
@@ -856,7 +858,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                         return (
                           <InputNumber
                             style={{ width: '100%' }}
-                            placeholder={`${propDef.displayName}を入力`}
+                            placeholder={t('searchResults.placeholders.enterProperty', { name: propDef.displayName })}
                             step={0.01}
                             min={propDef.minValue}
                             max={propDef.maxValue}
@@ -865,9 +867,9 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
                       case 'boolean':
                         return (
-                          <Select placeholder={`${propDef.displayName}を選択`} allowClear>
-                            <Select.Option value="true">はい (true)</Select.Option>
-                            <Select.Option value="false">いいえ (false)</Select.Option>
+                          <Select placeholder={t('searchResults.placeholders.selectProperty', { name: propDef.displayName })} allowClear>
+                            <Select.Option value="true">{t('common.yes')} (true)</Select.Option>
+                            <Select.Option value="false">{t('common.no')} (false)</Select.Option>
                           </Select>
                         );
 
@@ -875,7 +877,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                         return <DatePicker style={{ width: '100%' }} showTime />;
 
                       default:
-                        return <Input placeholder={`${propDef.displayName}を入力`} />;
+                        return <Input placeholder={t('searchResults.placeholders.enterProperty', { name: propDef.displayName })} />;
                     }
                   };
 
@@ -898,7 +900,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
           {selectedSecondaryTypeProperties.length > 0 && (
             <Card
               size="small"
-              title="セカンダリタイプのプロパティで検索"
+              title={t('searchResults.secondaryPropertySearch')}
               style={{ marginTop: 16, marginBottom: 16 }}
             >
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
@@ -912,7 +914,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                         if (propDef.choices && propDef.choices.length > 0) {
                           return (
                             <Select
-                              placeholder={`${propDef.displayName}を選択`}
+                              placeholder={t('searchResults.placeholders.selectProperty', { name: propDef.displayName })}
                               allowClear
                             >
                               {propDef.choices.map((choice, index) => (
@@ -923,13 +925,13 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                             </Select>
                           );
                         }
-                        return <Input placeholder={`${propDef.displayName}を入力`} />;
+                        return <Input placeholder={t('searchResults.placeholders.enterProperty', { name: propDef.displayName })} />;
 
                       case 'integer':
                         return (
                           <InputNumber
                             style={{ width: '100%' }}
-                            placeholder={`${propDef.displayName}を入力`}
+                            placeholder={t('searchResults.placeholders.enterProperty', { name: propDef.displayName })}
                             precision={0}
                             min={propDef.minValue}
                             max={propDef.maxValue}
@@ -940,7 +942,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                         return (
                           <InputNumber
                             style={{ width: '100%' }}
-                            placeholder={`${propDef.displayName}を入力`}
+                            placeholder={t('searchResults.placeholders.enterProperty', { name: propDef.displayName })}
                             step={0.01}
                             min={propDef.minValue}
                             max={propDef.maxValue}
@@ -949,9 +951,9 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
                       case 'boolean':
                         return (
-                          <Select placeholder={`${propDef.displayName}を選択`} allowClear>
-                            <Select.Option value="true">はい (true)</Select.Option>
-                            <Select.Option value="false">いいえ (false)</Select.Option>
+                          <Select placeholder={t('searchResults.placeholders.selectProperty', { name: propDef.displayName })} allowClear>
+                            <Select.Option value="true">{t('common.yes')} (true)</Select.Option>
+                            <Select.Option value="false">{t('common.no')} (false)</Select.Option>
                           </Select>
                         );
 
@@ -959,7 +961,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                         return <DatePicker style={{ width: '100%' }} showTime />;
 
                       default:
-                        return <Input placeholder={`${propDef.displayName}を入力`} />;
+                        return <Input placeholder={t('searchResults.placeholders.enterProperty', { name: propDef.displayName })} />;
                     }
                   };
 
@@ -981,7 +983,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit" loading={loading}>
-                検索
+                {t('common.search')}
               </Button>
               <Button onClick={() => {
                 form.resetFields();
@@ -989,7 +991,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                 setSelectedTypeProperties([]);
                 setSelectedSecondaryTypeProperties([]);
               }}>
-                クリア
+                {t('common.clear')}
               </Button>
             </Space>
           </Form.Item>
@@ -1005,7 +1007,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
               fontFamily: 'monospace',
               wordBreak: 'break-all'
             }}>
-              <span style={{ fontWeight: 'bold', marginRight: 8 }}>実行したCMISクエリ:</span>
+              <span style={{ fontWeight: 'bold', marginRight: 8 }}>{t('searchResults.executedQuery')}:</span>
               {lastExecutedQuery}
             </div>
           )}
@@ -1014,8 +1016,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
       {searchResult && (
         <Card 
-          title={`検索結果 (${searchResult.numItems}件)`}
-          extra={searchResult.hasMoreItems && <span style={{ color: '#999' }}>さらに結果があります</span>}
+          title={t('searchResults.results', { count: searchResult.numItems })}
+          extra={searchResult.hasMoreItems && <span style={{ color: '#999' }}>{t('common.moreResults')}</span>}
         >
           <Table
             columns={columns}

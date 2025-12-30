@@ -854,7 +854,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               navigate(`/documents?folderId=${rootFolderId}`);
             } catch (error) {
               console.error('Navigation error:', error);
-              message.error('ナビゲーションに失敗しました');
+              message.error(t('common.errors.navigationFailed'));
             }
           }}
         >
@@ -882,7 +882,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       }
                     } catch (error) {
                       console.error('Path navigation error:', error);
-                      message.error('フォルダへのナビゲーションに失敗しました');
+                      message.error(t('documentViewer.messages.folderNavigationFailed'));
                     }
                   }
                 }}
@@ -1308,7 +1308,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                         </span>
                       }
                       tooltip={propDefTyped.description}
-                      rules={propDefTyped.required ? [{ required: true, message: `${propDefTyped.displayName || propId}は必須です` }] : undefined}
+                      rules={propDefTyped.required ? [{ required: true, message: t('documentViewer.relationshipModal.fieldRequired', { field: propDefTyped.displayName || propId }) }] : undefined}
                     >
                       {propDefTyped.propertyType === 'boolean' ? (
                         <Select
@@ -1317,10 +1317,10 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                             { label: 'false', value: false }
                           ]}
                           allowClear
-                          placeholder="値を選択"
+                          placeholder={t('documentViewer.relationshipModal.selectValue')}
                         />
                       ) : propDefTyped.propertyType === 'integer' || propDefTyped.propertyType === 'decimal' ? (
-                        <Input type="number" placeholder="数値を入力" />
+                        <Input type="number" placeholder={t('documentViewer.relationshipModal.enterNumber')} />
                       ) : propDefTyped.propertyType === 'datetime' ? (
                         <Input type="datetime-local" />
                       ) : (

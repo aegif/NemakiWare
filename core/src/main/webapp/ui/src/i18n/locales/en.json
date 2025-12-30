@@ -371,7 +371,21 @@
     "decimal": "Decimal",
     "boolean": "Boolean",
     "datetime": "DateTime",
-    "id": "ID"
+    "id": "ID",
+    "selectPlaceholder": "Select {{name}}",
+    "multiInputPlaceholder": "Enter {{name}} (multiple allowed)",
+    "readOnly": "Read-only",
+    "readOnlyTooltip": "This property is read-only",
+    "secondaryTypeTooltip": "Edit in the Secondary Types section above",
+    "dedicatedUI": "Dedicated UI",
+    "totalItems": "Total {{total}} items",
+    "columns": {
+      "propertyName": "Property Name",
+      "value": "Value"
+    },
+    "validation": {
+      "required": "{{name}} is required"
+    }
   },
   "documentViewer": {
     "properties": "Properties",
@@ -434,7 +448,10 @@
       "selectObject": "Select Object",
       "customProperties": "Custom Properties",
       "selected": "Selected",
-      "selectObjectPlaceholder": "Please select an object"
+      "selectObjectPlaceholder": "Please select an object",
+      "fieldRequired": "{{field}} is required",
+      "selectValue": "Select value",
+      "enterNumber": "Enter number"
     },
     "relationshipDetail": {
       "title": "Relationship Detail",
@@ -477,7 +494,8 @@
       "updateRelationshipError": "Failed to update relationship properties",
       "loadVersionHistoryError": "Failed to load version history",
       "loadRelationshipsError": "Failed to load relationships",
-      "typeChangedSuccess": "Type changed to {{newTypeId}}"
+      "typeChangedSuccess": "Type changed to {{newTypeId}}",
+      "folderNavigationFailed": "Failed to navigate to folder"
     },
     "selectTargetObject": "Select Target Object",
     "coercionWarning": {
@@ -501,6 +519,7 @@
   "userManagement": {
     "title": "User Management",
     "newUser": "New User",
+    "createUser": "Create New User",
     "editUser": "Edit User",
     "deleteUser": "Delete User",
     "userId": "User ID",
@@ -510,30 +529,80 @@
     "password": "Password",
     "confirmPassword": "Confirm Password",
     "groups": "Groups",
+    "searchPlaceholder": "Search users (ID, name, first name, last name, email)",
+    "confirmDelete": "Delete this user?",
+    "columns": {
+      "userId": "User ID",
+      "userName": "User Name",
+      "firstName": "First Name",
+      "lastName": "Last Name",
+      "email": "Email",
+      "groups": "Groups"
+    },
+    "placeholders": {
+      "userId": "Enter user ID",
+      "userName": "Enter user name",
+      "firstName": "Enter first name",
+      "lastName": "Enter last name",
+      "email": "Enter email",
+      "password": "Enter password",
+      "groups": "Select groups"
+    },
+    "validation": {
+      "userIdRequired": "Please enter a user ID",
+      "userNameRequired": "Please enter a user name",
+      "passwordRequired": "Please enter a password",
+      "passwordMinLength": "Password must be at least 6 characters"
+    },
     "messages": {
+      "loadError": "Failed to load users",
       "createSuccess": "User created successfully",
       "updateSuccess": "User updated successfully",
       "deleteSuccess": "User deleted successfully",
       "createError": "Failed to create user",
       "updateError": "Failed to update user",
-      "deleteError": "Failed to delete user"
+      "deleteError": "Failed to delete user",
+      "permissionError": "Permission error: You do not have permission to manage users",
+      "deletePermissionError": "Permission error: You do not have permission to delete users"
     }
   },
   "groupManagement": {
     "title": "Group Management",
     "newGroup": "New Group",
+    "createGroup": "Create New Group",
     "editGroup": "Edit Group",
     "deleteGroup": "Delete Group",
     "groupId": "Group ID",
     "groupName": "Group Name",
     "members": "Members",
+    "description": "Description",
+    "searchPlaceholder": "Search groups (ID, name, members)",
+    "confirmDelete": "Delete this group?",
+    "columns": {
+      "groupId": "Group ID",
+      "groupName": "Group Name",
+      "members": "Members"
+    },
+    "placeholders": {
+      "groupId": "Enter group ID",
+      "groupName": "Enter group name",
+      "description": "Enter group description (optional)",
+      "members": "Select members"
+    },
+    "validation": {
+      "groupIdRequired": "Please enter a group ID",
+      "groupNameRequired": "Please enter a group name"
+    },
     "messages": {
+      "loadError": "Failed to load groups",
       "createSuccess": "Group created successfully",
       "updateSuccess": "Group updated successfully",
       "deleteSuccess": "Group deleted successfully",
       "createError": "Failed to create group",
       "updateError": "Failed to update group",
-      "deleteError": "Failed to delete group"
+      "deleteError": "Failed to delete group",
+      "permissionError": "Permission error: You do not have permission to manage groups",
+      "deletePermissionError": "Permission error: You do not have permission to delete groups"
     }
   },
   "permissionManagement": {
@@ -544,16 +613,46 @@
     "permission": "Permission",
     "directPermission": "Direct Permission",
     "inheritedPermission": "Inherited Permission",
-    "breakInheritance": "Break Inheritance",
+    "direct": "Direct",
+    "inherited": "Inherited",
+    "breakInheritance": {
+      "title": "Break ACL Inheritance?",
+      "content": "This will remove permission inheritance from the parent folder. This operation cannot be undone. Inherited permissions will be copied as direct permissions.",
+      "okText": "Break Inheritance"
+    },
+    "breakInheritanceButton": "Break Inheritance",
     "restoreInheritance": "Restore Inheritance",
+    "userOrGroup": "User/Group",
+    "objectInfo": "Object Information",
+    "objectId": "ID",
+    "objectType": "Type",
+    "objectPath": "Path",
+    "confirmDelete": "Delete this permission?",
+    "columns": {
+      "principal": "Principal",
+      "permissions": "Permissions",
+      "directPermission": "Direct Permission"
+    },
+    "placeholders": {
+      "selectPrincipal": "Select user or group"
+    },
     "messages": {
+      "loadError": "Failed to load data",
+      "loadObjectError": "Failed to load object",
+      "loadAclError": "Failed to load ACL",
+      "loadUsersError": "Failed to load users",
+      "loadGroupsError": "Failed to load groups",
       "addSuccess": "Permission added successfully",
       "removeSuccess": "Permission removed successfully",
       "addError": "Failed to add permission",
-      "removeError": "Failed to remove permission"
+      "removeError": "Failed to remove permission",
+      "breakInheritanceSuccess": "ACL inheritance broken successfully",
+      "breakInheritanceError": "Failed to break ACL inheritance"
     },
     "validation": {
-      "permissionRequired": "Please select a permission"
+      "permissionRequired": "Please select a permission",
+      "selectPrincipal": "Please select a user or group",
+      "selectPermission": "Please select a permission"
     }
   },
   "preview": {
@@ -689,6 +788,54 @@
       "searchFailed": "Search failed"
     }
   },
+  "searchResults": {
+    "title": "Search",
+    "fullTextSearch": "Full Text Search",
+    "excludeMetadata": "Exclude standard metadata from search (filename, description, etc.)",
+    "baseType": "Base Type",
+    "objectType": "Object Type",
+    "secondaryType": "Secondary Type",
+    "createdBy": "Created By",
+    "createdFrom": "Created From",
+    "createdTo": "Created To",
+    "customPropertySearch": "Search by Custom Properties",
+    "secondaryPropertySearch": "Search by Secondary Type Properties",
+    "executedQuery": "Executed CMIS Query",
+    "results": "Search Results ({{count}} items)",
+    "baseTypes": {
+      "document": "Document",
+      "folder": "Folder",
+      "relationship": "Relationship"
+    },
+    "columns": {
+      "type": "Type",
+      "name": "Name",
+      "path": "Path",
+      "sourceId": "Source ID",
+      "targetId": "Target ID",
+      "objectType": "Object Type",
+      "secondaryTypes": "Secondary Types",
+      "size": "Size",
+      "createdAt": "Created At",
+      "createdBy": "Created By"
+    },
+    "tooltips": {
+      "viewDetails": "View Details"
+    },
+    "placeholders": {
+      "searchKeyword": "Enter search keywords",
+      "selectBaseType": "Select Base Type",
+      "selectObjectType": "Select Object Type",
+      "selectSecondaryType": "Select Secondary Type",
+      "searchByName": "Search by name",
+      "searchByCreator": "Search by creator",
+      "selectProperty": "Select {{name}}",
+      "enterProperty": "Enter {{name}}"
+    },
+    "messages": {
+      "searchFailed": "Search failed"
+    }
+  },
   "documentList": {
     "title": "Document List",
     "folderCreate": "Create Folder",
@@ -699,17 +846,102 @@
     "documentSearch": "Search Documents",
     "goUp": "Go Up",
     "goUpTooltip": "Go to Parent Folder",
+    "folderTree": "Folder Tree",
+    "goToParent": "Go to Parent Folder",
+    "up": "Up",
+    "searchPlaceholder": "Enter search keywords",
+    "uploadFile": "Upload File",
+    "uploadingFile": "Uploading File...",
+    "createFolder": "Create Folder",
+    "file": "File",
+    "fileName": "File Name",
+    "folderName": "Folder Name",
+    "dragDropOrClick": "Drag and drop file or click to select",
+    "customProperties": "Custom Properties",
+    "checkin": "Check In",
+    "checkinFileLabel": "File (Optional - only if updating content)",
+    "checkinFileHint": "Select a file only if you want to update the content during check-in",
+    "versionType": "Version Type",
+    "minorVersion": "Minor Version (e.g., 1.1 → 1.2)",
+    "majorVersion": "Major Version (e.g., 1.1 → 2.0)",
+    "checkinComment": "Check-in Comment",
+    "versionHistory": "Version History",
+    "deleteConfirmation": "Confirm Delete",
+    "deleteButton": "Delete",
+    "checkingRelatedObjects": "Checking related objects...",
+    "deleteConfirmMessage": "<strong>\"{{name}}\"</strong> will be deleted. Continue?",
+    "deleteWarningTitle": "Warning:",
+    "deleteWarningMessage": "This object has <strong>{{count}}</strong> child object(s) linked via parent-child relationship (nemaki:parentChildRelationship).",
+    "deleteWarningCascade": "Deleting this will also delete all child objects.",
+    "renameTitle": "Rename \"{{name}}\"",
+    "changeButton": "Change",
+    "newName": "New Name",
     "columns": {
       "type": "Type",
       "name": "Name",
       "objectType": "Object Type",
       "path": "Path",
       "createdBy": "Created By",
-      "createdAt": "Created At",
+      "creationDate": "Created At",
       "size": "Size",
-      "lastModifiedAt": "Last Modified",
-      "lastModifiedBy": "Modified By",
-      "actions": "Actions"
+      "modifiedDate": "Last Modified",
+      "modifiedBy": "Modified By",
+      "actions": "Actions",
+      "version": "Version",
+      "comment": "Comment"
+    },
+    "tags": {
+      "working": "Working"
+    },
+    "types": {
+      "document": "Document",
+      "folder": "Folder"
+    },
+    "actions": {
+      "viewDetails": "View Details",
+      "rename": "Rename",
+      "checkout": "Check Out",
+      "checkin": "Check In",
+      "cancelCheckout": "Cancel Check Out",
+      "versionHistory": "Version History",
+      "permissionManagement": "Permission Management"
+    },
+    "placeholders": {
+      "enterFileName": "Enter file name",
+      "selectDocumentType": "Select Document Type",
+      "selectFolderType": "Select Folder Type",
+      "enterFolderName": "Enter folder name",
+      "enterProperty": "Enter {{name}}",
+      "enterCheckinComment": "Enter a comment describing your changes",
+      "enterNewName": "Enter new name"
+    },
+    "validation": {
+      "selectFile": "Please select a file",
+      "enterFileName": "Please enter a file name",
+      "enterFolderName": "Please enter a folder name",
+      "enterName": "Please enter a name",
+      "nameMaxLength": "Name must be 255 characters or less",
+      "selectVersionType": "Please select a version type",
+      "enterProperty": "Please enter {{name}}"
+    },
+    "messages": {
+      "deleteSuccess": "Deleted successfully",
+      "deleteSuccessWithCount": "{{count}} object(s) deleted successfully",
+      "deletePartialFail": "Failed to delete {{count}} object(s)",
+      "deleteError": "Failed to delete",
+      "renameSuccess": "Renamed successfully",
+      "renameError": "Failed to rename",
+      "checkoutSuccess": "Checked out successfully",
+      "checkoutError": "Failed to check out",
+      "checkinSuccess": "Checked in successfully",
+      "checkinError": "Failed to check in",
+      "cancelCheckoutSuccess": "Check out cancelled successfully",
+      "cancelCheckoutError": "Failed to cancel check out",
+      "versionHistoryError": "Failed to get version history",
+      "enterSearchKeyword": "Please enter search keywords",
+      "searchError": "Search failed",
+      "folderNavigationError": "Failed to navigate to folder",
+      "parentNavigationError": "Failed to navigate to parent folder"
     },
     "tooltips": {
       "viewDetails": "View Details",
@@ -764,19 +996,6 @@
       "majorVersion": "Major Version (e.g., 1.1 → 2.0)",
       "checkinComment": "Check-in Comment",
       "commentPlaceholder": "Enter a comment describing your changes"
-    },
-    "validation": {
-      "fileRequired": "Please select a file",
-      "fileNameRequired": "Please enter a file name",
-      "folderNameRequired": "Please enter a folder name",
-      "nameRequired": "Please enter a name",
-      "nameMinLength": "Please enter a name",
-      "nameMaxLength": "Name must be 255 characters or less",
-      "versionTypeRequired": "Please select a version type"
-    },
-    "messages": {
-      "fileNotSelected": "No file selected",
-      "folderNotSelected": "No upload destination folder selected"
     },
     "baseTypes": {
       "document": "Document",
@@ -868,10 +1087,13 @@
   },
   "archiveManagement": {
     "title": "Archive Management",
+    "restore": "Restore",
+    "viewDetails": "View Details",
     "columns": {
       "type": "Type",
       "name": "Name",
       "originalPath": "Original Path",
+      "archiveDate": "Archived At",
       "archivedAt": "Archived At",
       "size": "Size",
       "actions": "Actions"
@@ -898,6 +1120,20 @@
       "executeSuccess": "Action executed successfully",
       "executeFailed": "Action execution failed",
       "executeError": "An error occurred while executing the action"
+    }
+  },
+  "actionForm": {
+    "execute": "Execute",
+    "selectPlaceholder": "Select {{label}}",
+    "messages": {
+      "loadError": "Failed to load form",
+      "loadActionsError": "Failed to load actions",
+      "executeSuccess": "Action executed successfully",
+      "executeFailed": "Action execution failed",
+      "executeError": "An error occurred while executing the action"
+    },
+    "validation": {
+      "required": "{{label}} is required"
     }
   },
   "language": {

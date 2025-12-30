@@ -239,6 +239,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button, Space, Modal, message } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { ActionDefinition } from '../../types/cmis';
 import { ActionService } from '../../services/action';
 import { ActionFormRenderer } from './ActionFormRenderer';
@@ -256,6 +257,7 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
   triggerType,
   onActionComplete
 }) => {
+  const { t } = useTranslation();
   const [actions, setActions] = useState<ActionDefinition[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -277,7 +279,7 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
       setActions(filteredActions);
     } catch (error) {
       // Failed to load actions
-      message.error('アクションの読み込みに失敗しました');
+      message.error(t('actionForm.messages.loadActionsError'));
     } finally {
       setLoading(false);
     }

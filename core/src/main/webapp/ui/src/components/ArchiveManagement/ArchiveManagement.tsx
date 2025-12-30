@@ -232,6 +232,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
 import { CMISObject } from '../../types/cmis';
+import { useTranslation } from 'react-i18next';
 
 interface ArchiveManagementProps {
   repositoryId: string;
@@ -242,6 +243,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
   const [archives, setArchives] = useState<CMISObject[]>([]);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { t, i18n } = useTranslation();
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
@@ -256,7 +258,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       const archiveList = await cmisService.getArchives(repositoryId);
       setArchives(archiveList);
     } catch (error) {
-      message.error('アーカイブの読み込みに失敗しました');
+      message.error(t('archiveManagement.messages.loadError'));
     } finally {
       setLoading(false);
     }
@@ -265,10 +267,10 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
   const handleRestore = async (objectId: string) => {
     try {
       await cmisService.restoreObject(repositoryId, objectId);
-      message.success('オブジェクトを復元しました');
+      message.success(t('archiveManagement.messages.restoreSuccess'));
       loadArchives();
     } catch (error) {
-      message.error('復元に失敗しました');
+      message.error(t('archiveManagement.messages.restoreError'));
     }
   };
 
@@ -279,7 +281,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
 
   const columns = [
     {
-      title: 'タイプ',
+      title: t('archiveManagement.columns.type'),
       dataIndex: 'baseType',
       key: 'type',
       width: 60,
@@ -290,37 +292,37 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       ),
     },
     {
-      title: '名前',
+      title: t('archiveManagement.columns.name'),
       dataIndex: 'name',
       key: 'name',
     },
     {
-      title: 'オリジナルパス',
+      title: t('archiveManagement.columns.originalPath'),
       dataIndex: 'path',
       key: 'path',
       ellipsis: true,
     },
     {
-      title: 'アーカイブ日時',
+      title: t('archiveManagement.columns.archiveDate'),
       dataIndex: 'lastModificationDate',
       key: 'archived',
       width: 180,
-      render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+      render: (date: string) => date ? new Date(date).toLocaleString(i18n.language === 'ja' ? 'ja-JP' : 'en-US') : '-',
     },
     {
-      title: 'サイズ',
+      title: t('archiveManagement.columns.size'),
       dataIndex: 'contentStreamLength',
       key: 'size',
       width: 100,
       render: (size: number) => size ? `${Math.round(size / 1024)} KB` : '-',
     },
     {
-      title: 'アクション',
+      title: t('common.actions'),
       key: 'actions',
       width: 150,
       render: (_: any, record: CMISObject) => (
         <Space>
-          <Tooltip title="詳細表示">
+          <Tooltip title={t('archiveManagement.viewDetails')}>
             <Button 
               icon={<EyeOutlined />} 
               size="small"
@@ -328,7 +330,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
             />
           </Tooltip>
           {record.baseType === 'cmis:document' && (
-            <Tooltip title="ダウンロード">
+            <Tooltip title={t('common.download')}>
               <Button 
                 icon={<DownloadOutlined />} 
                 size="small"
@@ -337,18 +339,18 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
             </Tooltip>
           )}
           <Popconfirm
-            title="このオブジェクトを復元しますか？"
+            title={t('archiveManagement.confirmRestore')}
             onConfirm={() => handleRestore(record.id)}
-            okText="はい"
-            cancelText="いいえ"
+            okText={t('common.yes')}
+            cancelText={t('common.no')}
           >
-            <Tooltip title="復元">
+            <Tooltip title={t('archiveManagement.restore')}>
               <Button 
                 icon={<ReloadOutlined />} 
                 size="small"
                 type="primary"
               >
-                復元
+                {t('archiveManagement.restore')}
               </Button>
             </Tooltip>
           </Popconfirm>
@@ -361,7 +363,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>
-          <InboxOutlined /> アーカイブ管理
+          <InboxOutlined /> {t('archiveManagement.title')}
         </h2>
       </div>
 

@@ -264,6 +264,7 @@ import {
 } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
 import { User, Group } from '../../types/cmis';
+import { useTranslation } from 'react-i18next';
 
 interface UserManagementProps {
   repositoryId: string;
@@ -278,6 +279,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
+  const { t } = useTranslation();
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
@@ -294,18 +296,17 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       setUsers(userList);
     } catch (error: any) {
       // Failed to load users
-      let errorMessage = 'ユーザーの読み込みに失敗しました';
+      let errorMessage = t('userManagement.messages.loadError');
 
       if (error.status === 500) {
-        // サーバー側でHTTP 500が返された場合（根本的な問題）
-        errorMessage = 'サーバー側でエラーが発生しています';
+        errorMessage = t('common.errors.serverError');
         if (error.details) {
-          errorMessage += `\n詳細: ${error.details}`;
+          errorMessage += `\n${t('common.errors.details', { details: error.details })}`;
         }
       } else if (error.status === 401) {
-        errorMessage = '認証エラー: ログインし直してください';
+        errorMessage = t('common.errors.authError');
       } else if (error.status === 403) {
-        errorMessage = '権限エラー: ユーザー管理の権限がありません';
+        errorMessage = t('userManagement.messages.permissionError');
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -329,10 +330,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
     try {
       if (editingUser) {
         await cmisService.updateUser(repositoryId, editingUser.id, values);
-        message.success('ユーザーを更新しました');
+        message.success(t('userManagement.messages.updateSuccess'));
       } else {
         await cmisService.createUser(repositoryId, values);
-        message.success('ユーザーを作成しました');
+        message.success(t('userManagement.messages.createSuccess'));
       }
       
       setModalVisible(false);
@@ -341,17 +342,17 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       loadUsers();
     } catch (error: any) {
       // Failed to create/update user
-      let errorMessage = editingUser ? 'ユーザーの更新に失敗しました' : 'ユーザーの作成に失敗しました';
+      let errorMessage = editingUser ? t('userManagement.messages.updateError') : t('userManagement.messages.createError');
       
       if (error.status === 500) {
-        errorMessage = 'サーバー側でエラーが発生しています';
+        errorMessage = t('common.errors.serverError');
         if (error.details) {
-          errorMessage += `\n詳細: ${error.details}`;
+          errorMessage += `\n${t('common.errors.details', { details: error.details })}`;
         }
       } else if (error.status === 401) {
-        errorMessage = '認証エラー: ログインし直してください';
+        errorMessage = t('common.errors.authError');
       } else if (error.status === 403) {
-        errorMessage = '権限エラー: この操作の権限がありません';
+        errorMessage = t('common.errors.permissionError');
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -369,21 +370,21 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
   const handleDelete = async (userId: string) => {
     try {
       await cmisService.deleteUser(repositoryId, userId);
-      message.success('ユーザーを削除しました');
+      message.success(t('userManagement.messages.deleteSuccess'));
       loadUsers();
     } catch (error: any) {
       // Failed to delete user
-      let errorMessage = 'ユーザーの削除に失敗しました';
+      let errorMessage = t('userManagement.messages.deleteError');
       
       if (error.status === 500) {
-        errorMessage = 'サーバー側でエラーが発生しています';
+        errorMessage = t('common.errors.serverError');
         if (error.details) {
-          errorMessage += `\n詳細: ${error.details}`;
+          errorMessage += `\n${t('common.errors.details', { details: error.details })}`;
         }
       } else if (error.status === 401) {
-        errorMessage = '認証エラー: ログインし直してください';
+        errorMessage = t('common.errors.authError');
       } else if (error.status === 403) {
-        errorMessage = '権限エラー: ユーザー削除の権限がありません';
+        errorMessage = t('userManagement.messages.deletePermissionError');
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -413,12 +414,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
 
   const columns = [
     {
-      title: 'ユーザーID',
+      title: t('userManagement.columns.userId'),
       dataIndex: 'id',
       key: 'id',
     },
     {
-      title: 'ユーザー名',
+      title: t('userManagement.columns.userName'),
       dataIndex: 'name',
       key: 'name',
       render: (name: string, record: User) => {
@@ -433,25 +434,25 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       },
     },
     {
-      title: '名',
+      title: t('userManagement.columns.firstName'),
       dataIndex: 'firstName',
       key: 'firstName',
       render: (firstName: string) => firstName && firstName.trim() !== '' ? firstName : '-',
     },
     {
-      title: '姓',
+      title: t('userManagement.columns.lastName'),
       dataIndex: 'lastName',
       key: 'lastName',
       render: (lastName: string) => lastName && lastName.trim() !== '' ? lastName : '-',
     },
     {
-      title: 'メールアドレス',
+      title: t('userManagement.columns.email'),
       dataIndex: 'email',
       key: 'email',
       render: (email: string) => email && email.trim() !== '' ? email : '-',
     },
     {
-      title: '所属グループ',
+      title: t('userManagement.columns.groups'),
       dataIndex: 'groups',
       key: 'groups',
       render: (groups: string[]) => {
@@ -468,7 +469,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       },
     },
     {
-      title: 'アクション',
+      title: t('common.actions'),
       key: 'actions',
       width: 150,
       render: (_: any, record: User) => (
@@ -478,20 +479,20 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
             size="small"
             onClick={() => handleEdit(record)}
           >
-            編集
+            {t('common.edit')}
           </Button>
           <Popconfirm
-            title="このユーザーを削除しますか？"
+            title={t('userManagement.confirmDelete')}
             onConfirm={() => handleDelete(record.id)}
-            okText="はい"
-            cancelText="いいえ"
+            okText={t('common.yes')}
+            cancelText={t('common.no')}
           >
             <Button 
               icon={<DeleteOutlined />} 
               size="small"
               danger
             >
-              削除
+              {t('common.delete')}
             </Button>
           </Popconfirm>
         </Space>
@@ -503,19 +504,19 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>
-          <UserOutlined /> ユーザー管理
+          <UserOutlined /> {t('userManagement.title')}
         </h2>
         <Button
           type="primary"
           icon={<PlusOutlined />}
           onClick={() => setModalVisible(true)}
         >
-          新規作成
+          {t('common.create')}
         </Button>
       </div>
 
       <Input.Search
-        placeholder="ユーザーを検索 (ID、名前、名、姓、メールアドレス)"
+        placeholder={t('userManagement.searchPlaceholder')}
         allowClear
         value={searchText}
         onChange={(e) => setSearchText(e.target.value)}
@@ -533,7 +534,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       />
 
       <Modal
-        title={editingUser ? 'ユーザー編集' : '新規ユーザー作成'}
+        title={editingUser ? t('userManagement.editUser') : t('userManagement.createUser')}
         open={modalVisible}
         onCancel={handleCancel}
         footer={null}
@@ -547,70 +548,70 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
         >
           <Form.Item
             name="id"
-            label="ユーザーID"
+            label={t('userManagement.columns.userId')}
             rules={[
-              { required: true, message: 'ユーザーIDを入力してください' },
-              { pattern: /^[a-zA-Z0-9_-]+$/, message: '英数字、アンダースコア、ハイフンのみ使用可能です' }
+              { required: true, message: t('userManagement.validation.userIdRequired') },
+              { pattern: /^[a-zA-Z0-9_-]+$/, message: t('common.validation.alphanumericOnly') }
             ]}
           >
             <Input 
-              placeholder="ユーザーIDを入力"
+              placeholder={t('userManagement.placeholders.userId')}
               disabled={!!editingUser}
             />
           </Form.Item>
 
           <Form.Item
             name="name"
-            label="ユーザー名"
-            rules={[{ required: true, message: 'ユーザー名を入力してください' }]}
+            label={t('userManagement.columns.userName')}
+            rules={[{ required: true, message: t('userManagement.validation.userNameRequired') }]}
           >
-            <Input placeholder="ユーザー名を入力" />
+            <Input placeholder={t('userManagement.placeholders.userName')} />
           </Form.Item>
 
           <Form.Item
             name="firstName"
-            label="名"
+            label={t('userManagement.columns.firstName')}
           >
-            <Input placeholder="名を入力" />
+            <Input placeholder={t('userManagement.placeholders.firstName')} />
           </Form.Item>
 
           <Form.Item
             name="lastName"
-            label="姓"
+            label={t('userManagement.columns.lastName')}
           >
-            <Input placeholder="姓を入力" />
+            <Input placeholder={t('userManagement.placeholders.lastName')} />
           </Form.Item>
 
           <Form.Item
             name="email"
-            label="メールアドレス"
+            label={t('userManagement.columns.email')}
             rules={[
-              { type: 'email', message: '正しいメールアドレスを入力してください' }
+              { type: 'email', message: t('common.validation.validEmail') }
             ]}
           >
-            <Input placeholder="メールアドレスを入力" />
+            <Input placeholder={t('userManagement.placeholders.email')} />
           </Form.Item>
 
           {!editingUser && (
             <Form.Item
               name="password"
-              label="パスワード"
+              label={t('userManagement.password')}
               rules={[
-                { required: true, message: 'パスワードを入力してください' },
-                { min: 6, message: 'パスワードは6文字以上で入力してください' }
+                { required: true, message: t('userManagement.validation.passwordRequired') },
+                { min: 6, message: t('userManagement.validation.passwordMinLength') }
               ]}
             >
-              <Input.Password placeholder="パスワードを入力" />
+              <Input.Password placeholder={t('userManagement.placeholders.password')} />
             </Form.Item>
           )}
 
           <Form.Item
             name="groups"
-            label="所属グループ"
+            label={t('userManagement.columns.groups')}
           >
             <Select
               mode="multiple"
-              placeholder="グループを選択"
+              placeholder={t('userManagement.placeholders.groups')}
               options={groups.map(group => ({
                 label: group.name || group.id,
                 value: group.id
@@ -621,10 +622,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
-                {editingUser ? '更新' : '作成'}
+                {editingUser ? t('common.update') : t('common.create')}
               </Button>
               <Button onClick={handleCancel}>
-                キャンセル
+                {t('common.cancel')}
               </Button>
             </Space>
           </Form.Item>

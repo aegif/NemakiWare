@@ -296,6 +296,7 @@ import {
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, ACL, Permission, User, Group } from '../../types/cmis';
+import { useTranslation } from 'react-i18next';
 
 interface PermissionManagementProps {
   repositoryId: string;
@@ -316,6 +317,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
   const [modalVisible, setModalVisible] = useState(false);
   const [isInherited, setIsInherited] = useState<boolean>(true);
   const [form] = Form.useForm();
+  const { t } = useTranslation();
 
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
@@ -340,25 +342,25 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       const obj = await cmisService.getObject(repositoryId, objectId)
         .catch(err => {
           // Failed to load object
-          throw new Error(`オブジェクトの読み込みに失敗: ${err.message}`);
+          throw new Error(`${t('permissionManagement.messages.loadObjectError')}: ${err.message}`);
         });
 
       const aclData = await cmisService.getACL(repositoryId, objectId)
         .catch(err => {
           // Failed to load ACL
-          throw new Error(`ACLの読み込みに失敗: ${err.message}`);
+          throw new Error(`${t('permissionManagement.messages.loadAclError')}: ${err.message}`);
         });
 
       const userList = await cmisService.getUsers(repositoryId)
         .catch(err => {
           // Failed to load users
-          throw new Error(`ユーザー一覧の読み込みに失敗: ${err.message}`);
+          throw new Error(`${t('permissionManagement.messages.loadUsersError')}: ${err.message}`);
         });
 
       const groupList = await cmisService.getGroups(repositoryId)
         .catch(err => {
           // Failed to load groups
-          throw new Error(`グループ一覧の読み込みに失敗: ${err.message}`);
+          throw new Error(`${t('permissionManagement.messages.loadGroupsError')}: ${err.message}`);
         });
 
       setObject(obj);
@@ -370,7 +372,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       setIsInherited(inheritanceEnabled);
     } catch (error) {
       // Failed to load permission data
-      const errorMessage = error instanceof Error ? error.message : 'データの読み込みに失敗しました';
+      const errorMessage = error instanceof Error ? error.message : t('permissionManagement.messages.loadError');
       message.error(errorMessage);
     } finally {
       setLoading(false);
@@ -393,12 +395,12 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       };
       
       await cmisService.setACL(repositoryId, objectId, updatedACL);
-      message.success('権限を追加しました');
+      message.success(t('permissionManagement.messages.addSuccess'));
       setModalVisible(false);
       form.resetFields();
       loadData();
     } catch (error) {
-      message.error('権限の追加に失敗しました');
+      message.error(t('permissionManagement.messages.addError'));
     }
   };
 
@@ -415,11 +417,11 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
 
       await cmisService.setACL(repositoryId, objectId, updatedACL);
 
-      message.success('権限を削除しました');
+      message.success(t('permissionManagement.messages.removeSuccess'));
       loadData();
     } catch (error) {
       console.error('[ACL] Permission removal failed:', error);
-      message.error('権限の削除に失敗しました');
+      message.error(t('permissionManagement.messages.removeError'));
     }
   };
 
@@ -427,19 +429,19 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
     if (!acl || !objectId) return;
 
     Modal.confirm({
-      title: 'ACL継承を切断しますか？',
-      content: '親フォルダからの権限継承を解除します。この操作は元に戻せません。継承されている権限は直接権限として複製されます。',
-      okText: '継承を切断',
-      cancelText: 'キャンセル',
+      title: t('permissionManagement.breakInheritance.title'),
+      content: t('permissionManagement.breakInheritance.content'),
+      okText: t('permissionManagement.breakInheritance.okText'),
+      cancelText: t('common.cancel'),
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
           await cmisService.setACL(repositoryId, objectId, acl, { breakInheritance: true });
-          message.success('ACL継承を切断しました');
+          message.success(t('permissionManagement.messages.breakInheritanceSuccess'));
           loadData();
         } catch (error) {
           // Failed to break inheritance
-          message.error('ACL継承の切断に失敗しました');
+          message.error(t('permissionManagement.messages.breakInheritanceError'));
         }
       }
     });
@@ -447,7 +449,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
 
   const columns = [
     {
-      title: 'プリンシパル',
+      title: t('permissionManagement.columns.principal'),
       dataIndex: 'principalId',
       key: 'principalId',
       render: (principalId: string) => {
@@ -474,7 +476,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       },
     },
     {
-      title: '権限',
+      title: t('permissionManagement.columns.permissions'),
       dataIndex: 'permissions',
       key: 'permissions',
       render: (permissions: string[]) => (
@@ -488,33 +490,33 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       ),
     },
     {
-      title: '直接権限',
+      title: t('permissionManagement.columns.directPermission'),
       dataIndex: 'direct',
       key: 'direct',
       render: (direct: boolean) => (
         <Tag color={direct ? 'green' : 'orange'}>
-          {direct ? '直接' : '継承'}
+          {direct ? t('permissionManagement.direct') : t('permissionManagement.inherited')}
         </Tag>
       ),
     },
     {
-      title: 'アクション',
+      title: t('common.actions'),
       key: 'actions',
       width: 100,
       render: (_: any, record: Permission) => (
         record.direct && (
           <Popconfirm
-            title="この権限を削除しますか？"
+            title={t('permissionManagement.confirmDelete')}
             onConfirm={() => handleRemovePermission(record.principalId)}
-            okText="はい"
-            cancelText="いいえ"
+            okText={t('common.yes')}
+            cancelText={t('common.no')}
           >
             <Button 
               icon={<DeleteOutlined />} 
               size="small"
               danger
             >
-              削除
+              {t('common.delete')}
             </Button>
           </Popconfirm>
         )
@@ -523,7 +525,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
   ];
 
   if (loading || !object || !acl) {
-    return <div>読み込み中...</div>;
+    return <div>{t('common.loading')}</div>;
   }
 
   const principalOptions = [
@@ -552,10 +554,10 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
                 navigate(`/documents/${objectId}${folderIdParam}`);
               }}
             >
-              戻る
+              {t('common.back')}
             </Button>
             <h2 style={{ margin: 0 }}>
-              <LockOutlined /> 権限管理: {object.name}
+              <LockOutlined /> {t('permissionManagement.title')}: {object.name}
             </h2>
           </Space>
           
@@ -567,7 +569,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
                 onClick={handleBreakInheritance}
                 danger
               >
-                継承を切る
+                {t('permissionManagement.breakInheritanceButton')}
               </Button>
             )}
             <Button 
@@ -575,21 +577,21 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
               icon={<PlusOutlined />}
               onClick={() => setModalVisible(true)}
             >
-              権限を追加
+              {t('permissionManagement.addPermission')}
             </Button>
           </Space>
         </div>
 
-        <Card size="small" title="オブジェクト情報">
+        <Card size="small" title={t('permissionManagement.objectInfo')}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
             <div>
-              <strong>ID:</strong> {object.id}
+              <strong>{t('permissionManagement.objectId')}:</strong> {object.id}
             </div>
             <div>
-              <strong>タイプ:</strong> {object.objectType}
+              <strong>{t('permissionManagement.objectType')}:</strong> {object.objectType}
             </div>
             <div>
-              <strong>パス:</strong> {object.path}
+              <strong>{t('permissionManagement.objectPath')}:</strong> {object.path}
             </div>
           </div>
         </Card>
@@ -604,7 +606,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       </Space>
 
       <Modal
-        title="権限を追加"
+        title={t('permissionManagement.addPermission')}
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={null}
@@ -618,11 +620,11 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
         >
           <Form.Item
             name="principalId"
-            label="ユーザー/グループ"
-            rules={[{ required: true, message: 'ユーザーまたはグループを選択してください' }]}
+            label={t('permissionManagement.userOrGroup')}
+            rules={[{ required: true, message: t('permissionManagement.validation.selectPrincipal') }]}
           >
             <Select
-              placeholder="ユーザーまたはグループを選択"
+              placeholder={t('permissionManagement.placeholders.selectPrincipal')}
               showSearch
               filterOption={(input, option) =>
                 (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
@@ -633,8 +635,8 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
 
           <Form.Item
             name="permissions"
-            label="権限"
-            rules={[{ required: true, message: '権限を選択してください' }]}
+            label={t('permissionManagement.columns.permissions')}
+            rules={[{ required: true, message: t('permissionManagement.validation.selectPermission') }]}
           >
             <Checkbox.Group>
               <Space direction="vertical">
@@ -650,10 +652,10 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
-                追加
+                {t('common.add')}
               </Button>
               <Button onClick={() => setModalVisible(false)}>
-                キャンセル
+                {t('common.cancel')}
               </Button>
             </Space>
           </Form.Item>

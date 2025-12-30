@@ -371,7 +371,21 @@
     "decimal": "小数",
     "boolean": "真偽値",
     "datetime": "日時",
-    "id": "ID"
+    "id": "ID",
+    "selectPlaceholder": "{{name}}を選択",
+    "multiInputPlaceholder": "{{name}}を入力（複数可）",
+    "readOnly": "読み取り専用",
+    "readOnlyTooltip": "このプロパティは読み取り専用です",
+    "secondaryTypeTooltip": "上部の「セカンダリタイプ」セクションで編集できます",
+    "dedicatedUI": "専用UI",
+    "totalItems": "全 {{total}} 件",
+    "columns": {
+      "propertyName": "プロパティ名",
+      "value": "値"
+    },
+    "validation": {
+      "required": "{{name}}は必須です"
+    }
   },
   "documentViewer": {
     "properties": "プロパティ",
@@ -434,7 +448,10 @@
       "selectObject": "オブジェクトを選択",
       "customProperties": "カスタムプロパティ",
       "selected": "選択中",
-      "selectObjectPlaceholder": "オブジェクトを選択してください"
+      "selectObjectPlaceholder": "オブジェクトを選択してください",
+      "fieldRequired": "{{field}}は必須です",
+      "selectValue": "値を選択",
+      "enterNumber": "数値を入力"
     },
     "relationshipDetail": {
       "title": "関連オブジェクト詳細",
@@ -477,7 +494,8 @@
       "updateRelationshipError": "関連プロパティの更新に失敗しました",
       "loadVersionHistoryError": "バージョン履歴の読み込みに失敗しました",
       "loadRelationshipsError": "関係の読み込みに失敗しました",
-      "typeChangedSuccess": "タイプを {{newTypeId}} に変更しました"
+      "typeChangedSuccess": "タイプを {{newTypeId}} に変更しました",
+      "folderNavigationFailed": "フォルダへのナビゲーションに失敗しました"
     },
     "selectTargetObject": "ターゲットオブジェクトを選択",
     "coercionWarning": {
@@ -501,6 +519,7 @@
   "userManagement": {
     "title": "ユーザー管理",
     "newUser": "新規ユーザー",
+    "createUser": "新規ユーザー作成",
     "editUser": "ユーザー編集",
     "deleteUser": "ユーザー削除",
     "userId": "ユーザーID",
@@ -510,50 +529,130 @@
     "password": "パスワード",
     "confirmPassword": "パスワード確認",
     "groups": "グループ",
+    "searchPlaceholder": "ユーザーを検索 (ID、名前、名、姓、メールアドレス)",
+    "confirmDelete": "このユーザーを削除しますか？",
+    "columns": {
+      "userId": "ユーザーID",
+      "userName": "ユーザー名",
+      "firstName": "名",
+      "lastName": "姓",
+      "email": "メールアドレス",
+      "groups": "所属グループ"
+    },
+    "placeholders": {
+      "userId": "ユーザーIDを入力",
+      "userName": "ユーザー名を入力",
+      "firstName": "名を入力",
+      "lastName": "姓を入力",
+      "email": "メールアドレスを入力",
+      "password": "パスワードを入力",
+      "groups": "グループを選択"
+    },
+    "validation": {
+      "userIdRequired": "ユーザーIDを入力してください",
+      "userNameRequired": "ユーザー名を入力してください",
+      "passwordRequired": "パスワードを入力してください",
+      "passwordMinLength": "パスワードは6文字以上で入力してください"
+    },
     "messages": {
+      "loadError": "ユーザーの読み込みに失敗しました",
       "createSuccess": "ユーザーを作成しました",
       "updateSuccess": "ユーザーを更新しました",
       "deleteSuccess": "ユーザーを削除しました",
       "createError": "ユーザーの作成に失敗しました",
       "updateError": "ユーザーの更新に失敗しました",
-      "deleteError": "ユーザーの削除に失敗しました"
+      "deleteError": "ユーザーの削除に失敗しました",
+      "permissionError": "権限エラー: ユーザー管理の権限がありません",
+      "deletePermissionError": "権限エラー: ユーザー削除の権限がありません"
     }
   },
   "groupManagement": {
     "title": "グループ管理",
     "newGroup": "新規グループ",
+    "createGroup": "新規グループ作成",
     "editGroup": "グループ編集",
     "deleteGroup": "グループ削除",
     "groupId": "グループID",
     "groupName": "グループ名",
     "members": "メンバー",
+    "description": "説明",
+    "searchPlaceholder": "グループを検索 (ID、名前、メンバー)",
+    "confirmDelete": "このグループを削除しますか？",
+    "columns": {
+      "groupId": "グループID",
+      "groupName": "グループ名",
+      "members": "メンバー"
+    },
+    "placeholders": {
+      "groupId": "グループIDを入力",
+      "groupName": "グループ名を入力",
+      "description": "グループの説明を入力（任意）",
+      "members": "メンバーを選択"
+    },
+    "validation": {
+      "groupIdRequired": "グループIDを入力してください",
+      "groupNameRequired": "グループ名を入力してください"
+    },
     "messages": {
+      "loadError": "グループの読み込みに失敗しました",
       "createSuccess": "グループを作成しました",
       "updateSuccess": "グループを更新しました",
       "deleteSuccess": "グループを削除しました",
       "createError": "グループの作成に失敗しました",
       "updateError": "グループの更新に失敗しました",
-      "deleteError": "グループの削除に失敗しました"
+      "deleteError": "グループの削除に失敗しました",
+      "permissionError": "権限エラー: グループ管理の権限がありません",
+      "deletePermissionError": "権限エラー: グループ削除の権限がありません"
     }
   },
   "permissionManagement": {
     "title": "権限管理",
-    "addPermission": "権限追加",
+    "addPermission": "権限を追加",
     "removePermission": "権限削除",
     "principal": "プリンシパル",
     "permission": "権限",
     "directPermission": "直接権限",
     "inheritedPermission": "継承権限",
-    "breakInheritance": "継承を切断",
+    "direct": "直接",
+    "inherited": "継承",
+    "breakInheritance": {
+      "title": "ACL継承を切断しますか？",
+      "content": "親フォルダからの権限継承を解除します。この操作は元に戻せません。継承されている権限は直接権限として複製されます。",
+      "okText": "継承を切断"
+    },
+    "breakInheritanceButton": "継承を切る",
     "restoreInheritance": "継承を復元",
+    "userOrGroup": "ユーザー/グループ",
+    "objectInfo": "オブジェクト情報",
+    "objectId": "ID",
+    "objectType": "タイプ",
+    "objectPath": "パス",
+    "confirmDelete": "この権限を削除しますか？",
+    "columns": {
+      "principal": "プリンシパル",
+      "permissions": "権限",
+      "directPermission": "直接権限"
+    },
+    "placeholders": {
+      "selectPrincipal": "ユーザーまたはグループを選択"
+    },
     "messages": {
+      "loadError": "データの読み込みに失敗しました",
+      "loadObjectError": "オブジェクトの読み込みに失敗",
+      "loadAclError": "ACLの読み込みに失敗",
+      "loadUsersError": "ユーザー一覧の読み込みに失敗",
+      "loadGroupsError": "グループ一覧の読み込みに失敗",
       "addSuccess": "権限を追加しました",
       "removeSuccess": "権限を削除しました",
       "addError": "権限の追加に失敗しました",
-      "removeError": "権限の削除に失敗しました"
+      "removeError": "権限の削除に失敗しました",
+      "breakInheritanceSuccess": "ACL継承を切断しました",
+      "breakInheritanceError": "ACL継承の切断に失敗しました"
     },
     "validation": {
-      "permissionRequired": "権限を選択してください"
+      "permissionRequired": "権限を選択してください",
+      "selectPrincipal": "ユーザーまたはグループを選択してください",
+      "selectPermission": "権限を選択してください"
     }
   },
   "preview": {
@@ -689,6 +788,54 @@
       "searchFailed": "検索に失敗しました"
     }
   },
+  "searchResults": {
+    "title": "検索",
+    "fullTextSearch": "全文検索",
+    "excludeMetadata": "標準メタデータを検索対象から外す（ファイル名・説明などを除く）",
+    "baseType": "ベースタイプ",
+    "objectType": "オブジェクトタイプ",
+    "secondaryType": "セカンダリタイプ",
+    "createdBy": "作成者",
+    "createdFrom": "作成日（開始）",
+    "createdTo": "作成日（終了）",
+    "customPropertySearch": "カスタムプロパティで検索",
+    "secondaryPropertySearch": "セカンダリタイプのプロパティで検索",
+    "executedQuery": "実行したCMISクエリ",
+    "results": "検索結果 ({{count}}件)",
+    "baseTypes": {
+      "document": "ドキュメント",
+      "folder": "フォルダ",
+      "relationship": "関連"
+    },
+    "columns": {
+      "type": "タイプ",
+      "name": "名前",
+      "path": "パス",
+      "sourceId": "ソースID",
+      "targetId": "ターゲットID",
+      "objectType": "オブジェクトタイプ",
+      "secondaryTypes": "セカンダリタイプ",
+      "size": "サイズ",
+      "createdAt": "作成日時",
+      "createdBy": "作成者"
+    },
+    "tooltips": {
+      "viewDetails": "詳細表示"
+    },
+    "placeholders": {
+      "searchKeyword": "検索キーワードを入力",
+      "selectBaseType": "ベースタイプを選択",
+      "selectObjectType": "オブジェクトタイプを選択",
+      "selectSecondaryType": "セカンダリタイプを選択",
+      "searchByName": "名前で検索",
+      "searchByCreator": "作成者で検索",
+      "selectProperty": "{{name}}を選択",
+      "enterProperty": "{{name}}を入力"
+    },
+    "messages": {
+      "searchFailed": "検索に失敗しました"
+    }
+  },
   "documentList": {
     "title": "ドキュメント一覧",
     "folderCreate": "フォルダ作成",
@@ -699,17 +846,102 @@
     "documentSearch": "ドキュメント検索",
     "goUp": "上へ",
     "goUpTooltip": "親フォルダへ",
+    "folderTree": "フォルダツリー",
+    "goToParent": "親フォルダへ",
+    "up": "上へ",
+    "searchPlaceholder": "検索キーワードを入力",
+    "uploadFile": "ファイルアップロード",
+    "uploadingFile": "ファイルアップロード中...",
+    "createFolder": "フォルダ作成",
+    "file": "ファイル",
+    "fileName": "ファイル名",
+    "folderName": "フォルダ名",
+    "dragDropOrClick": "ファイルをドラッグ&ドロップまたはクリックして選択",
+    "customProperties": "カスタムプロパティ",
+    "checkin": "チェックイン",
+    "checkinFileLabel": "ファイル (オプション - 新しいコンテンツで更新する場合)",
+    "checkinFileHint": "チェックイン時にコンテンツを更新する場合のみファイルを選択してください",
+    "versionType": "バージョンタイプ",
+    "minorVersion": "マイナーバージョン (例: 1.1 → 1.2)",
+    "majorVersion": "メジャーバージョン (例: 1.1 → 2.0)",
+    "checkinComment": "チェックインコメント",
+    "versionHistory": "バージョン履歴",
+    "deleteConfirmation": "削除の確認",
+    "deleteButton": "削除する",
+    "checkingRelatedObjects": "関連オブジェクトを確認中...",
+    "deleteConfirmMessage": "<strong>「{{name}}」</strong>を削除しますか？",
+    "deleteWarningTitle": "⚠️ 注意:",
+    "deleteWarningMessage": "このオブジェクトには親子関係（nemaki:parentChildRelationship）で紐づいた<strong>{{count}}件</strong>の子オブジェクトがあります。",
+    "deleteWarningCascade": "削除すると、これらの子オブジェクトもすべて削除されます。",
+    "renameTitle": "「{{name}}」の名前を変更",
+    "changeButton": "変更",
+    "newName": "新しい名前",
     "columns": {
       "type": "タイプ",
       "name": "名前",
       "objectType": "オブジェクトタイプ",
       "path": "パス",
       "createdBy": "作成者",
-      "createdAt": "作成日時",
+      "creationDate": "作成日時",
       "size": "サイズ",
-      "lastModifiedAt": "更新日時",
-      "lastModifiedBy": "更新者",
-      "actions": "アクション"
+      "modifiedDate": "更新日時",
+      "modifiedBy": "更新者",
+      "actions": "アクション",
+      "version": "バージョン",
+      "comment": "コメント"
+    },
+    "tags": {
+      "working": "作業中"
+    },
+    "types": {
+      "document": "ドキュメント",
+      "folder": "フォルダ"
+    },
+    "actions": {
+      "viewDetails": "詳細表示",
+      "rename": "名前変更",
+      "checkout": "チェックアウト",
+      "checkin": "チェックイン",
+      "cancelCheckout": "チェックアウトキャンセル",
+      "versionHistory": "バージョン履歴",
+      "permissionManagement": "権限管理"
+    },
+    "placeholders": {
+      "enterFileName": "ファイル名を入力",
+      "selectDocumentType": "ドキュメントタイプを選択",
+      "selectFolderType": "フォルダタイプを選択",
+      "enterFolderName": "フォルダ名を入力",
+      "enterProperty": "{{name}}を入力",
+      "enterCheckinComment": "変更内容のコメントを入力してください",
+      "enterNewName": "新しい名前を入力"
+    },
+    "validation": {
+      "selectFile": "ファイルを選択してください",
+      "enterFileName": "ファイル名を入力してください",
+      "enterFolderName": "フォルダ名を入力してください",
+      "enterName": "名前を入力してください",
+      "nameMaxLength": "名前は255文字以内で入力してください",
+      "selectVersionType": "バージョンタイプを選択してください",
+      "enterProperty": "{{name}}を入力してください"
+    },
+    "messages": {
+      "deleteSuccess": "削除しました",
+      "deleteSuccessWithCount": "{{count}}件のオブジェクトを削除しました",
+      "deletePartialFail": "{{count}}件のオブジェクトの削除に失敗しました",
+      "deleteError": "削除に失敗しました",
+      "renameSuccess": "名前を変更しました",
+      "renameError": "名前の変更に失敗しました",
+      "checkoutSuccess": "チェックアウトしました",
+      "checkoutError": "チェックアウトに失敗しました",
+      "checkinSuccess": "チェックインしました",
+      "checkinError": "チェックインに失敗しました",
+      "cancelCheckoutSuccess": "チェックアウトをキャンセルしました",
+      "cancelCheckoutError": "チェックアウトのキャンセルに失敗しました",
+      "versionHistoryError": "バージョン履歴の取得に失敗しました",
+      "enterSearchKeyword": "検索キーワードを入力してください",
+      "searchError": "検索に失敗しました",
+      "folderNavigationError": "フォルダへの移動に失敗しました",
+      "parentNavigationError": "親フォルダへの移動に失敗しました"
     },
     "tooltips": {
       "viewDetails": "詳細表示",
@@ -764,19 +996,6 @@
       "majorVersion": "メジャーバージョン (例: 1.1 → 2.0)",
       "checkinComment": "チェックインコメント",
       "commentPlaceholder": "変更内容のコメントを入力してください"
-    },
-    "validation": {
-      "fileRequired": "ファイルを選択してください",
-      "fileNameRequired": "ファイル名を入力してください",
-      "folderNameRequired": "フォルダ名を入力してください",
-      "nameRequired": "名前を入力してください",
-      "nameMinLength": "名前を入力してください",
-      "nameMaxLength": "名前は255文字以内で入力してください",
-      "versionTypeRequired": "バージョンタイプを選択してください"
-    },
-    "messages": {
-      "fileNotSelected": "ファイルが選択されていません",
-      "folderNotSelected": "アップロード先フォルダが選択されていません"
     },
     "baseTypes": {
       "document": "ドキュメント",
@@ -868,10 +1087,13 @@
   },
   "archiveManagement": {
     "title": "アーカイブ管理",
+    "restore": "復元",
+    "viewDetails": "詳細表示",
     "columns": {
       "type": "タイプ",
       "name": "名前",
       "originalPath": "オリジナルパス",
+      "archiveDate": "アーカイブ日時",
       "archivedAt": "アーカイブ日時",
       "size": "サイズ",
       "actions": "アクション"
@@ -898,6 +1120,20 @@
       "executeSuccess": "アクションが正常に実行されました",
       "executeFailed": "アクションの実行に失敗しました",
       "executeError": "アクションの実行中にエラーが発生しました"
+    }
+  },
+  "actionForm": {
+    "execute": "実行",
+    "selectPlaceholder": "{{label}}を選択",
+    "messages": {
+      "loadError": "フォームの読み込みに失敗しました",
+      "loadActionsError": "アクションの読み込みに失敗しました",
+      "executeSuccess": "アクションが正常に実行されました",
+      "executeFailed": "アクションの実行に失敗しました",
+      "executeError": "アクションの実行中にエラーが発生しました"
+    },
+    "validation": {
+      "required": "{{label}}は必須です"
     }
   },
   "language": {

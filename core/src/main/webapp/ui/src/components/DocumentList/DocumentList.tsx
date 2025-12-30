@@ -245,6 +245,7 @@ import {
   FormOutlined
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, TypeDefinition } from '../../types/cmis';
 import { FolderTree } from '../FolderTree/FolderTree';
@@ -271,6 +272,7 @@ const escapeForCmisSql = (input: string): string => {
 };
 
 export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
+  const { t } = useTranslation();
   const [objects, setObjects] = useState<CMISObject[]>([]);
   const [loading, setLoading] = useState(false);
   // selectedFolderId: The folder whose contents are displayed in the list pane
@@ -428,8 +430,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       } catch (error) {
         console.error('Failed to load types:', error);
         // Set defaults if type loading fails
-        setDocumentTypes([{ id: 'cmis:document', displayName: 'ドキュメント' } as TypeDefinition]);
-        setFolderTypes([{ id: 'cmis:folder', displayName: 'フォルダ' } as TypeDefinition]);
+        setDocumentTypes([{ id: 'cmis:document', displayName: t('documentList.types.document') } as TypeDefinition]);
+        setFolderTypes([{ id: 'cmis:folder', displayName: t('documentList.types.folder') } as TypeDefinition]);
       } finally {
         setTypesLoading(false);
       }
@@ -487,7 +489,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       const folderPath = folder.path || '/';
       setCurrentFolderPath(folderPath);
     } catch (error) {
-      message.error(`オブジェクトの読み込みに失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      message.error(`${t('documentList.messages.loadObjectsError')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       // Clear objects on error to show empty state
       setObjects([]);
     } finally {
@@ -526,14 +528,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       const actualFile = file?.[0]?.originFileObj || file?.[0] || file?.fileList?.[0]?.originFileObj;
 
       if (!actualFile) {
-        const errorMsg = 'ファイルが選択されていません';
+        const errorMsg = t('documentList.messages.noFileSelected');
         setUploadError(errorMsg);
         message.error(errorMsg);
         return;
       }
 
       if (!selectedFolderId) {
-        const errorMsg = 'アップロード先フォルダが選択されていません';
+        const errorMsg = t('documentList.messages.noFolderSelected');
         setUploadError(errorMsg);
         message.error(errorMsg);
         return;
@@ -559,7 +561,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       await cmisService.createDocument(repositoryId, selectedFolderId, actualFile, properties);
 
-      message.success('ファイルをアップロードしました');
+      message.success(t('documentList.messages.uploadSuccess'));
       setUploadModalVisible(false);
       setUploadError(null);
       setSelectedDocumentTypeDefinition(null);
@@ -569,7 +571,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       await loadObjects();
     } catch (error) {
       console.error('Upload error:', error);
-      const errorMsg = 'ファイルのアップロードに失敗しました';
+      const errorMsg = t('documentList.messages.uploadError');
       setUploadError(errorMsg);
       message.error(errorMsg);
     } finally {
@@ -598,7 +600,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       }
 
       await cmisService.createFolder(repositoryId, selectedFolderId, values.name, properties);
-      message.success('フォルダを作成しました');
+      message.success(t('documentList.messages.createFolderSuccess'));
       setFolderModalVisible(false);
       setFolderError(null);
       setSelectedFolderTypeDefinition(null);
@@ -607,7 +609,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       await loadObjects();
     } catch (error) {
       console.error('Folder creation error:', error);
-      const errorMsg = 'フォルダの作成に失敗しました';
+      const errorMsg = t('documentList.messages.createFolderError');
       setFolderError(errorMsg);
       message.error(errorMsg);
     }
@@ -656,17 +658,17 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       // Show appropriate success message based on cascade deletion results
       if (result.deletedCount > 1) {
-        message.success(`${result.deletedCount}件のオブジェクトを削除しました（親子関係の子を含む）`);
+        message.success(t('documentList.messages.deleteSuccessWithCount', { count: result.deletedCount }));
       } else {
-        message.success('削除しました');
+        message.success(t('documentList.messages.deleteSuccess'));
       }
 
       // Warn about any failures during cascade deletion
       if (result.failedIds.length > 0) {
-        message.warning(`${result.failedIds.length}件のオブジェクトの削除に失敗しました`);
+        message.warning(t('documentList.messages.deletePartialFail', { count: result.failedIds.length }));
       }
     } catch (error) {
-      message.error('削除に失敗しました');
+      message.error(t('documentList.messages.deleteError'));
     } finally {
       setLoading(false);
       setDeleteTargetId('');
@@ -703,13 +705,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       await cmisService.updateProperties(repositoryId, renameTargetId, {
         'cmis:name': values.newName.trim()
       });
-      message.success('名前を変更しました');
+      message.success(t('documentList.messages.renameSuccess'));
       setRenameModalVisible(false);
       renameForm.resetFields();
       await loadObjects();
     } catch (error) {
       console.error('Rename error:', error);
-      message.error('名前の変更に失敗しました');
+      message.error(t('documentList.messages.renameError'));
     } finally {
       setLoading(false);
       setRenameTargetId('');
@@ -733,11 +735,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     try {
       setLoading(true);
       await cmisService.checkOut(repositoryId, objectId);
-      message.success('チェックアウトしました');
+      message.success(t('documentList.messages.checkoutSuccess'));
       await loadObjects();
     } catch (error) {
       console.error('Check-out error:', error);
-      message.error('チェックアウトに失敗しました');
+      message.error(t('documentList.messages.checkoutError'));
     } finally {
       setLoading(false);
     }
@@ -765,13 +767,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         }
       );
 
-      message.success('チェックインしました');
+      message.success(t('documentList.messages.checkinSuccess'));
       setCheckInModalVisible(false);
       form.resetFields();
       await loadObjects();
     } catch (error) {
       console.error('Check-in error:', error);
-      message.error('チェックインに失敗しました');
+      message.error(t('documentList.messages.checkinError'));
     } finally {
       setLoading(false);
     }
@@ -781,11 +783,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     try {
       setLoading(true);
       await cmisService.cancelCheckOut(repositoryId, objectId);
-      message.success('チェックアウトをキャンセルしました');
+      message.success(t('documentList.messages.cancelCheckoutSuccess'));
       await loadObjects();
     } catch (error) {
       console.error('Cancel check-out error:', error);
-      message.error('チェックアウトのキャンセルに失敗しました');
+      message.error(t('documentList.messages.cancelCheckoutError'));
     } finally {
       setLoading(false);
     }
@@ -799,7 +801,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setVersionHistoryModalVisible(true);
     } catch (error) {
       console.error('Version history error:', error);
-      message.error('バージョン履歴の取得に失敗しました');
+      message.error(t('documentList.messages.versionHistoryError'));
     } finally {
       setLoading(false);
     }
@@ -807,7 +809,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
-      message.warning('検索キーワードを入力してください');
+      message.warning(t('documentList.messages.enterSearchKeyword'));
       return;
     }
 
@@ -822,7 +824,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setObjects(searchResult.objects);
     } catch (error) {
       console.error('Search error:', error);
-      message.error(`検索に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      message.error(`${t('documentList.messages.searchError')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -836,7 +838,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
   const columns = [
     {
-      title: 'タイプ',
+      title: t('documentList.columns.type'),
       dataIndex: 'baseType',
       key: 'type',
       width: 60,
@@ -847,7 +849,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       ),
     },
     {
-      title: '名前',
+      title: t('documentList.columns.name'),
       dataIndex: 'name',
       key: 'name',
       render: (name: string, record: CMISObject) => {
@@ -891,7 +893,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               {name}
             </Button>
             {isPWC && (
-              <Tag color="orange">作業中</Tag>
+              <Tag color="orange">{t('documentList.tags.working')}</Tag>
             )}
           </Space>
         );
@@ -901,21 +903,21 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     // FEATURE: Added 2025-12-25 per user request for search result metadata
     ...(isSearchMode ? [
       {
-        title: 'オブジェクトタイプ',
+        title: t('documentList.columns.objectType'),
         dataIndex: 'objectType',
         key: 'objectType',
         width: 150,
         render: (objectType: string) => {
           // Display friendly name for common types
           const typeLabels: Record<string, string> = {
-            'cmis:document': 'ドキュメント',
-            'cmis:folder': 'フォルダ',
+            'cmis:document': t('documentList.types.document'),
+            'cmis:folder': t('documentList.types.folder'),
           };
           return typeLabels[objectType] || objectType || '-';
         },
       },
       {
-        title: 'パス',
+        title: t('documentList.columns.path'),
         dataIndex: 'path',
         key: 'path',
         width: 200,
@@ -940,7 +942,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                     setSearchQuery('');
                   } catch (error) {
                     console.error('Navigation error:', error);
-                    message.error('ナビゲーションに失敗しました');
+                    message.error(t('common.errors.navigationFailed'));
                   }
                 }}
               >
@@ -974,7 +976,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                             }
                           } catch (error) {
                             console.error('Path navigation error:', error);
-                            message.error('フォルダへのナビゲーションに失敗しました');
+                            message.error(t('documentList.messages.folderNavigationError'));
                           }
                         }
                       }}
@@ -990,14 +992,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         },
       },
       {
-        title: '作成者',
+        title: t('documentList.columns.createdBy'),
         dataIndex: 'createdBy',
         key: 'createdBy',
         width: 100,
         render: (createdBy: string) => createdBy || '-',
       },
       {
-        title: '作成日時',
+        title: t('documentList.columns.creationDate'),
         dataIndex: 'creationDate',
         key: 'creationDate',
         width: 150,
@@ -1005,7 +1007,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       },
     ] : []),
     {
-      title: 'サイズ',
+      title: t('documentList.columns.size'),
       dataIndex: 'contentStreamLength',
       key: 'size',
       width: 100,
@@ -1019,20 +1021,20 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       },
     },
     {
-      title: '更新日時',
+      title: t('documentList.columns.modifiedDate'),
       dataIndex: 'lastModificationDate',
       key: 'modified',
       width: 180,
       render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
     },
     {
-      title: '更新者',
+      title: t('documentList.columns.modifiedBy'),
       dataIndex: 'lastModifiedBy',
       key: 'modifiedBy',
       width: 120,
     },
     {
-      title: 'アクション',
+      title: t('common.actions'),
       key: 'actions',
       width: 300,
       render: (_: any, record: CMISObject) => {
@@ -1045,7 +1047,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
         return (
           <Space>
-            <Tooltip title="詳細表示">
+            <Tooltip title={t('documentList.actions.viewDetails')}>
               <Button
                 icon={<EyeOutlined />}
                 size="small"
@@ -1058,7 +1060,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 }}
               />
             </Tooltip>
-            <Tooltip title="名前変更">
+            <Tooltip title={t('documentList.actions.rename')}>
               <Button
                 icon={<FormOutlined />}
                 size="small"
@@ -1066,7 +1068,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               />
             </Tooltip>
             {record.baseType === 'cmis:document' && (
-              <Tooltip title="ダウンロード">
+              <Tooltip title={t('common.download')}>
                 <Button
                   icon={<DownloadOutlined />}
                   size="small"
@@ -1075,7 +1077,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               </Tooltip>
             )}
             {isVersionable && !isPWC && (
-              <Tooltip title="チェックアウト">
+              <Tooltip title={t('documentList.actions.checkout')}>
                 <Button
                   icon={<EditOutlined />}
                   size="small"
@@ -1085,7 +1087,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             )}
             {isVersionable && isPWC && (
               <>
-                <Tooltip title="チェックイン">
+                <Tooltip title={t('documentList.actions.checkin')}>
                   <Button
                     icon={<CheckOutlined />}
                     size="small"
@@ -1093,7 +1095,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                     onClick={() => handleCheckInClick(record.id)}
                   />
                 </Tooltip>
-                <Tooltip title="チェックアウトキャンセル">
+                <Tooltip title={t('documentList.actions.cancelCheckout')}>
                   <Button
                     icon={<CloseOutlined />}
                     size="small"
@@ -1103,7 +1105,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               </>
             )}
             {isVersionable && (
-              <Tooltip title="バージョン履歴">
+              <Tooltip title={t('documentList.actions.versionHistory')}>
                 <Button
                   icon={<HistoryOutlined />}
                   size="small"
@@ -1111,7 +1113,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 />
               </Tooltip>
             )}
-            <Tooltip title="権限管理">
+            <Tooltip title={t('documentList.actions.permissionManagement')}>
               <Button
                 icon={<LockOutlined />}
                 size="small"
@@ -1121,10 +1123,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   navigate(`/permissions/${record.id}?folderId=${effectiveFolderId}`);
                 }}
               >
-                権限管理
+                {t('documentList.actions.permissionManagement')}
               </Button>
             </Tooltip>
-            <Tooltip title="削除">
+            <Tooltip title={t('common.delete')}>
               <Button
                 icon={<DeleteOutlined />}
                 size="small"
@@ -1167,7 +1169,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       }
     } catch (error) {
       console.error('Breadcrumb navigation error:', error);
-      message.error('フォルダへのナビゲーションに失敗しました');
+      message.error(t('documentList.messages.folderNavigationError'));
     }
   };
 
@@ -1204,7 +1206,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       }
     } catch (error) {
       console.error('Navigate to parent error:', error);
-      message.error('親フォルダへのナビゲーションに失敗しました');
+      message.error(t('documentList.messages.parentNavigationError'));
     }
   };
 
@@ -1229,7 +1231,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     <div>
       <Row gutter={16}>
         <Col span={6}>
-          <Card title="フォルダツリー" size="small">
+          <Card title={t('documentList.folderTree')} size="small">
             <FolderTree
               repositoryId={repositoryId}
               onSelect={handleFolderSelect}
@@ -1248,37 +1250,37 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                     icon={<UpOutlined />}
                     onClick={handleGoToParent}
                     disabled={isInRootFolder}
-                    title="親フォルダへ"
+                    title={t('documentList.goToParent')}
                   >
-                    上へ
+                    {t('documentList.up')}
                   </Button>
                   <Breadcrumb items={breadcrumbItems} />
                 </Space>
                 <Space>
                   <Input
-                    placeholder="ドキュメント検索"
+                    placeholder={t('documentList.searchPlaceholder')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onPressEnter={handleSearch}
                     style={{ width: 200 }}
                     className="search-input"
                   />
-                  <Button onClick={handleSearch} className="search-button">検索</Button>
+                  <Button onClick={handleSearch} className="search-button">{t('common.search')}</Button>
                   {isSearchMode && (
-                    <Button onClick={handleClearSearch}>クリア</Button>
+                    <Button onClick={handleClearSearch}>{t('common.clear')}</Button>
                   )}
                   <Button
                     type="primary"
                     icon={<UploadOutlined />}
                     onClick={() => setUploadModalVisible(true)}
                   >
-                    ファイルアップロード
+                    {t('documentList.uploadFile')}
                   </Button>
                   <Button
                     icon={<PlusOutlined />}
                     onClick={() => setFolderModalVisible(true)}
                   >
-                    フォルダ作成
+                    {t('documentList.createFolder')}
                   </Button>
                 </Space>
               </div>
@@ -1297,7 +1299,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       </Row>
 
       <Modal
-        title={isUploading ? 'ファイルアップロード中...' : 'ファイルアップロード'}
+        title={isUploading ? t('documentList.uploadingFile') : t('documentList.uploadFile')}
         open={uploadModalVisible}
         onCancel={() => {
           if (isUploading) return; // Prevent closing during upload
@@ -1324,8 +1326,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
           )}
           <Form.Item
             name="file"
-            label="ファイル"
-            rules={[{ required: true, message: 'ファイルを選択してください' }]}
+            label={t('documentList.file')}
+            rules={[{ required: true, message: t('documentList.validation.selectFile') }]}
             valuePropName="fileList"
             getValueFromEvent={(e) => {
               if (Array.isArray(e)) {
@@ -1346,24 +1348,24 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               <p className="ant-upload-drag-icon">
                 <UploadOutlined />
               </p>
-              <p className="ant-upload-text">ファイルをドラッグ&amp;ドロップまたはクリックして選択</p>
+              <p className="ant-upload-text">{t('documentList.dragDropOrClick')}</p>
             </Upload.Dragger>
           </Form.Item>
           <Form.Item
             name="name"
-            label="ファイル名"
-            rules={[{ required: true, message: 'ファイル名を入力してください' }]}
+            label={t('documentList.fileName')}
+            rules={[{ required: true, message: t('documentList.validation.enterFileName') }]}
           >
-            <Input placeholder="ファイル名を入力" />
+            <Input placeholder={t('documentList.placeholders.enterFileName')} />
           </Form.Item>
           <Form.Item
             name="objectTypeId"
-            label="タイプ"
+            label={t('common.type')}
             initialValue="cmis:document"
           >
             <Select
               loading={typesLoading}
-              placeholder="ドキュメントタイプを選択"
+              placeholder={t('documentList.placeholders.selectDocumentType')}
               showSearch
               optionFilterProp="label"
               onChange={handleDocumentTypeChange}
@@ -1386,7 +1388,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
            Object.entries(selectedDocumentTypeDefinition.propertyDefinitions || {})
              .filter(([propId]) => !propId.startsWith('cmis:')).length > 0 && (
             <div style={{ marginBottom: 16, padding: 16, backgroundColor: '#fafafa', borderRadius: 8 }}>
-              <h4 style={{ marginTop: 0, marginBottom: 12 }}>カスタムプロパティ</h4>
+              <h4 style={{ marginTop: 0, marginBottom: 12 }}>{t('documentList.customProperties')}</h4>
               {Object.entries(selectedDocumentTypeDefinition.propertyDefinitions || {})
                 .filter(([propId]) => !propId.startsWith('cmis:'))
                 .map(([propId, propDef]: [string, any]) => (
@@ -1400,19 +1402,19 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                       </span>
                     }
                     tooltip={propDef.description}
-                    rules={propDef.required ? [{ required: true, message: `${propDef.displayName || propId}を入力してください` }] : []}
+                    rules={propDef.required ? [{ required: true, message: t('documentList.validation.enterProperty', { name: propDef.displayName || propId }) }] : []}
                   >
                     {propDef.propertyType === 'boolean' ? (
-                      <Select placeholder="選択してください" allowClear>
-                        <Select.Option value="true">はい</Select.Option>
-                        <Select.Option value="false">いいえ</Select.Option>
+                      <Select placeholder={t('common.placeholders.select', { field: '' })} allowClear>
+                        <Select.Option value="true">{t('common.yes')}</Select.Option>
+                        <Select.Option value="false">{t('common.no')}</Select.Option>
                       </Select>
                     ) : propDef.propertyType === 'integer' || propDef.propertyType === 'decimal' ? (
-                      <Input type="number" placeholder={propDef.description || `${propDef.displayName || propId}を入力`} />
+                      <Input type="number" placeholder={propDef.description || t('documentList.placeholders.enterProperty', { name: propDef.displayName || propId })} />
                     ) : propDef.propertyType === 'datetime' ? (
                       <Input type="datetime-local" />
                     ) : (
-                      <Input placeholder={propDef.description || `${propDef.displayName || propId}を入力`} />
+                      <Input placeholder={propDef.description || t('documentList.placeholders.enterProperty', { name: propDef.displayName || propId })} />
                     )}
                   </Form.Item>
                 ))}
@@ -1427,7 +1429,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 loading={isUploading}
                 disabled={isUploading}
               >
-                {isUploading ? 'アップロード中...' : 'アップロード'}
+                {isUploading ? t('common.uploading') : t('common.upload')}
               </Button>
               <Button
                 onClick={() => {
@@ -1438,7 +1440,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 }}
                 disabled={isUploading}
               >
-                キャンセル
+                {t('common.cancel')}
               </Button>
             </Space>
           </Form.Item>
@@ -1446,7 +1448,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       </Modal>
 
       <Modal
-        title="フォルダ作成"
+        title={t('documentList.createFolder')}
         open={folderModalVisible}
         onCancel={() => {
           setFolderModalVisible(false);
@@ -1471,19 +1473,19 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
           )}
           <Form.Item
             name="name"
-            label="フォルダ名"
-            rules={[{ required: true, message: 'フォルダ名を入力してください' }]}
+            label={t('documentList.folderName')}
+            rules={[{ required: true, message: t('documentList.validation.enterFolderName') }]}
           >
-            <Input placeholder="フォルダ名を入力" />
+            <Input placeholder={t('documentList.placeholders.enterFolderName')} />
           </Form.Item>
           <Form.Item
             name="objectTypeId"
-            label="タイプ"
+            label={t('common.type')}
             initialValue="cmis:folder"
           >
             <Select
               loading={typesLoading}
-              placeholder="フォルダタイプを選択"
+              placeholder={t('documentList.placeholders.selectFolderType')}
               showSearch
               optionFilterProp="label"
               onChange={handleFolderTypeChange}
@@ -1506,7 +1508,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
            Object.entries(selectedFolderTypeDefinition.propertyDefinitions || {})
              .filter(([propId]) => !propId.startsWith('cmis:')).length > 0 && (
             <div style={{ marginBottom: 16, padding: 16, backgroundColor: '#fafafa', borderRadius: 8 }}>
-              <h4 style={{ marginTop: 0, marginBottom: 12 }}>カスタムプロパティ</h4>
+              <h4 style={{ marginTop: 0, marginBottom: 12 }}>{t('documentList.customProperties')}</h4>
               {Object.entries(selectedFolderTypeDefinition.propertyDefinitions || {})
                 .filter(([propId]) => !propId.startsWith('cmis:'))
                 .map(([propId, propDef]: [string, any]) => (
@@ -1520,19 +1522,19 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                       </span>
                     }
                     tooltip={propDef.description}
-                    rules={propDef.required ? [{ required: true, message: `${propDef.displayName || propId}を入力してください` }] : []}
+                    rules={propDef.required ? [{ required: true, message: t('documentList.validation.enterProperty', { name: propDef.displayName || propId }) }] : []}
                   >
                     {propDef.propertyType === 'boolean' ? (
-                      <Select placeholder="選択してください" allowClear>
-                        <Select.Option value="true">はい</Select.Option>
-                        <Select.Option value="false">いいえ</Select.Option>
+                      <Select placeholder={t('common.placeholders.select', { field: '' })} allowClear>
+                        <Select.Option value="true">{t('common.yes')}</Select.Option>
+                        <Select.Option value="false">{t('common.no')}</Select.Option>
                       </Select>
                     ) : propDef.propertyType === 'integer' || propDef.propertyType === 'decimal' ? (
-                      <Input type="number" placeholder={propDef.description || `${propDef.displayName || propId}を入力`} />
+                      <Input type="number" placeholder={propDef.description || t('documentList.placeholders.enterProperty', { name: propDef.displayName || propId })} />
                     ) : propDef.propertyType === 'datetime' ? (
                       <Input type="datetime-local" />
                     ) : (
-                      <Input placeholder={propDef.description || `${propDef.displayName || propId}を入力`} />
+                      <Input placeholder={propDef.description || t('documentList.placeholders.enterProperty', { name: propDef.displayName || propId })} />
                     )}
                   </Form.Item>
                 ))}
@@ -1542,14 +1544,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
-                作成
+                {t('common.create')}
               </Button>
               <Button onClick={() => {
                 setFolderModalVisible(false);
                 setSelectedFolderTypeDefinition(null);
                 form.resetFields();
               }}>
-                キャンセル
+                {t('common.cancel')}
               </Button>
             </Space>
           </Form.Item>
@@ -1557,7 +1559,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       </Modal>
 
       <Modal
-        title="チェックイン"
+        title={t('documentList.checkin')}
         open={checkInModalVisible}
         onCancel={() => {
           setCheckInModalVisible(false);
@@ -1570,7 +1572,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         <Form form={form} onFinish={handleCheckIn} layout="vertical" initialValues={{ versionType: 'minor' }}>
           <Form.Item
             name="file"
-            label="ファイル (オプション - 新しいコンテンツで更新する場合)"
+            label={t('documentList.checkinFileLabel')}
             valuePropName="fileList"
             getValueFromEvent={(e) => {
               if (Array.isArray(e)) {
@@ -1586,39 +1588,39 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               <p className="ant-upload-drag-icon">
                 <UploadOutlined />
               </p>
-              <p className="ant-upload-text">ファイルをドラッグ&amp;ドロップまたはクリックして選択</p>
-              <p className="ant-upload-hint">チェックイン時にコンテンツを更新する場合のみファイルを選択してください</p>
+              <p className="ant-upload-text">{t('documentList.dragDropOrClick')}</p>
+              <p className="ant-upload-hint">{t('documentList.checkinFileHint')}</p>
             </Upload.Dragger>
           </Form.Item>
           <Form.Item
             name="versionType"
-            label="バージョンタイプ"
-            rules={[{ required: true, message: 'バージョンタイプを選択してください' }]}
+            label={t('documentList.versionType')}
+            rules={[{ required: true, message: t('documentList.validation.selectVersionType') }]}
           >
             <Radio.Group>
-              <Radio value="minor">マイナーバージョン (例: 1.1 → 1.2)</Radio>
-              <Radio value="major">メジャーバージョン (例: 1.1 → 2.0)</Radio>
+              <Radio value="minor">{t('documentList.minorVersion')}</Radio>
+              <Radio value="major">{t('documentList.majorVersion')}</Radio>
             </Radio.Group>
           </Form.Item>
           <Form.Item
             name="comment"
-            label="チェックインコメント"
+            label={t('documentList.checkinComment')}
           >
             <Input.TextArea
               rows={4}
-              placeholder="変更内容のコメントを入力してください"
+              placeholder={t('documentList.placeholders.enterCheckinComment')}
             />
           </Form.Item>
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
-                チェックイン
+                {t('documentList.checkin')}
               </Button>
               <Button onClick={() => {
                 setCheckInModalVisible(false);
                 form.resetFields();
               }}>
-                キャンセル
+                {t('common.cancel')}
               </Button>
             </Space>
           </Form.Item>
@@ -1626,7 +1628,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       </Modal>
 
       <Modal
-        title="バージョン履歴"
+        title={t('documentList.versionHistory')}
         open={versionHistoryModalVisible}
         onCancel={() => setVersionHistoryModalVisible(false)}
         footer={null}
@@ -1640,35 +1642,35 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
           size="small"
           columns={[
             {
-              title: 'バージョン',
+              title: t('documentList.columns.version'),
               dataIndex: 'versionLabel',
               key: 'version',
               width: 100,
             },
             {
-              title: '更新日時',
+              title: t('documentList.columns.modifiedDate'),
               dataIndex: 'lastModificationDate',
               key: 'date',
               width: 180,
               render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
             },
             {
-              title: '更新者',
+              title: t('documentList.columns.modifiedBy'),
               dataIndex: 'lastModifiedBy',
               key: 'author',
               width: 120,
             },
             {
-              title: 'コメント',
+              title: t('documentList.columns.comment'),
               key: 'comment',
               render: (record: CMISObject) => record.properties?.['cmis:checkinComment'] || '-',
             },
             {
-              title: 'アクション',
+              title: t('common.actions'),
               key: 'actions',
               width: 100,
               render: (_: any, record: CMISObject) => (
-                <Tooltip title="ダウンロード">
+                <Tooltip title={t('common.download')}>
                   <Button
                     icon={<DownloadOutlined />}
                     size="small"
@@ -1683,23 +1685,23 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       {/* Delete Confirmation Modal with cascade deletion info */}
       <Modal
-        title="削除の確認"
+        title={t('documentList.deleteConfirmation')}
         open={deleteModalVisible}
         onOk={handleDeleteConfirm}
         onCancel={handleDeleteCancel}
-        okText="削除する"
-        cancelText="キャンセル"
+        okText={t('documentList.deleteButton')}
+        cancelText={t('common.cancel')}
         okButtonProps={{ danger: true, loading: loading }}
         maskClosable={false}
       >
         {deleteLoading ? (
           <div style={{ textAlign: 'center', padding: '20px' }}>
-            関連オブジェクトを確認中...
+            {t('documentList.checkingRelatedObjects')}
           </div>
         ) : (
           <div>
             <p>
-              <strong>「{deleteTargetName}」</strong>を削除しますか？
+              {t('documentList.deleteConfirmMessage', { name: deleteTargetName })}
             </p>
             {deleteDescendantCount > 0 && (
               <div style={{
@@ -1710,11 +1712,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 marginTop: '12px'
               }}>
                 <p style={{ margin: 0, color: '#d46b08' }}>
-                  <strong>⚠️ 注意:</strong> このオブジェクトには親子関係（nemaki:parentChildRelationship）で
-                  紐づいた<strong>{deleteDescendantCount}件</strong>の子オブジェクトがあります。
+                  <strong>{t('documentList.deleteWarningTitle')}</strong> {t('documentList.deleteWarningMessage', { count: deleteDescendantCount })}
                 </p>
                 <p style={{ margin: '8px 0 0 0', color: '#d46b08' }}>
-                  削除すると、これらの子オブジェクトもすべて削除されます。
+                  {t('documentList.deleteWarningCascade')}
                 </p>
               </div>
             )}
@@ -1724,12 +1725,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       {/* Rename Modal */}
       <Modal
-        title={`「${renameTargetName}」の名前を変更`}
+        title={t('documentList.renameTitle', { name: renameTargetName })}
         open={renameModalVisible}
         onOk={() => renameForm.submit()}
         onCancel={handleRenameCancel}
-        okText="変更"
-        cancelText="キャンセル"
+        okText={t('documentList.changeButton')}
+        cancelText={t('common.cancel')}
         okButtonProps={{ loading: loading }}
         maskClosable={false}
       >
@@ -1740,14 +1741,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         >
           <Form.Item
             name="newName"
-            label="新しい名前"
+            label={t('documentList.newName')}
             rules={[
-              { required: true, message: '名前を入力してください' },
-              { min: 1, message: '名前を入力してください' },
-              { max: 255, message: '名前は255文字以内で入力してください' }
+              { required: true, message: t('documentList.validation.enterName') },
+              { min: 1, message: t('documentList.validation.enterName') },
+              { max: 255, message: t('documentList.validation.nameMaxLength') }
             ]}
           >
-            <Input placeholder="新しい名前を入力" autoFocus />
+            <Input placeholder={t('documentList.placeholders.enterNewName')} autoFocus />
           </Form.Item>
         </Form>
       </Modal>

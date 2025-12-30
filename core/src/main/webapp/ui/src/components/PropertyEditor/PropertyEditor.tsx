@@ -30,6 +30,7 @@ import { InfoCircleOutlined, EditOutlined, SaveOutlined, CloseOutlined } from '@
 import dayjs from 'dayjs';
 import { getSafeBooleanValue } from '../../utils/cmisPropertyUtils';
 import { PropertyDefinition, CMISObject } from '../../types/cmis';
+import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
 
@@ -49,6 +50,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const { t } = useTranslation();
 
   const safePropDefs = propertyDefinitions || {};
 
@@ -153,14 +155,14 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                 label: choice.displayName,
                 value: choice.value[0]
               }))}
-              placeholder={`${propDef.displayName}を選択`}
+              placeholder={t('propertyEditor.selectPlaceholder', { name: propDef.displayName })}
             />
           );
         }
         return propDef.cardinality === 'multi' ?
           <Select
             mode="tags"
-            placeholder={`${propDef.displayName}を入力（複数可）`}
+            placeholder={t('propertyEditor.multiInputPlaceholder', { name: propDef.displayName })}
           /> :
           <Input
             maxLength={propDef.maxLength}
@@ -190,8 +192,8 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
 
       case 'boolean':
         return <Switch
-          checkedChildren="はい"
-          unCheckedChildren="いいえ"
+          checkedChildren={t('common.yes')}
+          unCheckedChildren={t('common.no')}
         />;
 
       case 'datetime':
@@ -199,7 +201,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
           <DatePicker
             showTime
             style={{ width: '100%' }}
-            placeholder={`${propDef.displayName}を選択`}
+            placeholder={t('propertyEditor.selectPlaceholder', { name: propDef.displayName })}
           />
         );
 
@@ -237,7 +239,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
       // CRITICAL FIX (2025-12-14): Convert string 'true'/'false' to actual boolean
       // JavaScript evaluates string 'false' as truthy, causing incorrect display
       const boolValue = getSafeBooleanValue(actualValue);
-      return boolValue ? 'はい' : 'いいえ';
+      return boolValue ? t('common.yes') : t('common.no');
     }
 
     return String(actualValue);
@@ -259,7 +261,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
 
     const columns = [
       {
-        title: 'プロパティ名',
+        title: t('propertyEditor.columns.propertyName'),
         dataIndex: 'displayName',
         key: 'displayName',
         width: '30%',
@@ -275,20 +277,20 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
               </Tooltip>
             )}
             {!record.updatable && (
-              <Tooltip title="このプロパティは読み取り専用です">
-                <Text type="secondary" style={{ fontSize: 12 }}>(読み取り専用)</Text>
+              <Tooltip title={t('propertyEditor.readOnlyTooltip')}>
+                <Text type="secondary" style={{ fontSize: 12 }}>({t('propertyEditor.readOnly')})</Text>
               </Tooltip>
             )}
             {record.propId === 'cmis:secondaryObjectTypeIds' && (
-              <Tooltip title="上部の「セカンダリタイプ」セクションで編集できます">
-                <Text type="secondary" style={{ fontSize: 12 }}>(専用UI)</Text>
+              <Tooltip title={t('propertyEditor.secondaryTypeTooltip')}>
+                <Text type="secondary" style={{ fontSize: 12 }}>({t('propertyEditor.dedicatedUI')})</Text>
               </Tooltip>
             )}
           </Space>
         ),
       },
       {
-        title: '値',
+        title: t('propertyEditor.columns.value'),
         dataIndex: 'value',
         key: 'value',
         render: (value: any, record: any) => (
@@ -308,7 +310,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
               icon={<EditOutlined />}
               onClick={() => setEditMode(true)}
             >
-              編集
+              {t('common.edit')}
             </Button>
           </div>
         )}
@@ -318,7 +320,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
           pagination={{
             pageSize: 10,
             showSizeChanger: true,
-            showTotal: (total) => `全 ${total} 件`,
+            showTotal: (total) => t('propertyEditor.totalItems', { total }),
           }}
           size="small"
         />
@@ -357,7 +359,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
             rules={[
               {
                 required: propDef.required,
-                message: `${propDef.displayName}は必須です`
+                message: t('propertyEditor.validation.required', { name: propDef.displayName })
               }
             ]}
           >
@@ -373,13 +375,13 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
               loading={loading}
               icon={<SaveOutlined />}
             >
-              保存
+              {t('common.save')}
             </Button>
             <Button
               onClick={handleCancel}
               icon={<CloseOutlined />}
             >
-              キャンセル
+              {t('common.cancel')}
             </Button>
           </Space>
         </Form.Item>
