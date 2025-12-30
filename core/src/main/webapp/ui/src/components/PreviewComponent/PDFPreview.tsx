@@ -105,6 +105,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Button, Spin, Alert } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -125,6 +126,7 @@ interface PDFPreviewProps {
 }
 
 export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositoryId, objectId }) => {
+  const { t } = useTranslation();
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
   const [numPages, setNumPages] = useState<number | null>(null);
@@ -175,7 +177,7 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
 
         if (!effectiveRepoId || !effectiveObjId) {
           console.error('PDFPreview: Missing repositoryId or objectId');
-          setError('ファイルの読み込みに必要な情報が不足しています');
+          setError(t('preview.pdf.missingInfo'));
           setIsLoading(false);
           return;
         }
@@ -196,7 +198,7 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
         setPdfData(blobUrl);
       } catch (err) {
         console.error('PDF fetch error:', err);
-        setError(`PDFの取得に失敗しました: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setError(t('preview.pdf.fetchError', { error: err instanceof Error ? err.message : 'Unknown error' }));
       } finally {
         setIsLoading(false);
       }
@@ -222,7 +224,7 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
 
   const onDocumentLoadError = (error: Error) => {
     console.error('PDF load error:', error);
-    setError(`PDF読み込みに失敗しました: ${error.message}`);
+    setError(t('preview.pdf.loadError', { error: error.message }));
   };
 
   const goToPrevPage = () => {
@@ -247,7 +249,7 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
 
       {error && (
         <Alert
-          message="エラー"
+          message={t('common.error')}
           description={error}
           type="error"
           showIcon
@@ -257,7 +259,7 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
 
       {!error && isLoading && (
         <div style={{ textAlign: 'center', padding: '40px' }}>
-          <Spin size="large" tip="PDFを取得しています..." />
+          <Spin size="large" tip={t('preview.pdf.loading')} />
         </div>
       )}
 
@@ -271,23 +273,23 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
             flexWrap: 'wrap'
           }}>
             <Button onClick={goToPrevPage} disabled={pageNumber <= 1}>
-              前へ
+              {t('preview.pdf.previous')}
             </Button>
             <span>
-              {numPages ? `${pageNumber} / ${numPages}` : 'ページ読み込み中...'}
+              {numPages ? `${pageNumber} / ${numPages}` : t('preview.pdf.loadingPage')}
             </span>
             <Button onClick={goToNextPage} disabled={!numPages || pageNumber >= numPages}>
-              次へ
+              {t('preview.pdf.next')}
             </Button>
             <Button onClick={zoomOut} disabled={scale <= 0.5}>
-              縮小
+              {t('preview.pdf.zoomOut')}
             </Button>
             <span>{Math.round(scale * 100)}%</span>
             <Button onClick={zoomIn} disabled={scale >= 3.0}>
-              拡大
+              {t('preview.pdf.zoomIn')}
             </Button>
             <a href={pdfData || '#'} download={fileName} style={{ marginLeft: 'auto' }}>
-              <Button disabled={!pdfData}>ダウンロード</Button>
+              <Button disabled={!pdfData}>{t('common.download')}</Button>
             </a>
           </div>
 
@@ -304,7 +306,7 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
               onLoadError={onDocumentLoadError}
               loading={
                 <div style={{ textAlign: 'center', padding: '40px' }}>
-                  <Spin size="large" tip="PDFを読み込んでいます..." />
+                  <Spin size="large" tip={t('preview.pdf.loadingDocument')} />
                 </div>
               }
             >

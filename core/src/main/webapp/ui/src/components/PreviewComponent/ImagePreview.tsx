@@ -190,6 +190,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ImageGallery from 'react-image-gallery';
 import 'react-image-gallery/styles/css/image-gallery.css';
 import { Spin, Alert } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -219,6 +220,7 @@ const getMimeTypeFromFileName = (fileName: string): string => {
 };
 
 export const ImagePreview: React.FC<ImagePreviewProps> = ({ url, fileName, repositoryId, objectId }) => {
+  const { t } = useTranslation();
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -256,7 +258,7 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({ url, fileName, repos
 
         if (!effectiveRepoId || !effectiveObjId) {
           console.error('ImagePreview: Missing repositoryId or objectId');
-          setError('ファイルの読み込みに必要な情報が不足しています');
+          setError(t('preview.image.missingInfo'));
           setIsLoading(false);
           return;
         }
@@ -278,7 +280,7 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({ url, fileName, repos
         setImageUrl(blobUrl);
       } catch (err) {
         console.error('Image fetch error:', err);
-        setError(`画像の取得に失敗しました: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setError(t('preview.image.fetchError', { error: err instanceof Error ? err.message : 'Unknown error' }));
       } finally {
         setIsLoading(false);
       }
@@ -298,13 +300,13 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({ url, fileName, repos
   }, [url, repositoryId, objectId, fileName]);
 
   if (error) {
-    return <Alert message="エラー" description={error} type="error" showIcon />;
+    return <Alert message={t('common.error')} description={error} type="error" showIcon />;
   }
 
   if (isLoading || !imageUrl) {
     return (
       <div style={{ textAlign: 'center', padding: '40px' }}>
-        <Spin size="large" tip="画像を取得しています..." />
+        <Spin size="large" tip={t('preview.image.loading')} />
       </div>
     );
   }

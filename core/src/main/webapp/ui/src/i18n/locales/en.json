@@ -1,21 +1,22 @@
 {
-  "common": {
-    "loading": "Loading...",
-    "error": "Error",
-    "success": "Success",
-    "warning": "Warning",
-    "cancel": "Cancel",
-    "save": "Save",
-    "create": "Create",
-    "update": "Update",
-    "delete": "Delete",
-    "edit": "Edit",
-    "close": "Close",
-    "confirm": "Confirm",
-    "yes": "Yes",
-    "no": "No",
-    "search": "Search",
-    "actions": "Actions",
+    "common": {
+      "loading": "Loading...",
+      "error": "Error",
+      "success": "Success",
+      "warning": "Warning",
+      "cancel": "Cancel",
+      "save": "Save",
+      "create": "Create",
+      "update": "Update",
+      "delete": "Delete",
+      "edit": "Edit",
+      "close": "Close",
+      "confirm": "Confirm",
+      "yes": "Yes",
+      "no": "No",
+      "search": "Search",
+      "actions": "Actions",
+      "import": "Import",
     "name": "Name",
     "description": "Description",
     "type": "Type",
@@ -27,7 +28,50 @@
     "multi": "Multi",
     "direct": "Direct",
     "inherited": "Inherited",
-    "repository": "Repository"
+    "repository": "Repository",
+    "add": "Add",
+    "remove": "Remove",
+    "select": "Select",
+    "clear": "Clear",
+    "retry": "Retry",
+    "reload": "Reload",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "upload": "Upload",
+    "download": "Download",
+    "importing": "Importing...",
+    "uploading": "Uploading...",
+    "total": "Total: {{count}} items",
+    "items": "{{count}} items",
+    "moreResults": "More results available",
+    "validation": {
+      "required": "{{field}} is required",
+      "enterField": "Please enter {{field}}",
+      "selectField": "Please select {{field}}",
+      "invalidFormat": "Invalid {{field}} format",
+      "minLength": "{{field}} must be at least {{min}} characters",
+      "maxLength": "{{field}} must be at most {{max}} characters",
+      "alphanumericOnly": "Only alphanumeric characters, underscores, and hyphens are allowed",
+      "validEmail": "Please enter a valid email address"
+    },
+    "placeholders": {
+      "enter": "Enter {{field}}",
+      "select": "Select {{field}}",
+      "search": "Search {{field}}"
+    },
+    "errors": {
+      "loadFailed": "Failed to load {{item}}",
+      "createFailed": "Failed to create {{item}}",
+      "updateFailed": "Failed to update {{item}}",
+      "deleteFailed": "Failed to delete {{item}}",
+      "serverError": "A server error occurred",
+      "authError": "Authentication error: Please log in again",
+      "permissionError": "Permission error: You do not have permission for this operation",
+      "navigationFailed": "Navigation failed",
+      "details": "Details: {{details}}"
+    },
+    "confirmDelete": "Delete this {{item}}?"
   },
   "navigation": {
     "home": "Home",
@@ -75,6 +119,97 @@
     "openChoice": "Open Choice",
     "expandAll": "Expand All",
     "collapseAll": "Collapse All",
+    "importFromFile": "Import from File",
+    "createWithGUI": "Create with GUI",
+    "guiEdit": "GUI Edit",
+    "editWithGUI": "Edit with GUI",
+    "editWithJSON": "Edit with JSON",
+    "confirmDelete": "Delete this type?",
+    "cannotEditStandardType": "Standard CMIS types cannot be edited",
+    "cannotDeleteStandardType": "Standard CMIS types cannot be deleted",
+    "columns": {
+      "typeId": "Type ID",
+      "displayName": "Display Name",
+      "description": "Description",
+      "baseType": "Base Type",
+      "parentType": "Parent Type",
+      "propertyCount": "Property Count"
+    },
+    "tabs": {
+      "basicInfo": "Basic Information",
+      "propertyDefinitions": "Property Definitions"
+    },
+    "form": {
+      "typeIdRequired": "Please enter a type ID",
+      "enterTypeId": "Enter type ID",
+      "enterDisplayName": "Enter display name",
+      "enterDescription": "Enter type description",
+      "baseTypeRequired": "Please select a base type",
+      "selectBaseType": "Select base type",
+      "selectParentType": "Select parent type",
+      "creatable": "Creatable",
+      "fileable": "Fileable"
+    },
+    "baseTypes": {
+      "document": "Document",
+      "folder": "Folder"
+    },
+    "propertyForm": {
+      "propertyId": "Property ID",
+      "propertyIdRequired": "Please enter a property ID",
+      "displayNameRequired": "Please enter a display name",
+      "dataType": "Data Type",
+      "dataTypeRequired": "Please select a data type",
+      "selectDataType": "Select data type",
+      "cardinality": "Cardinality",
+      "cardinalityRequired": "Please select cardinality",
+      "selectCardinality": "Select cardinality",
+      "required": "Required",
+      "queryable": "Queryable",
+      "updatable": "Updatable",
+      "propertyDescription": "Property description"
+    },
+    "dataTypes": {
+      "string": "String",
+      "integer": "Integer",
+      "decimal": "Decimal",
+      "boolean": "Boolean",
+      "datetime": "DateTime"
+    },
+    "cardinality": {
+      "single": "Single",
+      "multi": "Multi"
+    },
+    "modal": {
+      "editType": "Edit Type",
+      "createType": "Create New Type",
+      "importTypeDefinition": "Import Type Definition File",
+      "conflictConfirmation": "Type Definition Conflict",
+      "overwriteAndCreate": "Overwrite and Create",
+      "editTypeJson": "Edit Type Definition (JSON)",
+      "editConflictConfirmation": "Type Definition Conflict (Edit)",
+      "overwriteAndUpdate": "Overwrite and Update",
+      "editTypeGUI": "Edit Type (GUI)",
+      "createTypeGUI": "Create New Type (GUI)"
+    },
+    "upload": {
+      "dragText": "Click or drag JSON file to upload",
+      "hint": "Select a JSON format type definition file"
+    },
+    "conflict": {
+      "typeIdExists": "The following type IDs already exist",
+      "uploadingDefinition": "Type definition being uploaded:"
+    },
+    "jsonEdit": {
+      "canEditDirectly": "You can edit the type definition directly in JSON format",
+      "idChangeWarning": "Changing the ID will show a conflict confirmation"
+    },
+    "editConflict": {
+      "typeIdChanged": "Type ID has been changed",
+      "willSaveAsExisting": "Changing the ID will save as an existing type",
+      "before": "Before",
+      "after": "After"
+    },
     "messages": {
       "loadError": "Failed to load types",
       "createSuccess": "Type created successfully",
@@ -85,11 +220,20 @@
       "deleteError": "Failed to delete type",
       "cannotDelete": "Cannot delete type",
       "hasSubtypes": "This type has subtypes",
+      "deleteSubtypesFirst": "Please delete subtypes first",
+      "referencedByRelationship": "This type is referenced by a relationship type",
+      "updateRelationshipsFirst": "Please update relationship types first",
       "hasRelationships": "This type is referenced by relationships",
       "fileRequired": "Please select a file",
+      "selectFile": "Please select a file",
       "parseError": "Failed to parse file",
       "readError": "Failed to read file",
-      "definitionUpdated": "Type definition updated"
+      "definitionUpdated": "Type definition updated",
+      "importSuccess": "Type definition imported",
+      "createTypeError": "Failed to create type",
+      "jsonParseError": "Failed to parse JSON",
+      "updateTypeSuccess": "Type definition updated",
+      "updateTypeError": "Failed to update type definition"
     },
     "validation": {
       "typeIdRequired": "Type ID is required",
@@ -300,7 +444,344 @@
     "noPreview": "Preview not available",
     "loadError": "Missing required information to load file",
     "renditionError": "Failed to get rendition",
-    "renditionInfoMissing": "Missing required information to get rendition"
+    "renditionInfoMissing": "Missing required information to get rendition",
+    "noContent": "File has no content",
+    "unsupportedType": "{{mimeType}} is not supported",
+    "previewError": "Preview Error",
+    "previewErrorDesc": "An error occurred while displaying the preview",
+    "cannotPreview": "Cannot preview",
+    "image": {
+      "loading": "Loading image...",
+      "loadError": "Failed to load image: {{error}}"
+    },
+    "video": {
+      "loading": "Loading video...",
+      "loadError": "Failed to load video: {{error}}"
+    },
+    "text": {
+      "loadError": "Failed to load file"
+    },
+    "pdf": {
+      "loading": "Loading PDF...",
+      "loadError": "Failed to load PDF: {{error}}",
+      "readError": "Failed to read PDF: {{error}}",
+      "pageLoading": "Loading page...",
+      "pageInfo": "{{current}} / {{total}}",
+      "zoomIn": "Zoom In",
+      "zoomOut": "Zoom Out"
+    },
+    "office": {
+      "loading": "Loading preview...",
+      "generating": "Generating PDF rendition...",
+      "generatingMessage": "Generating PDF rendition...",
+      "generationComplete": "PDF rendition generation complete",
+      "generationTimeout": "PDF rendition generation is taking too long. Please wait and try again.",
+      "generationError": "Failed to generate PDF rendition: {{error}}",
+      "contentError": "Failed to get PDF content",
+      "streamIdNotFound": "PDF rendition stream ID not found",
+      "previewFailed": "Preview generation failed. Please retry or download and view with a local application.",
+      "notSupported": "Office document preview is not currently supported. Please download and view with a local application.",
+      "types": {
+        "word": "Word Document",
+        "excel": "Excel Document",
+        "powerpoint": "PowerPoint Document",
+        "openDocumentText": "OpenDocument Text",
+        "openDocumentSpreadsheet": "OpenDocument Spreadsheet",
+        "openDocumentPresentation": "OpenDocument Presentation",
+        "rtf": "RTF Document",
+        "wordLegacy": "Word Document (Legacy)",
+        "excelLegacy": "Excel Document (Legacy)",
+        "powerpointLegacy": "PowerPoint Document (Legacy)",
+        "default": "Office Document"
+      }
+    }
+  },
+  "login": {
+    "title": "Login",
+    "repository": "Repository",
+    "username": "Username",
+    "password": "Password",
+    "loginButton": "Login",
+    "or": "or",
+    "oidcLogin": "Login with OIDC",
+    "samlLogin": "Login with SAML",
+    "selectRepository": "Select Repository",
+    "messages": {
+      "loginFailed": "Login failed. Please check your username, password, and repository ID.",
+      "oidcFailed": "OIDC authentication failed: {{error}}",
+      "oidcFailedPrivacy": "OIDC authentication failed: {{error}}\n\n[Important] Authentication state is not saved in privacy mode (incognito window), which may cause OIDC authentication to fail. Please try in normal mode.",
+      "samlFailed": "SAML authentication failed: {{error}}",
+      "samlResponseNotFound": "SAML authentication response not found.",
+      "samlProcessFailed": "Failed to process SAML authentication: {{error}}"
+    },
+    "validation": {
+      "repositoryRequired": "Please select a repository",
+      "usernameRequired": "Please enter your username",
+      "passwordRequired": "Please enter your password"
+    }
+  },
+  "auth": {
+    "checkingStatus": "Checking authentication status...",
+    "errorOccurred": "An error occurred",
+    "pageLoadError": "An error occurred while loading the page"
+  },
+  "search": {
+    "title": "Search",
+    "resultsTitle": "Search Results ({{count}} items)",
+    "fullTextSearch": "Full Text Search",
+    "searchPlaceholder": "Enter search keywords",
+    "excludeMetadata": "Exclude standard metadata from search (filename, description, etc.)",
+    "baseType": "Base Type",
+    "selectBaseType": "Select Base Type",
+    "objectType": "Object Type",
+    "selectObjectType": "Select Object Type",
+    "secondaryType": "Secondary Type",
+    "selectSecondaryType": "Select Secondary Type",
+    "name": "Name",
+    "namePlaceholder": "Search by name",
+    "createdBy": "Created By",
+    "createdByPlaceholder": "Search by creator",
+    "createdFrom": "Created From",
+    "createdTo": "Created To",
+    "customProperties": "Search by Custom Properties",
+    "secondaryTypeProperties": "Search by Secondary Type Properties",
+    "executedQuery": "Executed CMIS Query:",
+    "baseTypes": {
+      "document": "Document",
+      "folder": "Folder",
+      "relationship": "Relationship"
+    },
+    "columns": {
+      "type": "Type",
+      "name": "Name",
+      "path": "Path",
+      "sourceId": "Source ID",
+      "targetId": "Target ID",
+      "objectType": "Object Type",
+      "secondaryTypes": "Secondary Types",
+      "size": "Size",
+      "createdAt": "Created At",
+      "createdBy": "Created By",
+      "actions": "Actions"
+    },
+    "tooltips": {
+      "viewDetails": "View Details",
+      "download": "Download"
+    },
+    "messages": {
+      "searchFailed": "Search failed"
+    }
+  },
+  "documentList": {
+    "title": "Document List",
+    "folderCreate": "Create Folder",
+    "fileUpload": "Upload File",
+    "uploadTitle": "Upload File",
+    "uploadingTitle": "Uploading File...",
+    "folderCreateTitle": "Create Folder",
+    "documentSearch": "Search Documents",
+    "goUp": "Go Up",
+    "goUpTooltip": "Go to Parent Folder",
+    "columns": {
+      "type": "Type",
+      "name": "Name",
+      "objectType": "Object Type",
+      "path": "Path",
+      "createdBy": "Created By",
+      "createdAt": "Created At",
+      "size": "Size",
+      "lastModifiedAt": "Last Modified",
+      "lastModifiedBy": "Modified By",
+      "actions": "Actions"
+    },
+    "tooltips": {
+      "viewDetails": "View Details",
+      "rename": "Rename",
+      "download": "Download",
+      "checkout": "Check Out",
+      "checkin": "Check In",
+      "cancelCheckout": "Cancel Check Out",
+      "versionHistory": "Version History",
+      "permissionManagement": "Permission Management",
+      "delete": "Delete"
+    },
+    "uploadForm": {
+      "file": "File",
+      "fileName": "File Name",
+      "type": "Type",
+      "selectDocumentType": "Select Document Type",
+      "selectFolderType": "Select Folder Type",
+      "customProperties": "Custom Properties",
+      "dragDropText": "Drag and drop file or click to select"
+    },
+    "folderForm": {
+      "folderName": "Folder Name"
+    },
+    "deleteConfirm": {
+      "title": "Confirm Delete",
+      "deleteButton": "Delete",
+      "checkingRelated": "Checking related objects...",
+      "confirmMessage": "Delete \"{{name}}\"?",
+      "cascadeWarning": "This object has {{count}} child object(s) linked via parent-child relationship (nemaki:parentChildRelationship).",
+      "cascadeNote": "Deleting this will also delete all child objects."
+    },
+    "renameModal": {
+      "title": "Rename \"{{name}}\"",
+      "newName": "New Name",
+      "changeButton": "Change"
+    },
+    "versionHistoryModal": {
+      "title": "Version History",
+      "version": "Version",
+      "updatedAt": "Updated At",
+      "updatedBy": "Updated By",
+      "comment": "Comment"
+    },
+    "checkinModal": {
+      "title": "Check In",
+      "fileOptional": "File (Optional - only if updating content)",
+      "dragDropText": "Drag and drop file or click to select",
+      "fileHint": "Select a file only if you want to update the content during check-in",
+      "versionType": "Version Type",
+      "minorVersion": "Minor Version (e.g., 1.1 → 1.2)",
+      "majorVersion": "Major Version (e.g., 1.1 → 2.0)",
+      "checkinComment": "Check-in Comment",
+      "commentPlaceholder": "Enter a comment describing your changes"
+    },
+    "validation": {
+      "fileRequired": "Please select a file",
+      "fileNameRequired": "Please enter a file name",
+      "folderNameRequired": "Please enter a folder name",
+      "nameRequired": "Please enter a name",
+      "nameMinLength": "Please enter a name",
+      "nameMaxLength": "Name must be 255 characters or less",
+      "versionTypeRequired": "Please select a version type"
+    },
+    "messages": {
+      "fileNotSelected": "No file selected",
+      "folderNotSelected": "No upload destination folder selected"
+    },
+    "baseTypes": {
+      "document": "Document",
+      "folder": "Folder"
+    }
+  },
+  "secondaryTypes": {
+    "title": "Secondary Types",
+    "additionalProperties": "Additional Properties",
+    "loading": "Loading secondary types...",
+    "noAssigned": "No secondary types assigned",
+    "allAssigned": "All secondary types are already assigned",
+    "noAvailable": "No secondary types available",
+    "selectPlaceholder": "Select a secondary type to add...",
+    "tooltip": "Adding a secondary type allows you to set additional properties on the object",
+    "confirmDelete": {
+      "title": "Remove secondary type?",
+      "content": "Removing {{typeId}} may result in loss of property values associated with this type.",
+      "propertyCount": "This type contains {{count}} property definition(s).",
+      "irreversible": "This action cannot be undone. Continue?"
+    },
+    "messages": {
+      "loadError": "Failed to load secondary types",
+      "addSuccess": "Secondary type \"{{typeId}}\" added",
+      "addError": "Failed to add secondary type",
+      "removeSuccess": "Secondary type \"{{typeId}}\" removed",
+      "removeError": "Failed to remove secondary type"
+    }
+  },
+  "typeMigration": {
+    "title": "Change Object Type",
+    "loading": "Loading compatible types...",
+    "objectName": "Object Name",
+    "currentType": "Current Type",
+    "baseType": "Base Type",
+    "newType": "Select New Type:",
+    "selectTypePlaceholder": "Select a type",
+    "changeTypeButton": "Change Type",
+    "noCompatibleTypes": {
+      "title": "No Compatible Types",
+      "description": "There are no compatible types available for this object. Please define custom types with the same base type (document/folder)."
+    },
+    "additionalProperties": {
+      "title": "Additional Required Properties",
+      "description": "The new type has the following required properties. Please enter values."
+    },
+    "cmisWarning": {
+      "title": "Note: Non-CMIS Standard Operation",
+      "description": "Changing object type is not defined in the CMIS 1.1 standard. This feature is a NemakiWare-specific extension."
+    },
+    "placeholders": {
+      "multiValue": "Enter multiple values separated by commas",
+      "integer": "Enter an integer",
+      "decimal": "Enter a decimal number",
+      "datetime": "Select date and time",
+      "html": "Enter HTML",
+      "uri": "Enter URI (e.g., https://example.com)",
+      "default": "Enter value"
+    },
+    "messages": {
+      "loadError": "Failed to get compatible types: {{error}}",
+      "changeError": "Failed to change type: {{error}}"
+    }
+  },
+  "objectPicker": {
+    "title": "Select Object",
+    "tabs": {
+      "tree": "Browse Tree",
+      "search": "Search"
+    },
+    "columns": {
+      "name": "Name",
+      "type": "Type",
+      "updatedAt": "Updated At"
+    },
+    "noObjects": "No objects",
+    "searchPlaceholder": "Enter search keywords",
+    "noSearchResults": "No search results",
+    "enterSearchKeyword": "Please enter search keywords",
+    "selectButton": "Select",
+    "selectedObject": "Selected:",
+    "messages": {
+      "rootLoadError": "Failed to load root folder",
+      "folderLoadError": "Failed to load folder",
+      "contentsLoadError": "Failed to get folder contents",
+      "searchKeywordRequired": "Please enter search keywords",
+      "searchError": "Search failed"
+    }
+  },
+  "archiveManagement": {
+    "title": "Archive Management",
+    "columns": {
+      "type": "Type",
+      "name": "Name",
+      "originalPath": "Original Path",
+      "archivedAt": "Archived At",
+      "size": "Size",
+      "actions": "Actions"
+    },
+    "tooltips": {
+      "viewDetails": "View Details",
+      "download": "Download",
+      "restore": "Restore"
+    },
+    "confirmRestore": "Restore this object?",
+    "messages": {
+      "loadError": "Failed to load archives",
+      "restoreSuccess": "Object restored",
+      "restoreError": "Failed to restore"
+    }
+  },
+  "actions": {
+    "title": "Actions",
+    "loading": "Loading...",
+    "execute": "Execute",
+    "messages": {
+      "loadError": "Failed to load actions",
+      "formLoadError": "Failed to load form",
+      "executeSuccess": "Action executed successfully",
+      "executeFailed": "Action execution failed",
+      "executeError": "An error occurred while executing the action"
+    }
   },
   "language": {
     "title": "Language",

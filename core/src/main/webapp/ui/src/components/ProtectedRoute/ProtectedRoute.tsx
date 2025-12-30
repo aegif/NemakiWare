@@ -189,6 +189,8 @@
  */
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '../../i18n';
 import { useAuth } from '../../contexts/AuthContext';
 import { Login } from '../Login/Login';
 import { Spin } from 'antd';
@@ -198,6 +200,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
+  const { t } = useTranslation();
   const { isAuthenticated, isLoading } = useAuth();
 
   // Show loading spinner while checking authentication state
@@ -209,7 +212,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         alignItems: 'center',
         height: '100vh'
       }}>
-        <Spin size="large" tip="認証状態を確認中..." />
+        <Spin size="large" tip={t('auth.checkingAuth')} />
       </div>
     );
   }
@@ -280,9 +283,9 @@ class ErrorBoundary extends React.Component<
           height: '100vh',
           padding: '20px'
         }}>
-          <h2>エラーが発生しました</h2>
+          <h2>{i18n.t('common.errors.errorOccurred')}</h2>
           <p style={{ color: '#666', marginBottom: '20px' }}>
-            {this.state.errorMessage || 'ページの読み込み中にエラーが発生しました'}
+            {this.state.errorMessage || i18n.t('common.errors.pageLoadError')}
           </p>
           <button
             onClick={() => window.location.reload()}
@@ -296,7 +299,7 @@ class ErrorBoundary extends React.Component<
               borderRadius: '4px'
             }}
           >
-            再読み込み
+            {i18n.t('common.reload')}
           </button>
         </div>
       );

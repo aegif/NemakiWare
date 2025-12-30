@@ -214,6 +214,7 @@
 
 import React from 'react';
 import { Alert, Card } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { CMISObject } from '../../types/cmis';
 import { getFileType } from '../../utils/previewUtils';
@@ -230,11 +231,12 @@ interface PreviewComponentProps {
 
 import { useAuth } from '../../contexts/AuthContext';
 export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId, object }) => {
+  const { t } = useTranslation();
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
 
   if (!object.contentStreamMimeType) {
-    return <Alert message="プレビューできません" description="ファイルにコンテンツがありません" type="info" />;
+    return <Alert message={t('preview.cannotPreview')} description={t('preview.noContent')} type="info" />;
   }
 
   const fileType = getFileType(object.contentStreamMimeType);
@@ -254,10 +256,10 @@ export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId
         case 'office':
           return <OfficePreview url={contentUrl} fileName={object.name} mimeType={object.contentStreamMimeType!} repositoryId={repositoryId} objectId={object.id} />;
         default:
-          return <Alert message="プレビューできません" description={`${object.contentStreamMimeType} はサポートされていません`} type="warning" />;
+          return <Alert message={t('preview.cannotPreview')} description={t('preview.unsupportedMimeType', { mimeType: object.contentStreamMimeType })} type="warning" />;
       }
     } catch (err) {
-      return <Alert message="プレビューエラー" description="プレビューの表示中にエラーが発生しました" type="error" />;
+      return <Alert message={t('preview.previewError')} description={t('preview.errorOccurred')} type="error" />;
     }
   };
 

@@ -213,6 +213,7 @@
 import React, { useState, useEffect } from 'react';
 import { Editor } from '@monaco-editor/react';
 import { Spin, Alert } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -224,6 +225,7 @@ interface TextPreviewProps {
 }
 
 export const TextPreview: React.FC<TextPreviewProps> = ({ url, fileName, repositoryId, objectId }) => {
+  const { t } = useTranslation();
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
 
@@ -250,7 +252,7 @@ export const TextPreview: React.FC<TextPreviewProps> = ({ url, fileName, reposit
 
         if (!effectiveRepoId || !effectiveObjId) {
           console.error('TextPreview: Missing repositoryId or objectId');
-          setError('ファイルの読み込みに必要な情報が不足しています');
+          setError(t('preview.text.missingInfo'));
           setLoading(false);
           return;
         }
@@ -269,7 +271,7 @@ export const TextPreview: React.FC<TextPreviewProps> = ({ url, fileName, reposit
         setLoading(false);
       } catch (err) {
         console.error('TextPreview fetch error:', err);
-        setError('ファイルの読み込みに失敗しました');
+        setError(t('preview.text.loadError'));
         setLoading(false);
       }
     };
@@ -304,7 +306,7 @@ export const TextPreview: React.FC<TextPreviewProps> = ({ url, fileName, reposit
 
   if (loading) return <Spin size="large" style={{ display: 'block', textAlign: 'center', padding: '50px' }} />;
   
-  if (error) return <Alert message="エラー" description={error} type="error" />;
+  if (error) return <Alert message={t('common.error')} description={error} type="error" />;
 
   return (
     <div>

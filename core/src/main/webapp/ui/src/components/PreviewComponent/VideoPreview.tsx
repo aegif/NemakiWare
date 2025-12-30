@@ -188,6 +188,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactPlayer from 'react-player';
 import { Spin, Alert } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -218,6 +219,7 @@ const getMimeTypeFromFileName = (fileName: string): string => {
 };
 
 export const VideoPreview: React.FC<VideoPreviewProps> = ({ url, fileName, repositoryId, objectId }) => {
+  const { t } = useTranslation();
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -255,7 +257,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ url, fileName, repos
 
         if (!effectiveRepoId || !effectiveObjId) {
           console.error('VideoPreview: Missing repositoryId or objectId');
-          setError('ファイルの読み込みに必要な情報が不足しています');
+          setError(t('preview.video.missingInfo'));
           setIsLoading(false);
           return;
         }
@@ -277,7 +279,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ url, fileName, repos
         setVideoUrl(blobUrl);
       } catch (err) {
         console.error('Video fetch error:', err);
-        setError(`動画の取得に失敗しました: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setError(t('preview.video.fetchError', { error: err instanceof Error ? err.message : 'Unknown error' }));
       } finally {
         setIsLoading(false);
       }
@@ -297,13 +299,13 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ url, fileName, repos
   }, [url, repositoryId, objectId, fileName]);
 
   if (error) {
-    return <Alert message="エラー" description={error} type="error" showIcon />;
+    return <Alert message={t('common.error')} description={error} type="error" showIcon />;
   }
 
   if (isLoading || !videoUrl) {
     return (
       <div style={{ textAlign: 'center', padding: '40px' }}>
-        <Spin size="large" tip="動画を取得しています..." />
+        <Spin size="large" tip={t('preview.video.loading')} />
       </div>
     );
   }

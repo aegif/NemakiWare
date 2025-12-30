@@ -24,6 +24,7 @@ import {
   FormOutlined
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { TypeDefinition, PropertyDefinition } from '../../types/cmis';
 import { TypeGUIEditor } from './TypeGUIEditor';
@@ -60,6 +61,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   const [guiEditorIsEditing, setGuiEditorIsEditing] = useState(false);
 
   const { handleAuthError } = useAuth();
+  const { t } = useTranslation();
   const cmisService = new CMISService(handleAuthError);
 
   useEffect(() => {
@@ -72,7 +74,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       const typeList = await cmisService.getTypes(repositoryId);
       setTypes(typeList);
     } catch (error) {
-      message.error('タイプの読み込みに失敗しました');
+      message.error(t('typeManagement.messages.loadError'));
     } finally {
       setLoading(false);
     }
@@ -82,10 +84,10 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     try {
       if (editingType) {
         await cmisService.updateType(repositoryId, editingType.id, values);
-        message.success('タイプを更新しました');
+        message.success(t('typeManagement.messages.updateSuccess'));
       } else {
         await cmisService.createType(repositoryId, values);
-        message.success('タイプを作成しました');
+        message.success(t('typeManagement.messages.createSuccess'));
       }
 
       setModalVisible(false);
@@ -95,7 +97,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       // This fixes the issue where success message appears but type doesn't appear in table immediately
       await loadTypes();
     } catch (error) {
-      message.error(editingType ? 'タイプの更新に失敗しました' : 'タイプの作成に失敗しました');
+      message.error(editingType ? t('typeManagement.messages.updateError') : t('typeManagement.messages.createError'));
     }
   };
 
@@ -107,22 +109,22 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       await cmisService.deleteType(repositoryId, typeId);
       // Note: Type deletion is a NemakiWare-specific operation that goes beyond CMIS standard compliance
       // Existing documents with this type will fall back to base type behavior
-      message.success('タイプを削除しました（注意: 既存ドキュメントはベースタイプとして扱われます）');
+      message.success(t('typeManagement.messages.deleteSuccess'));
       // CRITICAL FIX (2025-12-24): Await loadTypes() to ensure table is refreshed after delete
       await loadTypes();
     } catch (error: any) {
       // Handle detailed error messages from backend
       // CMISService.deleteType() now attaches structured data to the error object
-      let errorMessage = 'タイプの削除に失敗しました';
+      let errorMessage = t('typeManagement.messages.deleteError');
       
       // Check for structured error data (subtypes array)
       if (error.subtypes && Array.isArray(error.subtypes) && error.subtypes.length > 0) {
         Modal.error({
-          title: 'タイプを削除できません',
+          title: t('typeManagement.messages.cannotDelete'),
           content: (
             <div>
-              <p>このタイプにはサブタイプが存在するため削除できません。</p>
-              <p>先に以下のサブタイプを削除してください:</p>
+              <p>{t('typeManagement.messages.hasSubtypes')}</p>
+              <p>{t('typeManagement.messages.deleteSubtypesFirst')}</p>
               <ul>
                 {error.subtypes.map((subtype: string) => (
                   <li key={subtype}>{subtype}</li>
@@ -137,11 +139,11 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       // Check for structured error data (referencingRelationships array)
       if (error.referencingRelationships && Array.isArray(error.referencingRelationships) && error.referencingRelationships.length > 0) {
         Modal.error({
-          title: 'タイプを削除できません',
+          title: t('typeManagement.messages.cannotDelete'),
           content: (
             <div>
-              <p>このタイプはリレーションシップタイプから参照されているため削除できません。</p>
-              <p>先に以下のリレーションシップタイプを更新または削除してください:</p>
+              <p>{t('typeManagement.messages.referencedByRelationship')}</p>
+              <p>{t('typeManagement.messages.updateRelationshipsFirst')}</p>
               <ul>
                 {error.referencingRelationships.map((rel: string) => (
                   <li key={rel}>{rel}</li>
@@ -176,7 +178,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
 
   const handleFileUpload = async () => {
     if (uploadFileList.length === 0) {
-      message.warning('ファイルを選択してください');
+      message.warning(t('typeManagement.messages.selectFile'));
       return;
     }
 
@@ -202,7 +204,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         }
       } catch (error) {
         // Failed to parse file
-        message.error('ファイルの解析に失敗しました');
+        message.error(t('typeManagement.messages.parseError'));
       }
     };
 
@@ -216,14 +218,14 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       reader.readAsText(fileToRead);
     } catch (error) {
       // Failed to read file
-      message.error('ファイルの読み込みに失敗しました');
+      message.error(t('typeManagement.messages.readError'));
     }
   };
 
   const performTypeUpload = async (typeDef: any, _overwrite: boolean = false) => {
     try {
       await cmisService.createType(repositoryId, typeDef);
-      message.success('型定義をインポートしました');
+      message.success(t('typeManagement.messages.importSuccess'));
       setUploadModalVisible(false);
       setConflictModalVisible(false);
       setUploadFileList([]);
@@ -232,7 +234,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       await loadTypes();
     } catch (error) {
       // Failed to create type definition
-      message.error('型定義の作成に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
+      message.error(t('typeManagement.messages.createTypeError') + ': ' + (error instanceof Error ? error.message : String(error)));
     }
   };
 
@@ -282,14 +284,14 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       // No conflict, update directly
       await performTypeUpdate(originalTypeId, typeDef);
     } catch (error) {
-      message.error('JSONの解析に失敗しました');
+      message.error(t('typeManagement.messages.jsonParseError'));
     }
   };
 
   const performTypeUpdate = async (typeId: string, typeDef: any) => {
     try {
       await cmisService.updateType(repositoryId, typeId, typeDef);
-      message.success('型定義を更新しました');
+      message.success(t('typeManagement.messages.updateTypeSuccess'));
       setJsonEditModalVisible(false);
       setEditConflictModalVisible(false);
       setEditingTypeJson('');
@@ -298,7 +300,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       // CRITICAL FIX (2025-12-24): Await loadTypes() to ensure table is refreshed after update
       await loadTypes();
     } catch (error) {
-      message.error('型定義の更新に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
+      message.error(t('typeManagement.messages.updateTypeError') + ': ' + (error instanceof Error ? error.message : String(error)));
     }
   };
 
@@ -330,10 +332,10 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     try {
       if (guiEditorIsEditing && guiEditorType) {
         await cmisService.updateType(repositoryId, guiEditorType.id, typeDefinition);
-        message.success('タイプを更新しました');
+        message.success(t('typeManagement.messages.updateSuccess'));
       } else {
         await cmisService.createType(repositoryId, typeDefinition);
-        message.success('タイプを作成しました');
+        message.success(t('typeManagement.messages.createSuccess'));
       }
       setGuiEditorModalVisible(false);
       setGuiEditorType(null);
@@ -341,7 +343,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       // CRITICAL FIX (2025-12-24): Await loadTypes() to ensure table is refreshed after GUI editor save
       await loadTypes();
     } catch (error) {
-      message.error(guiEditorIsEditing ? 'タイプの更新に失敗しました' : 'タイプの作成に失敗しました');
+      message.error(guiEditorIsEditing ? t('typeManagement.messages.updateError') : t('typeManagement.messages.createError'));
     }
   };
 
@@ -353,40 +355,40 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
 
   const columns = [
     {
-      title: 'タイプID',
+      title: t('typeManagement.columns.typeId'),
       dataIndex: 'id',
       key: 'id',
     },
     {
-      title: '表示名',
+      title: t('typeManagement.columns.displayName'),
       dataIndex: 'displayName',
       key: 'displayName',
     },
     {
-      title: '説明',
+      title: t('typeManagement.columns.description'),
       dataIndex: 'description',
       key: 'description',
       ellipsis: true,
     },
     {
-      title: 'ベースタイプ',
+      title: t('typeManagement.columns.baseType'),
       dataIndex: 'baseTypeId',
       key: 'baseTypeId',
     },
     {
-      title: '親タイプ',
+      title: t('typeManagement.columns.parentType'),
       dataIndex: 'parentTypeId',
       key: 'parentTypeId',
     },
     {
-      title: 'プロパティ数',
+      title: t('typeManagement.columns.propertyCount'),
       dataIndex: 'propertyDefinitions',
       key: 'propertyCount',
       render: (propertyDefinitions: Record<string, PropertyDefinition>) => 
         Object.keys(propertyDefinitions || {}).length,
     },
     {
-      title: 'アクション',
+      title: t('common.actions'),
       key: 'actions',
       width: 280,
       render: (_: any, record: TypeDefinition) => (
@@ -396,32 +398,32 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
             size="small"
             onClick={() => handleOpenGUIEditor(record, true)}
             disabled={!record.deletable && record.id.startsWith('cmis:')}
-            title={!record.deletable && record.id.startsWith('cmis:') ? '標準CMISタイプは編集できません' : 'GUIで編集'}
+            title={!record.deletable && record.id.startsWith('cmis:') ? t('typeManagement.cannotEditStandardType') : t('typeManagement.editWithGUI')}
           >
-            GUI編集
+            {t('typeManagement.guiEdit')}
           </Button>
           <Button
             icon={<EditOutlined />}
             size="small"
             onClick={() => handleJsonEdit(record)}
             disabled={!record.deletable && record.id.startsWith('cmis:')}
-            title={!record.deletable && record.id.startsWith('cmis:') ? '標準CMISタイプは編集できません' : 'JSONで編集'}
+            title={!record.deletable && record.id.startsWith('cmis:') ? t('typeManagement.cannotEditStandardType') : t('typeManagement.editWithJSON')}
           >
             JSON
           </Button>
           {record.deletable !== false && !record.id.startsWith('cmis:') ? (
             <Popconfirm
-              title="このタイプを削除しますか？"
+              title={t('typeManagement.confirmDelete')}
               onConfirm={() => handleDelete(record.id)}
-              okText="はい"
-              cancelText="いいえ"
+              okText={t('common.yes')}
+              cancelText={t('common.no')}
             >
               <Button
                 icon={<DeleteOutlined />}
                 size="small"
                 danger
               >
-                削除
+                {t('common.delete')}
               </Button>
             </Popconfirm>
           ) : (
@@ -429,9 +431,9 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
               icon={<DeleteOutlined />}
               size="small"
               disabled
-              title="標準CMISタイプは削除できません"
+              title={t('typeManagement.cannotDeleteStandardType')}
             >
-              削除
+              {t('common.delete')}
             </Button>
           )}
         </Space>
@@ -449,45 +451,45 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
                 <Form.Item
                   {...restField}
                   name={[name, 'id']}
-                  label="プロパティID"
-                  rules={[{ required: true, message: 'プロパティIDを入力してください' }]}
+                  label={t('typeManagement.propertyForm.propertyId')}
+                  rules={[{ required: true, message: t('typeManagement.propertyForm.propertyIdRequired') }]}
                 >
-                  <Input placeholder="プロパティID" />
+                  <Input placeholder={t('typeManagement.propertyForm.propertyId')} />
                 </Form.Item>
                 
                 <Form.Item
                   {...restField}
                   name={[name, 'displayName']}
-                  label="表示名"
-                  rules={[{ required: true, message: '表示名を入力してください' }]}
+                  label={t('typeManagement.columns.displayName')}
+                  rules={[{ required: true, message: t('typeManagement.propertyForm.displayNameRequired') }]}
                 >
-                  <Input placeholder="表示名" />
+                  <Input placeholder={t('typeManagement.columns.displayName')} />
                 </Form.Item>
                 
                 <Form.Item
                   {...restField}
                   name={[name, 'propertyType']}
-                  label="データ型"
-                  rules={[{ required: true, message: 'データ型を選択してください' }]}
+                  label={t('typeManagement.propertyForm.dataType')}
+                  rules={[{ required: true, message: t('typeManagement.propertyForm.dataTypeRequired') }]}
                 >
-                  <Select placeholder="データ型を選択">
-                    <Select.Option value="string">文字列</Select.Option>
-                    <Select.Option value="integer">整数</Select.Option>
-                    <Select.Option value="decimal">小数</Select.Option>
-                    <Select.Option value="boolean">真偽値</Select.Option>
-                    <Select.Option value="datetime">日時</Select.Option>
+                  <Select placeholder={t('typeManagement.propertyForm.selectDataType')}>
+                    <Select.Option value="string">{t('typeManagement.dataTypes.string')}</Select.Option>
+                    <Select.Option value="integer">{t('typeManagement.dataTypes.integer')}</Select.Option>
+                    <Select.Option value="decimal">{t('typeManagement.dataTypes.decimal')}</Select.Option>
+                    <Select.Option value="boolean">{t('typeManagement.dataTypes.boolean')}</Select.Option>
+                    <Select.Option value="datetime">{t('typeManagement.dataTypes.datetime')}</Select.Option>
                   </Select>
                 </Form.Item>
                 
                 <Form.Item
                   {...restField}
                   name={[name, 'cardinality']}
-                  label="多重度"
-                  rules={[{ required: true, message: '多重度を選択してください' }]}
+                  label={t('typeManagement.propertyForm.cardinality')}
+                  rules={[{ required: true, message: t('typeManagement.propertyForm.cardinalityRequired') }]}
                 >
-                  <Select placeholder="多重度を選択">
-                    <Select.Option value="single">単一</Select.Option>
-                    <Select.Option value="multi">複数</Select.Option>
+                  <Select placeholder={t('typeManagement.propertyForm.selectCardinality')}>
+                    <Select.Option value="single">{t('typeManagement.cardinality.single')}</Select.Option>
+                    <Select.Option value="multi">{t('typeManagement.cardinality.multi')}</Select.Option>
                   </Select>
                 </Form.Item>
               </div>
@@ -496,7 +498,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
                 <Form.Item
                   {...restField}
                   name={[name, 'required']}
-                  label="必須"
+                  label={t('typeManagement.propertyForm.required')}
                   valuePropName="checked"
                 >
                   <Switch />
@@ -505,7 +507,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
                 <Form.Item
                   {...restField}
                   name={[name, 'queryable']}
-                  label="検索可能"
+                  label={t('typeManagement.propertyForm.queryable')}
                   valuePropName="checked"
                 >
                   <Switch />
@@ -514,7 +516,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
                 <Form.Item
                   {...restField}
                   name={[name, 'updatable']}
-                  label="更新可能"
+                  label={t('typeManagement.propertyForm.updatable')}
                   valuePropName="checked"
                 >
                   <Switch />
@@ -525,16 +527,16 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
                   danger 
                   onClick={() => remove(name)}
                 >
-                  削除
+                  {t('common.delete')}
                 </Button>
               </div>
               
               <Form.Item
                 {...restField}
                 name={[name, 'description']}
-                label="説明"
+                label={t('typeManagement.columns.description')}
               >
-                <Input.TextArea rows={2} placeholder="プロパティの説明" />
+                <Input.TextArea rows={2} placeholder={t('typeManagement.propertyForm.propertyDescription')} />
               </Form.Item>
             </Card>
           ))}
@@ -545,7 +547,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
             block 
             icon={<PlusOutlined />}
           >
-            プロパティを追加
+            {t('typeManagement.addProperty')}
           </Button>
         </>
       )}
@@ -555,51 +557,51 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
   const tabItems = [
     {
       key: 'basic',
-      label: '基本情報',
+      label: t('typeManagement.tabs.basicInfo'),
       children: (
         <>
           <Form.Item
             name="id"
-            label="タイプID"
-            rules={[{ required: true, message: 'タイプIDを入力してください' }]}
+            label={t('typeManagement.columns.typeId')}
+            rules={[{ required: true, message: t('typeManagement.form.typeIdRequired') }]}
           >
             <Input 
-              placeholder="タイプIDを入力"
+              placeholder={t('typeManagement.form.enterTypeId')}
               disabled={!!editingType}
             />
           </Form.Item>
 
           <Form.Item
             name="displayName"
-            label="表示名"
-            rules={[{ required: true, message: '表示名を入力してください' }]}
+            label={t('typeManagement.columns.displayName')}
+            rules={[{ required: true, message: t('typeManagement.propertyForm.displayNameRequired') }]}
           >
-            <Input placeholder="表示名を入力" />
+            <Input placeholder={t('typeManagement.form.enterDisplayName')} />
           </Form.Item>
 
           <Form.Item
             name="description"
-            label="説明"
+            label={t('typeManagement.columns.description')}
           >
-            <Input.TextArea rows={3} placeholder="タイプの説明を入力" />
+            <Input.TextArea rows={3} placeholder={t('typeManagement.form.enterDescription')} />
           </Form.Item>
 
           <Form.Item
             name="baseTypeId"
-            label="ベースタイプ"
-            rules={[{ required: true, message: 'ベースタイプを選択してください' }]}
+            label={t('typeManagement.columns.baseType')}
+            rules={[{ required: true, message: t('typeManagement.form.baseTypeRequired') }]}
           >
-            <Select placeholder="ベースタイプを選択">
-              <Select.Option value="cmis:document">ドキュメント</Select.Option>
-              <Select.Option value="cmis:folder">フォルダ</Select.Option>
+            <Select placeholder={t('typeManagement.form.selectBaseType')}>
+              <Select.Option value="cmis:document">{t('typeManagement.baseTypes.document')}</Select.Option>
+              <Select.Option value="cmis:folder">{t('typeManagement.baseTypes.folder')}</Select.Option>
             </Select>
           </Form.Item>
 
           <Form.Item
             name="parentTypeId"
-            label="親タイプ"
+            label={t('typeManagement.columns.parentType')}
           >
-            <Select placeholder="親タイプを選択" allowClear>
+            <Select placeholder={t('typeManagement.form.selectParentType')} allowClear>
               {types.map(type => (
                 <Select.Option key={type.id} value={type.id}>
                   {type.displayName}
@@ -611,7 +613,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
             <Form.Item
               name="creatable"
-              label="作成可能"
+              label={t('typeManagement.form.creatable')}
               valuePropName="checked"
             >
               <Switch />
@@ -619,7 +621,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
 
             <Form.Item
               name="fileable"
-              label="ファイル可能"
+              label={t('typeManagement.form.fileable')}
               valuePropName="checked"
             >
               <Switch />
@@ -627,7 +629,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
 
             <Form.Item
               name="queryable"
-              label="検索可能"
+              label={t('typeManagement.propertyForm.queryable')}
               valuePropName="checked"
             >
               <Switch />
@@ -638,7 +640,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     },
     {
       key: 'properties',
-      label: 'プロパティ定義',
+      label: t('typeManagement.tabs.propertyDefinitions'),
       children: <PropertyDefinitionForm />,
     },
   ];
@@ -647,27 +649,27 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>
-          <FileOutlined /> タイプ管理
+          <FileOutlined /> {t('typeManagement.title')}
         </h2>
         <Space>
           <Button
             icon={<ImportOutlined />}
             onClick={handleImportClick}
           >
-            ファイルからインポート
+            {t('typeManagement.importFromFile')}
           </Button>
           <Button
             icon={<FormOutlined />}
             onClick={() => handleOpenGUIEditor(null, false)}
           >
-            GUIで新規作成
+            {t('typeManagement.createWithGUI')}
           </Button>
           <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setModalVisible(true)}
           >
-            新規タイプ
+            {t('typeManagement.newType')}
           </Button>
         </Space>
       </div>
@@ -681,7 +683,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       />
 
       <Modal
-        title={editingType ? 'タイプ編集' : '新規タイプ作成'}
+        title={editingType ? t('typeManagement.modal.editType') : t('typeManagement.modal.createType')}
         open={modalVisible}
         onCancel={handleCancel}
         footer={null}
@@ -698,10 +700,10 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
           <Form.Item style={{ marginTop: 16 }}>
             <Space>
               <Button type="primary" htmlType="submit">
-                {editingType ? '更新' : '作成'}
+                {editingType ? t('common.update') : t('common.create')}
               </Button>
               <Button onClick={handleCancel}>
-                キャンセル
+                {t('common.cancel')}
               </Button>
             </Space>
           </Form.Item>
@@ -710,12 +712,12 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
 
       {/* Upload modal */}
       <Modal
-        title="型定義ファイルのインポート"
+        title={t('typeManagement.modal.importTypeDefinition')}
         open={uploadModalVisible}
         onOk={handleFileUpload}
         onCancel={handleUploadCancel}
-        okText="インポート"
-        cancelText="キャンセル"
+        okText={t('common.import')}
+        cancelText={t('common.cancel')}
         maskClosable={false}
       >
         <Upload.Dragger
@@ -733,23 +735,23 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
           <p className="ant-upload-drag-icon">
             <FileOutlined />
           </p>
-          <p className="ant-upload-text">クリックまたはドラッグしてJSONファイルをアップロード</p>
-          <p className="ant-upload-hint">型定義のJSON形式ファイルを選択してください</p>
+          <p className="ant-upload-text">{t('typeManagement.upload.dragText')}</p>
+          <p className="ant-upload-hint">{t('typeManagement.upload.hint')}</p>
         </Upload.Dragger>
       </Modal>
 
       {/* Conflict confirmation modal */}
       <Modal
-        title="型定義の競合確認"
+        title={t('typeManagement.modal.conflictConfirmation')}
         open={conflictModalVisible}
         onOk={handleConflictConfirm}
         onCancel={handleConflictCancel}
-        okText="上書きして作成"
-        cancelText="キャンセル"
+        okText={t('typeManagement.modal.overwriteAndCreate')}
+        cancelText={t('common.cancel')}
         maskClosable={false}
       >
         <Alert
-          message="以下のタイプIDは既に存在します"
+          message={t('typeManagement.conflict.typeIdExists')}
           description={
             <ul>
               {conflictTypes.map(typeId => (
@@ -763,7 +765,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         />
         {pendingTypeDefinition && (
           <>
-            <p>アップロードしようとしている型定義:</p>
+            <p>{t('typeManagement.conflict.uploadingDefinition')}</p>
             <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 4, overflow: 'auto', maxHeight: 300 }}>
               {JSON.stringify(pendingTypeDefinition, null, 2)}
             </pre>
@@ -773,18 +775,18 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
 
       {/* JSON edit modal */}
       <Modal
-        title="型定義の編集 (JSON)"
+        title={t('typeManagement.modal.editTypeJson')}
         open={jsonEditModalVisible}
         onOk={handleJsonEditSave}
         onCancel={handleJsonEditCancel}
-        okText="保存"
-        cancelText="キャンセル"
+        okText={t('common.save')}
+        cancelText={t('common.cancel')}
         width={800}
         maskClosable={false}
       >
         <Alert
-          message="型定義をJSON形式で直接編集できます"
-          description="IDを変更すると競合確認が表示されます"
+          message={t('typeManagement.jsonEdit.canEditDirectly')}
+          description={t('typeManagement.jsonEdit.idChangeWarning')}
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
@@ -799,18 +801,18 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
 
       {/* Edit conflict confirmation modal */}
       <Modal
-        title="型定義の競合確認（編集）"
+        title={t('typeManagement.modal.editConflictConfirmation')}
         open={editConflictModalVisible}
         onOk={handleEditConflictConfirm}
         onCancel={handleEditConflictCancel}
-        okText="上書きして更新"
-        cancelText="キャンセル"
+        okText={t('typeManagement.modal.overwriteAndUpdate')}
+        cancelText={t('common.cancel')}
         width={800}
         maskClosable={false}
       >
         <Alert
-          message="タイプIDが変更されています"
-          description="IDを変更すると既存のタイプとして保存されます"
+          message={t('typeManagement.editConflict.typeIdChanged')}
+          description={t('typeManagement.editConflict.willSaveAsExisting')}
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
@@ -818,7 +820,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
         {editBeforeAfter && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
-              <h4>変更前</h4>
+              <h4>{t('typeManagement.editConflict.before')}</h4>
               <pre style={{ background: '#fff1f0', padding: 12, borderRadius: 4, overflow: 'auto', maxHeight: 300 }}>
                 {JSON.stringify({
                   id: editBeforeAfter.before?.id,
@@ -827,7 +829,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
               </pre>
             </div>
             <div>
-              <h4>変更後</h4>
+              <h4>{t('typeManagement.editConflict.after')}</h4>
               <pre style={{ background: '#f6ffed', padding: 12, borderRadius: 4, overflow: 'auto', maxHeight: 300 }}>
                 {JSON.stringify({
                   id: editBeforeAfter.after.id,
@@ -841,7 +843,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
 
       {/* GUI Editor modal */}
       <Modal
-        title={guiEditorIsEditing ? 'タイプ編集 (GUI)' : '新規タイプ作成 (GUI)'}
+        title={guiEditorIsEditing ? t('typeManagement.modal.editTypeGUI') : t('typeManagement.modal.createTypeGUI')}
         open={guiEditorModalVisible}
         onCancel={handleGUIEditorCancel}
         footer={null}

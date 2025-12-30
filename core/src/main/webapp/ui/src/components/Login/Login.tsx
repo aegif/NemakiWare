@@ -208,6 +208,7 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, Card, Alert, Select, Divider } from 'antd';
 import { UserOutlined, LockOutlined, DatabaseOutlined, LoginOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { AuthService, AuthToken } from '../../services/auth';
 import { CMISService } from '../../services/cmis';
 import { OIDCService } from '../../services/oidc';
@@ -221,6 +222,7 @@ interface LoginProps {
 }
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
+  const { t } = useTranslation();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -350,7 +352,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       // Additional cleanup after onLogin callback
       setTimeout(performCleanup, 100);
     } catch (error) {
-      setError('ログインに失敗しました。ユーザー名、パスワード、リポジトリIDを確認してください。');
+      setError(t('login.messages.loginFailed'));
     } finally {
       setLoading(false);
     }
@@ -393,9 +395,9 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       const errorMessage = error instanceof Error ? error.message : String(error);
       // Check for privacy mode related error
       if (errorMessage.includes('No matching state') || errorMessage.includes('state')) {
-        setError(`OIDC認証に失敗しました: ${errorMessage}\n\n【重要】プライバシーモード（シークレットウィンドウ）では認証状態が保存されないため、OIDC認証が失敗する場合があります。通常モードでお試しください。`);
+        setError(t('login.messages.oidcFailedPrivacy', { error: errorMessage }));
       } else {
-        setError(`OIDC認証に失敗しました: ${errorMessage}`);
+        setError(t('login.messages.oidcFailed', { error: errorMessage }));
       }
     } finally {
       setLoading(false);
@@ -415,7 +417,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       // SAML login failed - log actual error for debugging
       console.error('SAML login error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      setError(`SAML認証に失敗しました: ${errorMessage}`);
+      setError(t('login.messages.samlFailed', { error: errorMessage }));
       setLoading(false);
     }
   };
@@ -450,12 +452,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         // Redirect to main app after successful SAML authentication
         window.location.href = '/core/ui/';
       } else {
-        setError('SAML認証レスポンスが見つかりません。');
+        setError(t('login.messages.samlResponseNotFound'));
       }
     } catch (error) {
       console.error('SAML callback error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      setError(`SAML認証の処理に失敗しました: ${errorMessage}`);
+      setError(t('login.messages.samlProcessFailed', { error: errorMessage }));
     } finally {
       setLoading(false);
     }
@@ -505,36 +507,36 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         >
           <Form.Item
             name="repositoryId"
-            label="リポジトリ"
-            rules={[{ required: true, message: 'リポジトリを選択してください' }]}
+            label={t('login.repository')}
+            rules={[{ required: true, message: t('login.validation.repositoryRequired') }]}
           >
             <Select
               prefix={<DatabaseOutlined />}
-              placeholder="リポジトリを選択"
+              placeholder={t('login.selectRepository')}
               options={repositories.map(repo => ({ label: repo, value: repo }))}
             />
           </Form.Item>
 
           <Form.Item
             name="username"
-            label="ユーザー名"
-            rules={[{ required: true, message: 'ユーザー名を入力してください' }]}
+            label={t('login.username')}
+            rules={[{ required: true, message: t('login.validation.usernameRequired') }]}
           >
             <Input
               prefix={<UserOutlined />}
-              placeholder="ユーザー名"
+              placeholder={t('login.username')}
               autoComplete="username"
             />
           </Form.Item>
 
           <Form.Item
             name="password"
-            label="パスワード"
-            rules={[{ required: true, message: 'パスワードを入力してください' }]}
+            label={t('login.password')}
+            rules={[{ required: true, message: t('login.validation.passwordRequired') }]}
           >
             <Input.Password
               prefix={<LockOutlined />}
-              placeholder="パスワード"
+              placeholder={t('login.password')}
               autoComplete="current-password"
             />
           </Form.Item>
@@ -546,13 +548,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               loading={loading}
               style={{ width: '100%', height: 40 }}
             >
-              ログイン
+              {t('login.loginButton')}
             </Button>
           </Form.Item>
 
           {(isOIDCEnabled() || isSAMLEnabled()) && (
             <>
-              <Divider>または</Divider>
+              <Divider>{t('login.or')}</Divider>
               {isOIDCEnabled() && (
                 <Form.Item>
                   <Button
@@ -562,7 +564,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     loading={loading}
                     style={{ width: '100%', height: 40, marginBottom: 8 }}
                   >
-                    OIDC認証でログイン
+                    {t('login.oidcLogin')}
                   </Button>
                 </Form.Item>
               )}
@@ -575,7 +577,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     loading={loading}
                     style={{ width: '100%', height: 40 }}
                   >
-                    SAML認証でログイン
+                    {t('login.samlLogin')}
                   </Button>
                 </Form.Item>
               )}

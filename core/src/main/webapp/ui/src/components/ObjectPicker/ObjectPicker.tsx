@@ -26,6 +26,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Tabs, Tree, Input, Table, Button, Space, Spin, message } from 'antd';
 import { FolderOutlined, FileOutlined, SearchOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { CMISObject } from '../../types/cmis';
 
@@ -52,9 +53,11 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
   visible,
   onSelect,
   onCancel,
-  title = 'オブジェクトを選択',
+  title,
   filterType = 'all'
 }) => {
+  const { t } = useTranslation();
+  const defaultTitle = t('objectPicker.title');
   const [activeTab, setActiveTab] = useState<string>('tree');
   const [treeData, setTreeData] = useState<TreeNode[]>([]);
   const [treeLoading, setTreeLoading] = useState(true);
@@ -94,7 +97,7 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
       const children = await cmisService.getChildren(repositoryId, rootFolder.id);
       setCurrentFolderChildren(filterChildren(children));
     } catch (error) {
-      message.error('ルートフォルダの読み込みに失敗しました');
+      message.error(t('objectPicker.messages.rootFolderLoadError'));
     } finally {
       setTreeLoading(false);
     }
@@ -120,7 +123,7 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
         data: folder,
       }));
     } catch (error) {
-      message.error('フォルダの読み込みに失敗しました');
+      message.error(t('objectPicker.messages.folderLoadError'));
       return [];
     }
   };
@@ -151,14 +154,14 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
         const children = await cmisService.getChildren(repositoryId, folderId);
         setCurrentFolderChildren(filterChildren(children));
       } catch (error) {
-        message.error('フォルダ内容の取得に失敗しました');
+        message.error(t('objectPicker.messages.folderContentsError'));
       }
     }
   };
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
-      message.warning('検索キーワードを入力してください');
+      message.warning(t('objectPicker.messages.enterSearchKeyword'));
       return;
     }
 
@@ -172,7 +175,7 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
           );
       setSearchResults(filtered);
     } catch (error) {
-      message.error('検索に失敗しました');
+      message.error(t('objectPicker.messages.searchError'));
     } finally {
       setSearchLoading(false);
     }
@@ -191,7 +194,7 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
 
   const objectColumns = [
     {
-      title: '名前',
+      title: t('objectPicker.columns.name'),
       dataIndex: 'name',
       key: 'name',
       render: (name: string, record: CMISObject) => (
@@ -202,22 +205,22 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
       ),
     },
     {
-      title: 'タイプ',
+      title: t('objectPicker.columns.type'),
       dataIndex: 'objectType',
       key: 'objectType',
     },
     {
-      title: '更新日時',
+      title: t('objectPicker.columns.lastModified'),
       dataIndex: 'lastModificationDate',
       key: 'lastModificationDate',
-      render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+      render: (date: string) => date ? new Date(date).toLocaleString() : '-',
     },
   ];
 
   const tabItems = [
     {
       key: 'tree',
-      label: 'ツリーから選択',
+      label: t('objectPicker.tabs.tree'),
       children: (
         <div style={{ display: 'flex', height: '400px' }}>
           <div style={{ width: '250px', borderRight: '1px solid #d9d9d9', overflow: 'auto' }}>
@@ -251,7 +254,7 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
                   backgroundColor: selectedObject?.id === record.id ? '#e6f7ff' : undefined
                 }
               })}
-              locale={{ emptyText: 'オブジェクトがありません' }}
+              locale={{ emptyText: t('objectPicker.noObjects') }}
             />
           </div>
         </div>
@@ -259,20 +262,20 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
     },
     {
       key: 'search',
-      label: '検索',
+      label: t('objectPicker.tabs.search'),
       children: (
         <div style={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
           <div style={{ marginBottom: '16px' }}>
             <Space.Compact style={{ width: '100%' }}>
               <Input
-                placeholder="検索キーワードを入力"
+                placeholder={t('objectPicker.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onPressEnter={handleSearch}
                 prefix={<SearchOutlined />}
               />
               <Button type="primary" onClick={handleSearch} loading={searchLoading}>
-                検索
+                {t('common.search')}
               </Button>
             </Space.Compact>
           </div>
@@ -291,7 +294,7 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
                   backgroundColor: selectedObject?.id === record.id ? '#e6f7ff' : undefined
                 }
               })}
-              locale={{ emptyText: searchQuery ? '検索結果がありません' : '検索キーワードを入力してください' }}
+              locale={{ emptyText: searchQuery ? t('objectPicker.noSearchResults') : t('objectPicker.enterSearchKeyword') }}
             />
           </div>
         </div>
@@ -301,26 +304,26 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
 
   return (
     <Modal
-      title={title}
+      title={title || defaultTitle}
       open={visible}
       onCancel={onCancel}
       width={800}
       footer={
         <Space>
-          <Button onClick={onCancel}>キャンセル</Button>
+          <Button onClick={onCancel}>{t('common.cancel')}</Button>
           <Button
             type="primary"
             onClick={handleConfirm}
             disabled={!selectedObject}
           >
-            選択 {selectedObject && `(${selectedObject.name})`}
+            {t('common.select')} {selectedObject && `(${selectedObject.name})`}
           </Button>
         </Space>
       }
     >
       {selectedObject && (
         <div style={{ marginBottom: '16px', padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
-          <strong>選択中: </strong>
+          <strong>{t('objectPicker.selected')}: </strong>
           {selectedObject.baseType === 'cmis:folder' ? <FolderOutlined /> : <FileOutlined />}
           {' '}{selectedObject.name} (ID: {selectedObject.id})
         </div>

@@ -13,6 +13,7 @@
 import React, { useState, useEffect } from 'react';
 import { Alert, Button, Space, Spin, message } from 'antd';
 import { DownloadOutlined, FileTextOutlined, ReloadOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { useAuth } from '../../contexts/AuthContext';
 import { PDFPreview } from './PDFPreview';
@@ -32,6 +33,7 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
   repositoryId,
   objectId
 }) => {
+  const { t } = useTranslation();
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
 
@@ -68,17 +70,17 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
   };
 
   const getFileTypeDescription = (mimeType: string) => {
-    if (mimeType.includes('wordprocessingml')) return 'Word文書';
-    if (mimeType.includes('spreadsheetml')) return 'Excel文書';
-    if (mimeType.includes('presentationml')) return 'PowerPoint文書';
-    if (mimeType.includes('opendocument.text')) return 'OpenDocument テキスト';
-    if (mimeType.includes('opendocument.spreadsheet')) return 'OpenDocument スプレッドシート';
-    if (mimeType.includes('opendocument.presentation')) return 'OpenDocument プレゼンテーション';
-    if (mimeType === 'application/rtf' || mimeType === 'text/rtf') return 'RTF文書';
-    if (mimeType === 'application/msword') return 'Word文書 (旧形式)';
-    if (mimeType === 'application/vnd.ms-excel') return 'Excel文書 (旧形式)';
-    if (mimeType === 'application/vnd.ms-powerpoint') return 'PowerPoint文書 (旧形式)';
-    return 'オフィス文書';
+    if (mimeType.includes('wordprocessingml')) return t('preview.office.fileTypes.word');
+    if (mimeType.includes('spreadsheetml')) return t('preview.office.fileTypes.excel');
+    if (mimeType.includes('presentationml')) return t('preview.office.fileTypes.powerpoint');
+    if (mimeType.includes('opendocument.text')) return t('preview.office.fileTypes.odText');
+    if (mimeType.includes('opendocument.spreadsheet')) return t('preview.office.fileTypes.odSpreadsheet');
+    if (mimeType.includes('opendocument.presentation')) return t('preview.office.fileTypes.odPresentation');
+    if (mimeType === 'application/rtf' || mimeType === 'text/rtf') return t('preview.office.fileTypes.rtf');
+    if (mimeType === 'application/msword') return t('preview.office.fileTypes.wordLegacy');
+    if (mimeType === 'application/vnd.ms-excel') return t('preview.office.fileTypes.excelLegacy');
+    if (mimeType === 'application/vnd.ms-powerpoint') return t('preview.office.fileTypes.powerpointLegacy');
+    return t('preview.office.fileTypes.office');
   };
 
   // Extract repositoryId and objectId from URL if not provided
@@ -97,7 +99,7 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
     const effectiveObjId = objectId || objId;
 
     if (!effectiveRepoId || !effectiveObjId) {
-      setError('レンディション取得に必要な情報が不足しています');
+      setError(t('preview.office.missingInfo'));
       setLoading(false);
       return;
     }
@@ -123,10 +125,10 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
             setRenditionUrl(pdfBlobUrl);
             setError(null);
           } else {
-            setError('PDFコンテンツの取得に失敗しました');
+            setError(t('preview.office.pdfContentError'));
           }
         } else {
-          setError('PDFレンディションのストリームIDが見つかりません');
+          setError(t('preview.office.streamIdNotFound'));
         }
       } else {
         // No PDF rendition found - try to generate one
@@ -135,7 +137,7 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
       }
     } catch (err) {
       console.error('[OfficePreview] Error fetching renditions:', err);
-      setError('レンディションの取得に失敗しました');
+      setError(t('preview.office.renditionFetchError'));
     } finally {
       setLoading(false);
     }
@@ -147,7 +149,7 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
     try {
       const generateResult = await cmisService.generateRenditions(repoId, objId, false);
       console.log('[OfficePreview] Generate rendition result:', generateResult);
-      message.info('PDFレンディションを生成中...');
+      message.info(t('preview.office.generatingPdf'));
 
       // Wait a bit and then poll for the rendition
       await new Promise(resolve => setTimeout(resolve, 5000));
@@ -173,23 +175,23 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
             setBlobUrl(pdfBlobUrl);
             setRenditionUrl(pdfBlobUrl);
             setError(null);
-            message.success('PDFレンディションの生成が完了しました');
+            message.success(t('preview.office.pdfGenerationComplete'));
           } else {
             console.error('[OfficePreview] Failed to fetch PDF content');
-            setError('PDFコンテンツの取得に失敗しました');
+            setError(t('preview.office.pdfContentError'));
           }
         } else {
           console.error('[OfficePreview] PDF rendition found but no streamId:', pdfRendition);
-          setError('PDFレンディションのストリームIDが見つかりません');
+          setError(t('preview.office.streamIdNotFound'));
         }
       } else {
         console.error('[OfficePreview] No PDF rendition found after generation. Available renditions:', renditions);
-        setError('PDFレンディションの生成に時間がかかっています。しばらく待ってから再試行してください。');
+        setError(t('preview.office.generationTakingLong'));
       }
     } catch (err: any) {
       console.error('[OfficePreview] Error generating rendition:', err);
       console.error('[OfficePreview] Error details:', err.message, err.status, err.response);
-      setError(`PDFレンディションの生成に失敗しました: ${err.message || '不明なエラー'}`);
+      setError(t('preview.office.generationFailed', { error: err.message || t('common.unknownError') }));
     } finally {
       setGenerating(false);
     }
@@ -218,7 +220,7 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
       <div style={{ textAlign: 'center', padding: '60px' }}>
         <Spin size="large" />
         <p style={{ marginTop: '16px', color: '#666' }}>
-          {generating ? 'PDFレンディションを生成中...' : 'プレビューを読み込み中...'}
+          {generating ? t('preview.office.generatingPdf') : t('preview.office.loadingPreview')}
         </p>
       </div>
     );
@@ -238,7 +240,7 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
     <div style={{ textAlign: 'center', padding: '40px' }} data-testid="office-preview-fallback">
       <FileTextOutlined style={{ fontSize: '64px', color: '#1890ff', marginBottom: '24px' }} />
       <Alert
-        message={error || 'オフィス文書のプレビュー'}
+        message={error || t('preview.office.title')}
         description={
           <Space direction="vertical" size="large">
             <div>
@@ -246,9 +248,9 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
               <p>{getFileTypeDescription(mimeType)}</p>
             </div>
             {error ? (
-              <p>プレビューの生成に失敗しました。再試行するか、ダウンロードしてローカルアプリケーションでご確認ください。</p>
+              <p>{t('preview.office.previewFailedRetry')}</p>
             ) : (
-              <p>オフィス文書のプレビューは現在サポートされていません。<br />ダウンロードしてローカルアプリケーションでご確認ください。</p>
+              <p>{t('preview.office.notSupported')}</p>
             )}
             <Space>
               {error && (
@@ -256,7 +258,7 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
                   icon={<ReloadOutlined />}
                   onClick={handleRetry}
                 >
-                  再試行
+                  {t('common.retry')}
                 </Button>
               )}
               <Button
@@ -265,7 +267,7 @@ export const OfficePreview: React.FC<OfficePreviewProps> = ({
                 onClick={() => window.open(url, '_blank')}
                 size="large"
               >
-                ダウンロード
+                {t('common.download')}
               </Button>
             </Space>
           </Space>

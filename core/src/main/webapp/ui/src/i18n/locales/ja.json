@@ -1,21 +1,22 @@
 {
-  "common": {
-    "loading": "読み込み中...",
-    "error": "エラー",
-    "success": "成功",
-    "warning": "警告",
-    "cancel": "キャンセル",
-    "save": "保存",
-    "create": "作成",
-    "update": "更新",
-    "delete": "削除",
-    "edit": "編集",
-    "close": "閉じる",
-    "confirm": "確認",
-    "yes": "はい",
-    "no": "いいえ",
-    "search": "検索",
-    "actions": "アクション",
+    "common": {
+      "loading": "読み込み中...",
+      "error": "エラー",
+      "success": "成功",
+      "warning": "警告",
+      "cancel": "キャンセル",
+      "save": "保存",
+      "create": "作成",
+      "update": "更新",
+      "delete": "削除",
+      "edit": "編集",
+      "close": "閉じる",
+      "confirm": "確認",
+      "yes": "はい",
+      "no": "いいえ",
+      "search": "検索",
+      "actions": "アクション",
+      "import": "インポート",
     "name": "名前",
     "description": "説明",
     "type": "タイプ",
@@ -27,7 +28,50 @@
     "multi": "複数",
     "direct": "直接",
     "inherited": "継承",
-    "repository": "リポジトリ"
+    "repository": "リポジトリ",
+    "add": "追加",
+    "remove": "削除",
+    "select": "選択",
+    "clear": "クリア",
+    "retry": "再試行",
+    "reload": "再読み込み",
+    "back": "戻る",
+    "next": "次へ",
+    "previous": "前へ",
+    "upload": "アップロード",
+    "download": "ダウンロード",
+    "importing": "インポート中...",
+    "uploading": "アップロード中...",
+    "total": "全 {{count}} 件",
+    "items": "{{count}}個",
+    "moreResults": "さらに結果があります",
+    "validation": {
+      "required": "{{field}}は必須です",
+      "enterField": "{{field}}を入力してください",
+      "selectField": "{{field}}を選択してください",
+      "invalidFormat": "{{field}}の形式が不正です",
+      "minLength": "{{field}}は{{min}}文字以上で入力してください",
+      "maxLength": "{{field}}は{{max}}文字以内で入力してください",
+      "alphanumericOnly": "英数字、アンダースコア、ハイフンのみ使用可能です",
+      "validEmail": "正しいメールアドレスを入力してください"
+    },
+    "placeholders": {
+      "enter": "{{field}}を入力",
+      "select": "{{field}}を選択",
+      "search": "{{field}}を検索"
+    },
+    "errors": {
+      "loadFailed": "{{item}}の読み込みに失敗しました",
+      "createFailed": "{{item}}の作成に失敗しました",
+      "updateFailed": "{{item}}の更新に失敗しました",
+      "deleteFailed": "{{item}}の削除に失敗しました",
+      "serverError": "サーバー側でエラーが発生しています",
+      "authError": "認証エラー: ログインし直してください",
+      "permissionError": "権限エラー: この操作の権限がありません",
+      "navigationFailed": "ナビゲーションに失敗しました",
+      "details": "詳細: {{details}}"
+    },
+    "confirmDelete": "この{{item}}を削除しますか？"
   },
   "navigation": {
     "home": "ホーム",
@@ -42,7 +86,7 @@
   "typeManagement": {
     "title": "タイプ管理",
     "customTypes": "カスタムタイプ",
-    "newType": "新規タイプ作成",
+    "newType": "新規タイプ",
     "editType": "タイプ編集",
     "deleteType": "タイプ削除",
     "guiEditor": "GUIエディタ",
@@ -75,6 +119,97 @@
     "openChoice": "オープンチョイス",
     "expandAll": "全て展開",
     "collapseAll": "全て折りたたむ",
+    "importFromFile": "ファイルからインポート",
+    "createWithGUI": "GUIで新規作成",
+    "guiEdit": "GUI編集",
+    "editWithGUI": "GUIで編集",
+    "editWithJSON": "JSONで編集",
+    "confirmDelete": "このタイプを削除しますか？",
+    "cannotEditStandardType": "標準CMISタイプは編集できません",
+    "cannotDeleteStandardType": "標準CMISタイプは削除できません",
+    "columns": {
+      "typeId": "タイプID",
+      "displayName": "表示名",
+      "description": "説明",
+      "baseType": "ベースタイプ",
+      "parentType": "親タイプ",
+      "propertyCount": "プロパティ数"
+    },
+    "tabs": {
+      "basicInfo": "基本情報",
+      "propertyDefinitions": "プロパティ定義"
+    },
+    "form": {
+      "typeIdRequired": "タイプIDを入力してください",
+      "enterTypeId": "タイプIDを入力",
+      "enterDisplayName": "表示名を入力",
+      "enterDescription": "タイプの説明を入力",
+      "baseTypeRequired": "ベースタイプを選択してください",
+      "selectBaseType": "ベースタイプを選択",
+      "selectParentType": "親タイプを選択",
+      "creatable": "作成可能",
+      "fileable": "ファイル可能"
+    },
+    "baseTypes": {
+      "document": "ドキュメント",
+      "folder": "フォルダ"
+    },
+    "propertyForm": {
+      "propertyId": "プロパティID",
+      "propertyIdRequired": "プロパティIDを入力してください",
+      "displayNameRequired": "表示名を入力してください",
+      "dataType": "データ型",
+      "dataTypeRequired": "データ型を選択してください",
+      "selectDataType": "データ型を選択",
+      "cardinality": "多重度",
+      "cardinalityRequired": "多重度を選択してください",
+      "selectCardinality": "多重度を選択",
+      "required": "必須",
+      "queryable": "検索可能",
+      "updatable": "更新可能",
+      "propertyDescription": "プロパティの説明"
+    },
+    "dataTypes": {
+      "string": "文字列",
+      "integer": "整数",
+      "decimal": "小数",
+      "boolean": "真偽値",
+      "datetime": "日時"
+    },
+    "cardinality": {
+      "single": "単一",
+      "multi": "複数"
+    },
+    "modal": {
+      "editType": "タイプ編集",
+      "createType": "新規タイプ作成",
+      "importTypeDefinition": "型定義ファイルのインポート",
+      "conflictConfirmation": "型定義の競合確認",
+      "overwriteAndCreate": "上書きして作成",
+      "editTypeJson": "型定義の編集 (JSON)",
+      "editConflictConfirmation": "型定義の競合確認（編集）",
+      "overwriteAndUpdate": "上書きして更新",
+      "editTypeGUI": "タイプ編集 (GUI)",
+      "createTypeGUI": "新規タイプ作成 (GUI)"
+    },
+    "upload": {
+      "dragText": "クリックまたはドラッグしてJSONファイルをアップロード",
+      "hint": "型定義のJSON形式ファイルを選択してください"
+    },
+    "conflict": {
+      "typeIdExists": "以下のタイプIDは既に存在します",
+      "uploadingDefinition": "アップロードしようとしている型定義:"
+    },
+    "jsonEdit": {
+      "canEditDirectly": "型定義をJSON形式で直接編集できます",
+      "idChangeWarning": "IDを変更すると競合確認が表示されます"
+    },
+    "editConflict": {
+      "typeIdChanged": "タイプIDが変更されています",
+      "willSaveAsExisting": "IDを変更すると既存のタイプとして保存されます",
+      "before": "変更前",
+      "after": "変更後"
+    },
     "messages": {
       "loadError": "タイプの読み込みに失敗しました",
       "createSuccess": "タイプを作成しました",
@@ -85,11 +220,20 @@
       "deleteError": "タイプの削除に失敗しました",
       "cannotDelete": "タイプを削除できません",
       "hasSubtypes": "このタイプにはサブタイプがあります",
+      "deleteSubtypesFirst": "先にサブタイプを削除してください",
+      "referencedByRelationship": "このタイプはリレーションシップタイプで参照されています",
+      "updateRelationshipsFirst": "先にリレーションシップタイプを更新してください",
       "hasRelationships": "このタイプはリレーションシップで参照されています",
       "fileRequired": "ファイルを選択してください",
+      "selectFile": "ファイルを選択してください",
       "parseError": "ファイルの解析に失敗しました",
       "readError": "ファイルの読み込みに失敗しました",
-      "definitionUpdated": "型定義を更新しました"
+      "definitionUpdated": "型定義を更新しました",
+      "importSuccess": "型定義をインポートしました",
+      "createTypeError": "タイプの作成に失敗しました",
+      "jsonParseError": "JSONの解析に失敗しました",
+      "updateTypeSuccess": "型定義を更新しました",
+      "updateTypeError": "型定義の更新に失敗しました"
     },
     "validation": {
       "typeIdRequired": "タイプIDは必須です",
@@ -300,7 +444,344 @@
     "noPreview": "プレビューを表示できません",
     "loadError": "ファイルの読み込みに必要な情報が不足しています",
     "renditionError": "レンディションの取得に失敗しました",
-    "renditionInfoMissing": "レンディション取得に必要な情報が不足しています"
+    "renditionInfoMissing": "レンディション取得に必要な情報が不足しています",
+    "noContent": "ファイルにコンテンツがありません",
+    "unsupportedType": "{{mimeType}} はサポートされていません",
+    "previewError": "プレビューエラー",
+    "previewErrorDesc": "プレビューの表示中にエラーが発生しました",
+    "cannotPreview": "プレビューできません",
+    "image": {
+      "loading": "画像を取得しています...",
+      "loadError": "画像の取得に失敗しました: {{error}}"
+    },
+    "video": {
+      "loading": "動画を取得しています...",
+      "loadError": "動画の取得に失敗しました: {{error}}"
+    },
+    "text": {
+      "loadError": "ファイルの読み込みに失敗しました"
+    },
+    "pdf": {
+      "loading": "PDFを取得しています...",
+      "loadError": "PDFの取得に失敗しました: {{error}}",
+      "readError": "PDF読み込みに失敗しました: {{error}}",
+      "pageLoading": "ページ読み込み中...",
+      "pageInfo": "{{current}} / {{total}}",
+      "zoomIn": "拡大",
+      "zoomOut": "縮小"
+    },
+    "office": {
+      "loading": "プレビューを読み込み中...",
+      "generating": "PDFレンディションを生成中...",
+      "generatingMessage": "PDFレンディションを生成中...",
+      "generationComplete": "PDFレンディションの生成が完了しました",
+      "generationTimeout": "PDFレンディションの生成に時間がかかっています。しばらく待ってから再試行してください。",
+      "generationError": "PDFレンディションの生成に失敗しました: {{error}}",
+      "contentError": "PDFコンテンツの取得に失敗しました",
+      "streamIdNotFound": "PDFレンディションのストリームIDが見つかりません",
+      "previewFailed": "プレビューの生成に失敗しました。再試行するか、ダウンロードしてローカルアプリケーションでご確認ください。",
+      "notSupported": "オフィス文書のプレビューは現在サポートされていません。ダウンロードしてローカルアプリケーションでご確認ください。",
+      "types": {
+        "word": "Word文書",
+        "excel": "Excel文書",
+        "powerpoint": "PowerPoint文書",
+        "openDocumentText": "OpenDocument テキスト",
+        "openDocumentSpreadsheet": "OpenDocument スプレッドシート",
+        "openDocumentPresentation": "OpenDocument プレゼンテーション",
+        "rtf": "RTF文書",
+        "wordLegacy": "Word文書 (旧形式)",
+        "excelLegacy": "Excel文書 (旧形式)",
+        "powerpointLegacy": "PowerPoint文書 (旧形式)",
+        "default": "オフィス文書"
+      }
+    }
+  },
+  "login": {
+    "title": "ログイン",
+    "repository": "リポジトリ",
+    "username": "ユーザー名",
+    "password": "パスワード",
+    "loginButton": "ログイン",
+    "or": "または",
+    "oidcLogin": "OIDC認証でログイン",
+    "samlLogin": "SAML認証でログイン",
+    "selectRepository": "リポジトリを選択",
+    "messages": {
+      "loginFailed": "ログインに失敗しました。ユーザー名、パスワード、リポジトリIDを確認してください。",
+      "oidcFailed": "OIDC認証に失敗しました: {{error}}",
+      "oidcFailedPrivacy": "OIDC認証に失敗しました: {{error}}\n\n【重要】プライバシーモード（シークレットウィンドウ）では認証状態が保存されないため、OIDC認証が失敗する場合があります。通常モードでお試しください。",
+      "samlFailed": "SAML認証に失敗しました: {{error}}",
+      "samlResponseNotFound": "SAML認証レスポンスが見つかりません。",
+      "samlProcessFailed": "SAML認証の処理に失敗しました: {{error}}"
+    },
+    "validation": {
+      "repositoryRequired": "リポジトリを選択してください",
+      "usernameRequired": "ユーザー名を入力してください",
+      "passwordRequired": "パスワードを入力してください"
+    }
+  },
+  "auth": {
+    "checkingStatus": "認証状態を確認中...",
+    "errorOccurred": "エラーが発生しました",
+    "pageLoadError": "ページの読み込み中にエラーが発生しました"
+  },
+  "search": {
+    "title": "検索",
+    "resultsTitle": "検索結果 ({{count}}件)",
+    "fullTextSearch": "全文検索",
+    "searchPlaceholder": "検索キーワードを入力",
+    "excludeMetadata": "標準メタデータを検索対象から外す（ファイル名・説明などを除く）",
+    "baseType": "ベースタイプ",
+    "selectBaseType": "ベースタイプを選択",
+    "objectType": "オブジェクトタイプ",
+    "selectObjectType": "オブジェクトタイプを選択",
+    "secondaryType": "セカンダリタイプ",
+    "selectSecondaryType": "セカンダリタイプを選択",
+    "name": "名前",
+    "namePlaceholder": "名前で検索",
+    "createdBy": "作成者",
+    "createdByPlaceholder": "作成者で検索",
+    "createdFrom": "作成日（開始）",
+    "createdTo": "作成日（終了）",
+    "customProperties": "カスタムプロパティで検索",
+    "secondaryTypeProperties": "セカンダリタイプのプロパティで検索",
+    "executedQuery": "実行したCMISクエリ:",
+    "baseTypes": {
+      "document": "ドキュメント",
+      "folder": "フォルダ",
+      "relationship": "関連"
+    },
+    "columns": {
+      "type": "タイプ",
+      "name": "名前",
+      "path": "パス",
+      "sourceId": "ソースID",
+      "targetId": "ターゲットID",
+      "objectType": "オブジェクトタイプ",
+      "secondaryTypes": "セカンダリタイプ",
+      "size": "サイズ",
+      "createdAt": "作成日時",
+      "createdBy": "作成者",
+      "actions": "アクション"
+    },
+    "tooltips": {
+      "viewDetails": "詳細表示",
+      "download": "ダウンロード"
+    },
+    "messages": {
+      "searchFailed": "検索に失敗しました"
+    }
+  },
+  "documentList": {
+    "title": "ドキュメント一覧",
+    "folderCreate": "フォルダ作成",
+    "fileUpload": "ファイルアップロード",
+    "uploadTitle": "ファイルアップロード",
+    "uploadingTitle": "ファイルアップロード中...",
+    "folderCreateTitle": "フォルダ作成",
+    "documentSearch": "ドキュメント検索",
+    "goUp": "上へ",
+    "goUpTooltip": "親フォルダへ",
+    "columns": {
+      "type": "タイプ",
+      "name": "名前",
+      "objectType": "オブジェクトタイプ",
+      "path": "パス",
+      "createdBy": "作成者",
+      "createdAt": "作成日時",
+      "size": "サイズ",
+      "lastModifiedAt": "更新日時",
+      "lastModifiedBy": "更新者",
+      "actions": "アクション"
+    },
+    "tooltips": {
+      "viewDetails": "詳細表示",
+      "rename": "名前変更",
+      "download": "ダウンロード",
+      "checkout": "チェックアウト",
+      "checkin": "チェックイン",
+      "cancelCheckout": "チェックアウトキャンセル",
+      "versionHistory": "バージョン履歴",
+      "permissionManagement": "権限管理",
+      "delete": "削除"
+    },
+    "uploadForm": {
+      "file": "ファイル",
+      "fileName": "ファイル名",
+      "type": "タイプ",
+      "selectDocumentType": "ドキュメントタイプを選択",
+      "selectFolderType": "フォルダタイプを選択",
+      "customProperties": "カスタムプロパティ",
+      "dragDropText": "ファイルをドラッグ&ドロップまたはクリックして選択"
+    },
+    "folderForm": {
+      "folderName": "フォルダ名"
+    },
+    "deleteConfirm": {
+      "title": "削除の確認",
+      "deleteButton": "削除する",
+      "checkingRelated": "関連オブジェクトを確認中...",
+      "confirmMessage": "「{{name}}」を削除しますか？",
+      "cascadeWarning": "このオブジェクトには親子関係（nemaki:parentChildRelationship）で紐づいた{{count}}件の子オブジェクトがあります。",
+      "cascadeNote": "削除すると、これらの子オブジェクトもすべて削除されます。"
+    },
+    "renameModal": {
+      "title": "「{{name}}」の名前を変更",
+      "newName": "新しい名前",
+      "changeButton": "変更"
+    },
+    "versionHistoryModal": {
+      "title": "バージョン履歴",
+      "version": "バージョン",
+      "updatedAt": "更新日時",
+      "updatedBy": "更新者",
+      "comment": "コメント"
+    },
+    "checkinModal": {
+      "title": "チェックイン",
+      "fileOptional": "ファイル (オプション - 新しいコンテンツで更新する場合)",
+      "dragDropText": "ファイルをドラッグ&ドロップまたはクリックして選択",
+      "fileHint": "チェックイン時にコンテンツを更新する場合のみファイルを選択してください",
+      "versionType": "バージョンタイプ",
+      "minorVersion": "マイナーバージョン (例: 1.1 → 1.2)",
+      "majorVersion": "メジャーバージョン (例: 1.1 → 2.0)",
+      "checkinComment": "チェックインコメント",
+      "commentPlaceholder": "変更内容のコメントを入力してください"
+    },
+    "validation": {
+      "fileRequired": "ファイルを選択してください",
+      "fileNameRequired": "ファイル名を入力してください",
+      "folderNameRequired": "フォルダ名を入力してください",
+      "nameRequired": "名前を入力してください",
+      "nameMinLength": "名前を入力してください",
+      "nameMaxLength": "名前は255文字以内で入力してください",
+      "versionTypeRequired": "バージョンタイプを選択してください"
+    },
+    "messages": {
+      "fileNotSelected": "ファイルが選択されていません",
+      "folderNotSelected": "アップロード先フォルダが選択されていません"
+    },
+    "baseTypes": {
+      "document": "ドキュメント",
+      "folder": "フォルダ"
+    }
+  },
+  "secondaryTypes": {
+    "title": "セカンダリタイプ",
+    "additionalProperties": "追加プロパティ",
+    "loading": "セカンダリタイプを読み込み中...",
+    "noAssigned": "セカンダリタイプが割り当てられていません",
+    "allAssigned": "すべてのセカンダリタイプが割り当て済みです",
+    "noAvailable": "利用可能なセカンダリタイプがありません",
+    "selectPlaceholder": "追加するセカンダリタイプを選択...",
+    "tooltip": "セカンダリタイプを追加すると、オブジェクトに追加のプロパティを設定できます",
+    "confirmDelete": {
+      "title": "セカンダリタイプを削除しますか？",
+      "content": "{{typeId}} を削除すると、このタイプに関連するプロパティ値が失われる可能性があります。",
+      "propertyCount": "このタイプには {{count}} 個のプロパティ定義が含まれています。",
+      "irreversible": "この操作は元に戻せません。続行しますか？"
+    },
+    "messages": {
+      "loadError": "セカンダリタイプの読み込みに失敗しました",
+      "addSuccess": "セカンダリタイプ「{{typeId}}」を追加しました",
+      "addError": "セカンダリタイプの追加に失敗しました",
+      "removeSuccess": "セカンダリタイプ「{{typeId}}」を削除しました",
+      "removeError": "セカンダリタイプの削除に失敗しました"
+    }
+  },
+  "typeMigration": {
+    "title": "オブジェクトタイプの変更",
+    "loading": "互換タイプを読み込み中...",
+    "objectName": "オブジェクト名",
+    "currentType": "現在のタイプ",
+    "baseType": "ベースタイプ",
+    "newType": "新しいタイプを選択:",
+    "selectTypePlaceholder": "タイプを選択してください",
+    "changeTypeButton": "タイプを変更",
+    "noCompatibleTypes": {
+      "title": "互換タイプなし",
+      "description": "このオブジェクトに変更可能な互換タイプがありません。同じベースタイプ（ドキュメント/フォルダ）を持つカスタムタイプを定義してください。"
+    },
+    "additionalProperties": {
+      "title": "追加の必須プロパティ",
+      "description": "新しいタイプには以下の必須プロパティがあります。値を入力してください."
+    },
+    "cmisWarning": {
+      "title": "注意: CMIS標準外の操作",
+      "description": "オブジェクトタイプの変更はCMIS 1.1標準では定義されていません。この機能はNemakiWare固有の拡張です。"
+    },
+    "placeholders": {
+      "multiValue": "複数の値はカンマで区切って入力",
+      "integer": "整数値を入力",
+      "decimal": "小数値を入力",
+      "datetime": "日時を選択",
+      "html": "HTMLを入力",
+      "uri": "URIを入力 (例: https://example.com)",
+      "default": "値を入力"
+    },
+    "messages": {
+      "loadError": "互換タイプの取得に失敗しました: {{error}}",
+      "changeError": "タイプの変更に失敗しました: {{error}}"
+    }
+  },
+  "objectPicker": {
+    "title": "オブジェクトを選択",
+    "tabs": {
+      "tree": "ツリーから選択",
+      "search": "検索"
+    },
+    "columns": {
+      "name": "名前",
+      "type": "タイプ",
+      "updatedAt": "更新日時"
+    },
+    "noObjects": "オブジェクトがありません",
+    "searchPlaceholder": "検索キーワードを入力",
+    "noSearchResults": "検索結果がありません",
+    "enterSearchKeyword": "検索キーワードを入力してください",
+    "selectButton": "選択",
+    "selectedObject": "選択中:",
+    "messages": {
+      "rootLoadError": "ルートフォルダの読み込みに失敗しました",
+      "folderLoadError": "フォルダの読み込みに失敗しました",
+      "contentsLoadError": "フォルダ内容の取得に失敗しました",
+      "searchKeywordRequired": "検索キーワードを入力してください",
+      "searchError": "検索に失敗しました"
+    }
+  },
+  "archiveManagement": {
+    "title": "アーカイブ管理",
+    "columns": {
+      "type": "タイプ",
+      "name": "名前",
+      "originalPath": "オリジナルパス",
+      "archivedAt": "アーカイブ日時",
+      "size": "サイズ",
+      "actions": "アクション"
+    },
+    "tooltips": {
+      "viewDetails": "詳細表示",
+      "download": "ダウンロード",
+      "restore": "復元"
+    },
+    "confirmRestore": "このオブジェクトを復元しますか？",
+    "messages": {
+      "loadError": "アーカイブの読み込みに失敗しました",
+      "restoreSuccess": "オブジェクトを復元しました",
+      "restoreError": "復元に失敗しました"
+    }
+  },
+  "actions": {
+    "title": "アクション",
+    "loading": "読み込み中...",
+    "execute": "実行",
+    "messages": {
+      "loadError": "アクションの読み込みに失敗しました",
+      "formLoadError": "フォームの読み込みに失敗しました",
+      "executeSuccess": "アクションが正常に実行されました",
+      "executeFailed": "アクションの実行に失敗しました",
+      "executeError": "アクションの実行中にエラーが発生しました"
+    }
   },
   "language": {
     "title": "言語",

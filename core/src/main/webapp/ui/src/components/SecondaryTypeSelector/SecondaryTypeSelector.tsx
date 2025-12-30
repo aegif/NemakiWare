@@ -17,6 +17,7 @@
 import React, { useState, useEffect } from 'react';
 import { Select, Tag, Space, Modal, message, Spin, Typography, Tooltip, Button } from 'antd';
 import { ExclamationCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { TypeDefinition, CMISObject } from '../../types/cmis';
 import { useAuth } from '../../contexts/AuthContext';
@@ -37,6 +38,7 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
   onUpdate,
   readOnly = false
 }) => {
+  const { t } = useTranslation();
   const { handleAuthError } = useAuth();
   const cmisService = new CMISService(handleAuthError);
 
@@ -61,7 +63,7 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
       setAvailableTypes(types);
     } catch (error) {
       console.error('Failed to load secondary types:', error);
-      message.error('セカンダリタイプの読み込みに失敗しました');
+      message.error(t('secondaryTypes.messages.loadError'));
     } finally {
       setLoading(false);
     }
@@ -81,12 +83,12 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
         [],
         changeToken
       );
-      message.success(`セカンダリタイプ「${selectedTypeId}」を追加しました`);
+      message.success(t('secondaryTypes.messages.addSuccess', { typeId: selectedTypeId }));
       setSelectedTypeId(undefined); // Clear selection after successful add
       onUpdate?.(updated);
     } catch (error) {
       console.error('Failed to add secondary type:', error);
-      message.error('セカンダリタイプの追加に失敗しました');
+      message.error(t('secondaryTypes.messages.addError'));
     } finally {
       setUpdating(false);
     }
@@ -100,24 +102,24 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
       : 0;
 
     Modal.confirm({
-      title: 'セカンダリタイプを削除しますか？',
+      title: t('secondaryTypes.confirmDelete.title'),
       icon: <ExclamationCircleOutlined />,
       content: (
         <div>
           <p>
-            <strong>{typeId}</strong> を削除すると、このタイプに関連するプロパティ値が失われる可能性があります。
+            {t('secondaryTypes.confirmDelete.content', { typeId })}
           </p>
           {propertyCount > 0 && (
             <p style={{ color: '#ff4d4f' }}>
-              このタイプには {propertyCount} 個のプロパティ定義が含まれています。
+              {t('secondaryTypes.confirmDelete.propertyCount', { count: propertyCount })}
             </p>
           )}
-          <p>この操作は元に戻せません。続行しますか？</p>
+          <p>{t('secondaryTypes.confirmDelete.irreversible')}</p>
         </div>
       ),
-      okText: '削除',
+      okText: t('common.delete'),
       okButtonProps: { danger: true },
-      cancelText: 'キャンセル',
+      cancelText: t('common.cancel'),
       onOk: async () => {
         setUpdating(true);
         try {
@@ -130,11 +132,11 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
             [typeId],
             changeToken
           );
-          message.success(`セカンダリタイプ「${typeId}」を削除しました`);
+          message.success(t('secondaryTypes.messages.removeSuccess', { typeId }));
           onUpdate?.(updated);
         } catch (error) {
           console.error('Failed to remove secondary type:', error);
-          message.error('セカンダリタイプの削除に失敗しました');
+          message.error(t('secondaryTypes.messages.removeError'));
         } finally {
           setUpdating(false);
         }
@@ -151,7 +153,7 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
     return (
       <div style={{ padding: '16px', textAlign: 'center' }}>
         <Spin size="small" />
-        <Text type="secondary" style={{ marginLeft: 8 }}>セカンダリタイプを読み込み中...</Text>
+        <Text type="secondary" style={{ marginLeft: 8 }}>{t('secondaryTypes.loading')}</Text>
       </div>
     );
   }
@@ -159,10 +161,10 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
   return (
     <div style={{ marginBottom: 16, padding: '12px', backgroundColor: '#fafafa', borderRadius: '4px' }}>
       <div style={{ marginBottom: 8 }}>
-        <Text strong>セカンダリタイプ</Text>
-        <Tooltip title="セカンダリタイプを追加すると、オブジェクトに追加のプロパティを設定できます">
+        <Text strong>{t('secondaryTypes.title')}</Text>
+        <Tooltip title={t('secondaryTypes.tooltip')}>
           <Text type="secondary" style={{ marginLeft: 8, fontSize: '12px' }}>
-            (追加プロパティ)
+            ({t('secondaryTypes.additionalProperties')})
           </Text>
         </Tooltip>
       </div>
@@ -170,7 +172,7 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
       {/* Currently assigned secondary types */}
       <div style={{ marginBottom: 12 }}>
         {currentSecondaryTypeIds.length === 0 ? (
-          <Text type="secondary">セカンダリタイプが割り当てられていません</Text>
+          <Text type="secondary">{t('secondaryTypes.noAssigned')}</Text>
         ) : (
           <Space wrap>
             {currentSecondaryTypeIds.map(typeId => {
@@ -198,7 +200,7 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
         <Space.Compact style={{ width: '100%', maxWidth: 500 }}>
           <Select
             style={{ flex: 1 }}
-            placeholder="追加するセカンダリタイプを選択..."
+            placeholder={t('secondaryTypes.selectPlaceholder')}
             loading={updating}
             disabled={updating}
             showSearch
@@ -226,17 +228,17 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
             loading={updating}
             disabled={!selectedTypeId || updating}
           >
-            追加
+            {t('common.add')}
           </Button>
         </Space.Compact>
       )}
 
       {!readOnly && availableOptions.length === 0 && availableTypes.length > 0 && (
-        <Text type="secondary">すべてのセカンダリタイプが割り当て済みです</Text>
+        <Text type="secondary">{t('secondaryTypes.allAssigned')}</Text>
       )}
 
       {availableTypes.length === 0 && (
-        <Text type="secondary">利用可能なセカンダリタイプがありません</Text>
+        <Text type="secondary">{t('secondaryTypes.noAvailable')}</Text>
       )}
     </div>
   );
