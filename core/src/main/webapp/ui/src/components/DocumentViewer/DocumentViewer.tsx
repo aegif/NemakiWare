@@ -1093,7 +1093,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               {object.lastModificationDate ? new Date(object.lastModificationDate).toLocaleString('ja-JP') : '-'}
             </Descriptions.Item>
             <Descriptions.Item label={t('documentViewer.size')}>
-              {object.contentStreamLength
+              {object.contentStreamLength != null && object.contentStreamLength >= 0
                 ? (object.contentStreamLength < 1024
                     ? `${object.contentStreamLength} B`
                     : `${Math.round(object.contentStreamLength / 1024)} KB`)
