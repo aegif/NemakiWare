@@ -284,21 +284,50 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Only changes when clicking an already-selected folder (second click)
   // CRITICAL FIX (2025-12-29): Initialize from sessionStorage to preserve across page navigation
   // This allows returning from DocumentViewer to the same tree pivot point
+  // CRITICAL FIX (2025-12-30): Also check URL for currentFolderId as backup
   const [currentFolderId, setCurrentFolderId] = useState<string>(() => {
+    // Priority: 1. URL currentFolderId param (explicit), 2. sessionStorage (persisted), 3. empty
+    const urlParams = new URLSearchParams(window.location.search);
+    const fromUrl = urlParams.get('currentFolderId');
+    if (fromUrl) {
+      console.log('[DocumentList] Initial currentFolderId from URL:', fromUrl);
+      return fromUrl;
+    }
     const saved = sessionStorage.getItem(`nemakiware_currentFolderId_${repositoryId}`);
     console.log('[DocumentList] Initial currentFolderId from sessionStorage:', saved);
     return saved || '';
   });
+  // Track if currentFolderId has been explicitly set by user action (not just defaulted to ROOT)
+  const [currentFolderIdIsUserSet, setCurrentFolderIdIsUserSet] = useState<boolean>(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const fromUrl = urlParams.get('currentFolderId');
+    const saved = sessionStorage.getItem(`nemakiware_currentFolderId_${repositoryId}`);
+    return !!(fromUrl || saved);
+  });
   const [currentFolderPath, setCurrentFolderPath] = useState<string>('/');
 
   // CRITICAL FIX (2025-12-29): Persist currentFolderId to sessionStorage when it changes
-  // This allows preserving the tree pivot point across page navigations (e.g., returning from DocumentViewer)
+  // CRITICAL FIX (2025-12-30): Only persist if it's a user-set value (not auto-defaulted to ROOT)
+  // This prevents overwriting the saved value with ROOT during initialization
   useEffect(() => {
-    if (currentFolderId) {
+    if (currentFolderId && repositoryId && currentFolderIdIsUserSet) {
       console.log('[DocumentList] Saving currentFolderId to sessionStorage:', currentFolderId);
       sessionStorage.setItem(`nemakiware_currentFolderId_${repositoryId}`, currentFolderId);
     }
-  }, [currentFolderId, repositoryId]);
+  }, [currentFolderId, repositoryId, currentFolderIdIsUserSet]);
+
+  // CRITICAL FIX (2025-12-30): Rehydrate currentFolderId when repositoryId changes
+  // This handles the case where repositoryId was not available during initial render
+  useEffect(() => {
+    if (repositoryId && !currentFolderId) {
+      const saved = sessionStorage.getItem(`nemakiware_currentFolderId_${repositoryId}`);
+      if (saved) {
+        console.log('[DocumentList] Rehydrating currentFolderId from sessionStorage:', saved);
+        setCurrentFolderId(saved);
+        setCurrentFolderIdIsUserSet(true);
+      }
+    }
+  }, [repositoryId]);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [folderModalVisible, setFolderModalVisible] = useState(false);
   const [checkInModalVisible, setCheckInModalVisible] = useState(false);
@@ -479,6 +508,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // This changes the tree pivot point and redraws the tree around the clicked folder
   const handleCurrentFolderChange = (folderId: string) => {
     setCurrentFolderId(folderId);
+    // CRITICAL FIX (2025-12-30): Mark as user-set so it gets persisted to sessionStorage
+    setCurrentFolderIdIsUserSet(true);
     // Also update selected folder to keep them in sync after tree redraw
     setSelectedFolderId(folderId);
     setSearchParams({ folderId });
@@ -848,7 +879,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   // When user clicks back from document detail, they should return to selectedFolderId
                   // FALLBACK: If selectedFolderId is empty (race condition), use URL param or ROOT_FOLDER_ID
                   const effectiveFolderId = selectedFolderId || searchParams.get('folderId') || ROOT_FOLDER_ID;
-                  const folderParam = `?folderId=${effectiveFolderId}`;
+                  // CRITICAL FIX (2025-12-30): Also pass currentFolderId in URL as backup for sessionStorage
+                  // This ensures the tree pivot point is preserved even if sessionStorage fails
+                  const effectiveCurrentFolderId = currentFolderId || ROOT_FOLDER_ID;
+                  const folderParam = `?folderId=${effectiveFolderId}&currentFolderId=${effectiveCurrentFolderId}`;
                   const targetUrl = `/documents/${record.id}${folderParam}`;
                   navigate(targetUrl);
                 }

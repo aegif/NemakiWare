@@ -991,14 +991,19 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                   // CRITICAL FIX (2025-12-23): Use URL folderId as primary source for back navigation
                   // NemakiWare's CMIS implementation does NOT return cmis:parentId property
                   // Priority: 1. URL folderId param (passed from DocumentList), 2. ROOT_FOLDER_ID
-                  const urlFolderId = currentFolderId;
+                  const urlFolderId = searchParams.get('folderId');
+                  // CRITICAL FIX (2025-12-30): Also get currentFolderId from URL for tree pivot restoration
+                  const urlCurrentFolderId = searchParams.get('currentFolderId');
 
                   console.log('[DocumentViewer] Back button clicked');
                   console.log('[DocumentViewer] URL folderId:', urlFolderId);
+                  console.log('[DocumentViewer] URL currentFolderId:', urlCurrentFolderId);
 
                   // Use URL folderId which was passed when navigating to this document
                   const effectiveFolderId = urlFolderId || 'e02f784f8360a02cc14d1314c10038ff';
-                  const targetUrl = `/documents?folderId=${effectiveFolderId}`;
+                  // CRITICAL FIX (2025-12-30): Pass currentFolderId back to DocumentList for tree pivot restoration
+                  const effectiveCurrentFolderId = urlCurrentFolderId || effectiveFolderId;
+                  const targetUrl = `/documents?folderId=${effectiveFolderId}&currentFolderId=${effectiveCurrentFolderId}`;
                   console.log('[DocumentViewer] Navigating to:', targetUrl);
                   navigate(targetUrl);
                 }}
