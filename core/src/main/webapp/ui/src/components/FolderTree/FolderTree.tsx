@@ -41,6 +41,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Tree, Spin, message } from 'antd';
 import type { TreeDataNode, TreeProps } from 'antd';
 import { FolderOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { CMISObject } from '../../types/cmis';
 import { useAuth } from '../../contexts/AuthContext';
@@ -73,6 +74,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   selectedFolderId: externalSelectedFolderId,
   currentFolderId: externalCurrentFolderId
 }) => {
+  const { t } = useTranslation();
   // State
   const [treeData, setTreeData] = useState<TreeDataNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -172,7 +174,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
       }
     } catch (error) {
       console.error('Failed to load root folder:', error);
-      message.error('ルートフォルダの読み込みに失敗しました');
+      message.error(t('folderTree.loadRootFolderError'));
     } finally {
       setLoading(false);
     }
@@ -210,7 +212,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
 
     } catch (error) {
       console.error('Failed to load tree from folder:', error);
-      message.error('フォルダツリーの読み込みに失敗しました');
+      message.error(t('folderTree.loadTreeError'));
     } finally {
       setLoading(false);
     }
@@ -441,7 +443,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   return (
     <div style={{ background: '#fafafa', padding: '8px', borderRadius: '4px' }}>
       <div style={{ marginBottom: '8px', fontSize: '12px', color: '#666' }}>
-        クリック: フォルダを選択 | 選択中のフォルダをクリック: カレントに設定
+        {t('folderTree.clickToSelect')} | {t('folderTree.clickSelectedToCurrent')}
       </div>
       <Tree
         treeData={treeData}
@@ -495,7 +497,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
           marginRight: '4px',
           backgroundColor: '#f0f0f0'
         }} />
-        カレントフォルダ
+        {t('folderTree.currentFolder')}
         <span style={{
           display: 'inline-block',
           width: '12px',
@@ -506,7 +508,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
           marginRight: '4px',
           backgroundColor: '#e6f7ff'
         }} />
-        選択中
+        {t('folderTree.selected')}
       </div>
     </div>
   );

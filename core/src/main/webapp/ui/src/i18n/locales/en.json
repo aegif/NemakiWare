@@ -904,5 +904,13 @@
     "title": "Language",
     "japanese": "Japanese",
     "english": "English"
+  },
+  "folderTree": {
+    "clickToSelect": "Click: Select folder",
+    "clickSelectedToCurrent": "Click selected folder: Set as current",
+    "currentFolder": "Current folder",
+    "selected": "Selected",
+    "loadRootFolderError": "Failed to load root folder",
+    "loadTreeError": "Failed to load folder tree"
   }
 }

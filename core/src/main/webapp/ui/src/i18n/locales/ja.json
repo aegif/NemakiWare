@@ -904,5 +904,13 @@
     "title": "言語",
     "japanese": "日本語",
     "english": "English"
+  },
+  "folderTree": {
+    "clickToSelect": "クリック: フォルダを選択",
+    "clickSelectedToCurrent": "選択中のフォルダをクリック: カレントに設定",
+    "currentFolder": "カレントフォルダ",
+    "selected": "選択中",
+    "loadRootFolderError": "ルートフォルダの読み込みに失敗しました",
+    "loadTreeError": "フォルダツリーの読み込みに失敗しました"
   }
 }
