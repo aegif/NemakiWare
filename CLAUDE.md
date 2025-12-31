@@ -60,11 +60,19 @@ mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 ```
 
 ### Dockerデプロイ
+
+⚠️ **重要**: `docker compose restart` は使用禁止！WARはイメージビルド時にコピーされるため、`restart` では古いWARのまま動作します。必ず `--build --force-recreate` を使用してください。
+
 ```bash
 cp core/target/core.war docker/core/core.war
 cd docker
+# 全コンテナ再構築（初回・完全リセット時）
 docker compose -f docker-compose-simple.yml down
 docker compose -f docker-compose-simple.yml up -d --build --force-recreate
+
+# coreのみ再構築（通常のデプロイ時）
+docker compose -f docker-compose-simple.yml up -d --build --force-recreate core
+
 sleep 90  # 起動待機
 ```
 
