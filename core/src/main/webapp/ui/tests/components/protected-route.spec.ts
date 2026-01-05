@@ -374,12 +374,12 @@ test.describe('ProtectedRoute Component - Authentication Wrapper', () => {
 
       // Navigate to different protected routes
       const routes = [
-        { name: 'ドキュメント', selector: '.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i })' },
-        { name: '管理', selector: '.ant-menu-submenu').filter({ hasText: /管理|Admin/i })' },
+        { name: 'ドキュメント', baseSelector: '.ant-menu-item', pattern: /ドキュメント|Documents/i },
+        { name: '管理', baseSelector: '.ant-menu-submenu', pattern: /管理|Admin/i },
       ];
 
       for (const route of routes) {
-        const menuItem = page.locator(route.selector);
+        const menuItem = page.locator(route.baseSelector).filter({ hasText: route.pattern });
 
         if (await menuItem.count() > 0) {
           console.log(`Navigating to: ${route.name}`);

@@ -64,7 +64,7 @@ test.describe('Admin Route Protection', () => {
       await expect(adminMenu).not.toBeVisible();
 
       // Verify user can see regular menus
-      const documentsMenu = page.locator('span').filter({ hasText: /ドキュメント|Documents/i })');
+      const documentsMenu = page.locator('span').filter({ hasText: /ドキュメント|Documents/i });
       await expect(documentsMenu).toBeVisible();
 
       const searchMenu = page.locator('span:has-text("検索")');

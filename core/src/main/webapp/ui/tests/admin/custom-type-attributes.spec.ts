@@ -252,7 +252,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       ).first();
       await baseTypeCombobox.click({ timeout: 10000 });
       await page.waitForTimeout(500);
-      const documentOption = page.locator('.ant-select-item-option').filter({ hasText: /ドキュメント|Documents/i })').first();
+      const documentOption = page.locator('.ant-select-item-option').filter({ hasText: /ドキュメント|Documents/i }).first();
       await documentOption.click();
 
       // Switch to properties tab

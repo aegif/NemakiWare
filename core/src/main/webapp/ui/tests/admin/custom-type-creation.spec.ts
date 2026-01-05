@@ -298,7 +298,7 @@ test.describe('Custom Type Creation and Property Management', () => {
         await page.waitForTimeout(500);
 
         // Select cmis:document from dropdown
-        const documentOption = page.locator('.ant-select-item').filter({ hasText: /ドキュメント|Documents/i })');
+        const documentOption = page.locator('.ant-select-item').filter({ hasText: /ドキュメント|Documents/i });
         if (await documentOption.count() > 0) {
           await documentOption.first().click();
           console.log('✅ Selected base type: cmis:document');
