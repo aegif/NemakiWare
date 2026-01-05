@@ -117,11 +117,11 @@
    # ビルド
    mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 
-   # WARコピー（常にこのパス！）
-   cp core/target/core.war /Users/ishiiakinori/NemakiWare/docker/core/core.war
+   # WARコピー
+   cp core/target/core.war docker/core/core.war
 
    # デプロイ（--build --force-recreateが必須！）
-   cd /Users/ishiiakinori/NemakiWare/docker
+   cd docker
    docker compose -f docker-compose-simple.yml up -d --build --force-recreate core
    ```
 
@@ -137,8 +137,8 @@
 
 ### 📁 作業ディレクトリの注意
 
-- **Git Worktree**: `/private/var/folders/.../worktrees/368c-tck/`
-- **メインリポジトリ**: `/Users/ishiiakinori/NemakiWare/`
+- **Git Worktree**: 一時的なworktreeディレクトリ
+- **メインリポジトリ**: プロジェクトルートディレクトリ
 
 **確認方法**:
 ```bash
@@ -150,14 +150,13 @@ git rev-parse --show-toplevel  # Gitルート
 
 **Playwright UIテスト**:
 ```bash
-cd /Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui
+cd core/src/main/webapp/ui
 npx playwright test tests/admin/initial-content-setup.spec.ts
 ```
 
 **TCKテスト**:
 ```bash
-cd /Users/ishiiakinori/NemakiWare
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=/path/to/java-17
 timeout 300s mvn test -Dtest=BasicsTestGroup -f core/pom.xml -Pdevelopment
 ```
 

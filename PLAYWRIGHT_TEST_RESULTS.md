@@ -139,8 +139,8 @@ core/src/main/webapp/ui/
 
 ### **実行コマンド**
 ```bash
-# プロジェクトディレクトリ
-cd /Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui
+# UIディレクトリに移動
+cd core/src/main/webapp/ui
 
 # 全テスト実行
 npm test

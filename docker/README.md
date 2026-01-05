@@ -121,7 +121,7 @@ lsof -i :8080  # Check what's using port
 ```bash
 # Error: Maven build failed
 # Solution: Check Java version and Maven settings
-java -version  # Should be Java 8
+java -version  # Should be Java 17
 mvn -version   # Should be 3.x
 ```
 

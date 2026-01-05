@@ -1,6 +1,6 @@
 # NemakiWare エージェント間連携ガイド
 
-**最終更新**: 2025-12-09
+**最終更新**: 2026-01-05
 **対象**: Claude Code、Devin、Cursor、その他のAIエージェント
 **目的**: エージェント間でスムーズにタスクを委譲できる体制を構築
 
@@ -453,11 +453,11 @@ const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');  // Not 
 - Primary config: `core/nemakiware.properties`, `docker/repositories.yml`.
 - For Java 17, ensure `MAVEN_OPTS` includes required `--add-opens` (see `core/start-jetty-dev.sh`).
 
-## Current Work Status (2025-11-09)
+## Current Work Status (2026-01-05)
 
 ### Active Branch
-- **Branch**: `vk/368c-tck`
-- **Focus**: TCK test complete success - All 39/39 implemented CMIS features passing
+- **Branch**: `release/3.0.0-RC1-QA`
+- **Focus**: QAテストとドキュメント整備
 
 ### TCK Complete Success Achievement (2025-11-09) 🎉
 

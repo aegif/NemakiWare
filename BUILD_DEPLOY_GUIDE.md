@@ -12,8 +12,8 @@ NemakiWareの開発で**最も混乱しやすいビルド・デプロイ・テ�
 
 NemakiWareプロジェクトでは、以下の2つの場所が存在する可能性があります：
 
-1. **メインリポジトリ**: `/Users/ishiiakinori/NemakiWare/`
-2. **Git Worktree**: `/private/var/folders/.../worktrees/368c-tck/`
+1. **メインリポジトリ**: プロジェクトルートディレクトリ (例: `/path/to/NemakiWare/`)
+2. **Git Worktree**: 一時的なworktreeディレクトリ
 
 **⚠️ 重要**: どちらで作業しているか常に確認してください。
 
@@ -35,7 +35,7 @@ git rev-parse --show-toplevel
 
 ```bash
 # Java 17が必須
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=/path/to/java-17
 export PATH=$JAVA_HOME/bin:$PATH
 
 # 確認
@@ -63,13 +63,13 @@ ls -lh core/target/core.war
 
 ```bash
 # WARファイルをDocker用ディレクトリにコピー
-cp core/target/core.war /Users/ishiiakinori/NemakiWare/docker/core/core.war
+cp core/target/core.war docker/core/core.war
 
 # 確認
-ls -lh /Users/ishiiakinori/NemakiWare/docker/core/core.war
+ls -lh docker/core/core.war
 ```
 
-**⚠️ 重要**: コピー先は**常に** `/Users/ishiiakinori/NemakiWare/docker/core/core.war` です。
+**⚠️ 重要**: コピー先は**常に** プロジェクトルートの `docker/core/core.war` です。
 
 ---
 
@@ -79,7 +79,7 @@ ls -lh /Users/ishiiakinori/NemakiWare/docker/core/core.war
 
 ```bash
 # Dockerディレクトリに移動
-cd /Users/ishiiakinori/NemakiWare/docker
+cd docker
 
 # 完全なリビルドと再作成（重要：--buildと--force-recreateの両方が必要）
 docker compose -f docker-compose-simple.yml up -d --build --force-recreate core
@@ -119,7 +119,7 @@ curl -u admin:admin http://localhost:8080/core/atom/bedroom
 
 ```bash
 # UIテストディレクトリに移動
-cd /Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui
+cd core/src/main/webapp/ui
 
 # 前提：npm依存関係がインストール済み
 npm install  # 初回のみ
@@ -144,11 +144,10 @@ Running 486 tests using 6 workers
 ### TCK コンプライアンステスト
 
 ```bash
-# プロジェクトルートに移動
-cd /Users/ishiiakinori/NemakiWare
+# プロジェクトルートで実行
 
 # Java 17環境設定
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=/path/to/java-17
 
 # 特定のテストグループを実行
 timeout 300s mvn test -Dtest=BasicsTestGroup -f core/pom.xml -Pdevelopment
@@ -168,9 +167,6 @@ Tests run: X, Failures: 0, Errors: 0, Skipped: 0
 
 ```bash
 # プロジェクトルートで実行
-cd /Users/ishiiakinori/NemakiWare
-
-# 全QAテスト実行
 ./qa-test.sh
 
 # 期待される結果：
@@ -200,10 +196,10 @@ git rev-parse --show-toplevel
 mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 
 # 3. WARファイルをコピー
-cp core/target/core.war /Users/ishiiakinori/NemakiWare/docker/core/core.war
+cp core/target/core.war docker/core/core.war
 
 # 4. 完全なリビルド
-cd /Users/ishiiakinori/NemakiWare/docker
+cd docker
 docker compose -f docker-compose-simple.yml down
 docker compose -f docker-compose-simple.yml up -d --build --force-recreate
 ```
@@ -256,10 +252,10 @@ curl -u admin:admin http://localhost:8080/core/atom/bedroom
 ### フルリビルド・デプロイ（ワンライナー）
 
 ```bash
-# Git worktree内で実行する場合
+# プロジェクトルートで実行
 mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q && \
-cp core/target/core.war /Users/ishiiakinori/NemakiWare/docker/core/core.war && \
-cd /Users/ishiiakinori/NemakiWare/docker && \
+cp core/target/core.war docker/core/core.war && \
+cd docker && \
 docker compose -f docker-compose-simple.yml up -d --build --force-recreate core && \
 sleep 35 && \
 curl -u admin:admin http://localhost:8080/core/atom/bedroom
@@ -298,7 +294,7 @@ docker logs docker-core-1 2>&1 | grep -i error
 
 1. **ビルドとデプロイは別プロセス**
    - ビルド: `mvn clean package`
-   - コピー: `cp core/target/core.war /Users/ishiiakinori/NemakiWare/docker/core/core.war`
+   - コピー: `cp core/target/core.war docker/core/core.war`
    - デプロイ: `docker compose up -d --build --force-recreate`
 
 2. **restartは不十分、rebuildが必要**
@@ -313,7 +309,7 @@ docker logs docker-core-1 2>&1 | grep -i error
 
 | 混乱しやすい点 | 正しい理解 |
 |--------------|----------|
-| WARファイルの場所 | 常に `/Users/ishiiakinori/NemakiWare/docker/core/core.war` にコピー |
+| WARファイルの場所 | 常に `docker/core/core.war` にコピー |
 | Dockerイメージの更新 | `restart`では更新されない、`--build`が必要 |
 | テストの実行タイミング | コンテナ起動後35秒待つ |
 | Java環境 | 必ずJava 17を使用（`java -version`で確認） |
