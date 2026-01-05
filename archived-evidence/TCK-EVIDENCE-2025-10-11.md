@@ -20,10 +20,10 @@
 
 ### Archive File
 - **File**: `tck-evidence-2025-10-11.tar.gz` (15KB)
-- **Location**: `/Users/ishiiakinori/NemakiWare/tck-evidence-2025-10-11.tar.gz`
+- **Location**: `/path/to/NemakiWare/tck-evidence-2025-10-11.tar.gz`
 
 ### Directory
-- **Location**: `/Users/ishiiakinori/NemakiWare/tck-evidence-2025-10-11/`
+- **Location**: `/path/to/NemakiWare/tck-evidence-2025-10-11/`
 - **Files**: 26 total (3 docs, 5 git state, 18 test reports)
 
 ### Quick Access

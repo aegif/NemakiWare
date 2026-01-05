@@ -17,7 +17,7 @@ NemakiWareには包括的なCMIS 1.1 TCK実行環境が整備されており、�
 ### 1. Jetty開発サーバーの起動
 
 ```bash
-cd /Users/ishiiakinori/NemakiWare/core
+cd /path/to/NemakiWare/core
 ./start-jetty-dev.sh
 ```
 
@@ -40,7 +40,7 @@ curl -u admin:password http://localhost:5984/
 
 **自動スクリプト使用:**
 ```bash
-cd /Users/ishiiakinori/NemakiWare/core
+cd /path/to/NemakiWare/core
 ./run-tck-comprehensive.sh
 ```
 
@@ -201,7 +201,7 @@ Success Rate: 95%
 
 **対処法:**
 ```bash
-cd /Users/ishiiakinori/NemakiWare/core
+cd /path/to/NemakiWare/core
 ./start-jetty-dev.sh
 ```
 

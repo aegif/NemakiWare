@@ -3,7 +3,7 @@
 # Script to replace javax JARs with Jakarta converted JARs for Jakarta EE deployment
 
 # Allow overriding paths via environment variables
-NEMAKI_HOME="${NEMAKI_HOME:-/Users/ishiiakinori/NemakiWare}"
+NEMAKI_HOME="${NEMAKI_HOME:-${PROJECT_ROOT:-$(pwd)}}"
 CORE_LIB_DIR="${CORE_LIB_DIR:-$NEMAKI_HOME/core/target/core/WEB-INF/lib}"
 JAKARTA_LIB_DIR="${JAKARTA_LIB_DIR:-$NEMAKI_HOME/lib/jakarta-converted}"
 

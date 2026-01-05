@@ -10,7 +10,7 @@ echo "Timestamp: $(date)"
 echo
 
 # Configuration
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=${JAVA_HOME:-/path/to/java-17}
 export PATH=$JAVA_HOME/bin:$PATH
 
 # Track test results
@@ -194,7 +194,7 @@ echo
 echo "Step 5.1: Single TCK Test - Create Document Without Content"
 echo "Testing the specific test that was originally failing..."
 
-cd /Users/ishiiakinori/NemakiWare
+cd ${PROJECT_ROOT:-$(pwd)}
 
 # Test with timeout to prevent hanging
 echo "Running CreateDocumentWithoutContentTest with 60 second timeout..."

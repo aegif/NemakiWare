@@ -85,12 +85,12 @@
 **実行内容**:
 1. **個別機能検証**
    ```bash
-   JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home timeout 60s mvn test -Dtest=BasicsTestGroup -f core/pom.xml -Pdevelopment
+   JAVA_HOME=/path/to/java-17 timeout 60s mvn test -Dtest=BasicsTestGroup -f core/pom.xml -Pdevelopment
    ```
 
 2. **全TCK実行**
    ```bash
-   JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home timeout 300s mvn test -Dtest=AllTest -f core/pom.xml -Pdevelopment
+   JAVA_HOME=/path/to/java-17 timeout 300s mvn test -Dtest=AllTest -f core/pom.xml -Pdevelopment
    ```
 
 3. **成功基準**: 全TCKテストがFAILUREなしで完了
@@ -167,7 +167,7 @@ mvn test -Dtest=AllTest -f core/pom.xml -Pdevelopment
 
 - **CMIS 1.1 Specification**: OASIS Content Management Interoperability Services (CMIS) Version 1.1
 - **OpenCMIS Documentation**: Apache Chemistry OpenCMIS Browser Binding Implementation
-- **NemakiWare Architecture**: `/Users/ishiiakinori/NemakiWare/CLAUDE.md`
+- **NemakiWare Architecture**: `/path/to/NemakiWare/CLAUDE.md`
 
 ---
 **作成日**: 2025-08-25

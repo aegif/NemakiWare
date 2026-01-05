@@ -9,7 +9,7 @@ set -e
 # Change to the project root directory
 cd "$(dirname "$0")"
 
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=${JAVA_HOME:-/path/to/java-17}
 export PATH=$JAVA_HOME/bin:$PATH
 
 TEST_MODE=${1:-"qa"}

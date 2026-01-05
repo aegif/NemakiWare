@@ -10,7 +10,7 @@ echo "Timestamp: $(date)"
 echo
 
 # Set Java environment
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=${JAVA_HOME:-/path/to/java-17}
 export PATH=$JAVA_HOME/bin:$PATH
 
 # Verify Java version

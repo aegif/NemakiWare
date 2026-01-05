@@ -128,7 +128,7 @@ This evidence package documents the achievement of COMPLETE CMIS 1.1 TCK complia
 with ZERO skipped tests...
 
 ## Test Execution Command
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=/path/to/java-17
 mvn test -Dtest=... -f core/pom.xml -Pdevelopment
 ```
 

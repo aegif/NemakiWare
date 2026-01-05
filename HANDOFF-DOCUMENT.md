@@ -1993,7 +1993,7 @@ test.skip('should allow editing nemaki: custom type description', async ({ page,
 **🔴 Docker未起動のため検証保留中**:
 ```bash
 $ docker ps
-Cannot connect to the Docker daemon at unix:///Users/ishiiakinori/.docker/run/docker.sock.
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock.
 Is the docker daemon running?
 ```
 

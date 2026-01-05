@@ -87,7 +87,7 @@ Solr関連:
 
 ```bash
 # プロジェクトルートに移動
-cd /Users/ishiiakinori/NemakiWare
+cd /path/to/NemakiWare
 
 # 検証スクリプト実行
 ./verify-extracting-handler.sh
@@ -109,10 +109,10 @@ cd /Users/ishiiakinori/NemakiWare
 
 #### Step 1: 環境準備
 ```bash
-cd /Users/ishiiakinori/NemakiWare
+cd /path/to/NemakiWare
 
 # Java環境設定
-export JAVA_HOME="/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home"
+export JAVA_HOME="/path/to/java-17"
 export PATH="$JAVA_HOME/bin:$PATH"
 export MAVEN_OPTS="--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED"
 
@@ -229,7 +229,7 @@ kill -9 <PID>
 ```bash
 # 問題: Java 17以外を使用
 # 解決方法:
-export JAVA_HOME="/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home"
+export JAVA_HOME="/path/to/java-17"
 java -version  # 確認
 ```
 

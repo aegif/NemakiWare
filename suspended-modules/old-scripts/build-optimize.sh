@@ -20,7 +20,7 @@ echo
 
 # Java environment verification
 echo -e "${BLUE}1. ENVIRONMENT VERIFICATION${NC}"
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=/path/to/java-17
 export PATH=$JAVA_HOME/bin:$PATH
 
 java_version=$(java -version 2>&1 | grep 'version "17')

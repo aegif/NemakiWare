@@ -106,7 +106,7 @@ mvn test -Dtest=CrudTestGroup -f core/pom.xml -Pdevelopment
 ### Execution Steps
 ```bash
 # 1. Verify branch
-cd /Users/ishiiakinori/NemakiWare
+cd /path/to/NemakiWare
 git checkout feature/react-ui-playwright
 git log --oneline -1  # Should show: b04b7c2d9
 

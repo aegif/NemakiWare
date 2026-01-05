@@ -108,7 +108,7 @@ All 6 tests that were previously marked with `@Ignore` due to "timeout issues" n
 ## Test Execution Command
 
 ```bash
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=/path/to/java-17
 mvn test \
   -Dtest=BasicsTestGroup,ConnectionTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup,InheritedFlagTest,CrudTestGroup1,CrudTestGroup2 \
   -f core/pom.xml \

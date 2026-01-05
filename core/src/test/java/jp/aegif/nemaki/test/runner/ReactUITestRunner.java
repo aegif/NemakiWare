@@ -223,8 +223,8 @@ public class ReactUITestRunner {
         System.out.println("--- React SPA UI静的ファイル存在チェック ---");
         
         String[] staticFiles = {
-            "/Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui/dist/index.html",
-            "/Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui/dist/favicon.ico"
+            "/path/to/NemakiWare/core/src/main/webapp/ui/dist/index.html",
+            "/path/to/NemakiWare/core/src/main/webapp/ui/dist/favicon.ico"
         };
         
         for (String staticFile : staticFiles) {
@@ -250,8 +250,8 @@ public class ReactUITestRunner {
         
         // Core WARファイル内のReact UI統合確認
         String[] integrationPaths = {
-            "/Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui",
-            "/Users/ishiiakinori/NemakiWare/core/target/core.war"
+            "/path/to/NemakiWare/core/src/main/webapp/ui",
+            "/path/to/NemakiWare/core/target/core.war"
         };
         
         for (String integrationPath : integrationPaths) {
@@ -288,7 +288,7 @@ public class ReactUITestRunner {
     private void testWebAssetStructure() {
         System.out.println("--- Webアセット構造チェック ---");
         
-        String uiDistPath = "/Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui/dist";
+        String uiDistPath = "/path/to/NemakiWare/core/src/main/webapp/ui/dist";
         
         long startTime = System.currentTimeMillis();
         

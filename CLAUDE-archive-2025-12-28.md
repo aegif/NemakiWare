@@ -2176,7 +2176,7 @@ cd core && mvn jetty:run -Djetty.port=8081
 **Development Workflow**:
 ```bash
 # Setup development environment
-cd /Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui
+cd /path/to/NemakiWare/core/src/main/webapp/ui
 npm install
 
 # Development server with hot reload (port 5173)
@@ -2211,7 +2211,7 @@ npm run type-check
 ### Java 17 Environment (Mandatory)
 
 ```bash
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=/path/to/java-17
 export PATH=$JAVA_HOME/bin:$PATH
 
 # Verify version
@@ -2841,7 +2841,7 @@ If you need to execute TCK tests manually without the cleanup script:
 
 ```bash
 # WARNING: May fail if test data has accumulated (>500 documents)
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=/path/to/java-17
 timeout 5400s mvn test -Dtest=QueryTestGroup -f core/pom.xml -Pdevelopment
 ```
 
@@ -2972,7 +2972,7 @@ curl -s -u admin:password "http://localhost:5984/bedroom/_design/_repo" | jq '.v
 curl -s -u admin:password "http://localhost:5984/bedroom" | jq '.doc_count'
 
 # 3. If basic types missing, force re-initialization
-cd /Users/ishiiakinori/NemakiWare/docker
+cd /path/to/NemakiWare/docker
 docker compose -f docker-compose-simple.yml restart core
 sleep 60
 
@@ -3064,7 +3064,7 @@ curl -u admin:admin "http://localhost:8080/core/atom/bedroom/children?id=e02f784
 
 ```bash
 # 1. Navigate to UI directory
-cd /Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui
+cd /path/to/NemakiWare/core/src/main/webapp/ui
 
 # 2. Make source code changes in src/ directory
 # Edit TypeScript/React components as needed
@@ -3092,7 +3092,7 @@ docker cp index.html docker-core-1:/path/  # Changes lost on restart
 cd core/src/main/webapp/ui && npm run build
 
 # 2. Rebuild complete WAR file (includes UI)
-cd /Users/ishiiakinori/NemakiWare
+cd /path/to/NemakiWare
 mvn clean package -f core/pom.xml -Pdevelopment
 
 # 3. Deploy new WAR to Docker
@@ -3127,7 +3127,7 @@ For production-like deployment consistency:
 cd core/src/main/webapp/ui && npm run build
 
 # 2. Build core WAR (includes UI)
-cd /Users/ishiiakinori/NemakiWare
+cd /path/to/NemakiWare
 mvn clean package -f core/pom.xml -Pdevelopment
 
 # 3. Deploy to Docker

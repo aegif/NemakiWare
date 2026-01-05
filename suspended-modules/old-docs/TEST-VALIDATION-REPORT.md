@@ -135,7 +135,7 @@ testHttpEndpoint("REST API", "グループ一覧", BASE_URL + "/rest/repo/" + RE
 ```
 
 ### 3. 実行スクリプト更新
-**修正**: `/Users/ishiiakinori/NemakiWare/run-comprehensive-tests.sh`
+**修正**: `/path/to/NemakiWare/run-comprehensive-tests.sh`
 
 ```bash
 ✅ 修正済みテストクラス使用

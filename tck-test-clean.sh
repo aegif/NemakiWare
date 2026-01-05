@@ -106,8 +106,8 @@ echo ""
 # Step 4: Java environment setup
 echo -e "${YELLOW}[Step 4/5] Setting up Java environment...${NC}"
 # Detect OS and set JAVA_HOME accordingly
-if [ -d "/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home" ]; then
-    export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+if [ -d "${JAVA_HOME:-/path/to/java-17}" ]; then
+    export JAVA_HOME=${JAVA_HOME:-/path/to/java-17}
 elif [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
     export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 else

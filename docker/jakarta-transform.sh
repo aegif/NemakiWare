@@ -48,8 +48,8 @@ transform_jar() {
 }
 
 # Copy JARs to transform
-LIB_DIR="/Users/ishiiakinori/NemakiWare/core/target/core/WEB-INF/lib"
-NEMAKI_DIR="/Users/ishiiakinori/NemakiWare"
+LIB_DIR="${PROJECT_ROOT:-$(pwd)}/core/target/core/WEB-INF/lib"
+NEMAKI_DIR="${PROJECT_ROOT:-$(pwd)}"
 
 echo "Copying OpenCMIS and related JARs for transformation..."
 # Copy all OpenCMIS 1.1.0 JARs
@@ -98,6 +98,6 @@ echo "Transformation completed. Output JARs are in: $OUTPUT_DIR"
 ls -la "$OUTPUT_DIR"
 
 # Copy output JARs to jakarta-converted directory
-JAKARTA_DIR="/Users/ishiiakinori/NemakiWare/lib/jakarta-converted"
+JAKARTA_DIR="${PROJECT_ROOT:-$(pwd)}/lib/jakarta-converted"
 echo "Copying transformed JARs to $JAKARTA_DIR..."
 cp "$OUTPUT_DIR"/*.jar "$JAKARTA_DIR/"

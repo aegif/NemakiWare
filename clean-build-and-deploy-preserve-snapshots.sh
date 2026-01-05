@@ -8,7 +8,7 @@ echo "Timestamp: $(date)"
 echo
 
 # Configuration
-export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export JAVA_HOME=${JAVA_HOME:-/path/to/java-17}
 export PATH=$JAVA_HOME/bin:$PATH
 
 # Step 1: Verify Java 17 environment
