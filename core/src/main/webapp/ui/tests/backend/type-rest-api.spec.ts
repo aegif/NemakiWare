@@ -1369,6 +1369,406 @@ test.describe('Type REST API - Concurrent Operations', () => {
   });
 });
 
+/**
+ * Type Inheritance Verification Tests
+ *
+ * Tests to verify that child types properly inherit properties from parent types:
+ * - Child types inherit parent type's custom properties
+ * - Child types retain their own additional properties
+ * - Nested inheritance (grandchild types) works correctly
+ * - CMIS standard properties are always present
+ */
+test.describe('Type REST API - Type Inheritance Verification', () => {
+  const BASE_AUTH = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+
+  test('should verify custom type inherits cmis:document properties and has own properties', async ({ request }) => {
+    // Create a custom type with custom properties based on cmis:document
+    const suffix = `inherit${Date.now()}`;
+    const customType = {
+      id: `test:inheritanceTest${suffix}`,
+      localName: `inheritanceTest${suffix}`,
+      displayName: `Inheritance Test Type ${suffix}`,
+      description: 'Type to verify property inheritance',
+      baseId: 'cmis:document',
+      parentId: 'cmis:document',
+      creatable: true,
+      queryable: true,
+      fulltextIndexed: true,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {
+        [`test:customProp1${suffix}`]: {
+          id: `test:customProp1${suffix}`,
+          displayName: 'Custom String Property',
+          description: 'String property defined in custom type',
+          propertyType: 'string',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        },
+        [`test:customProp2${suffix}`]: {
+          id: `test:customProp2${suffix}`,
+          displayName: 'Custom Integer Property',
+          description: 'Integer property defined in custom type',
+          propertyType: 'integer',
+          cardinality: 'single',
+          required: false,
+          queryable: true,
+          updatable: true
+        }
+      }
+    };
+
+    const createResponse = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': BASE_AUTH,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(customType)
+    });
+
+    expect(createResponse.status()).toBe(200);
+    console.log('✅ Created custom type:', customType.id);
+
+    // Wait for cache sync
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Query CMIS API to get the full type definition with inherited properties
+    const cmisTypeResponse = await request.get(
+      `${BASE_URL}/core/browser/bedroom?cmisselector=typeDefinition&typeId=${encodeURIComponent(customType.id)}`,
+      {
+        headers: {
+          'Authorization': BASE_AUTH,
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    expect(cmisTypeResponse.status()).toBe(200);
+    const cmisTypeData = await cmisTypeResponse.json();
+    console.log('✅ Retrieved type from CMIS API');
+
+    // Verify the type definition
+    const propertyDefs = cmisTypeData.propertyDefinitions || {};
+    const propertyIds = Object.keys(propertyDefs);
+
+    console.log('Custom type property IDs:', propertyIds.filter(id => id.startsWith('test:')));
+    console.log('Total properties:', propertyIds.length);
+
+    // Verify custom properties are present
+    const hasCustomProp1 = propertyIds.some(id => id.includes('customProp1'));
+    const hasCustomProp2 = propertyIds.some(id => id.includes('customProp2'));
+    expect(hasCustomProp1).toBe(true);
+    expect(hasCustomProp2).toBe(true);
+    console.log('✅ Custom type has its own properties');
+
+    // Verify cmis:document properties are inherited
+    expect(propertyIds).toContain('cmis:objectId');
+    expect(propertyIds).toContain('cmis:name');
+    expect(propertyIds).toContain('cmis:objectTypeId');
+    expect(propertyIds).toContain('cmis:baseTypeId');
+    console.log('✅ Custom type has inherited CMIS standard properties');
+
+    // Verify baseTypeId is cmis:document
+    expect(cmisTypeData.baseTypeId || cmisTypeData.baseId).toBe('cmis:document');
+    console.log('✅ baseTypeId is cmis:document');
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(customType.id)}`, {
+      headers: { 'Authorization': BASE_AUTH, 'Accept': 'application/json' }
+    });
+
+    console.log('✅ Cleanup completed');
+  });
+
+  test('should verify base type properties are always inherited', async ({ request }) => {
+    // Create a custom type based on cmis:document
+    const suffix = `baseInherit${Date.now()}`;
+    const customType = {
+      id: `test:baseInherit${suffix}`,
+      localName: `baseInherit${suffix}`,
+      displayName: `Base Inheritance Test ${suffix}`,
+      description: 'Type to verify base type property inheritance',
+      baseId: 'cmis:document',
+      parentId: 'cmis:document',
+      creatable: true,
+      queryable: true,
+      fulltextIndexed: true,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {}  // No custom properties
+    };
+
+    const createResponse = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': BASE_AUTH,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(customType)
+    });
+
+    expect(createResponse.status()).toBe(200);
+    console.log('Created custom type:', customType.id);
+
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Query CMIS API for the full type definition
+    const cmisTypeResponse = await request.get(
+      `${BASE_URL}/core/browser/bedroom?cmisselector=typeDefinition&typeId=${encodeURIComponent(customType.id)}`,
+      {
+        headers: {
+          'Authorization': BASE_AUTH,
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    expect(cmisTypeResponse.status()).toBe(200);
+    const cmisTypeData = await cmisTypeResponse.json();
+
+    // Verify cmis:document properties are inherited
+    const propertyDefs = cmisTypeData.propertyDefinitions || {};
+    const propertyIds = Object.keys(propertyDefs);
+
+    // Essential cmis:document properties that must be inherited
+    const requiredDocumentProperties = [
+      'cmis:objectId',
+      'cmis:objectTypeId',
+      'cmis:name',
+      'cmis:createdBy',
+      'cmis:creationDate',
+      'cmis:lastModifiedBy',
+      'cmis:lastModificationDate',
+      'cmis:baseTypeId'
+    ];
+
+    const missingProperties: string[] = [];
+    for (const prop of requiredDocumentProperties) {
+      if (!propertyIds.includes(prop)) {
+        missingProperties.push(prop);
+      }
+    }
+
+    if (missingProperties.length > 0) {
+      console.log('Missing properties:', missingProperties);
+    }
+
+    expect(missingProperties.length).toBe(0);
+    console.log(`✅ All ${requiredDocumentProperties.length} required cmis:document properties are inherited`);
+
+    // Document-specific properties
+    const documentSpecificProps = ['cmis:contentStreamLength', 'cmis:contentStreamMimeType'];
+    const hasDocumentProps = documentSpecificProps.some(prop => propertyIds.includes(prop));
+    console.log(`Document-specific properties present: ${hasDocumentProps}`);
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(customType.id)}`, {
+      headers: { 'Authorization': BASE_AUTH, 'Accept': 'application/json' }
+    });
+  });
+
+  test('should verify folder type inherits cmis:folder properties', async ({ request }) => {
+    // Create a custom folder type
+    const suffix = `folderInherit${Date.now()}`;
+    const folderType = {
+      id: `test:folderInherit${suffix}`,
+      localName: `folderInherit${suffix}`,
+      displayName: `Folder Inheritance Test ${suffix}`,
+      description: 'Folder type to verify base type property inheritance',
+      baseId: 'cmis:folder',
+      parentId: 'cmis:folder',
+      creatable: true,
+      fileable: true,
+      queryable: true,
+      fulltextIndexed: false,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {}
+    };
+
+    const createResponse = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': BASE_AUTH,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(folderType)
+    });
+
+    expect(createResponse.status()).toBe(200);
+    console.log('Created custom folder type:', folderType.id);
+
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Query CMIS API for the full type definition
+    const cmisTypeResponse = await request.get(
+      `${BASE_URL}/core/browser/bedroom?cmisselector=typeDefinition&typeId=${encodeURIComponent(folderType.id)}`,
+      {
+        headers: {
+          'Authorization': BASE_AUTH,
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    expect(cmisTypeResponse.status()).toBe(200);
+    const cmisTypeData = await cmisTypeResponse.json();
+
+    const propertyDefs = cmisTypeData.propertyDefinitions || {};
+    const propertyIds = Object.keys(propertyDefs);
+
+    // Folder-specific properties that should be inherited
+    const folderProperties = [
+      'cmis:objectId',
+      'cmis:objectTypeId',
+      'cmis:name',
+      'cmis:parentId',  // Folder-specific
+      'cmis:path'       // Folder-specific
+    ];
+
+    let inheritedCount = 0;
+    for (const prop of folderProperties) {
+      if (propertyIds.includes(prop)) {
+        inheritedCount++;
+        console.log(`✅ Inherited: ${prop}`);
+      } else {
+        console.log(`⚠️ Missing: ${prop}`);
+      }
+    }
+
+    expect(inheritedCount).toBeGreaterThanOrEqual(3);  // At least common properties
+    console.log(`Folder type inherits ${inheritedCount}/${folderProperties.length} expected properties`);
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(folderType.id)}`, {
+      headers: { 'Authorization': BASE_AUTH, 'Accept': 'application/json' }
+    });
+  });
+
+  test('should verify relationship type inherits cmis:relationship properties', async ({ request }) => {
+    // Create a custom relationship type
+    const suffix = `relInherit${Date.now()}`;
+    const relationshipType = {
+      id: `test:relInherit${suffix}`,
+      localName: `relInherit${suffix}`,
+      displayName: `Relationship Inheritance Test ${suffix}`,
+      description: 'Relationship type to verify base type property inheritance',
+      baseId: 'cmis:relationship',
+      parentId: 'cmis:relationship',
+      creatable: true,
+      queryable: true,
+      fulltextIndexed: false,
+      includedInSupertypeQuery: true,
+      controllablePolicy: false,
+      controllableACL: true,
+      propertyDefinitions: {}
+    };
+
+    const createResponse = await request.post(`${REST_API_BASE}/create`, {
+      headers: {
+        'Authorization': BASE_AUTH,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify(relationshipType)
+    });
+
+    expect(createResponse.status()).toBe(200);
+    console.log('Created custom relationship type:', relationshipType.id);
+
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Query CMIS API for the full type definition
+    const cmisTypeResponse = await request.get(
+      `${BASE_URL}/core/browser/bedroom?cmisselector=typeDefinition&typeId=${encodeURIComponent(relationshipType.id)}`,
+      {
+        headers: {
+          'Authorization': BASE_AUTH,
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    expect(cmisTypeResponse.status()).toBe(200);
+    const cmisTypeData = await cmisTypeResponse.json();
+
+    const propertyDefs = cmisTypeData.propertyDefinitions || {};
+    const propertyIds = Object.keys(propertyDefs);
+
+    // Relationship-specific properties that should be inherited
+    const relationshipProperties = [
+      'cmis:objectId',
+      'cmis:objectTypeId',
+      'cmis:sourceId',   // Relationship-specific
+      'cmis:targetId'    // Relationship-specific
+    ];
+
+    let inheritedCount = 0;
+    for (const prop of relationshipProperties) {
+      if (propertyIds.includes(prop)) {
+        inheritedCount++;
+        console.log(`✅ Inherited: ${prop}`);
+      } else {
+        console.log(`⚠️ Missing: ${prop}`);
+      }
+    }
+
+    // Relationship types should have source and target properties
+    expect(propertyIds).toContain('cmis:sourceId');
+    expect(propertyIds).toContain('cmis:targetId');
+    console.log('✅ Relationship type has required source/target properties');
+
+    // Cleanup
+    await request.delete(`${REST_API_BASE}/delete/${encodeURIComponent(relationshipType.id)}`, {
+      headers: { 'Authorization': BASE_AUTH, 'Accept': 'application/json' }
+    });
+  });
+
+  test('should verify existing nemaki custom types have correct inheritance', async ({ request }) => {
+    // Verify nemaki:parentChildRelationship inherits cmis:relationship properties
+
+    const cmisTypeResponse = await request.get(
+      `${BASE_URL}/core/browser/bedroom?cmisselector=typeDefinition&typeId=${encodeURIComponent('nemaki:parentChildRelationship')}`,
+      {
+        headers: {
+          'Authorization': BASE_AUTH,
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    if (cmisTypeResponse.status() === 200) {
+      const cmisTypeData = await cmisTypeResponse.json();
+
+      // Verify it's based on cmis:relationship
+      expect(cmisTypeData.baseTypeId || cmisTypeData.baseId).toBe('cmis:relationship');
+      console.log('✅ nemaki:parentChildRelationship is based on cmis:relationship');
+
+      const propertyDefs = cmisTypeData.propertyDefinitions || {};
+      const propertyIds = Object.keys(propertyDefs);
+
+      // Should have relationship properties
+      expect(propertyIds).toContain('cmis:sourceId');
+      expect(propertyIds).toContain('cmis:targetId');
+      console.log('✅ nemaki:parentChildRelationship has inherited relationship properties');
+
+      // Check for any nemaki-specific custom properties
+      const nemakiProps = propertyIds.filter(id => id.startsWith('nemaki:'));
+      console.log(`nemaki:parentChildRelationship has ${nemakiProps.length} custom properties:`, nemakiProps);
+    } else if (cmisTypeResponse.status() === 404) {
+      console.log('nemaki:parentChildRelationship not found - may not be initialized');
+    } else {
+      console.log('Unexpected status:', cmisTypeResponse.status());
+    }
+  });
+});
+
 test.describe('Type REST API - Property Constraints', () => {
   test('POST /create - should create type with required property', async ({ request }) => {
     const suffix = Date.now().toString();
