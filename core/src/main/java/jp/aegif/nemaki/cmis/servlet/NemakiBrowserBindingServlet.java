@@ -2634,9 +2634,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             if (objectId == null || objectId.isEmpty()) {
                 throw new IllegalArgumentException("objectId parameter is required for delete operation");
             }
-            
-            
-            
+
+            // CRITICAL FIX: Read allVersions parameter from request (default to TRUE for backward compatibility)
+            Boolean allVersions = getBooleanParameterSafe(request, "allVersions");
+            if (allVersions == null) {
+                allVersions = Boolean.TRUE; // Default behavior per CMIS spec
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("Delete operation: objectId=" + objectId + ", allVersions=" + allVersions);
+            }
+
             // Extract repository ID from path
             String repositoryId = extractRepositoryIdFromPath(pathInfo);
             if (repositoryId == null) {
@@ -2652,7 +2659,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 cmisService = getCmisService(callContext);
             
             // Perform the delete operation using CmisService
-            cmisService.deleteObject(repositoryId, objectId, Boolean.TRUE, null); // allVersions = true, no extensions
+            cmisService.deleteObject(repositoryId, objectId, allVersions, null); // CRITICAL FIX: Use allVersions from request
             
             
             

@@ -2485,6 +2485,12 @@ public class ContentServiceImpl implements ContentService {
 		// Make the list of objects to be deleted
 		List<Document> versionList = new ArrayList<Document>();
 		String versionSeriesId = document.getVersionSeriesId();
+
+		// CRITICAL FIX (2026-01-08): For single version deletion (allVersions=false),
+		// we need to handle version promotion BEFORE deletion to avoid orphaned version series.
+		// The previous implementation tried to find the next latest version AFTER deletion,
+		// but by then the CouchDB view (latestVersions) couldn't find any document with isLatestVersion=true.
+
 		if (allVersions) {
 			try {
 				versionList = getAllVersions(callContext, repositoryId, versionSeriesId);
@@ -2502,52 +2508,131 @@ public class ContentServiceImpl implements ContentService {
 				versionList.add(document);
 			}
 		} else {
+			// Single version deletion - need to handle version promotion first
 			versionList.add(document);
+
+			// Get all versions to find the next latest version BEFORE deletion
+			List<Document> allVersionsInSeries = new ArrayList<Document>();
+			try {
+				allVersionsInSeries = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
+				if (log.isDebugEnabled()) {
+					log.debug("getAllVersions returned {} documents for versionSeriesId: {}",
+						allVersionsInSeries.size(), versionSeriesId);
+					for (Document v : allVersionsInSeries) {
+						log.debug("  - Document: id={}, versionLabel={}, isLatest={}, isPWC={}",
+							v.getId(), v.getVersionLabel(), v.isLatestVersion(), v.isPrivateWorkingCopy());
+					}
+				}
+			} catch (Exception e) {
+				log.error("Failed to get all versions for single version deletion: {}", e.getMessage(), e);
+			}
+
+			// Filter out PWC and the document being deleted
+			List<Document> remainingVersions = new ArrayList<Document>();
+			for (Document v : allVersionsInSeries) {
+				if (!v.isPrivateWorkingCopy() && !v.getId().equals(objectId)) {
+					remainingVersions.add(v);
+				}
+			}
+			if (log.isDebugEnabled()) {
+				log.debug("After filtering (excluding objectId={} and PWC), remainingVersions count: {}",
+					objectId, remainingVersions.size());
+			}
+
+			if (remainingVersions.isEmpty()) {
+				// This is the only version - delete entire version series after document deletion
+				log.info("Single version document deletion - will delete entire version series: {}", versionSeriesId);
+				// Set allVersions to true to trigger version series cleanup
+				allVersions = true;
+			} else {
+				// Find the next latest version (highest version label among remaining)
+				// Sort by version label descending to get the next latest
+				Document nextLatest = null;
+				double highestVersionNumber = -1;
+				for (Document v : remainingVersions) {
+					try {
+						String versionLabel = v.getVersionLabel();
+						if (versionLabel != null) {
+							double versionNumber = Double.parseDouble(versionLabel);
+							if (versionNumber > highestVersionNumber) {
+								highestVersionNumber = versionNumber;
+								nextLatest = v;
+							}
+						}
+					} catch (NumberFormatException e) {
+						log.warn("Could not parse version label: {}", v.getVersionLabel());
+					}
+				}
+
+				// CRITICAL: Update the next latest version BEFORE deleting the current one
+				if (nextLatest != null) {
+					log.info("Promoting version {} to latest before deleting version {}",
+						nextLatest.getVersionLabel(), document.getVersionLabel());
+					nextLatest.setLatestVersion(true);
+					// Check if this should also be latest major version
+					boolean isHighestMajor = true;
+					if (nextLatest.isMajorVersion()) {
+						for (Document v : remainingVersions) {
+							if (v.isMajorVersion() && !v.getId().equals(nextLatest.getId())) {
+								try {
+									double otherVersion = Double.parseDouble(v.getVersionLabel());
+									if (otherVersion > highestVersionNumber) {
+										isHighestMajor = false;
+										break;
+									}
+								} catch (NumberFormatException e) {
+									// ignore
+								}
+							}
+						}
+					}
+					nextLatest.setLatestMajorVersion(nextLatest.isMajorVersion() && isHighestMajor);
+					contentDaoService.update(repositoryId, nextLatest);
+
+					// Invalidate cache for the promoted version
+					nemakiCachePool.get(repositoryId).getObjectDataCache().remove(nextLatest.getId());
+
+					// Update Solr index for the promoted version
+					solrUtil.indexDocument(repositoryId, nextLatest);
+				}
+			}
 		}
 
-		// Delete
+		// Delete documents (with archive creation via delete() method)
 		for (Document version : versionList) {
-			// Archive a document
+			// Archive attachment before deletion
 			if (version.getAttachmentNodeId() != null) {
 				String attachmentId = version.getAttachmentNodeId();
-				// Delete an attachment
+				// Delete an attachment (this also creates attachment archive if enabled)
 				deleteAttachment(callContext, repositoryId, attachmentId);
 			}
-			// Delete rendition(no need for archive)
+			// Delete rendition (no need for archive)
 			if (CollectionUtils.isNotEmpty(version.getRenditionIds())) {
 				for (String renditionId : version.getRenditionIds()) {
 					contentDaoService.delete(repositoryId, renditionId);
 				}
 			}
 
-			// Delete a document
+			// Delete a document (this creates document archive if enabled via delete() method)
 			delete(callContext, repositoryId, version.getId(), deleteWithParent);
 		}
 
-		// Move up the latest version OR delete VersionSeries
-		if (!allVersions) {
-			Document latestVersion = getDocumentOfLatestVersion(repositoryId, versionSeriesId);
-			if (latestVersion != null) {
-				latestVersion.setLatestVersion(true);
-				latestVersion.setLatestMajorVersion(latestVersion.isMajorVersion());
-				contentDaoService.update(repositoryId, latestVersion);
-			}
-	} else {
-		// CRITICAL FIX: When all versions are deleted, delete the VersionSeries as well
-		try {
-			contentDaoService.delete(repositoryId, versionSeriesId);
-			
-			// CRITICAL FIX: Invalidate cache for deleted VersionSeries to prevent stale data
-			nemakiCachePool.get(repositoryId).getObjectDataCache().remove(versionSeriesId);
-		} catch (Exception e) {
-			log.error("Failed to delete VersionSeries {}: {}", versionSeriesId, e.getMessage(), e);
-			// Continue even if VersionSeries deletion fails - documents are already deleted
-		}
-	}
+		// Delete VersionSeries when all versions are deleted
+		if (allVersions) {
+			// CRITICAL FIX: When all versions are deleted, delete the VersionSeries as well
+			try {
+				contentDaoService.delete(repositoryId, versionSeriesId);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+				// CRITICAL FIX: Invalidate cache for deleted VersionSeries to prevent stale data
+				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(versionSeriesId);
+				log.info("Deleted VersionSeries: {}", versionSeriesId);
+			} catch (Exception e) {
+				log.error("Failed to delete VersionSeries {}: {}", versionSeriesId, e.getMessage(), e);
+				// Continue even if VersionSeries deletion fails - documents are already deleted
+			}
+		}
+		// Note: Solr index deletion is handled in the delete() method for each document
+		// and Solr index update for promoted versions is handled above
 	}
 
 	// deletedWithParent flag controls whether it's deleted with the parent all
