@@ -554,7 +554,8 @@ export class CMISService {
       creationDate: this.getSafeDateProperty(props, 'cmis:creationDate'),
       lastModificationDate: this.getSafeDateProperty(props, 'cmis:lastModificationDate'),
       contentStreamLength: this.getSafeIntegerProperty(props, 'cmis:contentStreamLength'),
-      path: this.getSafeStringProperty(props, 'cmis:path')
+      path: this.getSafeStringProperty(props, 'cmis:path'),
+      changeToken: this.getSafeStringProperty(props, 'cmis:changeToken')
     };
   }
 
@@ -986,6 +987,92 @@ export class CMISService {
         throw error;
       }
       throw new Error('Network error');
+    }
+  }
+
+  /**
+   * Set content stream for an existing document (creates new version)
+   *
+   * This method updates the content of an existing document, which creates a new version
+   * in a versionable repository. Used for "same name file upload creates new version" feature.
+   *
+   * CMIS Browser Binding: POST with cmisaction=setContent
+   *
+   * @param repositoryId Repository ID
+   * @param objectId Document ID to update
+   * @param file New file content
+   * @param overwrite Whether to overwrite existing content (default: true)
+   * @returns Updated document object
+   */
+  async setContentStream(repositoryId: string, objectId: string, file: File, overwrite: boolean = true): Promise<CMISObject> {
+    try {
+      // First, get the current object to retrieve the change token
+      const currentObject = await this.getObject(repositoryId, objectId);
+      const changeToken = currentObject?.changeToken || '';
+      
+      const objectSegment = this.encodeObjectIdSegment(objectId);
+      const url = `${this.baseUrl}/${repositoryId}/${objectSegment}`;
+
+      const formData = new FormData();
+      formData.append('cmisaction', 'setContent');
+      formData.append('objectId', objectId);
+      formData.append('overwriteFlag', String(overwrite));
+      formData.append('content', file, file.name);
+      if (file.type) {
+        formData.append('mimeType', file.type);
+      }
+      // Include change token if available (required by CMIS 1.1)
+      if (changeToken) {
+        formData.append('changeToken', changeToken);
+      }
+
+      const response = await this.httpClient.postFormData(url, formData);
+
+      if (response.status === 200 || response.status === 201) {
+        try {
+          const data = JSON.parse(response.responseText);
+          return this.buildCmisObjectFromBrowserData(data);
+        } catch (e) {
+          throw new Error('Failed to parse Browser Binding response');
+        }
+      }
+
+      // Handle HTTP errors
+      const error = this.handleHttpError(response.status, response.statusText, response.responseURL);
+      throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error');
+    }
+  }
+
+  /**
+   * Find a document by name in a specific folder
+   *
+   * Used for detecting if a file with the same name already exists in the folder,
+   * enabling the "same name file creates new version" feature.
+   *
+   * @param repositoryId Repository ID
+   * @param folderId Folder ID to search in
+   * @param name Document name to find
+   * @returns Matching document object if found, null otherwise
+   */
+  async findDocumentByNameInFolder(repositoryId: string, folderId: string, name: string): Promise<CMISObject | null> {
+    try {
+      const children = await this.getChildren(repositoryId, folderId);
+      const normalizedName = name.toLowerCase();
+
+      for (const child of children) {
+        if (child.baseType === 'cmis:document' && child.name && child.name.toLowerCase() === normalizedName) {
+          return child;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('Error finding document by name:', error);
+      return null;
     }
   }
 

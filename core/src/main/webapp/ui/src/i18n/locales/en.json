@@ -925,6 +925,13 @@
       "enterProperty": "Please enter {{name}}"
     },
     "messages": {
+      "uploadSuccess": "File uploaded successfully",
+      "uploadError": "Failed to upload file",
+      "noFileSelected": "Please select a file",
+      "noFolderSelected": "Please select a folder",
+      "newVersionCreated": "New version of \"{{name}}\" created successfully",
+      "folderCreateSuccess": "Folder created successfully",
+      "folderCreateError": "Failed to create folder",
       "deleteSuccess": "Deleted successfully",
       "deleteSuccessWithCount": "{{count}} object(s) deleted successfully",
       "deletePartialFail": "Failed to delete {{count}} object(s)",

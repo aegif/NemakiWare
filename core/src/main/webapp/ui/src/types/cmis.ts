@@ -155,6 +155,8 @@ export interface CMISObject {
   sourceId?: string;
   /** Relationship-specific: Target object ID (2025-12-23) */
   targetId?: string;
+  /** Change token for optimistic locking (CMIS 1.1) */
+  changeToken?: string;
 }
 
 export interface SearchResult {

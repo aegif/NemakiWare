@@ -3,12 +3,18 @@ package jp.aegif.nemaki.rest;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
+import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.common.NemakiObjectType;
+import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
+import org.mindrot.jbcrypt.BCrypt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.context.WebApplicationContext;
@@ -27,6 +33,7 @@ import jakarta.ws.rs.core.Context;
 
 import java.io.ByteArrayInputStream;
 import java.util.Base64;
+import java.util.UUID;
 import java.util.zip.Inflater;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -397,6 +404,22 @@ public class AuthTokenResource extends ResourceBase{
 		return null;
 	}
 
+	/**
+	 * Get an existing user or create a new one for SSO authentication.
+	 *
+	 * SSO AUTO-PROVISIONING (2026-01-08):
+	 * When a user authenticates via OIDC/SAML and doesn't exist in NemakiWare,
+	 * this method automatically creates a user account with:
+	 * - userId: extracted from SSO token (preferred_username, email, or sub)
+	 * - name: same as userId (can be updated later)
+	 * - password: random UUID hash (SSO users don't use password authentication)
+	 * - admin: false (non-admin by default)
+	 * - parentId: users folder under system folder
+	 *
+	 * @param repositoryId Repository ID
+	 * @param userName User name extracted from SSO token
+	 * @return UserItem object (existing or newly created), or null if creation failed
+	 */
 	private UserItem getOrCreateUser(String repositoryId, String userName) {
 		try {
 			ContentService contentService = getContentService();
@@ -405,18 +428,135 @@ public class AuthTokenResource extends ResourceBase{
 				return null;
 			}
 
+			// Check if user already exists
 			UserItem userItem = contentService.getUserItemById(repositoryId, userName);
 			if (userItem != null) {
 				logger.info("Found existing user: {}", userName);
 				return userItem;
 			}
 
-			logger.info("User {} not found, creating new user for SSO", userName);
-			return null;
+			// User not found - create new user for SSO
+			logger.info("User {} not found, creating new user for SSO auto-provisioning", userName);
+
+			// Get users folder
+			Folder usersFolder = getOrCreateUsersFolder(repositoryId, contentService);
+			if (usersFolder == null) {
+				logger.error("Failed to get or create users folder for SSO user: {}", userName);
+				return null;
+			}
+
+			// Generate a random password hash (SSO users don't use password auth)
+			String randomPassword = UUID.randomUUID().toString();
+			String passwordHash = BCrypt.hashpw(randomPassword, BCrypt.gensalt());
+
+			// Create new user
+			UserItem newUser = new UserItem(
+				null,                          // id (auto-generated)
+				NemakiObjectType.nemakiUser,  // objectType
+				userName,                      // userId
+				userName,                      // name (same as userId, can be updated later)
+				passwordHash,                  // password (random hash for SSO users)
+				false,                         // isAdmin
+				usersFolder.getId()           // parentId
+			);
+
+			// Set creation signature
+			newUser.setCreator(userName);
+			newUser.setModifier(userName);
+			newUser.setCreated(new java.util.GregorianCalendar());
+			newUser.setModified(new java.util.GregorianCalendar());
+
+			// Create user in repository
+			UserItem createdUser = contentService.createUserItem(
+				new SystemCallContext(repositoryId),
+				repositoryId,
+				newUser
+			);
+
+			if (createdUser != null) {
+				logger.info("Successfully created SSO user: {} (id: {})", userName, createdUser.getId());
+				return createdUser;
+			} else {
+				logger.error("Failed to create SSO user: {} - createUserItem returned null", userName);
+				return null;
+			}
+
 		} catch (Exception e) {
 			logger.error("Failed to get or create user: " + userName, e);
 			return null;
 		}
+	}
+
+	/**
+	 * Get or create the users folder under the system folder.
+	 *
+	 * Uses the same pattern as UserItemResource.getOrCreateSystemSubFolder()
+	 *
+	 * @param repositoryId Repository ID
+	 * @param contentService ContentService instance
+	 * @return Users folder, or null if not found/created
+	 */
+	private Folder getOrCreateUsersFolder(String repositoryId, ContentService contentService) {
+		try {
+			// Get system folder (same approach as UserItemResource)
+			Folder systemFolder = contentService.getSystemFolder(repositoryId);
+			if (systemFolder == null) {
+				logger.error("System folder not found for repository: {}", repositoryId);
+				return null;
+			}
+
+			// Search for existing users folder in system folder children
+			java.util.List<jp.aegif.nemaki.model.Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
+			if (children != null) {
+				for (jp.aegif.nemaki.model.Content child : children) {
+					if ("users".equals(child.getName()) && child instanceof Folder) {
+						logger.debug("Found existing users folder: {}", child.getId());
+						return (Folder) child;
+					}
+				}
+			}
+
+			// Create users folder if it doesn't exist
+			logger.info("Creating users folder under system folder for repository: {}", repositoryId);
+			org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl properties =
+				new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
+			properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl("cmis:name", "users"));
+			properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
+			properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
+
+			Folder usersFolder = contentService.createFolder(
+				new SystemCallContext(repositoryId),
+				repositoryId,
+				properties,
+				systemFolder,
+				null, null, null, null
+			);
+
+			if (usersFolder != null) {
+				logger.info("Successfully created users folder: {}", usersFolder.getId());
+			}
+
+			return usersFolder;
+		} catch (Exception e) {
+			logger.error("Failed to get or create users folder: " + e.getMessage(), e);
+			return null;
+		}
+	}
+
+	/**
+	 * Get PropertyManager from Spring context.
+	 */
+	private PropertyManager getPropertyManager() {
+		try {
+			WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(
+				request.getServletContext());
+			if (context != null) {
+				return context.getBean("propertyManager", PropertyManager.class);
+			}
+		} catch (Exception e) {
+			logger.error("Failed to retrieve PropertyManager from Spring context", e);
+		}
+		return null;
 	}
 
 	private ContentService getContentService() {

@@ -544,24 +544,36 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       // Set uploading state (2025-12-26)
       setIsUploading(true);
 
-      // Build properties with selected type and custom properties (2025-12-23)
-      const properties: Record<string, any> = {
-        'cmis:name': name,
-        'cmis:objectTypeId': objectTypeId || 'cmis:document'
-      };
+      // VERSIONING FEATURE (2026-01-08): Check if a document with the same name already exists
+      // If it does, update the content stream (creates new version) instead of creating new document
+      const existingDocument = await cmisService.findDocumentByNameInFolder(repositoryId, selectedFolderId, name);
 
-      // Add custom properties from form values
-      for (const [key, value] of Object.entries(values)) {
-        if (!key.startsWith('cmis:') && key !== 'file' && key !== 'name' && key !== 'objectTypeId') {
-          if (value !== undefined && value !== null && value !== '') {
-            properties[key] = value;
+      if (existingDocument) {
+        // Same name file exists - update content stream to create new version
+        console.log(`[DocumentList] Found existing document "${name}" (${existingDocument.id}), creating new version`);
+        await cmisService.setContentStream(repositoryId, existingDocument.id, actualFile, true);
+        message.success(t('documentList.messages.newVersionCreated', { name }));
+      } else {
+        // No same name file - create new document
+        // Build properties with selected type and custom properties (2025-12-23)
+        const properties: Record<string, any> = {
+          'cmis:name': name,
+          'cmis:objectTypeId': objectTypeId || 'cmis:document'
+        };
+
+        // Add custom properties from form values
+        for (const [key, value] of Object.entries(values)) {
+          if (!key.startsWith('cmis:') && key !== 'file' && key !== 'name' && key !== 'objectTypeId') {
+            if (value !== undefined && value !== null && value !== '') {
+              properties[key] = value;
+            }
           }
         }
+
+        await cmisService.createDocument(repositoryId, selectedFolderId, actualFile, properties);
+        message.success(t('documentList.messages.uploadSuccess'));
       }
 
-      await cmisService.createDocument(repositoryId, selectedFolderId, actualFile, properties);
-
-      message.success(t('documentList.messages.uploadSuccess'));
       setUploadModalVisible(false);
       setUploadError(null);
       setSelectedDocumentTypeDefinition(null);

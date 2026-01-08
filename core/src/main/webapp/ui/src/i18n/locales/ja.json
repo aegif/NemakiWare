@@ -925,6 +925,13 @@
       "enterProperty": "{{name}}を入力してください"
     },
     "messages": {
+      "uploadSuccess": "ファイルをアップロードしました",
+      "uploadError": "ファイルのアップロードに失敗しました",
+      "noFileSelected": "ファイルを選択してください",
+      "noFolderSelected": "フォルダを選択してください",
+      "newVersionCreated": "「{{name}}」の新しいバージョンを作成しました",
+      "folderCreateSuccess": "フォルダを作成しました",
+      "folderCreateError": "フォルダの作成に失敗しました",
       "deleteSuccess": "削除しました",
       "deleteSuccessWithCount": "{{count}}件のオブジェクトを削除しました",
       "deletePartialFail": "{{count}}件のオブジェクトの削除に失敗しました",
