@@ -830,7 +830,8 @@
 						ui/.gitignore,
 						ui/README.md,
 						ui/index.html,
-						ui/assets/**
+						ui/assets/**,
+						ui/dist/**
 					</warSourceExcludes>
 					<!-- Copy production build files to ui/ directory -->
 					<!-- webResources runs AFTER warSourceExcludes, so production index.html will be included -->
