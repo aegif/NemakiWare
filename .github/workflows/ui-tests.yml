@@ -92,7 +92,7 @@ jobs:
         echo "Waiting for NemakiWare server to start..."
         SERVER_READY=false
         for i in {1..60}; do
-          if curl -f http://localhost:8080/core/ui/dist/; then
+          if curl -f http://localhost:8080/core/ui/; then
             echo "NemakiWare server is ready"
             SERVER_READY=true
             break
