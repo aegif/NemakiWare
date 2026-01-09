@@ -213,3 +213,6 @@ suspended-modules/opencmis-1.1.0-legacy/
 suspended-modules/opencmis-1.2.0-jars/
 suspended-modules/opencmis-legacy-converted/
 chemistry-opencmis-1.1.0-jakarta-jars/
+
+# WAR展開ディレクトリ (デバッグ用の一時ディレクトリ)
+war_content/
