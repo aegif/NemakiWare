@@ -216,3 +216,6 @@ chemistry-opencmis-1.1.0-jakarta-jars/
 
 # WAR展開ディレクトリ (デバッグ用の一時ディレクトリ)
 war_content/
+
+# 古いビルドアセット残骸 (正しいビルドは ui/dist/assets/)
+core/src/main/webapp/ui/assets/
