@@ -2,6 +2,20 @@
 
 This directory contains comprehensive Playwright E2E tests for complex scenarios involving multiple NemakiWare features working together. These tests validate the consistency and integrity of the system when performing operations that span across different functional areas.
 
+## Detailed Documentation
+
+Each test suite has detailed documentation in Japanese with step-by-step explanations:
+
+| Test Suite | Documentation |
+|------------|---------------|
+| Custom Type with Versioning and Search | [docs/custom-type-versioning-search.md](docs/custom-type-versioning-search.md) |
+| ACL Inheritance and Custom Type Interaction | [docs/acl-custom-type-interaction.md](docs/acl-custom-type-interaction.md) |
+| Secondary Type with Custom Properties | [docs/secondary-type-properties.md](docs/secondary-type-properties.md) |
+| Folder Hierarchy with Scoped Search | [docs/folder-hierarchy-search.md](docs/folder-hierarchy-search.md) |
+| Version and Property History Consistency | [docs/version-property-history.md](docs/version-property-history.md) |
+| Archive and Restore Consistency | [docs/archive-restore-consistency.md](docs/archive-restore-consistency.md) |
+| Type Management Consistency | [docs/type-management-consistency.md](docs/type-management-consistency.md) |
+
 ## Test Suites Overview
 
 ### 1. Custom Type with Versioning and Search (`custom-type-versioning-search.spec.ts`)
