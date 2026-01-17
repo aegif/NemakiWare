@@ -151,7 +151,24 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
     }
   };
 
-  // Get available groups for selection (exclude self and detect circular references)
+  // Precompute which groups would cause circular references when editing
+  const circularGroupIds = useMemo(() => {
+    if (!editingGroup) {
+      return new Set<string>();
+    }
+
+    const circularIds = new Set<string>();
+    for (const group of groups) {
+      if (group.id === editingGroup.id) continue;
+      const isCircular = detectCircularReference(editingGroup.id, [group.id], groups).length > 0;
+      if (isCircular) {
+        circularIds.add(group.id);
+      }
+    }
+    return circularIds;
+  }, [groups, editingGroup]);
+
+  // Get available groups for selection (exclude self and disable circular references)
   const getAvailableGroupsForSelection = useMemo(() => {
     if (!editingGroup) {
       // Creating new group - all groups available
@@ -161,14 +178,15 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       }));
     }
 
-    // Editing existing group - exclude self
+    // Editing existing group - exclude self and mark circular as disabled
     return groups
       .filter(g => g.id !== editingGroup.id)
       .map(g => ({
         label: `${g.name || g.id} (${g.id})`,
-        value: g.id
+        value: g.id,
+        disabled: circularGroupIds.has(g.id)
       }));
-  }, [groups, editingGroup]);
+  }, [groups, editingGroup, circularGroupIds]);
 
   const handleSubmit = async (values: any) => {
     try {
