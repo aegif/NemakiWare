@@ -39,6 +39,8 @@ public interface SolrIndexMaintenanceService {
         private long totalDocuments;
         private long indexedCount;
         private long errorCount;
+        private long silentDropCount;  // Number of documents detected as silently dropped by Solr
+        private long reindexedCount;   // Number of silently dropped documents successfully re-indexed
         private long startTime;
         private long endTime;
         private String currentFolder;
@@ -57,6 +59,10 @@ public interface SolrIndexMaintenanceService {
         public void setIndexedCount(long indexedCount) { this.indexedCount = indexedCount; }
         public long getErrorCount() { return errorCount; }
         public void setErrorCount(long errorCount) { this.errorCount = errorCount; }
+        public long getSilentDropCount() { return silentDropCount; }
+        public void setSilentDropCount(long silentDropCount) { this.silentDropCount = silentDropCount; }
+        public long getReindexedCount() { return reindexedCount; }
+        public void setReindexedCount(long reindexedCount) { this.reindexedCount = reindexedCount; }
         public long getStartTime() { return startTime; }
         public void setStartTime(long startTime) { this.startTime = startTime; }
         public long getEndTime() { return endTime; }

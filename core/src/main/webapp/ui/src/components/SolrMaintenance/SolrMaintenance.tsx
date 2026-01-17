@@ -316,6 +316,8 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
           <Descriptions.Item label={t('solrMaintenance.reindexStatus.totalDocuments')}>{reindexStatus.totalDocuments}</Descriptions.Item>
           <Descriptions.Item label={t('solrMaintenance.reindexStatus.indexed')}>{reindexStatus.indexedCount}</Descriptions.Item>
           <Descriptions.Item label={t('solrMaintenance.reindexStatus.errorCount')}>{reindexStatus.errorCount}</Descriptions.Item>
+          <Descriptions.Item label={t('solrMaintenance.reindexStatus.silentDropCount')}>{reindexStatus.silentDropCount || 0}</Descriptions.Item>
+          <Descriptions.Item label={t('solrMaintenance.reindexStatus.reindexedCount')}>{reindexStatus.reindexedCount || 0}</Descriptions.Item>
           <Descriptions.Item label={t('solrMaintenance.reindexStatus.errorMessage')}>{reindexStatus.errorMessage || '-'}</Descriptions.Item>
         </Descriptions>
         {reindexStatus.status === 'running' && (

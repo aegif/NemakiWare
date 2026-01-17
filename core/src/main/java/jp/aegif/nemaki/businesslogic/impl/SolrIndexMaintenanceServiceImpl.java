@@ -141,13 +141,17 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 // Reindex all documents
                 AtomicLong indexedCount = new AtomicLong(0);
                 AtomicLong errorCount = new AtomicLong(0);
+                AtomicLong silentDropCount = new AtomicLong(0);
+                AtomicLong reindexedSuccessCount = new AtomicLong(0);
                 List<String> errors = new ArrayList<>();
 
                 reindexFolderRecursive(repositoryId, rootFolder.getId(), true, 
-                    status, indexedCount, errorCount, errors);
+                    status, indexedCount, errorCount, errors, silentDropCount, reindexedSuccessCount);
 
                 status.setIndexedCount(indexedCount.get());
                 status.setErrorCount(errorCount.get());
+                status.setSilentDropCount(silentDropCount.get());
+                status.setReindexedCount(reindexedSuccessCount.get());
                 status.setErrors(errors);
                 status.setStatus(cancelFlags.get(repositoryId).get() ? "cancelled" : "completed");
                 status.setEndTime(System.currentTimeMillis());
@@ -213,13 +217,17 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 // Reindex
                 AtomicLong indexedCount = new AtomicLong(0);
                 AtomicLong errorCount = new AtomicLong(0);
+                AtomicLong silentDropCount = new AtomicLong(0);
+                AtomicLong reindexedSuccessCount = new AtomicLong(0);
                 List<String> errors = new ArrayList<>();
 
                 reindexFolderRecursive(repositoryId, folderId, recursive, 
-                    status, indexedCount, errorCount, errors);
+                    status, indexedCount, errorCount, errors, silentDropCount, reindexedSuccessCount);
 
                 status.setIndexedCount(indexedCount.get());
                 status.setErrorCount(errorCount.get());
+                status.setSilentDropCount(silentDropCount.get());
+                status.setReindexedCount(reindexedSuccessCount.get());
                 status.setErrors(errors);
                 status.setStatus(cancelFlags.get(repositoryId).get() ? "cancelled" : "completed");
                 status.setEndTime(System.currentTimeMillis());
@@ -291,7 +299,8 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
     }
 
     private void reindexFolderRecursive(String repositoryId, String folderId, boolean recursive,
-            ReindexStatus status, AtomicLong indexedCount, AtomicLong errorCount, List<String> errors) {
+            ReindexStatus status, AtomicLong indexedCount, AtomicLong errorCount, List<String> errors,
+            AtomicLong silentDropCount, AtomicLong reindexedSuccessCount) {
         
         if (cancelFlags.get(repositoryId).get()) {
             return;
@@ -313,7 +322,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 if (cancelFlags.get(repositoryId).get()) {
                     // Flush remaining batch before cancellation
                     if (!batchBuffer.isEmpty()) {
-                        flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status);
+                        flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
                     }
                     return;
                 }
@@ -328,14 +337,14 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 
                 // Flush batch when it reaches BATCH_SIZE
                 if (batchBuffer.size() >= BATCH_SIZE) {
-                    flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status);
+                    flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
                     batchBuffer.clear();
                 }
             }
             
             // Flush remaining documents in buffer
             if (!batchBuffer.isEmpty()) {
-                flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status);
+                flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
             }
             
             // Process subfolders recursively
@@ -344,7 +353,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                     return;
                 }
                 reindexFolderRecursive(repositoryId, subFolder.getId(), true, 
-                    status, indexedCount, errorCount, errors);
+                    status, indexedCount, errorCount, errors, silentDropCount, reindexedSuccessCount);
             }
         } catch (Exception e) {
             log.error("Error reindexing folder: " + folderId, e);
@@ -360,7 +369,8 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
      * Uses batch indexing for improved performance with verification for silent drops.
      */
     private void flushBatch(String repositoryId, List<Content> batch, 
-            AtomicLong indexedCount, AtomicLong errorCount, List<String> errors, ReindexStatus status) {
+            AtomicLong indexedCount, AtomicLong errorCount, List<String> errors, ReindexStatus status,
+            AtomicLong silentDropCount, AtomicLong reindexedSuccessCount) {
         if (batch.isEmpty()) {
             return;
         }
@@ -382,7 +392,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             log.info("Batch indexed " + successCount + "/" + batch.size() + " documents, total: " + indexedCount.get());
             
             // Verify batch indexing and re-index any silently dropped documents
-            verifyAndReindexMissing(repositoryId, batch, indexedCount, errorCount, errors, status);
+            verifyAndReindexMissing(repositoryId, batch, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
             
         } catch (Exception e) {
             // Fall back to individual indexing on batch failure
@@ -408,41 +418,48 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
     private static final int MAX_VERIFICATION_QUERY_LENGTH = 4000;
     
     /**
-     * Estimate the query length for batch verification.
-     * This helps determine if we need to split the batch to avoid Solr query length limits.
+     * Build the verification query string for a batch of documents.
+     * This is used both for actual queries and for accurate length measurement.
      */
-    private int estimateQueryLength(String repositoryId, List<Content> batch) {
-        // Base query: "repository_id:<escaped_repo_id> AND object_id:("
-        int baseLength = 30 + ClientUtils.escapeQueryChars(repositoryId).length();
-        int idsLength = 0;
-        for (Content content : batch) {
-            // Each ID: "\"<escaped_id>\" OR " (approximately)
-            idsLength += ClientUtils.escapeQueryChars(content.getId()).length() + 6;
+    private String buildVerificationQuery(String repositoryId, List<Content> batch) {
+        StringBuilder queryBuilder = new StringBuilder();
+        queryBuilder.append("repository_id:").append(ClientUtils.escapeQueryChars(repositoryId)).append(" AND object_id:(");
+        for (int i = 0; i < batch.size(); i++) {
+            if (i > 0) {
+                queryBuilder.append(" OR ");
+            }
+            queryBuilder.append("\"").append(ClientUtils.escapeQueryChars(batch.get(i).getId())).append("\"");
         }
-        return baseLength + idsLength;
+        queryBuilder.append(")");
+        return queryBuilder.toString();
     }
     
     /**
      * Verify batch indexing by checking Solr for indexed documents.
      * Re-indexes any documents that were silently dropped by Solr.
      * If the query would be too long, splits the batch into smaller chunks.
+     * Tracks silentDropCount and reindexedCount in the status object.
      */
     private void verifyAndReindexMissing(String repositoryId, List<Content> batch,
-            AtomicLong indexedCount, AtomicLong errorCount, List<String> errors, ReindexStatus status) {
+            AtomicLong indexedCount, AtomicLong errorCount, List<String> errors, ReindexStatus status,
+            AtomicLong silentDropCount, AtomicLong reindexedSuccessCount) {
         if (batch.isEmpty()) {
             return;
         }
         
+        // Build the actual query string to get accurate length measurement
+        String queryString = buildVerificationQuery(repositoryId, batch);
+        
         // Check if we need to split the batch due to query length limits
-        int estimatedQueryLength = estimateQueryLength(repositoryId, batch);
-        if (estimatedQueryLength > MAX_VERIFICATION_QUERY_LENGTH && batch.size() > 1) {
+        if (queryString.length() > MAX_VERIFICATION_QUERY_LENGTH && batch.size() > 1) {
             // Split batch in half and verify each part separately
             int mid = batch.size() / 2;
             List<Content> firstHalf = batch.subList(0, mid);
             List<Content> secondHalf = batch.subList(mid, batch.size());
-            log.debug("Splitting batch verification due to query length: " + batch.size() + " -> " + firstHalf.size() + " + " + secondHalf.size());
-            verifyAndReindexMissing(repositoryId, new ArrayList<>(firstHalf), indexedCount, errorCount, errors, status);
-            verifyAndReindexMissing(repositoryId, new ArrayList<>(secondHalf), indexedCount, errorCount, errors, status);
+            log.info("Splitting batch verification due to query length (" + queryString.length() + " chars): " + 
+                batch.size() + " -> " + firstHalf.size() + " + " + secondHalf.size());
+            verifyAndReindexMissing(repositoryId, new ArrayList<>(firstHalf), indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
+            verifyAndReindexMissing(repositoryId, new ArrayList<>(secondHalf), indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
             return;
         }
         
@@ -454,20 +471,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 return;
             }
             
-            // Build query to check which documents exist in Solr
-            // Use object_id field which matches the content ID
-            // Escape special characters in repositoryId and objectId to prevent query injection
-            StringBuilder queryBuilder = new StringBuilder();
-            queryBuilder.append("repository_id:").append(ClientUtils.escapeQueryChars(repositoryId)).append(" AND object_id:(");
-            for (int i = 0; i < batch.size(); i++) {
-                if (i > 0) {
-                    queryBuilder.append(" OR ");
-                }
-                queryBuilder.append("\"").append(ClientUtils.escapeQueryChars(batch.get(i).getId())).append("\"");
-            }
-            queryBuilder.append(")");
-            
-            SolrQuery query = new SolrQuery(queryBuilder.toString());
+            SolrQuery query = new SolrQuery(queryString);
             query.setRows(0); // We only need the count
             QueryResponse response = solrClient.query(query);
             long foundCount = response.getResults().getNumFound();
@@ -476,6 +480,10 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 // Some documents were silently dropped - identify and re-index them
                 int missingCount = batch.size() - (int) foundCount;
                 log.warn("Batch verification: " + missingCount + " documents missing in Solr, attempting re-index");
+                
+                // Track silent drop count
+                silentDropCount.addAndGet(missingCount);
+                status.setSilentDropCount(silentDropCount.get());
                 
                 // Get the IDs that exist in Solr
                 query.setRows(batch.size());
@@ -491,12 +499,14 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 }
                 
                 // Re-index missing documents individually
-                int reindexedCount = 0;
+                int batchReindexedCount = 0;
                 for (Content content : batch) {
                     if (!existingIds.contains(content.getId())) {
                         try {
                             solrUtil.indexDocument(repositoryId, content, true);
-                            reindexedCount++;
+                            batchReindexedCount++;
+                            reindexedSuccessCount.incrementAndGet();
+                            status.setReindexedCount(reindexedSuccessCount.get());
                             log.info("Re-indexed silently dropped document: " + content.getId());
                         } catch (Exception ex) {
                             // Decrement indexedCount since this document was counted as success in batch
@@ -513,8 +523,8 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                     }
                 }
                 
-                if (reindexedCount > 0) {
-                    log.info("Re-indexed " + reindexedCount + " silently dropped documents");
+                if (batchReindexedCount > 0) {
+                    log.info("Re-indexed " + batchReindexedCount + " silently dropped documents (total: " + reindexedSuccessCount.get() + ")");
                 }
             }
         } catch (Exception e) {
@@ -614,11 +624,64 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
     }
 
     private static final int MAX_QUERY_ROWS = 1000;
+    
+    /**
+     * Validate Solr query syntax for common errors.
+     * Returns null if valid, or an error message if invalid.
+     */
+    private String validateQuerySyntax(String query) {
+        if (query == null || query.trim().isEmpty()) {
+            return null; // Empty query is valid (will use default)
+        }
+        
+        // Check for balanced parentheses
+        int parenCount = 0;
+        int bracketCount = 0;
+        boolean inQuote = false;
+        for (int i = 0; i < query.length(); i++) {
+            char c = query.charAt(i);
+            if (c == '"' && (i == 0 || query.charAt(i - 1) != '\\')) {
+                inQuote = !inQuote;
+            } else if (!inQuote) {
+                if (c == '(') parenCount++;
+                else if (c == ')') parenCount--;
+                else if (c == '[') bracketCount++;
+                else if (c == ']') bracketCount--;
+                
+                if (parenCount < 0) {
+                    return "Unbalanced parentheses: unexpected ')' at position " + i;
+                }
+                if (bracketCount < 0) {
+                    return "Unbalanced brackets: unexpected ']' at position " + i;
+                }
+            }
+        }
+        
+        if (inQuote) {
+            return "Unclosed quote in query";
+        }
+        if (parenCount != 0) {
+            return "Unbalanced parentheses: " + Math.abs(parenCount) + " unclosed '('";
+        }
+        if (bracketCount != 0) {
+            return "Unbalanced brackets: " + Math.abs(bracketCount) + " unclosed '['";
+        }
+        
+        return null; // Valid
+    }
 
     @Override
     public SolrQueryResult executeSolrQuery(String repositoryId, String query, int start, int rows, String sort, String fields) {
         SolrQueryResult result = new SolrQueryResult();
         long startTime = System.currentTimeMillis();
+        
+        // Validate query syntax before sending to Solr
+        String validationError = validateQuerySyntax(query);
+        if (validationError != null) {
+            result.setErrorMessage("Query syntax error: " + validationError);
+            result.setQueryTime(System.currentTimeMillis() - startTime);
+            return result;
+        }
 
         SolrClient solrClient = null;
         try {

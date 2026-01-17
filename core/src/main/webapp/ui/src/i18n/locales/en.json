@@ -1194,6 +1194,8 @@
       "totalDocuments": "Total Documents",
       "indexed": "Indexed",
       "errorCount": "Error Count",
+      "silentDropCount": "Silent Drops Detected",
+      "reindexedCount": "Re-indexed (Recovery)",
       "errorMessage": "Error Message",
       "errorDetails": "Error Details ({{count}} errors)",
       "cancel": "Cancel"

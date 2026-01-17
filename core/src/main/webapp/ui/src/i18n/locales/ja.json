@@ -1194,6 +1194,8 @@
       "totalDocuments": "総ドキュメント数",
       "indexed": "インデックス済み",
       "errorCount": "エラー数",
+      "silentDropCount": "サイレントドロップ検出数",
+      "reindexedCount": "再インデックス成功数（復旧）",
       "errorMessage": "エラーメッセージ",
       "errorDetails": "エラー詳細 ({{count}}件)",
       "cancel": "キャンセル"

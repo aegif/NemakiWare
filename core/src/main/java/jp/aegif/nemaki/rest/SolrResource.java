@@ -335,6 +335,8 @@ public class SolrResource extends ResourceBase {
 		result.put("totalDocuments", reindexStatus.getTotalDocuments());
 		result.put("indexedCount", reindexStatus.getIndexedCount());
 		result.put("errorCount", reindexStatus.getErrorCount());
+		result.put("silentDropCount", reindexStatus.getSilentDropCount());
+		result.put("reindexedCount", reindexStatus.getReindexedCount());
 		result.put("startTime", reindexStatus.getStartTime());
 		result.put("endTime", reindexStatus.getEndTime());
 		result.put("currentFolder", reindexStatus.getCurrentFolder());

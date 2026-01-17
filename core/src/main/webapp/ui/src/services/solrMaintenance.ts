@@ -17,6 +17,8 @@ export interface ReindexStatus {
   totalDocuments: number;
   indexedCount: number;
   errorCount: number;
+  silentDropCount: number;   // Number of documents detected as silently dropped by Solr
+  reindexedCount: number;    // Number of silently dropped documents successfully re-indexed
   startTime: number;
   endTime: number;
   currentFolder: string | null;
