@@ -333,7 +333,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
             </Button>
           </div>
         )}
-        {reindexStatus.errors && reindexStatus.errors.length > 0 && (
+        {reindexStatus.errors.length > 0 && (
           <div style={{ marginTop: 16 }}>
             <Collapse
               items={[

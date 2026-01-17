@@ -560,4 +560,80 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         assertNotNull(result);
         assertNull(result.getErrorMessage());
     }
+    
+    // Tests for improved escape detection with consecutive backslashes
+    
+    @Test
+    public void testExecuteSolrQueryWithDoubleBackslashBeforeQuote() {
+        // Query with \\" - the backslash is escaped, so the quote is NOT escaped (unclosed quote)
+        // Two backslashes (even number) means the quote is not escaped
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test\\\\\"", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNotNull("Double backslash before quote should leave quote unescaped (unclosed)", 
+            result.getErrorMessage());
+        assertTrue("Error should mention unclosed quote", 
+            result.getErrorMessage().contains("quote") || result.getErrorMessage().contains("Unclosed"));
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithTripleBackslashBeforeQuote() throws Exception {
+        // Query with \\\" - odd number of backslashes means quote IS escaped (valid)
+        when(solrUtil.getSolrClient()).thenReturn(solrClient);
+        when(solrClient.query(any(SolrQuery.class))).thenReturn(queryResponse);
+        when(queryResponse.getResults()).thenReturn(solrDocumentList);
+        when(solrDocumentList.getNumFound()).thenReturn(5L);
+        when(solrDocumentList.getStart()).thenReturn(0L);
+        when(solrDocumentList.iterator()).thenReturn(new ArrayList<SolrDocument>().iterator());
+        
+        // name:"test\\\" doc" - the \\\" is an escaped backslash followed by escaped quote
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test\\\\\\\" doc\"", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNull("Triple backslash before quote should escape the quote (valid query)", result.getErrorMessage());
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithQuadrupleBackslashBeforeQuote() {
+        // Query with \\\\" - four backslashes (even number) means quote is NOT escaped
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test\\\\\\\\\"", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNotNull("Quadruple backslash before quote should leave quote unescaped (unclosed)", 
+            result.getErrorMessage());
+        assertTrue("Error should mention unclosed quote", 
+            result.getErrorMessage().contains("quote") || result.getErrorMessage().contains("Unclosed"));
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithSingleBackslashAtStart() throws Exception {
+        // Query with escaped quote at the start of quoted string
+        when(solrUtil.getSolrClient()).thenReturn(solrClient);
+        when(solrClient.query(any(SolrQuery.class))).thenReturn(queryResponse);
+        when(queryResponse.getResults()).thenReturn(solrDocumentList);
+        when(solrDocumentList.getNumFound()).thenReturn(5L);
+        when(solrDocumentList.getStart()).thenReturn(0L);
+        when(solrDocumentList.iterator()).thenReturn(new ArrayList<SolrDocument>().iterator());
+        
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"\\\"test\"", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNull("Single backslash should escape the quote (valid query)", result.getErrorMessage());
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithBackslashNotBeforeQuote() throws Exception {
+        // Query with backslash not immediately before quote should not affect quote parsing
+        when(solrUtil.getSolrClient()).thenReturn(solrClient);
+        when(solrClient.query(any(SolrQuery.class))).thenReturn(queryResponse);
+        when(queryResponse.getResults()).thenReturn(solrDocumentList);
+        when(solrDocumentList.getNumFound()).thenReturn(5L);
+        when(solrDocumentList.getStart()).thenReturn(0L);
+        when(solrDocumentList.iterator()).thenReturn(new ArrayList<SolrDocument>().iterator());
+        
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test\\nvalue\"", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNull("Backslash not before quote should not affect parsing", result.getErrorMessage());
+    }
 }

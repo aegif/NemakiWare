@@ -451,16 +451,23 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         String queryString = buildVerificationQuery(repositoryId, batch);
         
         // Check if we need to split the batch due to query length limits
-        if (queryString.length() > MAX_VERIFICATION_QUERY_LENGTH && batch.size() > 1) {
-            // Split batch in half and verify each part separately
-            int mid = batch.size() / 2;
-            List<Content> firstHalf = batch.subList(0, mid);
-            List<Content> secondHalf = batch.subList(mid, batch.size());
-            log.info("Splitting batch verification due to query length (" + queryString.length() + " chars): " + 
-                batch.size() + " -> " + firstHalf.size() + " + " + secondHalf.size());
-            verifyAndReindexMissing(repositoryId, new ArrayList<>(firstHalf), indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
-            verifyAndReindexMissing(repositoryId, new ArrayList<>(secondHalf), indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
-            return;
+        if (queryString.length() > MAX_VERIFICATION_QUERY_LENGTH) {
+            if (batch.size() > 1) {
+                // Split batch in half and verify each part separately
+                int mid = batch.size() / 2;
+                List<Content> firstHalf = batch.subList(0, mid);
+                List<Content> secondHalf = batch.subList(mid, batch.size());
+                log.info("Splitting batch verification due to query length (" + queryString.length() + " chars): " + 
+                    batch.size() + " -> " + firstHalf.size() + " + " + secondHalf.size());
+                verifyAndReindexMissing(repositoryId, new ArrayList<>(firstHalf), indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
+                verifyAndReindexMissing(repositoryId, new ArrayList<>(secondHalf), indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount);
+                return;
+            } else {
+                // Single document with very long ID - skip verification to avoid Solr query length limit
+                log.warn("Skipping batch verification for single document due to query length (" + queryString.length() + 
+                    " chars exceeds limit " + MAX_VERIFICATION_QUERY_LENGTH + "): " + batch.get(0).getId());
+                return;
+            }
         }
         
         SolrClient solrClient = null;
@@ -640,7 +647,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         boolean inQuote = false;
         for (int i = 0; i < query.length(); i++) {
             char c = query.charAt(i);
-            if (c == '"' && (i == 0 || query.charAt(i - 1) != '\\')) {
+            if (c == '"' && !isEscaped(query, i)) {
                 inQuote = !inQuote;
             } else if (!inQuote) {
                 if (c == '(') parenCount++;
@@ -668,6 +675,24 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         }
         
         return null; // Valid
+    }
+    
+    /**
+     * Check if the character at position i is escaped by counting consecutive backslashes.
+     * A character is escaped if preceded by an odd number of backslashes.
+     */
+    private boolean isEscaped(String str, int i) {
+        if (i == 0) {
+            return false;
+        }
+        int backslashCount = 0;
+        int j = i - 1;
+        while (j >= 0 && str.charAt(j) == '\\') {
+            backslashCount++;
+            j--;
+        }
+        // Odd number of backslashes means the character is escaped
+        return backslashCount % 2 == 1;
     }
 
     @Override
