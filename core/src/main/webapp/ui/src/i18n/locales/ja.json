@@ -74,16 +74,17 @@
     },
     "confirmDelete": "この{{item}}を削除しますか？"
   },
-  "navigation": {
-    "home": "ホーム",
-    "documents": "ドキュメント",
-    "folders": "フォルダ",
-    "admin": "管理",
-    "settings": "設定",
-    "logout": "ログアウト",
-    "search": "検索",
-    "archive": "アーカイブ"
-  },
+    "navigation": {
+      "home": "ホーム",
+      "documents": "ドキュメント",
+      "folders": "フォルダ",
+      "admin": "管理",
+      "settings": "設定",
+      "logout": "ログアウト",
+      "search": "検索",
+      "archive": "アーカイブ",
+      "solr": "Solrインデックス"
+    },
   "typeManagement": {
     "title": "タイプ管理",
     "customTypes": "カスタムタイプ",

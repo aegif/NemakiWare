@@ -74,16 +74,17 @@
     },
     "confirmDelete": "Delete this {{item}}?"
   },
-  "navigation": {
-    "home": "Home",
-    "documents": "Documents",
-    "folders": "Folders",
-    "admin": "Admin",
-    "settings": "Settings",
-    "logout": "Logout",
-    "search": "Search",
-    "archive": "Archive"
-  },
+    "navigation": {
+      "home": "Home",
+      "documents": "Documents",
+      "folders": "Folders",
+      "admin": "Admin",
+      "settings": "Settings",
+      "logout": "Logout",
+      "search": "Search",
+      "archive": "Archive",
+      "solr": "Solr Index"
+    },
   "typeManagement": {
     "title": "Type Management",
     "customTypes": "Custom Types",

@@ -769,4 +769,26 @@
         <property name="aclService" ref="AclService" />
     </bean>
 
+    <!-- Solr Index Maintenance Service -->
+    <bean id="SolrIndexMaintenanceService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="solrIndexMaintenanceService" />
+        </property>
+    </bean>
+    <bean id="solrIndexMaintenanceService" class="jp.aegif.nemaki.businesslogic.impl.SolrIndexMaintenanceServiceImpl">
+        <property name="contentService" ref="ContentService" />
+        <property name="solrUtil" ref="solrUtil" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+    </bean>
+
+    <bean id="solrResource" class="jp.aegif.nemaki.rest.SolrResource">
+        <property name="solrUtil" ref="solrUtil" />
+        <property name="solrIndexMaintenanceService" ref="SolrIndexMaintenanceService" />
+    </bean>
+
 </beans>
