@@ -286,8 +286,9 @@ public class SolrUtil implements ApplicationContextAware {
 				if (response.getStatus() == 0) {
 					log.info("Batch indexed " + successCount + " documents successfully");
 				} else {
+					// Throw exception to trigger fallback to individual indexing in caller
 					log.error("Batch indexing failed with status: " + response.getStatus());
-					successCount = 0;
+					throw new RuntimeException("Solr batch indexing failed with status: " + response.getStatus());
 				}
 			}
 		} catch (SolrServerException e) {
