@@ -21,6 +21,7 @@ export interface ReindexStatus {
   endTime: number;
   currentFolder: string | null;
   errorMessage: string | null;
+  errors: string[];
 }
 
 export interface IndexHealthStatus {

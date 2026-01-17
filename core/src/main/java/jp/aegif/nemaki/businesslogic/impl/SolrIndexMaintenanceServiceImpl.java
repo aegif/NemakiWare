@@ -34,6 +34,7 @@ import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.client.solrj.response.UpdateResponse;
+import org.apache.solr.client.solrj.util.ClientUtils;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 
@@ -423,13 +424,14 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             
             // Build query to check which documents exist in Solr
             // Use object_id field which matches the content ID
+            // Escape special characters in repositoryId and objectId to prevent query injection
             StringBuilder queryBuilder = new StringBuilder();
-            queryBuilder.append("repository_id:").append(repositoryId).append(" AND object_id:(");
+            queryBuilder.append("repository_id:").append(ClientUtils.escapeQueryChars(repositoryId)).append(" AND object_id:(");
             for (int i = 0; i < batch.size(); i++) {
                 if (i > 0) {
                     queryBuilder.append(" OR ");
                 }
-                queryBuilder.append("\"").append(batch.get(i).getId()).append("\"");
+                queryBuilder.append("\"").append(ClientUtils.escapeQueryChars(batch.get(i).getId())).append("\"");
             }
             queryBuilder.append(")");
             
@@ -465,6 +467,9 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                             reindexedCount++;
                             log.info("Re-indexed silently dropped document: " + content.getId());
                         } catch (Exception ex) {
+                            // Decrement indexedCount since this document was counted as success in batch
+                            // but actually failed (silent drop + re-index failure)
+                            indexedCount.decrementAndGet();
                             errorCount.incrementAndGet();
                             String errorMsg = "Failed to re-index silently dropped document " + content.getId() + ": " + ex.getMessage();
                             if (errors.size() < 100) {
@@ -524,9 +529,10 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         SolrClient solrClient = null;
         try {
             // Get Solr document count
+            // Escape repositoryId to prevent query injection with special characters
             solrClient = solrUtil.getSolrClient();
             if (solrClient != null) {
-                SolrQuery query = new SolrQuery("repository_id:" + repositoryId);
+                SolrQuery query = new SolrQuery("repository_id:" + ClientUtils.escapeQueryChars(repositoryId));
                 query.setRows(0);
                 QueryResponse response = solrClient.query(query);
                 health.setSolrDocumentCount(response.getResults().getNumFound());
@@ -590,16 +596,18 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             }
 
             // Build query with repository filter
+            // Escape repositoryId to prevent query injection with special characters
+            String escapedRepoId = ClientUtils.escapeQueryChars(repositoryId);
             SolrQuery solrQuery = new SolrQuery();
             if (query != null && !query.trim().isEmpty()) {
                 // Add repository filter if not already present
                 if (!query.contains("repository_id:")) {
-                    solrQuery.setQuery("repository_id:" + repositoryId + " AND (" + query + ")");
+                    solrQuery.setQuery("repository_id:" + escapedRepoId + " AND (" + query + ")");
                 } else {
                     solrQuery.setQuery(query);
                 }
             } else {
-                solrQuery.setQuery("repository_id:" + repositoryId);
+                solrQuery.setQuery("repository_id:" + escapedRepoId);
             }
 
             solrQuery.setStart(start >= 0 ? start : 0);
@@ -691,7 +699,8 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 return false;
             }
 
-            UpdateResponse response = solrClient.deleteByQuery("repository_id:" + repositoryId);
+            // Escape repositoryId to prevent query injection with special characters
+            UpdateResponse response = solrClient.deleteByQuery("repository_id:" + ClientUtils.escapeQueryChars(repositoryId));
             solrClient.commit();
             solrClient.close();
 

@@ -31,7 +31,9 @@ import {
   InputNumber,
   Spin,
   Descriptions,
-  Typography
+  Typography,
+  Collapse,
+  List
 } from 'antd';
 import {
   SyncOutlined,
@@ -327,6 +329,32 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
             >
               {t('solrMaintenance.reindexStatus.cancel')}
             </Button>
+          </div>
+        )}
+        {reindexStatus.errors && reindexStatus.errors.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <Collapse
+              items={[
+                {
+                  key: 'errors',
+                  label: t('solrMaintenance.reindexStatus.errorDetails', { count: reindexStatus.errors.length }),
+                  children: (
+                    <List
+                      size="small"
+                      dataSource={reindexStatus.errors}
+                      renderItem={(error: string, index: number) => (
+                        <List.Item>
+                          <Text type="danger" style={{ fontSize: '12px' }}>
+                            {index + 1}. {error}
+                          </Text>
+                        </List.Item>
+                      )}
+                      style={{ maxHeight: '300px', overflow: 'auto' }}
+                    />
+                  ),
+                },
+              ]}
+            />
           </div>
         )}
       </Card>
