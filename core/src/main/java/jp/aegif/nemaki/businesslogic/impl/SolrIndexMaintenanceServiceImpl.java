@@ -57,6 +57,12 @@ import java.util.concurrent.atomic.AtomicLong;
 public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceService {
 
     private static final Log log = LogFactory.getLog(SolrIndexMaintenanceServiceImpl.class);
+    
+    /** Batch size for bulk indexing operations - balances memory usage and performance */
+    private static final int BATCH_SIZE = 100;
+    
+    /** Commit within milliseconds for batch operations */
+    private static final int BATCH_COMMIT_WITHIN_MS = 5000;
 
     private ContentService contentService;
     private SolrUtil solrUtil;
@@ -255,36 +261,98 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             }
 
             List<Content> children = contentService.getChildren(repositoryId, folderId);
+            
+            // Collect documents for batch indexing
+            List<Content> batchBuffer = new ArrayList<>();
+            List<Folder> subFolders = new ArrayList<>();
+            
             for (Content child : children) {
                 if (cancelFlags.get(repositoryId).get()) {
+                    // Flush remaining batch before cancellation
+                    if (!batchBuffer.isEmpty()) {
+                        flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status);
+                    }
                     return;
                 }
 
-                try {
-                    // Use synchronous indexing (forceSync=true) for maintenance operations
-                    // This ensures progress tracking is accurate and bypasses solr.indexing.force setting
-                    solrUtil.indexDocument(repositoryId, child, true);
-                    indexedCount.incrementAndGet();
-                    status.setIndexedCount(indexedCount.get());
-                } catch (Exception e) {
-                    errorCount.incrementAndGet();
-                    String errorMsg = "Failed to index " + child.getId() + ": " + e.getMessage();
-                    if (errors.size() < 100) {
-                        errors.add(errorMsg);
-                    }
-                    log.warn(errorMsg);
-                }
-
+                // Separate folders for recursive processing
                 if (recursive && child instanceof Folder) {
-                    reindexFolderRecursive(repositoryId, child.getId(), true, 
-                        status, indexedCount, errorCount, errors);
+                    subFolders.add((Folder) child);
                 }
+                
+                // Add to batch buffer
+                batchBuffer.add(child);
+                
+                // Flush batch when it reaches BATCH_SIZE
+                if (batchBuffer.size() >= BATCH_SIZE) {
+                    flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status);
+                    batchBuffer.clear();
+                }
+            }
+            
+            // Flush remaining documents in buffer
+            if (!batchBuffer.isEmpty()) {
+                flushBatch(repositoryId, batchBuffer, indexedCount, errorCount, errors, status);
+            }
+            
+            // Process subfolders recursively
+            for (Folder subFolder : subFolders) {
+                if (cancelFlags.get(repositoryId).get()) {
+                    return;
+                }
+                reindexFolderRecursive(repositoryId, subFolder.getId(), true, 
+                    status, indexedCount, errorCount, errors);
             }
         } catch (Exception e) {
             log.error("Error reindexing folder: " + folderId, e);
             errorCount.incrementAndGet();
             if (errors.size() < 100) {
                 errors.add("Error processing folder " + folderId + ": " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * Flush a batch of documents to Solr index.
+     * Uses batch indexing for improved performance.
+     */
+    private void flushBatch(String repositoryId, List<Content> batch, 
+            AtomicLong indexedCount, AtomicLong errorCount, List<String> errors, ReindexStatus status) {
+        if (batch.isEmpty()) {
+            return;
+        }
+        
+        try {
+            int successCount = solrUtil.indexDocumentsBatch(repositoryId, batch, BATCH_COMMIT_WITHIN_MS);
+            indexedCount.addAndGet(successCount);
+            status.setIndexedCount(indexedCount.get());
+            
+            // Track errors for documents that failed
+            int failedCount = batch.size() - successCount;
+            if (failedCount > 0) {
+                errorCount.addAndGet(failedCount);
+                if (errors.size() < 100) {
+                    errors.add("Batch indexing: " + failedCount + " documents failed in batch of " + batch.size());
+                }
+            }
+            
+            log.info("Batch indexed " + successCount + "/" + batch.size() + " documents, total: " + indexedCount.get());
+        } catch (Exception e) {
+            // Fall back to individual indexing on batch failure
+            log.warn("Batch indexing failed, falling back to individual indexing: " + e.getMessage());
+            for (Content content : batch) {
+                try {
+                    solrUtil.indexDocument(repositoryId, content, true);
+                    indexedCount.incrementAndGet();
+                    status.setIndexedCount(indexedCount.get());
+                } catch (Exception ex) {
+                    errorCount.incrementAndGet();
+                    String errorMsg = "Failed to index " + content.getId() + ": " + ex.getMessage();
+                    if (errors.size() < 100) {
+                        errors.add(errorMsg);
+                    }
+                    log.warn(errorMsg);
+                }
             }
         }
     }

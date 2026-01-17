@@ -445,8 +445,12 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
             </Form.Item>
           </Col>
           <Col span={6}>
-            <Form.Item name="rows" label="件数 (rows)">
-              <InputNumber min={1} max={100} style={{ width: '100%' }} />
+            <Form.Item 
+              name="rows" 
+              label="件数 (rows)"
+              tooltip="サーバー側で最大1000件に制限されます"
+            >
+              <InputNumber min={1} max={1000} style={{ width: '100%' }} />
             </Form.Item>
           </Col>
           <Col span={6}>

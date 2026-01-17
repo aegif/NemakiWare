@@ -245,6 +245,74 @@ public class SolrUtil implements ApplicationContextAware {
 	}
 
 	/**
+	 * Batch index multiple documents in Solr for improved performance.
+	 * Uses a single UpdateRequest with commitWithin for efficient bulk indexing.
+	 * @param repositoryId the repository ID
+	 * @param contents list of contents to index
+	 * @param commitWithinMs commit within milliseconds (default 5000 for batch operations)
+	 * @return number of successfully indexed documents
+	 */
+	public int indexDocumentsBatch(String repositoryId, List<Content> contents, int commitWithinMs) {
+		if (contents == null || contents.isEmpty()) {
+			return 0;
+		}
+		
+		log.info("Batch indexing " + contents.size() + " documents for repository: " + repositoryId);
+		
+		SolrClient solrClient = null;
+		int successCount = 0;
+		try {
+			solrClient = getSolrClient();
+			if (solrClient == null) {
+				log.warn("Solr client is null, skipping batch indexing");
+				return 0;
+			}
+			
+			UpdateRequest updateRequest = new UpdateRequest();
+			updateRequest.setCommitWithin(commitWithinMs > 0 ? commitWithinMs : 5000);
+			
+			for (Content content : contents) {
+				try {
+					SolrInputDocument doc = createSolrDocument(repositoryId, content);
+					updateRequest.add(doc);
+					successCount++;
+				} catch (Exception e) {
+					log.warn("Failed to create Solr document for " + content.getId() + ": " + e.getMessage());
+				}
+			}
+			
+			if (successCount > 0) {
+				UpdateResponse response = updateRequest.process(solrClient);
+				if (response.getStatus() == 0) {
+					log.info("Batch indexed " + successCount + " documents successfully");
+				} else {
+					log.error("Batch indexing failed with status: " + response.getStatus());
+					successCount = 0;
+				}
+			}
+		} catch (SolrServerException e) {
+			log.error("Solr server error during batch indexing: " + e.getMessage(), e);
+			throw new RuntimeException("Solr batch indexing failed: " + e.getMessage(), e);
+		} catch (IOException e) {
+			log.error("IO error during batch indexing: " + e.getMessage(), e);
+			throw new RuntimeException("Solr batch indexing failed: " + e.getMessage(), e);
+		} catch (Exception e) {
+			log.error("Unexpected error during batch indexing: " + e.getMessage(), e);
+			throw new RuntimeException("Solr batch indexing failed: " + e.getMessage(), e);
+		} finally {
+			if (solrClient != null) {
+				try {
+					solrClient.close();
+				} catch (IOException e) {
+					log.warn("Failed to close Solr client: " + e.getMessage());
+				}
+			}
+		}
+		
+		return successCount;
+	}
+
+	/**
 	 * Internal method to perform the actual Solr indexing
 	 */
 	private void indexDocumentInternal(String repositoryId, Content content) {
