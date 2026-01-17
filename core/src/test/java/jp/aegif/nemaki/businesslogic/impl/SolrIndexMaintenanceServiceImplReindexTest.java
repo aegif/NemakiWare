@@ -348,5 +348,9 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
             }
             Thread.sleep(100);
         }
+        ReindexStatus finalStatus = service.getReindexStatus(repositoryId);
+        fail("Reindex did not complete within " + timeoutSeconds + " seconds. " +
+             "Current status: " + finalStatus.getStatus() + 
+             ", indexed: " + finalStatus.getIndexedCount() + "/" + finalStatus.getTotalDocuments());
     }
 }
