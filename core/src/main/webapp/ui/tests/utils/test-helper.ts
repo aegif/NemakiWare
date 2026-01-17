@@ -659,6 +659,85 @@ export class TestHelper {
   }
 
   /**
+   * Navigate into a folder by clicking on its name link
+   *
+   * CRITICAL FIX (2025-01-17): DocumentList uses SINGLE CLICK on folder name link
+   * to navigate, NOT double-click on row. The folder name is rendered as a clickable
+   * link that calls setSelectedFolderId() on click.
+   *
+   * @param folderName Name of the folder to navigate into
+   * @param isMobile Whether the browser is in mobile mode
+   * @returns true if navigation was successful, false otherwise
+   */
+  async navigateIntoFolder(folderName: string, isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Navigating into folder: ${folderName}`);
+
+    // Find the folder row
+    const folderRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).first();
+    if (await folderRow.count() === 0) {
+      console.log(`TestHelper: Folder ${folderName} not found in table`);
+      return false;
+    }
+
+    // Get current URL to verify navigation later
+    const urlBefore = this.page.url();
+    console.log(`TestHelper: URL before navigation: ${urlBefore}`);
+
+    // Get the folder ID for URL verification
+    const folderId = await folderRow.getAttribute('data-row-key').catch(() => null);
+    console.log(`TestHelper: Folder ID: ${folderId}`);
+
+    // CRITICAL FIX: Click the folder NAME LINK, not double-click the row
+    // The folder name is a clickable <a> or <span> that triggers navigation
+    const folderNameLink = folderRow.locator('a, span.ant-typography').filter({ hasText: folderName }).first();
+    if (await folderNameLink.count() > 0) {
+      await folderNameLink.click(isMobile ? { force: true } : {});
+      console.log('TestHelper: Clicked folder name link');
+    } else {
+      // Fallback: try clicking the name cell directly
+      const nameCell = folderRow.locator('td').nth(1); // Name is usually the second column
+      await nameCell.click(isMobile ? { force: true } : {});
+      console.log('TestHelper: Clicked folder name cell (fallback)');
+    }
+
+    // Wait for navigation to complete
+    await this.page.waitForTimeout(2000);
+
+    // Verify navigation was successful by checking:
+    // 1. URL change (should contain folder ID)
+    // 2. Table content change (folder should not be in current view)
+
+    const urlAfter = this.page.url();
+    console.log(`TestHelper: URL after navigation: ${urlAfter}`);
+
+    // Check if URL contains the folder ID (indicates navigation)
+    const urlContainsFolderId = folderId ? urlAfter.includes(folderId) : false;
+    const urlChanged = urlAfter !== urlBefore;
+
+    // Check if the folder is no longer visible in the table (we're inside it now)
+    // Note: The folder name might still appear in breadcrumb, but not in table
+    await this.page.waitForTimeout(500); // Wait for table to update
+    const folderStillInTable = await this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).count() > 0;
+
+    console.log(`TestHelper: Navigation check - URL changed: ${urlChanged}, URL has folderId: ${urlContainsFolderId}, Folder still in table: ${folderStillInTable}`);
+
+    // Navigation is successful if:
+    // - URL contains the folder ID, OR
+    // - URL changed AND folder is no longer in table
+    const navigationSuccessful = urlContainsFolderId || (urlChanged && !folderStillInTable);
+
+    if (navigationSuccessful) {
+      console.log(`TestHelper: Successfully navigated into folder: ${folderName}`);
+    } else {
+      console.log(`TestHelper: Navigation into folder ${folderName} may have failed`);
+      // Take screenshot for debugging
+      await this.page.screenshot({ path: 'test-results/screenshots/folder-navigation-failed.png', fullPage: true });
+    }
+
+    return navigationSuccessful;
+  }
+
+  /**
    * Wait for document list page to be fully loaded with action buttons
    * This method ensures all UI elements are ready before tests interact with them
    *

@@ -90,9 +90,13 @@ test.describe('Archive and Restore Consistency', () => {
         console.log(`Folder ID: ${testFolderId}`);
       }
 
-      // Navigate into folder
-      await folderRow.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      // Navigate into folder using helper (single click on folder name, not dblclick on row)
+      const navigationSuccessful = await testHelper.navigateIntoFolder(testFolderName, isMobile);
+      console.log(`Navigation into folder: ${navigationSuccessful}`);
+
+      if (!navigationSuccessful) {
+        console.log('WARNING: Folder navigation may have failed, document will be created at current location');
+      }
 
       // Create document inside folder
       const docCreated = await testHelper.uploadDocument(testDocumentName, documentContent, isMobile);
@@ -124,12 +128,8 @@ test.describe('Archive and Restore Consistency', () => {
     await documentsMenuItem.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
 
-    // Navigate into test folder
-    const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
-    if (await folderRow.count() > 0) {
-      await folderRow.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
-    }
+    // Navigate into test folder using helper (single click on folder name)
+    await testHelper.navigateIntoFolder(testFolderName, isMobile);
 
     // Find the document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
@@ -250,11 +250,10 @@ test.describe('Archive and Restore Consistency', () => {
     await documentsMenuItem.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
 
-    // Navigate into test folder
+    // Navigate into test folder using helper (single click on folder name)
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
     if (await folderRow.count() > 0) {
-      await folderRow.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await testHelper.navigateIntoFolder(testFolderName, isMobile);
 
       // Verify document is back
       const restoredDocument = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName });
@@ -287,11 +286,10 @@ test.describe('Archive and Restore Consistency', () => {
     await documentsMenuItem.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(2000);
 
-    // Navigate into test folder
+    // Navigate into test folder using helper (single click on folder name)
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
     if (await folderRow.count() > 0) {
-      await folderRow.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      await testHelper.navigateIntoFolder(testFolderName, isMobile);
     }
 
     // Archive the document again
