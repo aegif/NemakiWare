@@ -24,6 +24,10 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
+import {
+  TIMEOUTS,
+  I18N_PATTERNS,
+} from './test-constants';
 
 test.describe('Version and Property History Consistency', () => {
   test.describe.configure({ mode: 'serial' });
@@ -383,29 +387,51 @@ test.describe('Version and Property History Consistency', () => {
   });
 
   test.afterAll(async ({ browser }) => {
-    console.log('Cleaning up version history test data...');
+    console.log('=== Starting cleanup for version-property-history test ===');
+    console.log(`Test Run ID: ${testRunId}`);
+    console.log(`Document to clean: ${testDocumentName} (ID: ${testDocumentId || 'unknown'})`);
 
     const context = await browser.newContext();
     const page = await context.newPage();
     const authHelper = new AuthHelper(page);
     const testHelper = new TestHelper(page);
+    const failedCleanups: string[] = [];
 
     try {
       await authHelper.login();
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
-      // Delete test document
-      const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-      if (await documentsMenuItem.count() > 0) {
-        await documentsMenuItem.click();
-        await page.waitForTimeout(2000);
+      // Step 1: Delete test document
+      console.log('[Cleanup Step 1] Deleting test document...');
+      try {
+        const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: I18N_PATTERNS.DOCUMENTS });
+        if (await documentsMenuItem.count() > 0) {
+          await documentsMenuItem.click();
+          await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
-        await testHelper.deleteTestDocument(testDocumentName);
+          await testHelper.deleteTestDocument(testDocumentName);
+          console.log(`[Cleanup] Successfully deleted document: ${testDocumentName}`);
+        }
+      } catch (docError) {
+        const errorMsg = `document: ${testDocumentName} (ID: ${testDocumentId || 'unknown'})`;
+        failedCleanups.push(errorMsg);
+        console.error(`[Cleanup] Failed to delete ${errorMsg}:`, docError);
       }
+
     } catch (error) {
-      console.error('Cleanup error:', error);
+      console.error('[Cleanup] Fatal error during cleanup:', error);
     } finally {
       await context.close();
+
+      // Report cleanup failures for manual intervention
+      if (failedCleanups.length > 0) {
+        console.warn('=== CLEANUP FAILURES - Manual cleanup required ===');
+        console.warn('The following items could not be deleted automatically:');
+        failedCleanups.forEach(item => console.warn(`  - ${item}`));
+        console.warn('=================================================');
+      } else {
+        console.log('=== Cleanup completed successfully ===');
+      }
     }
   });
 });

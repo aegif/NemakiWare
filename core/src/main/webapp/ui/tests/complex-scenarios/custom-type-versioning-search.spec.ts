@@ -27,6 +27,12 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
+import {
+  TIMEOUTS,
+  I18N_PATTERNS,
+  isMobileBrowser,
+  getClickOptions,
+} from './test-constants';
 
 test.describe('Custom Type with Required Properties, Validation, Search, and Versioning', () => {
   // Run tests serially to maintain state across tests
@@ -682,74 +688,108 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
   });
 
   test.afterAll(async ({ browser }) => {
-    console.log('Cleaning up test data...');
+    console.log('=== Starting cleanup for custom-type-versioning-search test ===');
+    console.log(`Test Run ID: ${testRunId}`);
+    console.log(`Document to clean: ${testDocumentName} (ID: ${testDocumentId || 'unknown'})`);
+    console.log(`Type to clean: ${customTypeId}`);
 
     const context = await browser.newContext();
     const page = await context.newPage();
     const authHelper = new AuthHelper(page);
+    const failedCleanups: string[] = [];
 
     try {
       await authHelper.login();
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
-      // Navigate to documents and delete test document
-      const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-      if (await documentsMenuItem.count() > 0) {
-        await documentsMenuItem.click();
-        await page.waitForTimeout(2000);
+      // CLEANUP ORDER: Documents first, then Types (dependency order)
+      // Step 1: Delete test document
+      console.log('[Cleanup Step 1] Deleting test document...');
+      try {
+        const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: I18N_PATTERNS.DOCUMENTS });
+        if (await documentsMenuItem.count() > 0) {
+          await documentsMenuItem.click();
+          await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
-        const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
-        if (await documentRow.count() > 0) {
-          await documentRow.click();
-          await page.waitForTimeout(500);
+          const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
+          if (await documentRow.count() > 0) {
+            await documentRow.click();
+            await page.waitForTimeout(TIMEOUTS.UI_ANIMATION);
 
-          const deleteButton = page.locator('button').filter({ hasText: /削除|Delete/ }).first();
-          if (await deleteButton.count() > 0) {
-            await deleteButton.click();
-            await page.waitForTimeout(500);
-
-            const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除/ }).first();
-            if (await confirmButton.count() > 0) {
-              await confirmButton.click();
-              await page.waitForTimeout(2000);
-              console.log(`Deleted test document: ${testDocumentName}`);
-            }
-          }
-        }
-      }
-
-      // Navigate to type management and delete custom type
-      const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
-      if (await adminMenu.count() > 0) {
-        await adminMenu.click();
-        await page.waitForTimeout(1000);
-
-        const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
-        if (await typeManagementItem.count() > 0) {
-          await typeManagementItem.click();
-          await page.waitForTimeout(2000);
-
-          const typeRow = page.locator('.ant-table-tbody tr').filter({ hasText: customTypeId }).first();
-          if (await typeRow.count() > 0) {
-            const deleteButton = typeRow.locator('button').filter({ hasText: /削除|Delete/ }).first();
+            const deleteButton = page.locator('button').filter({ hasText: I18N_PATTERNS.DELETE }).first();
             if (await deleteButton.count() > 0) {
               await deleteButton.click();
-              await page.waitForTimeout(500);
+              await page.waitForTimeout(TIMEOUTS.UI_ANIMATION);
 
-              const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除/ }).first();
+              const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: I18N_PATTERNS.CONFIRM }).first();
               if (await confirmButton.count() > 0) {
                 await confirmButton.click();
-                await page.waitForTimeout(2000);
-                console.log(`Deleted custom type: ${customTypeId}`);
+                await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
+                console.log(`[Cleanup] Successfully deleted document: ${testDocumentName}`);
               }
+            }
+          } else {
+            console.log(`[Cleanup] Document not found (may have been deleted already): ${testDocumentName}`);
+          }
+        }
+      } catch (docError) {
+        const errorMsg = `document: ${testDocumentName} (ID: ${testDocumentId || 'unknown'})`;
+        failedCleanups.push(errorMsg);
+        console.error(`[Cleanup] Failed to delete ${errorMsg}:`, docError);
+      }
+
+      // Step 2: Delete custom type (after documents are deleted)
+      console.log('[Cleanup Step 2] Deleting custom type...');
+      try {
+        const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: I18N_PATTERNS.ADMIN });
+        if (await adminMenu.count() > 0) {
+          await adminMenu.click();
+          await page.waitForTimeout(TIMEOUTS.UI_ANIMATION * 2);
+
+          const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: I18N_PATTERNS.TYPE_MANAGEMENT });
+          if (await typeManagementItem.count() > 0) {
+            await typeManagementItem.click();
+            await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
+
+            const typeRow = page.locator('.ant-table-tbody tr').filter({ hasText: customTypeId }).first();
+            if (await typeRow.count() > 0) {
+              const deleteButton = typeRow.locator('button').filter({ hasText: I18N_PATTERNS.DELETE }).first();
+              if (await deleteButton.count() > 0) {
+                await deleteButton.click();
+                await page.waitForTimeout(TIMEOUTS.UI_ANIMATION);
+
+                const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: I18N_PATTERNS.CONFIRM }).first();
+                if (await confirmButton.count() > 0) {
+                  await confirmButton.click();
+                  await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
+                  console.log(`[Cleanup] Successfully deleted type: ${customTypeId}`);
+                }
+              }
+            } else {
+              console.log(`[Cleanup] Type not found (may have been deleted already): ${customTypeId}`);
             }
           }
         }
+      } catch (typeError) {
+        const errorMsg = `type: ${customTypeId}`;
+        failedCleanups.push(errorMsg);
+        console.error(`[Cleanup] Failed to delete ${errorMsg}:`, typeError);
       }
+
     } catch (error) {
-      console.error('Cleanup error:', error);
+      console.error('[Cleanup] Fatal error during cleanup:', error);
     } finally {
       await context.close();
+
+      // Report cleanup failures for manual intervention
+      if (failedCleanups.length > 0) {
+        console.warn('=== CLEANUP FAILURES - Manual cleanup required ===');
+        console.warn('The following items could not be deleted automatically:');
+        failedCleanups.forEach(item => console.warn(`  - ${item}`));
+        console.warn('=================================================');
+      } else {
+        console.log('=== Cleanup completed successfully ===');
+      }
     }
   });
 });

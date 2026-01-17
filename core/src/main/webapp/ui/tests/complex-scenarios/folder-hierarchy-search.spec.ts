@@ -24,6 +24,10 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
+import {
+  TIMEOUTS,
+  I18N_PATTERNS,
+} from './test-constants';
 
 test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', () => {
   test.describe.configure({ mode: 'serial' });
@@ -369,62 +373,106 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
   });
 
   test.afterAll(async ({ browser }) => {
-    console.log('Cleaning up folder hierarchy test data...');
+    console.log('=== Starting cleanup for folder-hierarchy-search test ===');
+    console.log(`Test Run ID: ${testRunId}`);
+    console.log(`Root folder to clean: ${rootFolderName} (ID: ${rootFolderId || 'unknown'})`);
+    console.log(`Subfolders to clean: ${subFolder1Name}, ${subFolder2Name}`);
+    console.log(`Documents to clean: ${testDocument1Name}, ${testDocument2Name}`);
 
     const context = await browser.newContext();
     const page = await context.newPage();
     const authHelper = new AuthHelper(page);
     const testHelper = new TestHelper(page);
+    const failedCleanups: string[] = [];
 
     try {
       await authHelper.login();
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
-      // Navigate to documents
-      const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
+      // CLEANUP ORDER: Documents first, then Subfolders, then Root folder (dependency order)
+      const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: I18N_PATTERNS.DOCUMENTS });
       if (await documentsMenuItem.count() > 0) {
         await documentsMenuItem.click();
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
         // Navigate into root folder
         const rootFolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: rootFolderName }).first();
         if (await rootFolderRow.count() > 0) {
           await rootFolderRow.dblclick();
-          await page.waitForTimeout(2000);
+          await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
-          // Delete subfolders and their contents
+          // Step 1: Delete documents in subfolders
+          console.log('[Cleanup Step 1] Deleting documents in subfolders...');
           for (const subfolderName of [subFolder1Name, subFolder2Name]) {
-            const subfolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: subfolderName }).first();
-            if (await subfolderRow.count() > 0) {
-              await subfolderRow.dblclick();
-              await page.waitForTimeout(2000);
+            try {
+              const subfolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: subfolderName }).first();
+              if (await subfolderRow.count() > 0) {
+                await subfolderRow.dblclick();
+                await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
-              // Delete documents in subfolder
-              for (const docName of [testDocument1Name, testDocument2Name]) {
-                await testHelper.deleteTestDocument(docName);
+                // Delete documents in subfolder
+                for (const docName of [testDocument1Name, testDocument2Name]) {
+                  try {
+                    await testHelper.deleteTestDocument(docName);
+                    console.log(`[Cleanup] Successfully deleted document: ${docName}`);
+                  } catch (docError) {
+                    // Document may not exist in this folder
+                    console.log(`[Cleanup] Document not found in ${subfolderName}: ${docName}`);
+                  }
+                }
+
+                // Go back
+                await page.goBack();
+                await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
               }
+            } catch (subfolderError) {
+              console.error(`[Cleanup] Error processing subfolder ${subfolderName}:`, subfolderError);
+            }
+          }
 
-              // Go back
-              await page.goBack();
-              await page.waitForTimeout(2000);
-
-              // Delete subfolder
+          // Step 2: Delete subfolders
+          console.log('[Cleanup Step 2] Deleting subfolders...');
+          for (const subfolderName of [subFolder1Name, subFolder2Name]) {
+            try {
               await testHelper.deleteTestFolder(subfolderName);
+              console.log(`[Cleanup] Successfully deleted subfolder: ${subfolderName}`);
+            } catch (folderError) {
+              const errorMsg = `subfolder: ${subfolderName}`;
+              failedCleanups.push(errorMsg);
+              console.error(`[Cleanup] Failed to delete ${errorMsg}:`, folderError);
             }
           }
 
           // Go back to root
           await page.goBack();
-          await page.waitForTimeout(2000);
+          await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
         }
 
-        // Delete root folder
-        await testHelper.deleteTestFolder(rootFolderName);
+        // Step 3: Delete root folder
+        console.log('[Cleanup Step 3] Deleting root folder...');
+        try {
+          await testHelper.deleteTestFolder(rootFolderName);
+          console.log(`[Cleanup] Successfully deleted root folder: ${rootFolderName}`);
+        } catch (rootError) {
+          const errorMsg = `root folder: ${rootFolderName} (ID: ${rootFolderId || 'unknown'})`;
+          failedCleanups.push(errorMsg);
+          console.error(`[Cleanup] Failed to delete ${errorMsg}:`, rootError);
+        }
       }
     } catch (error) {
-      console.error('Cleanup error:', error);
+      console.error('[Cleanup] Fatal error during cleanup:', error);
     } finally {
       await context.close();
+
+      // Report cleanup failures for manual intervention
+      if (failedCleanups.length > 0) {
+        console.warn('=== CLEANUP FAILURES - Manual cleanup required ===');
+        console.warn('The following items could not be deleted automatically:');
+        failedCleanups.forEach(item => console.warn(`  - ${item}`));
+        console.warn('=================================================');
+      } else {
+        console.log('=== Cleanup completed successfully ===');
+      }
     }
   });
 });

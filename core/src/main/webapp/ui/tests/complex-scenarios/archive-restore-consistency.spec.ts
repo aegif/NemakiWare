@@ -26,6 +26,10 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
+import {
+  TIMEOUTS,
+  I18N_PATTERNS,
+} from './test-constants';
 
 test.describe('Archive and Restore Consistency', () => {
   test.describe.configure({ mode: 'serial' });
@@ -345,29 +349,53 @@ test.describe('Archive and Restore Consistency', () => {
   });
 
   test.afterAll(async ({ browser }) => {
-    console.log('Cleaning up archive test data...');
+    console.log('=== Starting cleanup for archive-restore-consistency test ===');
+    console.log(`Test Run ID: ${testRunId}`);
+    console.log(`Folder to clean: ${testFolderName} (ID: ${testFolderId || 'unknown'})`);
+    console.log(`Document to clean: ${testDocumentName} (ID: ${testDocumentId || 'unknown'})`);
 
     const context = await browser.newContext();
     const page = await context.newPage();
     const authHelper = new AuthHelper(page);
     const testHelper = new TestHelper(page);
+    const failedCleanups: string[] = [];
 
     try {
       await authHelper.login();
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
-      // Delete test folder
-      const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-      if (await documentsMenuItem.count() > 0) {
-        await documentsMenuItem.click();
-        await page.waitForTimeout(2000);
+      // CLEANUP ORDER: Documents first (if any remain), then Folders (dependency order)
+      // Note: Document may have been permanently deleted in test, folder cleanup is primary
+      console.log('[Cleanup Step 1] Deleting test folder...');
+      try {
+        const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: I18N_PATTERNS.DOCUMENTS });
+        if (await documentsMenuItem.count() > 0) {
+          await documentsMenuItem.click();
+          await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
-        await testHelper.deleteTestFolder(testFolderName);
+          await testHelper.deleteTestFolder(testFolderName);
+          console.log(`[Cleanup] Successfully deleted folder: ${testFolderName}`);
+        }
+      } catch (folderError) {
+        const errorMsg = `folder: ${testFolderName} (ID: ${testFolderId || 'unknown'})`;
+        failedCleanups.push(errorMsg);
+        console.error(`[Cleanup] Failed to delete ${errorMsg}:`, folderError);
       }
+
     } catch (error) {
-      console.error('Cleanup error:', error);
+      console.error('[Cleanup] Fatal error during cleanup:', error);
     } finally {
       await context.close();
+
+      // Report cleanup failures for manual intervention
+      if (failedCleanups.length > 0) {
+        console.warn('=== CLEANUP FAILURES - Manual cleanup required ===');
+        console.warn('The following items could not be deleted automatically:');
+        failedCleanups.forEach(item => console.warn(`  - ${item}`));
+        console.warn('=================================================');
+      } else {
+        console.log('=== Cleanup completed successfully ===');
+      }
     }
   });
 });

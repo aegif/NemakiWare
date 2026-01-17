@@ -23,6 +23,10 @@ import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
+import {
+  TIMEOUTS,
+  I18N_PATTERNS,
+} from './test-constants';
 
 test.describe('Secondary Type with Custom Properties', () => {
   test.describe.configure({ mode: 'serial' });
@@ -392,57 +396,91 @@ test.describe('Secondary Type with Custom Properties', () => {
   });
 
   test.afterAll(async ({ browser }) => {
-    console.log('Cleaning up secondary type test data...');
+    console.log('=== Starting cleanup for secondary-type-properties test ===');
+    console.log(`Test Run ID: ${testRunId}`);
+    console.log(`Document to clean: ${testDocumentName} (ID: ${testDocumentId || 'unknown'})`);
+    console.log(`Secondary type to clean: ${secondaryTypeId}`);
 
     const context = await browser.newContext();
     const page = await context.newPage();
     const authHelper = new AuthHelper(page);
     const testHelper = new TestHelper(page);
+    const failedCleanups: string[] = [];
 
     try {
       await authHelper.login();
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
-      // Delete test document
-      const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-      if (await documentsMenuItem.count() > 0) {
-        await documentsMenuItem.click();
-        await page.waitForTimeout(2000);
+      // CLEANUP ORDER: Documents first, then Types (dependency order)
+      // Step 1: Delete test document
+      console.log('[Cleanup Step 1] Deleting test document...');
+      try {
+        const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: I18N_PATTERNS.DOCUMENTS });
+        if (await documentsMenuItem.count() > 0) {
+          await documentsMenuItem.click();
+          await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
-        await testHelper.deleteTestDocument(testDocumentName);
+          await testHelper.deleteTestDocument(testDocumentName);
+          console.log(`[Cleanup] Successfully deleted document: ${testDocumentName}`);
+        }
+      } catch (docError) {
+        const errorMsg = `document: ${testDocumentName} (ID: ${testDocumentId || 'unknown'})`;
+        failedCleanups.push(errorMsg);
+        console.error(`[Cleanup] Failed to delete ${errorMsg}:`, docError);
       }
 
-      // Delete secondary type
-      const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
-      if (await adminMenu.count() > 0) {
-        await adminMenu.click();
-        await page.waitForTimeout(1000);
+      // Step 2: Delete secondary type (after documents are deleted)
+      console.log('[Cleanup Step 2] Deleting secondary type...');
+      try {
+        const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: I18N_PATTERNS.ADMIN });
+        if (await adminMenu.count() > 0) {
+          await adminMenu.click();
+          await page.waitForTimeout(TIMEOUTS.UI_ANIMATION * 2);
 
-        const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
-        if (await typeManagementItem.count() > 0) {
-          await typeManagementItem.click();
-          await page.waitForTimeout(2000);
+          const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: I18N_PATTERNS.TYPE_MANAGEMENT });
+          if (await typeManagementItem.count() > 0) {
+            await typeManagementItem.click();
+            await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
 
-          const typeRow = page.locator('.ant-table-tbody tr').filter({ hasText: secondaryTypeId }).first();
-          if (await typeRow.count() > 0) {
-            const deleteButton = typeRow.locator('button').filter({ hasText: /削除|Delete/ }).first();
-            if (await deleteButton.count() > 0) {
-              await deleteButton.click();
-              await page.waitForTimeout(500);
+            const typeRow = page.locator('.ant-table-tbody tr').filter({ hasText: secondaryTypeId }).first();
+            if (await typeRow.count() > 0) {
+              const deleteButton = typeRow.locator('button').filter({ hasText: I18N_PATTERNS.DELETE }).first();
+              if (await deleteButton.count() > 0) {
+                await deleteButton.click();
+                await page.waitForTimeout(TIMEOUTS.UI_ANIMATION);
 
-              const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除/ }).first();
-              if (await confirmButton.count() > 0) {
-                await confirmButton.click();
-                await page.waitForTimeout(2000);
+                const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: I18N_PATTERNS.CONFIRM }).first();
+                if (await confirmButton.count() > 0) {
+                  await confirmButton.click();
+                  await page.waitForTimeout(TIMEOUTS.PAGE_LOAD);
+                  console.log(`[Cleanup] Successfully deleted secondary type: ${secondaryTypeId}`);
+                }
               }
+            } else {
+              console.log(`[Cleanup] Secondary type not found (may have been deleted already): ${secondaryTypeId}`);
             }
           }
         }
+      } catch (typeError) {
+        const errorMsg = `secondary type: ${secondaryTypeId}`;
+        failedCleanups.push(errorMsg);
+        console.error(`[Cleanup] Failed to delete ${errorMsg}:`, typeError);
       }
+
     } catch (error) {
-      console.error('Cleanup error:', error);
+      console.error('[Cleanup] Fatal error during cleanup:', error);
     } finally {
       await context.close();
+
+      // Report cleanup failures for manual intervention
+      if (failedCleanups.length > 0) {
+        console.warn('=== CLEANUP FAILURES - Manual cleanup required ===');
+        console.warn('The following items could not be deleted automatically:');
+        failedCleanups.forEach(item => console.warn(`  - ${item}`));
+        console.warn('=================================================');
+      } else {
+        console.log('=== Cleanup completed successfully ===');
+      }
     }
   });
 });
