@@ -376,4 +376,188 @@ public class SolrIndexMaintenanceServiceImplQueryTest {
         assertEquals(1000, result.getNumFound());
         assertEquals(100, result.getStart());
     }
+    
+    // ========== Query Syntax Validation Tests ==========
+    
+    @Test
+    public void testExecuteSolrQueryWithUnbalancedParentheses() {
+        // Query with unclosed parenthesis should return validation error
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:(test", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNotNull(result.getErrorMessage());
+        assertTrue("Error should mention unbalanced parentheses", 
+            result.getErrorMessage().contains("parentheses") || result.getErrorMessage().contains("syntax"));
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithExtraClosingParenthesis() {
+        // Query with extra closing parenthesis should return validation error
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:test)", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNotNull(result.getErrorMessage());
+        assertTrue("Error should mention unbalanced parentheses", 
+            result.getErrorMessage().contains("parentheses") || result.getErrorMessage().contains("syntax"));
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithUnbalancedBrackets() {
+        // Query with unclosed bracket should return validation error
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "date:[2020-01-01 TO *", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNotNull(result.getErrorMessage());
+        assertTrue("Error should mention unbalanced brackets", 
+            result.getErrorMessage().contains("bracket") || result.getErrorMessage().contains("syntax"));
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithExtraClosingBracket() {
+        // Query with extra closing bracket should return validation error
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "date:2020-01-01]", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNotNull(result.getErrorMessage());
+        assertTrue("Error should mention unbalanced brackets", 
+            result.getErrorMessage().contains("bracket") || result.getErrorMessage().contains("syntax"));
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithUnclosedQuote() {
+        // Query with unclosed quote should return validation error
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNotNull(result.getErrorMessage());
+        assertTrue("Error should mention unclosed quote", 
+            result.getErrorMessage().contains("quote") || result.getErrorMessage().contains("syntax"));
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithBalancedParentheses() throws Exception {
+        // Query with balanced parentheses should succeed
+        when(solrUtil.getSolrClient()).thenReturn(solrClient);
+        when(solrClient.query(any(SolrQuery.class))).thenReturn(queryResponse);
+        when(queryResponse.getResults()).thenReturn(solrDocumentList);
+        when(solrDocumentList.getNumFound()).thenReturn(5L);
+        when(solrDocumentList.getStart()).thenReturn(0L);
+        when(solrDocumentList.iterator()).thenReturn(new ArrayList<SolrDocument>().iterator());
+        
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:(test OR demo)", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNull(result.getErrorMessage());
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithBalancedBrackets() throws Exception {
+        // Query with balanced brackets should succeed
+        when(solrUtil.getSolrClient()).thenReturn(solrClient);
+        when(solrClient.query(any(SolrQuery.class))).thenReturn(queryResponse);
+        when(queryResponse.getResults()).thenReturn(solrDocumentList);
+        when(solrDocumentList.getNumFound()).thenReturn(5L);
+        when(solrDocumentList.getStart()).thenReturn(0L);
+        when(solrDocumentList.iterator()).thenReturn(new ArrayList<SolrDocument>().iterator());
+        
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "date:[2020-01-01 TO 2021-01-01]", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNull(result.getErrorMessage());
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithQuotedString() throws Exception {
+        // Query with properly quoted string should succeed
+        when(solrUtil.getSolrClient()).thenReturn(solrClient);
+        when(solrClient.query(any(SolrQuery.class))).thenReturn(queryResponse);
+        when(queryResponse.getResults()).thenReturn(solrDocumentList);
+        when(solrDocumentList.getNumFound()).thenReturn(5L);
+        when(solrDocumentList.getStart()).thenReturn(0L);
+        when(solrDocumentList.iterator()).thenReturn(new ArrayList<SolrDocument>().iterator());
+        
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test document\"", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNull(result.getErrorMessage());
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithNestedParentheses() throws Exception {
+        // Query with nested parentheses should succeed
+        when(solrUtil.getSolrClient()).thenReturn(solrClient);
+        when(solrClient.query(any(SolrQuery.class))).thenReturn(queryResponse);
+        when(queryResponse.getResults()).thenReturn(solrDocumentList);
+        when(solrDocumentList.getNumFound()).thenReturn(5L);
+        when(solrDocumentList.getStart()).thenReturn(0L);
+        when(solrDocumentList.iterator()).thenReturn(new ArrayList<SolrDocument>().iterator());
+        
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "(name:(test OR demo) AND type:document)", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNull(result.getErrorMessage());
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithParenthesesInsideQuotes() throws Exception {
+        // Parentheses inside quotes should not affect balance check
+        when(solrUtil.getSolrClient()).thenReturn(solrClient);
+        when(solrClient.query(any(SolrQuery.class))).thenReturn(queryResponse);
+        when(queryResponse.getResults()).thenReturn(solrDocumentList);
+        when(solrDocumentList.getNumFound()).thenReturn(5L);
+        when(solrDocumentList.getStart()).thenReturn(0L);
+        when(solrDocumentList.iterator()).thenReturn(new ArrayList<SolrDocument>().iterator());
+        
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test (with parens)\"", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNull(result.getErrorMessage());
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithComplexValidQuery() throws Exception {
+        // Complex but valid query should succeed
+        when(solrUtil.getSolrClient()).thenReturn(solrClient);
+        when(solrClient.query(any(SolrQuery.class))).thenReturn(queryResponse);
+        when(queryResponse.getResults()).thenReturn(solrDocumentList);
+        when(solrDocumentList.getNumFound()).thenReturn(5L);
+        when(solrDocumentList.getStart()).thenReturn(0L);
+        when(solrDocumentList.iterator()).thenReturn(new ArrayList<SolrDocument>().iterator());
+        
+        SolrQueryResult result = service.executeSolrQuery(
+            TEST_REPO_ID, 
+            "(name:\"test doc\" OR title:demo) AND date:[2020-01-01 TO *] AND type:(document OR folder)", 
+            0, 10, null, null
+        );
+        
+        assertNotNull(result);
+        assertNull(result.getErrorMessage());
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithMultipleUnbalancedParentheses() {
+        // Query with multiple unclosed parentheses should return validation error
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:((test", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNotNull(result.getErrorMessage());
+        assertTrue("Error should mention unbalanced parentheses", 
+            result.getErrorMessage().contains("parentheses") || result.getErrorMessage().contains("syntax"));
+    }
+    
+    @Test
+    public void testExecuteSolrQueryWithEscapedQuote() throws Exception {
+        // Query with escaped quote should succeed
+        when(solrUtil.getSolrClient()).thenReturn(solrClient);
+        when(solrClient.query(any(SolrQuery.class))).thenReturn(queryResponse);
+        when(queryResponse.getResults()).thenReturn(solrDocumentList);
+        when(solrDocumentList.getNumFound()).thenReturn(5L);
+        when(solrDocumentList.getStart()).thenReturn(0L);
+        when(solrDocumentList.iterator()).thenReturn(new ArrayList<SolrDocument>().iterator());
+        
+        SolrQueryResult result = service.executeSolrQuery(TEST_REPO_ID, "name:\"test \\\"quoted\\\" doc\"", 0, 10, null, null);
+        
+        assertNotNull(result);
+        assertNull(result.getErrorMessage());
+    }
 }

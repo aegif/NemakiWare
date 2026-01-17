@@ -323,4 +323,144 @@ public class SolrIndexMaintenanceServiceImplStatusTest {
         
         assertEquals(150, status.getErrors().size());
     }
+    
+    // ========== Silent Drop Count and Reindexed Count Tests ==========
+    
+    @Test
+    public void testReindexStatusSilentDropCountInitialization() {
+        ReindexStatus status = service.getReindexStatus("test-repo");
+        
+        assertEquals("Initial silent drop count should be 0", 0, status.getSilentDropCount());
+    }
+    
+    @Test
+    public void testReindexStatusReindexedCountInitialization() {
+        ReindexStatus status = service.getReindexStatus("test-repo");
+        
+        assertEquals("Initial reindexed count should be 0", 0, status.getReindexedCount());
+    }
+    
+    @Test
+    public void testReindexStatusSilentDropCountSetterGetter() {
+        ReindexStatus status = new ReindexStatus();
+        
+        status.setSilentDropCount(10);
+        
+        assertEquals(10, status.getSilentDropCount());
+    }
+    
+    @Test
+    public void testReindexStatusReindexedCountSetterGetter() {
+        ReindexStatus status = new ReindexStatus();
+        
+        status.setReindexedCount(5);
+        
+        assertEquals(5, status.getReindexedCount());
+    }
+    
+    @Test
+    public void testReindexStatusSilentDropAndReindexedCounts() {
+        ReindexStatus status = new ReindexStatus();
+        
+        // Simulate scenario: 10 documents silently dropped, 8 successfully re-indexed
+        status.setSilentDropCount(10);
+        status.setReindexedCount(8);
+        
+        assertEquals(10, status.getSilentDropCount());
+        assertEquals(8, status.getReindexedCount());
+        
+        // Calculate failed re-index attempts
+        long failedReindex = status.getSilentDropCount() - status.getReindexedCount();
+        assertEquals(2, failedReindex);
+    }
+    
+    @Test
+    public void testReindexStatusAllFieldsWithSilentDropTracking() {
+        ReindexStatus status = new ReindexStatus();
+        
+        status.setRepositoryId("repo-1");
+        status.setStatus("completed");
+        status.setTotalDocuments(1000);
+        status.setIndexedCount(995);
+        status.setErrorCount(5);
+        status.setSilentDropCount(3);
+        status.setReindexedCount(2);
+        status.setStartTime(1000L);
+        status.setEndTime(2000L);
+        status.setCurrentFolder(null);
+        status.setErrorMessage(null);
+        
+        assertEquals("repo-1", status.getRepositoryId());
+        assertEquals("completed", status.getStatus());
+        assertEquals(1000, status.getTotalDocuments());
+        assertEquals(995, status.getIndexedCount());
+        assertEquals(5, status.getErrorCount());
+        assertEquals(3, status.getSilentDropCount());
+        assertEquals(2, status.getReindexedCount());
+        assertEquals(1000L, status.getStartTime());
+        assertEquals(2000L, status.getEndTime());
+        assertNull(status.getCurrentFolder());
+        assertNull(status.getErrorMessage());
+    }
+    
+    @Test
+    public void testReindexStatusZeroSilentDrops() {
+        ReindexStatus status = new ReindexStatus();
+        
+        // Normal scenario: no silent drops
+        status.setTotalDocuments(100);
+        status.setIndexedCount(100);
+        status.setErrorCount(0);
+        status.setSilentDropCount(0);
+        status.setReindexedCount(0);
+        
+        assertEquals(0, status.getSilentDropCount());
+        assertEquals(0, status.getReindexedCount());
+        assertEquals(status.getTotalDocuments(), status.getIndexedCount());
+    }
+    
+    @Test
+    public void testReindexStatusLargeSilentDropCount() {
+        ReindexStatus status = new ReindexStatus();
+        
+        // Stress test: large number of silent drops
+        status.setSilentDropCount(10000);
+        status.setReindexedCount(9500);
+        
+        assertEquals(10000, status.getSilentDropCount());
+        assertEquals(9500, status.getReindexedCount());
+    }
+    
+    @Test
+    public void testReindexStatusSilentDropCountEqualsReindexedCount() {
+        ReindexStatus status = new ReindexStatus();
+        
+        // Best case: all silent drops were successfully re-indexed
+        status.setSilentDropCount(50);
+        status.setReindexedCount(50);
+        
+        assertEquals(status.getSilentDropCount(), status.getReindexedCount());
+    }
+    
+    @Test
+    public void testReindexStatusSilentDropCountWithErrors() {
+        ReindexStatus status = new ReindexStatus();
+        
+        // Scenario: silent drops detected, some re-indexed, some failed
+        status.setTotalDocuments(100);
+        status.setIndexedCount(90);
+        status.setErrorCount(10);
+        status.setSilentDropCount(15);
+        status.setReindexedCount(5);
+        
+        List<String> errors = new ArrayList<>();
+        errors.add("Silent drop re-index failed for doc-1");
+        errors.add("Silent drop re-index failed for doc-2");
+        status.setErrors(errors);
+        
+        assertEquals(15, status.getSilentDropCount());
+        assertEquals(5, status.getReindexedCount());
+        assertEquals(10, status.getErrorCount());
+        assertEquals(2, status.getErrors().size());
+    }
 }
