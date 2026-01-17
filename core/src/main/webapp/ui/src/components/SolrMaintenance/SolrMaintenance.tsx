@@ -44,6 +44,7 @@ import {
   ReloadOutlined,
   StopOutlined
 } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { SolrMaintenanceService, ReindexStatus, IndexHealthStatus, SolrQueryResult } from '../../services/solrMaintenance';
 
@@ -55,6 +56,7 @@ interface SolrMaintenanceProps {
 }
 
 export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }) => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [healthStatus, setHealthStatus] = useState<IndexHealthStatus | null>(null);
   const [reindexStatus, setReindexStatus] = useState<ReindexStatus | null>(null);
@@ -83,11 +85,11 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       setHealthStatus(status);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      message.error(`インデックスヘルスチェックに失敗しました: ${errorMessage}`);
+      message.error(`${t('solrMaintenance.healthCheck.error')}: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
-  }, [repositoryId]);
+  }, [repositoryId, t]);
 
   const loadReindexStatus = useCallback(async () => {
     try {
@@ -131,58 +133,58 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
   const handleFullReindex = async () => {
     try {
       await service.startFullReindex(repositoryId);
-      message.success('全体再インデクシングを開始しました');
+      message.success(t('solrMaintenance.messages.fullReindexStarted'));
       loadReindexStatus();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      message.error(`再インデクシングの開始に失敗しました: ${errorMessage}`);
+      message.error(`${t('solrMaintenance.messages.fullReindexError')}: ${errorMessage}`);
     }
   };
 
   const handleFolderReindex = async () => {
     if (!folderIdInput.trim()) {
-      message.warning('フォルダIDを入力してください');
+      message.warning(t('solrMaintenance.messages.folderIdRequired'));
       return;
     }
     try {
       await service.startFolderReindex(repositoryId, folderIdInput.trim(), recursiveReindex);
-      message.success('フォルダ再インデクシングを開始しました');
+      message.success(t('solrMaintenance.messages.folderReindexStarted'));
       loadReindexStatus();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      message.error(`フォルダ再インデクシングの開始に失敗しました: ${errorMessage}`);
+      message.error(`${t('solrMaintenance.messages.folderReindexError')}: ${errorMessage}`);
     }
   };
 
   const handleCancelReindex = async () => {
     try {
       await service.cancelReindex(repositoryId);
-      message.success('再インデクシングをキャンセルしました');
+      message.success(t('solrMaintenance.messages.reindexCancelled'));
       loadReindexStatus();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      message.error(`キャンセルに失敗しました: ${errorMessage}`);
+      message.error(`${t('solrMaintenance.messages.cancelError')}: ${errorMessage}`);
     }
   };
 
   const handleClearIndex = async () => {
     try {
       await service.clearIndex(repositoryId);
-      message.success('インデックスをクリアしました');
+      message.success(t('solrMaintenance.messages.indexCleared'));
       loadHealthStatus();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      message.error(`インデックスのクリアに失敗しました: ${errorMessage}`);
+      message.error(`${t('solrMaintenance.messages.clearError')}: ${errorMessage}`);
     }
   };
 
   const handleOptimizeIndex = async () => {
     try {
       await service.optimizeIndex(repositoryId);
-      message.success('インデックスを最適化しました');
+      message.success(t('solrMaintenance.messages.indexOptimized'));
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      message.error(`インデックスの最適化に失敗しました: ${errorMessage}`);
+      message.error(`${t('solrMaintenance.messages.optimizeError')}: ${errorMessage}`);
     }
   };
 
@@ -200,7 +202,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       setQueryResult(result);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      message.error(`クエリの実行に失敗しました: ${errorMessage}`);
+      message.error(`${t('solrMaintenance.messages.queryError')}: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -209,15 +211,15 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
   const getStatusTag = (status: string) => {
     switch (status) {
       case 'idle':
-        return <Tag color="default">待機中</Tag>;
+        return <Tag color="default">{t('solrMaintenance.status.idle')}</Tag>;
       case 'running':
-        return <Tag color="processing" icon={<SyncOutlined spin />}>実行中</Tag>;
+        return <Tag color="processing" icon={<SyncOutlined spin />}>{t('solrMaintenance.status.running')}</Tag>;
       case 'completed':
-        return <Tag color="success" icon={<CheckCircleOutlined />}>完了</Tag>;
+        return <Tag color="success" icon={<CheckCircleOutlined />}>{t('solrMaintenance.status.completed')}</Tag>;
       case 'error':
-        return <Tag color="error" icon={<WarningOutlined />}>エラー</Tag>;
+        return <Tag color="error" icon={<WarningOutlined />}>{t('solrMaintenance.status.error')}</Tag>;
       case 'cancelled':
-        return <Tag color="warning">キャンセル</Tag>;
+        return <Tag color="warning">{t('solrMaintenance.status.cancelled')}</Tag>;
       default:
         return <Tag>{status}</Tag>;
     }
@@ -225,13 +227,13 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
 
   const queryColumns = [
     {
-      title: 'フィールド',
+      title: t('solrMaintenance.query.field'),
       dataIndex: 'field',
       key: 'field',
       width: 200,
     },
     {
-      title: '値',
+      title: t('solrMaintenance.query.value'),
       dataIndex: 'value',
       key: 'value',
       render: (value: unknown) => {
@@ -249,36 +251,36 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     }
 
     return (
-      <Card title="インデックスヘルスチェック" extra={
+      <Card title={t('solrMaintenance.healthCheck.title')} extra={
         <Button icon={<ReloadOutlined />} onClick={loadHealthStatus} loading={loading}>
-          更新
+          {t('solrMaintenance.healthCheck.refresh')}
         </Button>
       }>
         <Row gutter={16}>
           <Col span={6}>
             <Statistic
-              title="Solrドキュメント数"
+              title={t('solrMaintenance.healthCheck.solrDocuments')}
               value={healthStatus.solrDocumentCount}
               prefix={<SearchOutlined />}
             />
           </Col>
           <Col span={6}>
             <Statistic
-              title="CouchDBドキュメント数"
+              title={t('solrMaintenance.healthCheck.couchDbDocuments')}
               value={healthStatus.couchDbDocumentCount}
               prefix={<FolderOutlined />}
             />
           </Col>
           <Col span={6}>
             <Statistic
-              title="Solrに未登録"
+              title={t('solrMaintenance.healthCheck.missingInSolr')}
               value={healthStatus.missingInSolr}
               valueStyle={{ color: healthStatus.missingInSolr > 0 ? '#cf1322' : '#3f8600' }}
             />
           </Col>
           <Col span={6}>
             <Statistic
-              title="孤立ドキュメント"
+              title={t('solrMaintenance.healthCheck.orphanedInSolr')}
               value={healthStatus.orphanedInSolr}
               valueStyle={{ color: healthStatus.orphanedInSolr > 0 ? '#faad14' : '#3f8600' }}
             />
@@ -286,7 +288,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
         </Row>
         <div style={{ marginTop: 16 }}>
           {healthStatus.healthy ? (
-            <Alert message="インデックスは正常です" type="success" showIcon />
+            <Alert message={t('solrMaintenance.healthCheck.healthy')} type="success" showIcon />
           ) : (
             <Alert message={healthStatus.message} type="warning" showIcon />
           )}
@@ -305,14 +307,14 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       : 0;
 
     return (
-      <Card title="再インデクシング状態" style={{ marginTop: 16 }}>
+      <Card title={t('solrMaintenance.reindexStatus.title')} style={{ marginTop: 16 }}>
         <Descriptions column={2}>
-          <Descriptions.Item label="状態">{getStatusTag(reindexStatus.status)}</Descriptions.Item>
-          <Descriptions.Item label="現在のフォルダ">{reindexStatus.currentFolder || '-'}</Descriptions.Item>
-          <Descriptions.Item label="総ドキュメント数">{reindexStatus.totalDocuments}</Descriptions.Item>
-          <Descriptions.Item label="インデックス済み">{reindexStatus.indexedCount}</Descriptions.Item>
-          <Descriptions.Item label="エラー数">{reindexStatus.errorCount}</Descriptions.Item>
-          <Descriptions.Item label="エラーメッセージ">{reindexStatus.errorMessage || '-'}</Descriptions.Item>
+          <Descriptions.Item label={t('solrMaintenance.reindexStatus.status')}>{getStatusTag(reindexStatus.status)}</Descriptions.Item>
+          <Descriptions.Item label={t('solrMaintenance.reindexStatus.currentFolder')}>{reindexStatus.currentFolder || '-'}</Descriptions.Item>
+          <Descriptions.Item label={t('solrMaintenance.reindexStatus.totalDocuments')}>{reindexStatus.totalDocuments}</Descriptions.Item>
+          <Descriptions.Item label={t('solrMaintenance.reindexStatus.indexed')}>{reindexStatus.indexedCount}</Descriptions.Item>
+          <Descriptions.Item label={t('solrMaintenance.reindexStatus.errorCount')}>{reindexStatus.errorCount}</Descriptions.Item>
+          <Descriptions.Item label={t('solrMaintenance.reindexStatus.errorMessage')}>{reindexStatus.errorMessage || '-'}</Descriptions.Item>
         </Descriptions>
         {reindexStatus.status === 'running' && (
           <div style={{ marginTop: 16 }}>
@@ -323,7 +325,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
               onClick={handleCancelReindex}
               style={{ marginTop: 8 }}
             >
-              キャンセル
+              {t('solrMaintenance.reindexStatus.cancel')}
             </Button>
           </div>
         )}
@@ -332,38 +334,38 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
   };
 
   const renderReindexActions = () => (
-    <Card title="再インデクシング操作" style={{ marginTop: 16 }}>
+    <Card title={t('solrMaintenance.reindexActions.title')} style={{ marginTop: 16 }}>
       <Space direction="vertical" style={{ width: '100%' }}>
         <div>
-          <Text strong>全体再インデクシング</Text>
+          <Text strong>{t('solrMaintenance.reindexActions.fullReindex')}</Text>
           <p style={{ color: '#666', marginBottom: 8 }}>
-            リポジトリ内の全ドキュメントを再インデックスします。
+            {t('solrMaintenance.reindexActions.fullReindexDesc')}
           </p>
           <Popconfirm
-            title="全体再インデクシングを実行しますか？"
-            description="この操作には時間がかかる場合があります。"
+            title={t('solrMaintenance.reindexActions.fullReindexConfirm')}
+            description={t('solrMaintenance.reindexActions.fullReindexConfirmDesc')}
             onConfirm={handleFullReindex}
-            okText="実行"
-            cancelText="キャンセル"
+            okText={t('solrMaintenance.reindexActions.execute')}
+            cancelText={t('common.cancel')}
           >
             <Button
               type="primary"
               icon={<SyncOutlined />}
               disabled={reindexStatus?.status === 'running'}
             >
-              全体再インデクシング
+              {t('solrMaintenance.reindexActions.fullReindex')}
             </Button>
           </Popconfirm>
         </div>
 
         <div style={{ marginTop: 16 }}>
-          <Text strong>フォルダ単位の再インデクシング</Text>
+          <Text strong>{t('solrMaintenance.reindexActions.folderReindex')}</Text>
           <p style={{ color: '#666', marginBottom: 8 }}>
-            指定したフォルダ配下のドキュメントを再インデックスします。
+            {t('solrMaintenance.reindexActions.folderReindexDesc')}
           </p>
           <Space>
             <Input
-              placeholder="フォルダID"
+              placeholder={t('solrMaintenance.reindexActions.folderId')}
               value={folderIdInput}
               onChange={(e) => setFolderIdInput(e.target.value)}
               style={{ width: 300 }}
@@ -374,44 +376,44 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
                 checked={recursiveReindex}
                 onChange={(e) => setRecursiveReindex(e.target.checked)}
               />
-              {' '}サブフォルダを含む
+              {' '}{t('solrMaintenance.reindexActions.includeSubfolders')}
             </label>
             <Button
               icon={<FolderOutlined />}
               onClick={handleFolderReindex}
               disabled={reindexStatus?.status === 'running'}
             >
-              フォルダ再インデクシング
+              {t('solrMaintenance.reindexActions.folderReindexButton')}
             </Button>
           </Space>
         </div>
 
         <div style={{ marginTop: 16 }}>
-          <Text strong>インデックス管理</Text>
+          <Text strong>{t('solrMaintenance.reindexActions.indexManagement')}</Text>
           <p style={{ color: '#666', marginBottom: 8 }}>
-            インデックスのクリアや最適化を行います。
+            {t('solrMaintenance.reindexActions.indexManagementDesc')}
           </p>
           <Space>
             <Popconfirm
-              title="インデックスをクリアしますか？"
-              description="この操作は取り消せません。全てのインデックスが削除されます。"
+              title={t('solrMaintenance.reindexActions.clearIndexConfirm')}
+              description={t('solrMaintenance.reindexActions.clearIndexConfirmDesc')}
               onConfirm={handleClearIndex}
-              okText="クリア"
-              cancelText="キャンセル"
+              okText={t('common.clear')}
+              cancelText={t('common.cancel')}
             >
               <Button danger icon={<ClearOutlined />}>
-                インデックスクリア
+                {t('solrMaintenance.reindexActions.clearIndex')}
               </Button>
             </Popconfirm>
             <Popconfirm
-              title="インデックスを最適化しますか？"
-              description="この操作はSolrコア全体に影響します（リポジトリ単位ではありません）。実行中は検索パフォーマンスが低下する可能性があります。"
+              title={t('solrMaintenance.reindexActions.optimizeIndexConfirm')}
+              description={t('solrMaintenance.reindexActions.optimizeIndexConfirmDesc')}
               onConfirm={handleOptimizeIndex}
-              okText="最適化"
-              cancelText="キャンセル"
+              okText={t('solrMaintenance.reindexActions.optimize')}
+              cancelText={t('common.cancel')}
             >
               <Button icon={<ThunderboltOutlined />}>
-                インデックス最適化
+                {t('solrMaintenance.reindexActions.optimizeIndex')}
               </Button>
             </Popconfirm>
           </Space>
@@ -421,7 +423,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
   );
 
   const renderSolrQuery = () => (
-    <Card title="Solrクエリ実行" style={{ marginTop: 16 }}>
+    <Card title={t('solrMaintenance.query.title')} style={{ marginTop: 16 }}>
       <Form
         form={queryForm}
         layout="vertical"
@@ -430,43 +432,43 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       >
         <Form.Item
           name="query"
-          label="クエリ (q)"
-          rules={[{ required: true, message: 'クエリを入力してください' }]}
+          label={t('solrMaintenance.query.queryLabel')}
+          rules={[{ required: true, message: t('solrMaintenance.query.queryRequired') }]}
         >
           <TextArea
-            placeholder="*:* または name:test など"
+            placeholder={t('solrMaintenance.query.queryPlaceholder')}
             rows={3}
           />
         </Form.Item>
         <Row gutter={16}>
           <Col span={6}>
-            <Form.Item name="start" label="開始位置 (start)">
+            <Form.Item name="start" label={t('solrMaintenance.query.start')}>
               <InputNumber min={0} style={{ width: '100%' }} />
             </Form.Item>
           </Col>
           <Col span={6}>
             <Form.Item 
               name="rows" 
-              label="件数 (rows)"
-              tooltip="サーバー側で最大1000件に制限されます"
+              label={t('solrMaintenance.query.rows')}
+              tooltip={t('solrMaintenance.query.rowsTooltip')}
             >
               <InputNumber min={1} max={1000} style={{ width: '100%' }} />
             </Form.Item>
           </Col>
           <Col span={6}>
-            <Form.Item name="sort" label="ソート (sort)">
-              <Input placeholder="score desc" />
+            <Form.Item name="sort" label={t('solrMaintenance.query.sort')}>
+              <Input placeholder={t('solrMaintenance.query.sortPlaceholder')} />
             </Form.Item>
           </Col>
           <Col span={6}>
-            <Form.Item name="fields" label="フィールド (fl)">
-              <Input placeholder="id,name,score" />
+            <Form.Item name="fields" label={t('solrMaintenance.query.fields')}>
+              <Input placeholder={t('solrMaintenance.query.fieldsPlaceholder')} />
             </Form.Item>
           </Col>
         </Row>
         <Form.Item>
           <Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={loading}>
-            クエリ実行
+            {t('solrMaintenance.query.executeQuery')}
           </Button>
         </Form.Item>
       </Form>
@@ -475,8 +477,13 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
         <div style={{ marginTop: 16 }}>
           <Alert
             message={queryResult.numFound === 0 
-              ? `0件 (${queryResult.queryTime}ms)` 
-              : `${queryResult.numFound}件中 ${queryResult.start + 1}〜${queryResult.start + queryResult.docs.length}件を表示 (${queryResult.queryTime}ms)`}
+              ? t('solrMaintenance.query.noResults', { queryTime: queryResult.queryTime })
+              : t('solrMaintenance.query.results', { 
+                  numFound: queryResult.numFound, 
+                  start: queryResult.start + 1, 
+                  end: queryResult.start + queryResult.docs.length, 
+                  queryTime: queryResult.queryTime 
+                })}
             type="info"
             style={{ marginBottom: 16 }}
           />
@@ -484,7 +491,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
             <Card
               key={index}
               size="small"
-              title={`ドキュメント ${queryResult.start + index + 1}`}
+              title={t('solrMaintenance.query.document', { number: queryResult.start + index + 1 })}
               style={{ marginBottom: 8 }}
             >
               <Table
@@ -503,7 +510,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
   const tabItems = [
     {
       key: 'status',
-      label: 'ステータス',
+      label: t('solrMaintenance.tabs.status'),
       children: (
         <>
           {renderHealthStatus()}
@@ -513,12 +520,12 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     },
     {
       key: 'reindex',
-      label: '再インデクシング',
+      label: t('solrMaintenance.tabs.reindex'),
       children: renderReindexActions(),
     },
     {
       key: 'query',
-      label: 'Solrクエリ',
+      label: t('solrMaintenance.tabs.query'),
       children: renderSolrQuery(),
     },
   ];
@@ -527,7 +534,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     <div style={{ padding: 24 }}>
       <Card>
         <div style={{ marginBottom: 16 }}>
-          <h2 style={{ margin: 0 }}>Solrインデックスメンテナンス</h2>
+          <h2 style={{ margin: 0 }}>{t('solrMaintenance.title')}</h2>
           {solrUrl && (
             <Text type="secondary">Solr URL: {solrUrl}</Text>
           )}

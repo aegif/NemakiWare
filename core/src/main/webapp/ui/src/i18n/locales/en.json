@@ -1169,5 +1169,95 @@
     "selected": "Selected",
     "loadRootFolderError": "Failed to load root folder",
     "loadTreeError": "Failed to load folder tree"
+  },
+  "solrMaintenance": {
+    "title": "Solr Index Maintenance",
+    "tabs": {
+      "status": "Status",
+      "reindex": "Reindexing",
+      "query": "Solr Query"
+    },
+    "healthCheck": {
+      "title": "Index Health Check",
+      "refresh": "Refresh",
+      "solrDocuments": "Solr Documents",
+      "couchDbDocuments": "CouchDB Documents",
+      "missingInSolr": "Missing in Solr",
+      "orphanedInSolr": "Orphaned Documents",
+      "healthy": "Index is healthy",
+      "error": "Index health check failed"
+    },
+    "reindexStatus": {
+      "title": "Reindex Status",
+      "status": "Status",
+      "currentFolder": "Current Folder",
+      "totalDocuments": "Total Documents",
+      "indexed": "Indexed",
+      "errorCount": "Error Count",
+      "errorMessage": "Error Message",
+      "cancel": "Cancel"
+    },
+    "status": {
+      "idle": "Idle",
+      "running": "Running",
+      "completed": "Completed",
+      "error": "Error",
+      "cancelled": "Cancelled"
+    },
+    "reindexActions": {
+      "title": "Reindex Operations",
+      "fullReindex": "Full Reindex",
+      "fullReindexDesc": "Reindex all documents in the repository.",
+      "fullReindexConfirm": "Execute full reindex?",
+      "fullReindexConfirmDesc": "This operation may take a long time.",
+      "execute": "Execute",
+      "folderReindex": "Folder Reindex",
+      "folderReindexDesc": "Reindex documents under the specified folder.",
+      "folderId": "Folder ID",
+      "includeSubfolders": "Include subfolders",
+      "folderReindexButton": "Folder Reindex",
+      "indexManagement": "Index Management",
+      "indexManagementDesc": "Clear or optimize the index.",
+      "clearIndex": "Clear Index",
+      "clearIndexConfirm": "Clear the index?",
+      "clearIndexConfirmDesc": "This operation cannot be undone. All indexes will be deleted.",
+      "optimizeIndex": "Optimize Index",
+      "optimizeIndexConfirm": "Optimize the index?",
+      "optimizeIndexConfirmDesc": "This operation affects the entire Solr core (not repository-specific). Search performance may degrade during execution.",
+      "optimize": "Optimize"
+    },
+    "query": {
+      "title": "Solr Query Execution",
+      "queryLabel": "Query (q)",
+      "queryRequired": "Please enter a query",
+      "queryPlaceholder": "*:* or name:test etc.",
+      "start": "Start (start)",
+      "rows": "Rows (rows)",
+      "rowsTooltip": "Server-side limit: max 1000 rows",
+      "sort": "Sort (sort)",
+      "sortPlaceholder": "score desc",
+      "fields": "Fields (fl)",
+      "fieldsPlaceholder": "id,name,score",
+      "executeQuery": "Execute Query",
+      "results": "Showing {{start}}-{{end}} of {{numFound}} results ({{queryTime}}ms)",
+      "noResults": "0 results ({{queryTime}}ms)",
+      "document": "Document {{number}}",
+      "field": "Field",
+      "value": "Value"
+    },
+    "messages": {
+      "fullReindexStarted": "Full reindex started",
+      "fullReindexError": "Failed to start reindex",
+      "folderIdRequired": "Please enter a folder ID",
+      "folderReindexStarted": "Folder reindex started",
+      "folderReindexError": "Failed to start folder reindex",
+      "reindexCancelled": "Reindex cancelled",
+      "cancelError": "Failed to cancel",
+      "indexCleared": "Index cleared",
+      "clearError": "Failed to clear index",
+      "indexOptimized": "Index optimized",
+      "optimizeError": "Failed to optimize index",
+      "queryError": "Failed to execute query"
+    }
   }
 }
