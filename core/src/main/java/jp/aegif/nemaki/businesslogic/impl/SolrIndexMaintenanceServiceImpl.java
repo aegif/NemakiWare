@@ -153,6 +153,11 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
 
                 log.info("Full reindex completed for repository: " + repositoryId + 
                     ", indexed: " + indexedCount.get() + ", errors: " + errorCount.get());
+                
+                // Run health check after completion to verify index integrity
+                if (!cancelFlags.get(repositoryId).get()) {
+                    runPostReindexHealthCheck(repositoryId, status, errors);
+                }
 
             } catch (Exception e) {
                 log.error("Error during full reindex for repository: " + repositoryId, e);
@@ -221,6 +226,11 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 log.info("Folder reindex completed for repository: " + repositoryId + 
                     ", folder: " + folderId + ", indexed: " + indexedCount.get() + 
                     ", errors: " + errorCount.get());
+                
+                // Run health check after completion to verify index integrity
+                if (!cancelFlags.get(repositoryId).get()) {
+                    runPostReindexHealthCheck(repositoryId, status, errors);
+                }
 
             } catch (Exception e) {
                 log.error("Error during folder reindex for repository: " + repositoryId, e);
@@ -231,6 +241,38 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         });
 
         return true;
+    }
+    
+    /**
+     * Run health check after reindex completion and log any discrepancies.
+     */
+    private void runPostReindexHealthCheck(String repositoryId, ReindexStatus status, List<String> errors) {
+        try {
+            log.info("Running post-reindex health check for repository: " + repositoryId);
+            IndexHealthStatus health = checkIndexHealth(repositoryId);
+            
+            if (!health.isHealthy()) {
+                String healthMessage = "Post-reindex health check: " + health.getMessage();
+                log.warn(healthMessage);
+                if (errors.size() < 100) {
+                    errors.add(healthMessage);
+                }
+                status.setErrors(errors);
+                
+                // Log specific discrepancies
+                if (health.getMissingInSolr() > 0) {
+                    log.warn("Post-reindex: " + health.getMissingInSolr() + " documents missing in Solr");
+                }
+                if (health.getOrphanedInSolr() > 0) {
+                    log.warn("Post-reindex: " + health.getOrphanedInSolr() + " orphaned documents in Solr");
+                }
+            } else {
+                log.info("Post-reindex health check passed: " + health.getMessage());
+            }
+        } catch (Exception e) {
+            log.warn("Error during post-reindex health check: " + e.getMessage());
+            // Don't fail the reindex - health check is informational
+        }
     }
 
     private void countDocumentsRecursive(String repositoryId, String folderId, AtomicLong count) {
@@ -314,7 +356,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
     
     /**
      * Flush a batch of documents to Solr index.
-     * Uses batch indexing for improved performance.
+     * Uses batch indexing for improved performance with verification for silent drops.
      */
     private void flushBatch(String repositoryId, List<Content> batch, 
             AtomicLong indexedCount, AtomicLong errorCount, List<String> errors, ReindexStatus status) {
@@ -327,7 +369,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             indexedCount.addAndGet(successCount);
             status.setIndexedCount(indexedCount.get());
             
-            // Track errors for documents that failed
+            // Track errors for documents that failed during document creation
             int failedCount = batch.size() - successCount;
             if (failedCount > 0) {
                 errorCount.addAndGet(failedCount);
@@ -337,6 +379,10 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             }
             
             log.info("Batch indexed " + successCount + "/" + batch.size() + " documents, total: " + indexedCount.get());
+            
+            // Verify batch indexing and re-index any silently dropped documents
+            verifyAndReindexMissing(repositoryId, batch, indexedCount, errorCount, errors, status);
+            
         } catch (Exception e) {
             // Fall back to individual indexing on batch failure
             log.warn("Batch indexing failed, falling back to individual indexing: " + e.getMessage());
@@ -352,6 +398,96 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                         errors.add(errorMsg);
                     }
                     log.warn(errorMsg);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Verify batch indexing by checking Solr for indexed documents.
+     * Re-indexes any documents that were silently dropped by Solr.
+     */
+    private void verifyAndReindexMissing(String repositoryId, List<Content> batch,
+            AtomicLong indexedCount, AtomicLong errorCount, List<String> errors, ReindexStatus status) {
+        if (batch.isEmpty()) {
+            return;
+        }
+        
+        SolrClient solrClient = null;
+        try {
+            solrClient = solrUtil.getSolrClient();
+            if (solrClient == null) {
+                log.warn("Solr client not available for batch verification");
+                return;
+            }
+            
+            // Build query to check which documents exist in Solr
+            // Use object_id field which matches the content ID
+            StringBuilder queryBuilder = new StringBuilder();
+            queryBuilder.append("repository_id:").append(repositoryId).append(" AND object_id:(");
+            for (int i = 0; i < batch.size(); i++) {
+                if (i > 0) {
+                    queryBuilder.append(" OR ");
+                }
+                queryBuilder.append("\"").append(batch.get(i).getId()).append("\"");
+            }
+            queryBuilder.append(")");
+            
+            SolrQuery query = new SolrQuery(queryBuilder.toString());
+            query.setRows(0); // We only need the count
+            QueryResponse response = solrClient.query(query);
+            long foundCount = response.getResults().getNumFound();
+            
+            if (foundCount < batch.size()) {
+                // Some documents were silently dropped - identify and re-index them
+                int missingCount = batch.size() - (int) foundCount;
+                log.warn("Batch verification: " + missingCount + " documents missing in Solr, attempting re-index");
+                
+                // Get the IDs that exist in Solr
+                query.setRows(batch.size());
+                query.setFields("object_id");
+                response = solrClient.query(query);
+                
+                java.util.Set<String> existingIds = new java.util.HashSet<>();
+                for (org.apache.solr.common.SolrDocument doc : response.getResults()) {
+                    Object objectId = doc.getFieldValue("object_id");
+                    if (objectId != null) {
+                        existingIds.add(objectId.toString());
+                    }
+                }
+                
+                // Re-index missing documents individually
+                int reindexedCount = 0;
+                for (Content content : batch) {
+                    if (!existingIds.contains(content.getId())) {
+                        try {
+                            solrUtil.indexDocument(repositoryId, content, true);
+                            reindexedCount++;
+                            log.info("Re-indexed silently dropped document: " + content.getId());
+                        } catch (Exception ex) {
+                            errorCount.incrementAndGet();
+                            String errorMsg = "Failed to re-index silently dropped document " + content.getId() + ": " + ex.getMessage();
+                            if (errors.size() < 100) {
+                                errors.add(errorMsg);
+                            }
+                            log.warn(errorMsg);
+                        }
+                    }
+                }
+                
+                if (reindexedCount > 0) {
+                    log.info("Re-indexed " + reindexedCount + " silently dropped documents");
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error during batch verification: " + e.getMessage());
+            // Don't fail the batch - verification is best-effort
+        } finally {
+            if (solrClient != null) {
+                try {
+                    solrClient.close();
+                } catch (Exception e) {
+                    log.warn("Failed to close Solr client: " + e.getMessage());
                 }
             }
         }
