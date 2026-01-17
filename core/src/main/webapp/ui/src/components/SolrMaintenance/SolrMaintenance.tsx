@@ -403,9 +403,17 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
                 インデックスクリア
               </Button>
             </Popconfirm>
-            <Button icon={<ThunderboltOutlined />} onClick={handleOptimizeIndex}>
-              インデックス最適化
-            </Button>
+            <Popconfirm
+              title="インデックスを最適化しますか？"
+              description="この操作はSolrコア全体に影響します（リポジトリ単位ではありません）。実行中は検索パフォーマンスが低下する可能性があります。"
+              onConfirm={handleOptimizeIndex}
+              okText="最適化"
+              cancelText="キャンセル"
+            >
+              <Button icon={<ThunderboltOutlined />}>
+                インデックス最適化
+              </Button>
+            </Popconfirm>
           </Space>
         </div>
       </Space>
@@ -462,7 +470,9 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       {queryResult && (
         <div style={{ marginTop: 16 }}>
           <Alert
-            message={`${queryResult.numFound}件中 ${queryResult.start + 1}〜${queryResult.start + queryResult.docs.length}件を表示 (${queryResult.queryTime}ms)`}
+            message={queryResult.numFound === 0 
+              ? `0件 (${queryResult.queryTime}ms)` 
+              : `${queryResult.numFound}件中 ${queryResult.start + 1}〜${queryResult.start + queryResult.docs.length}件を表示 (${queryResult.queryTime}ms)`}
             type="info"
             style={{ marginBottom: 16 }}
           />

@@ -89,7 +89,11 @@ export class SolrMaintenanceService {
   }
 
   async startFullReindex(repositoryId: string): Promise<{ message: string }> {
-    const response = await this.httpClient.getJson(`${this.getBaseUrl(repositoryId)}/reindex`);
+    const response = await this.httpClient.request({
+      method: 'POST',
+      url: `${this.getBaseUrl(repositoryId)}/reindex`,
+      accept: 'application/json'
+    });
     return this.handleResponse<{ message: string }>(response);
   }
 

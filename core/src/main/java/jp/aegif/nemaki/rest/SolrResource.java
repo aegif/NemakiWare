@@ -100,13 +100,19 @@ public class SolrResource extends ResourceBase {
 	@GET
 	@Path("/url")
 	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
 	public String url() {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		String solrUrl = getSolrUtil().getSolrUrl();
+		SolrUtil util = getSolrUtil();
+		if (util == null) {
+			errMsg.add("Solr utility is not available");
+			return makeResult(false, result, errMsg).toJSONString();
+		}
 
+		String solrUrl = util.getSolrUrl();
 		result.put("url", solrUrl);
 
 		// Output
@@ -114,9 +120,10 @@ public class SolrResource extends ResourceBase {
 		return result.toJSONString();
 	}
 
-	@GET
+	@POST
 	@Path("/init")
 	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
 	public String initialize(@PathParam("repositoryId") String repositoryId, @Context HttpServletRequest request) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
@@ -127,9 +134,15 @@ public class SolrResource extends ResourceBase {
 			return makeResult(status, result, errMsg).toString();
 		}
 
+		SolrUtil util = getSolrUtil();
+		if (util == null) {
+			errMsg.add("Solr utility is not available");
+			return makeResult(false, result, errMsg).toString();
+		}
+
 		// Call Solr
 		HttpClient httpClient = HttpClientBuilder.create().build();
-		String solrUrl = getSolrUtil().getSolrUrl();
+		String solrUrl = util.getSolrUrl();
 		String url = solrUrl + "admin/cores?core=nemaki&action=init&repositoryId=" + repositoryId;
 		HttpGet httpGet = new HttpGet(url);
 		try {
@@ -153,9 +166,10 @@ public class SolrResource extends ResourceBase {
 		return result.toString();
 	}
 
-	@GET
+	@POST
 	@Path("/reindex")
 	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
 	public String reindex(@PathParam("repositoryId") String repositoryId, @Context HttpServletRequest request) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
@@ -166,30 +180,23 @@ public class SolrResource extends ResourceBase {
 			return makeResult(status, result, errMsg).toString();
 		}
 
-		// Call Solr
-		HttpClient httpClient = HttpClientBuilder.create().build();
-		String solrUrl = getSolrUtil().getSolrUrl();
-		String url = solrUrl + "admin/cores?core=nemaki&action=index&tracking=FULL&repositoryId=" + repositoryId;
-		HttpGet httpGet = new HttpGet(url);
-		try {
-			String body = httpClient.execute(httpGet, response -> {
-				int responseStatus = response.getCode();
-				if (HttpStatus.SC_OK != responseStatus) {
-					throw new RuntimeException("Solr server connection failed");
-				}
-				return EntityUtils.toString(response.getEntity(), "UTF-8");
-			});
-			// TODO error message
-			status = checkSuccess(body);
-		} catch (Exception e) {
-			status = false;
-			// TODO error message
-			e.printStackTrace();
+		// Use the new SolrIndexMaintenanceService for full reindex
+		// This ensures progress tracking works correctly
+		SolrIndexMaintenanceService service = getMaintenanceService();
+		if (service == null) {
+			errMsg.add("Solr index maintenance service is not available");
+			return makeResult(false, result, errMsg).toString();
 		}
 
-		// Output
-		result = makeResult(status, result, errMsg);
-		return result.toString();
+		boolean started = service.startFullReindex(repositoryId);
+		if (!started) {
+			errMsg.add("Reindex already in progress for this repository");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		result.put("message", "Full reindex started");
+		result.put("repositoryId", repositoryId);
+		return makeResult(status, result, errMsg).toString();
 	}
 
 	@POST
@@ -332,6 +339,14 @@ public class SolrResource extends ResourceBase {
 		result.put("endTime", reindexStatus.getEndTime());
 		result.put("currentFolder", reindexStatus.getCurrentFolder());
 		result.put("errorMessage", reindexStatus.getErrorMessage());
+
+		// Include error details for debugging
+		List<String> errors = reindexStatus.getErrors();
+		if (errors != null && !errors.isEmpty()) {
+			JSONArray errorsArray = new JSONArray();
+			errorsArray.addAll(errors);
+			result.put("errors", errorsArray);
+		}
 
 		return makeResult(status, result, errMsg).toString();
 	}

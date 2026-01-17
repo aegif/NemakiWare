@@ -37,6 +37,8 @@ import org.apache.solr.client.solrj.response.UpdateResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 
+import jakarta.annotation.PreDestroy;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -44,6 +46,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -73,6 +76,20 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
 
     public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
         this.repositoryInfoMap = repositoryInfoMap;
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        log.info("Shutting down SolrIndexMaintenanceService executor service");
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Override
@@ -244,7 +261,9 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 }
 
                 try {
-                    solrUtil.indexDocument(repositoryId, child);
+                    // Use synchronous indexing (forceSync=true) for maintenance operations
+                    // This ensures progress tracking is accurate and bypasses solr.indexing.force setting
+                    solrUtil.indexDocument(repositoryId, child, true);
                     indexedCount.incrementAndGet();
                     status.setIndexedCount(indexedCount.get());
                 } catch (Exception e) {
@@ -298,15 +317,15 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         health.setRepositoryId(repositoryId);
         health.setCheckTime(System.currentTimeMillis());
 
+        SolrClient solrClient = null;
         try {
             // Get Solr document count
-            SolrClient solrClient = solrUtil.getSolrClient();
+            solrClient = solrUtil.getSolrClient();
             if (solrClient != null) {
                 SolrQuery query = new SolrQuery("repository_id:" + repositoryId);
                 query.setRows(0);
                 QueryResponse response = solrClient.query(query);
                 health.setSolrDocumentCount(response.getResults().getNumFound());
-                solrClient.close();
             }
 
             // Get CouchDB document count by counting from root folder
@@ -338,18 +357,29 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             log.error("Error checking index health for repository: " + repositoryId, e);
             health.setHealthy(false);
             health.setMessage("Error checking health: " + e.getMessage());
+        } finally {
+            if (solrClient != null) {
+                try {
+                    solrClient.close();
+                } catch (Exception e) {
+                    log.warn("Failed to close Solr client: " + e.getMessage());
+                }
+            }
         }
 
         return health;
     }
+
+    private static final int MAX_QUERY_ROWS = 1000;
 
     @Override
     public SolrQueryResult executeSolrQuery(String repositoryId, String query, int start, int rows, String sort, String fields) {
         SolrQueryResult result = new SolrQueryResult();
         long startTime = System.currentTimeMillis();
 
+        SolrClient solrClient = null;
         try {
-            SolrClient solrClient = solrUtil.getSolrClient();
+            solrClient = solrUtil.getSolrClient();
             if (solrClient == null) {
                 result.setErrorMessage("Solr client is not available");
                 return result;
@@ -368,15 +398,22 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 solrQuery.setQuery("repository_id:" + repositoryId);
             }
 
-            solrQuery.setStart(start);
-            solrQuery.setRows(rows > 0 ? rows : 10);
+            solrQuery.setStart(start >= 0 ? start : 0);
+            // Enforce maximum rows limit to prevent high-load queries
+            int effectiveRows = rows > 0 ? Math.min(rows, MAX_QUERY_ROWS) : 10;
+            solrQuery.setRows(effectiveRows);
 
             if (sort != null && !sort.trim().isEmpty()) {
-                solrQuery.set("sort", sort);
+                solrQuery.set("sort", sort.trim());
             }
 
             if (fields != null && !fields.trim().isEmpty()) {
-                solrQuery.setFields(fields.split(","));
+                // Trim each field name
+                String[] fieldArray = fields.split(",");
+                for (int i = 0; i < fieldArray.length; i++) {
+                    fieldArray[i] = fieldArray[i].trim();
+                }
+                solrQuery.setFields(fieldArray);
             }
 
             QueryResponse response = solrClient.query(solrQuery);
@@ -396,11 +433,17 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             result.setDocs(docList);
             result.setQueryTime(System.currentTimeMillis() - startTime);
 
-            solrClient.close();
-
         } catch (Exception e) {
             log.error("Error executing Solr query for repository: " + repositoryId, e);
             result.setErrorMessage(e.getMessage());
+        } finally {
+            if (solrClient != null) {
+                try {
+                    solrClient.close();
+                } catch (Exception e) {
+                    log.warn("Failed to close Solr client: " + e.getMessage());
+                }
+            }
         }
 
         return result;
