@@ -205,6 +205,17 @@ public class SolrUtil implements ApplicationContextAware {
 	 * Index a single document in Solr using standard SolrJ API
 	 */
 	public void indexDocument(String repositoryId, Content content) {
+		indexDocument(repositoryId, content, false);
+	}
+
+	/**
+	 * Index a single document in Solr using standard SolrJ API
+	 * @param repositoryId the repository ID
+	 * @param content the content to index
+	 * @param forceSync if true, bypasses the solr.indexing.force setting and indexes synchronously
+	 *                  (used for maintenance operations)
+	 */
+	public void indexDocument(String repositoryId, Content content, boolean forceSync) {
 		if (log.isDebugEnabled()) {
 			log.debug("indexDocument called for " + content.getId());
 		}
@@ -214,56 +225,148 @@ public class SolrUtil implements ApplicationContextAware {
 				.readValue(PropertyKey.SOLR_INDEXING_FORCE);
 		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
 
-		log.info("Solr indexing force setting: " + force);
+		log.info("Solr indexing force setting: " + force + ", forceSync: " + forceSync);
 
-		if (!force) {
+		// For maintenance operations (forceSync=true), bypass the force setting check
+		if (!force && !forceSync) {
 			log.info("Solr indexing is disabled (force=false), skipping indexing");
 			return;
 		}
 
-		// Execute Solr indexing asynchronously to avoid blocking CMIS operations
-		CompletableFuture.runAsync(() -> {
-			try {
-				log.info("Starting async Solr indexing for document: " + content.getId());
-				SolrClient solrClient = getSolrClient();
-				
-				if (solrClient == null) {
-					log.warn("Solr client is null, skipping indexing for document: " + content.getId());
-					return;
-				}
-				
-				SolrInputDocument doc = createSolrDocument(repositoryId, content);
-				
-				log.info("Created SolrInputDocument with " + doc.size() + " fields for document: " + content.getId());
-				log.debug("Document fields: repository_id={}, object_id={}, basetype={}, name={}", 
-					doc.getFieldValue("repository_id"), doc.getFieldValue("object_id"), 
-					doc.getFieldValue("basetype"), doc.getFieldValue("name"));
-				
-				UpdateRequest updateRequest = new UpdateRequest();
-				updateRequest.add(doc);
-				updateRequest.setCommitWithin(1000); // Commit within 1 second
-				
-				// DIRECT FIX: Don't pass core name to avoid URL duplication
-				// getSolrUrl() already returns full URL with core path
-				UpdateResponse response = updateRequest.process(solrClient);
-				
-				log.info("Solr response status: " + response.getStatus() + " for document: " + content.getId());
-				
-				if (response.getStatus() == 0) {
-					log.info("Document indexed successfully in Solr: " + content.getId() + " for repository: " + repositoryId);
-				} else {
-					log.error("Document indexing failed with status: " + response.getStatus() + " for document: " + content.getId());
-				}
-				
-				solrClient.close();
-			} catch (SolrServerException e) {
-				log.error("Solr server error during indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
-			} catch (IOException e) {
-				log.error("IO error during Solr indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
-			} catch (Exception e) {
-				log.error("Unexpected error during Solr indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
+		// For maintenance operations, execute synchronously to track progress accurately
+		if (forceSync) {
+			indexDocumentInternal(repositoryId, content);
+		} else {
+			// Execute Solr indexing asynchronously to avoid blocking CMIS operations
+			CompletableFuture.runAsync(() -> {
+				indexDocumentInternal(repositoryId, content);
+			});
+		}
+	}
+
+	/**
+	 * Batch index multiple documents in Solr for improved performance.
+	 * Uses a single UpdateRequest with commitWithin for efficient bulk indexing.
+	 * @param repositoryId the repository ID
+	 * @param contents list of contents to index
+	 * @param commitWithinMs commit within milliseconds (default 5000 for batch operations)
+	 * @return number of successfully indexed documents
+	 */
+	public int indexDocumentsBatch(String repositoryId, List<Content> contents, int commitWithinMs) {
+		if (contents == null || contents.isEmpty()) {
+			return 0;
+		}
+		
+		log.info("Batch indexing " + contents.size() + " documents for repository: " + repositoryId);
+		
+		SolrClient solrClient = null;
+		int successCount = 0;
+		try {
+			solrClient = getSolrClient();
+			if (solrClient == null) {
+				log.warn("Solr client is null, skipping batch indexing");
+				return 0;
 			}
-		});
+			
+			UpdateRequest updateRequest = new UpdateRequest();
+			updateRequest.setCommitWithin(commitWithinMs > 0 ? commitWithinMs : 5000);
+			
+			for (Content content : contents) {
+				try {
+					SolrInputDocument doc = createSolrDocument(repositoryId, content);
+					updateRequest.add(doc);
+					successCount++;
+				} catch (Exception e) {
+					log.warn("Failed to create Solr document for " + content.getId() + ": " + e.getMessage());
+				}
+			}
+			
+			if (successCount > 0) {
+				UpdateResponse response = updateRequest.process(solrClient);
+				if (response.getStatus() == 0) {
+					log.info("Batch indexed " + successCount + " documents successfully");
+				} else {
+					// Throw exception to trigger fallback to individual indexing in caller
+					log.error("Batch indexing failed with status: " + response.getStatus());
+					throw new RuntimeException("Solr batch indexing failed with status: " + response.getStatus());
+				}
+			}
+		} catch (SolrServerException e) {
+			log.error("Solr server error during batch indexing: " + e.getMessage(), e);
+			throw new RuntimeException("Solr batch indexing failed: " + e.getMessage(), e);
+		} catch (IOException e) {
+			log.error("IO error during batch indexing: " + e.getMessage(), e);
+			throw new RuntimeException("Solr batch indexing failed: " + e.getMessage(), e);
+		} catch (Exception e) {
+			log.error("Unexpected error during batch indexing: " + e.getMessage(), e);
+			throw new RuntimeException("Solr batch indexing failed: " + e.getMessage(), e);
+		} finally {
+			if (solrClient != null) {
+				try {
+					solrClient.close();
+				} catch (IOException e) {
+					log.warn("Failed to close Solr client: " + e.getMessage());
+				}
+			}
+		}
+		
+		return successCount;
+	}
+
+	/**
+	 * Internal method to perform the actual Solr indexing
+	 */
+	private void indexDocumentInternal(String repositoryId, Content content) {
+		SolrClient solrClient = null;
+		try {
+			log.info("Starting Solr indexing for document: " + content.getId());
+			solrClient = getSolrClient();
+			
+			if (solrClient == null) {
+				log.warn("Solr client is null, skipping indexing for document: " + content.getId());
+				return;
+			}
+			
+			SolrInputDocument doc = createSolrDocument(repositoryId, content);
+			
+			log.info("Created SolrInputDocument with " + doc.size() + " fields for document: " + content.getId());
+			log.debug("Document fields: repository_id={}, object_id={}, basetype={}, name={}", 
+				doc.getFieldValue("repository_id"), doc.getFieldValue("object_id"), 
+				doc.getFieldValue("basetype"), doc.getFieldValue("name"));
+			
+			UpdateRequest updateRequest = new UpdateRequest();
+			updateRequest.add(doc);
+			updateRequest.setCommitWithin(1000); // Commit within 1 second
+			
+			// DIRECT FIX: Don't pass core name to avoid URL duplication
+			// getSolrUrl() already returns full URL with core path
+			UpdateResponse response = updateRequest.process(solrClient);
+			
+			log.info("Solr response status: " + response.getStatus() + " for document: " + content.getId());
+			
+			if (response.getStatus() == 0) {
+				log.info("Document indexed successfully in Solr: " + content.getId() + " for repository: " + repositoryId);
+			} else {
+				log.error("Document indexing failed with status: " + response.getStatus() + " for document: " + content.getId());
+			}
+		} catch (SolrServerException e) {
+			log.error("Solr server error during indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
+			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
+		} catch (IOException e) {
+			log.error("IO error during Solr indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
+			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
+		} catch (Exception e) {
+			log.error("Unexpected error during Solr indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
+			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
+		} finally {
+			if (solrClient != null) {
+				try {
+					solrClient.close();
+				} catch (IOException e) {
+					log.warn("Failed to close Solr client: " + e.getMessage());
+				}
+			}
+		}
 	}
 
 	/**

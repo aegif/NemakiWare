@@ -210,6 +210,7 @@ import { TypeManagement } from './components/TypeManagement/TypeManagement';
 import { PermissionManagement } from './components/PermissionManagement/PermissionManagement';
 import { SearchResults } from './components/SearchBar/SearchResults';
 import { ArchiveManagement } from './components/ArchiveManagement/ArchiveManagement';
+import { SolrMaintenance } from './components/SolrMaintenance/SolrMaintenance';
 import { Login } from './components/Login/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute/ProtectedRoute';
@@ -286,6 +287,13 @@ function AppContent() {
             <ProtectedRoute>
               <AdminRoute>
                 <ArchiveManagement repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/solr" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <SolrMaintenance repositoryId={authToken.repositoryId} />
               </AdminRoute>
             </ProtectedRoute>
           } />

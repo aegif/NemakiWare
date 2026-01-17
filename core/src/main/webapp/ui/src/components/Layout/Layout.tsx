@@ -219,7 +219,8 @@ import {
   InboxOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  InfoCircleOutlined
+  InfoCircleOutlined,
+  DatabaseOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -341,6 +342,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           key: '/archive',
           icon: <InboxOutlined />,
           label: t('navigation.archive'),
+        },
+        {
+          key: '/solr',
+          icon: <DatabaseOutlined />,
+          label: t('navigation.solr'),
         },
       ],
     }] : []),

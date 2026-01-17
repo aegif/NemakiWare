@@ -74,16 +74,17 @@
     },
     "confirmDelete": "この{{item}}を削除しますか？"
   },
-  "navigation": {
-    "home": "ホーム",
-    "documents": "ドキュメント",
-    "folders": "フォルダ",
-    "admin": "管理",
-    "settings": "設定",
-    "logout": "ログアウト",
-    "search": "検索",
-    "archive": "アーカイブ"
-  },
+    "navigation": {
+      "home": "ホーム",
+      "documents": "ドキュメント",
+      "folders": "フォルダ",
+      "admin": "管理",
+      "settings": "設定",
+      "logout": "ログアウト",
+      "search": "検索",
+      "archive": "アーカイブ",
+      "solr": "Solrインデックス"
+    },
   "typeManagement": {
     "title": "タイプ管理",
     "customTypes": "カスタムタイプ",
@@ -1168,5 +1169,103 @@
     "selected": "選択中",
     "loadRootFolderError": "ルートフォルダの読み込みに失敗しました",
     "loadTreeError": "フォルダツリーの読み込みに失敗しました"
+  },
+  "solrMaintenance": {
+    "title": "Solrインデックスメンテナンス",
+    "tabs": {
+      "status": "ステータス",
+      "reindex": "再インデクシング",
+      "query": "Solrクエリ"
+    },
+    "healthCheck": {
+      "title": "インデックスヘルスチェック",
+      "refresh": "更新",
+      "solrDocuments": "Solrドキュメント数",
+      "couchDbDocuments": "CouchDBドキュメント数",
+      "missingInSolr": "Solrに未登録",
+      "orphanedInSolr": "孤立ドキュメント",
+      "healthy": "インデックスは正常です",
+      "error": "インデックスヘルスチェックに失敗しました"
+    },
+    "reindexStatus": {
+      "title": "再インデクシング状態",
+      "status": "状態",
+      "currentFolder": "現在のフォルダ",
+      "totalDocuments": "総ドキュメント数",
+      "indexed": "インデックス済み",
+      "errorCount": "エラー数",
+      "silentDropCount": "サイレントドロップ検出数",
+      "silentDropCountTooltip": "Solrがバッチ処理中にサイレントに破棄したドキュメントの数。これらは自動的に再インデックスが試みられます。",
+      "reindexedCount": "再インデックス成功数",
+      "reindexedCountTooltip": "サイレントドロップ検出後に個別再インデックスで復旧に成功したドキュメントの数。",
+      "verificationSkippedCount": "検証スキップ数",
+      "verificationSkippedCountTooltip": "クエリ長制限により検証をスキップしたドキュメントの数。これらのドキュメントはサイレントドロップの検出対象外です。",
+      "errorMessage": "エラーメッセージ",
+      "errorDetails": "エラー詳細 ({{count}}件)",
+      "warningDetails": "警告詳細 ({{count}}件)",
+      "cancel": "キャンセル"
+    },
+    "status": {
+      "idle": "待機中",
+      "running": "実行中",
+      "completed": "完了",
+      "error": "エラー",
+      "cancelled": "キャンセル"
+    },
+    "reindexActions": {
+      "title": "再インデクシング操作",
+      "fullReindex": "全体再インデクシング",
+      "fullReindexDesc": "リポジトリ内の全ドキュメントを再インデックスします。",
+      "fullReindexConfirm": "全体再インデクシングを実行しますか？",
+      "fullReindexConfirmDesc": "この操作には時間がかかる場合があります。",
+      "execute": "実行",
+      "folderReindex": "フォルダ単位の再インデクシング",
+      "folderReindexDesc": "指定したフォルダ配下のドキュメントを再インデックスします。",
+      "folderId": "フォルダID",
+      "includeSubfolders": "サブフォルダを含む",
+      "folderReindexButton": "フォルダ再インデクシング",
+      "indexManagement": "インデックス管理",
+      "indexManagementDesc": "インデックスのクリアや最適化を行います。",
+      "clearIndex": "インデックスクリア",
+      "clearIndexConfirm": "インデックスをクリアしますか？",
+      "clearIndexConfirmDesc": "この操作は取り消せません。全てのインデックスが削除されます。",
+      "optimizeIndex": "インデックス最適化",
+      "optimizeIndexConfirm": "インデックスを最適化しますか？",
+      "optimizeIndexConfirmDesc": "この操作はSolrコア全体に影響します（リポジトリ単位ではありません）。実行中は検索パフォーマンスが低下する可能性があります。",
+      "optimize": "最適化"
+    },
+    "query": {
+      "title": "Solrクエリ実行",
+      "queryLabel": "クエリ (q)",
+      "queryRequired": "クエリを入力してください",
+      "queryPlaceholder": "*:* または name:test など",
+      "start": "開始位置 (start)",
+      "rows": "件数 (rows)",
+      "rowsTooltip": "サーバー側で最大1000件に制限されます",
+      "sort": "ソート (sort)",
+      "sortPlaceholder": "score desc",
+      "fields": "フィールド (fl)",
+      "fieldsPlaceholder": "id,name,score",
+      "executeQuery": "クエリ実行",
+      "results": "{{numFound}}件中 {{start}}〜{{end}}件を表示 ({{queryTime}}ms)",
+      "noResults": "0件 ({{queryTime}}ms)",
+      "document": "ドキュメント {{number}}",
+      "field": "フィールド",
+      "value": "値"
+    },
+    "messages": {
+      "fullReindexStarted": "全体再インデクシングを開始しました",
+      "fullReindexError": "再インデクシングの開始に失敗しました",
+      "folderIdRequired": "フォルダIDを入力してください",
+      "folderReindexStarted": "フォルダ再インデクシングを開始しました",
+      "folderReindexError": "フォルダ再インデクシングの開始に失敗しました",
+      "reindexCancelled": "再インデクシングをキャンセルしました",
+      "cancelError": "キャンセルに失敗しました",
+      "indexCleared": "インデックスをクリアしました",
+      "clearError": "インデックスのクリアに失敗しました",
+      "indexOptimized": "インデックスを最適化しました",
+      "optimizeError": "インデックスの最適化に失敗しました",
+      "queryError": "クエリの実行に失敗しました"
+    }
   }
 }
