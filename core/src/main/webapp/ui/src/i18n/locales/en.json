@@ -17,6 +17,7 @@
       "search": "Search",
       "actions": "Actions",
       "import": "Import",
+      "more": "more",
     "name": "Name",
     "description": "Description",
     "type": "Type",
@@ -578,6 +579,15 @@
     "description": "Description",
     "searchPlaceholder": "Search groups (ID, name, members)",
     "confirmDelete": "Delete this group?",
+    "memberSettings": "Member Settings",
+    "userMembers": "User Members",
+    "groupMembers": "Group Members (Child Groups)",
+    "userMembersTooltip": "Select users who belong to this group",
+    "groupMembersTooltip": "Select child groups that belong to this group. This creates a parent-child hierarchy.",
+    "circularWarning": "Warning: Groups that contain this group cannot be selected (circular reference)",
+    "membersDetail": "Members of {{groupName}}",
+    "noUserMembers": "No user members",
+    "noGroupMembers": "No group members",
     "columns": {
       "groupId": "Group ID",
       "groupName": "Group Name",
@@ -587,11 +597,14 @@
       "groupId": "Enter group ID",
       "groupName": "Enter group name",
       "description": "Enter group description (optional)",
-      "members": "Select members"
+      "members": "Select members",
+      "userMembers": "Select users",
+      "groupMembers": "Select child groups"
     },
     "validation": {
       "groupIdRequired": "Please enter a group ID",
-      "groupNameRequired": "Please enter a group name"
+      "groupNameRequired": "Please enter a group name",
+      "circularReference": "Circular reference error: Adding {{groups}} would create a circular reference"
     },
     "messages": {
       "loadError": "Failed to load groups",

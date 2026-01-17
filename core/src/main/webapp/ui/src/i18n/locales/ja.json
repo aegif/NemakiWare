@@ -17,6 +17,7 @@
       "search": "検索",
       "actions": "アクション",
       "import": "インポート",
+      "more": "件以上",
     "name": "名前",
     "description": "説明",
     "type": "タイプ",
@@ -578,6 +579,15 @@
     "description": "説明",
     "searchPlaceholder": "グループを検索 (ID、名前、メンバー)",
     "confirmDelete": "このグループを削除しますか？",
+    "memberSettings": "メンバー設定",
+    "userMembers": "ユーザーメンバー",
+    "groupMembers": "グループメンバー（子グループ）",
+    "userMembersTooltip": "このグループに所属するユーザーを選択します",
+    "groupMembersTooltip": "このグループに所属する子グループを選択します。親子構造を作成できます。",
+    "circularWarning": "循環参照に注意：自分自身を含むグループは選択できません",
+    "membersDetail": "{{groupName}} のメンバー詳細",
+    "noUserMembers": "ユーザーメンバーはいません",
+    "noGroupMembers": "グループメンバーはありません",
     "columns": {
       "groupId": "グループID",
       "groupName": "グループ名",
@@ -587,11 +597,14 @@
       "groupId": "グループIDを入力",
       "groupName": "グループ名を入力",
       "description": "グループの説明を入力（任意）",
-      "members": "メンバーを選択"
+      "members": "メンバーを選択",
+      "userMembers": "ユーザーを選択",
+      "groupMembers": "子グループを選択"
     },
     "validation": {
       "groupIdRequired": "グループIDを入力してください",
-      "groupNameRequired": "グループ名を入力してください"
+      "groupNameRequired": "グループ名を入力してください",
+      "circularReference": "循環参照エラー: {{groups}} を追加すると循環参照が発生します"
     },
     "messages": {
       "loadError": "グループの読み込みに失敗しました",

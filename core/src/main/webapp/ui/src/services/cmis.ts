@@ -1841,11 +1841,17 @@ export class CMISService {
           const rawGroups = data.groups || [];
 
           // Transform group data to match UI expectations
-          const transformedGroups = rawGroups.map((group: any) => ({
-            id: group.groupId || group.id,
-            name: group.groupName || group.name || group.groupId || 'Unknown Group',
-            members: group.users || []
-          }));
+          const transformedGroups = rawGroups.map((group: any) => {
+            const userMembers = group.users || [];
+            const groupMembers = group.groups || [];
+            return {
+              id: group.groupId || group.id,
+              name: group.groupName || group.name || group.groupId || 'Unknown Group',
+              members: [...userMembers, ...groupMembers],  // Combined for backward compatibility
+              userMembers,
+              groupMembers
+            };
+          });
 
           return transformedGroups;
         } catch (e) {
@@ -1894,11 +1900,11 @@ export class CMISService {
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
       formData.append('name', group.name || '');  // FORM_GROUPNAME = "name"
-      // CRITICAL FIX: GroupManagement sends 'members' field, but API expects 'users' field
-      // Convert members array to users for server-side compatibility
-      const members = (group as any).members || (group as any).users || [];
-      formData.append('users', JSON.stringify(members));  // FORM_MEMBER_USERS = "users"
-      formData.append('groups', JSON.stringify((group as any).groups || []));  // FORM_MEMBER_GROUPS = "groups"
+      // Support both old 'members' field and new 'userMembers'/'groupMembers' fields
+      const userMembers = group.userMembers || (group as any).members || (group as any).users || [];
+      const groupMembers = group.groupMembers || (group as any).groups || [];
+      formData.append('users', JSON.stringify(userMembers));  // FORM_MEMBER_USERS = "users"
+      formData.append('groups', JSON.stringify(groupMembers));  // FORM_MEMBER_GROUPS = "groups"
 
       const response = await this.httpClient.postUrlEncoded(url, formData);
 
@@ -1928,11 +1934,11 @@ export class CMISService {
       // Convert to form data - match server-side FORM_ constants
       const formData = new URLSearchParams();
       formData.append('name', group.name || '');  // FORM_GROUPNAME = "name"
-      // CRITICAL FIX: GroupManagement sends 'members' field, but API expects 'users' field
-      // Convert members array to users for server-side compatibility
-      const members = (group as any).members || (group as any).users || [];
-      formData.append('users', JSON.stringify(members));  // FORM_MEMBER_USERS = "users"
-      formData.append('groups', JSON.stringify((group as any).groups || []));  // FORM_MEMBER_GROUPS = "groups"
+      // Support both old 'members' field and new 'userMembers'/'groupMembers' fields
+      const userMembers = group.userMembers || (group as any).members || (group as any).users || [];
+      const groupMembers = group.groupMembers || (group as any).groups || [];
+      formData.append('users', JSON.stringify(userMembers));  // FORM_MEMBER_USERS = "users"
+      formData.append('groups', JSON.stringify(groupMembers));  // FORM_MEMBER_GROUPS = "groups"
 
       // Use PUT method via httpClient.request()
       const response = await this.httpClient.request({

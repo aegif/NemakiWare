@@ -61,7 +61,9 @@ export interface Group {
   id: string;
   name: string;
   description?: string;
-  members: string[];
+  members: string[];       // Combined view for backward compatibility (users + groups)
+  userMembers: string[];   // User IDs that are members of this group
+  groupMembers: string[];  // Group IDs that are members of this group (child groups)
 }
 
 /**
