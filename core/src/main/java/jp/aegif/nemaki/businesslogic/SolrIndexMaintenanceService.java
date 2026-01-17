@@ -41,11 +41,13 @@ public interface SolrIndexMaintenanceService {
         private long errorCount;
         private long silentDropCount;  // Number of documents detected as silently dropped by Solr
         private long reindexedCount;   // Number of silently dropped documents successfully re-indexed
+        private long verificationSkippedCount;  // Number of documents skipped from verification due to query length limits
         private long startTime;
         private long endTime;
         private String currentFolder;
         private String errorMessage;
         private List<String> errors;
+        private List<String> warnings;  // Warnings (non-fatal issues like verification skipped)
 
         public ReindexStatus() {}
 
@@ -63,6 +65,8 @@ public interface SolrIndexMaintenanceService {
         public void setSilentDropCount(long silentDropCount) { this.silentDropCount = silentDropCount; }
         public long getReindexedCount() { return reindexedCount; }
         public void setReindexedCount(long reindexedCount) { this.reindexedCount = reindexedCount; }
+        public long getVerificationSkippedCount() { return verificationSkippedCount; }
+        public void setVerificationSkippedCount(long verificationSkippedCount) { this.verificationSkippedCount = verificationSkippedCount; }
         public long getStartTime() { return startTime; }
         public void setStartTime(long startTime) { this.startTime = startTime; }
         public long getEndTime() { return endTime; }
@@ -73,6 +77,8 @@ public interface SolrIndexMaintenanceService {
         public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
         public List<String> getErrors() { return errors; }
         public void setErrors(List<String> errors) { this.errors = errors; }
+        public List<String> getWarnings() { return warnings; }
+        public void setWarnings(List<String> warnings) { this.warnings = warnings; }
     }
 
     /**

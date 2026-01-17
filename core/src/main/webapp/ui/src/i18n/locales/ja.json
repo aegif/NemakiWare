@@ -1195,9 +1195,14 @@
       "indexed": "インデックス済み",
       "errorCount": "エラー数",
       "silentDropCount": "サイレントドロップ検出数",
-      "reindexedCount": "再インデックス成功数（復旧）",
+      "silentDropCountTooltip": "Solrがバッチ処理中にサイレントに破棄したドキュメントの数。これらは自動的に再インデックスが試みられます。",
+      "reindexedCount": "再インデックス成功数",
+      "reindexedCountTooltip": "サイレントドロップ検出後に個別再インデックスで復旧に成功したドキュメントの数。",
+      "verificationSkippedCount": "検証スキップ数",
+      "verificationSkippedCountTooltip": "クエリ長制限により検証をスキップしたドキュメントの数。これらのドキュメントはサイレントドロップの検出対象外です。",
       "errorMessage": "エラーメッセージ",
       "errorDetails": "エラー詳細 ({{count}}件)",
+      "warningDetails": "警告詳細 ({{count}}件)",
       "cancel": "キャンセル"
     },
     "status": {

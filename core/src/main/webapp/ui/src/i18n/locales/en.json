@@ -1195,9 +1195,14 @@
       "indexed": "Indexed",
       "errorCount": "Error Count",
       "silentDropCount": "Silent Drops Detected",
+      "silentDropCountTooltip": "Number of documents silently dropped by Solr during batch processing. These are automatically re-indexed.",
       "reindexedCount": "Re-indexed (Recovery)",
+      "reindexedCountTooltip": "Number of documents successfully recovered through individual re-indexing after silent drop detection.",
+      "verificationSkippedCount": "Verification Skipped",
+      "verificationSkippedCountTooltip": "Number of documents skipped from verification due to query length limits. These documents are not checked for silent drops.",
       "errorMessage": "Error Message",
       "errorDetails": "Error Details ({{count}} errors)",
+      "warningDetails": "Warning Details ({{count}} warnings)",
       "cancel": "Cancel"
     },
     "status": {

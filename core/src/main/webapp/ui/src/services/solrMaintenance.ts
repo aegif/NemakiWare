@@ -19,11 +19,13 @@ export interface ReindexStatus {
   errorCount: number;
   silentDropCount: number;   // Number of documents detected as silently dropped by Solr
   reindexedCount: number;    // Number of silently dropped documents successfully re-indexed
+  verificationSkippedCount: number;  // Number of documents skipped from verification due to query length limits
   startTime: number;
   endTime: number;
   currentFolder: string | null;
   errorMessage: string | null;
   errors: string[];
+  warnings: string[];  // Warnings (non-fatal issues like verification skipped)
 }
 
 export interface IndexHealthStatus {

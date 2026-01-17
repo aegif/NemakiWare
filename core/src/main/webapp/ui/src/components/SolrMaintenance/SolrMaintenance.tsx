@@ -33,7 +33,8 @@ import {
   Descriptions,
   Typography,
   Collapse,
-  List
+  List,
+  Tooltip
 } from 'antd';
 import {
   SyncOutlined,
@@ -316,8 +317,27 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
           <Descriptions.Item label={t('solrMaintenance.reindexStatus.totalDocuments')}>{reindexStatus.totalDocuments}</Descriptions.Item>
           <Descriptions.Item label={t('solrMaintenance.reindexStatus.indexed')}>{reindexStatus.indexedCount}</Descriptions.Item>
           <Descriptions.Item label={t('solrMaintenance.reindexStatus.errorCount')}>{reindexStatus.errorCount}</Descriptions.Item>
-          <Descriptions.Item label={t('solrMaintenance.reindexStatus.silentDropCount')}>{reindexStatus.silentDropCount || 0}</Descriptions.Item>
-          <Descriptions.Item label={t('solrMaintenance.reindexStatus.reindexedCount')}>{reindexStatus.reindexedCount || 0}</Descriptions.Item>
+          <Descriptions.Item label={
+            <Tooltip title={t('solrMaintenance.reindexStatus.silentDropCountTooltip')}>
+              <span style={{ cursor: 'help', borderBottom: '1px dotted #999' }}>
+                {t('solrMaintenance.reindexStatus.silentDropCount')}
+              </span>
+            </Tooltip>
+          }>{reindexStatus.silentDropCount || 0}</Descriptions.Item>
+          <Descriptions.Item label={
+            <Tooltip title={t('solrMaintenance.reindexStatus.reindexedCountTooltip')}>
+              <span style={{ cursor: 'help', borderBottom: '1px dotted #999' }}>
+                {t('solrMaintenance.reindexStatus.reindexedCount')}
+              </span>
+            </Tooltip>
+          }>{reindexStatus.reindexedCount || 0}</Descriptions.Item>
+          <Descriptions.Item label={
+            <Tooltip title={t('solrMaintenance.reindexStatus.verificationSkippedCountTooltip')}>
+              <span style={{ cursor: 'help', borderBottom: '1px dotted #999' }}>
+                {t('solrMaintenance.reindexStatus.verificationSkippedCount')}
+              </span>
+            </Tooltip>
+          }>{reindexStatus.verificationSkippedCount || 0}</Descriptions.Item>
           <Descriptions.Item label={t('solrMaintenance.reindexStatus.errorMessage')}>{reindexStatus.errorMessage || '-'}</Descriptions.Item>
         </Descriptions>
         {reindexStatus.status === 'running' && (
@@ -331,6 +351,32 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
             >
               {t('solrMaintenance.reindexStatus.cancel')}
             </Button>
+          </div>
+        )}
+        {reindexStatus.warnings && reindexStatus.warnings.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <Collapse
+              items={[
+                {
+                  key: 'warnings',
+                  label: <span style={{ color: '#faad14' }}>{t('solrMaintenance.reindexStatus.warningDetails', { count: reindexStatus.warnings.length })}</span>,
+                  children: (
+                    <List
+                      size="small"
+                      dataSource={reindexStatus.warnings}
+                      renderItem={(warning: string, index: number) => (
+                        <List.Item>
+                          <Text type="warning" style={{ fontSize: '12px' }}>
+                            {index + 1}. {warning}
+                          </Text>
+                        </List.Item>
+                      )}
+                      style={{ maxHeight: '300px', overflow: 'auto' }}
+                    />
+                  ),
+                },
+              ]}
+            />
           </div>
         )}
         {reindexStatus.errors.length > 0 && (

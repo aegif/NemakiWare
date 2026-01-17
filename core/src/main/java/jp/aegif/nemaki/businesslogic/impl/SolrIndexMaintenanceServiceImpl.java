@@ -112,6 +112,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         status.setStatus("running");
         status.setStartTime(System.currentTimeMillis());
         status.setErrors(new ArrayList<>());
+        status.setWarnings(new ArrayList<>());
         reindexStatuses.put(repositoryId, status);
         cancelFlags.put(repositoryId, new AtomicBoolean(false));
 
@@ -188,6 +189,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         status.setStatus("running");
         status.setStartTime(System.currentTimeMillis());
         status.setErrors(new ArrayList<>());
+        status.setWarnings(new ArrayList<>());
         reindexStatuses.put(repositoryId, status);
         cancelFlags.put(repositoryId, new AtomicBoolean(false));
 
@@ -464,8 +466,15 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 return;
             } else {
                 // Single document with very long ID - skip verification to avoid Solr query length limit
-                log.warn("Skipping batch verification for single document due to query length (" + queryString.length() + 
-                    " chars exceeds limit " + MAX_VERIFICATION_QUERY_LENGTH + "): " + batch.get(0).getId());
+                String warningMsg = "Verification skipped for document " + batch.get(0).getId() + 
+                    " due to query length (" + queryString.length() + " chars exceeds limit " + MAX_VERIFICATION_QUERY_LENGTH + ")";
+                log.warn(warningMsg);
+                
+                // Track verification skipped count and add warning
+                status.setVerificationSkippedCount(status.getVerificationSkippedCount() + 1);
+                if (status.getWarnings() != null) {
+                    status.getWarnings().add(warningMsg);
+                }
                 return;
             }
         }
