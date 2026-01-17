@@ -300,6 +300,73 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       });
     };
 
+    // Clean up ALL leftover circ-* groups before running tests
+    // This is necessary because previous test runs may have left behind groups
+    test.beforeAll(async ({ browser }) => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+
+      try {
+        const authHelper = new AuthHelper(page);
+        await authHelper.login();
+
+        // Navigate to group management
+        await page.waitForTimeout(2000);
+        const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
+        if (await adminMenu.count() > 0) {
+          await adminMenu.click();
+          await page.waitForTimeout(1000);
+        }
+        await page.locator('.ant-menu-item:has-text("グループ管理")').click();
+        await page.waitForTimeout(2000);
+
+        // Helper to delete a group with proper popconfirm handling
+        const deleteGroup = async (row: any) => {
+          await row.locator('button:has-text("削除")').click();
+          // Wait for popconfirm to appear
+          const confirmBtn = page.locator('.ant-popconfirm-buttons button:has-text("はい")');
+          await confirmBtn.waitFor({ state: 'visible', timeout: 5000 });
+          await page.waitForTimeout(300); // Wait for animation
+          await confirmBtn.click();
+          await page.waitForTimeout(1500); // Wait for deletion to complete
+        };
+
+        // Find and delete ALL circ-b-* groups first (they contain circ-a-* as members)
+        let circBRows = page.locator('.ant-table tbody tr').filter({
+          has: page.locator('td:first-child').filter({ hasText: /^circ-b-/ })
+        });
+        let circBCount = await circBRows.count();
+        console.log(`Cleanup: Found ${circBCount} circ-b-* groups to delete`);
+        while (circBCount > 0) {
+          await deleteGroup(circBRows.first());
+          // Re-query after deletion
+          circBRows = page.locator('.ant-table tbody tr').filter({
+            has: page.locator('td:first-child').filter({ hasText: /^circ-b-/ })
+          });
+          circBCount = await circBRows.count();
+        }
+
+        // Find and delete ALL circ-a-* groups
+        let circARows = page.locator('.ant-table tbody tr').filter({
+          has: page.locator('td:first-child').filter({ hasText: /^circ-a-/ })
+        });
+        let circACount = await circARows.count();
+        console.log(`Cleanup: Found ${circACount} circ-a-* groups to delete`);
+        while (circACount > 0) {
+          await deleteGroup(circARows.first());
+          // Re-query after deletion
+          circARows = page.locator('.ant-table tbody tr').filter({
+            has: page.locator('td:first-child').filter({ hasText: /^circ-a-/ })
+          });
+          circACount = await circARows.count();
+        }
+
+        console.log('Cleanup: Removed all leftover circ-* test groups');
+      } finally {
+        await context.close();
+      }
+    });
+
     test.afterAll(async ({ browser }) => {
       // Cleanup: Delete test groups via API
       const context = await browser.newContext();
