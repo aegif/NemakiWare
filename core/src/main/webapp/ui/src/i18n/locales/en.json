@@ -1187,17 +1187,17 @@
       "healthy": "Index is healthy",
       "error": "Index health check failed"
     },
-        "reindexStatus": {
-          "title": "Reindex Status",
-          "status": "Status",
-          "currentFolder": "Current Folder",
-          "totalDocuments": "Total Documents",
-          "indexed": "Indexed",
-          "errorCount": "Error Count",
-          "errorMessage": "Error Message",
-          "errorDetails": "Error Details ({{count}} errors)",
-          "cancel": "Cancel"
-        },
+    "reindexStatus": {
+      "title": "Reindex Status",
+      "status": "Status",
+      "currentFolder": "Current Folder",
+      "totalDocuments": "Total Documents",
+      "indexed": "Indexed",
+      "errorCount": "Error Count",
+      "errorMessage": "Error Message",
+      "errorDetails": "Error Details ({{count}} errors)",
+      "cancel": "Cancel"
+    },
     "status": {
       "idle": "Idle",
       "running": "Running",

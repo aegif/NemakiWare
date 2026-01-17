@@ -340,13 +340,14 @@ public class SolrResource extends ResourceBase {
 		result.put("currentFolder", reindexStatus.getCurrentFolder());
 		result.put("errorMessage", reindexStatus.getErrorMessage());
 
-		// Include error details for debugging
+		// Always include errors array for consistent API response
+		// This ensures UI doesn't need to handle undefined errors field
 		List<String> errors = reindexStatus.getErrors();
-		if (errors != null && !errors.isEmpty()) {
-			JSONArray errorsArray = new JSONArray();
+		JSONArray errorsArray = new JSONArray();
+		if (errors != null) {
 			errorsArray.addAll(errors);
-			result.put("errors", errorsArray);
 		}
+		result.put("errors", errorsArray);
 
 		return makeResult(status, result, errMsg).toString();
 	}

@@ -1187,17 +1187,17 @@
       "healthy": "インデックスは正常です",
       "error": "インデックスヘルスチェックに失敗しました"
     },
-        "reindexStatus": {
-          "title": "再インデクシング状態",
-          "status": "状態",
-          "currentFolder": "現在のフォルダ",
-          "totalDocuments": "総ドキュメント数",
-          "indexed": "インデックス済み",
-          "errorCount": "エラー数",
-          "errorMessage": "エラーメッセージ",
-          "errorDetails": "エラー詳細 ({{count}}件)",
-          "cancel": "キャンセル"
-        },
+    "reindexStatus": {
+      "title": "再インデクシング状態",
+      "status": "状態",
+      "currentFolder": "現在のフォルダ",
+      "totalDocuments": "総ドキュメント数",
+      "indexed": "インデックス済み",
+      "errorCount": "エラー数",
+      "errorMessage": "エラーメッセージ",
+      "errorDetails": "エラー詳細 ({{count}}件)",
+      "cancel": "キャンセル"
+    },
     "status": {
       "idle": "待機中",
       "running": "実行中",

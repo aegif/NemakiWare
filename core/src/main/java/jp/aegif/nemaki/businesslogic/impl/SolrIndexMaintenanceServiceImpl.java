@@ -404,13 +404,45 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         }
     }
     
+    // Maximum query length to avoid Solr query length limits (default is ~8KB)
+    private static final int MAX_VERIFICATION_QUERY_LENGTH = 4000;
+    
+    /**
+     * Estimate the query length for batch verification.
+     * This helps determine if we need to split the batch to avoid Solr query length limits.
+     */
+    private int estimateQueryLength(String repositoryId, List<Content> batch) {
+        // Base query: "repository_id:<escaped_repo_id> AND object_id:("
+        int baseLength = 30 + ClientUtils.escapeQueryChars(repositoryId).length();
+        int idsLength = 0;
+        for (Content content : batch) {
+            // Each ID: "\"<escaped_id>\" OR " (approximately)
+            idsLength += ClientUtils.escapeQueryChars(content.getId()).length() + 6;
+        }
+        return baseLength + idsLength;
+    }
+    
     /**
      * Verify batch indexing by checking Solr for indexed documents.
      * Re-indexes any documents that were silently dropped by Solr.
+     * If the query would be too long, splits the batch into smaller chunks.
      */
     private void verifyAndReindexMissing(String repositoryId, List<Content> batch,
             AtomicLong indexedCount, AtomicLong errorCount, List<String> errors, ReindexStatus status) {
         if (batch.isEmpty()) {
+            return;
+        }
+        
+        // Check if we need to split the batch due to query length limits
+        int estimatedQueryLength = estimateQueryLength(repositoryId, batch);
+        if (estimatedQueryLength > MAX_VERIFICATION_QUERY_LENGTH && batch.size() > 1) {
+            // Split batch in half and verify each part separately
+            int mid = batch.size() / 2;
+            List<Content> firstHalf = batch.subList(0, mid);
+            List<Content> secondHalf = batch.subList(mid, batch.size());
+            log.debug("Splitting batch verification due to query length: " + batch.size() + " -> " + firstHalf.size() + " + " + secondHalf.size());
+            verifyAndReindexMissing(repositoryId, new ArrayList<>(firstHalf), indexedCount, errorCount, errors, status);
+            verifyAndReindexMissing(repositoryId, new ArrayList<>(secondHalf), indexedCount, errorCount, errors, status);
             return;
         }
         
@@ -469,9 +501,10 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                         } catch (Exception ex) {
                             // Decrement indexedCount since this document was counted as success in batch
                             // but actually failed (silent drop + re-index failure)
-                            indexedCount.decrementAndGet();
+                            long correctedCount = indexedCount.decrementAndGet();
                             errorCount.incrementAndGet();
-                            String errorMsg = "Failed to re-index silently dropped document " + content.getId() + ": " + ex.getMessage();
+                            String errorMsg = "Failed to re-index silently dropped document " + content.getId() + 
+                                " (indexedCount corrected to " + correctedCount + "): " + ex.getMessage();
                             if (errors.size() < 100) {
                                 errors.add(errorMsg);
                             }
@@ -597,15 +630,13 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
 
             // Build query with repository filter
             // Escape repositoryId to prevent query injection with special characters
+            // Always force repository_id filter to prevent cross-repository queries
             String escapedRepoId = ClientUtils.escapeQueryChars(repositoryId);
             SolrQuery solrQuery = new SolrQuery();
             if (query != null && !query.trim().isEmpty()) {
-                // Add repository filter if not already present
-                if (!query.contains("repository_id:")) {
-                    solrQuery.setQuery("repository_id:" + escapedRepoId + " AND (" + query + ")");
-                } else {
-                    solrQuery.setQuery(query);
-                }
+                // Always wrap user query with repository filter for security
+                // This prevents accidental or intentional cross-repository queries
+                solrQuery.setQuery("repository_id:" + escapedRepoId + " AND (" + query + ")");
             } else {
                 solrQuery.setQuery("repository_id:" + escapedRepoId);
             }
