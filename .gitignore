@@ -170,6 +170,9 @@ MinimalTckTest.*
 QueryTckRunnerNoPolicyHang.*
 SimpleQueryTest.*
 
+# Exception: Keep important unit test files
+!core/src/test/java/jp/aegif/nemaki/businesslogic/impl/SolrIndexMaintenanceServiceImplTest.java
+
 # Runtime logs and configuration
 jetty-*.log
 query-*.log
