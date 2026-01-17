@@ -383,6 +383,10 @@ export class TestHelper {
 
   /**
    * Upload a document and wait for success
+   *
+   * STABILIZATION FIX (2025-01-17): Added closeAllOverlays at the beginning
+   * to ensure any leftover modals from failed tests are cleaned up before upload.
+   *
    * @param fileName Name of the file to upload
    * @param content Content of the file
    * @param isMobile Whether the browser is in mobile mode
@@ -390,7 +394,10 @@ export class TestHelper {
    */
   async uploadDocument(fileName: string, content: string, isMobile: boolean = false): Promise<boolean> {
     console.log(`TestHelper: Uploading ${fileName}`);
-    
+
+    // STABILIZATION FIX: Close any open overlays before attempting upload
+    await this.closeAllOverlays();
+
     // Click upload button to open modal
     const uploadButton = this.page.locator('button').filter({ hasText: 'アップロード' }).first();
     await uploadButton.click(isMobile ? { force: true } : {});
@@ -401,31 +408,166 @@ export class TestHelper {
     await this.page.waitForTimeout(500);
 
     console.log('TestHelper: Selecting file...');
-    const fileInput = this.page.locator('input[type="file"]');
-    await fileInput.setInputFiles({
-      name: fileName,
-      mimeType: 'text/plain',
-      buffer: Buffer.from(content, 'utf-8'),
-    });
-    await this.page.waitForTimeout(1000);
+    // Ant Design Upload.Dragger creates a hidden file input
+    // CRITICAL: Playwright's setInputFiles needs special handling for Ant Design
+    // The file input must be made visible or we need to use evaluate
+    let fileInput = this.page.locator('.ant-modal .ant-upload input[type="file"]').first();
+    if (await fileInput.count() === 0) {
+      fileInput = this.page.locator('.ant-modal input[type="file"]').first();
+    }
+
+    try {
+      // First, ensure the file input is ready
+      await fileInput.waitFor({ state: 'attached', timeout: 5000 });
+
+      // Set files using Playwright's built-in method
+      await fileInput.setInputFiles({
+        name: fileName,
+        mimeType: 'text/plain',
+        buffer: Buffer.from(content, 'utf-8'),
+      });
+
+      // CRITICAL: Dispatch change event to trigger Ant Design's Upload onChange handler
+      await fileInput.dispatchEvent('change');
+      console.log('TestHelper: Dispatched change event');
+
+      // Wait for Ant Design to process the file selection
+      await this.page.waitForTimeout(1500);
+
+      // Verify file was attached by checking for file list item or upload list
+      const fileListItem = this.page.locator('.ant-modal .ant-upload-list-item, .ant-modal .ant-upload-list');
+      const fileAttached = await fileListItem.count() > 0;
+      console.log(`TestHelper: File attached: ${fileAttached}`);
+
+      // Also check if the name field was auto-filled (indicates successful file selection)
+      const nameField = this.page.locator('.ant-modal input[placeholder*="ファイル名"]').first();
+      if (await nameField.count() > 0) {
+        const autoFilledName = await nameField.inputValue();
+        console.log(`TestHelper: Auto-filled name: ${autoFilledName}`);
+      }
+
+      console.log('TestHelper: File selected successfully');
+    } catch (e) {
+      console.log('TestHelper: File selection error:', e);
+      return false;
+    }
+    await this.page.waitForTimeout(1500);
 
     console.log('TestHelper: Filling file name field...');
-    const nameInput = this.page.locator('.ant-modal input[placeholder*="ファイル名"]');
-    await nameInput.fill(fileName);
+    // Wait for any auto-fill from file selection onChange
     await this.page.waitForTimeout(500);
 
+    // Try multiple selectors for the name input
+    let nameInput = this.page.locator('.ant-modal input[placeholder*="ファイル名"]').first();
+    if (await nameInput.count() === 0) {
+      nameInput = this.page.locator('.ant-modal input#name').first();
+    }
+    if (await nameInput.count() === 0) {
+      nameInput = this.page.locator('.ant-modal .ant-form-item input').first();
+    }
+
+    // Clear first, then fill (in case auto-fill happened)
+    await nameInput.clear();
+    await nameInput.fill(fileName);
+    console.log(`TestHelper: Name input value: ${await nameInput.inputValue()}`);
+    await this.page.waitForTimeout(500);
+
+    // CRITICAL FIX: Ensure the type is set to cmis:document (not cmis:folder)
+    // This fixes the issue where the form state persists from folder creation
+    console.log('TestHelper: Checking type selector...');
+    // Find the type selector by looking for Select element in the modal
+    // The form structure is: Form.Item with label "タイプ" > Select
+    const typeSelector = this.page.locator('.ant-modal .ant-select').first();
+    if (await typeSelector.count() > 0) {
+      // Check current type value from the selection item inside the Select
+      const selectionItem = typeSelector.locator('.ant-select-selection-item');
+      const currentType = await selectionItem.textContent().catch(() => '');
+      console.log(`TestHelper: Current type: "${currentType}"`);
+
+      // If type is not a document type, change it to cmis:document
+      if (currentType && currentType.includes('folder')) {
+        console.log('TestHelper: Type is folder - changing to cmis:document...');
+        await typeSelector.click();
+        await this.page.waitForTimeout(500);
+
+        // Wait for dropdown to appear
+        const dropdown = this.page.locator('.ant-select-dropdown:visible');
+        await dropdown.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+
+        // Select cmis:document from dropdown
+        const documentOption = this.page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:document' }).first();
+        if (await documentOption.count() > 0) {
+          await documentOption.click();
+          await this.page.waitForTimeout(500);
+          console.log('TestHelper: Type changed to cmis:document');
+        } else {
+          // Try first option that contains "document"
+          const anyDocOption = this.page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: /document/i }).first();
+          if (await anyDocOption.count() > 0) {
+            await anyDocOption.click();
+            await this.page.waitForTimeout(500);
+            console.log('TestHelper: Type changed to a document type');
+          } else {
+            console.log('TestHelper: WARNING - Could not find cmis:document option');
+            // Press Escape to close dropdown
+            await this.page.keyboard.press('Escape');
+          }
+        }
+      } else {
+        console.log('TestHelper: Type is already a document type');
+      }
+    } else {
+      console.log('TestHelper: Type selector not found in modal');
+    }
+
     console.log('TestHelper: Clicking upload button in modal...');
-    const modalUploadButton = this.page.locator('.ant-modal button[type="submit"]').filter({ hasText: 'アップロード' });
+    // Try multiple selectors for the upload button
+    let modalUploadButton = this.page.locator('.ant-modal button[type="submit"]').filter({ hasText: /アップロード|Upload/i }).first();
+    if (await modalUploadButton.count() === 0) {
+      modalUploadButton = this.page.locator('.ant-modal button.ant-btn-primary').first();
+    }
+
+    // Verify button is enabled before clicking
+    const isDisabled = await modalUploadButton.isDisabled().catch(() => true);
+    if (isDisabled) {
+      console.log('TestHelper: Upload button is disabled - form may be invalid');
+      // Take screenshot for debugging
+      await this.page.screenshot({ path: 'test-results/screenshots/upload-button-disabled.png', fullPage: true });
+    }
+
     await modalUploadButton.click(isMobile ? { force: true } : {});
 
     console.log('TestHelper: Waiting for upload to complete...');
-    
+
+    // Wait a moment to see if there's an error message
+    await this.page.waitForTimeout(2000);
+
+    // Check for form validation errors
+    const formErrors = await this.page.locator('.ant-modal .ant-form-item-explain-error').allTextContents();
+    if (formErrors.length > 0) {
+      console.log('TestHelper: Form validation errors:', formErrors);
+      // Take screenshot for debugging
+      await this.page.screenshot({ path: 'test-results/screenshots/upload-form-errors.png', fullPage: true });
+    }
+
+    // Check for API error alerts
+    const alertError = await this.page.locator('.ant-modal .ant-alert-error').textContent().catch(() => null);
+    if (alertError) {
+      console.log('TestHelper: Upload API error:', alertError);
+    }
+
+    // Check if upload button is loading (indicates upload in progress)
+    const isLoading = await this.page.locator('.ant-modal button[type="submit"].ant-btn-loading').count() > 0;
+    console.log(`TestHelper: Upload button is loading: ${isLoading}`);
+
     // Wait for modal to close (indicates upload request was sent)
     try {
       await this.page.waitForSelector('.ant-modal:has-text("ファイルアップロード")', { state: 'hidden', timeout: 20000 });
       console.log('TestHelper: Upload modal closed');
     } catch (e) {
       console.log('TestHelper: Upload modal did not close within 20s - trying to close manually');
+      // Take screenshot to see modal state
+      await this.page.screenshot({ path: 'test-results/screenshots/upload-modal-timeout.png', fullPage: true });
       const closeButton = this.page.locator('.ant-modal button').filter({ hasText: 'キャンセル' }).first();
       if (await closeButton.count() > 0) {
         await closeButton.click();
@@ -456,6 +598,9 @@ export class TestHelper {
    * Ensure a test document exists, creating it if necessary
    * This method is idempotent - safe to call multiple times
    *
+   * STABILIZATION FIX (2025-01-17): Added closeAllOverlays at the beginning
+   * to ensure any leftover modals from failed tests are cleaned up.
+   *
    * @param fileName Name of the file to ensure exists
    * @param content Content of the file (used only if creating)
    * @param isMobile Whether the browser is in mobile mode
@@ -463,6 +608,9 @@ export class TestHelper {
    */
   async ensureTestDocument(fileName: string, content: string = 'Test content', isMobile: boolean = false): Promise<boolean> {
     console.log(`TestHelper: Ensuring test document ${fileName} exists...`);
+
+    // STABILIZATION FIX: Close any open overlays before checking/creating document
+    await this.closeAllOverlays();
 
     // First check if document already exists in table
     const existingDoc = this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).first();
@@ -673,12 +821,18 @@ export class TestHelper {
   /**
    * Delete a test document if it exists
    *
+   * STABILIZATION FIX (2025-01-17): Added closeAllOverlays at the beginning
+   * to ensure any leftover modals from failed tests are cleaned up before deletion.
+   *
    * @param fileName Name of the file to delete
    * @param isMobile Whether the browser is in mobile mode
    * @returns true if deleted (or didn't exist), false if deletion failed
    */
   async deleteTestDocument(fileName: string, isMobile: boolean = false): Promise<boolean> {
     console.log(`TestHelper: Deleting test document ${fileName}...`);
+
+    // STABILIZATION FIX: Close any open overlays before attempting deletion
+    await this.closeAllOverlays();
 
     // Find document row
     const docRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).first();
@@ -724,12 +878,18 @@ export class TestHelper {
    * - Use robust button detection with multiple selectors
    * - Proper visibility waits for modal content
    *
+   * STABILIZATION FIX (2025-01-17): Added closeAllOverlays at the beginning
+   * to ensure any leftover modals from failed tests are cleaned up before folder creation.
+   *
    * @param folderName Name of the folder to create
    * @param isMobile Whether the browser is in mobile mode
    * @returns true if folder was created successfully, false otherwise
    */
   async createFolder(folderName: string, isMobile: boolean = false): Promise<boolean> {
     console.log(`TestHelper: Creating folder: ${folderName}`);
+
+    // STABILIZATION FIX: Close any open overlays before attempting folder creation
+    await this.closeAllOverlays();
 
     // Get folder creation button
     const folderButton = await this.getFolderButton();
@@ -864,61 +1024,23 @@ export class TestHelper {
    * CRITICAL FIX (2025-12-27): This method addresses the "ant-modal-wrap intercepts pointer events" issue
    * that occurs during test cleanup. Modals left open from failed tests can block subsequent interactions.
    *
-   * This method:
-   * 1. Closes all visible Ant Design modals (clicks X button or Cancel)
-   * 2. Closes all visible Ant Design drawers
-   * 3. Removes orphaned overlay elements via JavaScript
-   * 4. Waits for DOM to stabilize
+   * STABILIZATION FIX (2025-01-17): Improved order of operations:
+   * 1. FIRST remove blocking elements via JavaScript (to unblock pointer events)
+   * 2. Press Escape multiple times
+   * 3. Try clicking close buttons with force option
+   * 4. Final JavaScript cleanup
+   * 5. Verify all overlays are closed
    *
    * @returns Number of overlays closed
    */
   async closeAllOverlays(): Promise<number> {
     let closedCount = 0;
-    console.log('TestHelper: Closing all overlays...');
 
-    // Step 1: Close visible modals by clicking close button
-    const modalCloseButtons = this.page.locator('.ant-modal:not(.ant-modal-hidden) .ant-modal-close');
-    const modalCloseCount = await modalCloseButtons.count();
-    for (let i = 0; i < modalCloseCount; i++) {
-      try {
-        await modalCloseButtons.nth(i).click({ timeout: 1000 });
-        closedCount++;
-        await this.page.waitForTimeout(300);
-      } catch (e) {
-        // Button might have already been closed by previous action
-      }
-    }
-
-    // Step 2: Close drawers by clicking close button or mask
-    const drawerCloseButtons = this.page.locator('.ant-drawer:not(.ant-drawer-hidden) .ant-drawer-close');
-    const drawerCloseCount = await drawerCloseButtons.count();
-    for (let i = 0; i < drawerCloseCount; i++) {
-      try {
-        await drawerCloseButtons.nth(i).click({ timeout: 1000 });
-        closedCount++;
-        await this.page.waitForTimeout(300);
-      } catch (e) {
-        // Drawer might have already closed
-      }
-    }
-
-    // Step 3: Press Escape key to close any remaining modals/popovers
-    await this.page.keyboard.press('Escape');
-    await this.page.waitForTimeout(300);
-
-    // Step 4: Force remove orphaned overlay elements via JavaScript
-    const removedCount = await this.page.evaluate(() => {
+    // Step 1: FIRST remove blocking overlay elements via JavaScript (critical for unblocking)
+    const initialRemoved = await this.page.evaluate(() => {
       let removed = 0;
 
-      // Remove orphaned modal wrappers
-      document.querySelectorAll('.ant-modal-wrap').forEach((el) => {
-        if (el.parentNode) {
-          el.parentNode.removeChild(el);
-          removed++;
-        }
-      });
-
-      // Remove orphaned modal masks
+      // Remove all modal masks first (they block pointer events)
       document.querySelectorAll('.ant-modal-mask').forEach((el) => {
         if (el.parentNode) {
           el.parentNode.removeChild(el);
@@ -926,16 +1048,80 @@ export class TestHelper {
         }
       });
 
-      // Remove orphaned drawer wrappers
-      document.querySelectorAll('.ant-drawer-wrapper-body').forEach((el) => {
-        const drawer = el.closest('.ant-drawer');
-        if (drawer && drawer.parentNode) {
-          drawer.parentNode.removeChild(drawer);
+      // Reset body overflow style
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+
+      return removed;
+    });
+    closedCount += initialRemoved;
+
+    // Step 2: Press Escape multiple times to close any modal/drawer/popover
+    for (let i = 0; i < 3; i++) {
+      await this.page.keyboard.press('Escape');
+      await this.page.waitForTimeout(200);
+    }
+
+    // Step 3: Try clicking modal close buttons with force option
+    const modalCloseButtons = this.page.locator('.ant-modal:not(.ant-modal-hidden) .ant-modal-close');
+    const modalCloseCount = await modalCloseButtons.count();
+    for (let i = 0; i < modalCloseCount; i++) {
+      try {
+        await modalCloseButtons.nth(i).click({ force: true, timeout: 2000 });
+        closedCount++;
+        await this.page.waitForTimeout(300);
+      } catch (e) {
+        // Button might have already been closed
+      }
+    }
+
+    // Step 4: Try clicking cancel buttons in modals with force option
+    const cancelButtons = this.page.locator('.ant-modal:not(.ant-modal-hidden) button').filter({ hasText: /キャンセル|Cancel|閉じる|Close/i });
+    const cancelCount = await cancelButtons.count();
+    for (let i = 0; i < cancelCount; i++) {
+      try {
+        await cancelButtons.nth(i).click({ force: true, timeout: 2000 });
+        closedCount++;
+        await this.page.waitForTimeout(300);
+      } catch (e) {
+        // Button might have already been closed
+      }
+    }
+
+    // Step 5: Close drawers
+    const drawerCloseButtons = this.page.locator('.ant-drawer:not(.ant-drawer-hidden) .ant-drawer-close');
+    const drawerCloseCount = await drawerCloseButtons.count();
+    for (let i = 0; i < drawerCloseCount; i++) {
+      try {
+        await drawerCloseButtons.nth(i).click({ force: true, timeout: 2000 });
+        closedCount++;
+        await this.page.waitForTimeout(300);
+      } catch (e) {
+        // Drawer might have already closed
+      }
+    }
+
+    // Step 6: Final aggressive JavaScript cleanup
+    const finalRemoved = await this.page.evaluate(() => {
+      let removed = 0;
+
+      // Remove ALL modal-related elements
+      document.querySelectorAll('.ant-modal-wrap, .ant-modal-mask, .ant-modal-root').forEach((el) => {
+        if (el.parentNode) {
+          el.parentNode.removeChild(el);
           removed++;
         }
       });
 
-      // Remove orphaned popconfirms
+      // Remove drawer elements
+      document.querySelectorAll('.ant-drawer, .ant-drawer-mask').forEach((el) => {
+        if (el.parentNode) {
+          el.parentNode.removeChild(el);
+          removed++;
+        }
+      });
+
+      // Remove popconfirms and popovers
       document.querySelectorAll('.ant-popconfirm, .ant-popover').forEach((el) => {
         if (el.parentNode) {
           el.parentNode.removeChild(el);
@@ -943,20 +1129,33 @@ export class TestHelper {
         }
       });
 
-      // Reset body overflow style (modals set overflow: hidden)
+      // Reset body styles completely
       document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+      document.body.classList.remove('ant-scrolling-effect');
 
       return removed;
     });
+    closedCount += finalRemoved;
 
-    closedCount += removedCount;
+    // Step 7: Wait for DOM to stabilize
+    await this.page.waitForTimeout(500);
+
+    // Step 8: Verify no blocking overlays remain
+    const remainingOverlays = await this.page.locator('.ant-modal-wrap, .ant-modal-mask, .ant-drawer-mask').count();
+    if (remainingOverlays > 0) {
+      console.log(`TestHelper: WARNING - ${remainingOverlays} overlay elements still present after cleanup`);
+      // Final attempt - force remove via JavaScript
+      await this.page.evaluate(() => {
+        document.querySelectorAll('.ant-modal-wrap, .ant-modal-mask, .ant-drawer-mask').forEach((el) => {
+          el.remove();
+        });
+      });
+    }
 
     if (closedCount > 0) {
       console.log(`TestHelper: Closed ${closedCount} overlay elements`);
     }
-
-    // Wait for DOM to stabilize
-    await this.page.waitForTimeout(500);
 
     return closedCount;
   }
@@ -964,12 +1163,18 @@ export class TestHelper {
   /**
    * Delete a test folder if it exists
    *
+   * STABILIZATION FIX (2025-01-17): Added closeAllOverlays at the beginning
+   * to ensure any leftover modals from failed tests are cleaned up before deletion.
+   *
    * @param folderName Name of the folder to delete
    * @param isMobile Whether the browser is in mobile mode
    * @returns true if deleted (or didn't exist), false if deletion failed
    */
   async deleteTestFolder(folderName: string, isMobile: boolean = false): Promise<boolean> {
     console.log(`TestHelper: Deleting test folder ${folderName}...`);
+
+    // STABILIZATION FIX: Close any open overlays before attempting deletion
+    await this.closeAllOverlays();
 
     // Find folder row
     const folderRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).first();
