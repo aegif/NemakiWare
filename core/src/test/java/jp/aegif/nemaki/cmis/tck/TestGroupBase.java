@@ -1,12 +1,23 @@
 package jp.aegif.nemaki.cmis.tck;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.chemistry.opencmis.tck.CmisTest;
 import org.apache.chemistry.opencmis.tck.CmisTestGroup;
@@ -331,6 +342,9 @@ public class TestGroupBase extends AbstractRunner {
 				}
 			}
 
+			// Clean up test types (test:* prefixed types) via REST API
+			cleanupTestTypes(parameters);
+
 		} catch (Exception cleanupEx) {
 			System.err.println("TCK CLEANUP: Cleanup failed: " + cleanupEx.getMessage());
 			cleanupEx.printStackTrace();
@@ -344,6 +358,102 @@ public class TestGroupBase extends AbstractRunner {
 					// Ignore
 				}
 			}
+		}
+	}
+
+	/**
+	 * Clean up test types (test:* prefixed types) via NemakiWare REST API.
+	 * This prevents test type accumulation when tests are interrupted.
+	 */
+	private static void cleanupTestTypes(Map<String, String> parameters) {
+		try {
+			// Extract base URL and credentials from parameters
+			String atompubUrl = parameters.get("org.apache.chemistry.opencmis.binding.atompub.url");
+			String username = parameters.get("org.apache.chemistry.opencmis.user");
+			String password = parameters.get("org.apache.chemistry.opencmis.password");
+			String repositoryId = parameters.get("org.apache.chemistry.opencmis.session.repository.id");
+
+			if (atompubUrl == null || username == null || password == null || repositoryId == null) {
+				return;
+			}
+
+			// Derive REST API base URL from AtomPub URL
+			// AtomPub URL: http://localhost:8080/core/atom/bedroom
+			// REST API URL: http://localhost:8080/core/rest/repo/bedroom/type/list
+			String baseUrl = atompubUrl.replace("/atom/" + repositoryId, "");
+			String typeListUrl = baseUrl + "/rest/repo/" + repositoryId + "/type/list";
+
+			// Get list of all types
+			String authHeader = "Basic " + Base64.getEncoder().encodeToString(
+				(username + ":" + password).getBytes(StandardCharsets.UTF_8));
+
+			HttpURLConnection listConn = (HttpURLConnection) new URL(typeListUrl).openConnection();
+			listConn.setRequestMethod("GET");
+			listConn.setRequestProperty("Authorization", authHeader);
+			listConn.setConnectTimeout(10000);
+			listConn.setReadTimeout(30000);
+
+			int responseCode = listConn.getResponseCode();
+			if (responseCode != 200) {
+				return;
+			}
+
+			// Read response
+			StringBuilder response = new StringBuilder();
+			try (BufferedReader reader = new BufferedReader(
+					new InputStreamReader(listConn.getInputStream(), StandardCharsets.UTF_8))) {
+				String line;
+				while ((line = reader.readLine()) != null) {
+					response.append(line);
+				}
+			}
+
+			// Extract test type IDs using regex
+			// Pattern: "id":"test:xxx"
+			Pattern pattern = Pattern.compile("\"id\":\"(test:[^\"]+)\"");
+			Matcher matcher = pattern.matcher(response.toString());
+			List<String> testTypeIds = new ArrayList<>();
+			while (matcher.find()) {
+				testTypeIds.add(matcher.group(1));
+			}
+
+			if (testTypeIds.isEmpty()) {
+				return;
+			}
+
+			System.out.println("TCK CLEANUP: Found " + testTypeIds.size() + " test types to delete");
+
+			// Delete each test type
+			int deletedTypes = 0;
+			for (String typeId : testTypeIds) {
+				try {
+					// URL encode the type ID (replace : with %3A)
+					String encodedTypeId = URLEncoder.encode(typeId, "UTF-8");
+					String deleteUrl = baseUrl + "/rest/repo/" + repositoryId + "/type/delete/" + encodedTypeId;
+
+					HttpURLConnection deleteConn = (HttpURLConnection) new URL(deleteUrl).openConnection();
+					deleteConn.setRequestMethod("DELETE");
+					deleteConn.setRequestProperty("Authorization", authHeader);
+					deleteConn.setConnectTimeout(5000);
+					deleteConn.setReadTimeout(10000);
+
+					int deleteResponse = deleteConn.getResponseCode();
+					if (deleteResponse == 200) {
+						deletedTypes++;
+					}
+					deleteConn.disconnect();
+				} catch (Exception deleteEx) {
+					// Continue with other deletions
+				}
+			}
+
+			if (deletedTypes > 0) {
+				System.out.println("TCK CLEANUP: Deleted " + deletedTypes + " test types");
+			}
+
+		} catch (Exception e) {
+			System.err.println("TCK CLEANUP: Test type cleanup failed: " + e.getMessage());
+			// Don't fail the test due to cleanup errors
 		}
 	}
 
