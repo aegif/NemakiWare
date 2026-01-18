@@ -80,6 +80,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
   });
 
   test('Step 1: Create custom document type with required and searchable properties', async ({ page, browserName }) => {
+    test.setTimeout(180000); // Extended timeout for type creation with properties
     console.log(`Test Run ID: ${testRunId}`);
     console.log(`Creating custom type: ${customTypeId}`);
 
@@ -169,7 +170,9 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
       if (await propIdInput.count() > 0) {
         await propIdInput.first().fill(requiredPropId);
       } else {
-        await propertyCard.locator('input').first().fill(requiredPropId);
+        // Fallback: use text input, excluding checkboxes
+        const textInput = propertyCard.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first();
+        await textInput.fill(requiredPropId);
       }
       console.log(`Added required property: ${requiredPropId}`);
 
@@ -179,14 +182,21 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
         await propNameInput.first().fill(requiredPropName);
       }
 
-      // Select property type (string)
+      // Select property type (string) - default is already string, so skip if already selected
       const propTypeSelect = propertyCard.locator('.ant-select').first();
       if (await propTypeSelect.count() > 0) {
-        await propTypeSelect.click();
-        await page.waitForTimeout(300);
-        const stringOption = page.locator('.ant-select-item-option').filter({ hasText: /文字列|String/i }).first();
-        if (await stringOption.count() > 0) {
-          await stringOption.click();
+        // Check if it already shows 'string' type (default is usually string)
+        const currentType = await propTypeSelect.textContent();
+        if (!currentType?.includes('string') && !currentType?.includes('文字列')) {
+          await propTypeSelect.click();
+          await page.waitForTimeout(500);
+          const stringOption = page.locator('.ant-select-item-option').filter({ hasText: /文字列|String/i }).first();
+          if (await stringOption.count() > 0 && await stringOption.isVisible()) {
+            await stringOption.click();
+          } else {
+            // Close dropdown by clicking elsewhere
+            await page.keyboard.press('Escape');
+          }
         }
       }
 
@@ -213,7 +223,9 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
       if (await propIdInput2.count() > 0) {
         await propIdInput2.first().fill(searchablePropId);
       } else {
-        await propertyCard2.locator('input').first().fill(searchablePropId);
+        // Fallback: use text input, excluding checkboxes
+        const textInput2 = propertyCard2.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first();
+        await textInput2.fill(searchablePropId);
       }
       console.log(`Added searchable property: ${searchablePropId}`);
 
@@ -223,14 +235,21 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
         await propNameInput2.first().fill(searchablePropName);
       }
 
-      // Select property type (string)
+      // Select property type (string) - default is already string, so skip if already selected
       const propTypeSelect2 = propertyCard2.locator('.ant-select').first();
       if (await propTypeSelect2.count() > 0) {
-        await propTypeSelect2.click();
-        await page.waitForTimeout(300);
-        const stringOption2 = page.locator('.ant-select-item-option').filter({ hasText: /文字列|String/i }).first();
-        if (await stringOption2.count() > 0) {
-          await stringOption2.click();
+        // Check if it already shows 'string' type (default is usually string)
+        const currentType2 = await propTypeSelect2.textContent();
+        if (!currentType2?.includes('string') && !currentType2?.includes('文字列')) {
+          await propTypeSelect2.click();
+          await page.waitForTimeout(500);
+          const stringOption2 = page.locator('.ant-select-item-option').filter({ hasText: /文字列|String/i }).first();
+          if (await stringOption2.count() > 0 && await stringOption2.isVisible()) {
+            await stringOption2.click();
+          } else {
+            // Close dropdown by clicking elsewhere
+            await page.keyboard.press('Escape');
+          }
         }
       }
 

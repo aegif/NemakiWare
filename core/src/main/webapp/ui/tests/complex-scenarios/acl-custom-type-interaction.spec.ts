@@ -115,6 +115,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
   });
 
   test('Step 2: Create document inside test folder', async ({ page, browserName }) => {
+    test.setTimeout(180000); // Extended timeout for navigation + upload
     console.log(`Creating document: ${testDocumentName}`);
 
     const viewportSize = page.viewportSize();

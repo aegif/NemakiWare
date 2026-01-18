@@ -121,8 +121,8 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 log.info("Starting full reindex for repository: " + repositoryId);
                 
                 // Get root folder
-                Folder rootFolder = contentService.getFolder(repositoryId, 
-                    repositoryInfoMap.getSingleRepositoryInfo(repositoryId).getRootFolderId());
+                Folder rootFolder = contentService.getFolder(repositoryId,
+                    repositoryInfoMap.get(repositoryId).getRootFolderId());
                 
                 if (rootFolder == null) {
                     status.setStatus("error");
@@ -598,8 +598,8 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             }
 
             // Get CouchDB document count by counting from root folder
-            Folder rootFolder = contentService.getFolder(repositoryId, 
-                repositoryInfoMap.getSingleRepositoryInfo(repositoryId).getRootFolderId());
+            Folder rootFolder = contentService.getFolder(repositoryId,
+                repositoryInfoMap.get(repositoryId).getRootFolderId());
             if (rootFolder != null) {
                 AtomicLong couchCount = new AtomicLong(0);
                 countDocumentsRecursive(repositoryId, rootFolder.getId(), couchCount);

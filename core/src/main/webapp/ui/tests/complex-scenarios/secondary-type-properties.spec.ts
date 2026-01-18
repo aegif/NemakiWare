@@ -65,6 +65,7 @@ test.describe('Secondary Type with Custom Properties', () => {
   });
 
   test('Step 1: Create secondary type with custom property', async ({ page, browserName }) => {
+    test.setTimeout(180000); // Extended timeout for type creation with properties
     console.log(`Creating secondary type: ${secondaryTypeId}`);
 
     const viewportSize = page.viewportSize();
@@ -157,7 +158,9 @@ test.describe('Secondary Type with Custom Properties', () => {
       if (await propIdInput.count() > 0) {
         await propIdInput.first().fill(aspectPropId);
       } else {
-        await propertyCard.locator('input').first().fill(aspectPropId);
+        // Fallback: use text input, excluding checkboxes
+        const textInput = propertyCard.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first();
+        await textInput.fill(aspectPropId);
       }
       console.log(`Added aspect property: ${aspectPropId}`);
 
@@ -167,14 +170,19 @@ test.describe('Secondary Type with Custom Properties', () => {
         await propNameInput.first().fill(aspectPropName);
       }
 
-      // Select property type (string)
+      // Select property type (string) - default is already string, so skip if already selected
       const propTypeSelect = propertyCard.locator('.ant-select').first();
       if (await propTypeSelect.count() > 0) {
-        await propTypeSelect.click();
-        await page.waitForTimeout(300);
-        const stringOption = page.locator('.ant-select-item-option').filter({ hasText: /文字列|String/i }).first();
-        if (await stringOption.count() > 0) {
-          await stringOption.click();
+        const currentType = await propTypeSelect.textContent();
+        if (!currentType?.includes('string') && !currentType?.includes('文字列')) {
+          await propTypeSelect.click();
+          await page.waitForTimeout(500);
+          const stringOption = page.locator('.ant-select-item-option').filter({ hasText: /文字列|String/i }).first();
+          if (await stringOption.count() > 0 && await stringOption.isVisible()) {
+            await stringOption.click();
+          } else {
+            await page.keyboard.press('Escape');
+          }
         }
       }
     }

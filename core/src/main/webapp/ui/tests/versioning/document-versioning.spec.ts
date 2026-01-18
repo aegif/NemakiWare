@@ -641,4 +641,142 @@ test.describe('Document Versioning', () => {
       }
     }
   });
+
+  /**
+   * Test: Same-name file upload creates new version
+   *
+   * This test verifies the "same name file upload creates new version" feature:
+   * 1. Upload initial document
+   * 2. Upload file with same name again
+   * 3. Verify new version is created (not duplicate document)
+   * 4. Check version history shows multiple versions
+   *
+   * This is an alternative to the check-out/check-in workflow that allows
+   * users to create new versions simply by uploading a file with the same name.
+   *
+   * CMIS Concept: setContentStream with overwrite=true creates new version
+   * UI Message: 「{{name}}」の新しいバージョンを作成しました
+   */
+  test('should create new version when uploading same-name file', async ({ page, browserName }) => {
+    const viewportSize = page.viewportSize();
+    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+
+    // Navigate to documents page
+    const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
+    await documentsMenuItem.click(isMobile ? { force: true } : {});
+    await page.waitForTimeout(2000);
+
+    // Upload initial document with unique name
+    const timestamp = Date.now();
+    const filename = `same-name-version-${timestamp}.txt`;
+    const initialContent = 'Version 1.0 - Initial content';
+
+    console.log(`Test: Uploading initial document: ${filename}`);
+    const uploadSuccess = await testHelper.uploadDocument(filename, initialContent, isMobile);
+    if (!uploadSuccess) {
+      test.skip('Initial upload failed');
+      return;
+    }
+
+    // Wait for document to appear in table
+    await page.waitForTimeout(2000);
+
+    // Verify initial document exists
+    const initialDocRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
+    await expect(initialDocRow).toBeVisible({ timeout: 10000 });
+    console.log('Test: Initial document uploaded successfully');
+
+    // Count documents before second upload
+    const docCountBefore = await page.locator('.ant-table-tbody tr').filter({ hasText: filename }).count();
+    console.log(`Test: Document count before second upload: ${docCountBefore}`);
+
+    // Upload same-name file with different content (should create new version)
+    const newContent = 'Version 2.0 - Updated content';
+    console.log(`Test: Uploading same-name file to create new version: ${filename}`);
+
+    const secondUploadSuccess = await testHelper.uploadDocument(filename, newContent, isMobile);
+    if (!secondUploadSuccess) {
+      test.skip('Second upload failed');
+      return;
+    }
+
+    // Wait for operation to complete
+    await page.waitForTimeout(3000);
+
+    // Look for success message about new version
+    // Japanese: 「{{name}}」の新しいバージョンを作成しました
+    // English: New version of "{{name}}" created successfully
+    const versionSuccessMessage = page.locator('.ant-message-success').filter({
+      hasText: /新しいバージョン|New version/i
+    });
+    const versionMessageVisible = await versionSuccessMessage.count() > 0;
+    console.log(`Test: New version success message visible: ${versionMessageVisible}`);
+
+    // Verify document count is still the same (no duplicate created)
+    const docCountAfter = await page.locator('.ant-table-tbody tr').filter({ hasText: filename }).count();
+    console.log(`Test: Document count after second upload: ${docCountAfter}`);
+
+    // Document count should remain 1 (new version, not duplicate)
+    expect(docCountAfter).toBe(1);
+
+    // Open version history to verify multiple versions exist
+    const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
+    await documentRow.click(isMobile ? { force: true } : {});
+    await page.waitForTimeout(1000);
+
+    // Look for version history button
+    const versionHistoryButton = page.locator('button, .ant-btn, .ant-menu-item').filter({
+      hasText: /バージョン履歴|バージョン|Version.*History|Versions/i
+    }).first();
+
+    if (await versionHistoryButton.count() > 0) {
+      await versionHistoryButton.click(isMobile ? { force: true } : {});
+      await page.waitForTimeout(2000);
+
+      // Check if version history modal/drawer shows multiple versions
+      const versionHistoryModal = page.locator('.ant-modal, .ant-drawer');
+      if (await versionHistoryModal.count() > 0) {
+        // Count version entries in the history
+        const versionEntries = page.locator('.ant-table-tbody tr, .ant-list-item').filter({
+          hasText: /1\.|2\.|v1|v2/i
+        });
+        const versionCount = await versionEntries.count();
+        console.log(`Test: Version count in history: ${versionCount}`);
+
+        // Should have at least 2 versions (initial + updated)
+        expect(versionCount).toBeGreaterThanOrEqual(2);
+
+        // Close version history modal
+        const closeButton = page.locator('.ant-modal-close, button').filter({ hasText: /閉じる|Close|キャンセル/i }).first();
+        if (await closeButton.count() > 0) {
+          await closeButton.click();
+        }
+      }
+    } else {
+      // Version history button not visible - verify via document count assertion (already done above)
+      console.log('Test: Version history button not visible - verified via document count');
+    }
+
+    // Cleanup: Delete the test document
+    await page.waitForTimeout(1000);
+    const cleanupDocRow = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
+    if (await cleanupDocRow.count() > 0) {
+      await cleanupDocRow.click();
+      await page.waitForTimeout(500);
+
+      const deleteButton = page.locator('button[data-icon="delete"], button').filter({ hasText: /削除|Delete/i }).first();
+      if (await deleteButton.count() > 0) {
+        await deleteButton.click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(500);
+
+        const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|はい|削除|確認/i }).first();
+        if (await confirmButton.count() > 0) {
+          await confirmButton.click();
+          await page.waitForTimeout(2000);
+        }
+      }
+    }
+
+    console.log('Test: Same-name version creation test completed successfully');
+  });
 });

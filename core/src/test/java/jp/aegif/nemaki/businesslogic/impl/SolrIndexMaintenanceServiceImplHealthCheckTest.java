@@ -68,7 +68,7 @@ public class SolrIndexMaintenanceServiceImplHealthCheckTest {
     
     @Before
     public void setUp() {
-        when(repositoryInfoMap.getSingleRepositoryInfo(TEST_REPO_ID)).thenReturn(repositoryInfo);
+        when(repositoryInfoMap.get(TEST_REPO_ID)).thenReturn(repositoryInfo);
         when(repositoryInfo.getRootFolderId()).thenReturn(ROOT_FOLDER_ID);
     }
     

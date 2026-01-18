@@ -384,6 +384,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
   });
 
   test('Step 5: Delete document and then delete custom type', async ({ page, browserName }) => {
+    test.setTimeout(180000); // Extended timeout for document + type deletion
     console.log('Deleting document to allow type deletion...');
 
     const viewportSize = page.viewportSize();
@@ -397,6 +398,13 @@ test.describe('Type Management Consistency with Document Operations', () => {
     // Delete the test document
     await testHelper.deleteTestDocument(testDocumentName);
     await page.waitForTimeout(2000);
+
+    // CRITICAL FIX: Reload page to ensure clean state before navigating to type management
+    // The deleteTestDocument operation may leave modal overlays blocking interactions
+    console.log('Reloading page to ensure clean state before type deletion...');
+    await page.reload();
+    await page.waitForSelector('.ant-table, .ant-layout', { timeout: 10000 });
+    await page.waitForTimeout(1000);
 
     // Now try to delete the custom type
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });

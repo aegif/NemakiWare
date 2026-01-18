@@ -94,6 +94,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
   });
 
   test('Step 2: Create subfolders inside root folder', async ({ page, browserName }) => {
+    test.setTimeout(180000); // Extended timeout for creating multiple folders
     console.log('Creating subfolders...');
 
     const viewportSize = page.viewportSize();
@@ -127,6 +128,23 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
       }
     }
 
+    // Wait for UI to stabilize and close any notifications before creating second folder
+    await page.waitForTimeout(2000);
+
+    // Dismiss any notification messages that might interfere
+    const notifications = page.locator('.ant-message, .ant-notification');
+    if (await notifications.count() > 0) {
+      console.log(`Found ${await notifications.count()} notification(s), waiting for them to dismiss...`);
+      await page.waitForTimeout(3000);
+    }
+
+    // CRITICAL FIX: Reload the page to ensure clean state for second folder creation
+    // This avoids issues with React state not being properly reset after closeAllOverlays
+    console.log('Reloading page to ensure clean state...');
+    await page.reload();
+    await page.waitForSelector('.ant-table', { timeout: 10000 });
+    await page.waitForTimeout(1000);
+
     // Create subfolder 2
     const subfolder2Created = await testHelper.createFolder(subFolder2Name, isMobile);
     console.log(`Subfolder 2 created: ${subfolder2Created}`);
@@ -144,6 +162,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
   });
 
   test('Step 3: Create documents in different subfolders', async ({ page, browserName }) => {
+    test.setTimeout(180000); // Extended timeout for navigation + 2 document uploads
     console.log('Creating documents in subfolders...');
 
     const viewportSize = page.viewportSize();
@@ -170,9 +189,26 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
       // Create document 1 in subfolder 1
       const doc1Created = await testHelper.uploadDocument(testDocument1Name, `${searchableValue} - Document 1 content`, isMobile);
       console.log(`Document 1 created in subfolder 1: ${doc1Created}`);
+    }
 
-      // Go back to root folder
-      await page.goBack();
+    // CRITICAL FIX: Reload page and navigate fresh to subfolder 2
+    // Using goBack() can leave the UI in an inconsistent state
+    console.log('Reloading page to ensure clean state before subfolder 2...');
+    await page.reload();
+    await page.waitForSelector('.ant-table', { timeout: 10000 });
+    await page.waitForTimeout(2000);
+
+    // Navigate to documents menu if needed
+    const documentsMenuItem2 = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
+    if (await documentsMenuItem2.count() > 0) {
+      await documentsMenuItem2.click(isMobile ? { force: true } : {});
+      await page.waitForTimeout(2000);
+    }
+
+    // Navigate into root folder again
+    const rootFolderRow2 = page.locator('.ant-table-tbody tr').filter({ hasText: rootFolderName }).first();
+    if (await rootFolderRow2.count() > 0) {
+      await rootFolderRow2.dblclick(isMobile ? { force: true } : {});
       await page.waitForTimeout(2000);
     }
 

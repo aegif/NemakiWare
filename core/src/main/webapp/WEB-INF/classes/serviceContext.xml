@@ -652,12 +652,6 @@
         </property>
     </bean>
 
-    <bean id="solrResource" class="jp.aegif.nemaki.rest.SolrResource">
-    	<property name="solrUtil">
-       		<ref bean="solrUtil" />
-        </property>
-    </bean>
-
     <!-- Commented out - REST resources will handle Spring context lookup manually -->
     <!-- <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
         <property name="contentService">

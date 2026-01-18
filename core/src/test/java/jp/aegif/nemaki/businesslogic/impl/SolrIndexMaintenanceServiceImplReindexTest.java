@@ -65,7 +65,7 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
     
     @Before
     public void setUp() {
-        when(repositoryInfoMap.getSingleRepositoryInfo(TEST_REPO_ID)).thenReturn(repositoryInfo);
+        when(repositoryInfoMap.get(TEST_REPO_ID)).thenReturn(repositoryInfo);
         when(repositoryInfo.getRootFolderId()).thenReturn(ROOT_FOLDER_ID);
     }
     
@@ -318,8 +318,8 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         
         RepositoryInfo info1 = mock(RepositoryInfo.class);
         RepositoryInfo info2 = mock(RepositoryInfo.class);
-        when(repositoryInfoMap.getSingleRepositoryInfo(repo1)).thenReturn(info1);
-        when(repositoryInfoMap.getSingleRepositoryInfo(repo2)).thenReturn(info2);
+        when(repositoryInfoMap.get(repo1)).thenReturn(info1);
+        when(repositoryInfoMap.get(repo2)).thenReturn(info2);
         when(info1.getRootFolderId()).thenReturn("root-1");
         when(info2.getRootFolderId()).thenReturn("root-2");
         
