@@ -1,0 +1,22 @@
+# NemakiWare Test Environment Setup Dependencies
+
+# CMIS client library
+cmislib>=0.7.0
+
+# YAML configuration parsing
+PyYAML>=6.0
+
+# HTTP requests for REST API
+requests>=2.28.0
+
+# Word document generation
+python-docx>=0.8.11
+
+# PowerPoint document generation
+python-pptx>=0.6.21
+
+# Excel document generation
+openpyxl>=3.1.0
+
+# PDF document generation
+reportlab>=4.0.0

@@ -1,0 +1,204 @@
+# NemakiWare Test Environment Setup Configuration
+# This file defines the test data structure for populating a clean NemakiWare instance
+
+# CMIS Connection Settings
+cmis:
+  url: "http://localhost:8080/core/atom11"
+  repository_id: "bedroom"
+  username: "admin"
+  password: "admin"
+
+# REST API Settings (for user/group/type management)
+rest_api:
+  base_url: "http://localhost:8080/core/rest"
+  username: "admin"
+  password: "admin"
+
+# Organization Structure
+organizations:
+  - id: "torishimariyaku"
+    name: "取締役"
+    parent: null
+  - id: "soumu"
+    name: "総務部"
+    parent: null
+  - id: "houmu"
+    name: "法務部"
+    parent: null
+  - id: "eigyo"
+    name: "営業部"
+    parent: null
+  - id: "eigyo_1ka"
+    name: "第一営業課"
+    parent: "eigyo"
+  - id: "eigyo_2ka"
+    name: "第二営業課"
+    parent: "eigyo"
+  - id: "jouhou"
+    name: "情報システム部"
+    parent: null
+
+# User Settings
+users:
+  per_organization: 3
+  password: "password123"
+
+# Folder Structure under /sites
+sites_folders:
+  create_org_folders: true
+  org_folder_permissions:
+    members_read: true
+    members_write: true
+
+# Root Level Folders
+root_folders:
+  - id: "shanai_kitei"
+    name: "社内規程"
+    permissions:
+      - principal: "soumu"
+        permission: "cmis:write"
+      - principal: "CMIS_ANYONE"
+        permission: "cmis:read"
+    content:
+      type: "nemaki:document"
+      count: 20
+      formats:
+        - extension: "docx"
+          ratio: 0.5
+        - extension: "pptx"
+          ratio: 0.5
+      pages: 3
+
+  - id: "keiyakusho"
+    name: "契約書"
+    permissions:
+      - principal: "houmu"
+        permission: "cmis:write"
+      - principal: "CMIS_ANYONE"
+        permission: "cmis:write"
+    content:
+      type: "test:contract"
+      count: 40
+      formats:
+        - extension: "pdf"
+          ratio: 1.0
+      pages: 5
+
+  - id: "invoice"
+    name: "インボイス"
+    permissions:
+      - principal: "CMIS_ANYONE"
+        permission: "cmis:read"
+    content:
+      type: "test:invoice"
+      count: 100
+      formats:
+        - extension: "xlsx"
+          ratio: 1.0
+      pages: 1
+
+# Custom Type Definitions
+custom_types:
+  - type_id: "test:invoice"
+    display_name: "Invoice"
+    description: "Invoice document type"
+    parent_type: "nemaki:document"
+    properties:
+      - id: "test:invoice_no"
+        name: "Invoice_No"
+        type: "string"
+        required: false
+        queryable: true
+      - id: "test:sum"
+        name: "Sum"
+        type: "integer"
+        required: false
+        queryable: true
+
+  - type_id: "test:contract"
+    display_name: "Contract"
+    description: "Contract document type"
+    parent_type: "nemaki:document"
+    properties:
+      - id: "test:contract_no"
+        name: "Contract_No"
+        type: "string"
+        required: false
+        queryable: true
+      - id: "test:confidential"
+        name: "Confidential"
+        type: "boolean"
+        required: false
+        queryable: true
+
+# Content Generation Settings
+content_templates:
+  # Internal Regulations (Word/PowerPoint)
+  internal_regulations:
+    titles:
+      - "就業規則"
+      - "給与規程"
+      - "出張旅費規程"
+      - "慶弔見舞金規程"
+      - "育児・介護休業規程"
+      - "ハラスメント防止規程"
+      - "情報セキュリティ規程"
+      - "個人情報保護規程"
+      - "文書管理規程"
+      - "稟議規程"
+      - "経理規程"
+      - "購買規程"
+      - "在宅勤務規程"
+      - "副業・兼業規程"
+      - "退職金規程"
+      - "安全衛生管理規程"
+      - "車両管理規程"
+      - "社宅管理規程"
+      - "福利厚生規程"
+      - "研修規程"
+
+  # Contracts (PDF)
+  contracts:
+    titles:
+      - "業務委託契約書"
+      - "秘密保持契約書"
+      - "売買契約書"
+      - "賃貸借契約書"
+      - "ライセンス契約書"
+      - "保守契約書"
+      - "コンサルティング契約書"
+      - "代理店契約書"
+      - "フランチャイズ契約書"
+      - "共同開発契約書"
+    company_names:
+      - "株式会社ABC商事"
+      - "DEF株式会社"
+      - "GHI産業株式会社"
+      - "JKL電機株式会社"
+      - "MNO物流株式会社"
+      - "PQRシステムズ株式会社"
+      - "STUコンサルティング株式会社"
+      - "VWXマーケティング株式会社"
+
+  # Invoices (Excel)
+  invoices:
+    company_name: "株式会社テスト商事"
+    company_address: "東京都千代田区丸の内1-1-1"
+    company_tel: "03-1234-5678"
+    items:
+      - name: "コンサルティングサービス"
+        unit_price: 100000
+      - name: "システム開発費"
+        unit_price: 500000
+      - name: "保守サービス（月額）"
+        unit_price: 50000
+      - name: "ライセンス費用"
+        unit_price: 200000
+      - name: "トレーニング費用"
+        unit_price: 80000
+      - name: "ハードウェア購入費"
+        unit_price: 150000
+      - name: "ソフトウェア購入費"
+        unit_price: 300000
+      - name: "クラウドサービス利用料"
+        unit_price: 30000
