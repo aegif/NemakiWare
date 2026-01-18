@@ -10,7 +10,7 @@ This script populates a clean NemakiWare instance with test data including:
 - Test documents (Word, PowerPoint, PDF, Excel)
 
 Usage:
-    python setup_test_environment.py [--config config.yaml]
+    python setup_test_environment.py [--config config.yaml] [--seed 12345]
 
 Environment Variables (override config file values):
     NEMAKI_CMIS_URL: CMIS endpoint URL
@@ -19,35 +19,35 @@ Environment Variables (override config file values):
     NEMAKI_REST_URL: REST API base URL
     NEMAKI_REST_USERNAME: REST API username
     NEMAKI_REST_PASSWORD: REST API password
+    NEMAKI_RANDOM_SEED: Random seed for reproducible test data generation
 """
 
 import argparse
 import io
+import mimetypes
 import os
 import random
 import sys
-import tempfile
 from datetime import datetime, timedelta
-from typing import Any
 
 import requests
 import yaml
 from cmislib import CmisClient
-from cmislib.exceptions import ObjectNotFoundException
 from docx import Document
-from docx.shared import Inches, Pt
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from pptx import Presentation
 from pptx.util import Inches as PptxInches
 from pptx.util import Pt as PptxPt
-from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+
+# HTTP request timeout settings (connect timeout, read timeout) in seconds
+HTTP_TIMEOUT = (10, 30)
 
 
 class TestEnvironmentSetup:
@@ -118,8 +118,8 @@ class TestEnvironmentSetup:
                 if child.name == folder_name:
                     print(f"  Found existing folder: {folder_name}")
                     return child
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"  Warning: Could not list children of folder: {e}")
 
         print(f"  Creating folder: {folder_name}")
         return parent_folder.createFolder(folder_name)
@@ -142,7 +142,8 @@ class TestEnvironmentSetup:
             data = {"name": group_name, "users": "[]", "groups": "[]"}
 
             try:
-                response = requests.post(url, data=data, auth=self._get_rest_auth())
+                response = requests.post(url, data=data, auth=self._get_rest_auth(), timeout=HTTP_TIMEOUT)
+                response.raise_for_status()
                 result = response.json()
 
                 if result.get("status") == "success":
@@ -155,7 +156,7 @@ class TestEnvironmentSetup:
                         self.created_groups[group_id] = group_name
                     else:
                         print(f"  Failed to create group {group_name}: {error}")
-            except Exception as e:
+            except requests.exceptions.RequestException as e:
                 print(f"  Error creating group {group_name}: {e}")
 
         self._setup_group_hierarchy()
@@ -173,7 +174,8 @@ class TestEnvironmentSetup:
                 data = {"users": "[]", "groups": f'["{child_id}"]'}
 
                 try:
-                    response = requests.put(url, data=data, auth=self._get_rest_auth())
+                    response = requests.put(url, data=data, auth=self._get_rest_auth(), timeout=HTTP_TIMEOUT)
+                    response.raise_for_status()
                     result = response.json()
 
                     if result.get("status") == "success":
@@ -182,7 +184,7 @@ class TestEnvironmentSetup:
                         error = result.get("error", "Unknown error")
                         if "alreadyMember" not in str(error):
                             print(f"  Failed to add {child_id} to {parent_id}: {error}")
-                except Exception as e:
+                except requests.exceptions.RequestException as e:
                     print(f"  Error setting up hierarchy: {e}")
 
     def create_users(self) -> None:
@@ -210,7 +212,8 @@ class TestEnvironmentSetup:
                 }
 
                 try:
-                    response = requests.post(url, data=data, auth=self._get_rest_auth())
+                    response = requests.post(url, data=data, auth=self._get_rest_auth(), timeout=HTTP_TIMEOUT)
+                    response.raise_for_status()
                     result = response.json()
 
                     if result.get("status") == "success":
@@ -223,7 +226,7 @@ class TestEnvironmentSetup:
                             self.created_users[user_id] = user_name
                         else:
                             print(f"  Failed to create user {user_name}: {error}")
-                except Exception as e:
+                except requests.exceptions.RequestException as e:
                     print(f"  Error creating user {user_name}: {e}")
 
                 self._add_user_to_group(user_id, org_id)
@@ -234,14 +237,15 @@ class TestEnvironmentSetup:
         data = {"users": f'["{user_id}"]', "groups": "[]"}
 
         try:
-            response = requests.put(url, data=data, auth=self._get_rest_auth())
+            response = requests.put(url, data=data, auth=self._get_rest_auth(), timeout=HTTP_TIMEOUT)
+            response.raise_for_status()
             result = response.json()
 
             if result.get("status") != "success":
                 error = result.get("error", "Unknown error")
                 if "alreadyMember" not in str(error):
                     print(f"    Failed to add {user_id} to {group_id}: {error}")
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
             print(f"    Error adding user to group: {e}")
 
     def register_custom_types(self) -> None:
@@ -262,7 +266,8 @@ class TestEnvironmentSetup:
 
         try:
             files = {"data": ("type.xml", xml_content, "application/xml")}
-            response = requests.post(url, files=files, auth=self._get_rest_auth())
+            response = requests.post(url, files=files, auth=self._get_rest_auth(), timeout=HTTP_TIMEOUT)
+            response.raise_for_status()
             result = response.json()
 
             if result.get("status") == "success":
@@ -273,7 +278,7 @@ class TestEnvironmentSetup:
                     print(f"    Type already exists: {type_id}")
                 else:
                     print(f"    Failed to register type {type_id}: {error}")
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
             print(f"    Error registering type {type_id}: {e}")
 
     def _generate_type_xml(self, type_def: dict) -> str:
@@ -421,7 +426,8 @@ class TestEnvironmentSetup:
             if folder_id == "shanai_kitei":
                 doc_data = self._generate_internal_regulation(i, extension, pages)
             elif folder_id == "keiyakusho":
-                doc_data = self._generate_contract(i, extension, pages)
+                # Contracts are always PDF format
+                doc_data = self._generate_contract(i, pages)
             elif folder_id == "invoice":
                 doc_data = self._generate_invoice(i, extension)
             else:
@@ -588,8 +594,8 @@ class TestEnvironmentSetup:
         prs.save(buffer)
         return buffer.getvalue()
 
-    def _generate_contract(self, index: int, extension: str, pages: int) -> dict:
-        """Generate a contract document."""
+    def _generate_contract(self, index: int, pages: int) -> dict:
+        """Generate a contract document (always PDF format)."""
         templates = self.config["content_templates"]["contracts"]
         titles = templates["titles"]
         companies = templates["company_names"]
@@ -614,11 +620,16 @@ class TestEnvironmentSetup:
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2 * cm, bottomMargin=2 * cm)
 
+        # Register Japanese CID font (built-in, no external font file needed)
+        pdfmetrics.registerFont(UnicodeCIDFont("HeiseiMin-W3"))
+        japanese_font = "HeiseiMin-W3"
+
         styles = getSampleStyleSheet()
 
         title_style = ParagraphStyle(
             "CustomTitle",
             parent=styles["Heading1"],
+            fontName=japanese_font,
             fontSize=18,
             alignment=1,
             spaceAfter=30,
@@ -627,6 +638,7 @@ class TestEnvironmentSetup:
         body_style = ParagraphStyle(
             "CustomBody",
             parent=styles["Normal"],
+            fontName=japanese_font,
             fontSize=10,
             leading=14,
             spaceAfter=12,
@@ -874,15 +886,25 @@ class TestEnvironmentSetup:
                 print(f"      Error uploading {name}: {e}")
 
     def _get_mime_type(self, filename: str) -> str:
-        """Get MIME type from filename."""
+        """Get MIME type from filename.
+
+        Uses a predefined map for Office formats (which mimetypes module may not know),
+        then falls back to the mimetypes module, and finally to application/octet-stream.
+        """
         ext = filename.lower().split(".")[-1]
-        mime_types = {
+        # Office formats that mimetypes module may not recognize correctly
+        office_mime_types = {
             "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "pdf": "application/pdf",
         }
-        return mime_types.get(ext, "application/octet-stream")
+        if ext in office_mime_types:
+            return office_mime_types[ext]
+
+        # Fall back to mimetypes module for other extensions
+        mime_type, _ = mimetypes.guess_type(filename)
+        return mime_type if mime_type else "application/octet-stream"
 
     def run(self) -> None:
         """Run the complete test environment setup."""
@@ -923,7 +945,26 @@ def main():
         default="config.yaml",
         help="Path to configuration file (default: config.yaml)",
     )
+    parser.add_argument(
+        "--seed",
+        "-s",
+        type=int,
+        default=None,
+        help="Random seed for reproducible test data generation (default: None)",
+    )
     args = parser.parse_args()
+
+    # Apply random seed from argument or environment variable
+    seed = args.seed
+    if seed is None and os.environ.get("NEMAKI_RANDOM_SEED"):
+        try:
+            seed = int(os.environ["NEMAKI_RANDOM_SEED"])
+        except ValueError:
+            print("Warning: NEMAKI_RANDOM_SEED is not a valid integer, ignoring")
+
+    if seed is not None:
+        random.seed(seed)
+        print(f"Using random seed: {seed}")
 
     if not os.path.exists(args.config):
         print(f"Error: Configuration file not found: {args.config}")
