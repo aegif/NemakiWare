@@ -53,6 +53,9 @@ HTTP_TIMEOUT = (10, 30)
 class TestEnvironmentSetup:
     """Main class for setting up the NemakiWare test environment."""
 
+    # Japanese font name for PDF generation (registered once at initialization)
+    JAPANESE_FONT = "HeiseiMin-W3"
+
     def __init__(self, config_path: str):
         """Initialize with configuration file path."""
         self.config = self._load_config(config_path)
@@ -62,6 +65,9 @@ class TestEnvironmentSetup:
         self.sites_folder = None
         self.created_groups = {}
         self.created_users = {}
+
+        # Register Japanese CID font once at initialization (built-in, no external font file needed)
+        pdfmetrics.registerFont(UnicodeCIDFont(self.JAPANESE_FONT))
 
     def _load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file and apply environment variable overrides."""
@@ -471,13 +477,29 @@ class TestEnvironmentSetup:
         }
 
     def _create_regulation_content(self, title: str, extension: str, pages: int) -> bytes:
-        """Create regulation document content."""
+        """Create regulation document content.
+
+        Args:
+            title: Document title
+            extension: File extension (must be 'docx' or 'pptx')
+            pages: Number of pages to generate
+
+        Returns:
+            Document content as bytes
+
+        Raises:
+            ValueError: If extension is not 'docx' or 'pptx'
+        """
         if extension == "docx":
             return self._create_word_document(title, pages)
         elif extension == "pptx":
             return self._create_powerpoint_document(title, pages)
         else:
-            return b""
+            raise ValueError(
+                f"Unsupported extension '{extension}' for internal regulations. "
+                f"Only 'docx' and 'pptx' are supported. "
+                f"Please check your config.yaml formats section."
+            )
 
     def _create_word_document(self, title: str, pages: int) -> bytes:
         """Create a Word document with regulation content."""
@@ -620,16 +642,12 @@ class TestEnvironmentSetup:
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2 * cm, bottomMargin=2 * cm)
 
-        # Register Japanese CID font (built-in, no external font file needed)
-        pdfmetrics.registerFont(UnicodeCIDFont("HeiseiMin-W3"))
-        japanese_font = "HeiseiMin-W3"
-
         styles = getSampleStyleSheet()
 
         title_style = ParagraphStyle(
             "CustomTitle",
             parent=styles["Heading1"],
-            fontName=japanese_font,
+            fontName=self.JAPANESE_FONT,
             fontSize=18,
             alignment=1,
             spaceAfter=30,
@@ -638,7 +656,7 @@ class TestEnvironmentSetup:
         body_style = ParagraphStyle(
             "CustomBody",
             parent=styles["Normal"],
-            fontName=japanese_font,
+            fontName=self.JAPANESE_FONT,
             fontSize=10,
             leading=14,
             spaceAfter=12,
