@@ -23,7 +23,7 @@ import org.junit.BeforeClass;
  */
 public abstract class ApiV1TestBase {
     
-    protected static final String API_V1_PATH = "/api/v1";
+    protected static final String API_V1_PATH = "/api/v1/cmis";
     
     protected static String baseUrl;
     protected static String username;
