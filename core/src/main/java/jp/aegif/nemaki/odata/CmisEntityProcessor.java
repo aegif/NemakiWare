@@ -51,9 +51,12 @@ import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.GregorianCalendar;
@@ -129,8 +132,10 @@ public class CmisEntityProcessor implements EntityProcessor {
             );
         }
         
-        // Convert to OData entity
-        Entity entity = convertToEntity(objectData);
+        // Convert to OData entity with absolute URI for @odata.id
+        String baseUri = request.getRawBaseUri();
+        String entitySetName = edmEntitySet.getName();
+        Entity entity = convertToEntity(objectData, baseUri, entitySetName);
         
         // Handle $expand for navigation properties
         ExpandOption expandOption = uriInfo.getExpandOption();
@@ -408,9 +413,9 @@ public class CmisEntityProcessor implements EntityProcessor {
     }
     
     /**
-     * Convert CMIS ObjectData to OData Entity.
+     * Convert CMIS ObjectData to OData Entity with absolute URI for @odata.id.
      */
-    private Entity convertToEntity(ObjectData objectData) {
+    private Entity convertToEntity(ObjectData objectData, String baseUri, String entitySetName) {
         Entity entity = new Entity();
         
         if (objectData.getProperties() != null) {
@@ -429,13 +434,28 @@ public class CmisEntityProcessor implements EntityProcessor {
             }
         }
         
-        // Set the entity ID
+        // Set the entity ID as absolute URI (OData spec requirement)
+        // Format: {baseUri}/{EntitySet}('{objectId}')
         String objectIdValue = getPropertyValue(objectData, "cmis:objectId");
-        if (objectIdValue != null) {
-            entity.setId(URI.create(objectIdValue));
+        if (objectIdValue != null && baseUri != null && entitySetName != null) {
+            // Encode the object ID for URL safety (handles /, ?, #, &, =, etc.)
+            String encodedId = encodeODataKeyValue(objectIdValue);
+            String absoluteUri = baseUri + "/" + entitySetName + "('" + encodedId + "')";
+            entity.setId(URI.create(absoluteUri));
+        } else if (objectIdValue != null) {
+            // Fallback to just the object ID if base URI is not available
+            entity.setId(URI.create(encodeODataKeyValue(objectIdValue)));
         }
         
         return entity;
+    }
+    
+    /**
+     * Overloaded convertToEntity for backward compatibility (used in expand methods).
+     * Uses just the object ID without absolute URI format.
+     */
+    private Entity convertToEntity(ObjectData objectData) {
+        return convertToEntity(objectData, null, null);
     }
     
     /**
@@ -540,6 +560,40 @@ public class CmisEntityProcessor implements EntityProcessor {
             }
         }
         return null;
+    }
+    
+    /**
+     * Encode a value for use in OData entity key (inside single quotes).
+     * 
+     * This handles URI reserved characters that could break the URI structure:
+     * - Single quotes are doubled (' -> '')
+     * - Other reserved characters (/, ?, #, &, =, etc.) are URL-encoded
+     * 
+     * @param value The raw value to encode
+     * @return The encoded value safe for use in OData entity key
+     */
+    private String encodeODataKeyValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        
+        // First, URL-encode the value to handle reserved characters
+        String encoded;
+        try {
+            encoded = URLEncoder.encode(value, StandardCharsets.UTF_8.name());
+        } catch (UnsupportedEncodingException e) {
+            // UTF-8 is always supported, but handle the exception anyway
+            encoded = value;
+        }
+        
+        // URL encoding converts spaces to '+', but OData expects %20
+        encoded = encoded.replace("+", "%20");
+        
+        // Single quotes need to be doubled for OData string literals
+        // Note: URLEncoder encodes ' as %27, but OData expects '' for escaping
+        encoded = encoded.replace("%27", "''");
+        
+        return encoded;
     }
     
     /**

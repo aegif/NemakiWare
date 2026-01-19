@@ -56,8 +56,11 @@ import jp.aegif.nemaki.cmis.service.NavigationService;
 import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 
+import java.io.UnsupportedEncodingException;
 import java.math.BigInteger;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
 import java.util.HashSet;
@@ -154,7 +157,8 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         }
         
         // Fetch the data from CMIS
-        EntityCollection entityCollection = getData(edmEntitySet, top, skip, filterClause, orderByClause, selectedProperties, expandProperties, searchTerm);
+        String baseUri = request.getRawBaseUri();
+        EntityCollection entityCollection = getData(edmEntitySet, top, skip, filterClause, orderByClause, selectedProperties, expandProperties, searchTerm, baseUri);
         
         // Serialize the response
         ODataSerializer serializer = odata.createSerializer(responseFormat);
@@ -181,7 +185,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
      * Get data from CMIS based on the entity set name.
      */
     private EntityCollection getData(EdmEntitySet edmEntitySet, int maxItems, int skipCount, 
-            String filterClause, String orderByClause, Set<String> selectedProperties, Set<String> expandProperties, String searchTerm) throws ODataApplicationException {
+            String filterClause, String orderByClause, Set<String> selectedProperties, Set<String> expandProperties, String searchTerm, String baseUri) throws ODataApplicationException {
         EntityCollection entityCollection = new EntityCollection();
         String entitySetName = edmEntitySet.getName();
         
@@ -204,7 +208,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                 
                 if (objectList != null && objectList.getObjects() != null) {
                     for (ObjectData objectData : objectList.getObjects()) {
-                        Entity entity = convertToEntity(objectData, selectedProperties);
+                        Entity entity = convertToEntity(objectData, selectedProperties, baseUri, entitySetName);
                         
                         // Handle $expand for navigation properties
                         if (expandProperties != null && !expandProperties.isEmpty()) {
@@ -272,9 +276,9 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         // Add full-text search clause if search term is provided
         // CMIS uses CONTAINS() function for full-text search
         if (searchTerm != null && !searchTerm.isEmpty()) {
-            // Escape special characters for CMIS full-text search
-            String escapedSearchTerm = escapeSearchTerm(searchTerm);
-            whereClauses.add("CONTAINS('" + escapedSearchTerm + "')");
+            // Convert OData $search to CMIS CONTAINS() syntax
+            String containsClause = convertSearchToContains(searchTerm);
+            whereClauses.add(containsClause);
         }
         
         // Combine WHERE clauses with AND
@@ -292,13 +296,135 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
     }
     
     /**
+     * Convert OData $search expression to CMIS CONTAINS() clause.
+     * 
+     * Supports:
+     * - Implicit AND: Space-separated terms are combined with AND
+     *   Example: "test document" -> CONTAINS('test') AND CONTAINS('document')
+     * - Explicit OR: OR keyword between terms
+     *   Example: "test OR draft" -> CONTAINS('test') OR CONTAINS('draft')
+     * - Phrase search: Double-quoted strings are searched as phrases
+     *   Example: '"test document"' -> CONTAINS('"test document"')
+     * - NOT: NOT keyword before a term
+     *   Example: "test NOT draft" -> CONTAINS('test') AND NOT CONTAINS('draft')
+     * 
+     * @param searchTerm The raw search term from OData $search
+     * @return The CMIS CONTAINS() clause
+     */
+    private String convertSearchToContains(String searchTerm) {
+        if (searchTerm == null || searchTerm.trim().isEmpty()) {
+            return "CONTAINS('')";
+        }
+        
+        List<String> tokens = tokenizeSearchExpression(searchTerm);
+        if (tokens.isEmpty()) {
+            return "CONTAINS('')";
+        }
+        
+        // Build CMIS CONTAINS clauses from tokens
+        List<String> containsClauses = new ArrayList<>();
+        String currentOperator = "AND";
+        boolean negateNext = false;
+        
+        for (String token : tokens) {
+            if (token.equalsIgnoreCase("AND")) {
+                currentOperator = "AND";
+                continue;
+            } else if (token.equalsIgnoreCase("OR")) {
+                currentOperator = "OR";
+                continue;
+            } else if (token.equalsIgnoreCase("NOT")) {
+                negateNext = true;
+                continue;
+            }
+            
+            // Escape the token for CMIS
+            String escapedToken = escapeSearchTerm(token);
+            String containsClause = "CONTAINS('" + escapedToken + "')";
+            
+            if (negateNext) {
+                containsClause = "NOT " + containsClause;
+                negateNext = false;
+            }
+            
+            if (containsClauses.isEmpty()) {
+                containsClauses.add(containsClause);
+            } else {
+                // Combine with previous clause using current operator
+                String lastClause = containsClauses.remove(containsClauses.size() - 1);
+                containsClauses.add("(" + lastClause + " " + currentOperator + " " + containsClause + ")");
+            }
+            
+            // Reset operator to AND (implicit)
+            currentOperator = "AND";
+        }
+        
+        if (containsClauses.isEmpty()) {
+            return "CONTAINS('')";
+        }
+        
+        return containsClauses.get(0);
+    }
+    
+    /**
+     * Tokenize a search expression into individual terms and operators.
+     * Handles quoted phrases as single tokens.
+     * 
+     * @param searchTerm The raw search expression
+     * @return List of tokens (terms and operators)
+     */
+    private List<String> tokenizeSearchExpression(String searchTerm) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder currentToken = new StringBuilder();
+        boolean inQuotes = false;
+        
+        for (int i = 0; i < searchTerm.length(); i++) {
+            char c = searchTerm.charAt(i);
+            
+            if (c == '"') {
+                if (inQuotes) {
+                    // End of quoted phrase - include the quotes
+                    currentToken.append(c);
+                    tokens.add(currentToken.toString());
+                    currentToken = new StringBuilder();
+                    inQuotes = false;
+                } else {
+                    // Start of quoted phrase
+                    if (currentToken.length() > 0) {
+                        tokens.add(currentToken.toString());
+                        currentToken = new StringBuilder();
+                    }
+                    currentToken.append(c);
+                    inQuotes = true;
+                }
+            } else if (Character.isWhitespace(c) && !inQuotes) {
+                // End of token (if not in quotes)
+                if (currentToken.length() > 0) {
+                    tokens.add(currentToken.toString());
+                    currentToken = new StringBuilder();
+                }
+            } else {
+                currentToken.append(c);
+            }
+        }
+        
+        // Add the last token if any
+        if (currentToken.length() > 0) {
+            tokens.add(currentToken.toString());
+        }
+        
+        return tokens;
+    }
+    
+    /**
      * Escape special characters in search term for CMIS CONTAINS() function.
      * 
      * CMIS full-text search has specific syntax requirements:
      * - Single quotes must be doubled (' -> '')
      * - Backslashes must be escaped (\ -> \\)
-     * - Double quotes should be escaped for phrase matching (" -> \")
-     * - Special query operators like AND, OR, NOT should be treated as literals
+     * - Colons, asterisks, and question marks are escaped
+     * 
+     * Note: Double quotes are preserved for phrase matching.
      * 
      * @param searchTerm The raw search term from OData $search
      * @return The escaped search term safe for CMIS CONTAINS()
@@ -313,9 +439,6 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         
         // Escape single quotes (CMIS string delimiter)
         escaped = escaped.replace("'", "''");
-        
-        // Escape double quotes (used for phrase matching in some CMIS implementations)
-        escaped = escaped.replace("\"", "\\\"");
         
         // Remove or escape characters that could be interpreted as CMIS query operators
         // Colons can be problematic in some full-text search implementations
@@ -600,7 +723,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
     /**
      * Convert CMIS ObjectData to OData Entity with optional property filtering.
      */
-    private Entity convertToEntity(ObjectData objectData, Set<String> selectedProperties) {
+    private Entity convertToEntity(ObjectData objectData, Set<String> selectedProperties, String baseUri, String entitySetName) {
         Entity entity = new Entity();
         
         if (objectData.getProperties() != null) {
@@ -625,10 +748,17 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
             }
         }
         
-        // Set the entity ID
+        // Set the entity ID as absolute URI (OData spec requirement)
+        // Format: {baseUri}/{EntitySet}('{objectId}')
         String objectId = getPropertyValue(objectData, "cmis:objectId");
-        if (objectId != null) {
-            entity.setId(URI.create(objectId));
+        if (objectId != null && baseUri != null && entitySetName != null) {
+            // Encode the object ID for URL safety (handles /, ?, #, &, =, etc.)
+            String encodedId = encodeODataKeyValue(objectId);
+            String absoluteUri = baseUri + "/" + entitySetName + "('" + encodedId + "')";
+            entity.setId(URI.create(absoluteUri));
+        } else if (objectId != null) {
+            // Fallback to just the object ID if base URI is not available
+            entity.setId(URI.create(encodeODataKeyValue(objectId)));
         }
         
         return entity;
@@ -736,6 +866,48 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
             }
         }
         return null;
+    }
+    
+    /**
+     * Overloaded convertToEntity for backward compatibility (used in expand methods).
+     * Uses just the object ID without absolute URI format.
+     */
+    private Entity convertToEntity(ObjectData objectData, Set<String> selectedProperties) {
+        return convertToEntity(objectData, selectedProperties, null, null);
+    }
+    
+    /**
+     * Encode a value for use in OData entity key (inside single quotes).
+     * 
+     * This handles URI reserved characters that could break the URI structure:
+     * - Single quotes are doubled (' -> '')
+     * - Other reserved characters (/, ?, #, &, =, etc.) are URL-encoded
+     * 
+     * @param value The raw value to encode
+     * @return The encoded value safe for use in OData entity key
+     */
+    private String encodeODataKeyValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        
+        // First, URL-encode the value to handle reserved characters
+        String encoded;
+        try {
+            encoded = URLEncoder.encode(value, StandardCharsets.UTF_8.name());
+        } catch (UnsupportedEncodingException e) {
+            // UTF-8 is always supported, but handle the exception anyway
+            encoded = value;
+        }
+        
+        // URL encoding converts spaces to '+', but OData expects %20
+        encoded = encoded.replace("+", "%20");
+        
+        // Single quotes need to be doubled for OData string literals
+        // Note: URLEncoder encodes ' as %27, but OData expects '' for escaping
+        encoded = encoded.replace("%27", "''");
+        
+        return encoded;
     }
     
     /**
