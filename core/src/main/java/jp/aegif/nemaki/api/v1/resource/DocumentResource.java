@@ -188,6 +188,105 @@ public class DocumentResource {
         }
     }
     
+    @POST
+    @Path("/fromSource")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Operation(
+            summary = "Copy document from source",
+            description = "Creates a new document as a copy of an existing document"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "201",
+                    description = "Document copied successfully",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON,
+                            schema = @Schema(implementation = ObjectResponse.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Invalid request",
+                    content = @Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Source document or target folder not found",
+                    content = @Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)
+                    )
+            )
+    })
+    public Response copyDocumentFromSource(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId,
+            @Parameter(description = "Source document ID", required = true)
+            @QueryParam("sourceId") String sourceId,
+            @Parameter(description = "Target folder ID", required = true)
+            @QueryParam("targetFolderId") String targetFolderId,
+            @Parameter(description = "Versioning state (none, checkedout, minor, major)")
+            @QueryParam("versioningState") @DefaultValue("major") String versioningStateStr,
+            Map<String, PropertyValue> properties) {
+        
+        logger.info("API v1: Copying document " + sourceId + " to folder " + targetFolderId);
+        
+        try {
+            validateRepository(repositoryId);
+            
+            if (sourceId == null || sourceId.isEmpty()) {
+                throw ApiException.invalidArgument("sourceId is required");
+            }
+            if (targetFolderId == null || targetFolderId.isEmpty()) {
+                throw ApiException.invalidArgument("targetFolderId is required");
+            }
+            
+            CallContext callContext = getCallContext();
+            
+            // Convert properties if provided (optional - can override source properties)
+            Properties cmisProperties = null;
+            if (properties != null && !properties.isEmpty()) {
+                cmisProperties = convertToProperties(properties, null);
+            }
+            
+            VersioningState versioningState = VersioningState.MAJOR;
+            if ("none".equalsIgnoreCase(versioningStateStr)) {
+                versioningState = VersioningState.NONE;
+            } else if ("checkedout".equalsIgnoreCase(versioningStateStr)) {
+                versioningState = VersioningState.CHECKEDOUT;
+            } else if ("minor".equalsIgnoreCase(versioningStateStr)) {
+                versioningState = VersioningState.MINOR;
+            }
+            
+            String copiedDocumentId = objectService.createDocumentFromSource(
+                    callContext, repositoryId, sourceId, cmisProperties,
+                    targetFolderId, versioningState, null, null, null, null);
+            
+            ObjectData copiedDocument = objectService.getObject(
+                    callContext, repositoryId, copiedDocumentId, null,
+                    true, IncludeRelationships.NONE, null, false, false, null);
+            
+            ObjectResponse response = mapToObjectResponse(copiedDocument, repositoryId, true);
+            
+            String baseUri = uriInfo.getBaseUri().toString();
+            return Response.created(java.net.URI.create(baseUri + "repositories/" + repositoryId + "/documents/" + copiedDocumentId))
+                    .entity(response)
+                    .build();
+            
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.severe("Error copying document: " + e.getMessage());
+            if (e.getMessage() != null && e.getMessage().contains("not found")) {
+                throw ApiException.objectNotFound(sourceId, repositoryId);
+            }
+            throw ApiException.internalError("Failed to copy document: " + e.getMessage(), e);
+        }
+    }
+    
     @GET
     @Path("/{documentId}")
     @Operation(

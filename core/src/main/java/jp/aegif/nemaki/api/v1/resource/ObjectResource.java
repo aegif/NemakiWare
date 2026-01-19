@@ -686,6 +686,188 @@ public class ObjectResource {
         }
     }
     
+    @POST
+    @Path("/{objectId}/content/append")
+    @Consumes(MediaType.APPLICATION_OCTET_STREAM)
+    @Operation(
+            summary = "Append content stream",
+            description = "Appends content to the content stream for the specified document object"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Content appended successfully",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON,
+                            schema = @Schema(implementation = ObjectResponse.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Object not found",
+                    content = @Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)
+                    )
+            )
+    })
+    public Response appendContentStream(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId,
+            @Parameter(description = "Object ID", required = true)
+            @PathParam("objectId") String objectId,
+            @Parameter(description = "Change token for optimistic locking")
+            @QueryParam("changeToken") String changeToken,
+            @Parameter(description = "Content MIME type")
+            @QueryParam("mimeType") @DefaultValue("application/octet-stream") String mimeType,
+            @Parameter(description = "File name")
+            @QueryParam("fileName") String fileName,
+            @Parameter(description = "Is this the last chunk of content")
+            @QueryParam("isLastChunk") @DefaultValue("true") Boolean isLastChunk,
+            InputStream contentInputStream) {
+        
+        logger.info("API v1: Appending content stream for object " + objectId);
+        
+        try {
+            validateRepository(repositoryId);
+            CallContext callContext = getCallContext();
+            
+            ContentStream contentStream = new ContentStreamImpl(fileName, null, mimeType, contentInputStream);
+            
+            Holder<String> objectIdHolder = new Holder<>(objectId);
+            Holder<String> changeTokenHolder = changeToken != null ? new Holder<>(changeToken) : null;
+            
+            objectService.appendContentStream(callContext, repositoryId, objectIdHolder, 
+                    changeTokenHolder, contentStream, isLastChunk, null);
+            
+            ObjectData updatedObject = objectService.getObject(
+                    callContext, repositoryId, objectIdHolder.getValue(), null,
+                    true, IncludeRelationships.NONE, null, false, false, null);
+            
+            ObjectResponse response = mapToObjectResponse(updatedObject, repositoryId, true);
+            return Response.ok(response).build();
+            
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.severe("Error appending content stream for " + objectId + ": " + e.getMessage());
+            throw ApiException.internalError("Failed to append content stream: " + e.getMessage(), e);
+        }
+    }
+    
+    @PUT
+    @Path("/bulk")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Operation(
+            summary = "Bulk update properties",
+            description = "Updates properties of multiple objects in a single request"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Objects updated successfully",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON)
+            ),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Invalid request",
+                    content = @Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)
+                    )
+            )
+    })
+    public Response bulkUpdateProperties(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId,
+            Map<String, Object> requestBody) {
+        
+        logger.info("API v1: Bulk updating properties in repository " + repositoryId);
+        
+        try {
+            validateRepository(repositoryId);
+            CallContext callContext = getCallContext();
+            
+            // Extract objects array from request body
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> objects = (List<Map<String, Object>>) requestBody.get("objects");
+            if (objects == null || objects.isEmpty()) {
+                throw ApiException.invalidArgument("objects array is required");
+            }
+            
+            // Extract properties to update
+            @SuppressWarnings("unchecked")
+            Map<String, PropertyValue> propertiesToUpdate = (Map<String, PropertyValue>) requestBody.get("properties");
+            if (propertiesToUpdate == null || propertiesToUpdate.isEmpty()) {
+                throw ApiException.invalidArgument("properties to update are required");
+            }
+            
+            // Build list of object IDs and change tokens
+            List<org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken> objectIdAndChangeTokens = new ArrayList<>();
+            for (Map<String, Object> obj : objects) {
+                String objId = (String) obj.get("objectId");
+                String objChangeToken = (String) obj.get("changeToken");
+                if (objId == null || objId.isEmpty()) {
+                    throw ApiException.invalidArgument("objectId is required for each object");
+                }
+                objectIdAndChangeTokens.add(
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.BulkUpdateObjectIdAndChangeTokenImpl(
+                                objId, objChangeToken));
+            }
+            
+            // Convert properties
+            Properties cmisProperties = convertToProperties(propertiesToUpdate);
+            
+            // Extract secondary type IDs (optional)
+            @SuppressWarnings("unchecked")
+            List<String> addSecondaryTypeIds = (List<String>) requestBody.get("addSecondaryTypeIds");
+            @SuppressWarnings("unchecked")
+            List<String> removeSecondaryTypeIds = (List<String>) requestBody.get("removeSecondaryTypeIds");
+            
+            // Execute bulk update
+            List<org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken> results = 
+                    objectService.bulkUpdateProperties(callContext, repositoryId, objectIdAndChangeTokens,
+                            cmisProperties, addSecondaryTypeIds, removeSecondaryTypeIds, null);
+            
+            // Build response
+            List<Map<String, String>> updatedObjects = new ArrayList<>();
+            if (results != null) {
+                for (org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken result : results) {
+                    Map<String, String> updatedObj = new HashMap<>();
+                    updatedObj.put("objectId", result.getId());
+                    // getNewId() returns the new object ID after update (may differ if object was moved/renamed)
+                    String newId = result.getNewId();
+                    if (newId != null) {
+                        updatedObj.put("newObjectId", newId);
+                    }
+                    // Original change token - to get the new change token, retrieve the object again
+                    String changeToken = result.getChangeToken();
+                    if (changeToken != null) {
+                        updatedObj.put("changeToken", changeToken);
+                    }
+                    updatedObjects.add(updatedObj);
+                }
+            }
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("updatedObjects", updatedObjects);
+            response.put("numUpdated", updatedObjects.size());
+            
+            String baseUri = uriInfo.getBaseUri().toString();
+            Map<String, LinkInfo> links = new HashMap<>();
+            links.put("self", LinkInfo.of(baseUri + "repositories/" + repositoryId + "/objects/bulk"));
+            response.put("_links", links);
+            
+            return Response.ok(response).build();
+            
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.severe("Error bulk updating properties: " + e.getMessage());
+            throw ApiException.internalError("Failed to bulk update properties: " + e.getMessage(), e);
+        }
+    }
+    
     @GET
     @Path("/{objectId}/parents")
     @Operation(

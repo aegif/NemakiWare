@@ -6,6 +6,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.olingo.commons.api.data.ContextURL;
 import org.apache.olingo.commons.api.data.Entity;
 import org.apache.olingo.commons.api.data.EntityCollection;
@@ -81,6 +82,7 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
     public static final String FUNCTION_GET_ALL_VERSIONS = "GetAllVersions";
     public static final String FUNCTION_GET_OBJECT_BY_PATH = "GetObjectByPath";
     public static final String FUNCTION_QUERY = "Query";
+    public static final String FUNCTION_GET_CONTENT_CHANGES = "GetContentChanges";
     
     public CmisFunctionProcessor(
             RepositoryService repositoryService,
@@ -150,6 +152,12 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                     
                 case FUNCTION_QUERY:
                     entityCollection = executeQuery(uriResourceFunction, baseUri);
+                    entitySetName = "Objects";
+                    edmEntityType = serviceMetadata.getEdm().getEntityType(CmisEdmProvider.ET_OBJECT_FQN);
+                    break;
+                    
+                case FUNCTION_GET_CONTENT_CHANGES:
+                    entityCollection = executeGetContentChanges(uriResourceFunction, baseUri);
                     entitySetName = "Objects";
                     edmEntityType = serviceMetadata.getEdm().getEntityType(CmisEdmProvider.ET_OBJECT_FQN);
                     break;
@@ -504,6 +512,123 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
         // Set count if available
         if (queryResult != null && queryResult.getNumItems() != null) {
             entityCollection.setCount(queryResult.getNumItems().intValue());
+        }
+        
+        return entityCollection;
+    }
+    
+    /**
+     * Execute GetContentChanges function.
+     * Returns a list of objects that have changed since a given point in time.
+     * 
+     * Parameters:
+     * - changeLogToken: Token from previous call (optional, null for first call)
+     * - includeProperties: Whether to include object properties (optional, default false)
+     * - maxItems: Maximum number of items to return (optional)
+     */
+    private EntityCollection executeGetContentChanges(UriResourceFunction uriResourceFunction, String baseUri) throws Exception {
+        // Get parameters
+        String changeLogToken = null;
+        Boolean includeProperties = Boolean.FALSE;
+        String filter = null;
+        Boolean includePolicyIds = Boolean.FALSE;
+        Boolean includeAcl = Boolean.FALSE;
+        BigInteger maxItems = null;
+        
+        List<UriParameter> parameters = uriResourceFunction.getParameters();
+        for (UriParameter param : parameters) {
+            String paramName = param.getName();
+            String paramValue = param.getText();
+            
+            // Remove quotes if present
+            if (paramValue != null && paramValue.startsWith("'") && paramValue.endsWith("'")) {
+                paramValue = paramValue.substring(1, paramValue.length() - 1);
+            }
+            
+            switch (paramName) {
+                case "changeLogToken":
+                    if (paramValue != null) {
+                        try {
+                            changeLogToken = URLDecoder.decode(paramValue, StandardCharsets.UTF_8.name());
+                        } catch (UnsupportedEncodingException e) {
+                            changeLogToken = paramValue;
+                        }
+                    }
+                    break;
+                case "includeProperties":
+                    includeProperties = Boolean.parseBoolean(paramValue);
+                    break;
+                case "filter":
+                    filter = paramValue;
+                    break;
+                case "includePolicyIds":
+                    includePolicyIds = Boolean.parseBoolean(paramValue);
+                    break;
+                case "includeAcl":
+                    includeAcl = Boolean.parseBoolean(paramValue);
+                    break;
+                case "maxItems":
+                    if (paramValue != null && !paramValue.isEmpty()) {
+                        maxItems = new BigInteger(paramValue);
+                    }
+                    break;
+            }
+        }
+        
+        // Execute CMIS getContentChanges
+        Holder<String> changeLogTokenHolder = new Holder<>(changeLogToken);
+        
+        ObjectList changes = discoveryService.getContentChanges(
+                callContext,
+                repositoryId,
+                changeLogTokenHolder,
+                includeProperties,
+                filter,
+                includePolicyIds,
+                includeAcl,
+                maxItems,
+                null   // extension
+        );
+        
+        EntityCollection entityCollection = new EntityCollection();
+        if (changes != null && changes.getObjects() != null) {
+            for (ObjectData objectData : changes.getObjects()) {
+                // Determine entity set name based on base type
+                String entitySetName = "Objects";
+                String baseTypeId = getPropertyValue(objectData, "cmis:baseTypeId");
+                if ("cmis:document".equals(baseTypeId)) {
+                    entitySetName = "Documents";
+                } else if ("cmis:folder".equals(baseTypeId)) {
+                    entitySetName = "Folders";
+                }
+                
+                Entity entity = convertToEntity(objectData, baseUri, entitySetName);
+                
+                // Add change event info if available
+                if (objectData.getChangeEventInfo() != null) {
+                    if (objectData.getChangeEventInfo().getChangeType() != null) {
+                        entity.addProperty(new Property(null, "changeType", ValueType.PRIMITIVE, 
+                                objectData.getChangeEventInfo().getChangeType().value()));
+                    }
+                    if (objectData.getChangeEventInfo().getChangeTime() != null) {
+                        entity.addProperty(new Property(null, "changeTime", ValueType.PRIMITIVE, 
+                                objectData.getChangeEventInfo().getChangeTime().getTime()));
+                    }
+                }
+                
+                entityCollection.getEntities().add(entity);
+            }
+        }
+        
+        // Set count if available
+        if (changes != null && changes.getNumItems() != null) {
+            entityCollection.setCount(changes.getNumItems().intValue());
+        }
+        
+        // Add next change log token as annotation (for pagination)
+        if (changeLogTokenHolder.getValue() != null) {
+            entityCollection.setNext(URI.create(baseUri + "/GetContentChanges(changeLogToken='" + 
+                    encodeODataKeyValue(changeLogTokenHolder.getValue()) + "')"));
         }
         
         return entityCollection;

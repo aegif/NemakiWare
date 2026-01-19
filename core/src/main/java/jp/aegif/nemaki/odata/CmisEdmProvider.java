@@ -103,6 +103,9 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
     public static final String FUNCTION_QUERY = "Query";
     public static final FullQualifiedName FUNCTION_QUERY_FQN = new FullQualifiedName(NAMESPACE, FUNCTION_QUERY);
     
+    public static final String FUNCTION_GET_CONTENT_CHANGES = "GetContentChanges";
+    public static final FullQualifiedName FUNCTION_GET_CONTENT_CHANGES_FQN = new FullQualifiedName(NAMESPACE, FUNCTION_GET_CONTENT_CHANGES);
+    
     @Override
     public CsdlEntityType getEntityType(FullQualifiedName entityTypeName) throws ODataException {
         if (entityTypeName.equals(ET_OBJECT_FQN)) {
@@ -203,6 +206,8 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
             return Collections.singletonList(createGetObjectByPathFunction());
         } else if (functionName.equals(FUNCTION_QUERY_FQN)) {
             return Collections.singletonList(createQueryFunction());
+        } else if (functionName.equals(FUNCTION_GET_CONTENT_CHANGES_FQN)) {
+            return Collections.singletonList(createGetContentChangesFunction());
         }
         return null;
     }
@@ -215,6 +220,7 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
         functions.add(createGetAllVersionsFunction());
         functions.add(createGetObjectByPathFunction());
         functions.add(createQueryFunction());
+        functions.add(createGetContentChangesFunction());
         return functions;
     }
     
@@ -589,6 +595,73 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
         skipCountParam.setType(EdmPrimitiveTypeKind.Int32.getFullQualifiedName());
         skipCountParam.setNullable(true);
         parameters.add(skipCountParam);
+        
+        function.setParameters(parameters);
+        
+        // Return type (collection of objects)
+        CsdlReturnType returnType = new CsdlReturnType();
+        returnType.setType(ET_OBJECT_FQN);
+        returnType.setCollection(true);
+        returnType.setNullable(false);
+        function.setReturnType(returnType);
+        
+        return function;
+    }
+    
+    /**
+     * Create the GetContentChanges function.
+     * GET /odata/{repoId}/GetContentChanges(changeLogToken='token',maxItems=100)
+     * Returns a list of objects that have changed since a given point in time.
+     */
+    private CsdlFunction createGetContentChangesFunction() {
+        CsdlFunction function = new CsdlFunction();
+        function.setName(FUNCTION_GET_CONTENT_CHANGES);
+        function.setBound(false);
+        
+        // Parameters
+        List<CsdlParameter> parameters = new ArrayList<>();
+        
+        // changeLogToken parameter (optional - null for first call)
+        CsdlParameter changeLogTokenParam = new CsdlParameter();
+        changeLogTokenParam.setName("changeLogToken");
+        changeLogTokenParam.setType(EdmPrimitiveTypeKind.String.getFullQualifiedName());
+        changeLogTokenParam.setNullable(true);
+        parameters.add(changeLogTokenParam);
+        
+        // includeProperties parameter (optional)
+        CsdlParameter includePropertiesParam = new CsdlParameter();
+        includePropertiesParam.setName("includeProperties");
+        includePropertiesParam.setType(EdmPrimitiveTypeKind.Boolean.getFullQualifiedName());
+        includePropertiesParam.setNullable(true);
+        parameters.add(includePropertiesParam);
+        
+        // filter parameter (optional)
+        CsdlParameter filterParam = new CsdlParameter();
+        filterParam.setName("filter");
+        filterParam.setType(EdmPrimitiveTypeKind.String.getFullQualifiedName());
+        filterParam.setNullable(true);
+        parameters.add(filterParam);
+        
+        // includePolicyIds parameter (optional)
+        CsdlParameter includePolicyIdsParam = new CsdlParameter();
+        includePolicyIdsParam.setName("includePolicyIds");
+        includePolicyIdsParam.setType(EdmPrimitiveTypeKind.Boolean.getFullQualifiedName());
+        includePolicyIdsParam.setNullable(true);
+        parameters.add(includePolicyIdsParam);
+        
+        // includeAcl parameter (optional)
+        CsdlParameter includeAclParam = new CsdlParameter();
+        includeAclParam.setName("includeAcl");
+        includeAclParam.setType(EdmPrimitiveTypeKind.Boolean.getFullQualifiedName());
+        includeAclParam.setNullable(true);
+        parameters.add(includeAclParam);
+        
+        // maxItems parameter (optional)
+        CsdlParameter maxItemsParam = new CsdlParameter();
+        maxItemsParam.setName("maxItems");
+        maxItemsParam.setType(EdmPrimitiveTypeKind.Int32.getFullQualifiedName());
+        maxItemsParam.setNullable(true);
+        parameters.add(maxItemsParam);
         
         function.setParameters(parameters);
         
