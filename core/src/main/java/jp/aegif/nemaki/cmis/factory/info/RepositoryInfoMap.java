@@ -2,6 +2,7 @@ package jp.aegif.nemaki.cmis.factory.info;
 
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -45,7 +46,26 @@ public class RepositoryInfoMap {
 		return get(repositoryId) != null;
 	}
 
+	/**
+	 * Returns repository IDs with the default repository first.
+	 * This ensures cmislib and other CMIS clients get the configured default
+	 * repository as the first entry in service documents.
+	 *
+	 * @return Set of repository IDs with default repository first
+	 */
 	public Set<String> keys(){
+		String defaultRepoId = getDefaultRepositoryId();
+		if (defaultRepoId != null && map.containsKey(defaultRepoId)) {
+			// Use LinkedHashSet to preserve insertion order with default first
+			Set<String> orderedKeys = new LinkedHashSet<>();
+			orderedKeys.add(defaultRepoId);
+			for (String key : map.keySet()) {
+				if (!key.equals(defaultRepoId)) {
+					orderedKeys.add(key);
+				}
+			}
+			return orderedKeys;
+		}
 		return map.keySet();
 	}
 
