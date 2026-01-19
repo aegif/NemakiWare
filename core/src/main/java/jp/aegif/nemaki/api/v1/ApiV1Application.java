@@ -36,7 +36,7 @@ import jakarta.ws.rs.ApplicationPath;
         )
     ),
     servers = {
-        @Server(url = "/core", description = "NemakiWare Server")
+        @Server(url = "/core/api/v1", description = "NemakiWare REST API v1")
     },
     tags = {
         @Tag(name = "repositories", description = "Repository management operations"),
