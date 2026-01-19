@@ -899,7 +899,10 @@ public class FolderResource {
         String dateStr = value.toString();
         try {
             GregorianCalendar calendar = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
-            calendar.setTime(ISO_DATE_FORMAT.parse(dateStr));
+            // Synchronize on ISO_DATE_FORMAT since SimpleDateFormat is not thread-safe
+            synchronized (ISO_DATE_FORMAT) {
+                calendar.setTime(ISO_DATE_FORMAT.parse(dateStr));
+            }
             return calendar;
         } catch (ParseException e) {
             logger.warning("Failed to parse datetime: " + dateStr);

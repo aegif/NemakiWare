@@ -134,7 +134,11 @@
 	</filter-mapping>
 	<filter-mapping>
 		<filter-name>corsFilter</filter-name>
-		<url-pattern>/api/v1/*</url-pattern>
+		<url-pattern>/api/v1/cmis/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>corsFilter</filter-name>
+		<url-pattern>/odata/*</url-pattern>
 	</filter-mapping>
 	
 	<!-- DeleteType filter mapping - TEMPORARILY DISABLED to allow query action support -->
@@ -200,10 +204,15 @@
 		<filter-name>restAuthenticationFilter</filter-name>
 		<url-pattern>/api/*</url-pattern>
 	</filter-mapping>
-	<!-- Apply authentication to /api/v1/* endpoints (OpenAPI REST API v1) -->
+	<!-- Apply authentication to /api/v1/cmis/* endpoints (OpenAPI REST API v1 - CMIS operations) -->
 	<filter-mapping>
 		<filter-name>restAuthenticationFilter</filter-name>
-		<url-pattern>/api/v1/*</url-pattern>
+		<url-pattern>/api/v1/cmis/*</url-pattern>
+	</filter-mapping>
+	<!-- Apply authentication to /odata/* endpoints (OData 4.0) -->
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/odata/*</url-pattern>
 	</filter-mapping>
 
 
@@ -281,7 +290,8 @@
   <url-pattern>/rest/*</url-pattern>
  </servlet-mapping>
 
- <!-- Jersey application for OpenAPI v1 REST endpoints -->
+ <!-- Jersey application for OpenAPI v1 REST endpoints (CMIS operations) -->
+ <!-- NOTE: Mapped to /api/v1/cmis/* to avoid conflict with legacy Spring MVC /api/v1/repo/* endpoints -->
  <servlet>
   <servlet-name>jersey-api-v1</servlet-name>
   <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
@@ -299,7 +309,19 @@
 
  <servlet-mapping>
   <servlet-name>jersey-api-v1</servlet-name>
-  <url-pattern>/api/v1/*</url-pattern>
+  <url-pattern>/api/v1/cmis/*</url-pattern>
+ </servlet-mapping>
+
+ <!-- OData 4.0 Servlet for CMIS data access -->
+ <servlet>
+  <servlet-name>odata</servlet-name>
+  <servlet-class>jp.aegif.nemaki.odata.ODataServlet</servlet-class>
+  <load-on-startup>12</load-on-startup>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>odata</servlet-name>
+  <url-pattern>/odata/*</url-pattern>
  </servlet-mapping>
 
  <!-- Simple servlet for /rest/all/repositories endpoint -->

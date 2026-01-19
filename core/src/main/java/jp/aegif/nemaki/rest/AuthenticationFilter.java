@@ -123,7 +123,8 @@ public class AuthenticationFilter implements Filter {
 		}
 
 		// Bypass authentication for OpenAPI specification endpoints (allow public access to API docs)
-		if (requestURI != null && (requestURI.contains("/api/v1/openapi.json") || requestURI.contains("/api/v1/openapi.yaml"))) {
+		// Note: API v1 CMIS endpoints are at /api/v1/cmis/* to avoid conflict with legacy /api/v1/repo/* endpoints
+		if (requestURI != null && (requestURI.contains("/api/v1/cmis/openapi.json") || requestURI.contains("/api/v1/cmis/openapi.yaml"))) {
 			log.info("Bypassing authentication for OpenAPI spec endpoint: " + requestURI);
 			chain.doFilter(req, res);
 			return;

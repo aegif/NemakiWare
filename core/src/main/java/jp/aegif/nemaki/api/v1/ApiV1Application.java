@@ -18,14 +18,15 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 import jakarta.ws.rs.ApplicationPath;
 
-@ApplicationPath("/api/v1")
+@ApplicationPath("/api/v1/cmis")
 @OpenAPIDefinition(
     info = @Info(
-        title = "NemakiWare REST API",
+        title = "NemakiWare CMIS REST API",
         version = "1.0.0",
         description = "OpenAPI 3.0 compliant REST API for NemakiWare CMIS Repository. " +
                       "This API provides full access to CMIS operations including object management, " +
-                      "versioning, navigation, and query capabilities.",
+                      "versioning, navigation, and query capabilities. " +
+                      "Note: This API is served at /api/v1/cmis/* to avoid conflict with legacy /api/v1/repo/* endpoints.",
         contact = @Contact(
             name = "NemakiWare Project",
             url = "https://github.com/aegif/NemakiWare"
@@ -36,7 +37,7 @@ import jakarta.ws.rs.ApplicationPath;
         )
     ),
     servers = {
-        @Server(url = "/core/api/v1", description = "NemakiWare REST API v1")
+        @Server(url = "/core/api/v1/cmis", description = "NemakiWare CMIS REST API v1")
     },
     tags = {
         @Tag(name = "repositories", description = "Repository management operations"),

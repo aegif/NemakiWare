@@ -23,7 +23,8 @@ import org.junit.BeforeClass;
  */
 public abstract class ApiV1TestBase {
     
-    protected static final String API_V1_PATH = "/api/v1";
+    // Note: API v1 CMIS endpoints are at /api/v1/cmis/* to avoid conflict with legacy /api/v1/repo/* endpoints
+    protected static final String API_V1_PATH = "/api/v1/cmis";
     
     protected static String baseUrl;
     protected static String username;

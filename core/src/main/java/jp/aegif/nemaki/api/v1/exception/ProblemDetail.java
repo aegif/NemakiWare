@@ -34,7 +34,7 @@ public class ProblemDetail {
     private String detail;
     
     @Schema(description = "A URI reference that identifies the specific occurrence of the problem",
-            example = "/api/v1/repositories/bedroom/objects/OBJECT_ID")
+            example = "/api/v1/cmis/repositories/bedroom/objects/OBJECT_ID")
     @JsonProperty("instance")
     private String instance;
     

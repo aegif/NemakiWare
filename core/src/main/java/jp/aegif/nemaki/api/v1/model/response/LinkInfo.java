@@ -8,7 +8,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class LinkInfo {
     
-    @Schema(description = "Link URL", example = "/api/v1/repositories/bedroom/objects/OBJECT_ID")
+    @Schema(description = "Link URL", example = "/api/v1/cmis/repositories/bedroom/objects/OBJECT_ID")
     @JsonProperty("href")
     private String href;
     
