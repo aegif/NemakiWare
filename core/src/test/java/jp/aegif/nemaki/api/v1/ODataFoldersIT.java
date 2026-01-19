@@ -49,6 +49,32 @@ public class ODataFoldersIT extends ODataTestBase {
     }
 
     @Test
+    public void testFilterContains_ReturnsOk() {
+        String filter = URLEncoder.encode("contains(name,'folder')", StandardCharsets.UTF_8);
+
+        given()
+                .spec(odataRequestSpec)
+        .when()
+                .get(odataFoldersPath() + "?$filter=" + filter)
+        .then()
+                .statusCode(200)
+                .body("value", notNullValue());
+    }
+
+    @Test
+    public void testFilterEndswith_ReturnsOk() {
+        String filter = URLEncoder.encode("endswith(name,'s')", StandardCharsets.UTF_8);
+
+        given()
+                .spec(odataRequestSpec)
+        .when()
+                .get(odataFoldersPath() + "?$filter=" + filter)
+        .then()
+                .statusCode(200)
+                .body("value", notNullValue());
+    }
+
+    @Test
     public void testTopSkip_Paginates() {
         given()
                 .spec(odataRequestSpec)

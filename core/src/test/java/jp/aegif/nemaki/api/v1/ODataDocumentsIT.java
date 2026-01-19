@@ -63,6 +63,45 @@ public class ODataDocumentsIT extends ODataTestBase {
     }
 
     @Test
+    public void testFilterContains_ReturnsOk() {
+        String filter = URLEncoder.encode("contains(name,'test')", StandardCharsets.UTF_8);
+
+        given()
+                .spec(odataRequestSpec)
+        .when()
+                .get(odataDocumentsPath() + "?$filter=" + filter)
+        .then()
+                .statusCode(200)
+                .body("value", notNullValue());
+    }
+
+    @Test
+    public void testFilterEndswith_ReturnsOk() {
+        String filter = URLEncoder.encode("endswith(name,'.pdf')", StandardCharsets.UTF_8);
+
+        given()
+                .spec(odataRequestSpec)
+        .when()
+                .get(odataDocumentsPath() + "?$filter=" + filter)
+        .then()
+                .statusCode(200)
+                .body("value", notNullValue());
+    }
+
+    @Test
+    public void testFilterCompoundAndOr_ReturnsOk() {
+        String filter = URLEncoder.encode("name eq 'test.pdf' or contains(name,'draft')", StandardCharsets.UTF_8);
+
+        given()
+                .spec(odataRequestSpec)
+        .when()
+                .get(odataDocumentsPath() + "?$filter=" + filter)
+        .then()
+                .statusCode(200)
+                .body("value", notNullValue());
+    }
+
+    @Test
     public void testTopSkip_Paginates() {
         given()
                 .spec(odataRequestSpec)
