@@ -21,13 +21,13 @@ The setup script populates a clean NemakiWare instance with:
 
 ### CMIS API
 
-This script uses the **CMIS Browser Binding API** directly via HTTP requests instead of the cmislib Python library. This approach was chosen because:
+This script uses the **CMIS Browser Binding API** directly via HTTP requests. This approach was chosen because:
 
-1. cmislib has compatibility issues with NemakiWare's CMIS implementation
+1. Browser Binding is the recommended binding for modern CMIS clients
 2. Direct HTTP calls provide better control over request parameters
-3. Browser Binding is the recommended binding for modern CMIS clients
+3. No external CMIS client library dependencies required
 
-See `CMISLIB_COMPATIBILITY_REPORT.md` for detailed information about the cmislib compatibility issues.
+**Note**: NemakiWare 3.0.0+ is compatible with the Python cmislib library. The service document endpoint (`/atom`) now supports requests without a repository ID, and INTEGER property types properly handle BigInteger values per the CMIS 1.1 specification.
 
 ## Installation
 

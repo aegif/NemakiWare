@@ -98,15 +98,28 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 		if (repositoryId == null || repositoryId.isEmpty()) {
 			String defaultRepoId = repositoryInfoMap.getDefaultRepositoryId();
 			if (defaultRepoId != null) {
-				log.info("CMIS SERVICE FACTORY: No repositoryId specified, using default: " + defaultRepoId);
+				log.info("CMIS compatibility: No repositoryId specified, using default repository '" + defaultRepoId + "' for authentication");
+
 				// Update the CallContext with the default repository ID for authentication
+				// Handle all known CallContext implementations for robustness
+				boolean contextUpdated = false;
+
+				// CallContextImpl is the base class that all other implementations extend
 				if (callContext instanceof org.apache.chemistry.opencmis.server.impl.CallContextImpl) {
 					((org.apache.chemistry.opencmis.server.impl.CallContextImpl) callContext)
 						.put(CallContext.REPOSITORY_ID, defaultRepoId);
 					repositoryId = defaultRepoId;
+					contextUpdated = true;
+				}
+
+				if (!contextUpdated) {
+					// Log warning for unsupported CallContext types
+					log.warn("CMIS compatibility: Unable to set default repositoryId on CallContext type: " +
+						callContext.getClass().getName() + ". Authentication may fail for service document requests.");
 				}
 			} else {
-				log.warn("CMIS SERVICE FACTORY: No repositoryId specified and no default repository available");
+				log.warn("CMIS compatibility: No repositoryId specified and no default repository available. " +
+					"Service document requests will fail authentication.");
 			}
 		}
 

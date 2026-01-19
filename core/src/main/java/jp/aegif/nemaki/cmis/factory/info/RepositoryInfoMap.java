@@ -1,11 +1,14 @@
 package jp.aegif.nemaki.cmis.factory.info;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.SpringPropertyManager;
@@ -13,12 +16,18 @@ import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class RepositoryInfoMap {
+	private static final Log log = LogFactory.getLog(RepositoryInfoMap.class);
+
 	private Capabilities capabilities;
 	private AclCapabilities aclCapabilities;
 	private SpringPropertyManager propertyManager;
 
-	private Map<String, RepositoryInfo> map = new HashMap<String, RepositoryInfo>();
+	// LinkedHashMap preserves insertion order from YAML configuration
+	private Map<String, RepositoryInfo> map = new LinkedHashMap<String, RepositoryInfo>();
 	private String superUsersId;
+
+	// Explicitly track the first repository ID for deterministic default selection
+	private String firstRepositoryId;
 
 	public void init(){
 		loadRepositoriesSetting();
@@ -52,14 +61,20 @@ public class RepositoryInfoMap {
 	 * Get the default repository ID for CMIS service document requests.
 	 * CMIS 1.1 Compliance: When clients access /atom without specifying a repository,
 	 * they need to authenticate to retrieve the service document listing available repositories.
-	 * This method returns the first available repository ID for authentication purposes.
 	 *
-	 * @return The default repository ID, or null if no repositories are configured
+	 * This method returns the first repository defined in repositories.yml for deterministic behavior.
+	 * The selection is based on YAML definition order, not HashMap iteration order.
+	 *
+	 * @return The default repository ID (first defined in YAML), or null if no repositories are configured
 	 */
 	public String getDefaultRepositoryId() {
+		// Return the explicitly tracked first repository ID for deterministic behavior
+		if (firstRepositoryId != null) {
+			return firstRepositoryId;
+		}
+		// Fallback: LinkedHashMap preserves insertion order, so this is also deterministic
 		Set<String> repositoryIds = keys();
 		if (repositoryIds != null && !repositoryIds.isEmpty()) {
-			// Return the first repository ID (typically "bedroom" in NemakiWare)
 			return repositoryIds.iterator().next();
 		}
 		return null;
@@ -101,10 +116,18 @@ public class RepositoryInfoMap {
 
 		//Each repository's setting
 		List<Map<String, String>> repositoriesSetting = (List<Map<String, String>>)data.get("repositories");
+		boolean isFirst = true;
 		for(Map<String, String> repStg : repositoriesSetting){
 			RepositoryInfo info = buildDefaultInfo(defaultSetting);
 			modifyInfo(repStg, info);
 			map.put(info.getId(), info);
+
+			// Track the first repository ID for deterministic default selection
+			if (isFirst) {
+				this.firstRepositoryId = info.getId();
+				log.info("Default repository for service document authentication: " + this.firstRepositoryId);
+				isFirst = false;
+			}
 		}
 	}
 
