@@ -86,6 +86,26 @@ java.lang.ClassCastException: class java.math.BigInteger cannot be cast to class
 - `DataUtil.toLongSafe()` helper method added for safe type conversion
 - Custom types with integer properties (like `test:sum` on invoices) now work correctly
 
+### 6. Service Document Access Without Repository ID (Fixed in 3.0.0-RC1)
+
+**Issue (now fixed)**:
+cmislib and other CMIS clients expect to access `/atom` without specifying a repository ID to retrieve the service document listing available repositories. Previously, NemakiWare required a repository ID in the URL path for authentication, causing 401 Unauthorized errors when accessing `/atom`.
+
+**Fix applied in CmisServiceFactory.java**:
+- When `repositoryId` is null or empty in the CallContext, the default repository is used for authentication
+- Added `RepositoryInfoMap.getDefaultRepositoryId()` method to provide a fallback repository
+- cmislib can now connect to `http://localhost:8080/core/atom` and discover repositories
+
+**cmislib compatibility verified**:
+```python
+from cmislib import CmisClient
+client = CmisClient('http://localhost:8080/core/atom', 'admin', 'admin')
+repo = client.getDefaultRepository()  # Works!
+root = repo.getRootFolder()           # Works!
+folder = root.createFolder('test')    # Works!
+folder.delete()                        # Works!
+```
+
 ## Workaround: Direct HTTP API Usage
 
 The recommended approach for Python scripts interacting with NemakiWare is to use direct HTTP requests with the Browser Binding API:

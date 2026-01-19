@@ -48,6 +48,23 @@ public class RepositoryInfoMap {
 		return map.get(this.superUsersId);
 	}
 
+	/**
+	 * Get the default repository ID for CMIS service document requests.
+	 * CMIS 1.1 Compliance: When clients access /atom without specifying a repository,
+	 * they need to authenticate to retrieve the service document listing available repositories.
+	 * This method returns the first available repository ID for authentication purposes.
+	 *
+	 * @return The default repository ID, or null if no repositories are configured
+	 */
+	public String getDefaultRepositoryId() {
+		Set<String> repositoryIds = keys();
+		if (repositoryIds != null && !repositoryIds.isEmpty()) {
+			// Return the first repository ID (typically "bedroom" in NemakiWare)
+			return repositoryIds.iterator().next();
+		}
+		return null;
+	}
+
 	private void loadRepositoriesSetting(){
 		Map<String, String> defaultSetting = loadDefaultRepositorySetting();
 		loadOverrideRepositorySetting(defaultSetting);

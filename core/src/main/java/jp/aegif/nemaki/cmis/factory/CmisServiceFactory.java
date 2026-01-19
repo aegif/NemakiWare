@@ -84,17 +84,36 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 	public org.apache.chemistry.opencmis.commons.server.CmisService getService(CallContext callContext) {
 		String repositoryId = callContext.getRepositoryId();
 		String userName = callContext.getUsername();
-		
+
 		// CRITICAL DEBUG: Always log CmisServiceFactory calls
 		if (log.isDebugEnabled()) {
-			log.debug("CMIS SERVICE FACTORY: getService called - Repository ID: " + repositoryId + 
+			log.debug("CMIS SERVICE FACTORY: getService called - Repository ID: " + repositoryId +
 				", Username: " + userName + ", Thread: " + Thread.currentThread().getName());
 		}
-		
+
+		// CMIS 1.1 Compliance: Handle service document request (no repositoryId)
+		// cmislib and other CMIS clients expect to access /atom without specifying a repository
+		// to retrieve the service document listing available repositories.
+		// When repositoryId is null, use the first available repository for authentication.
+		if (repositoryId == null || repositoryId.isEmpty()) {
+			String defaultRepoId = repositoryInfoMap.getDefaultRepositoryId();
+			if (defaultRepoId != null) {
+				log.info("CMIS SERVICE FACTORY: No repositoryId specified, using default: " + defaultRepoId);
+				// Update the CallContext with the default repository ID for authentication
+				if (callContext instanceof org.apache.chemistry.opencmis.server.impl.CallContextImpl) {
+					((org.apache.chemistry.opencmis.server.impl.CallContextImpl) callContext)
+						.put(CallContext.REPOSITORY_ID, defaultRepoId);
+					repositoryId = defaultRepoId;
+				}
+			} else {
+				log.warn("CMIS SERVICE FACTORY: No repositoryId specified and no default repository available");
+			}
+		}
+
 		// Check if this is from HTTP request and log additional context
 		try {
 			if (callContext instanceof org.apache.chemistry.opencmis.server.impl.browser.BrowserCallContextImpl) {
-				org.apache.chemistry.opencmis.server.impl.browser.BrowserCallContextImpl browserContext = 
+				org.apache.chemistry.opencmis.server.impl.browser.BrowserCallContextImpl browserContext =
 					(org.apache.chemistry.opencmis.server.impl.browser.BrowserCallContextImpl) callContext;
 				// Try to get HTTP request details
 				if (log.isDebugEnabled()) {
