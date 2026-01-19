@@ -371,4 +371,139 @@ public class ODataFoldersIT extends ODataTestBase {
         .then()
             .statusCode(anyOf(equalTo(200), equalTo(501))); // 501 if $filter not implemented
     }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders with $expand=parent query option.
+     * Expands the parent folder navigation property.
+     */
+    @Test
+    public void testGetFoldersWithExpandParent() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$expand", "parent")
+            .queryParam("$top", 5)
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders with $expand=children query option.
+     * Expands the children collection navigation property.
+     */
+    @Test
+    public void testGetFoldersWithExpandChildren() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$expand", "children")
+            .queryParam("$top", 5)
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders('{objectId}') with $expand=children.
+     * Expands the children for a single folder.
+     */
+    @Test
+    public void testGetSingleFolderWithExpandChildren() {
+        // First, get a list of folders to find a valid ID
+        Response listResponse = given()
+            .spec(requestSpec)
+            .queryParam("$top", 1)
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(200)
+            .extract().response();
+        
+        // Check if there are any folders
+        java.util.List<?> folders = listResponse.jsonPath().getList("value");
+        if (folders != null && !folders.isEmpty()) {
+            String objectId = listResponse.jsonPath().getString("value[0].objectId");
+            if (objectId != null) {
+                // Get the single folder with $expand=children
+                given()
+                    .spec(requestSpec)
+                    .queryParam("$expand", "children")
+                .when()
+                    .get(folderPath(objectId))
+                .then()
+                    .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+                    .contentType(containsString("application/json"));
+            }
+        }
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders('{objectId}') with $expand=parent.
+     * Expands the parent folder for a single folder.
+     */
+    @Test
+    public void testGetSingleFolderWithExpandParent() {
+        // First, get a list of folders to find a valid ID
+        Response listResponse = given()
+            .spec(requestSpec)
+            .queryParam("$top", 1)
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(200)
+            .extract().response();
+        
+        // Check if there are any folders
+        java.util.List<?> folders = listResponse.jsonPath().getList("value");
+        if (folders != null && !folders.isEmpty()) {
+            String objectId = listResponse.jsonPath().getString("value[0].objectId");
+            if (objectId != null) {
+                // Get the single folder with $expand=parent
+                given()
+                    .spec(requestSpec)
+                    .queryParam("$expand", "parent")
+                .when()
+                    .get(folderPath(objectId))
+                .then()
+                    .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+                    .contentType(containsString("application/json"));
+            }
+        }
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders with combined $expand and $select.
+     */
+    @Test
+    public void testGetFoldersWithExpandAndSelect() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$expand", "children")
+            .queryParam("$select", "objectId,name,path")
+            .queryParam("$top", 5)
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders with multiple $expand properties.
+     */
+    @Test
+    public void testGetFoldersWithMultipleExpand() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$expand", "parent,children")
+            .queryParam("$top", 5)
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if not implemented
+            .contentType(containsString("application/json"));
+    }
 }

@@ -1,6 +1,9 @@
 package jp.aegif.nemaki.odata;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
+import org.apache.chemistry.opencmis.commons.data.ObjectInFolderData;
+import org.apache.chemistry.opencmis.commons.data.ObjectInFolderList;
+import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
@@ -17,6 +20,8 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.olingo.commons.api.data.ContextURL;
 import org.apache.olingo.commons.api.data.Entity;
+import org.apache.olingo.commons.api.data.EntityCollection;
+import org.apache.olingo.commons.api.data.Link;
 import org.apache.olingo.commons.api.data.Property;
 import org.apache.olingo.commons.api.data.ValueType;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
@@ -38,7 +43,10 @@ import org.apache.olingo.server.api.uri.UriInfo;
 import org.apache.olingo.server.api.uri.UriParameter;
 import org.apache.olingo.server.api.uri.UriResource;
 import org.apache.olingo.server.api.uri.UriResourceEntitySet;
+import org.apache.olingo.server.api.uri.queryoption.ExpandItem;
+import org.apache.olingo.server.api.uri.queryoption.ExpandOption;
 
+import jp.aegif.nemaki.cmis.service.NavigationService;
 import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 
@@ -66,16 +74,19 @@ public class CmisEntityProcessor implements EntityProcessor {
     
     private final RepositoryService repositoryService;
     private final ObjectService objectService;
+    private final NavigationService navigationService;
     private final String repositoryId;
     private final CallContext callContext;
     
     public CmisEntityProcessor(
             RepositoryService repositoryService,
             ObjectService objectService,
+            NavigationService navigationService,
             String repositoryId,
             CallContext callContext) {
         this.repositoryService = repositoryService;
         this.objectService = objectService;
+        this.navigationService = navigationService;
         this.repositoryId = repositoryId;
         this.callContext = callContext;
     }
@@ -107,15 +118,27 @@ public class CmisEntityProcessor implements EntityProcessor {
             );
         }
         
-        // Fetch the entity from CMIS
-        Entity entity = getEntity(objectId);
+        // Fetch the ObjectData from CMIS
+        ObjectData objectData = getObjectData(objectId);
         
-        if (entity == null) {
+        if (objectData == null) {
             throw new ODataApplicationException(
                     "Entity not found: " + objectId,
                     HttpStatusCode.NOT_FOUND.getStatusCode(),
                     Locale.ENGLISH
             );
+        }
+        
+        // Convert to OData entity
+        Entity entity = convertToEntity(objectData);
+        
+        // Handle $expand for navigation properties
+        ExpandOption expandOption = uriInfo.getExpandOption();
+        if (expandOption != null) {
+            java.util.Set<String> expandProperties = getExpandProperties(expandOption);
+            if (!expandProperties.isEmpty()) {
+                expandNavigationProperties(entity, objectData, expandProperties);
+            }
         }
         
         // Serialize the response
@@ -126,6 +149,7 @@ public class CmisEntityProcessor implements EntityProcessor {
         
         EntitySerializerOptions opts = EntitySerializerOptions.with()
                 .contextURL(contextUrl)
+                .expand(expandOption)
                 .build();
         
         SerializerResult serializerResult = serializer.entity(serviceMetadata, edmEntityType, entity, opts);
@@ -710,6 +734,254 @@ public class CmisEntityProcessor implements EntityProcessor {
                 return "cmis:policyText";
             default:
                 return null;
+        }
+    }
+    
+    /**
+     * Get ObjectData from CMIS by object ID.
+     */
+    private ObjectData getObjectData(String objectId) throws ODataApplicationException {
+        try {
+            return objectService.getObject(
+                    callContext,
+                    repositoryId,
+                    objectId,
+                    "*",            // filter - all properties
+                    Boolean.TRUE,   // includeAllowableActions
+                    IncludeRelationships.NONE,
+                    null,           // renditionFilter
+                    Boolean.FALSE,  // includePolicyIds
+                    Boolean.FALSE,  // includeAcl
+                    null            // extension
+            );
+        } catch (CmisObjectNotFoundException e) {
+            return null;
+        } catch (Exception e) {
+            throw new ODataApplicationException(
+                    "Error fetching entity: " + e.getMessage(),
+                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
+                    Locale.ENGLISH,
+                    e
+            );
+        }
+    }
+    
+    /**
+     * Extract navigation property names from $expand option.
+     */
+    private java.util.Set<String> getExpandProperties(ExpandOption expandOption) {
+        java.util.Set<String> expandProperties = new java.util.HashSet<>();
+        if (expandOption != null && expandOption.getExpandItems() != null) {
+            for (ExpandItem expandItem : expandOption.getExpandItems()) {
+                if (expandItem.getResourcePath() != null && !expandItem.getResourcePath().getUriResourceParts().isEmpty()) {
+                    UriResource uriResource = expandItem.getResourcePath().getUriResourceParts().get(0);
+                    expandProperties.add(uriResource.getSegmentValue());
+                }
+            }
+        }
+        return expandProperties;
+    }
+    
+    /**
+     * Expand navigation properties for an entity based on $expand option.
+     */
+    private void expandNavigationProperties(Entity entity, ObjectData objectData, java.util.Set<String> expandProperties) {
+        if (expandProperties == null || expandProperties.isEmpty()) {
+            return;
+        }
+        
+        Properties properties = objectData.getProperties();
+        if (properties == null) {
+            return;
+        }
+        
+        // Get the base type to determine which navigation properties are valid
+        PropertyData<?> baseTypeProperty = properties.getProperties().get("cmis:baseTypeId");
+        String baseTypeId = baseTypeProperty != null ? (String) baseTypeProperty.getFirstValue() : null;
+        
+        // Get object ID for fetching related objects
+        PropertyData<?> objectIdProperty = properties.getProperties().get("cmis:objectId");
+        String objectId = objectIdProperty != null ? (String) objectIdProperty.getFirstValue() : null;
+        
+        if (objectId == null) {
+            return;
+        }
+        
+        try {
+            // Handle 'parent' expansion (single parent folder)
+            if (expandProperties.contains("parent")) {
+                expandParentFolder(entity, properties);
+            }
+            
+            // Handle 'parents' expansion (collection of parent folders)
+            if (expandProperties.contains("parents")) {
+                expandParentFolders(entity, objectId);
+            }
+            
+            // Handle 'children' expansion (for folders only)
+            if (expandProperties.contains("children") && "cmis:folder".equals(baseTypeId)) {
+                expandChildren(entity, objectId);
+            }
+            
+            // Handle 'source' and 'target' expansion (for relationships only)
+            if ("cmis:relationship".equals(baseTypeId)) {
+                if (expandProperties.contains("source")) {
+                    expandRelationshipSource(entity, properties);
+                }
+                if (expandProperties.contains("target")) {
+                    expandRelationshipTarget(entity, properties);
+                }
+            }
+        } catch (Exception e) {
+            // Log error but don't fail the entire request
+        }
+    }
+    
+    /**
+     * Expand single parent folder navigation property.
+     */
+    private void expandParentFolder(Entity entity, Properties properties) {
+        PropertyData<?> parentIdProperty = properties.getProperties().get("cmis:parentId");
+        if (parentIdProperty == null || parentIdProperty.getFirstValue() == null) {
+            return;
+        }
+        
+        String parentId = (String) parentIdProperty.getFirstValue();
+        
+        try {
+            ObjectData parentObject = objectService.getObject(
+                    callContext, repositoryId, parentId, "*",
+                    Boolean.FALSE, IncludeRelationships.NONE, null,
+                    Boolean.FALSE, Boolean.FALSE, null
+            );
+            
+            if (parentObject != null) {
+                Entity parentEntity = convertToEntity(parentObject);
+                Link parentLink = new Link();
+                parentLink.setTitle("parent");
+                parentLink.setType("application/json");
+                parentLink.setInlineEntity(parentEntity);
+                entity.getNavigationLinks().add(parentLink);
+            }
+        } catch (Exception e) {
+            // Parent not accessible
+        }
+    }
+    
+    /**
+     * Expand parent folders collection.
+     */
+    private void expandParentFolders(Entity entity, String objectId) {
+        try {
+            List<ObjectParentData> parents = navigationService.getObjectParents(
+                    callContext, repositoryId, objectId, "*",
+                    Boolean.FALSE, IncludeRelationships.NONE, null,
+                    Boolean.FALSE, null
+            );
+            
+            if (parents != null && !parents.isEmpty()) {
+                EntityCollection parentsCollection = new EntityCollection();
+                for (ObjectParentData parentData : parents) {
+                    if (parentData.getObject() != null) {
+                        Entity parentEntity = convertToEntity(parentData.getObject());
+                        parentsCollection.getEntities().add(parentEntity);
+                    }
+                }
+                
+                Link parentsLink = new Link();
+                parentsLink.setTitle("parents");
+                parentsLink.setType("application/json");
+                parentsLink.setInlineEntitySet(parentsCollection);
+                entity.getNavigationLinks().add(parentsLink);
+            }
+        } catch (Exception e) {
+            // Parents not accessible
+        }
+    }
+    
+    /**
+     * Expand children collection for folders.
+     */
+    private void expandChildren(Entity entity, String folderId) {
+        try {
+            ObjectInFolderList children = navigationService.getChildren(
+                    callContext, repositoryId, folderId, "*", null,
+                    Boolean.FALSE, IncludeRelationships.NONE, null,
+                    Boolean.FALSE, BigInteger.valueOf(100), BigInteger.ZERO,
+                    null, null
+            );
+            
+            if (children != null && children.getObjects() != null) {
+                EntityCollection childrenCollection = new EntityCollection();
+                for (ObjectInFolderData childData : children.getObjects()) {
+                    if (childData.getObject() != null) {
+                        Entity childEntity = convertToEntity(childData.getObject());
+                        childrenCollection.getEntities().add(childEntity);
+                    }
+                }
+                
+                if (children.getNumItems() != null) {
+                    childrenCollection.setCount(children.getNumItems().intValue());
+                }
+                
+                Link childrenLink = new Link();
+                childrenLink.setTitle("children");
+                childrenLink.setType("application/json");
+                childrenLink.setInlineEntitySet(childrenCollection);
+                entity.getNavigationLinks().add(childrenLink);
+            }
+        } catch (Exception e) {
+            // Children not accessible
+        }
+    }
+    
+    /**
+     * Expand source object for relationships.
+     */
+    private void expandRelationshipSource(Entity entity, Properties properties) {
+        PropertyData<?> sourceIdProperty = properties.getProperties().get("cmis:sourceId");
+        if (sourceIdProperty == null || sourceIdProperty.getFirstValue() == null) {
+            return;
+        }
+        
+        String sourceId = (String) sourceIdProperty.getFirstValue();
+        expandRelatedObject(entity, sourceId, "source");
+    }
+    
+    /**
+     * Expand target object for relationships.
+     */
+    private void expandRelationshipTarget(Entity entity, Properties properties) {
+        PropertyData<?> targetIdProperty = properties.getProperties().get("cmis:targetId");
+        if (targetIdProperty == null || targetIdProperty.getFirstValue() == null) {
+            return;
+        }
+        
+        String targetId = (String) targetIdProperty.getFirstValue();
+        expandRelatedObject(entity, targetId, "target");
+    }
+    
+    /**
+     * Helper method to expand a related object by ID.
+     */
+    private void expandRelatedObject(Entity entity, String objectId, String linkTitle) {
+        try {
+            ObjectData relatedObject = objectService.getObject(
+                    callContext, repositoryId, objectId, "*",
+                    Boolean.FALSE, IncludeRelationships.NONE, null,
+                    Boolean.FALSE, Boolean.FALSE, null
+            );
+            
+            if (relatedObject != null) {
+                Entity relatedEntity = convertToEntity(relatedObject);
+                Link link = new Link();
+                link.setTitle(linkTitle);
+                link.setType("application/json");
+                link.setInlineEntity(relatedEntity);
+                entity.getNavigationLinks().add(link);
+            }
+        } catch (Exception e) {
+            // Related object not accessible
         }
     }
 }

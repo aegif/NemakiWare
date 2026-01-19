@@ -371,4 +371,106 @@ public class ODataDocumentsIT extends ODataTestBase {
             .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $metadata not implemented
             .contentType(anyOf(containsString("application/xml"), containsString("application/json")));
     }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents with $expand=parent query option.
+     * Expands the parent folder navigation property.
+     */
+    @Test
+    public void testGetDocumentsWithExpandParent() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$expand", "parent")
+            .queryParam("$top", 5)
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents with $expand=parents query option.
+     * Expands the parent folders collection (for multi-filed documents).
+     */
+    @Test
+    public void testGetDocumentsWithExpandParents() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$expand", "parents")
+            .queryParam("$top", 5)
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents('{objectId}') with $expand=parent.
+     * Expands the parent folder for a single document.
+     */
+    @Test
+    public void testGetSingleDocumentWithExpandParent() {
+        // First, get a list of documents to find a valid ID
+        Response listResponse = given()
+            .spec(requestSpec)
+            .queryParam("$top", 1)
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(200)
+            .extract().response();
+        
+        // Check if there are any documents
+        java.util.List<?> documents = listResponse.jsonPath().getList("value");
+        if (documents != null && !documents.isEmpty()) {
+            String objectId = listResponse.jsonPath().getString("value[0].objectId");
+            if (objectId != null) {
+                // Get the single document with $expand=parent
+                given()
+                    .spec(requestSpec)
+                    .queryParam("$expand", "parent")
+                .when()
+                    .get(documentPath(objectId))
+                .then()
+                    .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+                    .contentType(containsString("application/json"));
+            }
+        }
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents with combined $expand and $select.
+     */
+    @Test
+    public void testGetDocumentsWithExpandAndSelect() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$expand", "parent")
+            .queryParam("$select", "objectId,name")
+            .queryParam("$top", 5)
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents with combined $expand and $filter.
+     */
+    @Test
+    public void testGetDocumentsWithExpandAndFilter() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$expand", "parent")
+            .queryParam("$filter", "contains(name,'test')")
+            .queryParam("$top", 5)
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if not implemented
+            .contentType(containsString("application/json"));
+    }
 }

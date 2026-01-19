@@ -122,6 +122,7 @@ public class ODataServlet extends HttpServlet {
             handler.register(new CmisEntityProcessor(
                     repositoryService,
                     objectService,
+                    navigationService,
                     repositoryId,
                     callContext
             ));
