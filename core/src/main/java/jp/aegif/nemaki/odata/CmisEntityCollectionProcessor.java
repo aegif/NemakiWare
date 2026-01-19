@@ -272,8 +272,8 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         // Add full-text search clause if search term is provided
         // CMIS uses CONTAINS() function for full-text search
         if (searchTerm != null && !searchTerm.isEmpty()) {
-            // Escape single quotes in search term
-            String escapedSearchTerm = searchTerm.replace("'", "''");
+            // Escape special characters for CMIS full-text search
+            String escapedSearchTerm = escapeSearchTerm(searchTerm);
             whereClauses.add("CONTAINS('" + escapedSearchTerm + "')");
         }
         
@@ -289,6 +289,43 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         }
         
         return query.toString();
+    }
+    
+    /**
+     * Escape special characters in search term for CMIS CONTAINS() function.
+     * 
+     * CMIS full-text search has specific syntax requirements:
+     * - Single quotes must be doubled (' -> '')
+     * - Backslashes must be escaped (\ -> \\)
+     * - Double quotes should be escaped for phrase matching (" -> \")
+     * - Special query operators like AND, OR, NOT should be treated as literals
+     * 
+     * @param searchTerm The raw search term from OData $search
+     * @return The escaped search term safe for CMIS CONTAINS()
+     */
+    private String escapeSearchTerm(String searchTerm) {
+        if (searchTerm == null) {
+            return null;
+        }
+        
+        // Escape backslashes first (must be done before other escapes)
+        String escaped = searchTerm.replace("\\", "\\\\");
+        
+        // Escape single quotes (CMIS string delimiter)
+        escaped = escaped.replace("'", "''");
+        
+        // Escape double quotes (used for phrase matching in some CMIS implementations)
+        escaped = escaped.replace("\"", "\\\"");
+        
+        // Remove or escape characters that could be interpreted as CMIS query operators
+        // Colons can be problematic in some full-text search implementations
+        escaped = escaped.replace(":", "\\:");
+        
+        // Asterisks and question marks are wildcards in some implementations
+        escaped = escaped.replace("*", "\\*");
+        escaped = escaped.replace("?", "\\?");
+        
+        return escaped;
     }
     
     /**

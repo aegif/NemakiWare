@@ -134,6 +134,7 @@ public class ODataServlet extends HttpServlet {
                     repositoryService,
                     objectService,
                     versioningService,
+                    navigationService,
                     repositoryId,
                     callContext
             ));

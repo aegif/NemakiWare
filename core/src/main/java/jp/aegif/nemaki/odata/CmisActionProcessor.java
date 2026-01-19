@@ -34,9 +34,12 @@ import org.apache.olingo.server.api.uri.UriResource;
 import org.apache.olingo.server.api.uri.UriResourceAction;
 import org.apache.olingo.server.api.uri.UriResourceEntitySet;
 
+import jp.aegif.nemaki.cmis.service.NavigationService;
 import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
+
+import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 
 import java.io.InputStream;
 import java.net.URI;
@@ -65,6 +68,7 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
     private final RepositoryService repositoryService;
     private final ObjectService objectService;
     private final VersioningService versioningService;
+    private final NavigationService navigationService;
     private final String repositoryId;
     private final CallContext callContext;
     
@@ -78,11 +82,13 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
             RepositoryService repositoryService,
             ObjectService objectService,
             VersioningService versioningService,
+            NavigationService navigationService,
             String repositoryId,
             CallContext callContext) {
         this.repositoryService = repositoryService;
         this.objectService = objectService;
         this.versioningService = versioningService;
+        this.navigationService = navigationService;
         this.repositoryId = repositoryId;
         this.callContext = callContext;
     }
@@ -133,13 +139,18 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
             try {
                 parameters = odata.createDeserializer(requestFormat)
                         .actionParameters(request.getBody(), action).getActionParameters();
-            } catch (Exception e) {
-                // No parameters or invalid format - continue without parameters
+            } catch (DeserializerException e) {
+                throw new ODataApplicationException(
+                        "Invalid action parameters: " + e.getMessage(),
+                        HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                        Locale.ENGLISH,
+                        e
+                );
             }
         }
         
         // Execute the action
-        Entity resultEntity = executeAction(actionName, objectId, parameters);
+        Entity resultEntity = executeAction(actionName, objectId, parameters, request);
         
         if (resultEntity != null) {
             // Serialize the response
@@ -200,13 +211,18 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
             try {
                 parameters = odata.createDeserializer(requestFormat)
                         .actionParameters(request.getBody(), action).getActionParameters();
-            } catch (Exception e) {
-                // No parameters or invalid format - continue without parameters
+            } catch (DeserializerException e) {
+                throw new ODataApplicationException(
+                        "Invalid action parameters: " + e.getMessage(),
+                        HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                        Locale.ENGLISH,
+                        e
+                );
             }
         }
         
         // Execute the action (void return)
-        executeAction(actionName, objectId, parameters);
+        executeAction(actionName, objectId, parameters, request);
         
         response.setStatusCode(HttpStatusCode.NO_CONTENT.getStatusCode());
     }
@@ -214,7 +230,7 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
     /**
      * Execute the specified action on the object.
      */
-    private Entity executeAction(String actionName, String objectId, Map<String, Parameter> parameters)
+    private Entity executeAction(String actionName, String objectId, Map<String, Parameter> parameters, ODataRequest request)
             throws ODataApplicationException {
         
         if (objectId == null) {
@@ -225,20 +241,22 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
             );
         }
         
+        String baseUri = request.getRawBaseUri();
+        
         try {
             switch (actionName) {
                 case ACTION_CHECKOUT:
-                    return executeCheckOut(objectId);
+                    return executeCheckOut(objectId, baseUri);
                     
                 case ACTION_CANCEL_CHECKOUT:
                     executeCancelCheckOut(objectId);
                     return null;
                     
                 case ACTION_CHECKIN:
-                    return executeCheckIn(objectId, parameters);
+                    return executeCheckIn(objectId, parameters, baseUri);
                     
                 case ACTION_MOVE:
-                    return executeMove(objectId, parameters);
+                    return executeMove(objectId, parameters, baseUri);
                     
                 default:
                     throw new ODataApplicationException(
@@ -269,7 +287,7 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
      * Execute CheckOut action.
      * Returns the Private Working Copy (PWC) document.
      */
-    private Entity executeCheckOut(String objectId) throws Exception {
+    private Entity executeCheckOut(String objectId, String baseUri) throws Exception {
         Holder<String> objectIdHolder = new Holder<>(objectId);
         Holder<Boolean> contentCopiedHolder = new Holder<>();
         
@@ -289,7 +307,7 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
                 Boolean.FALSE, Boolean.FALSE, null
         );
         
-        return convertToEntity(pwcData);
+        return convertToEntity(pwcData, baseUri, "Documents");
     }
     
     /**
@@ -310,7 +328,7 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
      * - major: boolean (default true)
      * - checkinComment: string (optional)
      */
-    private Entity executeCheckIn(String objectId, Map<String, Parameter> parameters) throws Exception {
+    private Entity executeCheckIn(String objectId, Map<String, Parameter> parameters, String baseUri) throws Exception {
         Boolean major = Boolean.TRUE;
         String checkinComment = null;
         
@@ -350,7 +368,7 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
                 Boolean.FALSE, Boolean.FALSE, null
         );
         
-        return convertToEntity(newVersionData);
+        return convertToEntity(newVersionData, baseUri, "Documents");
     }
     
     /**
@@ -359,7 +377,7 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
      * - targetFolderId: string (required)
      * - sourceFolderId: string (optional, uses current parent if not specified)
      */
-    private Entity executeMove(String objectId, Map<String, Parameter> parameters) throws Exception {
+    private Entity executeMove(String objectId, Map<String, Parameter> parameters, String baseUri) throws Exception {
         if (parameters == null) {
             throw new ODataApplicationException(
                     "Move action requires targetFolderId parameter",
@@ -385,22 +403,36 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
         if (sourceFolderParam != null && sourceFolderParam.getValue() != null) {
             sourceFolderId = (String) sourceFolderParam.getValue();
         } else {
-            // Get current parent from object
-            ObjectData currentObject = objectService.getObject(
-                    callContext, repositoryId, objectId, "cmis:parentId",
-                    Boolean.FALSE, IncludeRelationships.NONE, null,
-                    Boolean.FALSE, Boolean.FALSE, null
+            // Get current parent using navigationService.getObjectParents()
+            // This handles multi-filed objects and unfiled objects properly
+            List<ObjectParentData> parents = navigationService.getObjectParents(
+                    callContext,
+                    repositoryId,
+                    objectId,
+                    "cmis:objectId",  // filter - only need the ID
+                    Boolean.FALSE,  // includeAllowableActions
+                    IncludeRelationships.NONE,
+                    null,  // renditionFilter
+                    Boolean.FALSE,  // includeRelativePathSegment
+                    null   // extension
             );
-            if (currentObject.getProperties() != null && 
-                currentObject.getProperties().getProperties().get("cmis:parentId") != null) {
-                sourceFolderId = (String) currentObject.getProperties()
-                        .getProperties().get("cmis:parentId").getFirstValue();
+            
+            if (parents != null && !parents.isEmpty()) {
+                ObjectParentData firstParent = parents.get(0);
+                if (firstParent.getObject() != null && firstParent.getObject().getProperties() != null) {
+                    org.apache.chemistry.opencmis.commons.data.PropertyData<?> parentIdProp = 
+                            firstParent.getObject().getProperties().getProperties().get("cmis:objectId");
+                    if (parentIdProp != null && parentIdProp.getFirstValue() != null) {
+                        sourceFolderId = (String) parentIdProp.getFirstValue();
+                    }
+                }
             }
         }
         
         if (sourceFolderId == null) {
             throw new ODataApplicationException(
-                    "Could not determine source folder for move operation",
+                    "Could not determine source folder for move operation. " +
+                    "The object may be unfiled or have no accessible parent folders.",
                     HttpStatusCode.BAD_REQUEST.getStatusCode(),
                     Locale.ENGLISH
             );
@@ -417,14 +449,23 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
                 null  // extension
         );
         
-        // Get the moved object
+        // Get the moved object and determine entity set based on base type
         ObjectData movedObject = objectService.getObject(
                 callContext, repositoryId, objectIdHolder.getValue(), "*",
                 Boolean.TRUE, IncludeRelationships.NONE, null,
                 Boolean.FALSE, Boolean.FALSE, null
         );
         
-        return convertToEntity(movedObject);
+        // Determine entity set name based on base type
+        String entitySetName = "Objects";
+        String baseTypeId = getPropertyValue(movedObject, "cmis:baseTypeId");
+        if ("cmis:document".equals(baseTypeId)) {
+            entitySetName = "Documents";
+        } else if ("cmis:folder".equals(baseTypeId)) {
+            entitySetName = "Folders";
+        }
+        
+        return convertToEntity(movedObject, baseUri, entitySetName);
     }
     
     /**
@@ -448,9 +489,14 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
     }
     
     /**
-     * Convert CMIS ObjectData to OData Entity.
+     * Convert CMIS ObjectData to OData Entity with proper absolute URI for @odata.id.
+     * 
+     * @param objectData The CMIS object data
+     * @param baseUri The base URI from the OData request (e.g., "http://localhost:8080/core/odata/bedroom")
+     * @param entitySetName The entity set name (e.g., "Documents", "Folders")
+     * @return The OData Entity with proper @odata.id
      */
-    private Entity convertToEntity(ObjectData objectData) {
+    private Entity convertToEntity(ObjectData objectData, String baseUri, String entitySetName) {
         Entity entity = new Entity();
         
         if (objectData.getProperties() != null) {
@@ -469,9 +515,16 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
             }
         }
         
-        // Set the entity ID
+        // Set the entity ID as absolute URI (OData spec requirement)
+        // Format: {baseUri}/{EntitySet}('{objectId}')
         String objectIdValue = getPropertyValue(objectData, "cmis:objectId");
-        if (objectIdValue != null) {
+        if (objectIdValue != null && baseUri != null && entitySetName != null) {
+            // Encode the object ID for URL safety
+            String encodedId = objectIdValue.replace("'", "''");
+            String absoluteUri = baseUri + "/" + entitySetName + "('" + encodedId + "')";
+            entity.setId(URI.create(absoluteUri));
+        } else if (objectIdValue != null) {
+            // Fallback to just the object ID if base URI is not available
             entity.setId(URI.create(objectIdValue));
         }
         
