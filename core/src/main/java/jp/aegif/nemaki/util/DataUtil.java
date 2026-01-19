@@ -878,8 +878,9 @@ public class DataUtil {
 			
 			// Extract type-specific values based on PropertyType
 			Map<String, Object> typeSpecificValues = extractTypeSpecificValues(original);
-			
+
 			// Create complete defensive copy with all fields
+			// Note: minValue/maxValue may be BigInteger (CMIS spec) but createPropDef expects Long
 			return createPropDef(
 				original.getId(),
 				original.getLocalName(),
@@ -897,13 +898,13 @@ public class DataUtil {
 				original.isOpenChoice(),
 				original.isOrderable(),
 				clonedDefaultValue,
-				(Long) typeSpecificValues.get("minValue"),
-				(Long) typeSpecificValues.get("maxValue"),
+				toLongSafe(typeSpecificValues.get("minValue")),
+				toLongSafe(typeSpecificValues.get("maxValue")),
 				(Resolution) typeSpecificValues.get("resolution"),
 				(DecimalPrecision) typeSpecificValues.get("decimalPrecision"),
 				(BigDecimal) typeSpecificValues.get("decimalMinValue"),
 				(BigDecimal) typeSpecificValues.get("decimalMaxValue"),
-				(Long) typeSpecificValues.get("maxLength")
+				toLongSafe(typeSpecificValues.get("maxLength"))
 			);
 		} catch (Exception e) {
 			// Log cloning failure for debugging
@@ -1067,6 +1068,35 @@ public class DataUtil {
 		}else{
 			//TODO what if ["", null,null,...] case?
 			return true;
+		}
+	}
+
+	/**
+	 * Safely convert a Number (BigInteger, Long, Integer, etc.) to Long.
+	 * CMIS spec uses BigInteger for INTEGER property min/max values,
+	 * but some internal APIs expect Long.
+	 * @param value The value to convert (may be BigInteger, Long, Integer, or null)
+	 * @return Long value, or null if input is null
+	 */
+	private static Long toLongSafe(Object value) {
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof Long) {
+			return (Long) value;
+		}
+		if (value instanceof BigInteger) {
+			return ((BigInteger) value).longValue();
+		}
+		if (value instanceof Number) {
+			return ((Number) value).longValue();
+		}
+		// Try to parse as string
+		try {
+			return Long.parseLong(value.toString());
+		} catch (NumberFormatException e) {
+			log.warn("Cannot convert value '" + value + "' to Long");
+			return null;
 		}
 	}
 

@@ -1015,9 +1015,20 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Handle children operation - equivalent to getChildren CMIS service call
      */
     private Object handleChildrenOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
-        // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
-        // Browser Binding URLs use /repositoryId/root convention, but CMIS service needs actual object ID
-        if ("root".equals(objectId)) {
+        // CMIS 1.1 Browser Binding: Support objectId query parameter for children requests
+        // URL formats supported:
+        //   1. /browser/{repo}/{objectId}?cmisselector=children - objectId from path
+        //   2. /browser/{repo}/root?cmisselector=children&objectId={id} - objectId from query param
+        //   3. /browser/{repo}/root?cmisselector=children - root folder children
+        String queryObjectId = request.getParameter(Constants.PARAM_OBJECT_ID);
+
+        if (queryObjectId != null && !queryObjectId.trim().isEmpty()) {
+            // Query parameter takes precedence when path is "root"
+            objectId = queryObjectId;
+            log.debug("Using objectId from query parameter: " + objectId);
+        } else if ("root".equals(objectId)) {
+            // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
+            // Browser Binding URLs use /repositoryId/root convention, but CMIS service needs actual object ID
             org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
             objectId = repoInfo.getRootFolderId();
             log.debug("Translated 'root' marker to actual root folder ID: " + objectId);
@@ -1047,8 +1058,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Handle descendants operation - equivalent to getFolderTree CMIS service call
      */
     private Object handleDescendantsOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
-        // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
-        if ("root".equals(objectId)) {
+        // CMIS 1.1 Browser Binding: Support objectId query parameter
+        String queryObjectId = request.getParameter(Constants.PARAM_OBJECT_ID);
+
+        if (queryObjectId != null && !queryObjectId.trim().isEmpty()) {
+            objectId = queryObjectId;
+            log.debug("Using objectId from query parameter: " + objectId);
+        } else if ("root".equals(objectId)) {
+            // CRITICAL FIX (2025-11-01): Translate "root" marker to actual root folder ID
             org.apache.chemistry.opencmis.commons.data.RepositoryInfo repoInfo = service.getRepositoryInfo(repositoryId, null);
             objectId = repoInfo.getRootFolderId();
             log.debug("Translated 'root' marker to actual root folder ID: " + objectId);

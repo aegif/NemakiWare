@@ -662,8 +662,31 @@ public class ExceptionServiceImpl implements ExceptionService,
 			PropertyDefinition<?> definition, PropertyData<?> propertyData,
 			String objectId) {
 		final String msg = "AN INTEGER property violates the range constraints";
-		BigInteger val = BigInteger
-				.valueOf((Long) propertyData.getFirstValue());
+		// CMIS 1.1 compliance: INTEGER properties use BigInteger, not Long
+		// Handle both BigInteger (CMIS spec) and Long (legacy/convenience) values
+		Object rawValue = propertyData.getFirstValue();
+		BigInteger val;
+		if (rawValue instanceof BigInteger) {
+			val = (BigInteger) rawValue;
+		} else if (rawValue instanceof Long) {
+			val = BigInteger.valueOf((Long) rawValue);
+		} else if (rawValue instanceof Integer) {
+			val = BigInteger.valueOf(((Integer) rawValue).longValue());
+		} else if (rawValue instanceof Number) {
+			// Fallback for any other Number type
+			val = BigInteger.valueOf(((Number) rawValue).longValue());
+		} else if (rawValue == null) {
+			// Null value - skip constraint check
+			return;
+		} else {
+			// Try to parse as string as last resort
+			try {
+				val = new BigInteger(rawValue.toString());
+			} catch (NumberFormatException e) {
+				log.warn("Cannot convert value '" + rawValue + "' to BigInteger for INTEGER property constraint check");
+				return;
+			}
+		}
 
 		BigInteger min = ((PropertyIntegerDefinition) definition).getMinValue();
 		if (min != null && min.compareTo(val) > 0) {
