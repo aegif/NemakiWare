@@ -122,7 +122,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -138,7 +138,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -154,7 +154,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -170,7 +170,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -186,7 +186,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -201,7 +201,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $select not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -216,7 +216,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $orderby not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -284,7 +284,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .post(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(201), equalTo(405), equalTo(501))); // 405/501 if POST not supported
+            .statusCode(anyOf(equalTo(201), equalTo(405))); // 405 if POST not supported
     }
     
     /**
@@ -318,7 +318,7 @@ public class ODataDocumentsIT extends ODataTestBase {
                 .when()
                     .patch(documentPath(objectId))
                 .then()
-                    .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(405), equalTo(501))); // 405/501 if PATCH not supported
+                    .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(405))); // 405 if PATCH not supported
             }
         }
     }
@@ -352,7 +352,7 @@ public class ODataDocumentsIT extends ODataTestBase {
                 .when()
                     .delete(documentPath(objectId))
                 .then()
-                    .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(405), equalTo(501))); // 405/501 if DELETE not supported
+                    .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(405))); // 405 if DELETE not supported
             }
         }
     }
@@ -368,7 +368,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(metadataPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $metadata not implemented
+            .statusCode(200)
             .contentType(anyOf(containsString("application/xml"), containsString("application/json")));
     }
     
@@ -385,7 +385,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -402,7 +402,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -434,7 +434,7 @@ public class ODataDocumentsIT extends ODataTestBase {
                 .when()
                     .get(documentPath(objectId))
                 .then()
-                    .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+                    .statusCode(200)
                     .contentType(containsString("application/json"));
             }
         }
@@ -453,7 +453,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -470,7 +470,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -508,7 +508,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .post(documentsPath() + "('" + objectId + "')/NemakiWare.CMIS.CheckOut")
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(501))) // 501 if not implemented
+            .statusCode(anyOf(equalTo(200), equalTo(204)))
             .contentType(anyOf(containsString("application/json"), emptyOrNullString()));
     }
     
@@ -544,7 +544,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .post(documentsPath() + "('" + objectId + "')/NemakiWare.CMIS.CancelCheckOut")
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(501))); // 501 if not implemented
+            .statusCode(anyOf(equalTo(200), equalTo(204)));
     }
     
     /**
@@ -582,7 +582,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .post(documentsPath() + "('" + objectId + "')/NemakiWare.CMIS.CheckIn")
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(501))) // 501 if not implemented
+            .statusCode(anyOf(equalTo(200), equalTo(204)))
             .contentType(anyOf(containsString("application/json"), emptyOrNullString()));
     }
     
@@ -621,7 +621,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .post(documentsPath() + "('" + objectId + "')/NemakiWare.CMIS.CheckIn")
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(501))); // 501 if not implemented
+            .statusCode(anyOf(equalTo(200), equalTo(204)));
     }
     
     // ==================== OData $search Tests ====================
@@ -638,7 +638,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -655,7 +655,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -673,7 +673,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -691,7 +691,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -709,7 +709,7 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -725,6 +725,6 @@ public class ODataDocumentsIT extends ODataTestBase {
         .when()
             .get(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(400), equalTo(501))); // 400 if invalid, 501 if not implemented
+            .statusCode(anyOf(equalTo(200), equalTo(400))); // 400 if invalid search term
     }
 }

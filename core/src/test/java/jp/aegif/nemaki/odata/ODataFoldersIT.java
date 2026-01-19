@@ -122,7 +122,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -138,7 +138,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -154,7 +154,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -170,7 +170,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -186,7 +186,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -201,7 +201,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $select not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -216,7 +216,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $orderby not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -284,7 +284,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .post(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(201), equalTo(405), equalTo(501))); // 405/501 if POST not supported
+            .statusCode(anyOf(equalTo(201), equalTo(405))); // 405 if POST not supported
     }
     
     /**
@@ -318,7 +318,7 @@ public class ODataFoldersIT extends ODataTestBase {
                 .when()
                     .patch(folderPath(objectId))
                 .then()
-                    .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(405), equalTo(501))); // 405/501 if PATCH not supported
+                    .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(405))); // 405 if PATCH not supported
             }
         }
     }
@@ -352,7 +352,7 @@ public class ODataFoldersIT extends ODataTestBase {
                 .when()
                     .delete(folderPath(objectId))
                 .then()
-                    .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(405), equalTo(501))); // 405/501 if DELETE not supported
+                    .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(405))); // 405 if DELETE not supported
             }
         }
     }
@@ -369,7 +369,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))); // 501 if $filter not implemented
+            .statusCode(200);
     }
     
     /**
@@ -385,7 +385,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -402,7 +402,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -434,7 +434,7 @@ public class ODataFoldersIT extends ODataTestBase {
                 .when()
                     .get(folderPath(objectId))
                 .then()
-                    .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+                    .statusCode(200)
                     .contentType(containsString("application/json"));
             }
         }
@@ -468,7 +468,7 @@ public class ODataFoldersIT extends ODataTestBase {
                 .when()
                     .get(folderPath(objectId))
                 .then()
-                    .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $expand not implemented
+                    .statusCode(200)
                     .contentType(containsString("application/json"));
             }
         }
@@ -487,7 +487,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -503,7 +503,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -523,7 +523,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501)))
+            .statusCode(200)
             .extract().response();
         
         java.util.List<?> folders = listResponse.jsonPath().getList("value");
@@ -545,7 +545,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .post(folderPath(objectIdToMove) + "/NemakiWare.CMIS.Move")
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(501))) // 501 if not implemented
+            .statusCode(anyOf(equalTo(200), equalTo(204)))
             .contentType(anyOf(containsString("application/json"), emptyOrNullString()));
     }
     
@@ -564,7 +564,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501)))
+            .statusCode(200)
             .extract().response();
         
         java.util.List<?> folders = listResponse.jsonPath().getList("value");
@@ -583,7 +583,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501)))
+            .statusCode(200)
             .extract().response();
         
         java.util.List<?> rootFolders = rootResponse.jsonPath().getList("value");
@@ -607,7 +607,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .post(folderPath(objectIdToMove) + "/NemakiWare.CMIS.Move")
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(501))); // 501 if not implemented
+            .statusCode(anyOf(equalTo(200), equalTo(204)));
     }
     
     /**
@@ -624,7 +624,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501)))
+            .statusCode(200)
             .extract().response();
         
         java.util.List<?> folders = listResponse.jsonPath().getList("value");
@@ -645,7 +645,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .post(folderPath(objectIdToMove) + "/NemakiWare.CMIS.Move")
         .then()
-            .statusCode(anyOf(equalTo(400), equalTo(501))); // 400 Bad Request or 501 if not implemented
+            .statusCode(400); // 400 Bad Request - missing required targetFolderId
     }
     
     // ==================== OData $search Tests ====================
@@ -662,7 +662,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -679,7 +679,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -697,7 +697,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -715,7 +715,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
     
@@ -733,7 +733,7 @@ public class ODataFoldersIT extends ODataTestBase {
         .when()
             .get(foldersPath())
         .then()
-            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .statusCode(200)
             .contentType(containsString("application/json"));
     }
 }
