@@ -30,8 +30,19 @@ import org.apache.olingo.server.api.uri.UriInfo;
 import org.apache.olingo.server.api.uri.UriResource;
 import org.apache.olingo.server.api.uri.UriResourceEntitySet;
 import org.apache.olingo.server.api.uri.queryoption.CountOption;
+import org.apache.olingo.server.api.uri.queryoption.FilterOption;
+import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
+import org.apache.olingo.server.api.uri.queryoption.OrderByItem;
+import org.apache.olingo.server.api.uri.queryoption.SelectOption;
+import org.apache.olingo.server.api.uri.queryoption.SelectItem;
 import org.apache.olingo.server.api.uri.queryoption.SkipOption;
 import org.apache.olingo.server.api.uri.queryoption.TopOption;
+import org.apache.olingo.server.api.uri.queryoption.expression.Expression;
+import org.apache.olingo.server.api.uri.queryoption.expression.ExpressionVisitException;
+import org.apache.olingo.server.api.uri.queryoption.expression.Member;
+import org.apache.olingo.server.api.uri.queryoption.expression.MethodKind;
+import org.apache.olingo.server.api.uri.queryoption.expression.BinaryOperatorKind;
+import org.apache.olingo.server.api.uri.queryoption.expression.UnaryOperatorKind;
 
 import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.cmis.service.NavigationService;
@@ -40,9 +51,12 @@ import jp.aegif.nemaki.cmis.service.RepositoryService;
 
 import java.math.BigInteger;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.GregorianCalendar;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * OData Entity Collection Processor for CMIS objects.
@@ -97,8 +111,29 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         int skip = getSkipOption(uriInfo);
         boolean count = getCountOption(uriInfo);
         
+        // Get filter option
+        FilterOption filterOption = uriInfo.getFilterOption();
+        String filterClause = null;
+        if (filterOption != null) {
+            filterClause = convertFilterToWhereClause(filterOption);
+        }
+        
+        // Get orderby option
+        OrderByOption orderByOption = uriInfo.getOrderByOption();
+        String orderByClause = null;
+        if (orderByOption != null) {
+            orderByClause = convertOrderByToClause(orderByOption);
+        }
+        
+        // Get select option for property filtering
+        SelectOption selectOption = uriInfo.getSelectOption();
+        Set<String> selectedProperties = null;
+        if (selectOption != null) {
+            selectedProperties = getSelectedProperties(selectOption);
+        }
+        
         // Fetch the data from CMIS
-        EntityCollection entityCollection = getData(edmEntitySet, top, skip);
+        EntityCollection entityCollection = getData(edmEntitySet, top, skip, filterClause, orderByClause, selectedProperties);
         
         // Serialize the response
         ODataSerializer serializer = odata.createSerializer(responseFormat);
@@ -110,7 +145,8 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         EntityCollectionSerializerOptions.Builder optsBuilder = EntityCollectionSerializerOptions.with()
                 .id(id)
                 .contextURL(contextUrl)
-                .count(uriInfo.getCountOption());
+                .count(uriInfo.getCountOption())
+                .select(selectOption);
         EntityCollectionSerializerOptions opts = optsBuilder.build();
         
         SerializerResult serializerResult = serializer.entityCollection(serviceMetadata, edmEntityType, entityCollection, opts);
@@ -123,12 +159,13 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
     /**
      * Get data from CMIS based on the entity set name.
      */
-    private EntityCollection getData(EdmEntitySet edmEntitySet, int maxItems, int skipCount) throws ODataApplicationException {
+    private EntityCollection getData(EdmEntitySet edmEntitySet, int maxItems, int skipCount, 
+            String filterClause, String orderByClause, Set<String> selectedProperties) throws ODataApplicationException {
         EntityCollection entityCollection = new EntityCollection();
         String entitySetName = edmEntitySet.getName();
         
         try {
-            String cmisQuery = buildCmisQuery(entitySetName);
+            String cmisQuery = buildCmisQuery(entitySetName, filterClause, orderByClause, selectedProperties);
             
             if (cmisQuery != null) {
                 ObjectList objectList = discoveryService.query(
@@ -146,7 +183,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                 
                 if (objectList != null && objectList.getObjects() != null) {
                     for (ObjectData objectData : objectList.getObjects()) {
-                        Entity entity = convertToEntity(objectData);
+                        Entity entity = convertToEntity(objectData, selectedProperties);
                         entityCollection.getEntities().add(entity);
                     }
                     
@@ -168,32 +205,321 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
     }
     
     /**
-     * Build CMIS query based on entity set name.
+     * Build CMIS query based on entity set name with optional filter, orderby, and select clauses.
      */
-    private String buildCmisQuery(String entitySetName) {
+    private String buildCmisQuery(String entitySetName, String filterClause, String orderByClause, Set<String> selectedProperties) {
+        String baseType = getBaseTypeForEntitySet(entitySetName);
+        if (baseType == null) {
+            return null;
+        }
+        
+        StringBuilder query = new StringBuilder();
+        
+        // Build SELECT clause
+        if (selectedProperties != null && !selectedProperties.isEmpty()) {
+            query.append("SELECT ");
+            List<String> cmisProperties = new ArrayList<>();
+            // Always include objectId
+            cmisProperties.add("cmis:objectId");
+            for (String prop : selectedProperties) {
+                String cmisProperty = mapODataPropertyToCmis(prop);
+                if (cmisProperty != null && !cmisProperty.equals("cmis:objectId")) {
+                    cmisProperties.add(cmisProperty);
+                }
+            }
+            query.append(String.join(", ", cmisProperties));
+        } else {
+            query.append("SELECT *");
+        }
+        
+        query.append(" FROM ").append(baseType);
+        
+        // Add WHERE clause if filter is provided
+        if (filterClause != null && !filterClause.isEmpty()) {
+            query.append(" WHERE ").append(filterClause);
+        }
+        
+        // Add ORDER BY clause if orderby is provided
+        if (orderByClause != null && !orderByClause.isEmpty()) {
+            query.append(" ORDER BY ").append(orderByClause);
+        }
+        
+        return query.toString();
+    }
+    
+    /**
+     * Get the CMIS base type for an entity set.
+     */
+    private String getBaseTypeForEntitySet(String entitySetName) {
         switch (entitySetName) {
             case CmisEdmProvider.ES_DOCUMENTS_NAME:
-                return "SELECT * FROM cmis:document";
+                return "cmis:document";
             case CmisEdmProvider.ES_FOLDERS_NAME:
-                return "SELECT * FROM cmis:folder";
+                return "cmis:folder";
             case CmisEdmProvider.ES_RELATIONSHIPS_NAME:
-                return "SELECT * FROM cmis:relationship";
+                return "cmis:relationship";
             case CmisEdmProvider.ES_POLICIES_NAME:
-                return "SELECT * FROM cmis:policy";
+                return "cmis:policy";
             case CmisEdmProvider.ES_ITEMS_NAME:
-                return "SELECT * FROM cmis:item";
+                return "cmis:item";
             case CmisEdmProvider.ES_OBJECTS_NAME:
-                // For Objects, we query all base types
-                return "SELECT * FROM cmis:document";
+                return "cmis:document";
             default:
                 return null;
         }
     }
     
     /**
-     * Convert CMIS ObjectData to OData Entity.
+     * Convert OData filter expression to CMIS WHERE clause.
      */
-    private Entity convertToEntity(ObjectData objectData) {
+    private String convertFilterToWhereClause(FilterOption filterOption) throws ODataApplicationException {
+        if (filterOption == null || filterOption.getExpression() == null) {
+            return null;
+        }
+        
+        try {
+            Expression expression = filterOption.getExpression();
+            return convertExpressionToCmis(expression);
+        } catch (Exception e) {
+            throw new ODataApplicationException(
+                    "Error converting filter expression: " + e.getMessage(),
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH,
+                    e
+            );
+        }
+    }
+    
+    /**
+     * Convert OData expression to CMIS query expression.
+     * Supports basic comparison operators and string functions.
+     */
+    private String convertExpressionToCmis(Expression expression) throws ODataApplicationException {
+        if (expression == null) {
+            return null;
+        }
+        
+        String exprStr = expression.toString();
+        
+        // Handle binary expressions (e.g., name eq 'value')
+        if (expression instanceof org.apache.olingo.server.api.uri.queryoption.expression.Binary) {
+            org.apache.olingo.server.api.uri.queryoption.expression.Binary binary = 
+                    (org.apache.olingo.server.api.uri.queryoption.expression.Binary) expression;
+            
+            String left = convertExpressionToCmis(binary.getLeftOperand());
+            String right = convertExpressionToCmis(binary.getRightOperand());
+            BinaryOperatorKind operator = binary.getOperator();
+            
+            switch (operator) {
+                case EQ:
+                    return left + " = " + right;
+                case NE:
+                    return left + " <> " + right;
+                case LT:
+                    return left + " < " + right;
+                case LE:
+                    return left + " <= " + right;
+                case GT:
+                    return left + " > " + right;
+                case GE:
+                    return left + " >= " + right;
+                case AND:
+                    return "(" + left + " AND " + right + ")";
+                case OR:
+                    return "(" + left + " OR " + right + ")";
+                default:
+                    throw new ODataApplicationException(
+                            "Unsupported operator: " + operator,
+                            HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(),
+                            Locale.ENGLISH
+                    );
+            }
+        }
+        
+        // Handle method expressions (e.g., startswith, contains)
+        if (expression instanceof org.apache.olingo.server.api.uri.queryoption.expression.Method) {
+            org.apache.olingo.server.api.uri.queryoption.expression.Method method = 
+                    (org.apache.olingo.server.api.uri.queryoption.expression.Method) expression;
+            
+            MethodKind methodKind = method.getMethod();
+            List<Expression> parameters = method.getParameters();
+            
+            if (parameters.size() >= 2) {
+                String property = convertExpressionToCmis(parameters.get(0));
+                String value = convertExpressionToCmis(parameters.get(1));
+                
+                // Remove quotes from value for LIKE patterns
+                String unquotedValue = value;
+                if (value.startsWith("'") && value.endsWith("'")) {
+                    unquotedValue = value.substring(1, value.length() - 1);
+                }
+                
+                switch (methodKind) {
+                    case STARTSWITH:
+                        return property + " LIKE '" + unquotedValue + "%'";
+                    case ENDSWITH:
+                        return property + " LIKE '%" + unquotedValue + "'";
+                    case CONTAINS:
+                        return "CONTAINS(" + property + ", '" + unquotedValue + "')";
+                    default:
+                        throw new ODataApplicationException(
+                                "Unsupported method: " + methodKind,
+                                HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(),
+                                Locale.ENGLISH
+                        );
+                }
+            }
+        }
+        
+        // Handle member expressions (property references)
+        if (expression instanceof Member) {
+            Member member = (Member) expression;
+            String propertyName = member.getResourcePath().getUriResourceParts().get(0).toString();
+            String cmisProperty = mapODataPropertyToCmis(propertyName);
+            return cmisProperty != null ? cmisProperty : propertyName;
+        }
+        
+        // Handle literal expressions
+        if (expression instanceof org.apache.olingo.server.api.uri.queryoption.expression.Literal) {
+            org.apache.olingo.server.api.uri.queryoption.expression.Literal literal = 
+                    (org.apache.olingo.server.api.uri.queryoption.expression.Literal) expression;
+            return literal.getText();
+        }
+        
+        // Handle unary expressions (e.g., not)
+        if (expression instanceof org.apache.olingo.server.api.uri.queryoption.expression.Unary) {
+            org.apache.olingo.server.api.uri.queryoption.expression.Unary unary = 
+                    (org.apache.olingo.server.api.uri.queryoption.expression.Unary) expression;
+            
+            String operand = convertExpressionToCmis(unary.getOperand());
+            UnaryOperatorKind operator = unary.getOperator();
+            
+            if (operator == UnaryOperatorKind.NOT) {
+                return "NOT (" + operand + ")";
+            }
+        }
+        
+        // Fallback: return the expression as string
+        return exprStr;
+    }
+    
+    /**
+     * Convert OData orderby option to CMIS ORDER BY clause.
+     */
+    private String convertOrderByToClause(OrderByOption orderByOption) {
+        if (orderByOption == null || orderByOption.getOrders() == null || orderByOption.getOrders().isEmpty()) {
+            return null;
+        }
+        
+        List<String> orderClauses = new ArrayList<>();
+        for (OrderByItem item : orderByOption.getOrders()) {
+            String property = item.getExpression().toString();
+            String cmisProperty = mapODataPropertyToCmis(property);
+            if (cmisProperty != null) {
+                String direction = item.isDescending() ? " DESC" : " ASC";
+                orderClauses.add(cmisProperty + direction);
+            }
+        }
+        
+        return orderClauses.isEmpty() ? null : String.join(", ", orderClauses);
+    }
+    
+    /**
+     * Get selected properties from SelectOption.
+     */
+    private Set<String> getSelectedProperties(SelectOption selectOption) {
+        if (selectOption == null || selectOption.getSelectItems() == null) {
+            return null;
+        }
+        
+        Set<String> properties = new HashSet<>();
+        for (SelectItem item : selectOption.getSelectItems()) {
+            if (item.isStar()) {
+                return null; // Select all
+            }
+            if (item.getResourcePath() != null && !item.getResourcePath().getUriResourceParts().isEmpty()) {
+                String propertyName = item.getResourcePath().getUriResourceParts().get(0).toString();
+                properties.add(propertyName);
+            }
+        }
+        
+        return properties.isEmpty() ? null : properties;
+    }
+    
+    /**
+     * Map OData property name to CMIS property ID.
+     */
+    private String mapODataPropertyToCmis(String odataProperty) {
+        switch (odataProperty) {
+            case "objectId":
+                return "cmis:objectId";
+            case "objectTypeId":
+                return "cmis:objectTypeId";
+            case "baseTypeId":
+                return "cmis:baseTypeId";
+            case "name":
+                return "cmis:name";
+            case "description":
+                return "cmis:description";
+            case "createdBy":
+                return "cmis:createdBy";
+            case "creationDate":
+                return "cmis:creationDate";
+            case "lastModifiedBy":
+                return "cmis:lastModifiedBy";
+            case "lastModificationDate":
+                return "cmis:lastModificationDate";
+            case "changeToken":
+                return "cmis:changeToken";
+            case "isImmutable":
+                return "cmis:isImmutable";
+            case "isLatestVersion":
+                return "cmis:isLatestVersion";
+            case "isMajorVersion":
+                return "cmis:isMajorVersion";
+            case "isLatestMajorVersion":
+                return "cmis:isLatestMajorVersion";
+            case "isPrivateWorkingCopy":
+                return "cmis:isPrivateWorkingCopy";
+            case "versionLabel":
+                return "cmis:versionLabel";
+            case "versionSeriesId":
+                return "cmis:versionSeriesId";
+            case "isVersionSeriesCheckedOut":
+                return "cmis:isVersionSeriesCheckedOut";
+            case "versionSeriesCheckedOutBy":
+                return "cmis:versionSeriesCheckedOutBy";
+            case "versionSeriesCheckedOutId":
+                return "cmis:versionSeriesCheckedOutId";
+            case "checkinComment":
+                return "cmis:checkinComment";
+            case "contentStreamLength":
+                return "cmis:contentStreamLength";
+            case "contentStreamMimeType":
+                return "cmis:contentStreamMimeType";
+            case "contentStreamFileName":
+                return "cmis:contentStreamFileName";
+            case "contentStreamId":
+                return "cmis:contentStreamId";
+            case "parentId":
+                return "cmis:parentId";
+            case "path":
+                return "cmis:path";
+            case "sourceId":
+                return "cmis:sourceId";
+            case "targetId":
+                return "cmis:targetId";
+            case "policyText":
+                return "cmis:policyText";
+            default:
+                return null;
+        }
+    }
+    
+    /**
+     * Convert CMIS ObjectData to OData Entity with optional property filtering.
+     */
+    private Entity convertToEntity(ObjectData objectData, Set<String> selectedProperties) {
         Entity entity = new Entity();
         
         if (objectData.getProperties() != null) {
@@ -204,9 +530,15 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                 // Map CMIS property names to OData property names
                 String odataPropertyName = mapPropertyName(propertyId);
                 if (odataPropertyName != null && value != null) {
-                    Property property = convertProperty(odataPropertyName, value);
-                    if (property != null) {
-                        entity.addProperty(property);
+                    // If selectedProperties is specified, only include selected properties
+                    // Always include objectId as it's the key
+                    if (selectedProperties == null || 
+                        selectedProperties.contains(odataPropertyName) || 
+                        odataPropertyName.equals("objectId")) {
+                        Property property = convertProperty(odataPropertyName, value);
+                        if (property != null) {
+                            entity.addProperty(property);
+                        }
                     }
                 }
             }
