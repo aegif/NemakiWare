@@ -165,6 +165,20 @@ npm run dev  # http://localhost:5173
 ### テストユーザーパスワード
 - BCryptハッシュ必須（平文は拒否される）
 
+### CMISクライアント互換性設定
+cmislib等のCMISクライアントは `/atom` にリポジトリID未指定でアクセスしてサービスドキュメントを取得します。
+
+```properties
+# nemakiware.properties
+# 必須: サービスドキュメント取得時の認証用デフォルトリポジトリ
+cmis.server.default.repository=bedroom
+```
+
+**動作:**
+- 設定あり → 指定リポジトリで認証（YAML順序を上書き）
+- 設定なし → repositories.yml の定義順で最初のリポジトリを使用
+- 無効値 → WARN出力 + YAML順序フォールバック
+
 ---
 
 ## トラブルシューティング
