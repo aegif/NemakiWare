@@ -222,3 +222,4 @@ war_content/
 
 # 古いビルドアセット残骸 (正しいビルドは ui/dist/assets/)
 core/src/main/webapp/ui/assets/
+test-data-setup/config.yaml
