@@ -37,8 +37,6 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ObjectUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.FilterConfig;
@@ -72,22 +70,16 @@ public class AuthenticationFilter implements Filter {
 		HttpServletRequest hreq = (HttpServletRequest) req;
 		HttpServletResponse hres = (HttpServletResponse) res;
 
+		// CORS is handled by SimpleCorsFilter in web.xml - do not add CORS headers here
+		// to avoid duplicate header application
+		
 		// Handle CORS preflight requests (OPTIONS) - bypass authentication
+		// SimpleCorsFilter handles the actual CORS headers, we just need to bypass auth
 		if ("OPTIONS".equalsIgnoreCase(hreq.getMethod())) {
-			log.info("=== CORS: Handling OPTIONS preflight request ===");
-			// Set CORS headers
-			hres.setHeader("Access-Control-Allow-Origin", "*");
-			hres.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-			hres.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, AUTH_TOKEN, nemaki_auth_token");
-			hres.setHeader("Access-Control-Max-Age", "3600");
-			hres.setStatus(HttpServletResponse.SC_OK);
+			log.info("=== CORS: Bypassing authentication for OPTIONS preflight request ===");
+			chain.doFilter(req, res);
 			return;
 		}
-
-		// Add CORS headers to all responses
-		hres.setHeader("Access-Control-Allow-Origin", "*");
-		hres.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-		hres.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, AUTH_TOKEN, nemaki_auth_token");
 
 		// Check if this is a path that should bypass authentication
 		String requestURI = hreq.getRequestURI();
