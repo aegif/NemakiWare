@@ -276,9 +276,18 @@ public class AuthenticationFilter implements Filter {
         		log.info("=== AUTH: Using superuser ID for /all/ path=" + superUserId + " ===");
         		return superUserId;
         	}else if("repositories".equals(pathFragments[0])){
-        		String superUserId = repositoryInfoMap.getSuperUsers().getId();
-        		log.info("=== AUTH: Using superuser ID for repositories path=" + superUserId + " ===");
-        		return superUserId;
+        		// Handle /api/v1/repositories/{repositoryId}/... pattern
+        		// pathFragments = ["repositories", "{repositoryId}", ...]
+        		if(pathFragments.length > 1 && StringUtils.isNotBlank(pathFragments[1])){
+        			String repositoryId = pathFragments[1];
+        			log.info("=== AUTH: Found repositoryId from /repositories/ path=" + repositoryId + " ===");
+        			return repositoryId;
+        		}else{
+        			// For /repositories (list all) endpoint, use superuser
+        			String superUserId = repositoryInfoMap.getSuperUsers().getId();
+        			log.info("=== AUTH: Using superuser ID for /repositories list path=" + superUserId + " ===");
+        			return superUserId;
+        		}
         	}else{
         		// For paths like /user/bedroom, /group/bedroom, etc.
         		// The repository ID is typically the second fragment

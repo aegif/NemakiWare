@@ -852,9 +852,9 @@ public class DocumentResource {
         String type = "string";
         if (prop.getFirstValue() instanceof Boolean) {
             type = "boolean";
-        } else if (prop.getFirstValue() instanceof Long || prop.getFirstValue() instanceof Integer) {
+        } else if (prop.getFirstValue() instanceof Long || prop.getFirstValue() instanceof Integer || prop.getFirstValue() instanceof BigInteger) {
             type = "integer";
-        } else if (prop.getFirstValue() instanceof Double || prop.getFirstValue() instanceof Float) {
+        } else if (prop.getFirstValue() instanceof Double || prop.getFirstValue() instanceof Float || prop.getFirstValue() instanceof BigDecimal) {
             type = "decimal";
         } else if (prop.getFirstValue() instanceof GregorianCalendar) {
             GregorianCalendar cal = (GregorianCalendar) prop.getFirstValue();
@@ -1047,8 +1047,8 @@ public class DocumentResource {
             calendar.setTime(ISO_DATE_FORMAT.parse(dateStr));
             return calendar;
         } catch (ParseException e) {
-            logger.warning("Failed to parse datetime: " + dateStr + ", using current time");
-            return new GregorianCalendar();
+            logger.warning("Failed to parse datetime: " + dateStr);
+            throw ApiException.invalidArgument("Invalid datetime format: " + dateStr + ". Expected ISO 8601 format (e.g., 2024-01-15T10:30:00Z)");
         }
     }
     
