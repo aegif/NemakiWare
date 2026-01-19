@@ -308,6 +308,13 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
      * - NOT: NOT keyword before a term
      *   Example: "test NOT draft" -> CONTAINS('test') AND NOT CONTAINS('draft')
      * 
+     * TODO: Future improvements for operator priority and parentheses support:
+     * - Implement standard operator precedence (NOT > AND > OR)
+     * - Support explicit parentheses for grouping: "(a OR b) AND c"
+     * - Current implementation processes operators left-to-right sequentially,
+     *   which may produce unexpected results for complex mixed expressions like
+     *   "a AND b OR c" (currently: ((a AND b) OR c), standard: (a AND b) OR c)
+     * 
      * @param searchTerm The raw search term from OData $search
      * @return The CMIS CONTAINS() clause
      */
