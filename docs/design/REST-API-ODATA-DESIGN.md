@@ -1275,7 +1275,102 @@ void testResultConsistency() {
 
 ---
 
-## 11. 変更履歴
+## 11. 実装状況
+
+### 11.1 実装済み機能
+
+#### REST API (`/api/v1/cmis/`)
+
+| リソース | 実装状況 | 備考 |
+|---------|---------|------|
+| RepositoryResource | 完了 | リポジトリ一覧、情報取得 |
+| ObjectResource | 完了 | CRUD、コンテンツストリーム、移動、親取得、一括更新 |
+| FolderResource | 完了 | 作成、子/子孫/ツリー/親取得、ツリー削除 |
+| DocumentResource | 完了 | 作成、バージョニング、コピー |
+| TypeResource | 完了 | 定義取得、子/子孫取得、JSONスキーマ生成 |
+| QueryResource | 完了 | CMISクエリ実行、変更ログ取得 |
+| AclResource | 完了 | ACL取得/適用 |
+| RelationshipResource | 完了 | 作成、オブジェクト別取得 |
+| PolicyResource | 完了 | 作成、適用/解除、適用ポリシー取得 |
+
+#### OData (`/odata/`)
+
+| 機能 | 実装状況 | 備考 |
+|-----|---------|------|
+| エンティティセット | 完了 | Documents, Folders, Objects, Relationships, Policies |
+| クエリオプション | 完了 | $filter, $select, $orderby, $top, $skip, $count, $expand, $search |
+| Actions | 完了 | CheckOut, CancelCheckOut, CheckIn, Move, Copy, ApplyAcl |
+| Functions | 完了 | GetAllVersions, GetObjectByPath, Query, GetContentChanges |
+| CRUD操作 | 完了 | GET/POST/PATCH/DELETE |
+
+### 11.2 未実装機能（設計書記載）
+
+#### 11.2.1 ユーザー管理 API (`/api/v1/repositories/{repositoryId}/users`)
+
+| メソッド | パス | 説明 | 優先度 |
+|---------|------|------|--------|
+| GET | `/` | ユーザー一覧取得 | 高 |
+| GET | `/{userId}` | ユーザー取得 | 高 |
+| GET | `/search` | ユーザー検索 | 中 |
+| POST | `/` | ユーザー作成 | 高 |
+| PUT | `/{userId}` | ユーザー更新 | 高 |
+| DELETE | `/{userId}` | ユーザー削除 | 中 |
+| POST | `/{userId}/password` | パスワード変更 | 高 |
+
+#### 11.2.2 グループ管理 API (`/api/v1/repositories/{repositoryId}/groups`)
+
+| メソッド | パス | 説明 | 優先度 |
+|---------|------|------|--------|
+| GET | `/` | グループ一覧取得 | 高 |
+| GET | `/{groupId}` | グループ取得 | 高 |
+| GET | `/search` | グループ検索 | 中 |
+| POST | `/` | グループ作成 | 高 |
+| PUT | `/{groupId}` | グループ更新 | 高 |
+| DELETE | `/{groupId}` | グループ削除 | 中 |
+| POST | `/{groupId}/members` | メンバー追加 | 高 |
+| DELETE | `/{groupId}/members` | メンバー削除 | 高 |
+
+#### 11.2.3 認証 API (`/api/v1/auth`)
+
+| メソッド | パス | 説明 | 優先度 |
+|---------|------|------|--------|
+| POST | `/login` | ログイン（トークン発行） | 高 |
+| POST | `/logout` | ログアウト（トークン無効化） | 高 |
+| POST | `/token/refresh` | トークンリフレッシュ | 中 |
+| POST | `/saml` | SAML 認証 | 低 |
+| POST | `/oidc` | OIDC 認証 | 低 |
+| GET | `/me` | 現在のユーザー情報取得 | 高 |
+
+#### 11.2.4 OData 追加エンティティセット
+
+| エンティティセット | 説明 | 優先度 |
+|-------------------|------|--------|
+| Types | タイプ定義 | 中 |
+| Users | ユーザー | 中 |
+| Groups | グループ | 中 |
+
+### 11.3 設計書に追加すべき機能（漏れ）
+
+以下の機能は既存の `/rest/` API に存在するが、設計書に詳細仕様が記載されていない：
+
+| 機能 | 既存パス | 説明 | 優先度 |
+|-----|---------|------|--------|
+| レンディション詳細 | `/rest/repo/{repoId}/renditions/` | PDF変換、レンディション取得の詳細仕様 | 中 |
+| アーカイブ管理 | `/rest/repo/{repoId}/archive/` | 一覧、復元、完全削除 | 低 |
+| キャッシュ管理 | `/rest/repo/{repoId}/cache/` | キャッシュ無効化 | 低 |
+| 検索エンジン管理 | `/rest/repo/{repoId}/search-engine/` | Solr管理、再インデックス | 低 |
+| アイテム作成 | - | createItem（CMIS Item タイプ） | 低 |
+
+### 11.4 TODO（将来の改善）
+
+1. **検索構文の拡張**: 演算子優先順位（NOT > AND > OR）と括弧対応
+2. **OData バッチ操作**: `$batch` エンドポイントのサポート
+3. **動的メタデータキャッシュ**: ETag ベースのキャッシュ制御
+4. **権限フィルタヘッダー**: `X-Total-Count`, `X-Accessible-Count` の実装
+
+---
+
+## 12. 変更履歴
 
 | バージョン | 日付 | 変更内容 | 作成者 |
 |-----------|------|---------|--------|
@@ -1294,6 +1389,11 @@ void testResultConsistency() {
 |     |            | - OData スコープ定義セクション追加 |  |
 |     |            | - OpenAPI スキーマ戦略セクション追加 |  |
 |     |            | - テストツール（REST Assured, Olingo Client）追加 |  |
+| 1.2 | 2026-01-19 | 実装状況セクション追加 | Devin |
+|     |            | - 実装済み機能の一覧 |  |
+|     |            | - 未実装機能（ユーザー/グループ/認証API）の整理 |  |
+|     |            | - 設計書に追加すべき機能の特定 |  |
+|     |            | - 将来のTODO項目の追加 |  |
 
 ---
 
