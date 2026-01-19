@@ -132,6 +132,10 @@
 		<filter-name>corsFilter</filter-name>
 		<url-pattern>/rest/*</url-pattern>
 	</filter-mapping>
+	<filter-mapping>
+		<filter-name>corsFilter</filter-name>
+		<url-pattern>/api/v1/*</url-pattern>
+	</filter-mapping>
 	
 	<!-- DeleteType filter mapping - TEMPORARILY DISABLED to allow query action support -->
 	<!-- CRITICAL FIX: This filter mapping prevents cmisaction=query from working in TCK tests -->
@@ -195,6 +199,11 @@
 	<filter-mapping>
 		<filter-name>restAuthenticationFilter</filter-name>
 		<url-pattern>/api/*</url-pattern>
+	</filter-mapping>
+	<!-- Apply authentication to /api/v1/* endpoints (OpenAPI REST API v1) -->
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/api/v1/*</url-pattern>
 	</filter-mapping>
 
 
@@ -270,6 +279,27 @@
  <servlet-mapping>
   <servlet-name>jersey-app</servlet-name>
   <url-pattern>/rest/*</url-pattern>
+ </servlet-mapping>
+
+ <!-- Jersey application for OpenAPI v1 REST endpoints -->
+ <servlet>
+  <servlet-name>jersey-api-v1</servlet-name>
+  <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
+  <init-param>
+        <param-name>jakarta.ws.rs.Application</param-name>
+        <param-value>jp.aegif.nemaki.api.v1.ApiV1Application</param-value>
+    </init-param>
+    <!-- Enable Jersey-Spring integration -->
+    <init-param>
+        <param-name>jersey.config.server.provider.classnames</param-name>
+        <param-value>org.glassfish.jersey.server.spring.SpringLifecycleListener</param-value>
+    </init-param>
+    <load-on-startup>11</load-on-startup>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>jersey-api-v1</servlet-name>
+  <url-pattern>/api/v1/*</url-pattern>
  </servlet-mapping>
 
  <!-- Simple servlet for /rest/all/repositories endpoint -->
