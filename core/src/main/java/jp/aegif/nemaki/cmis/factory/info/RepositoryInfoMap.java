@@ -84,6 +84,26 @@ public class RepositoryInfoMap {
 		Map<String, String> defaultSetting = loadDefaultRepositorySetting();
 		loadOverrideRepositorySetting(defaultSetting);
 		loadSuperUsersId();
+		loadExplicitDefaultRepository();
+	}
+
+	/**
+	 * Load explicit default repository from configuration.
+	 * If cmis.server.default.repository is specified, use it instead of YAML order.
+	 */
+	private void loadExplicitDefaultRepository() {
+		String configuredDefault = propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_REPOSITORY);
+		if (configuredDefault != null && !configuredDefault.trim().isEmpty()) {
+			configuredDefault = configuredDefault.trim();
+			if (map.containsKey(configuredDefault)) {
+				log.info("Using explicitly configured default repository: " + configuredDefault +
+					" (overriding YAML order: " + firstRepositoryId + ")");
+				this.firstRepositoryId = configuredDefault;
+			} else {
+				log.warn("Configured default repository '" + configuredDefault +
+					"' not found in repositories.yml. Using YAML order default: " + firstRepositoryId);
+			}
+		}
 	}
 
 	private Map<String, String> loadDefaultRepositorySetting(){

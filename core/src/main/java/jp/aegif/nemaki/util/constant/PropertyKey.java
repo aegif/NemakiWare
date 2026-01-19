@@ -14,6 +14,12 @@ public interface PropertyKey {
 	final String CMIS_SERVER_DEFAULT_MAX_DEPTH_OBJECTS = "cmis.server.default.depth.objects";
 	final String REPOSITORY_DEFINITION = "repository.definition";
 	final String REPOSITORY_DEFINITION_DEFAULT = "repository.definition.default";
+	/**
+	 * Default repository ID for service document requests (e.g., /atom without repository).
+	 * If not specified, uses the first repository defined in repositories.yml.
+	 * Example: cmis.server.default.repository=bedroom
+	 */
+	final String CMIS_SERVER_DEFAULT_REPOSITORY = "cmis.server.default.repository";
 
 	//Solr
 	final String SOLR_PROTOCOL = "solr.protocol";
