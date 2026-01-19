@@ -1,9 +1,16 @@
 package jp.aegif.nemaki.odata;
 
+import org.apache.chemistry.opencmis.commons.data.Ace;
+import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
+import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
+import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.olingo.commons.api.data.ContextURL;
@@ -34,6 +41,7 @@ import org.apache.olingo.server.api.uri.UriResource;
 import org.apache.olingo.server.api.uri.UriResourceAction;
 import org.apache.olingo.server.api.uri.UriResourceEntitySet;
 
+import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.cmis.service.NavigationService;
 import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
@@ -72,6 +80,7 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
     private final ObjectService objectService;
     private final VersioningService versioningService;
     private final NavigationService navigationService;
+    private final AclService aclService;
     private final String repositoryId;
     private final CallContext callContext;
     
@@ -80,18 +89,22 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
     public static final String ACTION_CANCEL_CHECKOUT = "CancelCheckOut";
     public static final String ACTION_CHECKIN = "CheckIn";
     public static final String ACTION_MOVE = "Move";
+    public static final String ACTION_COPY = "Copy";
+    public static final String ACTION_APPLY_ACL = "ApplyAcl";
     
     public CmisActionProcessor(
             RepositoryService repositoryService,
             ObjectService objectService,
             VersioningService versioningService,
             NavigationService navigationService,
+            AclService aclService,
             String repositoryId,
             CallContext callContext) {
         this.repositoryService = repositoryService;
         this.objectService = objectService;
         this.versioningService = versioningService;
         this.navigationService = navigationService;
+        this.aclService = aclService;
         this.repositoryId = repositoryId;
         this.callContext = callContext;
     }
@@ -261,6 +274,12 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
                 case ACTION_MOVE:
                     return executeMove(objectId, parameters, baseUri);
                     
+                case ACTION_COPY:
+                    return executeCopy(objectId, parameters, baseUri);
+                    
+                case ACTION_APPLY_ACL:
+                    return executeApplyAcl(objectId, parameters, baseUri);
+                    
                 default:
                     throw new ODataApplicationException(
                             "Unknown action: " + actionName,
@@ -268,7 +287,7 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
                             Locale.ENGLISH
                     );
             }
-        } catch (ODataApplicationException e) {
+        }catch (ODataApplicationException e) {
             throw e;
         } catch (CmisObjectNotFoundException e) {
             throw new ODataApplicationException(
@@ -469,6 +488,270 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
         }
         
         return convertToEntity(movedObject, baseUri, entitySetName);
+    }
+    
+    /**
+     * Execute Copy action.
+     * Copies a document to a target folder.
+     * Parameters:
+     * - targetFolderId: string (required)
+     * - versioningState: string (optional: none, major, minor, checkedout)
+     */
+    private Entity executeCopy(String objectId, Map<String, Parameter> parameters, String baseUri) throws Exception {
+        if (parameters == null) {
+            throw new ODataApplicationException(
+                    "Copy action requires targetFolderId parameter",
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH
+            );
+        }
+        
+        Parameter targetFolderParam = parameters.get("targetFolderId");
+        if (targetFolderParam == null || targetFolderParam.getValue() == null) {
+            throw new ODataApplicationException(
+                    "Copy action requires targetFolderId parameter",
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH
+            );
+        }
+        
+        String targetFolderId = (String) targetFolderParam.getValue();
+        
+        // Get versioning state (optional)
+        VersioningState versioningState = null;
+        Parameter versioningParam = parameters.get("versioningState");
+        if (versioningParam != null && versioningParam.getValue() != null) {
+            String versioningStateStr = (String) versioningParam.getValue();
+            try {
+                versioningState = VersioningState.valueOf(versioningStateStr.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                throw new ODataApplicationException(
+                        "Invalid versioningState: " + versioningStateStr + 
+                        ". Valid values are: none, major, minor, checkedout",
+                        HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                        Locale.ENGLISH
+                );
+            }
+        }
+        
+        // Get the source document to copy its content
+        ObjectData sourceObject = objectService.getObject(
+                callContext, repositoryId, objectId, "*",
+                Boolean.TRUE, IncludeRelationships.NONE, null,
+                Boolean.FALSE, Boolean.FALSE, null
+        );
+        
+        // Use createDocumentFromSource to copy the document
+        String copiedObjectId = objectService.createDocumentFromSource(
+                callContext,
+                repositoryId,
+                objectId,  // sourceId
+                null,      // properties (use source properties)
+                targetFolderId,
+                versioningState,
+                null,  // policies
+                null,  // addAces
+                null,  // removeAces
+                null   // extension
+        );
+        
+        // Get the copied object
+        ObjectData copiedObject = objectService.getObject(
+                callContext, repositoryId, copiedObjectId, "*",
+                Boolean.TRUE, IncludeRelationships.NONE, null,
+                Boolean.FALSE, Boolean.FALSE, null
+        );
+        
+        return convertToEntity(copiedObject, baseUri, "Documents");
+    }
+    
+    /**
+     * Execute ApplyAcl action.
+     * Applies ACL changes to an object.
+     * Parameters:
+     * - addAces: string (JSON array of ACEs to add, optional)
+     * - removeAces: string (JSON array of ACEs to remove, optional) - Note: NemakiWare only supports setting ACL, not removing
+     * - aclPropagation: string (optional: repositorydetermined, objectonly, propagate)
+     * 
+     * Note: NemakiWare's AclService.applyAcl() replaces the entire ACL rather than adding/removing.
+     * The addAces parameter is used as the new ACL. removeAces is ignored in this implementation.
+     */
+    private Entity executeApplyAcl(String objectId, Map<String, Parameter> parameters, String baseUri) throws Exception {
+        // Parse ACL parameters
+        Acl aces = null;
+        AclPropagation aclPropagation = AclPropagation.REPOSITORYDETERMINED;
+        
+        if (parameters != null) {
+            // Parse addAces parameter (JSON format: [{"principal":"user1","permissions":["cmis:read"]}])
+            // This will be used as the new ACL (NemakiWare replaces the entire ACL)
+            Parameter addAcesParam = parameters.get("addAces");
+            if (addAcesParam != null && addAcesParam.getValue() != null) {
+                String addAcesJson = (String) addAcesParam.getValue();
+                aces = parseAclFromJson(addAcesJson);
+            }
+            
+            // Parse aclPropagation parameter
+            Parameter propagationParam = parameters.get("aclPropagation");
+            if (propagationParam != null && propagationParam.getValue() != null) {
+                String propagationStr = (String) propagationParam.getValue();
+                try {
+                    aclPropagation = AclPropagation.valueOf(propagationStr.toUpperCase());
+                } catch (IllegalArgumentException e) {
+                    throw new ODataApplicationException(
+                            "Invalid aclPropagation: " + propagationStr + 
+                            ". Valid values are: repositorydetermined, objectonly, propagate",
+                            HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                            Locale.ENGLISH
+                    );
+                }
+            }
+        }
+        
+        if (aces == null) {
+            throw new ODataApplicationException(
+                    "ApplyAcl action requires addAces parameter",
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH
+            );
+        }
+        
+        // Apply ACL changes (NemakiWare replaces the entire ACL)
+        aclService.applyAcl(
+                callContext,
+                repositoryId,
+                objectId,
+                aces,
+                aclPropagation
+        );
+        
+        // Get the updated object
+        ObjectData updatedObject = objectService.getObject(
+                callContext, repositoryId, objectId, "*",
+                Boolean.TRUE, IncludeRelationships.NONE, null,
+                Boolean.FALSE, Boolean.FALSE, null
+        );
+        
+        // Determine entity set name based on base type
+        String entitySetName = "Objects";
+        String baseTypeId = getPropertyValue(updatedObject, "cmis:baseTypeId");
+        if ("cmis:document".equals(baseTypeId)) {
+            entitySetName = "Documents";
+        } else if ("cmis:folder".equals(baseTypeId)) {
+            entitySetName = "Folders";
+        }
+        
+        return convertToEntity(updatedObject, baseUri, entitySetName);
+    }
+    
+    /**
+     * Parse ACL from JSON format.
+     * Expected format: [{"principal":"user1","permissions":["cmis:read","cmis:write"]}]
+     */
+    private Acl parseAclFromJson(String json) throws ODataApplicationException {
+        if (json == null || json.trim().isEmpty()) {
+            return null;
+        }
+        
+        try {
+            // Simple JSON parsing for ACE array
+            // Format: [{"principal":"user1","permissions":["cmis:read"]}]
+            List<Ace> aces = new java.util.ArrayList<>();
+            
+            // Remove outer brackets and split by },{ to get individual ACEs
+            String trimmed = json.trim();
+            if (trimmed.startsWith("[")) {
+                trimmed = trimmed.substring(1);
+            }
+            if (trimmed.endsWith("]")) {
+                trimmed = trimmed.substring(0, trimmed.length() - 1);
+            }
+            
+            if (trimmed.isEmpty()) {
+                return null;
+            }
+            
+            // Split by "},{" to handle multiple ACEs
+            String[] aceStrings = trimmed.split("\\},\\s*\\{");
+            
+            for (String aceStr : aceStrings) {
+                // Clean up the string
+                aceStr = aceStr.trim();
+                if (!aceStr.startsWith("{")) {
+                    aceStr = "{" + aceStr;
+                }
+                if (!aceStr.endsWith("}")) {
+                    aceStr = aceStr + "}";
+                }
+                
+                // Extract principal
+                String principal = extractJsonValue(aceStr, "principal");
+                if (principal == null) {
+                    continue;
+                }
+                
+                // Extract permissions array
+                List<String> permissions = extractJsonArray(aceStr, "permissions");
+                if (permissions == null || permissions.isEmpty()) {
+                    continue;
+                }
+                
+                // Create ACE
+                AccessControlEntryImpl ace = new AccessControlEntryImpl();
+                ace.setPrincipal(new AccessControlPrincipalDataImpl(principal));
+                ace.setPermissions(permissions);
+                ace.setDirect(true);
+                aces.add(ace);
+            }
+            
+            if (aces.isEmpty()) {
+                return null;
+            }
+            
+            AccessControlListImpl acl = new AccessControlListImpl();
+            acl.setAces(aces);
+            return acl;
+            
+        } catch (Exception e) {
+            throw new ODataApplicationException(
+                    "Invalid ACL JSON format: " + e.getMessage(),
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH
+            );
+        }
+    }
+    
+    /**
+     * Extract a string value from a simple JSON object.
+     */
+    private String extractJsonValue(String json, String key) {
+        String pattern = "\"" + key + "\"\\s*:\\s*\"([^\"]+)\"";
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+        java.util.regex.Matcher m = p.matcher(json);
+        if (m.find()) {
+            return m.group(1);
+        }
+        return null;
+    }
+    
+    /**
+     * Extract a string array from a simple JSON object.
+     */
+    private List<String> extractJsonArray(String json, String key) {
+        String pattern = "\"" + key + "\"\\s*:\\s*\\[([^\\]]+)\\]";
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+        java.util.regex.Matcher m = p.matcher(json);
+        if (m.find()) {
+            String arrayContent = m.group(1);
+            List<String> result = new java.util.ArrayList<>();
+            // Extract quoted strings
+            java.util.regex.Pattern stringPattern = java.util.regex.Pattern.compile("\"([^\"]+)\"");
+            java.util.regex.Matcher stringMatcher = stringPattern.matcher(arrayContent);
+            while (stringMatcher.find()) {
+                result.add(stringMatcher.group(1));
+            }
+            return result;
+        }
+        return null;
     }
     
     /**

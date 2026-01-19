@@ -16,6 +16,7 @@ import org.apache.olingo.server.core.ODataHandlerImpl;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 
+import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.cmis.service.NavigationService;
 import jp.aegif.nemaki.cmis.service.ObjectService;
@@ -61,6 +62,7 @@ public class ODataServlet extends HttpServlet {
     private NavigationService navigationService;
     private DiscoveryService discoveryService;
     private VersioningService versioningService;
+    private AclService aclService;
     
     @Override
     public void init() throws ServletException {
@@ -74,6 +76,7 @@ public class ODataServlet extends HttpServlet {
             navigationService = context.getBean(NavigationService.class);
             discoveryService = context.getBean(DiscoveryService.class);
             versioningService = context.getBean(VersioningService.class);
+            aclService = context.getBean(AclService.class);
         }
     }
     
@@ -135,6 +138,17 @@ public class ODataServlet extends HttpServlet {
                     objectService,
                     versioningService,
                     navigationService,
+                    aclService,
+                    repositoryId,
+                    callContext
+            ));
+            
+            handler.register(new CmisFunctionProcessor(
+                    repositoryService,
+                    objectService,
+                    navigationService,
+                    discoveryService,
+                    versioningService,
                     repositoryId,
                     callContext
             ));
