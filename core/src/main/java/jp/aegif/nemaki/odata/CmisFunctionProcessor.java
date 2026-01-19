@@ -559,7 +559,13 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                     includeProperties = Boolean.parseBoolean(paramValue);
                     break;
                 case "filter":
-                    filter = paramValue;
+                    if (paramValue != null) {
+                        try {
+                            filter = URLDecoder.decode(paramValue, StandardCharsets.UTF_8.name());
+                        } catch (UnsupportedEncodingException e) {
+                            filter = paramValue;
+                        }
+                    }
                     break;
                 case "includePolicyIds":
                     includePolicyIds = Boolean.parseBoolean(paramValue);

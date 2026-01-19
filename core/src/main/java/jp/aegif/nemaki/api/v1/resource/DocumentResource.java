@@ -193,7 +193,9 @@ public class DocumentResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Operation(
             summary = "Copy document from source",
-            description = "Creates a new document as a copy of an existing document"
+            description = "Creates a new document as a copy of an existing document. " +
+                    "Required parameters (sourceId, targetFolderId) are passed as query parameters. " +
+                    "Optional property overrides can be passed in the JSON request body as a map of property names to PropertyValue objects."
     )
     @ApiResponses(value = {
             @ApiResponse(

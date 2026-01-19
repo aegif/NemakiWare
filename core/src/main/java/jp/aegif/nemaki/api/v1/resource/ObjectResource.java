@@ -60,6 +60,9 @@ import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -788,25 +791,36 @@ public class ObjectResource {
             validateRepository(repositoryId);
             CallContext callContext = getCallContext();
             
-            // Extract objects array from request body
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> objects = (List<Map<String, Object>>) requestBody.get("objects");
-            if (objects == null || objects.isEmpty()) {
+            // Use Jackson ObjectMapper for type-safe parsing
+            ObjectMapper mapper = new ObjectMapper();
+            
+            // Extract and convert objects array from request body
+            Object objectsRaw = requestBody.get("objects");
+            if (objectsRaw == null) {
+                throw ApiException.invalidArgument("objects array is required");
+            }
+            List<Map<String, String>> objects = mapper.convertValue(objectsRaw, 
+                    new TypeReference<List<Map<String, String>>>() {});
+            if (objects.isEmpty()) {
                 throw ApiException.invalidArgument("objects array is required");
             }
             
-            // Extract properties to update
-            @SuppressWarnings("unchecked")
-            Map<String, PropertyValue> propertiesToUpdate = (Map<String, PropertyValue>) requestBody.get("properties");
-            if (propertiesToUpdate == null || propertiesToUpdate.isEmpty()) {
+            // Extract and convert properties to update
+            Object propertiesRaw = requestBody.get("properties");
+            if (propertiesRaw == null) {
+                throw ApiException.invalidArgument("properties to update are required");
+            }
+            Map<String, PropertyValue> propertiesToUpdate = mapper.convertValue(propertiesRaw,
+                    new TypeReference<Map<String, PropertyValue>>() {});
+            if (propertiesToUpdate.isEmpty()) {
                 throw ApiException.invalidArgument("properties to update are required");
             }
             
             // Build list of object IDs and change tokens
             List<org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken> objectIdAndChangeTokens = new ArrayList<>();
-            for (Map<String, Object> obj : objects) {
-                String objId = (String) obj.get("objectId");
-                String objChangeToken = (String) obj.get("changeToken");
+            for (Map<String, String> obj : objects) {
+                String objId = obj.get("objectId");
+                String objChangeToken = obj.get("changeToken");
                 if (objId == null || objId.isEmpty()) {
                     throw ApiException.invalidArgument("objectId is required for each object");
                 }
@@ -818,11 +832,17 @@ public class ObjectResource {
             // Convert properties
             Properties cmisProperties = convertToProperties(propertiesToUpdate);
             
-            // Extract secondary type IDs (optional)
-            @SuppressWarnings("unchecked")
-            List<String> addSecondaryTypeIds = (List<String>) requestBody.get("addSecondaryTypeIds");
-            @SuppressWarnings("unchecked")
-            List<String> removeSecondaryTypeIds = (List<String>) requestBody.get("removeSecondaryTypeIds");
+            // Extract secondary type IDs (optional) with type-safe conversion
+            List<String> addSecondaryTypeIds = null;
+            Object addSecondaryRaw = requestBody.get("addSecondaryTypeIds");
+            if (addSecondaryRaw != null) {
+                addSecondaryTypeIds = mapper.convertValue(addSecondaryRaw, new TypeReference<List<String>>() {});
+            }
+            List<String> removeSecondaryTypeIds = null;
+            Object removeSecondaryRaw = requestBody.get("removeSecondaryTypeIds");
+            if (removeSecondaryRaw != null) {
+                removeSecondaryTypeIds = mapper.convertValue(removeSecondaryRaw, new TypeReference<List<String>>() {});
+            }
             
             // Execute bulk update
             List<org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken> results = 
