@@ -20,6 +20,7 @@ import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.cmis.service.NavigationService;
 import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
+import jp.aegif.nemaki.cmis.service.VersioningService;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -59,6 +60,7 @@ public class ODataServlet extends HttpServlet {
     private ObjectService objectService;
     private NavigationService navigationService;
     private DiscoveryService discoveryService;
+    private VersioningService versioningService;
     
     @Override
     public void init() throws ServletException {
@@ -71,6 +73,7 @@ public class ODataServlet extends HttpServlet {
             objectService = context.getBean(ObjectService.class);
             navigationService = context.getBean(NavigationService.class);
             discoveryService = context.getBean(DiscoveryService.class);
+            versioningService = context.getBean(VersioningService.class);
         }
     }
     
@@ -123,6 +126,14 @@ public class ODataServlet extends HttpServlet {
                     repositoryService,
                     objectService,
                     navigationService,
+                    repositoryId,
+                    callContext
+            ));
+            
+            handler.register(new CmisActionProcessor(
+                    repositoryService,
+                    objectService,
+                    versioningService,
                     repositoryId,
                     callContext
             ));

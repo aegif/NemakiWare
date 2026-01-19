@@ -39,6 +39,7 @@ import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
 import org.apache.olingo.server.api.uri.queryoption.OrderByItem;
 import org.apache.olingo.server.api.uri.queryoption.ExpandItem;
 import org.apache.olingo.server.api.uri.queryoption.ExpandOption;
+import org.apache.olingo.server.api.uri.queryoption.SearchOption;
 import org.apache.olingo.server.api.uri.queryoption.SelectOption;
 import org.apache.olingo.server.api.uri.queryoption.SelectItem;
 import org.apache.olingo.server.api.uri.queryoption.SkipOption;
@@ -145,8 +146,15 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
             expandProperties = getExpandProperties(expandOption);
         }
         
+        // Get search option for full-text search
+        SearchOption searchOption = uriInfo.getSearchOption();
+        String searchTerm = null;
+        if (searchOption != null && searchOption.getSearchExpression() != null) {
+            searchTerm = searchOption.getText();
+        }
+        
         // Fetch the data from CMIS
-        EntityCollection entityCollection = getData(edmEntitySet, top, skip, filterClause, orderByClause, selectedProperties, expandProperties);
+        EntityCollection entityCollection = getData(edmEntitySet, top, skip, filterClause, orderByClause, selectedProperties, expandProperties, searchTerm);
         
         // Serialize the response
         ODataSerializer serializer = odata.createSerializer(responseFormat);
@@ -173,12 +181,12 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
      * Get data from CMIS based on the entity set name.
      */
     private EntityCollection getData(EdmEntitySet edmEntitySet, int maxItems, int skipCount, 
-            String filterClause, String orderByClause, Set<String> selectedProperties, Set<String> expandProperties) throws ODataApplicationException {
+            String filterClause, String orderByClause, Set<String> selectedProperties, Set<String> expandProperties, String searchTerm) throws ODataApplicationException {
         EntityCollection entityCollection = new EntityCollection();
         String entitySetName = edmEntitySet.getName();
         
         try {
-            String cmisQuery = buildCmisQuery(entitySetName, filterClause, orderByClause, selectedProperties);
+            String cmisQuery = buildCmisQuery(entitySetName, filterClause, orderByClause, selectedProperties, searchTerm);
             
             if (cmisQuery != null) {
                 ObjectList objectList = discoveryService.query(
@@ -224,9 +232,9 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
     }
     
     /**
-     * Build CMIS query based on entity set name with optional filter, orderby, and select clauses.
+     * Build CMIS query based on entity set name with optional filter, orderby, select, and search clauses.
      */
-    private String buildCmisQuery(String entitySetName, String filterClause, String orderByClause, Set<String> selectedProperties) {
+    private String buildCmisQuery(String entitySetName, String filterClause, String orderByClause, Set<String> selectedProperties, String searchTerm) {
         String baseType = getBaseTypeForEntitySet(entitySetName);
         if (baseType == null) {
             return null;
@@ -253,9 +261,26 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         
         query.append(" FROM ").append(baseType);
         
-        // Add WHERE clause if filter is provided
+        // Build WHERE clause combining filter and search
+        List<String> whereClauses = new ArrayList<>();
+        
+        // Add filter clause if provided
         if (filterClause != null && !filterClause.isEmpty()) {
-            query.append(" WHERE ").append(filterClause);
+            whereClauses.add(filterClause);
+        }
+        
+        // Add full-text search clause if search term is provided
+        // CMIS uses CONTAINS() function for full-text search
+        if (searchTerm != null && !searchTerm.isEmpty()) {
+            // Escape single quotes in search term
+            String escapedSearchTerm = searchTerm.replace("'", "''");
+            whereClauses.add("CONTAINS('" + escapedSearchTerm + "')");
+        }
+        
+        // Combine WHERE clauses with AND
+        if (!whereClauses.isEmpty()) {
+            query.append(" WHERE ");
+            query.append(String.join(" AND ", whereClauses));
         }
         
         // Add ORDER BY clause if orderby is provided

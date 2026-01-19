@@ -3,14 +3,18 @@ package jp.aegif.nemaki.odata;
 import org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind;
 import org.apache.olingo.commons.api.edm.FullQualifiedName;
 import org.apache.olingo.commons.api.edm.provider.CsdlAbstractEdmProvider;
+import org.apache.olingo.commons.api.edm.provider.CsdlAction;
+import org.apache.olingo.commons.api.edm.provider.CsdlActionImport;
 import org.apache.olingo.commons.api.edm.provider.CsdlEntityContainer;
 import org.apache.olingo.commons.api.edm.provider.CsdlEntityContainerInfo;
 import org.apache.olingo.commons.api.edm.provider.CsdlEntitySet;
 import org.apache.olingo.commons.api.edm.provider.CsdlEntityType;
 import org.apache.olingo.commons.api.edm.provider.CsdlNavigationProperty;
 import org.apache.olingo.commons.api.edm.provider.CsdlNavigationPropertyBinding;
+import org.apache.olingo.commons.api.edm.provider.CsdlParameter;
 import org.apache.olingo.commons.api.edm.provider.CsdlProperty;
 import org.apache.olingo.commons.api.edm.provider.CsdlPropertyRef;
+import org.apache.olingo.commons.api.edm.provider.CsdlReturnType;
 import org.apache.olingo.commons.api.edm.provider.CsdlSchema;
 import org.apache.olingo.commons.api.ex.ODataException;
 
@@ -67,6 +71,19 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
     public static final String ES_RELATIONSHIPS_NAME = "Relationships";
     public static final String ES_POLICIES_NAME = "Policies";
     public static final String ES_ITEMS_NAME = "Items";
+    
+    // Actions
+    public static final String ACTION_CHECKOUT = "CheckOut";
+    public static final FullQualifiedName ACTION_CHECKOUT_FQN = new FullQualifiedName(NAMESPACE, ACTION_CHECKOUT);
+    
+    public static final String ACTION_CANCEL_CHECKOUT = "CancelCheckOut";
+    public static final FullQualifiedName ACTION_CANCEL_CHECKOUT_FQN = new FullQualifiedName(NAMESPACE, ACTION_CANCEL_CHECKOUT);
+    
+    public static final String ACTION_CHECKIN = "CheckIn";
+    public static final FullQualifiedName ACTION_CHECKIN_FQN = new FullQualifiedName(NAMESPACE, ACTION_CHECKIN);
+    
+    public static final String ACTION_MOVE = "Move";
+    public static final FullQualifiedName ACTION_MOVE_FQN = new FullQualifiedName(NAMESPACE, ACTION_MOVE);
     
     @Override
     public CsdlEntityType getEntityType(FullQualifiedName entityTypeName) throws ODataException {
@@ -147,9 +164,182 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
         entityTypes.add(getEntityType(ET_ITEM_FQN));
         schema.setEntityTypes(entityTypes);
         
+        // Add actions
+        List<CsdlAction> actions = getActions();
+        schema.setActions(actions);
+        
         schema.setEntityContainer(getEntityContainer());
         
         return Collections.singletonList(schema);
+    }
+    
+    @Override
+    public List<CsdlAction> getActions(FullQualifiedName actionName) throws ODataException {
+        if (actionName.equals(ACTION_CHECKOUT_FQN)) {
+            return Collections.singletonList(createCheckOutAction());
+        } else if (actionName.equals(ACTION_CANCEL_CHECKOUT_FQN)) {
+            return Collections.singletonList(createCancelCheckOutAction());
+        } else if (actionName.equals(ACTION_CHECKIN_FQN)) {
+            return Collections.singletonList(createCheckInAction());
+        } else if (actionName.equals(ACTION_MOVE_FQN)) {
+            return Collections.singletonList(createMoveAction());
+        }
+        return null;
+    }
+    
+    /**
+     * Get all actions for the schema.
+     */
+    private List<CsdlAction> getActions() {
+        List<CsdlAction> actions = new ArrayList<>();
+        actions.add(createCheckOutAction());
+        actions.add(createCancelCheckOutAction());
+        actions.add(createCheckInAction());
+        actions.add(createMoveAction());
+        return actions;
+    }
+    
+    /**
+     * Create the CheckOut action bound to Document.
+     * POST /odata/{repoId}/Documents('objectId')/NemakiWare.CMIS.CheckOut
+     * Returns the Private Working Copy (PWC) document.
+     */
+    private CsdlAction createCheckOutAction() {
+        CsdlAction action = new CsdlAction();
+        action.setName(ACTION_CHECKOUT);
+        action.setBound(true);
+        
+        // Binding parameter (the document to check out)
+        List<CsdlParameter> parameters = new ArrayList<>();
+        CsdlParameter bindingParam = new CsdlParameter();
+        bindingParam.setName("bindingParameter");
+        bindingParam.setType(ET_DOCUMENT_FQN);
+        bindingParam.setNullable(false);
+        parameters.add(bindingParam);
+        action.setParameters(parameters);
+        
+        // Return type (the PWC document)
+        CsdlReturnType returnType = new CsdlReturnType();
+        returnType.setType(ET_DOCUMENT_FQN);
+        returnType.setNullable(false);
+        action.setReturnType(returnType);
+        
+        return action;
+    }
+    
+    /**
+     * Create the CancelCheckOut action bound to Document.
+     * POST /odata/{repoId}/Documents('objectId')/NemakiWare.CMIS.CancelCheckOut
+     * Cancels the check out and deletes the PWC.
+     */
+    private CsdlAction createCancelCheckOutAction() {
+        CsdlAction action = new CsdlAction();
+        action.setName(ACTION_CANCEL_CHECKOUT);
+        action.setBound(true);
+        
+        // Binding parameter (the PWC to cancel)
+        List<CsdlParameter> parameters = new ArrayList<>();
+        CsdlParameter bindingParam = new CsdlParameter();
+        bindingParam.setName("bindingParameter");
+        bindingParam.setType(ET_DOCUMENT_FQN);
+        bindingParam.setNullable(false);
+        parameters.add(bindingParam);
+        action.setParameters(parameters);
+        
+        // No return type (void action)
+        return action;
+    }
+    
+    /**
+     * Create the CheckIn action bound to Document.
+     * POST /odata/{repoId}/Documents('objectId')/NemakiWare.CMIS.CheckIn
+     * Parameters: major (boolean), checkinComment (string)
+     * Returns the new version of the document.
+     */
+    private CsdlAction createCheckInAction() {
+        CsdlAction action = new CsdlAction();
+        action.setName(ACTION_CHECKIN);
+        action.setBound(true);
+        
+        // Parameters
+        List<CsdlParameter> parameters = new ArrayList<>();
+        
+        // Binding parameter (the PWC to check in)
+        CsdlParameter bindingParam = new CsdlParameter();
+        bindingParam.setName("bindingParameter");
+        bindingParam.setType(ET_DOCUMENT_FQN);
+        bindingParam.setNullable(false);
+        parameters.add(bindingParam);
+        
+        // major parameter
+        CsdlParameter majorParam = new CsdlParameter();
+        majorParam.setName("major");
+        majorParam.setType(EdmPrimitiveTypeKind.Boolean.getFullQualifiedName());
+        majorParam.setNullable(true);
+        parameters.add(majorParam);
+        
+        // checkinComment parameter
+        CsdlParameter commentParam = new CsdlParameter();
+        commentParam.setName("checkinComment");
+        commentParam.setType(EdmPrimitiveTypeKind.String.getFullQualifiedName());
+        commentParam.setNullable(true);
+        parameters.add(commentParam);
+        
+        action.setParameters(parameters);
+        
+        // Return type (the new version)
+        CsdlReturnType returnType = new CsdlReturnType();
+        returnType.setType(ET_DOCUMENT_FQN);
+        returnType.setNullable(false);
+        action.setReturnType(returnType);
+        
+        return action;
+    }
+    
+    /**
+     * Create the Move action bound to Object.
+     * POST /odata/{repoId}/Objects('objectId')/NemakiWare.CMIS.Move
+     * Parameters: targetFolderId (string), sourceFolderId (string, optional)
+     * Returns the moved object.
+     */
+    private CsdlAction createMoveAction() {
+        CsdlAction action = new CsdlAction();
+        action.setName(ACTION_MOVE);
+        action.setBound(true);
+        
+        // Parameters
+        List<CsdlParameter> parameters = new ArrayList<>();
+        
+        // Binding parameter (the object to move)
+        CsdlParameter bindingParam = new CsdlParameter();
+        bindingParam.setName("bindingParameter");
+        bindingParam.setType(ET_OBJECT_FQN);
+        bindingParam.setNullable(false);
+        parameters.add(bindingParam);
+        
+        // targetFolderId parameter (required)
+        CsdlParameter targetParam = new CsdlParameter();
+        targetParam.setName("targetFolderId");
+        targetParam.setType(EdmPrimitiveTypeKind.String.getFullQualifiedName());
+        targetParam.setNullable(false);
+        parameters.add(targetParam);
+        
+        // sourceFolderId parameter (optional)
+        CsdlParameter sourceParam = new CsdlParameter();
+        sourceParam.setName("sourceFolderId");
+        sourceParam.setType(EdmPrimitiveTypeKind.String.getFullQualifiedName());
+        sourceParam.setNullable(true);
+        parameters.add(sourceParam);
+        
+        action.setParameters(parameters);
+        
+        // Return type (the moved object)
+        CsdlReturnType returnType = new CsdlReturnType();
+        returnType.setType(ET_OBJECT_FQN);
+        returnType.setNullable(false);
+        action.setReturnType(returnType);
+        
+        return action;
     }
     
     /**

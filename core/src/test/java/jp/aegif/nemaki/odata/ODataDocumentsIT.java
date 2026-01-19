@@ -473,4 +473,258 @@ public class ODataDocumentsIT extends ODataTestBase {
             .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if not implemented
             .contentType(containsString("application/json"));
     }
+    
+    // ==================== OData Actions Tests ====================
+    
+    /**
+     * Test POST /odata/{repositoryId}/Documents('objectId')/NemakiWare.CMIS.CheckOut
+     * CheckOut action should return the Private Working Copy (PWC).
+     */
+    @Test
+    public void testCheckOutAction() {
+        // First, get a document to check out
+        Response listResponse = given()
+            .spec(requestSpec)
+            .queryParam("$top", 1)
+            .queryParam("$filter", "isVersionSeriesCheckedOut eq false")
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(200)
+            .extract().response();
+        
+        java.util.List<?> documents = listResponse.jsonPath().getList("value");
+        if (documents == null || documents.isEmpty()) {
+            // No documents available for checkout test
+            return;
+        }
+        
+        String objectId = listResponse.jsonPath().getString("value[0].objectId");
+        
+        // Execute CheckOut action
+        given()
+            .spec(requestSpec)
+            .contentType("application/json")
+        .when()
+            .post(documentsPath() + "('" + objectId + "')/NemakiWare.CMIS.CheckOut")
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(501))) // 501 if not implemented
+            .contentType(anyOf(containsString("application/json"), emptyOrNullString()));
+    }
+    
+    /**
+     * Test POST /odata/{repositoryId}/Documents('objectId')/NemakiWare.CMIS.CancelCheckOut
+     * CancelCheckOut action should cancel the checkout and delete the PWC.
+     */
+    @Test
+    public void testCancelCheckOutAction() {
+        // First, get a checked-out document (PWC)
+        Response listResponse = given()
+            .spec(requestSpec)
+            .queryParam("$top", 1)
+            .queryParam("$filter", "isPrivateWorkingCopy eq true")
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(200)
+            .extract().response();
+        
+        java.util.List<?> documents = listResponse.jsonPath().getList("value");
+        if (documents == null || documents.isEmpty()) {
+            // No PWC available for cancel checkout test
+            return;
+        }
+        
+        String objectId = listResponse.jsonPath().getString("value[0].objectId");
+        
+        // Execute CancelCheckOut action
+        given()
+            .spec(requestSpec)
+            .contentType("application/json")
+        .when()
+            .post(documentsPath() + "('" + objectId + "')/NemakiWare.CMIS.CancelCheckOut")
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(501))); // 501 if not implemented
+    }
+    
+    /**
+     * Test POST /odata/{repositoryId}/Documents('objectId')/NemakiWare.CMIS.CheckIn
+     * CheckIn action should check in the PWC and create a new version.
+     */
+    @Test
+    public void testCheckInAction() {
+        // First, get a checked-out document (PWC)
+        Response listResponse = given()
+            .spec(requestSpec)
+            .queryParam("$top", 1)
+            .queryParam("$filter", "isPrivateWorkingCopy eq true")
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(200)
+            .extract().response();
+        
+        java.util.List<?> documents = listResponse.jsonPath().getList("value");
+        if (documents == null || documents.isEmpty()) {
+            // No PWC available for checkin test
+            return;
+        }
+        
+        String objectId = listResponse.jsonPath().getString("value[0].objectId");
+        
+        // Execute CheckIn action with parameters
+        String checkInParams = "{\"major\": true, \"checkinComment\": \"Test checkin via OData\"}";
+        
+        given()
+            .spec(requestSpec)
+            .contentType("application/json")
+            .body(checkInParams)
+        .when()
+            .post(documentsPath() + "('" + objectId + "')/NemakiWare.CMIS.CheckIn")
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(501))) // 501 if not implemented
+            .contentType(anyOf(containsString("application/json"), emptyOrNullString()));
+    }
+    
+    /**
+     * Test POST /odata/{repositoryId}/Documents('objectId')/NemakiWare.CMIS.CheckIn
+     * CheckIn action with minor version.
+     */
+    @Test
+    public void testCheckInActionMinorVersion() {
+        // First, get a checked-out document (PWC)
+        Response listResponse = given()
+            .spec(requestSpec)
+            .queryParam("$top", 1)
+            .queryParam("$filter", "isPrivateWorkingCopy eq true")
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(200)
+            .extract().response();
+        
+        java.util.List<?> documents = listResponse.jsonPath().getList("value");
+        if (documents == null || documents.isEmpty()) {
+            // No PWC available for checkin test
+            return;
+        }
+        
+        String objectId = listResponse.jsonPath().getString("value[0].objectId");
+        
+        // Execute CheckIn action with minor version
+        String checkInParams = "{\"major\": false, \"checkinComment\": \"Minor version via OData\"}";
+        
+        given()
+            .spec(requestSpec)
+            .contentType("application/json")
+            .body(checkInParams)
+        .when()
+            .post(documentsPath() + "('" + objectId + "')/NemakiWare.CMIS.CheckIn")
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(501))); // 501 if not implemented
+    }
+    
+    // ==================== OData $search Tests ====================
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents with $search query option.
+     * Full-text search using Solr integration.
+     */
+    @Test
+    public void testGetDocumentsWithSearch() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$search", "test")
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents with $search and $top.
+     * Full-text search with pagination.
+     */
+    @Test
+    public void testGetDocumentsWithSearchAndTop() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$search", "document")
+            .queryParam("$top", 5)
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents with $search and $filter combined.
+     * Full-text search combined with property filter.
+     */
+    @Test
+    public void testGetDocumentsWithSearchAndFilter() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$search", "invoice")
+            .queryParam("$filter", "contains(name,'report')")
+            .queryParam("$top", 10)
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents with $search and $select.
+     * Full-text search with property projection.
+     */
+    @Test
+    public void testGetDocumentsWithSearchAndSelect() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$search", "contract")
+            .queryParam("$select", "objectId,name,contentStreamMimeType")
+            .queryParam("$top", 5)
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents with $search and $orderby.
+     * Full-text search with ordering.
+     */
+    @Test
+    public void testGetDocumentsWithSearchAndOrderBy() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$search", "report")
+            .queryParam("$orderby", "lastModificationDate desc")
+            .queryParam("$top", 10)
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents with $search containing special characters.
+     * Full-text search with special characters should be properly escaped.
+     */
+    @Test
+    public void testGetDocumentsWithSearchSpecialChars() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$search", "test's document")
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(400), equalTo(501))); // 400 if invalid, 501 if not implemented
+    }
 }

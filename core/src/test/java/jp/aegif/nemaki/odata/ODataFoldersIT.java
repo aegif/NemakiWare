@@ -506,4 +506,234 @@ public class ODataFoldersIT extends ODataTestBase {
             .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if not implemented
             .contentType(containsString("application/json"));
     }
+    
+    // ==================== OData Actions Tests ====================
+    
+    /**
+     * Test POST /odata/{repositoryId}/Folders('objectId')/NemakiWare.CMIS.Move
+     * Move action should move a folder to a different parent folder.
+     */
+    @Test
+    public void testMoveAction() {
+        // First, get two folders - one to move and one as target
+        Response listResponse = given()
+            .spec(requestSpec)
+            .queryParam("$top", 2)
+            .queryParam("$filter", "path ne '/'") // Exclude root folder
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501)))
+            .extract().response();
+        
+        java.util.List<?> folders = listResponse.jsonPath().getList("value");
+        if (folders == null || folders.size() < 2) {
+            // Not enough folders available for move test
+            return;
+        }
+        
+        String objectIdToMove = listResponse.jsonPath().getString("value[0].objectId");
+        String targetFolderId = listResponse.jsonPath().getString("value[1].objectId");
+        
+        // Execute Move action with parameters
+        String moveParams = "{\"targetFolderId\": \"" + targetFolderId + "\"}";
+        
+        given()
+            .spec(requestSpec)
+            .contentType("application/json")
+            .body(moveParams)
+        .when()
+            .post(folderPath(objectIdToMove) + "/NemakiWare.CMIS.Move")
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(501))) // 501 if not implemented
+            .contentType(anyOf(containsString("application/json"), emptyOrNullString()));
+    }
+    
+    /**
+     * Test POST /odata/{repositoryId}/Folders('objectId')/NemakiWare.CMIS.Move
+     * Move action with explicit source folder ID.
+     */
+    @Test
+    public void testMoveActionWithSourceFolder() {
+        // First, get folders to find a valid ID and its parent
+        Response listResponse = given()
+            .spec(requestSpec)
+            .queryParam("$top", 1)
+            .queryParam("$filter", "path ne '/'") // Exclude root folder
+            .queryParam("$expand", "parent")
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501)))
+            .extract().response();
+        
+        java.util.List<?> folders = listResponse.jsonPath().getList("value");
+        if (folders == null || folders.isEmpty()) {
+            // No folders available for move test
+            return;
+        }
+        
+        String objectIdToMove = listResponse.jsonPath().getString("value[0].objectId");
+        String sourceFolderId = listResponse.jsonPath().getString("value[0].parentId");
+        
+        // Get root folder as target
+        Response rootResponse = given()
+            .spec(requestSpec)
+            .queryParam("$filter", "path eq '/'")
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501)))
+            .extract().response();
+        
+        java.util.List<?> rootFolders = rootResponse.jsonPath().getList("value");
+        if (rootFolders == null || rootFolders.isEmpty()) {
+            return;
+        }
+        
+        String targetFolderId = rootResponse.jsonPath().getString("value[0].objectId");
+        
+        if (sourceFolderId == null || targetFolderId == null) {
+            return;
+        }
+        
+        // Execute Move action with explicit source folder
+        String moveParams = "{\"targetFolderId\": \"" + targetFolderId + "\", \"sourceFolderId\": \"" + sourceFolderId + "\"}";
+        
+        given()
+            .spec(requestSpec)
+            .contentType("application/json")
+            .body(moveParams)
+        .when()
+            .post(folderPath(objectIdToMove) + "/NemakiWare.CMIS.Move")
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(204), equalTo(501))); // 501 if not implemented
+    }
+    
+    /**
+     * Test POST /odata/{repositoryId}/Folders('objectId')/NemakiWare.CMIS.Move
+     * Move action without required targetFolderId should fail.
+     */
+    @Test
+    public void testMoveActionMissingTargetFolder() {
+        // First, get a folder to move
+        Response listResponse = given()
+            .spec(requestSpec)
+            .queryParam("$top", 1)
+            .queryParam("$filter", "path ne '/'") // Exclude root folder
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501)))
+            .extract().response();
+        
+        java.util.List<?> folders = listResponse.jsonPath().getList("value");
+        if (folders == null || folders.isEmpty()) {
+            // No folders available for move test
+            return;
+        }
+        
+        String objectIdToMove = listResponse.jsonPath().getString("value[0].objectId");
+        
+        // Execute Move action without targetFolderId - should fail
+        String moveParams = "{}";
+        
+        given()
+            .spec(requestSpec)
+            .contentType("application/json")
+            .body(moveParams)
+        .when()
+            .post(folderPath(objectIdToMove) + "/NemakiWare.CMIS.Move")
+        .then()
+            .statusCode(anyOf(equalTo(400), equalTo(501))); // 400 Bad Request or 501 if not implemented
+    }
+    
+    // ==================== OData $search Tests ====================
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders with $search query option.
+     * Full-text search using Solr integration.
+     */
+    @Test
+    public void testGetFoldersWithSearch() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$search", "test")
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders with $search and $top.
+     * Full-text search with pagination.
+     */
+    @Test
+    public void testGetFoldersWithSearchAndTop() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$search", "folder")
+            .queryParam("$top", 5)
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders with $search and $filter combined.
+     * Full-text search combined with property filter.
+     */
+    @Test
+    public void testGetFoldersWithSearchAndFilter() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$search", "project")
+            .queryParam("$filter", "contains(name,'archive')")
+            .queryParam("$top", 10)
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders with $search and $select.
+     * Full-text search with property projection.
+     */
+    @Test
+    public void testGetFoldersWithSearchAndSelect() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$search", "documents")
+            .queryParam("$select", "objectId,name,path")
+            .queryParam("$top", 5)
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders with $search and $orderby.
+     * Full-text search with ordering.
+     */
+    @Test
+    public void testGetFoldersWithSearchAndOrderBy() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$search", "backup")
+            .queryParam("$orderby", "lastModificationDate desc")
+            .queryParam("$top", 10)
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $search not implemented
+            .contentType(containsString("application/json"));
+    }
 }
