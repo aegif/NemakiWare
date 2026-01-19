@@ -28,6 +28,8 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.SystemConst;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.api.v1.exception.ProblemDetail;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
@@ -35,8 +37,6 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ObjectUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.FilterConfig;
@@ -54,6 +54,9 @@ public class AuthenticationFilter implements Filter {
 	private RepositoryInfoMap repositoryInfoMap;
 	private PrincipalService principalService;
 	private final String TOKEN_FALSE = "false";
+	
+	// ObjectMapper for RFC 7807 ProblemDetail serialization (thread-safe, reusable)
+	private static final ObjectMapper objectMapper = new ObjectMapper();
 
 	private  Log log = LogFactory.getLog(AuthenticationFilter.class);
 
@@ -67,22 +70,16 @@ public class AuthenticationFilter implements Filter {
 		HttpServletRequest hreq = (HttpServletRequest) req;
 		HttpServletResponse hres = (HttpServletResponse) res;
 
+		// CORS is handled by SimpleCorsFilter in web.xml - do not add CORS headers here
+		// to avoid duplicate header application
+		
 		// Handle CORS preflight requests (OPTIONS) - bypass authentication
+		// SimpleCorsFilter handles the actual CORS headers, we just need to bypass auth
 		if ("OPTIONS".equalsIgnoreCase(hreq.getMethod())) {
-			log.info("=== CORS: Handling OPTIONS preflight request ===");
-			// Set CORS headers
-			hres.setHeader("Access-Control-Allow-Origin", "*");
-			hres.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-			hres.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, AUTH_TOKEN, nemaki_auth_token");
-			hres.setHeader("Access-Control-Max-Age", "3600");
-			hres.setStatus(HttpServletResponse.SC_OK);
+			log.info("=== CORS: Bypassing authentication for OPTIONS preflight request ===");
+			chain.doFilter(req, res);
 			return;
 		}
-
-		// Add CORS headers to all responses
-		hres.setHeader("Access-Control-Allow-Origin", "*");
-		hres.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-		hres.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, AUTH_TOKEN, nemaki_auth_token");
 
 		// Check if this is a path that should bypass authentication
 		String requestURI = hreq.getRequestURI();
@@ -125,20 +122,36 @@ public class AuthenticationFilter implements Filter {
 			return;
 		}
 
+		// Bypass authentication for OpenAPI specification endpoints (allow public access to API docs)
+		if (requestURI != null && (requestURI.contains("/api/v1/openapi.json") || requestURI.contains("/api/v1/openapi.yaml"))) {
+			log.info("Bypassing authentication for OpenAPI spec endpoint: " + requestURI);
+			chain.doFilter(req, res);
+			return;
+		}
+
 		boolean auth = login(hreq, hres);
 		if(auth){
 			chain.doFilter(req, res);
 		}else{
 			log.warn("REST API Unauthorized! : " + hreq.getRequestURI());
 
-			// Check if this is an API v1 endpoint - return JSON response instead of HTML error page
+			// Check if this is an API v1 endpoint - return RFC 7807 Problem Details response
 			// Use requestURI instead of pathInfo because pathInfo may be null for filter URL patterns
 			if (requestURI != null && requestURI.contains("/api/v1/")) {
-				// Return JSON 401 response for API v1 endpoints
+				// Return RFC 7807 compliant 401 response for API v1 endpoints
 				hres.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-				hres.setContentType("application/json");
+				hres.setContentType("application/problem+json");
 				hres.setCharacterEncoding("UTF-8");
-				hres.getWriter().write("{\"status\":\"error\",\"message\":\"Authentication required\"}");
+				// Support both Basic and Bearer authentication for future JWT/OAuth2 compatibility
+				hres.setHeader("WWW-Authenticate", "Basic realm=\"NemakiWare API\", Bearer realm=\"NemakiWare API\"");
+				
+				// Use ProblemDetail class for consistent RFC 7807 format and proper JSON escaping
+				ProblemDetail problem = ProblemDetail.unauthorized(
+					"Valid credentials are required to access this resource. Please provide Basic or Bearer authentication credentials.",
+					requestURI
+				);
+				String problemJson = objectMapper.writeValueAsString(problem);
+				hres.getWriter().write(problemJson);
 				hres.getWriter().flush();
 			} else {
 				// For legacy endpoints, use standard error response
@@ -263,9 +276,18 @@ public class AuthenticationFilter implements Filter {
         		log.info("=== AUTH: Using superuser ID for /all/ path=" + superUserId + " ===");
         		return superUserId;
         	}else if("repositories".equals(pathFragments[0])){
-        		String superUserId = repositoryInfoMap.getSuperUsers().getId();
-        		log.info("=== AUTH: Using superuser ID for repositories path=" + superUserId + " ===");
-        		return superUserId;
+        		// Handle /api/v1/repositories/{repositoryId}/... pattern
+        		// pathFragments = ["repositories", "{repositoryId}", ...]
+        		if(pathFragments.length > 1 && StringUtils.isNotBlank(pathFragments[1])){
+        			String repositoryId = pathFragments[1];
+        			log.info("=== AUTH: Found repositoryId from /repositories/ path=" + repositoryId + " ===");
+        			return repositoryId;
+        		}else{
+        			// For /repositories (list all) endpoint, use superuser
+        			String superUserId = repositoryInfoMap.getSuperUsers().getId();
+        			log.info("=== AUTH: Using superuser ID for /repositories list path=" + superUserId + " ===");
+        			return superUserId;
+        		}
         	}else{
         		// For paths like /user/bedroom, /group/bedroom, etc.
         		// The repository ID is typically the second fragment
