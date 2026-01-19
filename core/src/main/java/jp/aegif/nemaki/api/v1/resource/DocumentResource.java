@@ -41,17 +41,27 @@ import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyHtmlImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyUriImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
@@ -315,11 +325,14 @@ public class DocumentResource {
             
         } catch (ApiException e) {
             throw e;
+        } catch (CmisUpdateConflictException e) {
+            logger.warning("Document already checked out: " + documentId);
+            throw ApiException.conflict("Document is already checked out");
+        } catch (CmisVersioningException e) {
+            logger.warning("Versioning error checking out document " + documentId + ": " + e.getMessage());
+            throw ApiException.conflict("Versioning conflict: " + e.getMessage());
         } catch (Exception e) {
             logger.severe("Error checking out document " + documentId + ": " + e.getMessage());
-            if (e.getMessage() != null && e.getMessage().contains("already checked out")) {
-                throw ApiException.conflict("Document is already checked out");
-            }
             throw ApiException.internalError("Failed to check out document: " + e.getMessage(), e);
         }
     }
@@ -412,12 +425,15 @@ public class DocumentResource {
             
         } catch (ApiException e) {
             throw e;
+        } catch (CmisVersioningException e) {
+            logger.warning("Versioning error checking in document " + documentId + ": " + e.getMessage());
+            throw ApiException.invalidArgument("Document is not checked out or versioning error: " + e.getMessage());
+        } catch (CmisUpdateConflictException e) {
+            logger.warning("Update conflict checking in document " + documentId + ": " + e.getMessage());
+            throw ApiException.conflict("Update conflict: " + e.getMessage());
         } catch (Exception e) {
             logger.severe("Error checking in document " + documentId + ": " + e.getMessage());
-                        if (e.getMessage() != null && e.getMessage().contains("not checked out")) {
-                            throw ApiException.invalidArgument("Document is not checked out");
-                        }
-                        throw ApiException.internalError("Failed to check in document: " + e.getMessage(), e);
+            throw ApiException.internalError("Failed to check in document: " + e.getMessage(), e);
         }
     }
     
@@ -490,12 +506,15 @@ public class DocumentResource {
             
         } catch (ApiException e) {
             throw e;
+        } catch (CmisVersioningException e) {
+            logger.warning("Versioning error cancelling checkout for document " + documentId + ": " + e.getMessage());
+            throw ApiException.invalidArgument("Document is not checked out or versioning error: " + e.getMessage());
+        } catch (CmisUpdateConflictException e) {
+            logger.warning("Update conflict cancelling checkout for document " + documentId + ": " + e.getMessage());
+            throw ApiException.conflict("Update conflict: " + e.getMessage());
         } catch (Exception e) {
             logger.severe("Error cancelling checkout for document " + documentId + ": " + e.getMessage());
-                        if (e.getMessage() != null && e.getMessage().contains("not checked out")) {
-                            throw ApiException.invalidArgument("Document is not checked out");
-                        }
-                        throw ApiException.internalError("Failed to cancel checkout: " + e.getMessage(), e);
+            throw ApiException.internalError("Failed to cancel checkout: " + e.getMessage(), e);
         }
     }
     
@@ -866,13 +885,68 @@ public class DocumentResource {
                     continue;
                 }
                 
-                String type = pv.getType();
+                String type = pv.getType() != null ? pv.getType() : "string";
                 Object value = pv.getValue();
+                boolean isMultiValued = "multi".equals(pv.getCardinality()) || value instanceof List;
                 
-                if ("id".equals(type)) {
-                    properties.addProperty(new PropertyIdImpl(propertyId, value.toString()));
-                } else {
-                    properties.addProperty(new PropertyStringImpl(propertyId, value.toString()));
+                switch (type) {
+                    case "id":
+                        if (isMultiValued) {
+                            properties.addProperty(new PropertyIdImpl(propertyId, convertToStringList(value)));
+                        } else {
+                            properties.addProperty(new PropertyIdImpl(propertyId, value.toString()));
+                        }
+                        break;
+                    case "boolean":
+                        if (isMultiValued) {
+                            properties.addProperty(new PropertyBooleanImpl(propertyId, convertToBooleanList(value)));
+                        } else {
+                            properties.addProperty(new PropertyBooleanImpl(propertyId, convertToBoolean(value)));
+                        }
+                        break;
+                    case "integer":
+                        if (isMultiValued) {
+                            properties.addProperty(new PropertyIntegerImpl(propertyId, convertToBigIntegerList(value)));
+                        } else {
+                            properties.addProperty(new PropertyIntegerImpl(propertyId, convertToBigInteger(value)));
+                        }
+                        break;
+                    case "decimal":
+                        if (isMultiValued) {
+                            properties.addProperty(new PropertyDecimalImpl(propertyId, convertToBigDecimalList(value)));
+                        } else {
+                            properties.addProperty(new PropertyDecimalImpl(propertyId, convertToBigDecimal(value)));
+                        }
+                        break;
+                    case "datetime":
+                        if (isMultiValued) {
+                            properties.addProperty(new PropertyDateTimeImpl(propertyId, convertToCalendarList(value)));
+                        } else {
+                            properties.addProperty(new PropertyDateTimeImpl(propertyId, convertToCalendar(value)));
+                        }
+                        break;
+                    case "html":
+                        if (isMultiValued) {
+                            properties.addProperty(new PropertyHtmlImpl(propertyId, convertToStringList(value)));
+                        } else {
+                            properties.addProperty(new PropertyHtmlImpl(propertyId, value.toString()));
+                        }
+                        break;
+                    case "uri":
+                        if (isMultiValued) {
+                            properties.addProperty(new PropertyUriImpl(propertyId, convertToStringList(value)));
+                        } else {
+                            properties.addProperty(new PropertyUriImpl(propertyId, value.toString()));
+                        }
+                        break;
+                    case "string":
+                    default:
+                        if (isMultiValued) {
+                            properties.addProperty(new PropertyStringImpl(propertyId, convertToStringList(value)));
+                        } else {
+                            properties.addProperty(new PropertyStringImpl(propertyId, value.toString()));
+                        }
+                        break;
                 }
             }
         }
@@ -882,5 +956,112 @@ public class DocumentResource {
         }
         
         return properties;
+    }
+    
+    @SuppressWarnings("unchecked")
+    private List<String> convertToStringList(Object value) {
+        if (value instanceof List) {
+            List<?> list = (List<?>) value;
+            List<String> result = new ArrayList<>();
+            for (Object item : list) {
+                result.add(item != null ? item.toString() : null);
+            }
+            return result;
+        }
+        return List.of(value.toString());
+    }
+    
+    private Boolean convertToBoolean(Object value) {
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        return Boolean.parseBoolean(value.toString());
+    }
+    
+    @SuppressWarnings("unchecked")
+    private List<Boolean> convertToBooleanList(Object value) {
+        if (value instanceof List) {
+            List<?> list = (List<?>) value;
+            List<Boolean> result = new ArrayList<>();
+            for (Object item : list) {
+                result.add(convertToBoolean(item));
+            }
+            return result;
+        }
+        return List.of(convertToBoolean(value));
+    }
+    
+    private BigInteger convertToBigInteger(Object value) {
+        if (value instanceof BigInteger) {
+            return (BigInteger) value;
+        }
+        if (value instanceof Number) {
+            return BigInteger.valueOf(((Number) value).longValue());
+        }
+        return new BigInteger(value.toString());
+    }
+    
+    @SuppressWarnings("unchecked")
+    private List<BigInteger> convertToBigIntegerList(Object value) {
+        if (value instanceof List) {
+            List<?> list = (List<?>) value;
+            List<BigInteger> result = new ArrayList<>();
+            for (Object item : list) {
+                result.add(convertToBigInteger(item));
+            }
+            return result;
+        }
+        return List.of(convertToBigInteger(value));
+    }
+    
+    private BigDecimal convertToBigDecimal(Object value) {
+        if (value instanceof BigDecimal) {
+            return (BigDecimal) value;
+        }
+        if (value instanceof Number) {
+            return BigDecimal.valueOf(((Number) value).doubleValue());
+        }
+        return new BigDecimal(value.toString());
+    }
+    
+    @SuppressWarnings("unchecked")
+    private List<BigDecimal> convertToBigDecimalList(Object value) {
+        if (value instanceof List) {
+            List<?> list = (List<?>) value;
+            List<BigDecimal> result = new ArrayList<>();
+            for (Object item : list) {
+                result.add(convertToBigDecimal(item));
+            }
+            return result;
+        }
+        return List.of(convertToBigDecimal(value));
+    }
+    
+    private GregorianCalendar convertToCalendar(Object value) {
+        if (value instanceof GregorianCalendar) {
+            return (GregorianCalendar) value;
+        }
+        String dateStr = value.toString();
+        try {
+            GregorianCalendar calendar = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
+            calendar.setTime(ISO_DATE_FORMAT.parse(dateStr));
+            return calendar;
+        } catch (ParseException e) {
+            logger.warning("Failed to parse datetime: " + dateStr + ", using current time");
+            return new GregorianCalendar();
+        }
+    }
+    
+    @SuppressWarnings("unchecked")
+    private List<GregorianCalendar> convertToCalendarList(Object value) {
+        if (value instanceof List) {
+            List<?> list = (List<?>) value;
+            List<GregorianCalendar> result = new ArrayList<>();
+            for (Object item : list) {
+                result.add(convertToCalendar(item));
+            }
+            return result;
+        }
+        return List.of(convertToCalendar(value));
     }
 }
