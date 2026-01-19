@@ -28,6 +28,8 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.SystemConst;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.api.v1.exception.ProblemDetail;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
@@ -54,6 +56,9 @@ public class AuthenticationFilter implements Filter {
 	private RepositoryInfoMap repositoryInfoMap;
 	private PrincipalService principalService;
 	private final String TOKEN_FALSE = "false";
+	
+	// ObjectMapper for RFC 7807 ProblemDetail serialization (thread-safe, reusable)
+	private static final ObjectMapper objectMapper = new ObjectMapper();
 
 	private  Log log = LogFactory.getLog(AuthenticationFilter.class);
 
@@ -145,14 +150,15 @@ public class AuthenticationFilter implements Filter {
 				hres.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 				hres.setContentType("application/problem+json");
 				hres.setCharacterEncoding("UTF-8");
-				hres.setHeader("WWW-Authenticate", "Basic realm=\"NemakiWare API\"");
-				String problemJson = "{" +
-					"\"type\":\"https://nemakiware.org/problems/authentication-required\"," +
-					"\"title\":\"Authentication Required\"," +
-					"\"status\":401," +
-					"\"detail\":\"Valid credentials are required to access this resource. Please provide Basic authentication credentials.\"," +
-					"\"instance\":\"" + requestURI + "\"" +
-					"}";
+				// Support both Basic and Bearer authentication for future JWT/OAuth2 compatibility
+				hres.setHeader("WWW-Authenticate", "Basic realm=\"NemakiWare API\", Bearer realm=\"NemakiWare API\"");
+				
+				// Use ProblemDetail class for consistent RFC 7807 format and proper JSON escaping
+				ProblemDetail problem = ProblemDetail.unauthorized(
+					"Valid credentials are required to access this resource. Please provide Basic or Bearer authentication credentials.",
+					requestURI
+				);
+				String problemJson = objectMapper.writeValueAsString(problem);
 				hres.getWriter().write(problemJson);
 				hres.getWriter().flush();
 			} else {
