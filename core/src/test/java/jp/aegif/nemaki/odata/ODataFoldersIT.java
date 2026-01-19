@@ -143,6 +143,54 @@ public class ODataFoldersIT extends ODataTestBase {
     }
     
     /**
+     * Test GET /odata/{repositoryId}/Folders with $filter query option.
+     * Filter by name containing a substring.
+     */
+    @Test
+    public void testGetFoldersWithFilterContains() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$filter", "contains(name,'folder')")
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders with $filter query option.
+     * Filter by name ending with a suffix.
+     */
+    @Test
+    public void testGetFoldersWithFilterEndsWith() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$filter", "endswith(name,'s')")
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Folders with compound $filter query option.
+     * Filter using AND/OR operators.
+     */
+    @Test
+    public void testGetFoldersWithFilterCompound() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$filter", "name eq 'TestFolder' or contains(name,'test')")
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
      * Test GET /odata/{repositoryId}/Folders with $select query option.
      */
     @Test

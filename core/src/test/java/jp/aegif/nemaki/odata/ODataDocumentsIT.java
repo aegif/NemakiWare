@@ -143,6 +143,54 @@ public class ODataDocumentsIT extends ODataTestBase {
     }
     
     /**
+     * Test GET /odata/{repositoryId}/Documents with $filter query option.
+     * Filter by name containing a substring.
+     */
+    @Test
+    public void testGetDocumentsWithFilterContains() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$filter", "contains(name,'test')")
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents with $filter query option.
+     * Filter by name ending with a suffix.
+     */
+    @Test
+    public void testGetDocumentsWithFilterEndsWith() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$filter", "endswith(name,'.pdf')")
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
+     * Test GET /odata/{repositoryId}/Documents with compound $filter query option.
+     * Filter using AND/OR operators.
+     */
+    @Test
+    public void testGetDocumentsWithFilterCompound() {
+        given()
+            .spec(requestSpec)
+            .queryParam("$filter", "name eq 'test.pdf' or contains(name,'draft')")
+        .when()
+            .get(documentsPath())
+        .then()
+            .statusCode(anyOf(equalTo(200), equalTo(501))) // 501 if $filter not implemented
+            .contentType(containsString("application/json"));
+    }
+    
+    /**
      * Test GET /odata/{repositoryId}/Documents with $select query option.
      */
     @Test
