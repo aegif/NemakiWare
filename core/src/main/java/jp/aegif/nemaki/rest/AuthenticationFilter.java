@@ -125,20 +125,35 @@ public class AuthenticationFilter implements Filter {
 			return;
 		}
 
+		// Bypass authentication for OpenAPI specification endpoints (allow public access to API docs)
+		if (requestURI != null && (requestURI.contains("/api/v1/openapi.json") || requestURI.contains("/api/v1/openapi.yaml"))) {
+			log.info("Bypassing authentication for OpenAPI spec endpoint: " + requestURI);
+			chain.doFilter(req, res);
+			return;
+		}
+
 		boolean auth = login(hreq, hres);
 		if(auth){
 			chain.doFilter(req, res);
 		}else{
 			log.warn("REST API Unauthorized! : " + hreq.getRequestURI());
 
-			// Check if this is an API v1 endpoint - return JSON response instead of HTML error page
+			// Check if this is an API v1 endpoint - return RFC 7807 Problem Details response
 			// Use requestURI instead of pathInfo because pathInfo may be null for filter URL patterns
 			if (requestURI != null && requestURI.contains("/api/v1/")) {
-				// Return JSON 401 response for API v1 endpoints
+				// Return RFC 7807 compliant 401 response for API v1 endpoints
 				hres.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-				hres.setContentType("application/json");
+				hres.setContentType("application/problem+json");
 				hres.setCharacterEncoding("UTF-8");
-				hres.getWriter().write("{\"status\":\"error\",\"message\":\"Authentication required\"}");
+				hres.setHeader("WWW-Authenticate", "Basic realm=\"NemakiWare API\"");
+				String problemJson = "{" +
+					"\"type\":\"https://nemakiware.org/problems/authentication-required\"," +
+					"\"title\":\"Authentication Required\"," +
+					"\"status\":401," +
+					"\"detail\":\"Valid credentials are required to access this resource. Please provide Basic authentication credentials.\"," +
+					"\"instance\":\"" + requestURI + "\"" +
+					"}";
+				hres.getWriter().write(problemJson);
 				hres.getWriter().flush();
 			} else {
 				// For legacy endpoints, use standard error response
