@@ -49,6 +49,9 @@ import jp.aegif.nemaki.cmis.service.VersioningService;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
@@ -534,13 +537,6 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
             }
         }
         
-        // Get the source document to copy its content
-        ObjectData sourceObject = objectService.getObject(
-                callContext, repositoryId, objectId, "*",
-                Boolean.TRUE, IncludeRelationships.NONE, null,
-                Boolean.FALSE, Boolean.FALSE, null
-        );
-        
         // Use createDocumentFromSource to copy the document
         String copiedObjectId = objectService.createDocumentFromSource(
                 callContext,
@@ -644,8 +640,14 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
     }
     
     /**
-     * Parse ACL from JSON format.
+     * Parse ACL from JSON format using Jackson for robust parsing.
      * Expected format: [{"principal":"user1","permissions":["cmis:read","cmis:write"]}]
+     * 
+     * Uses Jackson ObjectMapper for proper JSON parsing to handle:
+     * - Nested structures
+     * - Escaped characters
+     * - Various whitespace patterns
+     * - Unicode characters
      */
     private Acl parseAclFromJson(String json) throws ODataApplicationException {
         if (json == null || json.trim().isEmpty()) {
@@ -653,45 +655,42 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
         }
         
         try {
-            // Simple JSON parsing for ACE array
-            // Format: [{"principal":"user1","permissions":["cmis:read"]}]
-            List<Ace> aces = new java.util.ArrayList<>();
+            ObjectMapper objectMapper = new ObjectMapper();
+            List<Map<String, Object>> aceList = objectMapper.readValue(
+                    json, 
+                    new TypeReference<List<Map<String, Object>>>() {}
+            );
             
-            // Remove outer brackets and split by },{ to get individual ACEs
-            String trimmed = json.trim();
-            if (trimmed.startsWith("[")) {
-                trimmed = trimmed.substring(1);
-            }
-            if (trimmed.endsWith("]")) {
-                trimmed = trimmed.substring(0, trimmed.length() - 1);
-            }
-            
-            if (trimmed.isEmpty()) {
+            if (aceList == null || aceList.isEmpty()) {
                 return null;
             }
             
-            // Split by "},{" to handle multiple ACEs
-            String[] aceStrings = trimmed.split("\\},\\s*\\{");
+            List<Ace> aces = new java.util.ArrayList<>();
             
-            for (String aceStr : aceStrings) {
-                // Clean up the string
-                aceStr = aceStr.trim();
-                if (!aceStr.startsWith("{")) {
-                    aceStr = "{" + aceStr;
-                }
-                if (!aceStr.endsWith("}")) {
-                    aceStr = aceStr + "}";
-                }
-                
+            for (Map<String, Object> aceMap : aceList) {
                 // Extract principal
-                String principal = extractJsonValue(aceStr, "principal");
-                if (principal == null) {
+                Object principalObj = aceMap.get("principal");
+                if (principalObj == null) {
+                    continue;
+                }
+                String principal = principalObj.toString();
+                
+                // Extract permissions array
+                Object permissionsObj = aceMap.get("permissions");
+                if (permissionsObj == null) {
                     continue;
                 }
                 
-                // Extract permissions array
-                List<String> permissions = extractJsonArray(aceStr, "permissions");
-                if (permissions == null || permissions.isEmpty()) {
+                List<String> permissions = new java.util.ArrayList<>();
+                if (permissionsObj instanceof List) {
+                    for (Object perm : (List<?>) permissionsObj) {
+                        if (perm != null) {
+                            permissions.add(perm.toString());
+                        }
+                    }
+                }
+                
+                if (permissions.isEmpty()) {
                     continue;
                 }
                 
@@ -713,45 +712,12 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
             
         } catch (Exception e) {
             throw new ODataApplicationException(
-                    "Invalid ACL JSON format: " + e.getMessage(),
+                    "Invalid ACL JSON format: " + e.getMessage() + 
+                    ". Expected format: [{\"principal\":\"user1\",\"permissions\":[\"cmis:read\"]}]",
                     HttpStatusCode.BAD_REQUEST.getStatusCode(),
                     Locale.ENGLISH
             );
         }
-    }
-    
-    /**
-     * Extract a string value from a simple JSON object.
-     */
-    private String extractJsonValue(String json, String key) {
-        String pattern = "\"" + key + "\"\\s*:\\s*\"([^\"]+)\"";
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
-        java.util.regex.Matcher m = p.matcher(json);
-        if (m.find()) {
-            return m.group(1);
-        }
-        return null;
-    }
-    
-    /**
-     * Extract a string array from a simple JSON object.
-     */
-    private List<String> extractJsonArray(String json, String key) {
-        String pattern = "\"" + key + "\"\\s*:\\s*\\[([^\\]]+)\\]";
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
-        java.util.regex.Matcher m = p.matcher(json);
-        if (m.find()) {
-            String arrayContent = m.group(1);
-            List<String> result = new java.util.ArrayList<>();
-            // Extract quoted strings
-            java.util.regex.Pattern stringPattern = java.util.regex.Pattern.compile("\"([^\"]+)\"");
-            java.util.regex.Matcher stringMatcher = stringPattern.matcher(arrayContent);
-            while (stringMatcher.find()) {
-                result.add(stringMatcher.group(1));
-            }
-            return result;
-        }
-        return null;
     }
     
     /**

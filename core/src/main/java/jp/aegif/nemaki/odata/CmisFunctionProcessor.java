@@ -44,6 +44,7 @@ import jp.aegif.nemaki.cmis.service.VersioningService;
 import java.io.UnsupportedEncodingException;
 import java.math.BigInteger;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.GregorianCalendar;
@@ -367,6 +368,14 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                 if (path != null && path.startsWith("'") && path.endsWith("'")) {
                     path = path.substring(1, path.length() - 1);
                 }
+                // URL decode the path to handle encoded characters (spaces, slashes, etc.)
+                if (path != null) {
+                    try {
+                        path = URLDecoder.decode(path, StandardCharsets.UTF_8.name());
+                    } catch (UnsupportedEncodingException e) {
+                        // UTF-8 is always supported, but handle gracefully
+                    }
+                }
                 break;
             }
         }
@@ -428,7 +437,14 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
             
             switch (paramName) {
                 case "statement":
-                    statement = paramValue;
+                    // URL decode the statement to handle encoded characters
+                    if (paramValue != null) {
+                        try {
+                            statement = URLDecoder.decode(paramValue, StandardCharsets.UTF_8.name());
+                        } catch (UnsupportedEncodingException e) {
+                            statement = paramValue;
+                        }
+                    }
                     break;
                 case "searchAllVersions":
                     searchAllVersions = Boolean.parseBoolean(paramValue);
