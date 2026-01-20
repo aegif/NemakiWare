@@ -140,6 +140,14 @@ public class ItemResource {
                 throw ApiException.invalidArgument("parentId is required");
             }
             
+            CallContext callContext = getCallContext();
+            
+            ObjectData parentObject = objectService.getObject(callContext, repositoryId, parentId, 
+                    "cmis:objectTypeId,cmis:baseTypeId", false, IncludeRelationships.NONE, "cmis:none", false, false, null);
+            if (parentObject == null) {
+                throw ApiException.objectNotFound(parentId, repositoryId, "Parent folder not found");
+            }
+            
             PropertiesImpl cmisProperties = convertToProperties(properties);
             
             PropertyData<?> objectTypeId = cmisProperties.getProperties().get(PropertyIds.OBJECT_TYPE_ID);
@@ -152,9 +160,7 @@ public class ItemResource {
                 cmisProperties.addProperty(new PropertyIdImpl(PropertyIds.BASE_TYPE_ID, "cmis:item"));
             }
             
-            CallContext callContext = getCallContext();
-            
-            String itemId = objectService.createItem(callContext, repositoryId, cmisProperties, parentId, 
+            String itemId = objectService.createItem(callContext, repositoryId, cmisProperties, parentId,
                     null, null, null, null);
             
             ObjectData createdItem = objectService.getObject(callContext, repositoryId, itemId, 

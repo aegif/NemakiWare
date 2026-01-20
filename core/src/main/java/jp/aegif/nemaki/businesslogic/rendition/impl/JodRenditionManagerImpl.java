@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -245,6 +246,27 @@ public class JodRenditionManagerImpl implements RenditionManager {
 	public boolean checkConvertible(String mediatype) {
 		DocumentFormat df = registry.getFormatByMediaType(mediatype);
 		return df != null;
+	}
+	
+	public List<String> getSupportedMimeTypes() {
+		List<String> mimeTypes = new ArrayList<>();
+		if (registry != null) {
+			for (org.jodconverter.document.DocumentFamily family : org.jodconverter.document.DocumentFamily.values()) {
+				try {
+					java.util.Set<DocumentFormat> formats = registry.getOutputFormats(family);
+					if (formats != null) {
+						for (DocumentFormat format : formats) {
+							if (format.getMediaType() != null && !mimeTypes.contains(format.getMediaType())) {
+								mimeTypes.add(format.getMediaType());
+							}
+						}
+					}
+				} catch (Exception e) {
+					log.debug("Could not get output formats for family: " + family);
+				}
+			}
+		}
+		return mimeTypes;
 	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {

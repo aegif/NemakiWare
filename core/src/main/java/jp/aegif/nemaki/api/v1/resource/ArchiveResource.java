@@ -25,6 +25,8 @@ import jp.aegif.nemaki.api.v1.exception.ApiException;
 import jp.aegif.nemaki.api.v1.exception.ProblemDetail;
 import jp.aegif.nemaki.api.v1.model.response.LinkInfo;
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 import jp.aegif.nemaki.util.DateUtil;
@@ -58,6 +60,17 @@ public class ArchiveResource {
     @Context
     private HttpServletRequest httpRequest;
     
+    private void checkAdminAuthorization() {
+        CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+        if (callContext == null) {
+            throw ApiException.unauthorized("Authentication required for archive management operations");
+        }
+        Boolean isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+        if (isAdmin == null || !isAdmin) {
+            throw ApiException.permissionDenied("Only administrators can perform archive management operations");
+        }
+    }
+    
     @GET
     @Operation(
             summary = "List archived items",
@@ -86,11 +99,18 @@ public class ArchiveResource {
         logger.info("API v1: Listing archives in repository " + repositoryId);
         
         try {
-            List<Archive> allArchives = contentService.getArchives(repositoryId, skipCount, maxItems + 1, desc);
-            
             List<Archive> filteredArchives = new ArrayList<>();
-            if (CollectionUtils.isNotEmpty(allArchives)) {
-                for (Archive a : allArchives) {
+            int fetchSkip = skipCount;
+            int fetchSize = maxItems * 2;
+            boolean hasMoreItems = false;
+            
+            while (filteredArchives.size() <= maxItems) {
+                List<Archive> batch = contentService.getArchives(repositoryId, fetchSkip, fetchSize, desc);
+                if (batch == null || batch.isEmpty()) {
+                    break;
+                }
+                
+                for (Archive a : batch) {
                     if (NodeType.ATTACHMENT.value().equals(a.getType())) {
                         continue;
                     } else if (NodeType.CMIS_DOCUMENT.value().equals(a.getType())) {
@@ -98,11 +118,19 @@ public class ArchiveResource {
                         if (!ilv) continue;
                     }
                     filteredArchives.add(a);
+                    if (filteredArchives.size() > maxItems) {
+                        hasMoreItems = true;
+                        break;
+                    }
                 }
+                
+                if (batch.size() < fetchSize) {
+                    break;
+                }
+                fetchSkip += fetchSize;
             }
             
-            boolean hasMoreItems = filteredArchives.size() > maxItems;
-            if (hasMoreItems) {
+            if (filteredArchives.size() > maxItems) {
                 filteredArchives = filteredArchives.subList(0, maxItems);
             }
             
@@ -216,6 +244,8 @@ public class ArchiveResource {
         
         logger.info("API v1: Restoring archive " + archiveId + " in repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             Archive archive = contentService.getArchive(repositoryId, archiveId);
             if (archive == null) {
@@ -277,6 +307,8 @@ public class ArchiveResource {
         
         logger.info("API v1: Destroying archive " + archiveId + " in repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             Archive archive = contentService.getArchive(repositoryId, archiveId);
             if (archive == null) {
@@ -315,6 +347,8 @@ public class ArchiveResource {
             @PathParam("repositoryId") String repositoryId) {
         
         logger.info("API v1: Emptying trash in repository " + repositoryId);
+        
+        checkAdminAuthorization();
         
         try {
             List<Archive> allArchives = contentService.getArchives(repositoryId, null, null, false);

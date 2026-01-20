@@ -26,7 +26,9 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.CacheService;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
+import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,6 +64,17 @@ public class CacheResource {
     @Context
     private HttpServletRequest httpRequest;
     
+    private void checkAdminAuthorization() {
+        CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+        if (callContext == null) {
+            throw ApiException.unauthorized("Authentication required for cache management operations");
+        }
+        Boolean isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+        if (isAdmin == null || !isAdmin) {
+            throw ApiException.permissionDenied("Only administrators can perform cache management operations");
+        }
+    }
+    
     @DELETE
     @Path("/objects/{objectId}")
     @Operation(
@@ -95,6 +108,8 @@ public class CacheResource {
             @QueryParam("beforeDate") String beforeDate) {
         
         logger.info("API v1: Invalidating cache for object " + objectId + " in repository " + repositoryId);
+        
+        checkAdminAuthorization();
         
         Lock lock = threadLockService.getWriteLock(repositoryId, objectId);
         try {
@@ -174,6 +189,8 @@ public class CacheResource {
         
         logger.info("API v1: Invalidating tree cache for folder " + folderId + " in repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         CacheInvalidationResponse response = new CacheInvalidationResponse();
         response.setObjectId(folderId);
         
@@ -231,6 +248,8 @@ public class CacheResource {
             @PathParam("repositoryId") String repositoryId) {
         
         logger.info("API v1: Invalidating type cache for repository " + repositoryId);
+        
+        checkAdminAuthorization();
         
         try {
             if (typeManager == null) {

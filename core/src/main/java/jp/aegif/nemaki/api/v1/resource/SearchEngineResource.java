@@ -25,6 +25,8 @@ import jp.aegif.nemaki.api.v1.exception.ApiException;
 import jp.aegif.nemaki.api.v1.exception.ProblemDetail;
 import jp.aegif.nemaki.api.v1.model.response.LinkInfo;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService.IndexHealthStatus;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService.ReindexStatus;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService.SolrQueryResult;
@@ -58,6 +60,17 @@ public class SearchEngineResource {
     
     @Context
     private HttpServletRequest httpRequest;
+    
+    private void checkAdminAuthorization() {
+        CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+        if (callContext == null) {
+            throw ApiException.unauthorized("Authentication required for search engine management operations");
+        }
+        Boolean isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+        if (isAdmin == null || !isAdmin) {
+            throw ApiException.permissionDenied("Only administrators can perform search engine management operations");
+        }
+    }
     
     @GET
     @Path("/url")
@@ -239,13 +252,16 @@ public class SearchEngineResource {
         
         logger.info("API v1: Initializing search index for repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             if (solrUtil == null) {
                 throw ApiException.internalError("Solr utility is not available");
             }
             
             String solrUrl = solrUtil.getSolrUrl();
-            String url = solrUrl + "admin/cores?core=nemaki&action=init&repositoryId=" + repositoryId;
+            String encodedRepoId = java.net.URLEncoder.encode(repositoryId, "UTF-8");
+            String url = solrUrl + "admin/cores?core=nemaki&action=init&repositoryId=" + encodedRepoId;
             
             org.apache.hc.client5.http.classic.HttpClient httpClient = 
                 org.apache.hc.client5.http.impl.classic.HttpClientBuilder.create().build();
@@ -309,6 +325,8 @@ public class SearchEngineResource {
             @PathParam("repositoryId") String repositoryId) {
         
         logger.info("API v1: Starting full reindex for repository " + repositoryId);
+        
+        checkAdminAuthorization();
         
         try {
             if (solrIndexMaintenanceService == null) {
@@ -375,6 +393,8 @@ public class SearchEngineResource {
         
         logger.info("API v1: Starting folder reindex for " + folderId + " in repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             if (solrIndexMaintenanceService == null) {
                 throw ApiException.internalError("Solr index maintenance service is not available");
@@ -440,6 +460,8 @@ public class SearchEngineResource {
         
         logger.info("API v1: Reindexing document " + objectId + " in repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             if (solrIndexMaintenanceService == null) {
                 throw ApiException.internalError("Solr index maintenance service is not available");
@@ -493,6 +515,8 @@ public class SearchEngineResource {
         
         logger.info("API v1: Cancelling reindex for repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             if (solrIndexMaintenanceService == null) {
                 throw ApiException.internalError("Solr index maintenance service is not available");
@@ -544,6 +568,8 @@ public class SearchEngineResource {
         
         logger.info("API v1: Deleting " + objectId + " from index in repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             if (solrIndexMaintenanceService == null) {
                 throw ApiException.internalError("Solr index maintenance service is not available");
@@ -592,6 +618,8 @@ public class SearchEngineResource {
             @PathParam("repositoryId") String repositoryId) {
         
         logger.info("API v1: Clearing index for repository " + repositoryId);
+        
+        checkAdminAuthorization();
         
         try {
             if (solrIndexMaintenanceService == null) {
@@ -642,6 +670,8 @@ public class SearchEngineResource {
         
         logger.info("API v1: Optimizing index for repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             if (solrIndexMaintenanceService == null) {
                 throw ApiException.internalError("Solr index maintenance service is not available");
@@ -670,10 +700,9 @@ public class SearchEngineResource {
     
     @POST
     @Path("/query")
-    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Operation(
             summary = "Execute Solr query",
-            description = "Executes a raw Solr query for debugging and administration purposes"
+            description = "Executes a raw Solr query for debugging and administration purposes. Parameters are passed as query parameters."
     )
     @ApiResponses(value = {
             @ApiResponse(
@@ -700,6 +729,8 @@ public class SearchEngineResource {
             @QueryParam("fl") String fields) {
         
         logger.info("API v1: Executing Solr query in repository " + repositoryId);
+        
+        checkAdminAuthorization();
         
         try {
             if (solrIndexMaintenanceService == null) {

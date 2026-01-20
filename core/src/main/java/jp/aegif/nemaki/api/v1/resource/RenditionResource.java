@@ -26,6 +26,8 @@ import jp.aegif.nemaki.api.v1.exception.ApiException;
 import jp.aegif.nemaki.api.v1.exception.ProblemDetail;
 import jp.aegif.nemaki.api.v1.model.response.LinkInfo;
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.dao.ContentDaoService;
@@ -91,6 +93,17 @@ public class RenditionResource {
     
     @Context
     private HttpServletRequest httpRequest;
+    
+    private void checkAdminAuthorization() {
+        CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+        if (callContext == null) {
+            throw ApiException.unauthorized("Authentication required for rendition management operations");
+        }
+        Boolean isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+        if (isAdmin == null || !isAdmin) {
+            throw ApiException.permissionDenied("Only administrators can perform rendition management operations");
+        }
+    }
     
     @GET
     @Path("/document/{objectId}")
@@ -261,12 +274,13 @@ public class RenditionResource {
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
                 public void write(OutputStream output) throws IOException {
-                    byte[] buffer = new byte[8192];
-                    int bytesRead;
-                    while ((bytesRead = inputStream.read(buffer)) != -1) {
-                        output.write(buffer, 0, bytesRead);
+                    try (InputStream in = inputStream) {
+                        byte[] buffer = new byte[8192];
+                        int bytesRead;
+                        while ((bytesRead = in.read(buffer)) != -1) {
+                            output.write(buffer, 0, bytesRead);
+                        }
                     }
-                    inputStream.close();
                 }
             };
             
@@ -324,6 +338,8 @@ public class RenditionResource {
             @QueryParam("force") @DefaultValue("false") boolean force) {
         
         logger.info("API v1: Generating rendition for document " + objectId + " in repository " + repositoryId + ", force=" + force);
+        
+        checkAdminAuthorization();
         
         try {
             Content content = contentService.getContent(repositoryId, objectId);
@@ -443,10 +459,23 @@ public class RenditionResource {
         
         logger.info("API v1: Deleting rendition " + renditionId + " in repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             Rendition rendition = contentDaoService.getRendition(repositoryId, renditionId);
             if (rendition == null) {
                 throw ApiException.objectNotFound(renditionId, repositoryId);
+            }
+            
+            String documentId = rendition.getRenditionDocumentId();
+            if (documentId != null) {
+                Content content = contentService.getContent(repositoryId, documentId);
+                if (content != null && content.getRenditionIds() != null) {
+                    List<String> updatedRenditionIds = new ArrayList<>(content.getRenditionIds());
+                    updatedRenditionIds.remove(renditionId);
+                    content.setRenditionIds(updatedRenditionIds);
+                    contentDaoService.update(repositoryId, content);
+                }
             }
             
             contentDaoService.delete(repositoryId, renditionId);
@@ -482,7 +511,12 @@ public class RenditionResource {
             @PathParam("repositoryId") String repositoryId) {
         
         SupportedTypesResponse response = new SupportedTypesResponse();
-        response.setSupportedTypes(SUPPORTED_MIME_TYPES);
+        List<String> dynamicTypes = renditionManager.getSupportedMimeTypes();
+        if (dynamicTypes == null || dynamicTypes.isEmpty()) {
+            response.setSupportedTypes(SUPPORTED_MIME_TYPES);
+        } else {
+            response.setSupportedTypes(dynamicTypes);
+        }
         
         Map<String, LinkInfo> links = new HashMap<>();
         links.put("self", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/renditions/supported-types"));
