@@ -226,6 +226,28 @@ test.describe('User Management API', () => {
     expect(data).toHaveProperty('users');
     console.log(`Search returned ${data.users.length} users`);
   });
+
+  test('should reject unauthenticated access to user list', async ({ request }) => {
+    const { status } = await apiRequestNoAuth(
+      request,
+      'GET',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/users`
+    );
+
+    expect(status).toBe(401);
+    console.log('Unauthenticated user list access correctly rejected');
+  });
+
+  test('should reject non-admin access to user list', async ({ request }) => {
+    const { status } = await apiRequestNonAdmin(
+      request,
+      'GET',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/users`
+    );
+
+    expect(status).toBe(403);
+    console.log('Non-admin user list access correctly rejected with 403');
+  });
 });
 
 /**
@@ -321,6 +343,28 @@ test.describe('Group Management API', () => {
     expect(status).toBe(200);
     expect(data).toHaveProperty('groups');
     console.log(`Search returned ${data.groups.length} groups`);
+  });
+
+  test('should reject unauthenticated access to group list', async ({ request }) => {
+    const { status } = await apiRequestNoAuth(
+      request,
+      'GET',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/groups`
+    );
+
+    expect(status).toBe(401);
+    console.log('Unauthenticated group list access correctly rejected');
+  });
+
+  test('should reject non-admin access to group list', async ({ request }) => {
+    const { status } = await apiRequestNonAdmin(
+      request,
+      'GET',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/groups`
+    );
+
+    expect(status).toBe(403);
+    console.log('Non-admin group list access correctly rejected with 403');
   });
 });
 

@@ -32,6 +32,8 @@ import jp.aegif.nemaki.api.v1.model.response.GroupResponse;
 import jp.aegif.nemaki.api.v1.model.response.LinkInfo;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.GroupItem;
@@ -69,12 +71,23 @@ public class GroupResource {
     @Context
     private UriInfo uriInfo;
     
-    @Context
-    private HttpServletRequest httpRequest;
+        @Context
+        private HttpServletRequest httpRequest;
     
-    @GET
-    @Operation(
-            summary = "List all groups",
+        private void checkAdminAuthorization() {
+            CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+            if (callContext == null) {
+                throw ApiException.unauthorized("Authentication required for group management operations");
+            }
+            Boolean isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+            if (isAdmin == null || !isAdmin) {
+                throw ApiException.permissionDenied("Only administrators can perform group management operations");
+            }
+        }
+    
+        @GET
+        @Operation(
+                summary = "List all groups",
             description = "Gets a list of all groups in the repository"
     )
     @ApiResponses(value = {
@@ -103,10 +116,12 @@ public class GroupResource {
             @Parameter(description = "Number of items to skip")
             @QueryParam("skipCount") @DefaultValue("0") Integer skipCount) {
         
-        logger.info("API v1: Listing groups for repository " + repositoryId);
+                logger.info("API v1: Listing groups for repository " + repositoryId);
         
-        try {
-            List<GroupItem> allGroups = ObjectUtils.defaultIfNull(
+                checkAdminAuthorization();
+        
+                try {
+                    List<GroupItem> allGroups = ObjectUtils.defaultIfNull(
                     contentService.getGroupItems(repositoryId), Collections.emptyList());
             
             int totalCount = allGroups.size();
@@ -165,12 +180,14 @@ public class GroupResource {
             @Parameter(description = "Group ID", required = true, example = "administrators")
             @PathParam("groupId") String groupId) {
         
-        logger.info("API v1: Getting group " + groupId + " from repository " + repositoryId);
+                logger.info("API v1: Getting group " + groupId + " from repository " + repositoryId);
         
-        try {
-            GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
+                checkAdminAuthorization();
+        
+                try {
+                    GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
             
-            if (group == null) {
+                    if (group == null) {
                 throw ApiException.groupNotFound(groupId, repositoryId);
             }
             
@@ -209,10 +226,12 @@ public class GroupResource {
             @Parameter(description = "Maximum number of items to return")
             @QueryParam("maxItems") @DefaultValue("50") Integer maxItems) {
         
-        logger.info("API v1: Searching groups with query '" + query + "' in repository " + repositoryId);
+                logger.info("API v1: Searching groups with query '" + query + "' in repository " + repositoryId);
         
-        try {
-            if (StringUtils.isBlank(query)) {
+                checkAdminAuthorization();
+        
+                try {
+                    if (StringUtils.isBlank(query)) {
                 throw ApiException.invalidArgument("Query parameter is required");
             }
             
@@ -282,14 +301,16 @@ public class GroupResource {
             @PathParam("repositoryId") String repositoryId,
             GroupRequest request) {
         
-        try {
-            if (request == null) {
-                throw ApiException.invalidArgument("Request body is required");
-            }
+                checkAdminAuthorization();
+        
+                try {
+                    if (request == null) {
+                        throw ApiException.invalidArgument("Request body is required");
+                    }
             
-            logger.info("API v1: Creating group " + request.getGroupId() + " in repository " + repositoryId);
+                    logger.info("API v1: Creating group " + request.getGroupId() + " in repository " + repositoryId);
             
-            validateCreateGroupRequest(request, repositoryId);
+                    validateCreateGroupRequest(request, repositoryId);
             
             GroupItem existingGroup = contentService.getGroupItemById(repositoryId, request.getGroupId());
             if (existingGroup != null) {
@@ -356,15 +377,17 @@ public class GroupResource {
             @PathParam("groupId") String groupId,
             GroupRequest request) {
         
-        logger.info("API v1: Updating group " + groupId + " in repository " + repositoryId);
+                logger.info("API v1: Updating group " + groupId + " in repository " + repositoryId);
         
-        try {
-            GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
-            if (group == null) {
-                throw ApiException.groupNotFound(groupId, repositoryId);
-            }
+                checkAdminAuthorization();
+        
+                try {
+                    GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
+                    if (group == null) {
+                        throw ApiException.groupNotFound(groupId, repositoryId);
+                    }
             
-            if (request.getGroupName() != null) {
+                    if (request.getGroupName() != null) {
                 group.setName(request.getGroupName());
             }
             
@@ -419,15 +442,17 @@ public class GroupResource {
             @Parameter(description = "Group ID", required = true)
             @PathParam("groupId") String groupId) {
         
-        logger.info("API v1: Deleting group " + groupId + " from repository " + repositoryId);
+                logger.info("API v1: Deleting group " + groupId + " from repository " + repositoryId);
         
-        try {
-            GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
-            if (group == null) {
-                throw ApiException.groupNotFound(groupId, repositoryId);
-            }
+                checkAdminAuthorization();
+        
+                try {
+                    GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
+                    if (group == null) {
+                        throw ApiException.groupNotFound(groupId, repositoryId);
+                    }
             
-            removeGroupFromAllNestedGroups(repositoryId, groupId);
+                    removeGroupFromAllNestedGroups(repositoryId, groupId);
             
             contentService.delete(new SystemCallContext(repositoryId), repositoryId, group.getId(), false);
             
@@ -473,15 +498,17 @@ public class GroupResource {
             @PathParam("groupId") String groupId,
             GroupMembersRequest request) {
         
-        logger.info("API v1: Adding members to group " + groupId + " in repository " + repositoryId);
+                logger.info("API v1: Adding members to group " + groupId + " in repository " + repositoryId);
         
-        try {
-            GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
-            if (group == null) {
-                throw ApiException.groupNotFound(groupId, repositoryId);
-            }
+                checkAdminAuthorization();
+        
+                try {
+                    GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
+                    if (group == null) {
+                        throw ApiException.groupNotFound(groupId, repositoryId);
+                    }
             
-            List<String> currentUsers = group.getUsers() != null ? new ArrayList<>(group.getUsers()) : new ArrayList<>();
+                    List<String> currentUsers = group.getUsers() != null ? new ArrayList<>(group.getUsers()) : new ArrayList<>();
             List<String> currentGroups = group.getGroups() != null ? new ArrayList<>(group.getGroups()) : new ArrayList<>();
             
             if (request.getUsers() != null) {
@@ -560,16 +587,18 @@ public class GroupResource {
             @PathParam("groupId") String groupId,
             GroupMembersRequest request) {
         
-        logger.info("API v1: Removing members from group " + groupId + " in repository " + repositoryId);
+                logger.info("API v1: Removing members from group " + groupId + " in repository " + repositoryId);
         
-        try {
-            GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
-            if (group == null) {
-                throw ApiException.groupNotFound(groupId, repositoryId);
-            }
+                checkAdminAuthorization();
+        
+                try {
+                    GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
+                    if (group == null) {
+                        throw ApiException.groupNotFound(groupId, repositoryId);
+                    }
             
-            List<String> currentUsers = group.getUsers() != null ? new ArrayList<>(group.getUsers()) : new ArrayList<>();
-            List<String> currentGroups = group.getGroups() != null ? new ArrayList<>(group.getGroups()) : new ArrayList<>();
+                    List<String> currentUsers = group.getUsers() != null ? new ArrayList<>(group.getUsers()) : new ArrayList<>();
+                    List<String> currentGroups = group.getGroups() != null ? new ArrayList<>(group.getGroups()) : new ArrayList<>();
             
             if (request.getUsers() != null) {
                 currentUsers.removeAll(request.getUsers());

@@ -32,6 +32,8 @@ import jp.aegif.nemaki.api.v1.model.response.UserListResponse;
 import jp.aegif.nemaki.api.v1.model.response.UserResponse;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.GroupItem;
@@ -73,12 +75,23 @@ public class UserResource {
     @Context
     private UriInfo uriInfo;
     
-    @Context
-    private HttpServletRequest httpRequest;
+        @Context
+        private HttpServletRequest httpRequest;
     
-    @GET
-    @Operation(
-            summary = "List all users",
+        private void checkAdminAuthorization() {
+            CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+            if (callContext == null) {
+                throw ApiException.unauthorized("Authentication required for user management operations");
+            }
+            Boolean isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+            if (isAdmin == null || !isAdmin) {
+                throw ApiException.permissionDenied("Only administrators can perform user management operations");
+            }
+        }
+    
+        @GET
+        @Operation(
+                summary = "List all users",
             description = "Gets a list of all users in the repository"
     )
     @ApiResponses(value = {
@@ -107,10 +120,12 @@ public class UserResource {
             @Parameter(description = "Number of items to skip")
             @QueryParam("skipCount") @DefaultValue("0") Integer skipCount) {
         
-        logger.info("API v1: Listing users for repository " + repositoryId);
+                logger.info("API v1: Listing users for repository " + repositoryId);
         
-        try {
-            List<UserItem> allUsers = ObjectUtils.defaultIfNull(
+                checkAdminAuthorization();
+        
+                try {
+                    List<UserItem> allUsers = ObjectUtils.defaultIfNull(
                     contentService.getUserItems(repositoryId), Collections.emptyList());
             
             int totalCount = allUsers.size();
@@ -169,10 +184,12 @@ public class UserResource {
             @Parameter(description = "User ID", required = true, example = "admin")
             @PathParam("userId") String userId) {
         
-        logger.info("API v1: Getting user " + userId + " from repository " + repositoryId);
+                logger.info("API v1: Getting user " + userId + " from repository " + repositoryId);
         
-        try {
-            UserItem user = contentService.getUserItemById(repositoryId, userId);
+                checkAdminAuthorization();
+        
+                try {
+                    UserItem user = contentService.getUserItemById(repositoryId, userId);
             
             if (user == null) {
                 throw ApiException.userNotFound(userId, repositoryId);
@@ -213,10 +230,12 @@ public class UserResource {
             @Parameter(description = "Maximum number of items to return")
             @QueryParam("maxItems") @DefaultValue("50") Integer maxItems) {
         
-        logger.info("API v1: Searching users with query '" + query + "' in repository " + repositoryId);
+                logger.info("API v1: Searching users with query '" + query + "' in repository " + repositoryId);
         
-        try {
-            if (StringUtils.isBlank(query)) {
+                checkAdminAuthorization();
+        
+                try {
+                    if (StringUtils.isBlank(query)) {
                 throw ApiException.invalidArgument("Query parameter is required");
             }
             
@@ -286,14 +305,16 @@ public class UserResource {
             @PathParam("repositoryId") String repositoryId,
             UserRequest request) {
         
-        try {
-            if (request == null) {
-                throw ApiException.invalidArgument("Request body is required");
-            }
+                checkAdminAuthorization();
+        
+                try {
+                    if (request == null) {
+                        throw ApiException.invalidArgument("Request body is required");
+                    }
             
-            logger.info("API v1: Creating user " + request.getUserId() + " in repository " + repositoryId);
+                    logger.info("API v1: Creating user " + request.getUserId() + " in repository " + repositoryId);
             
-            validateCreateUserRequest(request, repositoryId);
+                    validateCreateUserRequest(request, repositoryId);
             
             UserItem existingUser = contentService.getUserItemById(repositoryId, request.getUserId());
             if (existingUser != null) {
@@ -371,15 +392,17 @@ public class UserResource {
             @PathParam("userId") String userId,
             UserRequest request) {
         
-        logger.info("API v1: Updating user " + userId + " in repository " + repositoryId);
+                logger.info("API v1: Updating user " + userId + " in repository " + repositoryId);
         
-        try {
-            UserItem user = contentService.getUserItemById(repositoryId, userId);
-            if (user == null) {
-                throw ApiException.userNotFound(userId, repositoryId);
-            }
+                checkAdminAuthorization();
+        
+                try {
+                    UserItem user = contentService.getUserItemById(repositoryId, userId);
+                    if (user == null) {
+                        throw ApiException.userNotFound(userId, repositoryId);
+                    }
             
-            if (request.getUserName() != null) {
+                    if (request.getUserName() != null) {
                 user.setName(request.getUserName());
             }
             
@@ -450,15 +473,17 @@ public class UserResource {
             @Parameter(description = "User ID", required = true)
             @PathParam("userId") String userId) {
         
-        logger.info("API v1: Deleting user " + userId + " from repository " + repositoryId);
+                logger.info("API v1: Deleting user " + userId + " from repository " + repositoryId);
         
-        try {
-            UserItem user = contentService.getUserItemById(repositoryId, userId);
-            if (user == null) {
-                throw ApiException.userNotFound(userId, repositoryId);
-            }
+                checkAdminAuthorization();
+        
+                try {
+                    UserItem user = contentService.getUserItemById(repositoryId, userId);
+                    if (user == null) {
+                        throw ApiException.userNotFound(userId, repositoryId);
+                    }
             
-            removeUserFromAllGroups(repositoryId, userId);
+                    removeUserFromAllGroups(repositoryId, userId);
             
             contentService.delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
             
@@ -508,10 +533,12 @@ public class UserResource {
             @PathParam("userId") String userId,
             PasswordChangeRequest request) {
         
-        logger.info("API v1: Changing password for user " + userId + " in repository " + repositoryId);
+                logger.info("API v1: Changing password for user " + userId + " in repository " + repositoryId);
         
-        try {
-            if (request.getOldPassword() == null || request.getNewPassword() == null) {
+                checkAdminAuthorization();
+        
+                try {
+                    if (request.getOldPassword() == null || request.getNewPassword() == null) {
                 throw ApiException.invalidArgument("Both oldPassword and newPassword are required");
             }
             
