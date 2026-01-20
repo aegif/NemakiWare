@@ -107,9 +107,13 @@ public class AuthResource {
             @PathParam("repositoryId") String repositoryId,
             LoginRequest request) {
         
-        logger.info("API v1: Login attempt for user " + request.getUserId() + " in repository " + repositoryId);
-        
         try {
+            if (request == null) {
+                throw ApiException.invalidArgument("Request body is required");
+            }
+            
+            logger.info("API v1: Login attempt for user " + request.getUserId() + " in repository " + repositoryId);
+            
             if (StringUtils.isBlank(request.getUserId())) {
                 throw ApiException.invalidArgument("userId is required");
             }
@@ -177,9 +181,13 @@ public class AuthResource {
         logger.info("API v1: Logout request for repository " + repositoryId);
         
         try {
-            String username = getAuthenticatedUsername();
+            String username = getAuthenticatedUsername(repositoryId);
             if (username == null || "anonymous".equals(username)) {
                 throw ApiException.unauthorized("Not authenticated");
+            }
+            
+            if (tokenService != null) {
+                tokenService.removeToken("", repositoryId, username);
             }
             
             logger.info("API v1: Logout successful for user " + username);
@@ -225,7 +233,7 @@ public class AuthResource {
         logger.info("API v1: Token refresh request for repository " + repositoryId);
         
         try {
-            String username = getAuthenticatedUsername();
+            String username = getAuthenticatedUsername(repositoryId);
             if (username == null || "anonymous".equals(username)) {
                 throw ApiException.unauthorized("Not authenticated");
             }
@@ -290,7 +298,7 @@ public class AuthResource {
         logger.info("API v1: Get current user request for repository " + repositoryId);
         
         try {
-            String username = getAuthenticatedUsername();
+            String username = getAuthenticatedUsername(repositoryId);
             if (username == null || "anonymous".equals(username)) {
                 throw ApiException.unauthorized("Not authenticated");
             }
@@ -457,25 +465,37 @@ public class AuthResource {
         }
     }
     
-    private String getAuthenticatedUsername() {
+    private String getAuthenticatedUsername(String repositoryId) {
         if (httpRequest != null && httpRequest.getUserPrincipal() != null) {
             return httpRequest.getUserPrincipal().getName();
         }
         
         String authHeader = httpRequest != null ? httpRequest.getHeader("Authorization") : null;
-        if (authHeader != null && authHeader.startsWith("Basic ")) {
-            try {
-                String credentials = new String(Base64.getDecoder().decode(authHeader.substring(6)));
-                int colonIndex = credentials.indexOf(':');
-                if (colonIndex > 0) {
-                    return credentials.substring(0, colonIndex);
+        if (authHeader != null) {
+            if (authHeader.startsWith("Basic ")) {
+                try {
+                    String credentials = new String(Base64.getDecoder().decode(authHeader.substring(6)));
+                    int colonIndex = credentials.indexOf(':');
+                    if (colonIndex > 0) {
+                        return credentials.substring(0, colonIndex);
+                    }
+                } catch (Exception e) {
+                    logger.warning("Failed to decode Basic auth header: " + e.getMessage());
                 }
-            } catch (Exception e) {
-                logger.warning("Failed to decode Basic auth header: " + e.getMessage());
+            } else if (authHeader.startsWith("Bearer ")) {
+                String token = authHeader.substring(7);
+                return getUsernameFromBearerToken(repositoryId, token);
             }
         }
         
         return null;
+    }
+    
+    private String getUsernameFromBearerToken(String repositoryId, String token) {
+        if (tokenService == null || StringUtils.isBlank(token)) {
+            return null;
+        }
+        return tokenService.validateToken("", repositoryId, token);
     }
     
     private UserResponse convertToUserResponse(UserItem user, String repositoryId) {
@@ -528,6 +548,12 @@ public class AuthResource {
         return userGroups;
     }
     
+    /**
+     * SECURITY WARNING: This is a simplified SAML implementation for development/testing purposes only.
+     * It does NOT perform proper SAML signature verification, Issuer validation, or Condition checks.
+     * For production use, integrate a proper SAML library (e.g., OpenSAML) with full security validation.
+     * Using this implementation in production could allow arbitrary NameID injection attacks.
+     */
     private String extractUserNameFromSAMLResponse(String samlResponse) {
         try {
             byte[] decodedBytes = Base64.getDecoder().decode(samlResponse);
@@ -552,6 +578,12 @@ public class AuthResource {
         }
     }
     
+    /**
+     * SECURITY WARNING: This is a simplified OIDC implementation for development/testing purposes only.
+     * It does NOT perform proper ID token signature verification or access token validation.
+     * The user_info is accepted directly from the client without verification against the IdP.
+     * For production use, implement proper OIDC token validation with signature verification.
+     */
     private String extractUserNameFromOIDCUserInfo(Map<String, Object> userInfo) {
         if (userInfo.containsKey("preferred_username")) {
             return (String) userInfo.get("preferred_username");

@@ -286,9 +286,13 @@ public class UserResource {
             @PathParam("repositoryId") String repositoryId,
             UserRequest request) {
         
-        logger.info("API v1: Creating user " + request.getUserId() + " in repository " + repositoryId);
-        
         try {
+            if (request == null) {
+                throw ApiException.invalidArgument("Request body is required");
+            }
+            
+            logger.info("API v1: Creating user " + request.getUserId() + " in repository " + repositoryId);
+            
             validateCreateUserRequest(request, repositoryId);
             
             UserItem existingUser = contentService.getUserItemById(repositoryId, request.getUserId());
@@ -453,6 +457,8 @@ public class UserResource {
             if (user == null) {
                 throw ApiException.userNotFound(userId, repositoryId);
             }
+            
+            removeUserFromAllGroups(repositoryId, userId);
             
             contentService.delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
             
@@ -622,6 +628,22 @@ public class UserResource {
                 members.remove(userId);
                 group.setUsers(members);
                 contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
+            }
+        }
+    }
+    
+    private void removeUserFromAllGroups(String repositoryId, String userId) {
+        List<GroupItem> allGroups = ObjectUtils.defaultIfNull(
+                contentService.getGroupItems(repositoryId), Collections.emptyList());
+        
+        for (GroupItem group : allGroups) {
+            List<String> members = group.getUsers();
+            if (members != null && members.contains(userId)) {
+                List<String> updatedMembers = new ArrayList<>(members);
+                updatedMembers.remove(userId);
+                group.setUsers(updatedMembers);
+                contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
+                logger.info("Removed user " + userId + " from group " + group.getGroupId());
             }
         }
     }

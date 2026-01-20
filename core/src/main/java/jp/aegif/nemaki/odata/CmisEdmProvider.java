@@ -160,9 +160,9 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
             } else if (entitySetName.equals(ES_TYPES_NAME)) {
                 return createEntitySet(ES_TYPES_NAME, ET_TYPE_FQN);
             } else if (entitySetName.equals(ES_USERS_NAME)) {
-                return createEntitySet(ES_USERS_NAME, ET_USER_FQN);
+                return createUsersEntitySet();
             } else if (entitySetName.equals(ES_GROUPS_NAME)) {
-                return createEntitySet(ES_GROUPS_NAME, ET_GROUP_FQN);
+                return createGroupsEntitySet();
             }
         }
         return null;
@@ -871,6 +871,48 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
         CsdlEntitySet entitySet = new CsdlEntitySet();
         entitySet.setName(name);
         entitySet.setType(entityType);
+        return entitySet;
+    }
+    
+    /**
+     * Create the Users entity set with NavigationPropertyBinding.
+     */
+    private CsdlEntitySet createUsersEntitySet() {
+        CsdlEntitySet entitySet = new CsdlEntitySet();
+        entitySet.setName(ES_USERS_NAME);
+        entitySet.setType(ET_USER_FQN);
+        
+        List<CsdlNavigationPropertyBinding> navBindings = new ArrayList<>();
+        CsdlNavigationPropertyBinding groupsBinding = new CsdlNavigationPropertyBinding();
+        groupsBinding.setPath("groups");
+        groupsBinding.setTarget(ES_GROUPS_NAME);
+        navBindings.add(groupsBinding);
+        entitySet.setNavigationPropertyBindings(navBindings);
+        
+        return entitySet;
+    }
+    
+    /**
+     * Create the Groups entity set with NavigationPropertyBinding.
+     */
+    private CsdlEntitySet createGroupsEntitySet() {
+        CsdlEntitySet entitySet = new CsdlEntitySet();
+        entitySet.setName(ES_GROUPS_NAME);
+        entitySet.setType(ET_GROUP_FQN);
+        
+        List<CsdlNavigationPropertyBinding> navBindings = new ArrayList<>();
+        CsdlNavigationPropertyBinding usersBinding = new CsdlNavigationPropertyBinding();
+        usersBinding.setPath("users");
+        usersBinding.setTarget(ES_USERS_NAME);
+        navBindings.add(usersBinding);
+        
+        CsdlNavigationPropertyBinding nestedGroupsBinding = new CsdlNavigationPropertyBinding();
+        nestedGroupsBinding.setPath("nestedGroups");
+        nestedGroupsBinding.setTarget(ES_GROUPS_NAME);
+        navBindings.add(nestedGroupsBinding);
+        
+        entitySet.setNavigationPropertyBindings(navBindings);
+        
         return entitySet;
     }
     

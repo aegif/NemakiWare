@@ -85,6 +85,43 @@ public class TokenServiceImpl implements TokenService{
 
 			return repoMap.get(userName);
 		}
+		
+		private void remove(String app, String repositoryId, String userName){
+			Map<String, Map<String, Token>> appMap = map.get(app);
+			if(appMap == null){
+				return;
+			}
+			Map<String, Token> repoMap = appMap.get(repositoryId);
+			if(repoMap == null){
+				return;
+			}
+			repoMap.remove(userName);
+			log.info("Token removed for user: " + userName + ", repository: " + repositoryId + ", app: " + app);
+		}
+		
+		private String validate(String app, String repositoryId, String tokenString){
+			Map<String, Map<String, Token>> appMap = map.get(app);
+			if(appMap == null){
+				return null;
+			}
+			Map<String, Token> repoMap = appMap.get(repositoryId);
+			if(repoMap == null){
+				return null;
+			}
+			long currentTime = System.currentTimeMillis();
+			for(Map.Entry<String, Token> entry : repoMap.entrySet()){
+				Token token = entry.getValue();
+				if(token != null && tokenString.equals(token.getToken())){
+					if(token.getExpiration() > currentTime){
+						return entry.getKey();
+					} else {
+						log.info("Token expired for user: " + entry.getKey());
+						return null;
+					}
+				}
+			}
+			return null;
+		}
 	}
 	
 	public void init() {
@@ -110,6 +147,16 @@ public class TokenServiceImpl implements TokenService{
 	@Override
 	public Token setToken(String app, String repositoryId, String userId) {
 		return tokenMap.set(app,repositoryId,  userId);
+	}
+	
+	@Override
+	public void removeToken(String app, String repositoryId, String userId) {
+		tokenMap.remove(app, repositoryId, userId);
+	}
+	
+	@Override
+	public String validateToken(String app, String repositoryId, String tokenString) {
+		return tokenMap.validate(app, repositoryId, tokenString);
 	}
 	
 	@Override

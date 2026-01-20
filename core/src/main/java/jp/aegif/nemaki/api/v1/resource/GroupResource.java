@@ -282,9 +282,13 @@ public class GroupResource {
             @PathParam("repositoryId") String repositoryId,
             GroupRequest request) {
         
-        logger.info("API v1: Creating group " + request.getGroupId() + " in repository " + repositoryId);
-        
         try {
+            if (request == null) {
+                throw ApiException.invalidArgument("Request body is required");
+            }
+            
+            logger.info("API v1: Creating group " + request.getGroupId() + " in repository " + repositoryId);
+            
             validateCreateGroupRequest(request, repositoryId);
             
             GroupItem existingGroup = contentService.getGroupItemById(repositoryId, request.getGroupId());
@@ -294,6 +298,8 @@ public class GroupResource {
             
             List<String> users = request.getUsers() != null ? request.getUsers() : new ArrayList<>();
             List<String> groups = request.getGroups() != null ? request.getGroups() : new ArrayList<>();
+            
+            validateMemberIds(repositoryId, users, groups);
             
             GroupItem group = new GroupItem(null, NemakiObjectType.nemakiGroup, 
                     request.getGroupId(), request.getGroupName(), users, groups);
@@ -597,6 +603,26 @@ public class GroupResource {
         }
         if (StringUtils.isBlank(request.getGroupName())) {
             throw ApiException.invalidArgument("groupName is required");
+        }
+    }
+    
+    private void validateMemberIds(String repositoryId, List<String> userIds, List<String> groupIds) {
+        if (CollectionUtils.isNotEmpty(userIds)) {
+            for (String userId : userIds) {
+                UserItem user = contentService.getUserItemById(repositoryId, userId);
+                if (user == null) {
+                    throw ApiException.invalidArgument("User with ID '" + userId + "' does not exist");
+                }
+            }
+        }
+        
+        if (CollectionUtils.isNotEmpty(groupIds)) {
+            for (String groupId : groupIds) {
+                GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
+                if (group == null) {
+                    throw ApiException.invalidArgument("Group with ID '" + groupId + "' does not exist");
+                }
+            }
         }
     }
     
