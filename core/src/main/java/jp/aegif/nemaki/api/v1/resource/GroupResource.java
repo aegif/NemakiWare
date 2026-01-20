@@ -427,6 +427,8 @@ public class GroupResource {
                 throw ApiException.groupNotFound(groupId, repositoryId);
             }
             
+            removeGroupFromAllNestedGroups(repositoryId, groupId);
+            
             contentService.delete(new SystemCallContext(repositoryId), repositoryId, group.getId(), false);
             
             return Response.noContent().build();
@@ -622,6 +624,22 @@ public class GroupResource {
                 if (group == null) {
                     throw ApiException.invalidArgument("Group with ID '" + groupId + "' does not exist");
                 }
+            }
+        }
+    }
+    
+    private void removeGroupFromAllNestedGroups(String repositoryId, String groupId) {
+        List<GroupItem> allGroups = ObjectUtils.defaultIfNull(
+                contentService.getGroupItems(repositoryId), Collections.emptyList());
+        
+        for (GroupItem group : allGroups) {
+            List<String> nestedGroups = group.getGroups();
+            if (nestedGroups != null && nestedGroups.contains(groupId)) {
+                List<String> updatedNestedGroups = new ArrayList<>(nestedGroups);
+                updatedNestedGroups.remove(groupId);
+                group.setGroups(updatedNestedGroups);
+                contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
+                logger.info("Removed group " + groupId + " from nestedGroups of group " + group.getGroupId());
             }
         }
     }
