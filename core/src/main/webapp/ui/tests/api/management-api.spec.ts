@@ -1,4 +1,4 @@
-import { test, expect, Page, APIRequestContext } from '@playwright/test';
+import { test, expect, APIRequestContext } from '@playwright/test';
 import { randomUUID } from 'crypto';
 
 /**
@@ -57,6 +57,16 @@ async function apiRequestNoAuth(
   body?: any
 ): Promise<{ status: number; data: any; headers: { [key: string]: string } }> {
   return apiRequestWithAuth(request, method, path, null, body);
+}
+
+/** Helper to make API requests with non-admin credentials */
+async function apiRequestNonAdmin(
+  request: APIRequestContext,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  body?: any
+): Promise<{ status: number; data: any; headers: { [key: string]: string } }> {
+  return apiRequestWithAuth(request, method, path, getNonAdminAuthHeader(), body);
 }
 
 /** Helper to make API requests with custom authentication */
@@ -392,6 +402,18 @@ test.describe('Archive Management API', () => {
     expect(status).toBe(401);
     console.log('Unauthenticated access correctly rejected');
   });
+
+  test('should reject non-admin access to archives', async ({ request }) => {
+    const { status } = await apiRequestNonAdmin(
+      request,
+      'GET',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/archives`
+    );
+
+    // Non-admin user should get 403
+    expect(status).toBe(403);
+    console.log('Non-admin access correctly rejected with 403');
+  });
 });
 
 /**
@@ -440,6 +462,18 @@ test.describe('Cache Management API', () => {
     // Unauthenticated user should get 401
     expect(status).toBe(401);
     console.log('Unauthenticated cache invalidation correctly rejected');
+  });
+
+  test('should reject non-admin cache invalidation', async ({ request }) => {
+    const { status } = await apiRequestNonAdmin(
+      request,
+      'DELETE',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/cache/types`
+    );
+
+    // Non-admin user should get 403
+    expect(status).toBe(403);
+    console.log('Non-admin cache invalidation correctly rejected with 403');
   });
 });
 
@@ -497,6 +531,18 @@ test.describe('Search Engine Management API', () => {
     expect(status).toBe(401);
     console.log('Unauthenticated search engine access correctly rejected');
   });
+
+  test('should reject non-admin access to search engine API', async ({ request }) => {
+    const { status } = await apiRequestNonAdmin(
+      request,
+      'GET',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/search-engine/url`
+    );
+
+    // Non-admin user should get 403
+    expect(status).toBe(403);
+    console.log('Non-admin search engine access correctly rejected with 403');
+  });
 });
 
 /**
@@ -527,6 +573,18 @@ test.describe('Rendition Management API', () => {
     // Unauthenticated user should get 401
     expect(status).toBe(401);
     console.log('Unauthenticated rendition access correctly rejected');
+  });
+
+  test('should reject non-admin access to rendition API', async ({ request }) => {
+    const { status } = await apiRequestNonAdmin(
+      request,
+      'GET',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/renditions/supported-types`
+    );
+
+    // Non-admin user should get 403
+    expect(status).toBe(403);
+    console.log('Non-admin rendition access correctly rejected with 403');
   });
 });
 
