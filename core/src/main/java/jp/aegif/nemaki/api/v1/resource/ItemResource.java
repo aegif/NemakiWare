@@ -148,6 +148,11 @@ public class ItemResource {
                 throw ApiException.objectNotFound(parentId, repositoryId, "Parent folder not found");
             }
             
+            PropertyData<?> parentBaseTypeId = parentObject.getProperties().getProperties().get(PropertyIds.BASE_TYPE_ID);
+            if (parentBaseTypeId == null || !"cmis:folder".equals(parentBaseTypeId.getFirstValue())) {
+                throw ApiException.invalidArgument("Parent object " + parentId + " is not a folder. Items can only be created inside folders.");
+            }
+            
             PropertiesImpl cmisProperties = convertToProperties(properties);
             
             PropertyData<?> objectTypeId = cmisProperties.getProperties().get(PropertyIds.OBJECT_TYPE_ID);

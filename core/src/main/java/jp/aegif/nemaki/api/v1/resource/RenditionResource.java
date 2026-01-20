@@ -137,6 +137,8 @@ public class RenditionResource {
         
         logger.info("API v1: Getting renditions for document " + objectId + " in repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             Content content = contentService.getContent(repositoryId, objectId);
             if (content == null) {
@@ -208,6 +210,8 @@ public class RenditionResource {
         
         logger.info("API v1: Getting rendition " + renditionId + " in repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             Rendition rendition = contentDaoService.getRendition(repositoryId, renditionId);
             if (rendition == null) {
@@ -254,6 +258,8 @@ public class RenditionResource {
             @PathParam("renditionId") String renditionId) {
         
         logger.info("API v1: Getting rendition content " + renditionId + " in repository " + repositoryId);
+        
+        checkAdminAuthorization();
         
         try {
             Rendition rendition = contentDaoService.getRendition(repositoryId, renditionId);

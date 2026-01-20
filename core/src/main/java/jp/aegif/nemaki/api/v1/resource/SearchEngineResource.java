@@ -94,6 +94,8 @@ public class SearchEngineResource {
         
         logger.info("API v1: Getting Solr URL for repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             if (solrUtil == null) {
                 throw ApiException.internalError("Solr utility is not available");
@@ -139,6 +141,8 @@ public class SearchEngineResource {
             @PathParam("repositoryId") String repositoryId) {
         
         logger.info("API v1: Getting reindex status for repository " + repositoryId);
+        
+        checkAdminAuthorization();
         
         try {
             if (solrIndexMaintenanceService == null) {
@@ -197,6 +201,8 @@ public class SearchEngineResource {
             @PathParam("repositoryId") String repositoryId) {
         
         logger.info("API v1: Checking index health for repository " + repositoryId);
+        
+        checkAdminAuthorization();
         
         try {
             if (solrIndexMaintenanceService == null) {

@@ -98,6 +98,8 @@ public class ArchiveResource {
         
         logger.info("API v1: Listing archives in repository " + repositoryId);
         
+        checkAdminAuthorization();
+        
         try {
             List<Archive> filteredArchives = new ArrayList<>();
             int fetchSkip = skipCount;
@@ -185,6 +187,8 @@ public class ArchiveResource {
             @PathParam("archiveId") String archiveId) {
         
         logger.info("API v1: Getting archive " + archiveId + " in repository " + repositoryId);
+        
+        checkAdminAuthorization();
         
         try {
             Archive archive = contentService.getArchive(repositoryId, archiveId);
