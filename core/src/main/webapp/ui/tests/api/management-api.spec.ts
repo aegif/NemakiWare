@@ -36,7 +36,8 @@ function getAdminAuthHeader(): string {
 /** Generate Basic Authentication header for a non-admin user */
 function getNonAdminAuthHeader(): string {
   // Using a test user that exists but is not admin
-  return `Basic ${Buffer.from('testuser:testuser').toString('base64')}`;
+  // NOTE: testuser is created by global-setup.ts with BCrypt hash of 'test'
+  return `Basic ${Buffer.from('testuser:test').toString('base64')}`;
 }
 
 /** Helper to make authenticated API requests with admin credentials */
