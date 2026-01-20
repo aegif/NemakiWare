@@ -28,14 +28,21 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
         String path = requestContext.getUriInfo().getPath();
-        
+
+        logger.info("ApiAuthenticationFilter: checking path = " + path);
+
         // Allow access to OpenAPI spec without authentication
         if (path.endsWith("/openapi.json") || path.endsWith("/openapi.yaml")) {
+            logger.info("ApiAuthenticationFilter: allowing OpenAPI access");
             return;
         }
-        
+
         // Allow access to auth endpoints without authentication
-        if (path.contains("/auth/login") || path.contains("/auth/saml") || path.contains("/auth/oidc")) {
+        // Note: Login endpoint is at /auth/repositories/{repositoryId}/login
+        // The path at this point is relative to the application path (/api/v1/cmis)
+        // So it will be something like "auth/repositories/bedroom/login"
+        if (path.startsWith("auth/") && (path.endsWith("/login") || path.contains("/saml") || path.contains("/oidc"))) {
+            logger.info("ApiAuthenticationFilter: allowing auth endpoint access");
             return;
         }
         

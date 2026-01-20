@@ -130,6 +130,15 @@ public class AuthenticationFilter implements Filter {
 			return;
 		}
 
+		// Bypass authentication for API v1 auth endpoints (login, saml, oidc)
+		// These endpoints handle their own authentication through request body or SSO
+		if (requestURI != null && requestURI.contains("/api/v1/cmis/auth/") &&
+			(requestURI.endsWith("/login") || requestURI.contains("/saml") || requestURI.contains("/oidc"))) {
+			log.info("Bypassing authentication for API v1 auth endpoint: " + requestURI);
+			chain.doFilter(req, res);
+			return;
+		}
+
 		boolean auth = login(hreq, hres);
 		if(auth){
 			chain.doFilter(req, res);
@@ -288,6 +297,16 @@ public class AuthenticationFilter implements Filter {
         			String superUserId = repositoryInfoMap.getSuperUsers().getId();
         			log.info("=== AUTH: Using superuser ID for /repositories list path=" + superUserId + " ===");
         			return superUserId;
+        		}
+        	}else if("auth".equals(pathFragments[0])){
+        		// Handle /auth/repositories/{repositoryId}/... pattern (API v1 authentication endpoints)
+        		// pathFragments = ["auth", "repositories", "{repositoryId}", ...]
+        		if(pathFragments.length > 2 && "repositories".equals(pathFragments[1]) && StringUtils.isNotBlank(pathFragments[2])){
+        			String repositoryId = pathFragments[2];
+        			log.info("=== AUTH: Found repositoryId from /auth/repositories/ path=" + repositoryId + " ===");
+        			return repositoryId;
+        		}else{
+        			log.warn("Could not extract repositoryId from auth path: " + java.util.Arrays.toString(pathFragments));
         		}
         	}else{
         		// For paths like /user/bedroom, /group/bedroom, etc.

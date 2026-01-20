@@ -41,6 +41,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -86,6 +87,7 @@ public class RenditionResource {
     private ContentDaoService contentDaoService;
     
     @Autowired
+    @Qualifier("RenditionManager")
     private RenditionManager renditionManager;
     
     @Context
