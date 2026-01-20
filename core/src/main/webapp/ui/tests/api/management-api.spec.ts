@@ -114,7 +114,7 @@ test.describe('User Management API', () => {
       `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/users`,
       {
         userId: testUserId,
-        name: `Test User ${uuid}`,
+        userName: `Test User ${uuid}`,
         email: testUserEmail,
         firstName: 'Test',
         lastName: 'User',
@@ -216,8 +216,7 @@ test.describe('Group Management API', () => {
       `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/groups`,
       {
         groupId: testGroupId,
-        name: `Test Group ${uuid}`,
-        description: 'Test group for API testing'
+        groupName: `Test Group ${uuid}`
       }
     );
 
@@ -242,12 +241,12 @@ test.describe('Group Management API', () => {
       'PUT',
       `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/groups/${testGroupId}`,
       {
-        description: 'Updated description for API testing'
+        groupName: `Updated Group ${uuid}`
       }
     );
 
     expect(updateResponse.status).toBe(200);
-    expect(updateResponse.data).toHaveProperty('description', 'Updated description for API testing');
+    expect(updateResponse.data).toHaveProperty('groupName', `Updated Group ${uuid}`);
     console.log(`Updated group: ${testGroupId}`);
 
     // Delete group
@@ -301,7 +300,8 @@ test.describe('Authentication API', () => {
 
     expect(status).toBe(200);
     expect(data).toHaveProperty('token');
-    expect(data).toHaveProperty('userId', 'admin');
+    expect(data).toHaveProperty('user');
+    expect(data.user).toHaveProperty('userId', 'admin');
     console.log('Login successful, token received');
   });
 
@@ -360,11 +360,12 @@ test.describe('Archive Management API', () => {
  */
 test.describe('Cache Management API', () => {
   test('should invalidate object cache (requires admin)', async ({ request }) => {
+    // Use a test object ID - the API uses DELETE /cache/objects/{objectId}
+    const testObjectId = 'test-object-id';
     const { status } = await apiRequest(
       request,
-      'POST',
-      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/cache/invalidate/object`,
-      { objectId: 'test-object-id' }
+      'DELETE',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/cache/objects/${testObjectId}`
     );
 
     // Should succeed with admin credentials or return 403 if not admin
@@ -373,10 +374,11 @@ test.describe('Cache Management API', () => {
   });
 
   test('should invalidate type definition cache (requires admin)', async ({ request }) => {
+    // The API uses DELETE /cache/types
     const { status } = await apiRequest(
       request,
-      'POST',
-      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/cache/invalidate/type-definition`
+      'DELETE',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/cache/types`
     );
 
     // Should succeed with admin credentials or return 403 if not admin
@@ -454,9 +456,9 @@ test.describe('Rendition Management API', () => {
 
     expect([200, 403]).toContain(status);
     if (status === 200) {
-      expect(data).toHaveProperty('mimeTypes');
-      expect(Array.isArray(data.mimeTypes)).toBe(true);
-      console.log(`Supported MIME types: ${data.mimeTypes?.length || 0}`);
+      expect(data).toHaveProperty('supportedTypes');
+      expect(Array.isArray(data.supportedTypes)).toBe(true);
+      console.log(`Supported MIME types: ${data.supportedTypes?.length || 0}`);
     } else {
       console.log('Supported types requires admin privileges');
     }
