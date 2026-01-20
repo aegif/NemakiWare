@@ -28,26 +28,56 @@ import { randomUUID } from 'crypto';
 const BASE_URL = 'http://localhost:8080';
 const REPOSITORY_ID = 'bedroom';
 
-/** Generate Basic Authentication header */
-function getAuthHeader(): string {
+/** Generate Basic Authentication header for admin user */
+function getAdminAuthHeader(): string {
   return `Basic ${Buffer.from('admin:admin').toString('base64')}`;
 }
 
-/** Helper to make authenticated API requests */
+/** Generate Basic Authentication header for a non-admin user */
+function getNonAdminAuthHeader(): string {
+  // Using a test user that exists but is not admin
+  return `Basic ${Buffer.from('testuser:testuser').toString('base64')}`;
+}
+
+/** Helper to make authenticated API requests with admin credentials */
 async function apiRequest(
   request: APIRequestContext,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
   body?: any
 ): Promise<{ status: number; data: any; headers: { [key: string]: string } }> {
+  return apiRequestWithAuth(request, method, path, getAdminAuthHeader(), body);
+}
+
+/** Helper to make API requests without authentication */
+async function apiRequestNoAuth(
+  request: APIRequestContext,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  body?: any
+): Promise<{ status: number; data: any; headers: { [key: string]: string } }> {
+  return apiRequestWithAuth(request, method, path, null, body);
+}
+
+/** Helper to make API requests with custom authentication */
+async function apiRequestWithAuth(
+  request: APIRequestContext,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  authHeader: string | null,
+  body?: any
+): Promise<{ status: number; data: any; headers: { [key: string]: string } }> {
   const url = `${BASE_URL}${path}`;
-  const options: any = {
-    headers: {
-      'Authorization': getAuthHeader(),
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
+  const headers: { [key: string]: string } = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
   };
+  
+  if (authHeader) {
+    headers['Authorization'] = authHeader;
+  }
+  
+  const options: any = { headers };
 
   if (body) {
     options.data = body;
@@ -76,12 +106,12 @@ async function apiRequest(
     data = await response.text();
   }
 
-  const headers: { [key: string]: string } = {};
+  const responseHeaders: { [key: string]: string } = {};
   response.headers().forEach((value, key) => {
-    headers[key] = value;
+    responseHeaders[key] = value;
   });
 
-  return { status: response.status(), data, headers };
+  return { status: response.status(), data, headers: responseHeaders };
 }
 
 /**
@@ -334,134 +364,169 @@ test.describe('Authentication API', () => {
 });
 
 /**
- * Archive Management API Tests
+ * Archive Management API Tests (Admin Only)
  */
 test.describe('Archive Management API', () => {
-  test('should list archives (requires admin)', async ({ request }) => {
+  test('should list archives with admin credentials', async ({ request }) => {
     const { status, data } = await apiRequest(
       request,
       'GET',
       `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/archives`
     );
 
-    // Should succeed with admin credentials
-    expect([200, 403]).toContain(status);
-    if (status === 200) {
-      expect(data).toHaveProperty('archives');
-      console.log(`Listed ${data.archives?.length || 0} archives`);
-    } else {
-      console.log('Archive listing requires admin privileges');
-    }
+    // Admin user should get 200
+    expect(status).toBe(200);
+    expect(data).toHaveProperty('archives');
+    expect(Array.isArray(data.archives)).toBe(true);
+    console.log(`Listed ${data.archives.length} archives`);
+  });
+
+  test('should reject unauthenticated access to archives', async ({ request }) => {
+    const { status } = await apiRequestNoAuth(
+      request,
+      'GET',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/archives`
+    );
+
+    // Unauthenticated user should get 401
+    expect(status).toBe(401);
+    console.log('Unauthenticated access correctly rejected');
   });
 });
 
 /**
- * Cache Management API Tests
+ * Cache Management API Tests (Admin Only)
  */
 test.describe('Cache Management API', () => {
-  test('should invalidate object cache (requires admin)', async ({ request }) => {
+  test('should invalidate object cache with admin credentials', async ({ request }) => {
     // Use a test object ID - the API uses DELETE /cache/objects/{objectId}
+    // Note: This may return 200 with "Cache entry not found" message if object doesn't exist
     const testObjectId = 'test-object-id';
-    const { status } = await apiRequest(
+    const { status, data } = await apiRequest(
       request,
       'DELETE',
       `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/cache/objects/${testObjectId}`
     );
 
-    // Should succeed with admin credentials or return 403 if not admin
-    expect([200, 204, 403, 404]).toContain(status);
-    console.log(`Cache invalidation status: ${status}`);
+    // Admin user should get 200 (success response with message)
+    expect(status).toBe(200);
+    expect(data).toHaveProperty('objectId', testObjectId);
+    expect(data).toHaveProperty('message');
+    console.log(`Cache invalidation: ${data.message}`);
   });
 
-  test('should invalidate type definition cache (requires admin)', async ({ request }) => {
+  test('should invalidate type definition cache with admin credentials', async ({ request }) => {
     // The API uses DELETE /cache/types
-    const { status } = await apiRequest(
+    const { status, data } = await apiRequest(
       request,
       'DELETE',
       `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/cache/types`
     );
 
-    // Should succeed with admin credentials or return 403 if not admin
-    expect([200, 204, 403]).toContain(status);
-    console.log(`Type definition cache invalidation status: ${status}`);
+    // Admin user should get 200
+    expect(status).toBe(200);
+    expect(data).toHaveProperty('repositoryId', REPOSITORY_ID);
+    expect(data).toHaveProperty('message');
+    console.log(`Type cache invalidation: ${data.message}`);
+  });
+
+  test('should reject unauthenticated cache invalidation', async ({ request }) => {
+    const { status } = await apiRequestNoAuth(
+      request,
+      'DELETE',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/cache/types`
+    );
+
+    // Unauthenticated user should get 401
+    expect(status).toBe(401);
+    console.log('Unauthenticated cache invalidation correctly rejected');
   });
 });
 
 /**
- * Search Engine Management API Tests
+ * Search Engine Management API Tests (Admin Only)
  */
 test.describe('Search Engine Management API', () => {
-  test('should get Solr URL (requires admin)', async ({ request }) => {
+  test('should get Solr URL with admin credentials', async ({ request }) => {
     const { status, data } = await apiRequest(
       request,
       'GET',
       `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/search-engine/url`
     );
 
-    // Should succeed with admin credentials or return 403 if not admin
-    expect([200, 403]).toContain(status);
-    if (status === 200) {
-      expect(data).toHaveProperty('url');
-      console.log(`Solr URL: ${data.url}`);
-    } else {
-      console.log('Solr URL requires admin privileges');
-    }
+    // Admin user should get 200
+    expect(status).toBe(200);
+    expect(data).toHaveProperty('url');
+    console.log(`Solr URL: ${data.url}`);
   });
 
-  test('should get reindex status (requires admin)', async ({ request }) => {
+  test('should get reindex status with admin credentials', async ({ request }) => {
     const { status, data } = await apiRequest(
       request,
       'GET',
       `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/search-engine/status`
     );
 
-    // Should succeed with admin credentials or return 403 if not admin
-    expect([200, 403]).toContain(status);
-    if (status === 200) {
-      expect(data).toHaveProperty('status');
-      console.log(`Reindex status: ${data.status}`);
-    } else {
-      console.log('Reindex status requires admin privileges');
-    }
+    // Admin user should get 200
+    expect(status).toBe(200);
+    expect(data).toHaveProperty('status');
+    console.log(`Reindex status: ${data.status}`);
   });
 
-  test('should check index health (requires admin)', async ({ request }) => {
+  test('should check index health with admin credentials', async ({ request }) => {
     const { status, data } = await apiRequest(
       request,
       'GET',
       `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/search-engine/health`
     );
 
-    // Should succeed with admin credentials or return 403 if not admin
-    expect([200, 403]).toContain(status);
-    if (status === 200) {
-      expect(data).toHaveProperty('healthy');
-      console.log(`Index healthy: ${data.healthy}`);
-    } else {
-      console.log('Index health check requires admin privileges');
-    }
+    // Admin user should get 200
+    expect(status).toBe(200);
+    expect(data).toHaveProperty('healthy');
+    console.log(`Index healthy: ${data.healthy}`);
+  });
+
+  test('should reject unauthenticated access to search engine API', async ({ request }) => {
+    const { status } = await apiRequestNoAuth(
+      request,
+      'GET',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/search-engine/url`
+    );
+
+    // Unauthenticated user should get 401
+    expect(status).toBe(401);
+    console.log('Unauthenticated search engine access correctly rejected');
   });
 });
 
 /**
- * Rendition Management API Tests
+ * Rendition Management API Tests (Admin Only)
  */
 test.describe('Rendition Management API', () => {
-  test('should get supported MIME types', async ({ request }) => {
+  test('should get supported MIME types with admin credentials', async ({ request }) => {
     const { status, data } = await apiRequest(
       request,
       'GET',
       `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/renditions/supported-types`
     );
 
-    expect([200, 403]).toContain(status);
-    if (status === 200) {
-      expect(data).toHaveProperty('supportedTypes');
-      expect(Array.isArray(data.supportedTypes)).toBe(true);
-      console.log(`Supported MIME types: ${data.supportedTypes?.length || 0}`);
-    } else {
-      console.log('Supported types requires admin privileges');
-    }
+    // Admin user should get 200
+    expect(status).toBe(200);
+    expect(data).toHaveProperty('supportedTypes');
+    expect(Array.isArray(data.supportedTypes)).toBe(true);
+    console.log(`Supported MIME types: ${data.supportedTypes.length}`);
+  });
+
+  test('should reject unauthenticated access to rendition API', async ({ request }) => {
+    const { status } = await apiRequestNoAuth(
+      request,
+      'GET',
+      `/core/api/v1/cmis/repositories/${REPOSITORY_ID}/renditions/supported-types`
+    );
+
+    // Unauthenticated user should get 401
+    expect(status).toBe(401);
+    console.log('Unauthenticated rendition access correctly rejected');
   });
 });
 
