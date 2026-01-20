@@ -66,6 +66,15 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
     public static final String ET_ITEM_NAME = "Item";
     public static final FullQualifiedName ET_ITEM_FQN = new FullQualifiedName(NAMESPACE, ET_ITEM_NAME);
     
+    public static final String ET_TYPE_NAME = "Type";
+    public static final FullQualifiedName ET_TYPE_FQN = new FullQualifiedName(NAMESPACE, ET_TYPE_NAME);
+    
+    public static final String ET_USER_NAME = "User";
+    public static final FullQualifiedName ET_USER_FQN = new FullQualifiedName(NAMESPACE, ET_USER_NAME);
+    
+    public static final String ET_GROUP_NAME = "Group";
+    public static final FullQualifiedName ET_GROUP_FQN = new FullQualifiedName(NAMESPACE, ET_GROUP_NAME);
+    
     // Entity Sets
     public static final String ES_OBJECTS_NAME = "Objects";
     public static final String ES_DOCUMENTS_NAME = "Documents";
@@ -73,6 +82,9 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
     public static final String ES_RELATIONSHIPS_NAME = "Relationships";
     public static final String ES_POLICIES_NAME = "Policies";
     public static final String ES_ITEMS_NAME = "Items";
+    public static final String ES_TYPES_NAME = "Types";
+    public static final String ES_USERS_NAME = "Users";
+    public static final String ES_GROUPS_NAME = "Groups";
     
     // Actions
     public static final String ACTION_CHECKOUT = "CheckOut";
@@ -120,6 +132,12 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
             return createPolicyEntityType();
         } else if (entityTypeName.equals(ET_ITEM_FQN)) {
             return createItemEntityType();
+        } else if (entityTypeName.equals(ET_TYPE_FQN)) {
+            return createTypeEntityType();
+        } else if (entityTypeName.equals(ET_USER_FQN)) {
+            return createUserEntityType();
+        } else if (entityTypeName.equals(ET_GROUP_FQN)) {
+            return createGroupEntityType();
         }
         return null;
     }
@@ -139,13 +157,19 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
                 return createEntitySet(ES_POLICIES_NAME, ET_POLICY_FQN);
             } else if (entitySetName.equals(ES_ITEMS_NAME)) {
                 return createEntitySet(ES_ITEMS_NAME, ET_ITEM_FQN);
+            } else if (entitySetName.equals(ES_TYPES_NAME)) {
+                return createEntitySet(ES_TYPES_NAME, ET_TYPE_FQN);
+            } else if (entitySetName.equals(ES_USERS_NAME)) {
+                return createEntitySet(ES_USERS_NAME, ET_USER_FQN);
+            } else if (entitySetName.equals(ES_GROUPS_NAME)) {
+                return createEntitySet(ES_GROUPS_NAME, ET_GROUP_FQN);
             }
         }
         return null;
     }
     
     @Override
-    public CsdlEntityContainer getEntityContainer() throws ODataException {
+    public CsdlEntityContainer getEntityContainer()throws ODataException {
         List<CsdlEntitySet> entitySets = new ArrayList<>();
         entitySets.add(getEntitySet(CONTAINER, ES_OBJECTS_NAME));
         entitySets.add(getEntitySet(CONTAINER, ES_DOCUMENTS_NAME));
@@ -153,6 +177,9 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
         entitySets.add(getEntitySet(CONTAINER, ES_RELATIONSHIPS_NAME));
         entitySets.add(getEntitySet(CONTAINER, ES_POLICIES_NAME));
         entitySets.add(getEntitySet(CONTAINER, ES_ITEMS_NAME));
+        entitySets.add(getEntitySet(CONTAINER, ES_TYPES_NAME));
+        entitySets.add(getEntitySet(CONTAINER, ES_USERS_NAME));
+        entitySets.add(getEntitySet(CONTAINER, ES_GROUPS_NAME));
         
         CsdlEntityContainer entityContainer = new CsdlEntityContainer();
         entityContainer.setName(CONTAINER_NAME);
@@ -183,6 +210,9 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
         entityTypes.add(getEntityType(ET_RELATIONSHIP_FQN));
         entityTypes.add(getEntityType(ET_POLICY_FQN));
         entityTypes.add(getEntityType(ET_ITEM_FQN));
+        entityTypes.add(getEntityType(ET_TYPE_FQN));
+        entityTypes.add(getEntityType(ET_USER_FQN));
+        entityTypes.add(getEntityType(ET_GROUP_FQN));
         schema.setEntityTypes(entityTypes);
         
         // Add actions
@@ -842,5 +872,101 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
         entitySet.setName(name);
         entitySet.setType(entityType);
         return entitySet;
+    }
+    
+    /**
+     * Create the Type entity type for CMIS type definitions.
+     */
+    private CsdlEntityType createTypeEntityType() {
+        CsdlEntityType entityType = new CsdlEntityType();
+        entityType.setName(ET_TYPE_NAME);
+        
+        CsdlPropertyRef propertyRef = new CsdlPropertyRef();
+        propertyRef.setName("typeId");
+        entityType.setKey(Collections.singletonList(propertyRef));
+        
+        List<CsdlProperty> properties = new ArrayList<>();
+        properties.add(createProperty("typeId", EdmPrimitiveTypeKind.String, false));
+        properties.add(createProperty("localName", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("localNamespace", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("displayName", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("queryName", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("description", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("baseTypeId", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("parentTypeId", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("isCreatable", EdmPrimitiveTypeKind.Boolean, true));
+        properties.add(createProperty("isFileable", EdmPrimitiveTypeKind.Boolean, true));
+        properties.add(createProperty("isQueryable", EdmPrimitiveTypeKind.Boolean, true));
+        properties.add(createProperty("isFulltextIndexed", EdmPrimitiveTypeKind.Boolean, true));
+        properties.add(createProperty("isIncludedInSupertypeQuery", EdmPrimitiveTypeKind.Boolean, true));
+        properties.add(createProperty("isControllablePolicy", EdmPrimitiveTypeKind.Boolean, true));
+        properties.add(createProperty("isControllableAcl", EdmPrimitiveTypeKind.Boolean, true));
+        entityType.setProperties(properties);
+        
+        List<CsdlNavigationProperty> navProperties = new ArrayList<>();
+        navProperties.add(createNavigationProperty("parentType", ET_TYPE_FQN, false));
+        navProperties.add(createNavigationProperty("childTypes", ET_TYPE_FQN, true));
+        entityType.setNavigationProperties(navProperties);
+        
+        return entityType;
+    }
+    
+    /**
+     * Create the User entity type for user management.
+     */
+    private CsdlEntityType createUserEntityType() {
+        CsdlEntityType entityType = new CsdlEntityType();
+        entityType.setName(ET_USER_NAME);
+        
+        CsdlPropertyRef propertyRef = new CsdlPropertyRef();
+        propertyRef.setName("userId");
+        entityType.setKey(Collections.singletonList(propertyRef));
+        
+        List<CsdlProperty> properties = new ArrayList<>();
+        properties.add(createProperty("userId", EdmPrimitiveTypeKind.String, false));
+        properties.add(createProperty("userName", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("firstName", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("lastName", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("email", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("isAdmin", EdmPrimitiveTypeKind.Boolean, true));
+        properties.add(createProperty("createdBy", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("creationDate", EdmPrimitiveTypeKind.DateTimeOffset, true));
+        properties.add(createProperty("lastModifiedBy", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("lastModificationDate", EdmPrimitiveTypeKind.DateTimeOffset, true));
+        entityType.setProperties(properties);
+        
+        List<CsdlNavigationProperty> navProperties = new ArrayList<>();
+        navProperties.add(createNavigationProperty("groups", ET_GROUP_FQN, true));
+        entityType.setNavigationProperties(navProperties);
+        
+        return entityType;
+    }
+    
+    /**
+     * Create the Group entity type for group management.
+     */
+    private CsdlEntityType createGroupEntityType() {
+        CsdlEntityType entityType = new CsdlEntityType();
+        entityType.setName(ET_GROUP_NAME);
+        
+        CsdlPropertyRef propertyRef = new CsdlPropertyRef();
+        propertyRef.setName("groupId");
+        entityType.setKey(Collections.singletonList(propertyRef));
+        
+        List<CsdlProperty> properties = new ArrayList<>();
+        properties.add(createProperty("groupId", EdmPrimitiveTypeKind.String, false));
+        properties.add(createProperty("groupName", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("createdBy", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("creationDate", EdmPrimitiveTypeKind.DateTimeOffset, true));
+        properties.add(createProperty("lastModifiedBy", EdmPrimitiveTypeKind.String, true));
+        properties.add(createProperty("lastModificationDate", EdmPrimitiveTypeKind.DateTimeOffset, true));
+        entityType.setProperties(properties);
+        
+        List<CsdlNavigationProperty> navProperties = new ArrayList<>();
+        navProperties.add(createNavigationProperty("users", ET_USER_FQN, true));
+        navProperties.add(createNavigationProperty("nestedGroups", ET_GROUP_FQN, true));
+        entityType.setNavigationProperties(navProperties);
+        
+        return entityType;
     }
 }
