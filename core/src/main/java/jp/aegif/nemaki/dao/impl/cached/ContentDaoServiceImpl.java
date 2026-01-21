@@ -1228,10 +1228,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			tree = getOrCreateTreeCache(repositoryId, _c.getParentId());
 		}
 
-		// CRITICAL FIX: Remove from cache BEFORE database deletion
-		// This prevents read-through cache population during deletion process
-		
-		//delete user/group from cache
+		// Cache invalidation strategy for User/Group deletion:
+		// - For users: Use targeted invalidation (remove only this user's cache entries)
+		// - For groups: Use targeted invalidation for direct members, but fall back to
+		//   removeAll() if the group has nested groups (to handle indirect membership)
+		// - Fall back to removeAll() if item is null to ensure cache consistency
+		// Note: Group updates use removeAll() because membership changes can affect
+		// any user's group list. Deletion uses targeted approach when possible for
+		// better performance, with fallbacks for edge cases.
 		if(nb.isUser()){
 			UserItem item = getUserItem(repositoryId, objectId);
 			if(item != null){
@@ -1241,24 +1245,38 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				nemakiCachePool.get(repositoryId).getJoinedGroupCache().remove(userId);
 			}else{
 				log.warn("UserItem is null during delete for objectId=" + objectId + 
-					". UserItemCache entry may not be properly invalidated.");
+					". Falling back to removeAll() for joinedGroupCache.");
+				// Fallback: clear all joinedGroupCache to ensure consistency
+				nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 			}
 		}else if(nb.isGroup()){
 			GroupItem item = getGroupItem(repositoryId, objectId);
 			if(item != null){
 				String groupId = item.getGroupId();
 				nemakiCachePool.get(repositoryId).getGroupItemCache().remove(groupId);
-				// Targeted invalidation: remove joinedGroup cache entries for all users in this group
-				List<String> groupUsers = item.getUsers();
-				if(groupUsers != null && !groupUsers.isEmpty()){
-					NemakiCache<List<String>> joinedGroupCache = nemakiCachePool.get(repositoryId).getJoinedGroupCache();
-					for(String userId : groupUsers){
-						joinedGroupCache.remove(userId);
+				
+				// Check if this group has nested groups - if so, use removeAll() to handle
+				// indirect membership (users in nested groups are also affected)
+				List<String> nestedGroups = item.getGroups();
+				if(nestedGroups != null && !nestedGroups.isEmpty()){
+					// Fallback to removeAll() for groups with nested structure
+					log.info("Group " + groupId + " has nested groups. Using removeAll() for joinedGroupCache.");
+					nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
+				}else{
+					// Targeted invalidation: remove joinedGroup cache entries for direct users only
+					List<String> groupUsers = item.getUsers();
+					if(groupUsers != null && !groupUsers.isEmpty()){
+						NemakiCache<List<String>> joinedGroupCache = nemakiCachePool.get(repositoryId).getJoinedGroupCache();
+						for(String userId : groupUsers){
+							joinedGroupCache.remove(userId);
+						}
 					}
 				}
 			}else{
 				log.warn("GroupItem is null during delete for objectId=" + objectId + 
-					". GroupItemCache entry may not be properly invalidated.");
+					". Falling back to removeAll() for joinedGroupCache.");
+				// Fallback: clear all joinedGroupCache to ensure consistency
+				nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 			}
 		}
 
@@ -1325,10 +1343,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			tree = getOrCreateTreeCache(repositoryId, _c.getParentId());
 		}
 
-		// CRITICAL FIX: Remove from cache BEFORE database deletion
-		// This prevents read-through cache population during deletion process
-
-		//delete user/group from cache
+		// Cache invalidation strategy for User/Group deletion:
+		// - For users: Use targeted invalidation (remove only this user's cache entries)
+		// - For groups: Use targeted invalidation for direct members, but fall back to
+		//   removeAll() if the group has nested groups (to handle indirect membership)
+		// - Fall back to removeAll() if item is null to ensure cache consistency
+		// Note: Group updates use removeAll() because membership changes can affect
+		// any user's group list. Deletion uses targeted approach when possible for
+		// better performance, with fallbacks for edge cases.
 		if(nb.isUser()){
 			UserItem item = getUserItem(repositoryId, objectId);
 			if(item != null){
@@ -1338,24 +1360,38 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				nemakiCachePool.get(repositoryId).getJoinedGroupCache().remove(userId);
 			}else{
 				log.warn("UserItem is null during delete for objectId=" + objectId + 
-					". UserItemCache entry may not be properly invalidated.");
+					". Falling back to removeAll() for joinedGroupCache.");
+				// Fallback: clear all joinedGroupCache to ensure consistency
+				nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 			}
 		}else if(nb.isGroup()){
 			GroupItem item = getGroupItem(repositoryId, objectId);
 			if(item != null){
 				String groupId = item.getGroupId();
 				nemakiCachePool.get(repositoryId).getGroupItemCache().remove(groupId);
-				// Targeted invalidation: remove joinedGroup cache entries for all users in this group
-				List<String> groupUsers = item.getUsers();
-				if(groupUsers != null && !groupUsers.isEmpty()){
-					NemakiCache<List<String>> joinedGroupCache = nemakiCachePool.get(repositoryId).getJoinedGroupCache();
-					for(String userId : groupUsers){
-						joinedGroupCache.remove(userId);
+				
+				// Check if this group has nested groups - if so, use removeAll() to handle
+				// indirect membership (users in nested groups are also affected)
+				List<String> nestedGroups = item.getGroups();
+				if(nestedGroups != null && !nestedGroups.isEmpty()){
+					// Fallback to removeAll() for groups with nested structure
+					log.info("Group " + groupId + " has nested groups. Using removeAll() for joinedGroupCache.");
+					nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
+				}else{
+					// Targeted invalidation: remove joinedGroup cache entries for direct users only
+					List<String> groupUsers = item.getUsers();
+					if(groupUsers != null && !groupUsers.isEmpty()){
+						NemakiCache<List<String>> joinedGroupCache = nemakiCachePool.get(repositoryId).getJoinedGroupCache();
+						for(String userId : groupUsers){
+							joinedGroupCache.remove(userId);
+						}
 					}
 				}
 			}else{
 				log.warn("GroupItem is null during delete for objectId=" + objectId + 
-					". GroupItemCache entry may not be properly invalidated.");
+					". Falling back to removeAll() for joinedGroupCache.");
+				// Fallback: clear all joinedGroupCache to ensure consistency
+				nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 			}
 		}
 
