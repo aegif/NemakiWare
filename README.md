@@ -93,11 +93,47 @@ docker compose -f docker-compose-simple.yml down
 
 ### Rebuilding After Code Changes
 
+⚠️ **Important**: Always use `--build --force-recreate`. Never use `docker compose restart` as it won't pick up WAR changes.
+
 ```bash
-# Rebuild and redeploy (important: use --build --force-recreate)
+# 1. Rebuild UI (if frontend changed)
+cd core/src/main/webapp/ui
+npm run build
+
+# 2. Rebuild WAR
+cd ../../../..
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
+
+# 3. Deploy to Docker
 cp core/target/core.war docker/core/core.war
 cd docker
 docker compose -f docker-compose-simple.yml up -d --build --force-recreate core
+```
+
+### Complete Clean Rebuild (Full Reset)
+
+For a complete environment reset including database:
+
+```bash
+# 1. Clean UI build artifacts
+cd core/src/main/webapp/ui
+rm -rf node_modules dist
+npm install
+npm run build
+
+# 2. Clean and rebuild WAR
+cd ../../../..
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
+cp core/target/core.war docker/core/core.war
+
+# 3. Reset Docker environment (removes all data!)
+cd docker
+docker compose -f docker-compose-simple.yml down -v
+docker compose -f docker-compose-simple.yml up -d --build --force-recreate
+
+# 4. Wait for startup (90 seconds)
+sleep 90
+curl -u admin:admin http://localhost:8080/core/atom/bedroom
 ```
 
 ---

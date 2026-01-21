@@ -1,7 +1,0 @@
- TCK-TEST-FIXES-2025-10-11.md                       | 287 +++++++++++++++++++++
- .../nemaki/cmis/original/MultiThreadTest.java      |   3 +-
- .../jp/aegif/nemaki/cmis/original/TestBase.java    |  14 +-
- .../aegif/nemaki/cmis/tck/tests/CrudTestGroup.java |   6 +-
- .../nemaki/cmis/tck/tests/CrudTestGroup1.java      |  95 +++++++
- .../nemaki/cmis/tck/tests/CrudTestGroup2.java      |  86 ++++++
- 6 files changed, 482 insertions(+), 9 deletions(-)
