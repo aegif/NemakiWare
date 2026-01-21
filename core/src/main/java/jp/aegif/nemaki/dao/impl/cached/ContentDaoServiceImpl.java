@@ -1235,17 +1235,31 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		if(nb.isUser()){
 			UserItem item = getUserItem(repositoryId, objectId);
 			if(item != null){
-				nemakiCachePool.get(repositoryId).getUserItemCache().remove(item.getUserId());
+				String userId = item.getUserId();
+				nemakiCachePool.get(repositoryId).getUserItemCache().remove(userId);
+				// Targeted invalidation: only remove this user's joinedGroup cache entry
+				nemakiCachePool.get(repositoryId).getJoinedGroupCache().remove(userId);
+			}else{
+				log.warn("UserItem is null during delete for objectId=" + objectId + 
+					". UserItemCache entry may not be properly invalidated.");
 			}
-			// Invalidate joinedGroupCache as user's group memberships are now invalid
-			nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 		}else if(nb.isGroup()){
 			GroupItem item = getGroupItem(repositoryId, objectId);
 			if(item != null){
-				nemakiCachePool.get(repositoryId).getGroupItemCache().remove(item.getGroupId());
+				String groupId = item.getGroupId();
+				nemakiCachePool.get(repositoryId).getGroupItemCache().remove(groupId);
+				// Targeted invalidation: remove joinedGroup cache entries for all users in this group
+				List<String> groupUsers = item.getUsers();
+				if(groupUsers != null && !groupUsers.isEmpty()){
+					NemakiCache<List<String>> joinedGroupCache = nemakiCachePool.get(repositoryId).getJoinedGroupCache();
+					for(String userId : groupUsers){
+						joinedGroupCache.remove(userId);
+					}
+				}
+			}else{
+				log.warn("GroupItem is null during delete for objectId=" + objectId + 
+					". GroupItemCache entry may not be properly invalidated.");
 			}
-			// Invalidate joinedGroupCache as group membership data is now invalid
-			nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 		}
 
 		// remove from cache FIRST
@@ -1318,17 +1332,31 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		if(nb.isUser()){
 			UserItem item = getUserItem(repositoryId, objectId);
 			if(item != null){
-				nemakiCachePool.get(repositoryId).getUserItemCache().remove(item.getUserId());
+				String userId = item.getUserId();
+				nemakiCachePool.get(repositoryId).getUserItemCache().remove(userId);
+				// Targeted invalidation: only remove this user's joinedGroup cache entry
+				nemakiCachePool.get(repositoryId).getJoinedGroupCache().remove(userId);
+			}else{
+				log.warn("UserItem is null during delete for objectId=" + objectId + 
+					". UserItemCache entry may not be properly invalidated.");
 			}
-			// Invalidate joinedGroupCache as user's group memberships are now invalid
-			nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 		}else if(nb.isGroup()){
 			GroupItem item = getGroupItem(repositoryId, objectId);
 			if(item != null){
-				nemakiCachePool.get(repositoryId).getGroupItemCache().remove(item.getGroupId());
+				String groupId = item.getGroupId();
+				nemakiCachePool.get(repositoryId).getGroupItemCache().remove(groupId);
+				// Targeted invalidation: remove joinedGroup cache entries for all users in this group
+				List<String> groupUsers = item.getUsers();
+				if(groupUsers != null && !groupUsers.isEmpty()){
+					NemakiCache<List<String>> joinedGroupCache = nemakiCachePool.get(repositoryId).getJoinedGroupCache();
+					for(String userId : groupUsers){
+						joinedGroupCache.remove(userId);
+					}
+				}
+			}else{
+				log.warn("GroupItem is null during delete for objectId=" + objectId + 
+					". GroupItemCache entry may not be properly invalidated.");
 			}
-			// Invalidate joinedGroupCache as group membership data is now invalid
-			nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 		}
 
 		// remove from cache FIRST
