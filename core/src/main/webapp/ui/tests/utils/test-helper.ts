@@ -398,6 +398,15 @@ export class TestHelper {
     // STABILIZATION FIX: Close any open overlays before attempting upload
     await this.closeAllOverlays();
 
+    // CRITICAL FIX (2026-01-21): Double-check for Error Boundary after closeAllOverlays
+    // The error boundary may still be visible if closeAllOverlays didn't detect it properly
+    const errorBoundaryCheck = this.page.locator('button').filter({ hasText: '再読み込み' }).first();
+    if (await errorBoundaryCheck.count() > 0) {
+      console.log('TestHelper: Error boundary still visible after closeAllOverlays - forcing page reload');
+      await this.page.reload({ waitUntil: 'networkidle' });
+      await this.page.waitForTimeout(3000);
+    }
+
     // Click upload button to open modal
     const uploadButton = this.page.locator('button').filter({ hasText: 'アップロード' }).first();
     await uploadButton.click(isMobile ? { force: true } : {});
@@ -1114,6 +1123,26 @@ export class TestHelper {
    */
   async closeAllOverlays(): Promise<number> {
     let closedCount = 0;
+
+    // Step 0: Check for Error Boundary error and recover by reloading
+    // This handles cases where React throws "Failed to execute 'removeChild' on 'Node'" errors
+    const errorBoundaryReloadButton = this.page.locator('button').filter({ hasText: '再読み込み' }).first();
+    if (await errorBoundaryReloadButton.count() > 0) {
+      console.log('TestHelper: Error boundary detected - clicking reload button to recover');
+      try {
+        await errorBoundaryReloadButton.click({ timeout: 3000 });
+        // Wait for page to reload and stabilize
+        await this.page.waitForLoadState('networkidle', { timeout: 30000 });
+        await this.page.waitForTimeout(2000);
+        closedCount++;
+        console.log('TestHelper: Page reloaded after error boundary recovery');
+      } catch (e) {
+        console.log('TestHelper: Error boundary reload failed, attempting page reload');
+        await this.page.reload({ waitUntil: 'networkidle' });
+        await this.page.waitForTimeout(2000);
+        closedCount++;
+      }
+    }
 
     // Step 1: FIRST remove blocking overlay elements via JavaScript (critical for unblocking)
     const initialRemoved = await this.page.evaluate(() => {

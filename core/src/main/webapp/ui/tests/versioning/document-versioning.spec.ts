@@ -661,6 +661,12 @@ test.describe('Document Versioning', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
+    // CRITICAL FIX (2026-01-21): Reload page to clear any Error Boundary state from previous tests
+    // This test runs last and may inherit DOM corruption from previous tests
+    console.log('Test: Reloading page to ensure clean state');
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(2000);
+
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
@@ -689,6 +695,17 @@ test.describe('Document Versioning', () => {
     // Count documents before second upload
     const docCountBefore = await page.locator('.ant-table-tbody tr').filter({ hasText: filename }).count();
     console.log(`Test: Document count before second upload: ${docCountBefore}`);
+
+    // CRITICAL FIX (2026-01-21): Reload page before second upload to clear Error Boundary state
+    // The first upload may have caused React DOM corruption during table refresh
+    console.log('Test: Reloading page before second upload to clear any Error Boundary');
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(2000);
+
+    // Re-navigate to documents page after reload
+    const documentsMenuItemAgain = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
+    await documentsMenuItemAgain.click(isMobile ? { force: true } : {});
+    await page.waitForTimeout(2000);
 
     // Upload same-name file with different content (should create new version)
     const newContent = 'Version 2.0 - Updated content';

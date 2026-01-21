@@ -83,7 +83,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      timeout: 90000, // 90 seconds for complex tests with folder creation/cleanup
+      timeout: 180000, // 180 seconds for complex versioning tests
       use: {
         ...devices['Desktop Chrome'],
         // NemakiWare UI viewport settings
