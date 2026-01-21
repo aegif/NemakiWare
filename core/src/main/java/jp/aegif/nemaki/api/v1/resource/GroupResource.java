@@ -39,7 +39,6 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.DateUtil;
-import jp.aegif.nemaki.util.cache.NemakiCachePool;
 
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
@@ -68,9 +67,6 @@ public class GroupResource {
     
     @Autowired
     private ContentService contentService;
-    
-    @Autowired
-    private NemakiCachePool nemakiCachePool;
     
     @Context
     private UriInfo uriInfo;
@@ -459,8 +455,6 @@ public class GroupResource {
                     removeGroupFromAllNestedGroups(repositoryId, groupId);
 
             contentService.delete(new SystemCallContext(repositoryId), repositoryId, group.getId(), false);
-
-            nemakiCachePool.get(repositoryId).getGroupItemCache().remove(groupId);
 
             return Response.noContent().build();
             

@@ -41,7 +41,6 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.DateUtil;
-import jp.aegif.nemaki.util.cache.NemakiCachePool;
 
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
@@ -72,9 +71,6 @@ public class UserResource {
     
     @Autowired
     private ContentService contentService;
-    
-    @Autowired
-    private NemakiCachePool nemakiCachePool;
     
     @Context
     private UriInfo uriInfo;
@@ -490,8 +486,6 @@ public class UserResource {
                     removeUserFromAllGroups(repositoryId, userId);
 
             contentService.delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
-
-            nemakiCachePool.get(repositoryId).getUserItemCache().remove(userId);
 
             return Response.noContent().build();
             

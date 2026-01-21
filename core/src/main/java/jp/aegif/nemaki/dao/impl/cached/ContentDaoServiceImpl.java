@@ -1234,10 +1234,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		//delete user/group from cache
 		if(nb.isUser()){
 			UserItem item = getUserItem(repositoryId, objectId);
-			nemakiCachePool.get(repositoryId).getUserItemCache().remove(item.getUserId());
+			if(item != null){
+				nemakiCachePool.get(repositoryId).getUserItemCache().remove(item.getUserId());
+			}
+			// Invalidate joinedGroupCache as user's group memberships are now invalid
+			nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 		}else if(nb.isGroup()){
 			GroupItem item = getGroupItem(repositoryId, objectId);
-			nemakiCachePool.get(repositoryId).getGroupItemCache().remove(item.getGroupId());
+			if(item != null){
+				nemakiCachePool.get(repositoryId).getGroupItemCache().remove(item.getGroupId());
+			}
+			// Invalidate joinedGroupCache as group membership data is now invalid
+			nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 		}
 
 		// remove from cache FIRST
@@ -1309,10 +1317,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		//delete user/group from cache
 		if(nb.isUser()){
 			UserItem item = getUserItem(repositoryId, objectId);
-			nemakiCachePool.get(repositoryId).getUserItemCache().remove(item.getUserId());
+			if(item != null){
+				nemakiCachePool.get(repositoryId).getUserItemCache().remove(item.getUserId());
+			}
+			// Invalidate joinedGroupCache as user's group memberships are now invalid
+			nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 		}else if(nb.isGroup()){
 			GroupItem item = getGroupItem(repositoryId, objectId);
-			nemakiCachePool.get(repositoryId).getGroupItemCache().remove(item.getGroupId());
+			if(item != null){
+				nemakiCachePool.get(repositoryId).getGroupItemCache().remove(item.getGroupId());
+			}
+			// Invalidate joinedGroupCache as group membership data is now invalid
+			nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 		}
 
 		// remove from cache FIRST
