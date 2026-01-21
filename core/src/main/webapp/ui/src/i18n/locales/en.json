@@ -83,7 +83,8 @@
       "logout": "Logout",
       "search": "Search",
       "archive": "Archive",
-      "solr": "Solr Index"
+      "solr": "Solr Index",
+      "apiDocs": "API Docs"
     },
   "typeManagement": {
     "title": "Type Management",
@@ -1267,5 +1268,11 @@
       "optimizeError": "Failed to optimize index",
       "queryError": "Failed to execute query"
     }
+  },
+  "apiDocs": {
+    "title": "REST API Documentation",
+    "description": "Interactive documentation for NemakiWare CMIS REST API (OpenAPI 3.0 compliant).",
+    "note": "Authentication",
+    "noteDescription": "API requests require Basic authentication or OIDC/SAML tokens. Current repository: {{repositoryId}}"
   }
 }

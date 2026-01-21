@@ -220,7 +220,8 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   InfoCircleOutlined,
-  DatabaseOutlined
+  DatabaseOutlined,
+  ApiOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -347,6 +348,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           key: '/solr',
           icon: <DatabaseOutlined />,
           label: t('navigation.solr'),
+        },
+        {
+          key: '/api-docs',
+          icon: <ApiOutlined />,
+          label: t('navigation.apiDocs'),
         },
       ],
     }] : []),

@@ -211,6 +211,7 @@ import { PermissionManagement } from './components/PermissionManagement/Permissi
 import { SearchResults } from './components/SearchBar/SearchResults';
 import { ArchiveManagement } from './components/ArchiveManagement/ArchiveManagement';
 import { SolrMaintenance } from './components/SolrMaintenance/SolrMaintenance';
+import { ApiDocs } from './components/ApiDocs/ApiDocs';
 import { Login } from './components/Login/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute/ProtectedRoute';
@@ -294,6 +295,13 @@ function AppContent() {
             <ProtectedRoute>
               <AdminRoute>
                 <SolrMaintenance repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/api-docs" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <ApiDocs repositoryId={authToken.repositoryId} />
               </AdminRoute>
             </ProtectedRoute>
           } />

@@ -83,7 +83,8 @@
       "logout": "ログアウト",
       "search": "検索",
       "archive": "アーカイブ",
-      "solr": "Solrインデックス"
+      "solr": "Solrインデックス",
+      "apiDocs": "API仕様"
     },
   "typeManagement": {
     "title": "タイプ管理",
@@ -1267,5 +1268,11 @@
       "optimizeError": "インデックスの最適化に失敗しました",
       "queryError": "クエリの実行に失敗しました"
     }
+  },
+  "apiDocs": {
+    "title": "REST API仕様書",
+    "description": "NemakiWare CMIS REST API (OpenAPI 3.0準拠) のインタラクティブドキュメントです。",
+    "note": "認証について",
+    "noteDescription": "APIリクエストにはBasic認証またはOIDC/SAMLトークンが必要です。現在のリポジトリ: {{repositoryId}}"
   }
 }
