@@ -32,7 +32,6 @@ import {
   EditOutlined,
   DeleteOutlined,
   UserOutlined,
-  UsergroupAddOutlined,
   ExclamationCircleOutlined
 } from '@ant-design/icons';
 import { CMISService } from '../../services/cmis';
