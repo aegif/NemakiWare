@@ -1461,6 +1461,46 @@ public class CloudantClientWrapper {
 			}
 		}
 
+		// CRITICAL FIX (2025-01-21): For CouchNodeBase, use Document.getProperties() to properly map 'type' field
+		// The Cloudant SDK Document stores custom fields like 'type' in properties map, not as direct fields
+		// Without this fix, CouchNodeBase.type will be null, breaking User/Group cache invalidation
+		if (clazz.getSimpleName().equals("CouchNodeBase")) {
+			Map<String, Object> properties = doc.getProperties();
+			if (properties != null) {
+				Map<String, Object> completeMap = new HashMap<>();
+
+				// Add standard document fields
+				completeMap.put("_id", doc.getId());
+				completeMap.put("_rev", doc.getRev());
+
+				// Add all properties from CouchDB document with timestamp conversion
+				for (Map.Entry<String, Object> entry : properties.entrySet()) {
+					String key = entry.getKey();
+					Object value = entry.getValue();
+
+					// Convert timestamp fields from Number to GregorianCalendar
+					if (("created".equals(key) || "modified".equals(key)) && value instanceof Number) {
+						long timestamp = ((Number) value).longValue();
+						java.util.GregorianCalendar calendar = new java.util.GregorianCalendar();
+						calendar.setTimeInMillis(timestamp);
+						completeMap.put(key, calendar);
+					} else {
+						completeMap.put(key, value);
+					}
+				}
+
+				log.debug("CouchNodeBase deserialization - _id: {}, type: {}", doc.getId(), completeMap.get("type"));
+
+				try {
+					T result = mapper.convertValue(completeMap, clazz);
+					return result;
+				} catch (Exception deserEx) {
+					log.warn("Error deserializing CouchNodeBase: " + deserEx.getMessage());
+					throw deserEx;
+				}
+			}
+		}
+
 				// Convert immutable Document to mutable Map first, then to target class
 				@SuppressWarnings("unchecked")
 				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);

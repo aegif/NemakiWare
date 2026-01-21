@@ -52,6 +52,7 @@ public class CouchNodeBase {
 	@JsonProperty("_rev")
 	protected String revision;
 
+	@JsonProperty("type")
 	protected String type;
 	protected GregorianCalendar created;
 	protected String creator;
