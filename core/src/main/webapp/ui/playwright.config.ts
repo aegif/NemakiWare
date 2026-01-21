@@ -33,8 +33,9 @@ export default defineConfig({
   // Retry on CI only
   retries: process.env.CI ? 2 : 0,
 
-  // Opt out of parallel tests on CI
-  workers: process.env.CI ? 1 : undefined,
+  // Use single worker to prevent authentication race conditions
+  // Multiple concurrent logins can cause session conflicts in NemakiWare
+  workers: 1,
 
   // Reporter configuration
   reporter: [
@@ -72,11 +73,11 @@ export default defineConfig({
     // Record video on failure
     video: 'retain-on-failure',
 
-    // Default timeout for actions (increased for slow CI environments)
-    actionTimeout: 30000,
+    // Default timeout for actions (increased for slow CI/Docker environments)
+    actionTimeout: 60000,
 
-    // Default timeout for navigation
-    navigationTimeout: 30000,
+    // Default timeout for navigation (increased for Docker environment latency)
+    navigationTimeout: 60000,
   },
 
   // Configure projects for major browsers

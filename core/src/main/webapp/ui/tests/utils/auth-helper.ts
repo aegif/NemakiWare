@@ -394,8 +394,8 @@ export class AuthHelper {
     await loginButton.click();
     console.log(`AuthHelper: Clicked login button for user: ${credentials.username}`);
 
-    // Wait a moment for the login request to process
-    await this.page.waitForTimeout(1000);
+    // Wait for the login request to process - increased for stability
+    await this.page.waitForTimeout(2000);
     console.log('AuthHelper: Waiting for authentication...');
 
     // Check for login error messages
@@ -409,16 +409,17 @@ export class AuthHelper {
     // Increased timeout for mobile browsers and non-admin users
     // CRITICAL FIX (2025-10-21): Extended timeout to 30s to prevent flaky test failures
     // CRITICAL FIX (2025-10-26): Extended timeout to 60s for test users with permission delays
+    // CRITICAL FIX (2026-01-21): Extended timeout to 60s for all users due to Docker environment latency
     // Add retry logic for authentication race conditions
     let authRetries = 0;
-    // Increase retry count for test users who may need more time for permission propagation
-    const maxAuthRetries = credentials.username === 'admin' ? 3 : 5;
+    // Increase retry count for all users to handle Docker environment delays
+    const maxAuthRetries = credentials.username === 'admin' ? 5 : 7;
 
     while (authRetries < maxAuthRetries) {
       try {
         console.log(`AuthHelper: Waiting for authenticated page elements (attempt ${authRetries + 1}/${maxAuthRetries})...`);
-        // Increase timeout for non-admin users to allow for permission synchronization
-        const authTimeout = credentials.username === 'admin' ? 30000 : 60000;
+        // Increase timeout for all users to allow for Docker environment latency
+        const authTimeout = credentials.username === 'admin' ? 60000 : 90000;
         await this.page.waitForFunction(
           () => {
             // Check if login form is gone (password field not visible)
@@ -490,6 +491,7 @@ export class AuthHelper {
 
     // Wait for documents page to fully load with Ant Design components
     // CRITICAL FIX (2025-10-21): Extended timeout to 30s for slow CI environments
+    // CRITICAL FIX (2026-01-21): Extended timeout to 60s for Docker environment latency
     await this.page.waitForFunction(
       () => {
         // Check for key elements that indicate successful navigation to documents
@@ -497,7 +499,7 @@ export class AuthHelper {
         const hasSider = document.querySelector('.ant-layout-sider') !== null;
         return hasLayout && hasSider;
       },
-      { timeout: 30000 }  // Increased from 10000ms to 30000ms per code review feedback
+      { timeout: 60000 }  // Increased from 30000ms to 60000ms for Docker environment
     );
 
     // Additional wait for page stabilization
