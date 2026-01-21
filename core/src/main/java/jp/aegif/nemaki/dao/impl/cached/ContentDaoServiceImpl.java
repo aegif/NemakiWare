@@ -1208,6 +1208,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	/**
 	 * Maximum number of groups to expand when collecting nested group users.
 	 * If this limit is exceeded, falls back to removeAll() for safety.
+	 * 
+	 * Rationale for value 100:
+	 * - Most organizations have fewer than 100 groups in their hierarchy
+	 * - Expanding 100 groups with fresh DB reads is acceptable performance cost
+	 * - If an organization has deeper/wider group hierarchies, they should
+	 *   consider adjusting this value or accepting the removeAll() fallback
+	 * - This is a safety valve to prevent runaway expansion in pathological cases
+	 *   (e.g., circular references that somehow bypass cycle detection)
+	 * 
+	 * TODO: Consider externalizing this to nemakiware.properties for configurability
 	 */
 	private static final int MAX_NESTED_GROUP_EXPANSION = 100;
 	
