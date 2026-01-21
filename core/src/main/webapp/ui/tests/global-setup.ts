@@ -83,8 +83,11 @@ async function ensureTestUserExists(): Promise<void> {
   const couchdbUrl = process.env.COUCHDB_URL || 'http://localhost:5984';
   const couchdbAuth = 'Basic ' + Buffer.from('admin:password').toString('base64');
 
+  // Use unique test user name to avoid conflict with Keycloak SSO users
+  const testUserId = 'api-e2e-testuser';
+
   try {
-    // Check if testuser already exists
+    // Check if test user already exists
     const checkResponse = await fetch(`${couchdbUrl}/bedroom/_find`, {
       method: 'POST',
       headers: {
@@ -92,14 +95,14 @@ async function ensureTestUserExists(): Promise<void> {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        selector: { type: 'user', userId: 'testuser' },
+        selector: { type: 'user', userId: testUserId },
         limit: 1
       }),
       signal: AbortSignal.timeout(10000)
     });
 
     if (!checkResponse.ok) {
-      console.log('⚠️ Could not query CouchDB for testuser');
+      console.log(`⚠️ Could not query CouchDB for ${testUserId}`);
       return;
     }
 
@@ -109,12 +112,12 @@ async function ensureTestUserExists(): Promise<void> {
       const existingUser = result.docs[0];
       // Check if password is already BCrypt hashed
       if (existingUser.password && existingUser.password.startsWith('$2')) {
-        console.log('✅ testuser already exists with BCrypt password');
+        console.log(`✅ ${testUserId} already exists with BCrypt password`);
         return;
       }
 
       // Update existing user with BCrypt password
-      console.log('🔐 Updating testuser with BCrypt password...');
+      console.log(`🔐 Updating ${testUserId} with BCrypt password...`);
       existingUser.password = '$2a$12$WOlW7Yk7vFYz7kjFCz/GpeJ7B4kzWhnSMXH2UcN/iMAuiMcYC/Cie'; // BCrypt hash of 'test'
 
       const updateResponse = await fetch(`${couchdbUrl}/bedroom/${existingUser._id}`, {
@@ -128,24 +131,32 @@ async function ensureTestUserExists(): Promise<void> {
       });
 
       if (updateResponse.ok) {
-        console.log('✅ testuser password updated to BCrypt');
+        console.log(`✅ ${testUserId} password updated to BCrypt`);
       } else {
-        console.log('⚠️ Failed to update testuser password');
+        console.log(`⚠️ Failed to update ${testUserId} password`);
       }
     } else {
-      // Create new testuser
-      console.log('👤 Creating testuser...');
+      // Create new test user (unique name to avoid conflict with SSO users)
+      // Document format must match NemakiWare's nemaki:user structure
+      console.log(`👤 Creating ${testUserId}...`);
       const newUser = {
-        type: 'user',
-        userId: 'testuser',
-        name: 'Test User',
-        firstName: 'Test',
-        lastName: 'User',
-        email: 'testuser@example.com',
+        type: 'cmis:item',
+        objectType: 'nemaki:user',
+        userId: testUserId,
         password: '$2a$12$WOlW7Yk7vFYz7kjFCz/GpeJ7B4kzWhnSMXH2UcN/iMAuiMcYC/Cie', // BCrypt hash of 'test'
         admin: false,
-        created: new Date().toISOString(),
-        creator: 'admin'
+        creator: 'system',
+        modifier: 'system',
+        document: false,
+        content: false,
+        folder: false,
+        attachment: false,
+        relationship: false,
+        policy: false,
+        aspects: [],
+        acl: { entries: [] },
+        secondaryIds: [],
+        subTypeProperties: []
       };
 
       const createResponse = await fetch(`${couchdbUrl}/bedroom`, {
@@ -159,13 +170,13 @@ async function ensureTestUserExists(): Promise<void> {
       });
 
       if (createResponse.ok) {
-        console.log('✅ testuser created successfully');
+        console.log(`✅ ${testUserId} created successfully`);
       } else {
-        console.log('⚠️ Failed to create testuser:', await createResponse.text());
+        console.log(`⚠️ Failed to create ${testUserId}:`, await createResponse.text());
       }
     }
   } catch (error) {
-    console.log('⚠️ Could not ensure testuser exists:', error);
+    console.log(`⚠️ Could not ensure ${testUserId} exists:`, error);
   }
 }
 

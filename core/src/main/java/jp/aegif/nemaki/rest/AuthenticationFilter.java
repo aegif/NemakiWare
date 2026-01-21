@@ -76,7 +76,7 @@ public class AuthenticationFilter implements Filter {
 		// Handle CORS preflight requests (OPTIONS) - bypass authentication
 		// SimpleCorsFilter handles the actual CORS headers, we just need to bypass auth
 		if ("OPTIONS".equalsIgnoreCase(hreq.getMethod())) {
-			log.info("=== CORS: Bypassing authentication for OPTIONS preflight request ===");
+			log.debug("=== CORS: Bypassing authentication for OPTIONS preflight request ===");
 			chain.doFilter(req, res);
 			return;
 		}
@@ -86,38 +86,38 @@ public class AuthenticationFilter implements Filter {
 		String servletPath = hreq.getServletPath();
 		String pathInfo = hreq.getPathInfo();
 
-		log.info("=== AUTH DEBUG: requestURI=" + requestURI + ", servletPath=" + servletPath + ", pathInfo=" + pathInfo + " ===");
+		log.debug("=== AUTH DEBUG: requestURI=" + requestURI + ", servletPath=" + servletPath + ", pathInfo=" + pathInfo + " ===");
 
 		// UI paths should bypass REST authentication (handled by SPA)
 		if (requestURI != null && requestURI.contains("/ui/")) {
-			log.info("Bypassing REST authentication for UI path: " + requestURI);
+			log.debug("Bypassing REST authentication for UI path: " + requestURI);
 			chain.doFilter(req, res);
 			return;
 		}
 
 		// Check various URI patterns for /all/ paths
 		if (requestURI != null && requestURI.contains("/rest/all/")) {
-			log.info("Bypassing authentication for /rest/all/ URI: " + requestURI);
+			log.debug("Bypassing authentication for /rest/all/ URI: " + requestURI);
 			chain.doFilter(req, res);
 			return;
 		}
 
 		// For servlet mappings, pathInfo might be null, so check servletPath
 		if (servletPath != null && servletPath.contains("/all/")) {
-			log.info("Bypassing authentication for /all/ servletPath: " + servletPath);
+			log.debug("Bypassing authentication for /all/ servletPath: " + servletPath);
 			chain.doFilter(req, res);
 			return;
 		}
 
 		if (pathInfo != null && pathInfo.startsWith("/all/")) {
-			log.info("Bypassing authentication for /all/ pathInfo: " + pathInfo);
+			log.debug("Bypassing authentication for /all/ pathInfo: " + pathInfo);
 			chain.doFilter(req, res);
 			return;
 		}
 
 		// Bypass authentication for SSO token conversion endpoints (SAML and OIDC)
 		if (requestURI != null && (requestURI.contains("/authtoken/saml/convert") || requestURI.contains("/authtoken/oidc/convert"))) {
-			log.info("Bypassing authentication for SSO token conversion endpoint: " + requestURI);
+			log.debug("Bypassing authentication for SSO token conversion endpoint: " + requestURI);
 			chain.doFilter(req, res);
 			return;
 		}
@@ -125,7 +125,7 @@ public class AuthenticationFilter implements Filter {
 		// Bypass authentication for OpenAPI specification endpoints (allow public access to API docs)
 		// Note: API v1 CMIS endpoints are at /api/v1/cmis/* to avoid conflict with legacy /api/v1/repo/* endpoints
 		if (requestURI != null && (requestURI.contains("/api/v1/cmis/openapi.json") || requestURI.contains("/api/v1/cmis/openapi.yaml"))) {
-			log.info("Bypassing authentication for OpenAPI spec endpoint: " + requestURI);
+			log.debug("Bypassing authentication for OpenAPI spec endpoint: " + requestURI);
 			chain.doFilter(req, res);
 			return;
 		}
@@ -134,7 +134,7 @@ public class AuthenticationFilter implements Filter {
 		// These endpoints handle their own authentication through request body or SSO
 		if (requestURI != null && requestURI.contains("/api/v1/cmis/auth/") &&
 			(requestURI.endsWith("/login") || requestURI.contains("/saml") || requestURI.contains("/oidc"))) {
-			log.info("Bypassing authentication for API v1 auth endpoint: " + requestURI);
+			log.debug("Bypassing authentication for API v1 auth endpoint: " + requestURI);
 			chain.doFilter(req, res);
 			return;
 		}
@@ -173,7 +173,7 @@ public class AuthenticationFilter implements Filter {
 	public boolean login(HttpServletRequest request, HttpServletResponse response){
 		final String repositoryId = getRepositoryId(request);
 		
-		log.info("=== AUTH LOGIN: repositoryId=" + repositoryId + " ===");
+		log.debug("=== AUTH LOGIN: repositoryId=" + repositoryId + " ===");
 
 		//Create simplified callContext without servlet dependencies
 		CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, null, null, null, null);
@@ -188,7 +188,7 @@ public class AuthenticationFilter implements Filter {
 				if (values.length == 2) {
 					ctxt.put(CallContext.USERNAME, values[0]);
 					ctxt.put(CallContext.PASSWORD, values[1]);
-					log.info("=== AUTH: Basic auth extracted - username=" + values[0] + " ===");
+					log.debug("=== AUTH: Basic auth extracted - username=" + values[0] + " ===");
 				}
 			} catch (Exception e) {
 				log.error("Failed to parse Basic auth header", e);
@@ -211,7 +211,7 @@ public class AuthenticationFilter implements Filter {
 			}else{
 				auth = authenticationService.login(ctxt);
 			}
-			log.info("=== AUTH: Authentication result=" + auth + " ===");
+			log.debug("=== AUTH: Authentication result=" + auth + " ===");
 		} catch (Exception e) {
 			log.error("Authentication error", e);
 			return false;
@@ -232,7 +232,7 @@ public class AuthenticationFilter implements Filter {
 					}
 				}
 				ctxt.put(CallContextKey.IS_ADMIN, isAdmin);
-				log.info("=== AUTH: User admin status=" + isAdmin + " ===");
+				log.debug("=== AUTH: User admin status=" + isAdmin + " ===");
 			} catch (Exception e) {
 				log.error("Failed to check admin status for user: " + ctxt.getUsername(), e);
 			}
@@ -248,7 +248,7 @@ public class AuthenticationFilter implements Filter {
 	private String getRepositoryId(HttpServletRequest request){
 		// Extract path and split manually
 		String pathInfo = request.getPathInfo();
-		log.info("=== AUTH: getRepositoryId - pathInfo=" + pathInfo + " ===");
+		log.debug("=== AUTH: getRepositoryId - pathInfo=" + pathInfo + " ===");
 
 		if (pathInfo == null || pathInfo.isEmpty()) {
 			log.warn("PathInfo is null or empty");
@@ -260,7 +260,7 @@ public class AuthenticationFilter implements Filter {
 			pathInfo = pathInfo.substring(1);
 		}
 		String[] pathFragments = pathInfo.split("/");
-		log.info("=== AUTH: pathFragments=" + java.util.Arrays.toString(pathFragments) + " ===");
+		log.debug("=== AUTH: pathFragments=" + java.util.Arrays.toString(pathFragments) + " ===");
 
         if(pathFragments.length > 0){
         	// Handle API v1 path pattern: /v1/repo/{repositoryId}/...
@@ -268,7 +268,7 @@ public class AuthenticationFilter implements Filter {
         	if("v1".equals(pathFragments[0])){
         		if(pathFragments.length > 2 && ApiType.REPO.equals(pathFragments[1]) && StringUtils.isNotBlank(pathFragments[2])){
         			String repositoryId = pathFragments[2];
-        			log.info("=== AUTH: Found repositoryId from API v1 path=" + repositoryId + " ===");
+        			log.debug("=== AUTH: Found repositoryId from API v1 path=" + repositoryId + " ===");
         			return repositoryId;
         		}else{
         			log.warn("Could not extract repositoryId from API v1 path: " + java.util.Arrays.toString(pathFragments));
@@ -276,26 +276,26 @@ public class AuthenticationFilter implements Filter {
         	}else if(ApiType.REPO.equals(pathFragments[0])){
         		if(pathFragments.length > 1 && StringUtils.isNotBlank(pathFragments[1])){
         			String repositoryId = pathFragments[1];
-        			log.info("=== AUTH: Found repositoryId from repo path=" + repositoryId + " ===");
+        			log.debug("=== AUTH: Found repositoryId from repo path=" + repositoryId + " ===");
         			return repositoryId;
         		}else{
         			log.warn("repositoryId is not specified in URI.");
         		}
         	}else if(ApiType.ALL.equals(pathFragments[0])){
         		String superUserId = repositoryInfoMap.getSuperUsers().getId();
-        		log.info("=== AUTH: Using superuser ID for /all/ path=" + superUserId + " ===");
+        		log.debug("=== AUTH: Using superuser ID for /all/ path=" + superUserId + " ===");
         		return superUserId;
         	}else if("repositories".equals(pathFragments[0])){
         		// Handle /api/v1/repositories/{repositoryId}/... pattern
         		// pathFragments = ["repositories", "{repositoryId}", ...]
         		if(pathFragments.length > 1 && StringUtils.isNotBlank(pathFragments[1])){
         			String repositoryId = pathFragments[1];
-        			log.info("=== AUTH: Found repositoryId from /repositories/ path=" + repositoryId + " ===");
+        			log.debug("=== AUTH: Found repositoryId from /repositories/ path=" + repositoryId + " ===");
         			return repositoryId;
         		}else{
         			// For /repositories (list all) endpoint, use superuser
         			String superUserId = repositoryInfoMap.getSuperUsers().getId();
-        			log.info("=== AUTH: Using superuser ID for /repositories list path=" + superUserId + " ===");
+        			log.debug("=== AUTH: Using superuser ID for /repositories list path=" + superUserId + " ===");
         			return superUserId;
         		}
         	}else if("auth".equals(pathFragments[0])){
@@ -303,7 +303,7 @@ public class AuthenticationFilter implements Filter {
         		// pathFragments = ["auth", "repositories", "{repositoryId}", ...]
         		if(pathFragments.length > 2 && "repositories".equals(pathFragments[1]) && StringUtils.isNotBlank(pathFragments[2])){
         			String repositoryId = pathFragments[2];
-        			log.info("=== AUTH: Found repositoryId from /auth/repositories/ path=" + repositoryId + " ===");
+        			log.debug("=== AUTH: Found repositoryId from /auth/repositories/ path=" + repositoryId + " ===");
         			return repositoryId;
         		}else{
         			log.warn("Could not extract repositoryId from auth path: " + java.util.Arrays.toString(pathFragments));
@@ -313,7 +313,7 @@ public class AuthenticationFilter implements Filter {
         		// The repository ID is typically the second fragment
         		if(pathFragments.length > 1 && StringUtils.isNotBlank(pathFragments[1])){
         			String repositoryId = pathFragments[1];
-        			log.info("=== AUTH: Found repositoryId from standard REST path=" + repositoryId + " ===");
+        			log.debug("=== AUTH: Found repositoryId from standard REST path=" + repositoryId + " ===");
         			return repositoryId;
         		}else{
         			log.warn("Could not extract repositoryId from path: " + java.util.Arrays.toString(pathFragments));

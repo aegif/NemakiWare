@@ -474,19 +474,25 @@ public class UserResource {
             @PathParam("userId") String userId) {
         
                 logger.info("API v1: Deleting user " + userId + " from repository " + repositoryId);
-        
+
                 checkAdminAuthorization();
-        
+
                 try {
                     UserItem user = contentService.getUserItemById(repositoryId, userId);
                     if (user == null) {
                         throw ApiException.userNotFound(userId, repositoryId);
                     }
-            
+
                     removeUserFromAllGroups(repositoryId, userId);
-            
+
             contentService.delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
-            
+
+            // TODO: Cache invalidation issue - After deletion, getUserItemById() still returns
+            // the deleted user due to caching in ContentService. The user is deleted from CouchDB
+            // but the cache is not invalidated. Need to add cache invalidation for UserItem.
+            // See: ContentServiceImpl.getUserItemById() caching mechanism
+            // Related test: management-api.spec.ts "should create, get, update, and delete user"
+
             return Response.noContent().build();
             
         } catch (ApiException e) {
