@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
+import jp.aegif.nemaki.cmis.factory.auth.TokenService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -51,6 +52,7 @@ public class AuthenticationFilter implements Filter {
 
 	private PropertyManager propertyManager;
 	private AuthenticationService authenticationService;
+	private TokenService tokenService;
 	private RepositoryInfoMap repositoryInfoMap;
 	private PrincipalService principalService;
 	private final String TOKEN_FALSE = "false";
@@ -172,36 +174,66 @@ public class AuthenticationFilter implements Filter {
 
 	public boolean login(HttpServletRequest request, HttpServletResponse response){
 		final String repositoryId = getRepositoryId(request);
-		
+
 		log.debug("=== AUTH LOGIN: repositoryId=" + repositoryId + " ===");
 
 		//Create simplified callContext without servlet dependencies
 		CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, null, null, null, null);
-		
-		// Extract basic auth information directly
-		String authHeader = request.getHeader("Authorization");
-		if (authHeader != null && authHeader.startsWith("Basic ")) {
-			try {
-				String base64Credentials = authHeader.substring("Basic ".length()).trim();
-				String credentials = new String(java.util.Base64.getDecoder().decode(base64Credentials));
-				String[] values = credentials.split(":", 2);
-				if (values.length == 2) {
-					ctxt.put(CallContext.USERNAME, values[0]);
-					ctxt.put(CallContext.PASSWORD, values[1]);
-					log.debug("=== AUTH: Basic auth extracted - username=" + values[0] + " ===");
+
+		// Check for AUTH_TOKEN header first (NemakiWare token-based authentication)
+		// Support both legacy header name (nemaki_auth_token) and standard header name (AUTH_TOKEN)
+		String authToken = request.getHeader(CallContextKey.AUTH_TOKEN);
+		if (authToken == null || authToken.isEmpty()) {
+			// Fallback to standard header name used by UI
+			authToken = request.getHeader("AUTH_TOKEN");
+		}
+		String authTokenApp = request.getHeader(CallContextKey.AUTH_TOKEN_APP);
+		if (authTokenApp == null || authTokenApp.isEmpty()) {
+			authTokenApp = request.getHeader("AUTH_TOKEN_APP");
+		}
+		String app = (authTokenApp == null) ? "" : authTokenApp;
+
+		if (authToken != null && !authToken.isEmpty()) {
+			// Token-based authentication - validate token and get username
+			log.info("=== AUTH: AUTH_TOKEN header found, validating token for repository: " + repositoryId + " ===");
+
+			if (tokenService != null) {
+				String userName = tokenService.validateToken(app, repositoryId, authToken);
+				if (userName != null) {
+					log.info("=== AUTH: Token validated successfully for user: " + userName + " ===");
+					ctxt.put(CallContext.USERNAME, userName);
+					ctxt.put(CallContextKey.AUTH_TOKEN, authToken);
+					ctxt.put(CallContextKey.AUTH_TOKEN_APP, authTokenApp);
+				} else {
+					log.info("=== AUTH: Invalid or expired AUTH_TOKEN for repository: " + repositoryId + ", app: " + app + " ===");
+					return false;
 				}
-			} catch (Exception e) {
-				log.error("Failed to parse Basic auth header", e);
+			} else {
+				log.info("=== AUTH: TokenService not available for token validation ===");
 				return false;
 			}
 		} else {
-			log.warn("No Authorization header found");
-			return false;
+			// Fall back to Basic auth
+			String authHeader = request.getHeader("Authorization");
+			if (authHeader != null && authHeader.startsWith("Basic ")) {
+				try {
+					String base64Credentials = authHeader.substring("Basic ".length()).trim();
+					String credentials = new String(java.util.Base64.getDecoder().decode(base64Credentials));
+					String[] values = credentials.split(":", 2);
+					if (values.length == 2) {
+						ctxt.put(CallContext.USERNAME, values[0]);
+						ctxt.put(CallContext.PASSWORD, values[1]);
+						log.debug("=== AUTH: Basic auth extracted - username=" + values[0] + " ===");
+					}
+				} catch (Exception e) {
+					log.error("Failed to parse Basic auth header", e);
+					return false;
+				}
+			} else {
+				log.warn("No Authorization header or AUTH_TOKEN found");
+				return false;
+			}
 		}
-		
-		// Add additional context from headers
-		ctxt.put(CallContextKey.AUTH_TOKEN, request.getHeader(CallContextKey.AUTH_TOKEN));
-		ctxt.put(CallContextKey.AUTH_TOKEN_APP, request.getHeader(CallContextKey.AUTH_TOKEN_APP));
 
 		// auth
 		boolean auth = false;
@@ -365,6 +397,10 @@ public class AuthenticationFilter implements Filter {
 
 	public void setAuthenticationService(AuthenticationService authenticationService) {
 		this.authenticationService = authenticationService;
+	}
+
+	public void setTokenService(TokenService tokenService) {
+		this.tokenService = tokenService;
 	}
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {

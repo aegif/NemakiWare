@@ -162,6 +162,8 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 
                 // Run health check after completion to verify index integrity
                 if (!cancelFlags.get(repositoryId).get()) {
+                    // Force commit and wait for Solr to fully process before health check
+                    forceCommitAndWait(repositoryId);
                     runPostReindexHealthCheck(repositoryId, status, errors);
                 }
 
@@ -240,6 +242,8 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 
                 // Run health check after completion to verify index integrity
                 if (!cancelFlags.get(repositoryId).get()) {
+                    // Force commit and wait for Solr to fully process before health check
+                    forceCommitAndWait(repositoryId);
                     runPostReindexHealthCheck(repositoryId, status, errors);
                 }
 
@@ -283,6 +287,26 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         } catch (Exception e) {
             log.warn("Error during post-reindex health check: " + e.getMessage());
             // Don't fail the reindex - health check is informational
+        }
+    }
+
+    /**
+     * Force commit to Solr and wait for the commit to be fully processed.
+     * This ensures all indexed documents are visible before running health checks.
+     */
+    private void forceCommitAndWait(String repositoryId) {
+        try {
+            log.info("Forcing Solr commit for repository: " + repositoryId);
+            SolrClient solrClient = solrUtil.getSolrClient();
+            if (solrClient != null) {
+                solrClient.commit();
+                solrClient.close();
+                // Wait a short time for Solr to fully process the commit
+                Thread.sleep(2000);
+                log.info("Solr commit completed for repository: " + repositoryId);
+            }
+        } catch (Exception e) {
+            log.warn("Error during Solr commit: " + e.getMessage());
         }
     }
 

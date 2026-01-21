@@ -60,13 +60,11 @@ root_folders:
       - principal: "GROUP_EVERYONE"
         permission: "cmis:read"
     content:
-      type: "nemaki:document"
-      count: 20
+      type: "test:policy"
+      count: 10
       formats:
         - extension: "docx"
-          ratio: 0.5
-        - extension: "pptx"
-          ratio: 0.5
+          ratio: 1.0
       pages: 3
 
   - id: "keiyakusho"
@@ -99,63 +97,128 @@ root_folders:
 
 # Custom Type Definitions
 custom_types:
+  # Invoice document type with extended properties
   - type_id: "test:invoice"
-    display_name: "Invoice"
-    description: "Invoice document type"
+    display_name: "請求書"
+    description: "請求書ドキュメントタイプ"
     parent_type: "nemaki:document"
     properties:
-      - id: "test:invoice_no"
-        name: "Invoice_No"
+      - id: "test:invoiceNumber"
+        name: "請求番号"
         type: "string"
         required: false
         queryable: true
-      - id: "test:sum"
-        name: "Sum"
+      - id: "test:customerName"
+        name: "顧客名"
+        type: "string"
+        required: false
+        queryable: true
+      - id: "test:amount"
+        name: "請求金額"
         type: "integer"
         required: false
         queryable: true
-
-  - type_id: "test:contract"
-    display_name: "Contract"
-    description: "Contract document type"
-    parent_type: "nemaki:document"
-    properties:
-      - id: "test:contract_no"
-        name: "Contract_No"
+      - id: "test:issueDate"
+        name: "発行日"
+        type: "datetime"
+        required: false
+        queryable: true
+      - id: "test:invoiceStatus"
+        name: "ステータス"
         type: "string"
         required: false
         queryable: true
-      - id: "test:confidential"
-        name: "Confidential"
-        type: "boolean"
+
+  # Contract document type with extended properties
+  - type_id: "test:contract"
+    display_name: "契約書"
+    description: "契約書ドキュメントタイプ"
+    parent_type: "nemaki:document"
+    properties:
+      - id: "test:contractNumber"
+        name: "契約番号"
+        type: "string"
+        required: false
+        queryable: true
+      - id: "test:partyName"
+        name: "契約相手方"
+        type: "string"
+        required: false
+        queryable: true
+      - id: "test:startDate"
+        name: "契約開始日"
+        type: "datetime"
+        required: false
+        queryable: true
+      - id: "test:endDate"
+        name: "契約終了日"
+        type: "datetime"
+        required: false
+        queryable: true
+      - id: "test:contractType"
+        name: "契約種別"
+        type: "string"
+        required: false
+        queryable: true
+
+  # Policy document type for internal regulations
+  - type_id: "test:policy"
+    display_name: "社内規程"
+    description: "社内規程ドキュメントタイプ"
+    parent_type: "nemaki:document"
+    properties:
+      - id: "test:policyNumber"
+        name: "規程番号"
+        type: "string"
+        required: false
+        queryable: true
+      - id: "test:department"
+        name: "管理部門"
+        type: "string"
+        required: false
+        queryable: true
+      - id: "test:effectiveDate"
+        name: "施行日"
+        type: "datetime"
+        required: false
+        queryable: true
+      - id: "test:reviewDate"
+        name: "次回見直し日"
+        type: "datetime"
+        required: false
+        queryable: true
+      - id: "test:policyVersion"
+        name: "版数"
+        type: "string"
         required: false
         queryable: true
 
 # Content Generation Settings
 content_templates:
-  # Internal Regulations (Word/PowerPoint)
+  # Internal Regulations (Word documents with test:policy type)
   internal_regulations:
     titles:
       - "就業規則"
       - "給与規程"
-      - "出張旅費規程"
-      - "慶弔見舞金規程"
-      - "育児・介護休業規程"
-      - "ハラスメント防止規程"
+      - "旅費規程"
       - "情報セキュリティ規程"
       - "個人情報保護規程"
-      - "文書管理規程"
-      - "稟議規程"
-      - "経理規程"
-      - "購買規程"
-      - "在宅勤務規程"
-      - "副業・兼業規程"
-      - "退職金規程"
+      - "ハラスメント防止規程"
       - "安全衛生管理規程"
-      - "車両管理規程"
-      - "社宅管理規程"
-      - "福利厚生規程"
-      - "研修規程"
+      - "退職金規程"
+      - "育児・介護休業規程"
+      - "慶弔見舞金規程"
+    departments:
+      - id: "general"
+        name: "総務部"
+      - id: "hr"
+        name: "人事部"
+      - id: "accounting"
+        name: "経理部"
+      - id: "it"
+        name: "情報システム部"
+      - id: "legal"
+        name: "法務部"
 
   # Contracts (PDF)
   contracts:
@@ -170,6 +233,17 @@ content_templates:
       - "代理店契約書"
       - "フランチャイズ契約書"
       - "共同開発契約書"
+    types:
+      - id: "service"
+        name: "業務委託契約"
+      - id: "sales"
+        name: "売買契約"
+      - id: "nda"
+        name: "秘密保持契約"
+      - id: "lease"
+        name: "賃貸借契約"
+      - id: "other"
+        name: "その他"
     company_names:
       - "株式会社ABC商事"
       - "DEF株式会社"
@@ -185,6 +259,28 @@ content_templates:
     company_name: "株式会社テスト商事"
     company_address: "東京都千代田区丸の内1-1-1"
     company_tel: "03-1234-5678"
+    statuses:
+      - id: "draft"
+        name: "未送付"
+      - id: "sent"
+        name: "送付済"
+      - id: "paid"
+        name: "入金済"
+      - id: "cancelled"
+        name: "キャンセル"
+    customer_names:
+      - "株式会社山田商事"
+      - "ABC株式会社"
+      - "東京テクノロジー"
+      - "大阪物産"
+      - "名古屋機械工業"
+      - "福岡サービス"
+      - "札幌電機"
+      - "横浜貿易"
+      - "神戸運輸"
+      - "京都ソリューションズ"
+      - "仙台通信"
+      - "広島製造"
     items:
       - name: "コンサルティングサービス"
         unit_price: 100000

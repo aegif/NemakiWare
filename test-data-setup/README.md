@@ -113,9 +113,9 @@ Each organization has 3 users named `{org_id}1`, `{org_id}2`, `{org_id}3`.
 │   │   ├── 第一営業課/
 │   │   └── 第二営業課/
 │   └── 情報システム部/
-├── 社内規程/          (20 Word/PowerPoint files)
-├── 契約書/            (40 PDF files)
-└── インボイス/        (100 Excel files)
+├── 社内規程/          (10 Word files, test:policy type)
+├── 契約書/            (40 PDF files, test:contract type)
+└── インボイス/        (100 Excel files, test:invoice type)
 ```
 
 ### Permissions
@@ -129,13 +129,26 @@ Each organization has 3 users named `{org_id}1`, `{org_id}2`, `{org_id}3`.
 
 ### Custom Content Types
 
-**test:invoice** (extends nemaki:document)
-- `test:invoice_no` (String): Invoice number
-- `test:sum` (Integer): Total amount
+**test:invoice** (extends nemaki:document) - 請求書
+- `test:invoiceNumber` (String): 請求番号
+- `test:customerName` (String): 顧客名
+- `test:amount` (Integer): 請求金額
+- `test:issueDate` (DateTime): 発行日
+- `test:invoiceStatus` (String): ステータス (draft/sent/paid/cancelled)
 
-**test:contract** (extends nemaki:document)
-- `test:contract_no` (String): Contract number
-- `test:confidential` (Boolean): Confidentiality flag
+**test:contract** (extends nemaki:document) - 契約書
+- `test:contractNumber` (String): 契約番号
+- `test:partyName` (String): 契約相手方
+- `test:startDate` (DateTime): 契約開始日
+- `test:endDate` (DateTime): 契約終了日
+- `test:contractType` (String): 契約種別 (service/sales/nda/lease/other)
+
+**test:policy** (extends nemaki:document) - 社内規程
+- `test:policyNumber` (String): 規程番号
+- `test:department` (String): 管理部門 (general/hr/accounting/it/legal)
+- `test:effectiveDate` (DateTime): 施行日
+- `test:reviewDate` (DateTime): 次回見直し日
+- `test:policyVersion` (String): 版数
 
 ## Troubleshooting
 

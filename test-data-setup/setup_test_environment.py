@@ -583,29 +583,50 @@ class TestEnvironmentSetup:
         return formats[-1]
 
     def _generate_internal_regulation(self, index: int, extension: str, pages: int) -> dict:
-        """Generate an internal regulation document."""
+        """Generate an internal regulation document with test:policy type."""
         templates = self.config["content_templates"]["internal_regulations"]
         titles = templates["titles"]
+        departments = templates.get("departments", [{"id": "general", "name": "総務部"}])
+
         title = titles[index % len(titles)]
+        department = random.choice(departments)
+        policy_number = f"POL-{index + 1:03d}"
+        policy_version = f"第{random.randint(1, 5)}版"
+
+        # Generate dates
+        effective_date = datetime(2024, 4, 1) + timedelta(days=random.randint(0, 365))
+        review_date = effective_date + timedelta(days=365)
 
         if index >= len(titles):
             title = f"{title}_{index // len(titles) + 1}"
 
-        content = self._create_regulation_content(title, extension, pages)
+        content = self._create_regulation_content(title, extension, pages, policy_number, department["name"], effective_date, policy_version)
 
         return {
             "name": f"{title}.{extension}",
             "content": content,
-            "properties": {},
+            "properties": {
+                "test:policyNumber": policy_number,
+                "test:department": department["id"],
+                "test:effectiveDate": effective_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                "test:reviewDate": review_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                "test:policyVersion": policy_version,
+            },
         }
 
-    def _create_regulation_content(self, title: str, extension: str, pages: int) -> bytes:
+    def _create_regulation_content(self, title: str, extension: str, pages: int,
+                                     policy_number: str = None, department: str = None,
+                                     effective_date: datetime = None, policy_version: str = None) -> bytes:
         """Create regulation document content.
 
         Args:
             title: Document title
             extension: File extension (must be 'docx' or 'pptx')
             pages: Number of pages to generate
+            policy_number: Policy document number
+            department: Managing department name
+            effective_date: Effective date of the policy
+            policy_version: Version string of the policy
 
         Returns:
             Document content as bytes
@@ -614,7 +635,7 @@ class TestEnvironmentSetup:
             ValueError: If extension is not 'docx' or 'pptx'
         """
         if extension == "docx":
-            return self._create_word_document(title, pages)
+            return self._create_word_document(title, pages, policy_number, department, effective_date, policy_version)
         elif extension == "pptx":
             return self._create_powerpoint_document(title, pages)
         else:
@@ -624,11 +645,25 @@ class TestEnvironmentSetup:
                 f"Please check your config.yaml formats section."
             )
 
-    def _create_word_document(self, title: str, pages: int) -> bytes:
+    def _create_word_document(self, title: str, pages: int,
+                               policy_number: str = None, department: str = None,
+                               effective_date: datetime = None, policy_version: str = None) -> bytes:
         """Create a Word document with regulation content."""
         doc = Document()
 
         doc.add_heading(title, 0)
+
+        # Add policy metadata if provided
+        if policy_number or department or effective_date or policy_version:
+            if policy_number:
+                doc.add_paragraph(f"規程番号: {policy_number}")
+            if effective_date:
+                doc.add_paragraph(f"施行日: {effective_date.strftime('%Y年%m月%d日')}")
+            if department:
+                doc.add_paragraph(f"管理部門: {department}")
+            if policy_version:
+                doc.add_paragraph(f"版数: {policy_version}")
+            doc.add_paragraph("")
 
         doc.add_heading("第1章 総則", level=1)
         doc.add_paragraph(
@@ -664,8 +699,9 @@ class TestEnvironmentSetup:
                 )
 
         doc.add_heading("附則", level=1)
+        effective_date_str = effective_date.strftime('%Y年%m月%d日') if effective_date else "令和6年4月1日"
         doc.add_paragraph(
-            "1. 本規程は、令和6年4月1日から施行する。\n"
+            f"1. 本規程は、{effective_date_str}から施行する。\n"
             "2. 本規程の改廃は、取締役会の決議による。"
         )
 
@@ -744,23 +780,33 @@ class TestEnvironmentSetup:
         templates = self.config["content_templates"]["contracts"]
         titles = templates["titles"]
         companies = templates["company_names"]
+        contract_types = templates.get("types", [{"id": "other", "name": "その他"}])
 
         title = titles[index % len(titles)]
         company = companies[index % len(companies)]
         contract_no = f"CTR-{datetime.now().year}-{index + 1:04d}"
+        contract_type = random.choice(contract_types)
 
-        content = self._create_contract_pdf(title, company, contract_no, pages)
+        # Generate contract dates
+        start_date = datetime.now() - timedelta(days=random.randint(0, 90))
+        end_date = start_date + timedelta(days=random.randint(365, 730))
+
+        content = self._create_contract_pdf(title, company, contract_no, pages, start_date, end_date)
 
         return {
             "name": f"{title}_{contract_no}.pdf",
             "content": content,
             "properties": {
-                "test:contract_no": contract_no,
-                "test:confidential": random.choice([True, False]),
+                "test:contractNumber": contract_no,
+                "test:partyName": company,
+                "test:startDate": start_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                "test:endDate": end_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                "test:contractType": contract_type["id"],
             },
         }
 
-    def _create_contract_pdf(self, title: str, company: str, contract_no: str, pages: int) -> bytes:
+    def _create_contract_pdf(self, title: str, company: str, contract_no: str, pages: int,
+                              start_date: datetime = None, end_date: datetime = None) -> bytes:
         """Create a PDF contract document."""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2 * cm, bottomMargin=2 * cm)
@@ -784,6 +830,12 @@ class TestEnvironmentSetup:
             leading=14,
             spaceAfter=12,
         )
+
+        # Use provided dates or generate random ones
+        if start_date is None:
+            start_date = datetime.now() - timedelta(days=random.randint(1, 365))
+        if end_date is None:
+            end_date = start_date + timedelta(days=random.randint(365, 730))
 
         story = []
 
@@ -849,10 +901,15 @@ class TestEnvironmentSetup:
         )
         story.append(Spacer(1, 20))
 
-        contract_date = datetime.now() - timedelta(days=random.randint(1, 365))
         story.append(
             Paragraph(
-                f"契約締結日: {contract_date.strftime('%Y年%m月%d日')}",
+                f"契約締結日: {start_date.strftime('%Y年%m月%d日')}",
+                body_style,
+            )
+        )
+        story.append(
+            Paragraph(
+                f"契約期間: {start_date.strftime('%Y年%m月%d日')} ～ {end_date.strftime('%Y年%m月%d日')}",
                 body_style,
             )
         )
@@ -871,8 +928,13 @@ class TestEnvironmentSetup:
         """Generate an invoice document."""
         templates = self.config["content_templates"]["invoices"]
         items = templates["items"]
+        customer_names = templates.get("customer_names", ["株式会社サンプル顧客"])
+        statuses = templates.get("statuses", [{"id": "draft", "name": "未送付"}])
 
         invoice_no = f"INV-{datetime.now().year}-{index + 1:05d}"
+        customer_name = random.choice(customer_names)
+        status = random.choice(statuses)
+        issue_date = datetime.now() - timedelta(days=random.randint(0, 180))
 
         num_items = random.randint(1, 5)
         selected_items = random.sample(items, min(num_items, len(items)))
@@ -893,19 +955,23 @@ class TestEnvironmentSetup:
                 }
             )
 
-        content = self._create_invoice_excel(invoice_no, invoice_items, total_sum, templates)
+        content = self._create_invoice_excel(invoice_no, invoice_items, total_sum, templates, customer_name, issue_date)
 
         return {
             "name": f"請求書_{invoice_no}.xlsx",
             "content": content,
             "properties": {
-                "test:invoice_no": invoice_no,
-                "test:sum": total_sum,
+                "test:invoiceNumber": invoice_no,
+                "test:customerName": customer_name,
+                "test:amount": total_sum,
+                "test:issueDate": issue_date.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                "test:invoiceStatus": status["id"],
             },
         }
 
     def _create_invoice_excel(
-        self, invoice_no: str, items: list, total_sum: int, templates: dict
+        self, invoice_no: str, items: list, total_sum: int, templates: dict,
+        customer_name: str = None, issue_date: datetime = None
     ) -> bytes:
         """Create an Excel invoice document."""
         wb = Workbook()
@@ -934,11 +1000,11 @@ class TestEnvironmentSetup:
         ws["A1"].alignment = Alignment(horizontal="center")
 
         ws["A3"] = f"請求書番号: {invoice_no}"
-        invoice_date = datetime.now() - timedelta(days=random.randint(0, 30))
+        invoice_date = issue_date if issue_date else datetime.now() - timedelta(days=random.randint(0, 30))
         ws["D3"] = f"発行日: {invoice_date.strftime('%Y年%m月%d日')}"
 
         ws["A5"] = "御中"
-        ws["A6"] = f"株式会社サンプル顧客{random.randint(1, 100)}"
+        ws["A6"] = customer_name if customer_name else f"株式会社サンプル顧客{random.randint(1, 100)}"
 
         ws["D5"] = templates["company_name"]
         ws["D6"] = templates["company_address"]
@@ -1059,12 +1125,12 @@ class TestEnvironmentSetup:
             # Check for error responses
             if "exception" in response.text:
                 # Skip "already exists" errors silently
-                if "already exists" in response.text.lower() or "constraint" in response.text.lower():
+                if "already exists" in response.text.lower():
                     return
-                print(f"      Error uploading {name}: {response.text[:100]}")
+                print(f"      Error uploading {name}: {response.text[:200]}")
 
         except Exception as e:
-            if "already exists" in str(e).lower() or "constraint" in str(e).lower():
+            if "already exists" in str(e).lower():
                 pass
             else:
                 print(f"      Error uploading {name}: {e}")

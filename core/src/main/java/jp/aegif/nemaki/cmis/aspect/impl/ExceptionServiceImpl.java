@@ -693,7 +693,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			constraint(objectId, msg);
 		}
 
-		BigInteger max = ((PropertyIntegerDefinition) definition).getMinValue();
+		BigInteger max = ((PropertyIntegerDefinition) definition).getMaxValue();
 		if (max != null && max.compareTo(val) < 0) {
 			constraint(objectId, msg);
 		}
@@ -714,7 +714,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 
 		BigDecimal max = ((PropertyDecimalDefinition) definition).getMaxValue();
-		if (max != null && max.compareTo(val) > 0) {
+		if (max != null && max.compareTo(val) < 0) {
 			constraint(objectId, msg);
 		}
 	}

@@ -738,6 +738,7 @@
     <bean id="restAuthenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
         <property name="propertyManager" ref="propertyManager" />
         <property name="authenticationService" ref="AuthenticationService" />
+        <property name="tokenService" ref="TokenService" />
         <property name="repositoryInfoMap" ref="repositoryInfoMap" />
         <property name="principalService" ref="PrincipalService" />
     </bean>
