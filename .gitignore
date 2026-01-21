@@ -1,22 +1,225 @@
+# Operating System files
 .DS_Store
+Thumbs.db
 *~
-nohup.out
-jetty.log
+
+# IDE and Editor files
 .classpath
 .project
-.settings
-!.gitkeep
+.settings/
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# Java compilation
+*.class
+**/*.class
+dependency-reduced-pom.xml
+
+# Build artifacts - should be built in each environment
+**/cloudant-init.jar
+cloudant-init/target/
+core/target/
+solr/target/
+action/target/
+common/target/
+
+# Maven/Build artifacts
+target/
+*/target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# Logs and temporary files
+*.log
+logs/
+*/logs/
+nohup.out
+jetty.log
+temp/
+*/temp/
+*.tmp
+*.bak
+
+# Test artifacts and reports
+tck-reports/
+**/tck-reports/
+test-output/
+**/test-reports/
+**/surefire-reports/
+
+# Generated TCK test files (from cleanup)
+*TckRunner.java
+*QueryTest.java
+run-*-tck.sh
+generate-*-tck-report.sh
+test-crud-fix.sh
+
+# Large binary files that should not be tracked
+*.war
+*.tgz
+*.tar.gz
+*solr-with-dependencies*.jar
+
+# Docker build contexts and WAR files
+docker/core/core*.war
+docker/ui/ui*.war
+docker/docker/core/core*.war
+docker/*/core*.war
+core/core*.war
+ui/target/scala-*/ui*.war
+
+# Solr dependencies and large JARs  
+solr/solr/*/lib/solr-with-dependencies*.jar
+docker/solr/solr/*/lib/solr-with-dependencies*.jar
+lib/jakarta-converted/solr-with-dependencies*.jar
+
+# Exception: Keep Jakarta-converted OpenCMIS JARs (important project artifacts)
+!docker/jakarta-lib/*jakarta*.jar
+!lib/jakarta-converted/*jakarta*.jar
+
+# Build workspace artifacts - exclude build outputs but keep OpenCMIS source code for debugging
+build-workspace/*
+# Exception: Keep OpenCMIS 1.2.0-SNAPSHOT source code for debugging and custom modifications  
+!build-workspace/chemistry-opencmis/
+build-workspace/chemistry-opencmis/**/target/
+build-workspace/chemistry-opencmis/**/*.class
+# Self-built JAR files should not be committed (we have source code)
+build-workspace/chemistry-opencmis/built-jars/
+# Keep specific source directories
+!build-workspace/chemistry-opencmis/chemistry-opencmis-client/
+!build-workspace/chemistry-opencmis/chemistry-opencmis-server/
+!build-workspace/chemistry-opencmis/chemistry-opencmis-commons/
+
+# NemakiWare specific
 setup/installer/*/log
-target
-/logs
-action-sample/dependency-reduced-pom.xml
 setup/installer/NemakiInstaller*
 core/catalina.home_IS_UNDEFINED/
+/*/catalina.home_IS_UNDEFINED
 core/src/main/webapp/WEB-INF/classes/custom-nemakiware.properties
 core/src/main/webapp/WEB-INF/classes/custom-repositories.yml
-/*/catalina.home_IS_UNDEFINED
-action/nemakiware-action.iml
-common/nemakiware-common.iml
-core/core.iml
-solr/solr.iml
-.idea
+
+# IzPack installer artifacts
+setup/installer/*.jar
+setup/installer/*.tar.gz
+setup/installer/target/
+setup/installer/install-util/target/
+setup/installer/auto-install*.xml
+setup/installer/simple-*.xml
+setup/installer/test-*.xml
+setup/installer/test-*.properties
+setup/installer/izpack-*.xml
+setup/installer/izpack-*.pom.xml
+setup/installer/*.bak
+setup/installer/make.bat
+setup/installer/make.sh
+setup/installer/bjornloka-wrapper.sh
+setup/installer/[0-9]*/
+setup/installer/bedroom/
+setup/installer/IzPack*/
+setup/installer/META-INF/
+setup/installer/tomcat/logs/
+setup/installer/solr/
+
+# Docker build artifacts
+docker/core/core.war
+docker/core/WEB-INF/
+docker/core/META-INF/
+docker/solr/solr.war
+docker/temp/
+docker/test-output.log
+docker/tck-execution.log
+
+# Generated configuration copies (keep source versions)
+docker/cmis-tck-parameters-docker.properties
+docker/cmis-tck-filters-docker.properties
+
+# Legacy UI module removed - React SPA now in core/src/main/webapp/ui/
+
+# Claude AI artifacts
+.claude/
+# Note: CLAUDE.md is intentionally NOT ignored as it contains project documentation
+
+# Keep important files
+!.gitkeep
+!core/src/test/resources/cmis-tck-*.properties
+
+# Important shell scripts for development and deployment
+!reliable-docker-deploy.sh
+!qa-test.sh
+!setup/installer/make.sh
+
+# Docker initializer JARs should be built, not committed
+docker/initializer/*.jar
+
+# PID files (runtime artifacts)
+*.pid
+**/*.pid
+
+# Test artifacts created during development
+*Test.java
+*Test.class
+DirectQueryTest.*
+ComprehensiveQueryTest.*
+MinimalTckTest.*
+QueryTckRunnerNoPolicyHang.*
+SimpleQueryTest.*
+
+# Exception: Keep important unit test files for Solr index maintenance
+!core/src/test/java/jp/aegif/nemaki/businesslogic/impl/SolrIndexMaintenanceServiceImpl*Test.java
+
+# Runtime logs and configuration
+jetty-*.log
+query-*.log
+tck-*.log
+
+# Solr distribution (exclude full distribution)
+solr-9.8.0/
+solr-*.tgz
+
+# WAR files (build artifacts)
+*.war
+**/*.war
+core/core.war/
+docker/core/*.war
+docker/**/*.war
+setup/installer/**/*.war
+
+# Large JAR files
+solr/solr/*/lib/
+docker/solr/solr/*/lib/
+# Commented out: build-workspace/chemistry-opencmis (source code should be tracked)
+core/src/main/webapp/ui/node_modules/
+.serena
+war_edit
+WEB-INF
+temp-extract
+
+# OpenCMIS build artifacts (auto-generated)
+build-workspace/chemistry-opencmis/built-jars/*.jar
+tck-evidence-2025-10-11.tar.gz
+*.bak*
+*.backup
+*.orig
+*.old
+node/
+
+# Legacy OpenCMIS JARs (removed 2025-12-16)
+# These are no longer needed - using lib/built-jars/ for custom OpenCMIS builds
+lib/014-source/
+suspended-modules/opencmis-1.1.0-legacy/
+suspended-modules/opencmis-1.2.0-jars/
+suspended-modules/opencmis-legacy-converted/
+chemistry-opencmis-1.1.0-jakarta-jars/
+
+# WAR展開ディレクトリ (デバッグ用の一時ディレクトリ)
+war_content/
+
+# 古いビルドアセット残骸 (正しいビルドは ui/dist/assets/)
+core/src/main/webapp/ui/assets/
+test-data-setup/config.yaml

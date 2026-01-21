@@ -72,6 +72,7 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.support.GenericApplicationContext;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.cmis.service.NavigationService;
@@ -80,7 +81,7 @@ import jp.aegif.nemaki.cmis.service.PolicyService;
 import jp.aegif.nemaki.cmis.service.RelationshipService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
-import jp.aegif.nemaki.plugin.action.JavaBackedAction;
+import jp.aegif.nemaki.model.Document;
 
 /**
  * Nemaki CMIS service.
@@ -96,6 +97,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * Map containing all Nemaki repositories.
 	 */
 
+	private ContentService contentService;
 	private AclService aclService;
 	private DiscoveryService discoveryService;
 	private NavigationService navigationService;
@@ -172,6 +174,36 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		info.setTypeId(getIdProperty(object, PropertyIds.OBJECT_TYPE_ID));
 		info.setBaseType(object.getBaseTypeId());
 
+		// CRITICAL TCK FIX (2025-11-03): PWC detection with property filter fallback MUST happen BEFORE versioning logic
+		// ROOT CAUSE: When client applies property filter, cmis:isPrivateWorkingCopy may be excluded from ObjectData
+		//             This causes getBooleanProperty() to return null, even though document is actually a PWC
+		// SOLUTION: Two-phase detection:
+		//           1. Try to read IS_PRIVATE_WORKING_COPY property from ObjectData (fast, when available)
+		//           2. If null (filtered), check if objectId equals versionSeriesCheckedOutId (CMIS spec fallback)
+		// CMIS Spec: A document is a PWC if and only if its ID equals the versionSeriesCheckedOutId
+		String objectId = object.getId();
+		boolean isPWCObject = false;
+		if (object.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
+			Boolean isPWCProperty = getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
+
+			if (isPWCProperty != null) {
+				// Property available: Use it directly (normal case)
+				isPWCObject = isPWCProperty.booleanValue();
+				if (log.isDebugEnabled()) {
+					log.debug("PWC detection for objectId=" + objectId + ": isPWC=" + isPWCObject +
+							 " (from IS_PRIVATE_WORKING_COPY property)");
+				}
+			} else {
+				// Property null (filtered): Use versionSeriesCheckedOutId fallback (CMIS spec method)
+				String versionSeriesCheckedOutId = getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID);
+				isPWCObject = (versionSeriesCheckedOutId != null && objectId.equals(versionSeriesCheckedOutId));
+				if (log.isDebugEnabled()) {
+					log.debug("PWC detection for objectId=" + objectId + ": isPWC=" + isPWCObject +
+							 " (property filtered, used versionSeriesCheckedOutId=" + versionSeriesCheckedOutId + " fallback)");
+				}
+			}
+		}
+
 		// versioning
 		info.setIsCurrentVersion(object.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT);
 		info.setWorkingCopyId(null);
@@ -180,29 +212,41 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		info.setVersionSeriesId(getIdProperty(object, PropertyIds.VERSION_SERIES_ID));
 		if (info.getVersionSeriesId() != null) {
 			Boolean isLatest = getBooleanProperty(object, PropertyIds.IS_LATEST_VERSION);
-			info.setIsCurrentVersion(isLatest == null ? true : isLatest.booleanValue());
+			// CRITICAL TCK FIX (2025-11-03): Use pre-computed isPWCObject instead of getBooleanProperty()
+			// This ensures PWC status is correctly detected even when IS_PRIVATE_WORKING_COPY property is filtered
+			Boolean isPWC = isPWCObject ? Boolean.TRUE : getBooleanProperty(object, PropertyIds.IS_PRIVATE_WORKING_COPY);
 
-			Boolean isCheckedOut = getBooleanProperty(object, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
-			if (isCheckedOut != null && isCheckedOut.booleanValue()) {
-				info.setWorkingCopyId(getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
-
-				// get latest version
-				// // Nemaki Cusomization START ////
-				/*
-				 * List<ObjectData> versions = getAllVersions(repositoryId,
-				 * object.getId(), info.getVersionSeriesId(), null,
-				 * Boolean.FALSE, null); if (versions != null && versions.size()
-				 * > 0) {
-				 * info.setWorkingCopyOriginalId(versions.get(0).getId()); }
-				 */
-
-				// NOTE:Spec2.2.7.6 only says the first element of
-				// getAllVersions MUST be PWC.
-				// When isCheckedOut = true, PWC MUST exsits, and
-				// cmis:versionSeriesCheckedOutId is PWC id(2.1.13.5.1).
-				info.setWorkingCopyOriginalId(getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
-				// // Nemaki Cusomization END ////
+			// CRITICAL TCK FIX (2025-11-03): PWC documents MUST have isCurrentVersion=true
+			// Even though PWC objects are not the "latest version", they ARE the "current version" for versioning operations
+			// OpenCMIS client checks isCurrentVersion() before allowing getAllVersions() and other versioning operations
+			// Without this fix, versioning operations on PWC throw CmisNotSupportedException
+			boolean isCurrentVersion;
+			if (isPWC != null && isPWC.booleanValue()) {
+				isCurrentVersion = true;  // PWCs are always "current version" for versioning operations
+				log.debug("Setting isCurrentVersion=true for PWC document");
+			} else {
+				// CRITICAL TCK FIX (2025-11-01): Default to FALSE instead of TRUE when IS_LATEST_VERSION is null
+				// Previous behavior: Defaulted to TRUE causing old versions to incorrectly appear as "current version"
+				// Correct behavior: Default to FALSE - only latest version should have isLatestVersion=true
+				// This prevents incorrect AtomPub link generation for non-latest versions
+				isCurrentVersion = (isLatest == null ? false : isLatest.booleanValue());
 			}
+
+			info.setIsCurrentVersion(isCurrentVersion);
+
+		Boolean isCheckedOut = getBooleanProperty(object, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
+
+		if (isCheckedOut != null && isCheckedOut.booleanValue()) {
+			String pwcId = getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID);
+
+			if (isPWC != null && isPWC.booleanValue()) {
+				info.setWorkingCopyId(null);
+				info.setWorkingCopyOriginalId(null);
+			} else {
+				info.setWorkingCopyId(pwcId);
+				info.setWorkingCopyOriginalId(null);
+			}
+		}
 		}
 
 		// content
@@ -210,7 +254,12 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		String mimeType = getStringProperty(object, PropertyIds.CONTENT_STREAM_MIME_TYPE);
 		String streamId = getIdProperty(object, PropertyIds.CONTENT_STREAM_ID);
 		BigInteger length = getIntegerProperty(object, PropertyIds.CONTENT_STREAM_LENGTH);
-		boolean hasContent = fileName != null || mimeType != null || streamId != null || length != null;
+
+		// CRITICAL TCK FIX (2025-10-09): Treat length=-1 as "no content" for CMIS 1.1 compliance
+		// CMIS uses -1 to indicate unknown/no content length (see CASE 3.5 in CompileServiceImpl)
+		boolean hasValidLength = length != null && !BigInteger.valueOf(-1L).equals(length);
+		boolean hasContent = fileName != null || mimeType != null || streamId != null || hasValidLength;
+
 		if (hasContent) {
 			info.setHasContent(hasContent);
 			info.setContentType(mimeType);
@@ -237,34 +286,69 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 			 */
 		} else {
 			String objecTypeId = getIdProperty(object, PropertyIds.OBJECT_TYPE_ID);
-			TypeDefinition typeDefinition = getTypeDefinition(repositoryId, objecTypeId, null);
+			// CRITICAL FIX (2025-12-27): Handle orphaned objects with missing TypeDefinition
+			// Orphaned objects (e.g., test:customDoc44acd8be) may exist in CouchDB but their
+			// TypeDefinition was deleted. Without this try-catch, getTypeDefinition() throws
+			// CmisObjectNotFoundException which breaks getChildren() for the entire folder.
+			try {
+				TypeDefinition typeDefinition = getTypeDefinition(repositoryId, objecTypeId, null);
 
-			if (typeDefinition.isFileable()) {
-				boolean unfiling = (repositoryInfo.getCapabilities().isUnfilingSupported() == null) ? false
-						: repositoryInfo.getCapabilities().isUnfilingSupported();
-				if (unfiling) {
-					List<ObjectParentData> parents = getObjectParents(repositoryId, object.getId(), null, Boolean.FALSE,
-							IncludeRelationships.NONE, "cmis:none", Boolean.FALSE, null);
-					info.setHasParent(parents != null && parents.size() >= 0);
+				if (typeDefinition != null && typeDefinition.isFileable()) {
+					boolean unfiling = (repositoryInfo.getCapabilities().isUnfilingSupported() == null) ? false
+							: repositoryInfo.getCapabilities().isUnfilingSupported();
+					if (unfiling) {
+						List<ObjectParentData> parents = getObjectParents(repositoryId, object.getId(), null, Boolean.FALSE,
+								IncludeRelationships.NONE, "cmis:none", Boolean.FALSE, null);
+						info.setHasParent(parents != null && parents.size() >= 0);
+					} else {
+						info.setHasParent(true);
+					}
 				} else {
-					info.setHasParent(true);
+					info.setHasParent(false);
 				}
-			} else {
-				info.setHasParent(false);
+			} catch (CmisObjectNotFoundException e) {
+				// Orphaned object with missing type definition - assume hasParent based on parentId property
+				String parentId = getIdProperty(object, PropertyIds.PARENT_ID);
+				info.setHasParent(parentId != null && !parentId.isEmpty());
+				log.warn("Orphaned object with missing TypeDefinition: objectId=" + object.getId()
+						+ ", typeId=" + objecTypeId + ", assuming hasParent=" + info.hasParent());
 			}
 		}
 		// // Nemaki Cusomization END ////
 
 		// policies and relationships
-		info.setSupportsRelationships(false);
+		// TCK CRITICAL FIX (2025-11-02): Relationships link generation policy
+		// CMIS Spec: Relationship objects CANNOT have relationships (prevents circular references)
+		// OpenCMIS Client Issue: When fetching Relationship objects with includeRelationships=BOTH,
+		//                        client expects NO relationships link (since they can't have relationships)
+		// Root Cause: checkRelationships() in TCK fetches relationship objects with SELECT_ALL_NO_CACHE_OC
+		//             If relationships link exists for Relationship objects → CmisNotSupportedException
+		// Solution: Generate relationships link ONLY for non-Relationship objects (Documents, Folders)
+		//           This is CMIS-compliant and matches client expectations
+		boolean isRelationshipObject = object.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP;
+
+		// Check if this is the root folder (use existing repositoryInfo from line 165)
+		boolean isRootFolder = objectId.equals(repositoryInfo.getRootFolderId());
+
+
+		// CRITICAL FIX (2025-11-02 REVISED 6 CORRECTED): PWC objects SHOULD have supportsRelationships=true
+		// PREVIOUS BUG: PWC objects were excluded from relationships support (supportsRelationships=false)
+		// CORRECT BEHAVIOR: Only Relationship objects and root folder should have supportsRelationships=false
+		// RATIONALE: PWC objects are regular documents that happen to be checked out - they can have relationships
+		//            The CMIS spec only restricts relationships for Relationship objects themselves (circular reference)
+		//            and root folder (implementation limitation)
+		boolean supportsRelationships = !isRelationshipObject && !isRootFolder;
+
+
+		info.setSupportsRelationships(supportsRelationships);
+
 		info.setSupportsPolicies(false);
 
+		// Policy support check - only enable if cmis:policy base type exists
 		TypeDefinitionList baseTypesList = getTypeChildren(repositoryId, null, Boolean.FALSE, BigInteger.valueOf(4),
 				BigInteger.ZERO, null);
 		for (TypeDefinition type : baseTypesList.getList()) {
-			if (BaseTypeId.CMIS_RELATIONSHIP.value().equals(type.getId())) {
-				info.setSupportsRelationships(true);
-			} else if (BaseTypeId.CMIS_POLICY.value().equals(type.getId())) {
+			if (BaseTypeId.CMIS_POLICY.value().equals(type.getId())) {
 				info.setSupportsPolicies(true);
 			}
 		}
@@ -405,7 +489,15 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 */
 	@Override
 	public ObjectData getFolderParent(String repositoryId, String folderId, String filter, ExtensionsData extension) {
-		return navigationService.getFolderParent(getCallContext(), repositoryId, folderId, filter, null);
+		ObjectData parent = navigationService.getFolderParent(getCallContext(), repositoryId, folderId, filter, null);
+		
+		// CRITICAL TCK FIX: Register ObjectInfo for the parent folder
+		// Without this, OpenCMIS AtomPub binding throws "Object Info not found for: null"
+		if (parent != null && parent.getId() != null) {
+			setObjectInfo(repositoryId, parent);
+		}
+		
+		return parent;
 	}
 
 	/**
@@ -460,6 +552,8 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	public String createDocument(String repositoryId, Properties properties, String folderId,
 			ContentStream contentStream, VersioningState versioningState, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
+		// FIXED: TypeManagerImpl property definition clearing disabled to preserve CMIS type inheritance
+		
 		return objectService.createDocument(getCallContext(), repositoryId, properties, folderId, contentStream,
 				versioningState, policies, addAces, removeAces, null);
 	}
@@ -483,6 +577,11 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	@Override
 	public String createFolder(String repositoryId, Properties properties, String folderId, List<String> policies,
 			Acl addAces, Acl removeAces, ExtensionsData extension) {
+		
+		if (log.isDebugEnabled()) {
+			log.debug("Creating folder in repository: " + repositoryId + ", parent folder: " + folderId);
+		}
+		
 		return objectService.createFolder(getCallContext(), repositoryId, properties, folderId, policies, addAces,
 				removeAces, extension);
 	}
@@ -721,6 +820,61 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	}
 
 	/**
+	 * CRITICAL TCK FIX: Apply ACL with separate add and remove ACEs.
+	 * This overload is required for OpenCMIS Browser Binding compatibility.
+	 * TCK tests use this method signature for applyACL operations.
+	 *
+	 * CRITICAL FIX (2025-11-12): Properly handle both add and remove ACEs
+	 * Previous implementation ignored removeAces causing NullPointerException
+	 * when only removeACE was specified in Browser Binding requests
+	 */
+	@Override
+	public Acl applyAcl(String repositoryId, String objectId, Acl addAces, Acl removeAces,
+			AclPropagation aclPropagation, ExtensionsData extension) {
+
+		// CRITICAL FIX: Get current ACL first
+		Acl currentAcl = aclService.getAcl(getCallContext(), repositoryId, objectId, false, extension);
+
+		// Build new ACL by applying add/remove operations
+		java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> newAces = new java.util.ArrayList<>();
+
+		// Start with current ACEs (only direct ones)
+		for (org.apache.chemistry.opencmis.commons.data.Ace ace : currentAcl.getAces()) {
+			if (ace.isDirect()) {
+				newAces.add(ace);
+			}
+		}
+
+		// Remove ACEs if removeAces is provided
+		if (removeAces != null && removeAces.getAces() != null && !removeAces.getAces().isEmpty()) {
+			for (org.apache.chemistry.opencmis.commons.data.Ace removeAce : removeAces.getAces()) {
+				String principalToRemove = removeAce.getPrincipalId();
+				newAces.removeIf(ace -> ace.getPrincipalId().equals(principalToRemove));
+			}
+		}
+
+		// Add new ACEs if addAces is provided
+		if (addAces != null && addAces.getAces() != null && !addAces.getAces().isEmpty()) {
+			for (org.apache.chemistry.opencmis.commons.data.Ace addAce : addAces.getAces()) {
+				// Remove existing ACE for same principal first (replace operation)
+				newAces.removeIf(ace -> ace.getPrincipalId().equals(addAce.getPrincipalId()));
+				newAces.add(addAce);
+			}
+		}
+
+		// Create final ACL with merged ACEs and extension elements
+		org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl finalAcl =
+			new org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl(newAces);
+
+		// CRITICAL: Copy extension elements from request to final ACL so they reach AclServiceImpl
+		if (extension != null && extension.getExtensions() != null && !extension.getExtensions().isEmpty()) {
+			finalAcl.setExtensions(extension.getExtensions());
+		}
+
+		return aclService.applyAcl(getCallContext(), repositoryId, objectId, finalAcl, aclPropagation);
+	}
+
+	/**
 	 * Get the ACL (Access Control List) currently applied to the specified
 	 * object.
 	 */
@@ -763,8 +917,19 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	@Override
 	public TypeDefinitionList getTypeChildren(String repositoryId, String typeId, Boolean includePropertyDefinitions,
 			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
-		return repositoryService.getTypeChildren(getCallContext(), repositoryId, typeId, includePropertyDefinitions,
+		log.info("*** CmisService.getTypeChildren ENTRY: repositoryId=" + repositoryId + 
+				 ", typeId=" + typeId + 
+				 ", includePropertyDefinitions=" + includePropertyDefinitions +
+				 ", maxItems=" + maxItems + 
+				 ", skipCount=" + skipCount + " ***");
+		
+		TypeDefinitionList result = repositoryService.getTypeChildren(getCallContext(), repositoryId, typeId, includePropertyDefinitions,
 				maxItems, skipCount, null);
+		
+		log.info("*** CmisService.getTypeChildren EXIT: returned " + 
+				 (result != null && result.getList() != null ? result.getList().size() : "null") + " type definitions ***");
+		
+		return result;
 	}
 
 	/**
@@ -875,12 +1040,34 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 
 	@Override
 	public TypeDefinition createType(String repositoryId, TypeDefinition type, ExtensionsData extension) {
-		return repositoryService.createType(getCallContext(), repositoryId, type, extension);
+		if (log.isDebugEnabled()) {
+			log.debug("Creating type in repository: " + repositoryId + ", type ID: " + (type != null ? type.getId() : "null"));
+		}
+		
+		try {
+			TypeDefinition result = repositoryService.createType(getCallContext(), repositoryId, type, extension);
+			if (log.isDebugEnabled()) {
+				log.debug("Type creation completed successfully for type: " + (type != null ? type.getId() : "null"));
+			}
+			return result;
+		} catch (Exception e) {
+			log.error("Exception in createType for repository " + repositoryId + ": " + e.getMessage(), e);
+			throw e;
+		}
 	}
 
 	@Override
 	public void deleteType(String repositoryId, String typeId, ExtensionsData extension) {
-		repositoryService.deleteType(getCallContext(), repositoryId, typeId, extension);
+		log.debug("CMIS Service deleteType called - Repository: " + repositoryId + 
+			", Type: " + typeId + ", User: " + (getCallContext() != null ? getCallContext().getUsername() : "null"));
+		
+		try {
+			repositoryService.deleteType(getCallContext(), repositoryId, typeId, extension);
+			log.debug("CmisService.deleteType completed successfully for type: " + typeId);
+		} catch (Exception e) {
+			log.error("Exception in CmisService.deleteType for type " + typeId + ": " + e.getMessage(), e);
+			throw e;
+		}
 	}
 
 	@Override
@@ -936,6 +1123,10 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 
 	public void setRelationshipService(RelationshipService relationshipService) {
 		this.relationshipService = relationshipService;
+	}
+
+	public void setContentService(ContentService contentService) {
+		this.contentService = contentService;
 	}
 
 	@Override

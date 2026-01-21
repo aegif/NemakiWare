@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.util.spring.SpringContext;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.common.ErrorCode;
 import jp.aegif.nemaki.common.NemakiObjectType;
@@ -29,6 +30,7 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.DateUtil;
 import jp.aegif.nemaki.util.constant.SystemConst;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
@@ -41,19 +43,51 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.*;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.FormParam;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 
 @Path("/repo/{repositoryId}/group")
 public class GroupItemResource extends ResourceBase{
 
+	private static final Log log = LogFactory.getLog(GroupItemResource.class);
 	private ContentService contentService;
+
+	private ContentService getContentService() {
+		if (contentService != null) {
+			return contentService;
+		}
+		// Fallback to manual Spring context lookup
+		return SpringContext.getApplicationContext()
+				.getBean("ContentService", ContentService.class);
+	}
+
+	private ContentService getContentServiceSafe() {
+		ContentService service = getContentService();
+		if (service == null) {
+			throw new IllegalStateException(
+					"ContentService not available - dependency injection failed");
+		}
+		return service;
+	}
 
 	@SuppressWarnings("unchecked")
 	@GET
@@ -64,12 +98,22 @@ public class GroupItemResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		List<GroupItem> groups = contentService.getGroupItems(repositoryId);
-		if(groups == null) groups = new ArrayList<>();
+		if (StringUtils.isBlank(query)) {
+			status = false;
+			addErrMsg(errMsg, "query", ErrorCode.ERR_MANDATORY);
+			return makeResult(status, result, errMsg).toJSONString();
+		}
+
+		List<GroupItem> groups = ObjectUtils.defaultIfNull(
+				getContentServiceSafe().getGroupItems(repositoryId), Collections.emptyList());
 		JSONArray queriedGroups = new JSONArray();
 
 		for(GroupItem g : groups) {
-			if ( g.getGroupId().contains(query)|| g.getName().contains(query)) {
+			String groupId = g.getGroupId();
+			String groupName = g.getName();
+			boolean matches = (StringUtils.isNotEmpty(groupId) && groupId.contains(query)) ||
+			                  (StringUtils.isNotEmpty(groupName) && groupName.contains(query));
+			if (matches) {
 				if(queriedGroups.size()<50){
 					queriedGroups.add(this.convertGroupToJson(g));
 				}else{
@@ -95,24 +139,44 @@ public class GroupItemResource extends ResourceBase{
 	@Path("/list")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String list(@PathParam("repositoryId") String repositoryId){
+		if (log.isDebugEnabled()) {
+			log.debug("GroupItemResource.list() called for repository: " + repositoryId);
+		}
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray listJSON = new JSONArray();
 		JSONArray errMsg = new JSONArray();
 
+
 		List<GroupItem> groupList;
 		try{
-			groupList = contentService.getGroupItems(repositoryId);
+			if (log.isDebugEnabled()) {
+				log.debug("Calling getContentService().getGroupItems()");
+			}
+			groupList = getContentService().getGroupItems(repositoryId);
+			if (log.isDebugEnabled()) {
+				log.debug("getGroupItems returned " + groupList.size() + " groups");
+			}
+			
 			for(GroupItem group : groupList){
+				if (log.isDebugEnabled()) {
+					log.debug("Processing group: ID=" + group.getGroupId() + ", Name=" + group.getName());
+				}
 				JSONObject groupJSON = convertGroupToJson(group);
 				listJSON.add(groupJSON);
 			}
 			result.put(ITEM_ALLGROUPS, listJSON);
 		}catch(Exception ex){
+			if (log.isDebugEnabled()) {
+				log.debug("Exception in GroupItemResource.list(): " + ex.getMessage());
+			}
 			ex.printStackTrace();
 			addErrMsg(errMsg, ITEM_ALLGROUPS, ErrorCode.ERR_LIST);
 		}
 		result = makeResult(status, result, errMsg);
+		if (log.isDebugEnabled()) {
+			log.debug("GroupItemResource.list() returning result");
+		}
 		return result.toString();
 	}
 
@@ -125,7 +189,8 @@ public class GroupItemResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
+
+		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
 		if(group == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
@@ -168,7 +233,7 @@ public class GroupItemResource extends ResourceBase{
 				group.setParentId(groupsFolder.getId());
 				setFirstSignature(httpRequest, group);
 
-				contentService.createGroupItem(new SystemCallContext(repositoryId), repositoryId, group);
+				getContentService().createGroupItem(new SystemCallContext(repositoryId), repositoryId, group);
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
@@ -181,26 +246,56 @@ public class GroupItemResource extends ResourceBase{
 
 	//TODO this is a copy & paste method.
 	private Folder getOrCreateSystemSubFolder(String repositoryId, String name){
-		Folder systemFolder = contentService.getSystemFolder(repositoryId);
+	if (log.isDebugEnabled()) {
+		log.debug("getOrCreateSystemSubFolder called with repositoryId='" + repositoryId + "', name='" + name + "'");
+		log.debug("About to call getContentService().getSystemFolder(repositoryId)");
+	}
+	
+	Folder systemFolder = getContentService().getSystemFolder(repositoryId);
+	
+	if (log.isDebugEnabled()) {
+		log.debug("getContentService().getSystemFolder returned: " + (systemFolder != null ? "NOT NULL (ID=" + systemFolder.getId() + ")" : "NULL"));
+	}
 
-		// check existing folder
-		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
-		if(CollectionUtils.isNotEmpty(children)){
-			for(Content child : children){
-				if(ObjectUtils.equals(name, child.getName())){
-					return (Folder)child;
-				}
+	// CRITICAL FIX (2025-11-09): Fallback solution when PropertyManager fails to read system.folder configuration
+	// Use direct folder lookup by known system folder ID from CouchDB
+	if (systemFolder == null) {
+		log.warn("systemFolder is null - .system folder not found via PropertyManager, attempting fallback with direct ID lookup");
+		try {
+			// Known .system folder ID: 34169aaa-5d6f-4685-a1d0-66bb31948877
+			Content content = getContentService().getContent(repositoryId, "34169aaa-5d6f-4685-a1d0-66bb31948877");
+			if (content instanceof Folder) {
+				systemFolder = (Folder) content;
+				log.info("Found .system folder via fallback ID lookup: ID=" + systemFolder.getId());
 			}
+		} catch (Exception e) {
+			log.error("Failed to find .system folder via fallback ID lookup", e);
 		}
 
-		// create
-		PropertiesImpl properties = new PropertiesImpl();
-		properties.addProperty(new PropertyStringImpl("cmis:name", name));
-		properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
-		properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
-		Folder _target = contentService.createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
-		return _target;
+		// If still null after fallback, throw exception
+		if (systemFolder == null) {
+			throw new RuntimeException(".system folder not accessible - check system folder configuration and security settings");
+		}
 	}
+
+	// check existing folder
+	List<Content> children = getContentService().getChildren(repositoryId, systemFolder.getId());
+	if(CollectionUtils.isNotEmpty(children)){
+		for(Content child : children){
+			if(ObjectUtils.equals(name, child.getName())){
+				return (Folder)child;
+			}
+		}
+	}
+
+	// create
+	PropertiesImpl properties = new PropertiesImpl();
+	properties.addProperty(new PropertyStringImpl("cmis:name", name));
+	properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
+	properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
+	Folder _target = getContentService().createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
+	return _target;
+}
 
 	@PUT
 	@Path("/update/{id}")
@@ -218,7 +313,7 @@ public class GroupItemResource extends ResourceBase{
 		JSONArray errMsg = new JSONArray();
 
 		//Existing group
-		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
+		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
 		if (group == null) {
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
@@ -238,7 +333,7 @@ public class GroupItemResource extends ResourceBase{
 			setModifiedSignature(httpRequest, group);
 
 			try{
-				contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
+				getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
@@ -260,8 +355,9 @@ public class GroupItemResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
+
 		//Existing group
-		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
+		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
 		if(group == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
@@ -270,7 +366,7 @@ public class GroupItemResource extends ResourceBase{
 		//Delete the group
 		if(status){
 			try{
-				contentService.delete(new SystemCallContext(repositoryId), repositoryId, group.getId(), false);
+				getContentService().delete(new SystemCallContext(repositoryId), repositoryId, group.getId(), false);
 			}catch(Exception ex){
 				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_DELETE);
 			}
@@ -294,7 +390,7 @@ public class GroupItemResource extends ResourceBase{
 		JSONArray errMsg = new JSONArray();
 
 		//Existing Group
-		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
+		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
 		if(group == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
@@ -319,7 +415,7 @@ public class GroupItemResource extends ResourceBase{
 			//Update
 			if(apiType.equals(API_ADD)){
 				try{
-					contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
+					getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
 				}catch(Exception ex){
 					ex.printStackTrace();
 					status = false;
@@ -327,7 +423,7 @@ public class GroupItemResource extends ResourceBase{
 				}
 			}else if(apiType.equals(API_REMOVE)){
 				try{
-					contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
+					getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
 				}catch(Exception ex){
 					ex.printStackTrace();
 					status = false;
@@ -380,7 +476,7 @@ public class GroupItemResource extends ResourceBase{
 
 			//check only when "add" API
 			if(apiType.equals(API_ADD)){
-				UserItem existingUser = contentService.getUserItemById(repositoryId, userId);
+				UserItem existingUser = getContentService().getUserItemById(repositoryId, userId);
 				if(existingUser == null){
 					notSkip = false;
 					addErrMsg(errMsg, ITEM_USER + ":" + userId, ErrorCode.ERR_NOTFOUND);
@@ -425,7 +521,7 @@ public class GroupItemResource extends ResourceBase{
 		List<String> gl = group.getGroups();
 		if(gl != null) groupsList = gl;
 
-		List<GroupItem> allGroupsList = contentService.getGroupItems(repositoryId);
+		List<GroupItem> allGroupsList = getContentService().getGroupItems(repositoryId);
 		List<String> allGroupsStringList = new ArrayList<String>();
 		for(final GroupItem g : allGroupsList){
 			allGroupsStringList.add(g.getId());
@@ -436,7 +532,7 @@ public class GroupItemResource extends ResourceBase{
 			boolean notSkip = true;
 
 			//Existance check
-			GroupItem g = contentService.getGroupItemById(repositoryId, groupId);
+			GroupItem g = getContentService().getGroupItemById(repositoryId, groupId);
 			if(g == null && apiType.equals(API_ADD)){
 				notSkip = false;
 				addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ErrorCode.ERR_NOTFOUND);
@@ -477,7 +573,7 @@ public class GroupItemResource extends ResourceBase{
 		}
 
 		//groupID uniqueness
-		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
+		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
 		if(group != null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUPID, ErrorCode.ERR_ALREADYEXISTS);
@@ -507,16 +603,15 @@ public class GroupItemResource extends ResourceBase{
 
 
 	private JSONObject convertGroupToJson(GroupItem group) {
-		SimpleDateFormat sdf = new SimpleDateFormat(SystemConst.DATETIME_FORMAT);
 		String created = new String();
 		try{
-			created = sdf.format(group.getCreated().getTime());
+			created = DateUtil.formatSystemDateTime(group.getCreated());
 		}catch(Exception ex){
 			ex.printStackTrace();
 		}
 		String modified = new String();
 		try{
-			modified = sdf.format(group.getModified().getTime());
+			modified = DateUtil.formatSystemDateTime(group.getModified());
 		}catch(Exception ex){
 			ex.printStackTrace();
 		}
@@ -554,4 +649,5 @@ public class GroupItemResource extends ResourceBase{
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
 	}
+
 }

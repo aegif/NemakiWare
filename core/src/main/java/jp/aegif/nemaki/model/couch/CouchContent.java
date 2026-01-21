@@ -32,9 +32,14 @@ import jp.aegif.nemaki.model.Property;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import java.util.Map;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 public class CouchContent extends CouchNodeBase{
 
+	private static final Log log = LogFactory.getLog(CouchContent.class);
 	private static final long serialVersionUID = -4795093916552322103L;
 	private String name;
 	private String description;
@@ -50,6 +55,125 @@ public class CouchContent extends CouchNodeBase{
 	public CouchContent(){
 		super();
 	}
+	
+	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	@JsonCreator
+	public CouchContent(Map<String, Object> properties) {
+		super(properties); // 親クラスのMapコンストラクタを呼び出し
+		
+		if (properties != null) {
+			// CouchContent固有のフィールドマッピング
+			this.name = (String) properties.get("name");
+			this.description = (String) properties.get("description");
+			this.parentId = (String) properties.get("parentId");
+			this.objectType = (String) properties.get("objectType");
+			this.changeToken = (String) properties.get("changeToken");
+			
+			// Boolean型の処理
+			if (properties.containsKey("aclInherited")) {
+				Object aclInheritedValue = properties.get("aclInherited");
+				if (aclInheritedValue instanceof Boolean) {
+					this.aclInherited = (Boolean) aclInheritedValue;
+				}
+			}
+			
+			// subTypePropertiesの変換
+			if (properties.containsKey("subTypeProperties")) {
+				Object subTypePropsValue = properties.get("subTypeProperties");
+				if (subTypePropsValue instanceof List) {
+					@SuppressWarnings("unchecked")
+					List<Map<String, Object>> subTypePropsList = (List<Map<String, Object>>) subTypePropsValue;
+					List<Property> subTypeProperties = new ArrayList<Property>();
+					for (Map<String, Object> propMap : subTypePropsList) {
+						String key = (String) propMap.get("key");
+						Object value = propMap.get("value");
+						if (key != null) {
+							subTypeProperties.add(new Property(key, value));
+						}
+					}
+					this.subTypeProperties = subTypeProperties;
+				}
+			}
+			
+			// ACL conversion (CRITICAL FIX 2025-11-11: ACL was not being loaded from CouchDB)
+			// This is why admin/system permissions were missing - only GROUP_EVERYONE showed
+			if (properties.containsKey("acl")) {
+				Object aclValue = properties.get("acl");
+				if (aclValue instanceof Map) {
+					@SuppressWarnings("unchecked")
+					Map<String, Object> aclMap = (Map<String, Object>) aclValue;
+					Object entriesValue = aclMap.get("entries");
+					if (entriesValue instanceof List) {
+						@SuppressWarnings("unchecked")
+						List<Map<String, Object>> entriesList = (List<Map<String, Object>>) entriesValue;
+						JSONArray entries = new JSONArray();
+						for (Map<String, Object> entry : entriesList) {
+							JSONObject entryObj = new JSONObject();
+							entryObj.put("principal", entry.get("principal"));
+							entryObj.put("permissions", entry.get("permissions"));
+							entries.add(entryObj);
+						}
+						CouchAcl couchAcl = new CouchAcl();
+						couchAcl.setEntries(entries);
+						this.acl = couchAcl;
+						log.debug("ACL loaded from CouchDB: " + entries.size() + " ACEs for object");
+					}
+				}
+			}
+
+			// CRITICAL FIX (2025-12-17): aspects conversion - Secondary type properties were not being loaded from CouchDB
+			// This is why nemaki:comment and other secondary type properties showed as null after update
+			if (properties.containsKey("aspects")) {
+				Object aspectsValue = properties.get("aspects");
+				if (aspectsValue instanceof List) {
+					@SuppressWarnings("unchecked")
+					List<Map<String, Object>> aspectsList = (List<Map<String, Object>>) aspectsValue;
+					List<Aspect> convertedAspects = new ArrayList<Aspect>();
+					for (Map<String, Object> aspectMap : aspectsList) {
+						String aspectName = (String) aspectMap.get("name");
+						if (aspectName != null) {
+							Aspect aspect = new Aspect();
+							aspect.setName(aspectName);
+
+							// Convert properties within the aspect
+							Object propsValue = aspectMap.get("properties");
+							if (propsValue instanceof List) {
+								@SuppressWarnings("unchecked")
+								List<Map<String, Object>> propsList = (List<Map<String, Object>>) propsValue;
+								List<Property> aspectProperties = new ArrayList<Property>();
+								for (Map<String, Object> propMap : propsList) {
+									String key = (String) propMap.get("key");
+									Object value = propMap.get("value");
+									if (key != null) {
+										aspectProperties.add(new Property(key, value));
+									}
+								}
+								aspect.setProperties(aspectProperties);
+							}
+							convertedAspects.add(aspect);
+						}
+					}
+					this.aspects = convertedAspects;
+					if (log.isDebugEnabled()) {
+						log.debug("Aspects loaded from CouchDB: " + convertedAspects.size() + " aspects");
+					}
+				}
+			}
+
+			// CRITICAL FIX (2025-12-17): secondaryIds conversion - Secondary type IDs were not being loaded from CouchDB
+			if (properties.containsKey("secondaryIds")) {
+				Object secondaryIdsValue = properties.get("secondaryIds");
+				if (secondaryIdsValue instanceof List) {
+					@SuppressWarnings("unchecked")
+					List<String> convertedSecondaryIds = (List<String>) secondaryIdsValue;
+					this.secondaryIds = new ArrayList<String>(convertedSecondaryIds);
+					if (log.isDebugEnabled()) {
+						log.debug("SecondaryIds loaded from CouchDB: " + convertedSecondaryIds.size() + " IDs");
+					}
+				}
+			}
+		}
+	}
 
 	public CouchContent(Content c){
 		super(c);
@@ -63,6 +187,9 @@ public class CouchContent extends CouchNodeBase{
 		setSecondaryIds(c.getSecondaryIds());
 		setObjectType(c.getObjectType());
 		setChangeToken(c.getChangeToken());
+
+		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from Content layer
+		setRevision(c.getRevision());
 	}
 
 	/**
@@ -177,7 +304,12 @@ public class CouchContent extends CouchNodeBase{
 		c.setChangeToken(getChangeToken());
 
 		CouchAcl cacl = getAcl();
-		c.setAcl(cacl.convertToNemakiAcl());
+		if (cacl != null) {
+			c.setAcl(cacl.convertToNemakiAcl());
+		} else {
+			// Set default ACL if none exists
+			c.setAcl(new jp.aegif.nemaki.model.Acl());
+		}
 
 		return c;
 	}

@@ -26,6 +26,8 @@ import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.service.NavigationService;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
@@ -33,7 +35,14 @@ import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
-import org.apache.chemistry.opencmis.commons.data.*;
+import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
+import org.apache.chemistry.opencmis.commons.data.ObjectData;
+import org.apache.chemistry.opencmis.commons.data.ObjectInFolderContainer;
+import org.apache.chemistry.opencmis.commons.data.ObjectInFolderData;
+import org.apache.chemistry.opencmis.commons.data.ObjectInFolderList;
+import org.apache.chemistry.opencmis.commons.data.ObjectList;
+import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectInFolderContainerImpl;
@@ -52,6 +61,7 @@ import java.util.List;
 import java.util.concurrent.locks.Lock;
 
 public class NavigationServiceImpl implements NavigationService {
+	private static final Log log = LogFactory.getLog(NavigationServiceImpl.class);
 
 	private ContentService contentService;
 	private ExceptionService exceptionService;
@@ -80,6 +90,11 @@ public class NavigationServiceImpl implements NavigationService {
 			// //////////////////
 			Folder folder = contentService.getFolder(repositoryId, folderId);
 			exceptionService.invalidArgumentFolderId(folder, folderId);
+			if (log.isDebugEnabled()) {
+				log.debug("NavigationService.getChildren called - Repository: " + repositoryId + 
+					", Folder ID: " + folderId + ", User: " + callContext.getUsername());
+			}
+			
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_GET_CHILDREN_FOLDER, folder);
 
@@ -316,6 +331,10 @@ public class NavigationServiceImpl implements NavigationService {
 
 			//Get parent
 			Folder parent = contentService.getParent(repositoryId, objectId);
+			if (parent == null) {
+				// Root folder or orphaned object - no parent exists
+				return new ArrayList<ObjectParentData>();
+			}
 			Lock parentLock = threadLockService.getReadLock(repositoryId, parent.getId());
 
 			try{

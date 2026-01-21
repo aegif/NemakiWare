@@ -7,5 +7,15 @@ tmp/
 tags
 .DS_Store
 *.class
-src/main/resources/*
+src/main/resources/logback*
+src/main/resources/META-INF/
+# Keep initialization dump files - they are critical for database setup
+!src/main/resources/initialization/
+src/main/resources/initialization/*.tmp
 logs/*
+
+# Eclipse IDE specific files (IDE-dependent paths should not be committed)
+.factorypath
+.settings/
+.classpath
+.project

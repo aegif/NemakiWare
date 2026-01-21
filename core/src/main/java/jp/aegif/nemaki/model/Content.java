@@ -73,6 +73,9 @@ public class Content extends NodeBase {
 		setCreator(n.getCreator());
 		setModified(n.getModified());
 		setModifier(n.getModifier());
+		
+		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from NodeBase
+		setRevision(n.getRevision());
 	}
 
 	/*
@@ -168,20 +171,16 @@ public class Content extends NodeBase {
 
 	@Override
 	public String toString() {
-		@SuppressWarnings("serial")
-		Map<String, Object> m = new HashMap<String, Object>() {
-			{
-				put("id", getId());
-				put("name", getName());
-				put("type", getType());
-				put("creator", getCreator());
-				put("created", getCreated());
-				put("modifier", getModifier());
-				put("modified", getModified());
-				put("parentId", getParentId());
-				put("aspects", getAspects().toString());
-			}
-		};
+		Map<String, Object> m = new HashMap<String, Object>();
+		m.put("id", getId());
+		m.put("name", getName());
+		m.put("type", getType());
+		m.put("creator", getCreator());
+		m.put("created", getCreated());
+		m.put("modifier", getModifier());
+		m.put("modified", getModified());
+		m.put("parentId", getParentId());
+		m.put("aspects", getAspects().toString());
 		return m.toString();
 	}
 

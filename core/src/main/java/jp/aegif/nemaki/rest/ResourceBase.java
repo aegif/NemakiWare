@@ -32,11 +32,10 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.springframework.stereotype.Component;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.GregorianCalendar;
 import java.util.TimeZone;
 
-@Component
 public class ResourceBase {
 
 	private static final ObjectMapper mapper = new ObjectMapper();
@@ -133,6 +132,32 @@ public class ResourceBase {
 
 	protected boolean checkAdmin(JSONArray errMsg, HttpServletRequest request){
 		CallContext callContext = (CallContext) request.getAttribute("CallContext");
+		
+		// Check if callContext is null
+		if (callContext == null) {
+			addErrMsg(errMsg, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN, "unknown");
+			return false;
+		}
+		
+		// DEBUG: Add detailed logging to diagnose admin check issue
+		try {
+			java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-admin-debug.log", true);
+			debugWriter.write("=== ADMIN CHECK DEBUG ===\n");
+			debugWriter.write("Timestamp: " + new java.util.Date() + "\n");
+			debugWriter.write("CallContext: " + (callContext != null ? "not null" : "null") + "\n");
+			if (callContext != null) {
+				debugWriter.write("Username: " + callContext.getUsername() + "\n");
+				debugWriter.write("Repository: " + callContext.getRepositoryId() + "\n");
+				Boolean _isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+				debugWriter.write("IS_ADMIN flag: " + _isAdmin + "\n");
+				debugWriter.write("CallContextKey.IS_ADMIN constant: " + CallContextKey.IS_ADMIN + "\n");
+			}
+			debugWriter.write("========================\n");
+			debugWriter.close();
+		} catch (Exception e) {
+			// Ignore debug errors
+		}
+		
 		Boolean _isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
 		boolean isAdmin = _isAdmin != null && _isAdmin;
 		if(!isAdmin){
@@ -160,6 +185,13 @@ public class ResourceBase {
 
 	protected boolean checkAdmin(ArrayNode errMsg, HttpServletRequest request){
 		CallContext callContext = (CallContext) request.getAttribute("CallContext");
+		
+		// Check if callContext is null
+		if (callContext == null) {
+			addErrMsg(errMsg, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN, "unknown");
+			return false;
+		}
+		
 		Boolean _isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
 		boolean isAdmin = _isAdmin != null && _isAdmin;
 		if(!isAdmin){

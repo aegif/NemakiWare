@@ -144,18 +144,14 @@ public class User extends NodeBase {
 
 	@Override
 	public String toString() {
-		@SuppressWarnings("serial")
-		Map<String, Object> m = new HashMap<String, Object>() {
-			{
-				put("id", getId());
-				put("name", getName());
-				put("type", getType());
-				put("email", getEmail());
-				put("lastName", getLastName());
-				put("firstName", getFirstName());
-				put("passwordHash", getPasswordHash());
-			}
-		};
+		Map<String, Object> m = new HashMap<String, Object>();
+		m.put("id", getId());
+		m.put("name", getName());
+		m.put("type", getType());
+		m.put("email", getEmail());
+		m.put("lastName", getLastName());
+		m.put("firstName", getFirstName());
+		m.put("passwordHash", getPasswordHash());
 		return m.toString();
 	}
 

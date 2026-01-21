@@ -107,16 +107,12 @@ public class Group extends NodeBase {
 
 	@Override
 	public String toString() {
-		@SuppressWarnings("serial")
-		Map<String, Object> m = new HashMap<String, Object>() {
-			{
-				put("id", getId());
-				put("name", getName());
-				put("type", getType());
-				put("users", getUsers());
-				put("groups", getGroups());
-			}
-		};
+		Map<String, Object> m = new HashMap<String, Object>();
+		m.put("id", getId());
+		m.put("name", getName());
+		m.put("type", getType());
+		m.put("users", getUsers());
+		m.put("groups", getGroups());
 		return m.toString();
 	}
 }

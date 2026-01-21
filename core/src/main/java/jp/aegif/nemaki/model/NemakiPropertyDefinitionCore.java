@@ -32,6 +32,7 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 	private PropertyType propertyType;
 	private String queryName;
 	private Cardinality cardinality;
+	private boolean inherited = false;  // CMIS 1.1 inherited flag - true for properties inherited from parent types
 
 	public NemakiPropertyDefinitionCore() {
 		super();
@@ -45,6 +46,19 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 		setCreator(n.getCreator());
 		setModified(n.getModified());
 		setModifier(n.getModifier());
+
+		// CRITICAL FIX FOR CLOUDANT SDK MIGRATION: Preserve _rev field
+		// In Ektorp era, _rev was handled automatically by the library
+		// With Cloudant SDK, application must manually preserve _rev for subsequent updates
+		setRevision(n.getRevision());
+
+		// TCK FIX: Don't initialize PropertyDefinition-specific fields to null
+		// These will be set by the caller (e.g., CouchPropertyDefinitionCore.convert())
+		// Initializing to null here causes property types to be lost
+		// this.propertyId = null;
+		// this.propertyType = null;
+		// this.queryName = null;
+		// this.cardinality = null;
 	}
 
 	public NemakiPropertyDefinitionCore(NemakiPropertyDefinition p){
@@ -53,6 +67,35 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 		setPropertyType(p.getPropertyType());
 		setQueryName(p.getQueryName());
 		setCardinality(p.getCardinality());
+
+		// CRITICAL TCK FIX: Do not set inherited flag here
+		// The inherited flag must be set by TypeManagerImpl based on type hierarchy
+		// Setting it here based on cmis: prefix is incorrect and causes TCK failures
+		setInherited(false); // Default value, will be corrected by TypeManagerImpl
+	}
+
+	/**
+	 * CRITICAL FIX: Constructor for PropertyDefinition<?> to prevent contamination
+	 * This constructor handles direct PropertyDefinition objects from OpenCMIS TCK
+	 * and ensures no property ID/type contamination from object reuse.
+	 */
+	public NemakiPropertyDefinitionCore(org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> propertyDefinition) {
+		super();
+		setType(NodeType.PROPERTY_DEFINITION_CORE.value());
+
+		// CRITICAL FIX: Directly extract properties from PropertyDefinition without contamination
+		String originalPropertyId = propertyDefinition.getId();
+
+		// CRITICAL FIX: Preserve exact property ID and type from source PropertyDefinition
+		setPropertyId(originalPropertyId);
+		setPropertyType(propertyDefinition.getPropertyType());
+		setQueryName(propertyDefinition.getQueryName());
+		setCardinality(propertyDefinition.getCardinality());
+
+		// CRITICAL TCK FIX: Use inherited flag from source PropertyDefinition
+		// The inherited flag indicates type hierarchy inheritance, not namespace prefix
+		Boolean sourceInherited = propertyDefinition.isInherited();
+		setInherited(sourceInherited != null ? sourceInherited : false);
 	}
 
 	public String getPropertyId() {
@@ -78,5 +121,43 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 	}
 	public void setCardinality(Cardinality cardinality) {
 		this.cardinality = cardinality;
+	}
+	
+	public boolean isInherited() {
+		return inherited;
+	}
+	
+	public void setInherited(boolean inherited) {
+		this.inherited = inherited;
+	}
+	
+	/**
+	 * CRITICAL FIX: Create a deep clone of this PropertyDefinitionCore instance.
+	 * This method ensures complete object identity separation to prevent contamination
+	 * between property definitions returned by different CMIS operations.
+	 * 
+	 * @return a completely independent deep clone of this instance
+	 */
+	public NemakiPropertyDefinitionCore deepClone() {
+		NemakiPropertyDefinitionCore clone = new NemakiPropertyDefinitionCore();
+		
+		// Clone base NodeBase properties
+		clone.setId(this.getId());
+		clone.setType(this.getType());
+		clone.setCreated(this.getCreated());
+		clone.setCreator(this.getCreator());
+		clone.setModified(this.getModified());
+		clone.setModifier(this.getModifier());
+		clone.setRevision(this.getRevision());
+		
+		// CRITICAL FIX: Clone PropertyDefinitionCore-specific fields with new instances
+		// These fields MUST be independent to prevent contamination
+		clone.setPropertyId(this.propertyId != null ? new String(this.propertyId) : null);
+		clone.setPropertyType(this.propertyType); // PropertyType is enum, safe to share
+		clone.setQueryName(this.queryName != null ? new String(this.queryName) : null);
+		clone.setCardinality(this.cardinality); // Cardinality is enum, safe to share
+		clone.setInherited(this.inherited); // boolean primitive, safe to copy
+		
+		return clone;
 	}
 }

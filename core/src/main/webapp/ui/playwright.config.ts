@@ -1,0 +1,156 @@
+import { defineConfig, devices } from '@playwright/test';
+
+/**
+ * Playwright Configuration for NemakiWare React UI
+ *
+ * This configuration supports testing the NemakiWare CMIS UI with:
+ * - Multiple browser engines (Chromium, Firefox, WebKit)
+ * - Different viewport sizes for responsive testing
+ * - Authentication scenarios with admin credentials
+ * - Docker containerized backend integration
+ */
+export default defineConfig({
+  // Test directory
+  testDir: './tests',
+
+  // Output directory for test results
+  outputDir: './test-results',
+
+  // Global timeout for each test (extended for cleanup operations and slow upload responses)
+  timeout: 120 * 1000, // 120 seconds
+
+  // Global timeout for expect() assertions
+  expect: {
+    timeout: 5000,
+  },
+
+  // Run tests in files in parallel
+  fullyParallel: true,
+
+  // Fail the build on CI if you accidentally left test.only in the source code
+  forbidOnly: !!process.env.CI,
+
+  // Retry on CI only
+  retries: process.env.CI ? 2 : 0,
+
+  // Opt out of parallel tests on CI
+  workers: process.env.CI ? 1 : undefined,
+
+  // Reporter configuration
+  reporter: [
+    ['html', { outputFolder: './playwright-report', open: 'never' }],
+    ['json', { outputFile: './playwright-report/results.json' }],
+    ['junit', { outputFile: './playwright-report/results.xml' }],
+    ['list'], // Console output
+  ],
+
+  // Shared settings for all projects
+  use: {
+    // Base URL for tests
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:8080',
+
+    // HTTP Basic Authentication credentials
+    httpCredentials: {
+      username: process.env.PW_BASIC_USER || 'admin',
+      password: process.env.PW_BASIC_PASS || 'admin',
+    },
+
+    extraHTTPHeaders: {
+      Authorization: 'Basic ' + Buffer.from(`${process.env.PW_BASIC_USER || 'admin'}:${process.env.PW_BASIC_PASS || 'admin'}`).toString('base64'),
+    },
+
+    // Force headless mode for Docker/CI environments
+    // This prevents GTK/GStreamer dependency issues in containers
+    headless: process.env.CI || process.env.DOCKER_ENV ? true : undefined,
+
+    // Collect trace when retrying the failed test
+    trace: 'on-first-retry',
+
+    // Capture screenshot on failure
+    screenshot: 'only-on-failure',
+
+    // Record video on failure
+    video: 'retain-on-failure',
+
+    // Default timeout for actions (increased for slow CI environments)
+    actionTimeout: 30000,
+
+    // Default timeout for navigation
+    navigationTimeout: 30000,
+  },
+
+  // Configure projects for major browsers
+  projects: [
+    {
+      name: 'chromium',
+      timeout: 180000, // 180 seconds for complex versioning tests
+      use: {
+        ...devices['Desktop Chrome'],
+        // NemakiWare UI viewport settings
+        viewport: { width: 1280, height: 720 },
+      },
+    },
+
+    {
+      name: 'firefox',
+      timeout: 90000, // 90 seconds for complex tests with folder creation/cleanup
+      use: {
+        ...devices['Desktop Firefox'],
+        viewport: { width: 1280, height: 720 },
+      },
+    },
+
+    {
+      name: 'webkit',
+      timeout: 90000, // 90 seconds for complex tests with folder creation/cleanup
+      use: {
+        ...devices['Desktop Safari'],
+        viewport: { width: 1280, height: 720 },
+      },
+    },
+
+    // Mobile testing
+    {
+      name: 'Mobile Chrome',
+      timeout: 90000, // 90 seconds for complex tests with folder creation/cleanup
+      use: {
+        ...devices['Pixel 5'],
+      },
+    },
+    {
+      name: 'Mobile Safari',
+      timeout: 90000, // 90 seconds for complex tests with folder creation/cleanup
+      use: {
+        ...devices['iPhone 12'],
+      },
+    },
+
+    // Tablet testing for document management interface
+    {
+      name: 'Tablet',
+      timeout: 90000, // 90 seconds for complex tests with folder creation/cleanup
+      use: {
+        ...devices['iPad Pro'],
+        viewport: { width: 1024, height: 768 },
+      },
+    },
+  ],
+
+  // Web server configuration for NemakiWare tests
+  // Tests connect to the actual NemakiWare server on port 8080
+  // The Vite dev server is not needed for E2E tests as we test the production build
+  // webServer: [
+  //   {
+  //     command: 'npm run dev',
+  //     port: 5173,
+  //     reuseExistingServer: !process.env.CI,
+  //     stdout: 'ignore',
+  //     stderr: 'pipe',
+  //   },
+  // ],
+
+  // Global setup ensures Keycloak is running for OIDC/SAML tests
+  // CRITICAL (2025-12-14): This setup will start Keycloak if not running
+  globalSetup: require.resolve('./tests/global-setup.ts'),
+  // globalTeardown: require.resolve('./tests/global-teardown.ts'),
+});

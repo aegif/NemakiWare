@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.model.couch;
 
 import java.io.InputStream;
+import java.util.Map;
 
 import jp.aegif.nemaki.model.Rendition;
 
@@ -35,6 +36,9 @@ public class CouchRendition extends CouchNodeBase{
 	private long width;
 	private String renditionDocumentId;
 	private InputStream inputStream;
+
+	// CouchDB _attachments metadata for getting actual content length
+	private Map<String, Object> _attachments;
 
 	public CouchRendition(){
 		super();
@@ -114,13 +118,44 @@ public class CouchRendition extends CouchNodeBase{
 		this.inputStream = inputStream;
 	}
 
+	public Map<String, Object> get_attachments() {
+		return _attachments;
+	}
+
+	public void set_attachments(Map<String, Object> _attachments) {
+		this._attachments = _attachments;
+	}
+
+	/**
+	 * Get actual content length from CouchDB _attachments metadata.
+	 * Falls back to the stored length field if _attachments is not available.
+	 * This is needed because Jackson may fail to deserialize the length field correctly.
+	 */
+	@SuppressWarnings("unchecked")
+	public long getActualLength() {
+		// First try to get from _attachments (CouchDB actual storage)
+		if (_attachments != null && _attachments.containsKey("content")) {
+			Object contentObj = _attachments.get("content");
+			if (contentObj instanceof Map) {
+				Map<String, Object> contentMeta = (Map<String, Object>) contentObj;
+				Object lengthObj = contentMeta.get("length");
+				if (lengthObj instanceof Number) {
+					return ((Number) lengthObj).longValue();
+				}
+			}
+		}
+		// Fall back to stored length field
+		return length;
+	}
+
 	public Rendition convert(){
 		Rendition r = new Rendition(super.convert());
 		r.setKind(getKind());
 		r.setTitle(getTitle());
 		r.setHeight(getHeight());
 		r.setWidth(getWidth());
-		r.setLength(getLength());
+		// Use getActualLength() to get length from CouchDB _attachments metadata
+		r.setLength(getActualLength());
 		r.setMimetype(getMimetype());
 		r.setRenditionDocumentId(getRenditionDocumentId());
 		return r;

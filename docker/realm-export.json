@@ -1,0 +1,55 @@
+{
+  "realm": "nemakiware",
+  "enabled": true,
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "nemakiware-oidc-client",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "http://localhost:8080/core/ui/*",
+        "http://localhost:8080/core/ui/oidc-callback.html",
+        "http://localhost:8080/core/ui/silent-callback.html"
+      ],
+      "webOrigins": [
+        "*"
+      ]
+    },
+    {
+      "clientId": "nemakiware-saml-client",
+      "protocol": "saml",
+      "adminUrl": "http://localhost:8080/core/ui/saml-callback.html",
+      "redirectUris": [
+        "http://localhost:8080/core/ui/saml-callback.html"
+      ],
+      "attributes": {
+        "saml.force.post.binding": "false",
+        "saml.assertion.signature": "false",
+        "saml.server.signature": "false",
+        "saml.client.signature": "false",
+        "saml_force_name_id_format": "false",
+        "saml_name_id_format": "username"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "testuser",
+      "enabled": true,
+      "email": "testuser@example.com",
+      "emailVerified": true,
+      "firstName": "Test",
+      "lastName": "User",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

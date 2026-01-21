@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 
 import jp.aegif.nemaki.model.NemakiPermissionDefinition;
 import jp.aegif.nemaki.util.PropertyManager;

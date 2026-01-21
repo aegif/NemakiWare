@@ -22,22 +22,24 @@
 package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.common.ErrorCode;
+import jp.aegif.nemaki.util.DateUtil;
 import java.text.SimpleDateFormat;
 import java.util.List;
 
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.spring.SpringContext;
 import jp.aegif.nemaki.util.constant.NodeType;
 import jp.aegif.nemaki.util.constant.SystemConst;
 
@@ -58,6 +60,41 @@ public class ArchiveResource extends ResourceBase {
 		this.contentService = contentService;
 	}
 
+	/**
+	 * Get ContentService with fallback to SpringContext lookup.
+	 * Jersey may create its own instances instead of using Spring beans,
+	 * so we need this fallback for dependency injection.
+	 */
+	private ContentService getContentService() {
+		if (contentService != null) {
+			return contentService;
+		}
+		// Fallback to manual Spring context lookup
+		try {
+			ContentService service = SpringContext.getApplicationContext()
+					.getBean("ContentService", ContentService.class);
+			if (service != null) {
+				log.debug("ContentService retrieved from SpringContext successfully");
+				return service;
+			}
+		} catch (Exception e) {
+			log.error("Failed to get ContentService from SpringContext: " + e.getMessage(), e);
+		}
+		// Final fallback - try different bean name patterns
+		try {
+			ContentService service = SpringContext.getApplicationContext()
+					.getBean("contentService", ContentService.class);
+			if (service != null) {
+				log.debug("ContentService retrieved from SpringContext with lowercase name");
+				return service;
+			}
+		} catch (Exception e) {
+			log.debug("Could not find contentService with lowercase name: " + e.getMessage());
+		}
+		log.error("ContentService is null and SpringContext fallback failed - dependency injection issue");
+		return null;
+	}
+
 	//FIXME Attachment should always be got out of the output on this layer
 	@SuppressWarnings("unchecked")
 	@GET
@@ -74,7 +111,7 @@ public class ArchiveResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		try{
-			List<Archive> archives = contentService.getArchives(repositoryId, skip, limit, desc);
+			List<Archive> archives = getContentService().getArchives(repositoryId, skip, limit, desc);
 			for(Archive a : archives){
 				//Filter out Attachment & old Versions
 				if (NodeType.ATTACHMENT.value().equals(a.getType())){
@@ -102,6 +139,37 @@ public class ArchiveResource extends ResourceBase {
 		return result.toJSONString();
 	}
 
+	@SuppressWarnings("unchecked")
+	@GET
+	@Path("/show/{id}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String id) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		try {
+			Archive archive = getContentService().getArchive(repositoryId, id);
+			if (archive == null) {
+				status = false;
+				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
+			} else {
+				JSONObject archiveJson = buildArchiveJson(archive);
+				if (archive.isDocument()) {
+					archiveJson.put("mimeType", archive.getMimeType());
+				}
+				result.put("archive", archiveJson);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			status = false;
+			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_GET_ARCHIVES);
+		}
+		
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
+
 	@PUT
 	@Path("/restore/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -111,7 +179,7 @@ public class ArchiveResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		try{
-			contentService.restoreArchive(repositoryId, id);
+			getContentService().restoreArchive(repositoryId, id);
 		}catch(ParentNoLongerExistException e){
 			log.error(e, e);
 			status = false;
@@ -130,7 +198,7 @@ public class ArchiveResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		try{
-			contentService.destroyArchive(repositoryId, id);
+			getContentService().destroyArchive(repositoryId, id);
 		}catch(Exception e){
 			log.error(e, e);
 			status = false;
@@ -151,7 +219,7 @@ public class ArchiveResource extends ResourceBase {
 		archiveJson.put("parentId", archive.getParentId());
 		archiveJson.put("isDeletedWithParent", archive.isDeletedWithParent());
 		try{
-			String _created = new SimpleDateFormat(SystemConst.DATETIME_FORMAT).format(archive.getCreated().getTime());
+			String _created = DateUtil.formatSystemDateTime(archive.getCreated());
 			archiveJson.put("created", _created);
 		}catch(Exception e){
 			log.warn(String.format("Archive(%s) 'created' property is broken.", archive.getId()));

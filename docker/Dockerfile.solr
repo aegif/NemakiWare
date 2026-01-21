@@ -1,0 +1,27 @@
+# Solr Module Dockerfile - Java 11+ for Solr 9.x
+FROM openjdk:11-jdk-slim
+
+# Install required packages
+RUN apt-get update && apt-get install -y \
+    curl \
+    maven \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy Solr module and dependencies
+COPY . ./
+
+# Build Solr module with Java 11
+RUN mvn clean compile -DskipTests
+
+# Expose Solr default port
+EXPOSE 8983
+
+# Set Java 11 environment
+ENV JAVA_HOME=/usr/local/openjdk-11
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# Start Solr application
+CMD ["mvn", "tomcat7:run"]

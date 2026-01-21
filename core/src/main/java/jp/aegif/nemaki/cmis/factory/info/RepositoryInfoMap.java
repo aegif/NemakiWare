@@ -1,11 +1,15 @@
 package jp.aegif.nemaki.cmis.factory.info;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.SpringPropertyManager;
@@ -13,12 +17,18 @@ import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class RepositoryInfoMap {
+	private static final Log log = LogFactory.getLog(RepositoryInfoMap.class);
+
 	private Capabilities capabilities;
 	private AclCapabilities aclCapabilities;
 	private SpringPropertyManager propertyManager;
 
-	private Map<String, RepositoryInfo> map = new HashMap<String, RepositoryInfo>();
+	// LinkedHashMap preserves insertion order from YAML configuration
+	private Map<String, RepositoryInfo> map = new LinkedHashMap<String, RepositoryInfo>();
 	private String superUsersId;
+
+	// Explicitly track the first repository ID for deterministic default selection
+	private String firstRepositoryId;
 
 	public void init(){
 		loadRepositoriesSetting();
@@ -36,7 +46,26 @@ public class RepositoryInfoMap {
 		return get(repositoryId) != null;
 	}
 
+	/**
+	 * Returns repository IDs with the default repository first.
+	 * This ensures cmislib and other CMIS clients get the configured default
+	 * repository as the first entry in service documents.
+	 *
+	 * @return Set of repository IDs with default repository first
+	 */
 	public Set<String> keys(){
+		String defaultRepoId = getDefaultRepositoryId();
+		if (defaultRepoId != null && map.containsKey(defaultRepoId)) {
+			// Use LinkedHashSet to preserve insertion order with default first
+			Set<String> orderedKeys = new LinkedHashSet<>();
+			orderedKeys.add(defaultRepoId);
+			for (String key : map.keySet()) {
+				if (!key.equals(defaultRepoId)) {
+					orderedKeys.add(key);
+				}
+			}
+			return orderedKeys;
+		}
 		return map.keySet();
 	}
 
@@ -48,10 +77,53 @@ public class RepositoryInfoMap {
 		return map.get(this.superUsersId);
 	}
 
+	/**
+	 * Get the default repository ID for CMIS service document requests.
+	 * CMIS 1.1 Compliance: When clients access /atom without specifying a repository,
+	 * they need to authenticate to retrieve the service document listing available repositories.
+	 *
+	 * This method returns the first repository defined in repositories.yml for deterministic behavior.
+	 * The selection is based on YAML definition order, not HashMap iteration order.
+	 *
+	 * @return The default repository ID (first defined in YAML), or null if no repositories are configured
+	 */
+	public String getDefaultRepositoryId() {
+		// Return the explicitly tracked first repository ID for deterministic behavior
+		if (firstRepositoryId != null) {
+			return firstRepositoryId;
+		}
+		// Fallback: LinkedHashMap preserves insertion order, so this is also deterministic
+		Set<String> repositoryIds = keys();
+		if (repositoryIds != null && !repositoryIds.isEmpty()) {
+			return repositoryIds.iterator().next();
+		}
+		return null;
+	}
+
 	private void loadRepositoriesSetting(){
 		Map<String, String> defaultSetting = loadDefaultRepositorySetting();
 		loadOverrideRepositorySetting(defaultSetting);
 		loadSuperUsersId();
+		loadExplicitDefaultRepository();
+	}
+
+	/**
+	 * Load explicit default repository from configuration.
+	 * If cmis.server.default.repository is specified, use it instead of YAML order.
+	 */
+	private void loadExplicitDefaultRepository() {
+		String configuredDefault = propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_REPOSITORY);
+		if (configuredDefault != null && !configuredDefault.trim().isEmpty()) {
+			configuredDefault = configuredDefault.trim();
+			if (map.containsKey(configuredDefault)) {
+				log.info("Using explicitly configured default repository: " + configuredDefault +
+					" (overriding YAML order: " + firstRepositoryId + ")");
+				this.firstRepositoryId = configuredDefault;
+			} else {
+				log.warn("Configured default repository '" + configuredDefault +
+					"' not found in repositories.yml. Using YAML order default: " + firstRepositoryId);
+			}
+		}
 	}
 
 	private Map<String, String> loadDefaultRepositorySetting(){
@@ -84,10 +156,18 @@ public class RepositoryInfoMap {
 
 		//Each repository's setting
 		List<Map<String, String>> repositoriesSetting = (List<Map<String, String>>)data.get("repositories");
+		boolean isFirst = true;
 		for(Map<String, String> repStg : repositoriesSetting){
 			RepositoryInfo info = buildDefaultInfo(defaultSetting);
 			modifyInfo(repStg, info);
 			map.put(info.getId(), info);
+
+			// Track the first repository ID for deterministic default selection
+			if (isFirst) {
+				this.firstRepositoryId = info.getId();
+				log.info("Default repository for service document authentication: " + this.firstRepositoryId);
+				isFirst = false;
+			}
 		}
 	}
 

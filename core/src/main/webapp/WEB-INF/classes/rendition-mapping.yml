@@ -1,0 +1,40 @@
+# Rendition Mapping Configuration
+# Defines which source formats should have renditions generated
+# and what output format to produce
+#
+# NOTE (3.0 RC): Only PDF output is supported. The targetMediaType field
+# is reserved for future use but is currently ignored by the converter.
+
+mappings:
+  # Microsoft Word documents
+  - sourceMediaTypes:
+      - "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      - "application/msword"
+    converter: "jod"
+    targetMediaType: "application/pdf"
+    kind: "cmis:preview"
+    
+  # Microsoft Excel documents
+  - sourceMediaTypes:
+      - "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      - "application/vnd.ms-excel"
+    converter: "jod"
+    targetMediaType: "application/pdf"
+    kind: "cmis:preview"
+    
+  # Microsoft PowerPoint documents
+  - sourceMediaTypes:
+      - "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      - "application/vnd.ms-powerpoint"
+    converter: "jod"
+    targetMediaType: "application/pdf"
+    kind: "cmis:preview"
+    
+  # OpenDocument formats
+  - sourceMediaTypes:
+      - "application/vnd.oasis.opendocument.text"
+      - "application/vnd.oasis.opendocument.spreadsheet"
+      - "application/vnd.oasis.opendocument.presentation"
+    converter: "jod"
+    targetMediaType: "application/pdf"
+    kind: "cmis:preview"

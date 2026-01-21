@@ -2,12 +2,32 @@
 <beans xmlns="http://www.springframework.org/schema/beans"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
 	xmlns:util="http://www.springframework.org/schema/util" xmlns:context="http://www.springframework.org/schema/context"
-	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
-    http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd
-    http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util-3.0.xsd
-    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.2.xsd">
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
+    http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
 
+	<!-- Import property context first to ensure beans are available -->
 	<import resource="classpath:propertyContext.xml" />
+	
+	<!-- Enable component scanning for configuration classes FIRST -->
+	<!-- This ensures ObjectMapper beans are available before any DAO contexts -->
+	<context:component-scan base-package="jp.aegif.nemaki.config" />
+
+	<!-- DatabasePreInitializer moved to patchContext.xml as explicit bean definition (2025-11-10) -->
+	<!-- This ensures it executes in child context after NemakiApplicationContextLoader.refresh() -->
+
+	<!-- Enable component scanning for REST resources after property context is loaded -->
+	<context:component-scan base-package="jp.aegif.nemaki.rest">
+		<!-- Exclude AuthenticationFilter from component scan to control initialization order -->
+		<context:exclude-filter type="regex" expression="jp\.aegif\.nemaki\.rest\.AuthenticationFilter"/>
+		<!-- Exclude Spring @RestController classes that need ContentService bean -->
+		<context:exclude-filter type="regex" expression="jp\.aegif\.nemaki\.rest\.controller\..*"/>
+		<!-- Exclude provider classes that need ObjectMapper bean -->
+		<context:exclude-filter type="regex" expression="jp\.aegif\.nemaki\.rest\.provider\..*"/>
+	</context:component-scan>
+
+	<!-- AuthenticationFilter will be defined in serviceContext.xml as restAuthenticationFilter -->
 
 	<bean id="customSystemProperty"
 		class="org.springframework.beans.factory.config.MethodInvokingFactoryBean">
@@ -34,6 +54,8 @@
 			<list>
 				<value>classpath*:${context.log}</value>
 				<value>classpath:propertyContext.xml</value>
+				<!-- databaseInitContext.xml removed - now using @Component scanning for DatabasePreInitializer -->
+				<value>classpath:jacksonContext.xml</value>
 				<value>classpath*:${context.dao.implementation}</value>
 				<value>classpath*:${context.dao}</value>
 				<value>classpath*:${context.businesslogic}</value>

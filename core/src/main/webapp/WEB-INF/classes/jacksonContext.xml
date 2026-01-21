@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Jackson Configuration Context for NemakiWare
+    
+    This context defines ObjectMapper beans that are required by DAO components.
+    It must be loaded early in the application context hierarchy to ensure
+    ObjectMapper beans are available before DAO initialization.
+-->
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans 
+                        http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!-- 
+        Primary ObjectMapper bean for application-wide use
+        
+        This configuration is optimized for NemakiWare's specific requirements:
+        - CouchDB/Cloudant document serialization
+        - Complex inheritance hierarchies (CouchNodeBase, CouchTypeDefinition)
+        - Mixed @JsonProperty and field access patterns
+        - CMIS data structure compatibility
+    -->
+    <bean id="nemakiObjectMapper" class="jp.aegif.nemaki.config.ObjectMapperFactory" 
+          factory-method="createNemakiObjectMapper" primary="true">
+    </bean>
+
+    <!-- 
+        Specialized ObjectMapper for CouchDB/Cloudant operations
+        
+        This is used specifically in CloudantClientWrapper and other DAO components
+        where strict control over serialization is required.
+    -->
+    <bean id="couchdbObjectMapper" class="jp.aegif.nemaki.config.ObjectMapperFactory" 
+          factory-method="createCouchdbObjectMapper">
+    </bean>
+
+    <!-- 
+        ObjectMapper for logging and debugging purposes
+        
+        This provides human-readable JSON output for development and debugging.
+    -->
+    <bean id="debugObjectMapper" class="jp.aegif.nemaki.config.ObjectMapperFactory" 
+          factory-method="createDebugObjectMapper">
+    </bean>
+
+</beans>

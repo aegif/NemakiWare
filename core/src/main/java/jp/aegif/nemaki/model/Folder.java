@@ -57,6 +57,9 @@ public class Folder extends Content {
 		setSecondaryIds(c.getSecondaryIds());
 		setObjectType(c.getObjectType());
 		setChangeToken(c.getChangeToken());
+		
+		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from Content
+		setRevision(c.getRevision());
 	}
 
 	public List<String> getAllowedChildTypeIds() {
@@ -77,19 +80,15 @@ public class Folder extends Content {
 
 	@Override
 	public String toString() {
-		@SuppressWarnings("serial")
-		Map<String, Object> m = new HashMap<String, Object>() {
-			{
-				put("id", getId());
-				put("name", getName());
-				put("type", getType());
-				put("creator", getCreator());
-				put("created", getCreated());
-				put("modifier", getModifier());
-				put("modified", getModified());
-				put("parentId", getParentId());
-			}
-		};
+		Map<String, Object> m = new HashMap<String, Object>();
+		m.put("id", getId());
+		m.put("name", getName());
+		m.put("type", getType());
+		m.put("creator", getCreator());
+		m.put("created", getCreated());
+		m.put("modifier", getModifier());
+		m.put("modified", getModified());
+		m.put("parentId", getParentId());
 		return m.toString();
 	}
 

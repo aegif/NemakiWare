@@ -2,7 +2,7 @@ package jp.aegif.nemaki.cmis.factory;
 
 import java.util.HashMap;
 
-import javax.servlet.ServletContext;
+import jakarta.servlet.ServletContext;
 
 import org.apache.chemistry.opencmis.server.impl.CmisRepositoryContextListener;
 import org.springframework.beans.factory.DisposableBean;

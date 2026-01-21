@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.util;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import jp.aegif.nemaki.dao.ContentDaoService;
@@ -32,6 +33,12 @@ public class PropertyManager{
 	 * @throws Exception
 	 */
 	public String readValue(String key){
+		// CRITICAL FIX: Check system properties first for Jetty environment override support
+		String systemPropertyValue = System.getProperty(key);
+		if(systemPropertyValue != null){
+			return systemPropertyValue;
+		}
+		
 		Object configVal = getDynamicValue(key);
 		if(configVal == null){
 			return propertyConfigurer.getValue(key);
@@ -64,11 +71,32 @@ public class PropertyManager{
 	}
 
 	public String readValue(String repositoryId, String key){
+		if (log.isDebugEnabled()) {
+			log.debug("readValue called with repositoryId='" + repositoryId + "', key='" + key + "'");
+		}
+		
 		Object configVal = getDynamicValue(repositoryId, key);
+		
+		if (log.isDebugEnabled()) {
+			log.debug("getDynamicValue returned: " + (configVal != null ? "'" + configVal.toString() + "'" : "NULL"));
+		}
+		
 		if(configVal == null){
-			return propertyConfigurer.getValue(key);
+			String fallbackValue = propertyConfigurer.getValue(key);
+			
+			if (log.isDebugEnabled()) {
+				log.debug("Using fallback propertyConfigurer.getValue('" + key + "') = " + (fallbackValue != null ? "'" + fallbackValue + "'" : "NULL"));
+			}
+			
+			return fallbackValue;
 		}else{
-			return configVal.toString();
+			String result = configVal.toString();
+			
+			if (log.isDebugEnabled()) {
+				log.debug("Returning dynamic value: '" + result + "'");
+			}
+			
+			return result;
 		}
 	}
 
@@ -115,16 +143,44 @@ public class PropertyManager{
 	private Object getDynamicValue(String repositoryId, String key){
 		Object result = null;
 
+		if (log.isDebugEnabled()) {
+			log.debug("getDynamicValue called with repositoryId='" + repositoryId + "', key='" + key + "'");
+		}
+
 		Configuration repoConf = getConfiguration(repositoryId);
+		
+		if (log.isDebugEnabled()) {
+			log.debug("getConfiguration('" + repositoryId + "') returned: " + (repoConf != null ? "NOT NULL" : "NULL"));
+		}
+		
 		if(repoConf != null){
+			if (log.isDebugEnabled()) {
+				log.debug("Configuration map: " + (repoConf.getConfiguration() != null ? "NOT NULL, size=" + repoConf.getConfiguration().size() : "NULL"));
+				if(repoConf.getConfiguration() != null) {
+					log.debug("Configuration keys: " + repoConf.getConfiguration().keySet());
+				}
+			}
+			
 			Object repoVal = repoConf.getConfiguration().get(key);
+			
+			if (log.isDebugEnabled()) {
+				log.debug("repoConf.getConfiguration().get('" + key + "') returned: " + (repoVal != null ? "'" + repoVal.toString() + "'" : "NULL"));
+			}
+			
 			if(repoVal != null){
 				result = repoVal;
 			}
 		}
 
 		if(result == null){
+			if (log.isDebugEnabled()) {
+				log.debug("Repository-specific value is null, trying system-wide configuration");
+			}
 			result = getDynamicValue(key);
+		}
+
+		if (log.isDebugEnabled()) {
+			log.debug("getDynamicValue final result: " + (result != null ? "'" + result.toString() + "'" : "NULL"));
 		}
 
 		return result;

@@ -1,0 +1,6 @@
+これはプレビューテスト用のサンプルテキストファイルです。
+NemakiWare CMIS Document Management System
+
+日本語テキストのテスト
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+

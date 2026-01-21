@@ -237,6 +237,17 @@ public interface ContentService {
 	
 	GroupItem getGroupItem(String repositoryId, String objectId);
 	GroupItem getGroupItemById(String repositoryId, String groupId);
+
+	/**
+	 * Get group item by group ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations (e.g., retry logic with optimistic locking)
+	 *
+	 * @param repositoryId
+	 * @param groupId
+	 * @return fresh group item from database, if nothing found, return null
+	 */
+	GroupItem getGroupItemByIdFresh(String repositoryId, String groupId);
+
 	List<GroupItem> getGroupItems(String repositoryId);
 	
 	Set<String> getGroupIdsContainingUser(String repositoryId, String userId);
@@ -289,6 +300,19 @@ public interface ContentService {
 	 */
 	Document createDocumentWithNewStream(CallContext callContext,
 			String repositoryId, Document original, ContentStream contentStream);
+
+	/**
+	 * Update a non-versionable document with new content stream in place.
+	 * This method updates the existing document's attachment without creating a new version.
+	 * Used for non-versionable documents per CMIS spec.
+	 *
+	 * @param callContext
+	 * @param repositoryId
+	 * @param original The document to update
+	 * @param contentStream New content stream
+	 * @return Updated document with same object ID
+	 */
+	Document updateDocumentWithNewStream(CallContext callContext, String repositoryId, Document original, ContentStream contentStream);
 
 	Document replacePwc(CallContext callContext, String repositoryId, Document original, ContentStream contentStream);
 
@@ -509,8 +533,9 @@ public interface ContentService {
 	 * @param callContext
 	 * @param repositoryId TODO
 	 * @param objectId
+	 * @return Updated document with new change token (CRITICAL: prevents race conditions)
 	 */
-	void deleteContentStream(CallContext callContext, String repositoryId, Holder<String> objectId);
+	Document deleteContentStream(CallContext callContext, String repositoryId, Holder<String> objectId);
 
 	/**
 	 * Delete a whole folder tree
@@ -730,4 +755,12 @@ public interface ContentService {
 	public Document updateWithoutCheckInOut(CallContext callContext, String repositoryId,
 			Boolean major, Properties properties,
 			ContentStream contentStream, String checkinComment, Document previousDoc, VersionSeries versionSeries);
+
+	/**
+	 * Get the actual attachment size from CouchDB metadata
+	 * @param repositoryId Repository ID
+	 * @param attachmentId Attachment node ID
+	 * @return Actual size in bytes from CouchDB attachment metadata, or null if not available
+	 */
+	Long getAttachmentActualSize(String repositoryId, String attachmentId);
 }

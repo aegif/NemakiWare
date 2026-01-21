@@ -173,22 +173,18 @@ public class Archive extends NodeBase {
 
 	@Override
 	public String toString() {
-		@SuppressWarnings("serial")
-		Map<String, Object> m = new HashMap<String, Object>() {
-			{
-				if(getId() != null) put("id", getId());
-				if(getOriginalId() != null) put("originalId", getOriginalId());
-				if(getLastRevision() != null) put("lastRevision", getLastRevision());
-				if(getName() != null) put("name", getName());
-				if(getType() != null) put("type", getType());
-				if(getParentId() != null) put("parentId", getParentId());
-				if(getAttachmentNodeId() != null) put("nemakiAttachments", getAttachmentNodeId().toString());
-				if(getVersionSeriesId() != null) put("versionSeriesId", getVersionSeriesId());
-				if(isLatestVersion() != null) put("isLatestVersion", isLatestVersion());
-				if(getCreated() != null) put("created", DataUtil.convertToDateFormat(getCreated()));
-				if(getCreator() != null) put("creator", getCreator());
-			}
-		};
+		Map<String, Object> m = new HashMap<String, Object>();
+		if(getId() != null) m.put("id", getId());
+		if(getOriginalId() != null) m.put("originalId", getOriginalId());
+		if(getLastRevision() != null) m.put("lastRevision", getLastRevision());
+		if(getName() != null) m.put("name", getName());
+		if(getType() != null) m.put("type", getType());
+		if(getParentId() != null) m.put("parentId", getParentId());
+		if(getAttachmentNodeId() != null) m.put("nemakiAttachments", getAttachmentNodeId().toString());
+		if(getVersionSeriesId() != null) m.put("versionSeriesId", getVersionSeriesId());
+		if(isLatestVersion() != null) m.put("isLatestVersion", isLatestVersion());
+		if(getCreated() != null) m.put("created", DataUtil.convertToDateFormat(getCreated()));
+		if(getCreator() != null) m.put("creator", getCreator());
 		return m.toString();
 	}
 

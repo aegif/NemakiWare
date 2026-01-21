@@ -26,4 +26,17 @@ public interface TypeService {
 			String repositoryId, NemakiPropertyDefinition propertyDefinition);
 	NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
 			String repositoryId, NemakiPropertyDefinitionDetail propertyDefinitionDetail);
+	
+	/**
+	 * Update a property definition core.
+	 * WARNING: Property cores may be globally shared across types. Changing core fields
+	 * (propertyType, cardinality) could affect all types that use the same propertyId.
+	 * Use with caution.
+	 * 
+	 * @param repositoryId Repository ID
+	 * @param propertyDefinitionCore The core to update
+	 * @return Updated core
+	 */
+	NemakiPropertyDefinitionCore updatePropertyDefinitionCore(
+			String repositoryId, NemakiPropertyDefinitionCore propertyDefinitionCore);
 }

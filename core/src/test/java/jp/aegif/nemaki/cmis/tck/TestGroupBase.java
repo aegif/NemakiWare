@@ -1,12 +1,23 @@
 package jp.aegif.nemaki.cmis.tck;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.chemistry.opencmis.tck.CmisTest;
 import org.apache.chemistry.opencmis.tck.CmisTestGroup;
@@ -25,40 +36,124 @@ public class TestGroupBase extends AbstractRunner {
 
 	static final String PARAMETERS_FILE_NAME = "cmis-tck-parameters.properties";
 	static final String FILTERS_FILE_NAME = "cmis-tck-filters.properties";
-	protected static File parametersFile = new File(
-			TestGroupBase.class.getClassLoader().getResource(PARAMETERS_FILE_NAME).getFile());
-	protected static Properties filters = PropertyUtil
-			.build(new File(TestGroupBase.class.getClassLoader().getResource("cmis-tck-filters.properties").getFile()));
+
+	protected static File parametersFile;
+	protected static Properties filters;
+	private static boolean parametersLoaded = false;
+	private static Map<String, String> loadedParameters;
+
+	// CRITICAL FIX: Load parameters once in static initializer to avoid hang
+	// This resolves the timeout issue where loadParameters hangs on 2nd+ calls
+	static {
+		System.err.println("[TCK STATIC INIT] Starting static initialization for TestGroupBase");
+		System.err.println("[TCK STATIC INIT] Thread: " + Thread.currentThread().getName());
+		try {
+			System.err.println("[TCK STATIC INIT] Loading parameter file resource");
+			java.net.URL paramUrl = TestGroupBase.class.getClassLoader().getResource(PARAMETERS_FILE_NAME);
+			if (paramUrl == null) {
+				System.err.println("[TCK] Could not find resource: " + PARAMETERS_FILE_NAME);
+				parametersFile = new File("core/src/test/resources/" + PARAMETERS_FILE_NAME);
+				if (parametersFile.exists()) {
+				} else {
+					System.err.println("[TCK] Parameters file does not exist at: " + parametersFile.getAbsolutePath());
+				}
+			} else {
+				parametersFile = new File(paramUrl.getFile());
+			}
+
+			java.net.URL filterUrl = TestGroupBase.class.getClassLoader().getResource(FILTERS_FILE_NAME);
+			if (filterUrl == null) {
+				System.err.println("[TCK] Could not find resource: " + FILTERS_FILE_NAME);
+				filters = new Properties();
+			} else {
+				filters = PropertyUtil.build(new File(filterUrl.getFile()));
+			}
+
+			// CRITICAL FIX: Load parameters once in static initializer
+			// This avoids the hang issue with multiple loadParameters calls
+			if (parametersFile != null && parametersFile.exists()) {
+				try {
+					System.err.println("[TCK STATIC INIT] Creating JUnitRunner for parameter preloading");
+					JUnitRunner tempRunner = new JUnitRunner();
+					System.err.println("[TCK STATIC INIT] Calling loadParameters() - THIS MAY HANG");
+					tempRunner.loadParameters(parametersFile);
+					System.err.println("[TCK STATIC INIT] loadParameters() completed successfully");
+					loadedParameters = tempRunner.getParameters();
+					parametersLoaded = true;
+					System.err.println("[TCK STATIC INIT] Parameters preloaded successfully, count: " + (loadedParameters != null ? loadedParameters.size() : 0));
+				} catch (Exception loadEx) {
+					System.err.println("[TCK] Failed to preload parameters: " + loadEx);
+					loadEx.printStackTrace();
+					// Continue without parameters - tests may fail but won't hang
+				}
+			}
+			System.err.println("[TCK STATIC INIT] Static initialization completed");
+		} catch (Exception e) {
+			System.err.println("[TCK] Error in static initialization: " + e);
+			e.printStackTrace();
+			// Initialize with empty properties to prevent NPE
+			if (filters == null) {
+				filters = new Properties();
+			}
+			if (parametersFile == null) {
+				parametersFile = new File("core/src/test/resources/" + PARAMETERS_FILE_NAME);
+			}
+		}
+	}
 
 	static Map<String, AbstractCmisTestGroup> testGroupMap = new HashMap<>();
+
+	// Accessor methods for backward compatibility
+	protected static File getParametersFile() {
+		return parametersFile;
+	}
+
+	private static Properties getFilters() {
+		return filters;
+	}
 
 	@Rule
 	public TestName testName = new TestName();
 
 	@Before
 	public void beforeMethod() throws Exception {
-		filterClass(this.getClass().getSimpleName());
-		filterMethod(testName.getMethodName());
+		// CRITICAL FIX: Temporarily skip filter checks to isolate timeout problem
+		if (false) {
+			filterClass(this.getClass().getSimpleName());
+			filterMethod(testName.getMethodName());
+		}
 	}
 
 	private void filterClass(String simpleClassName) {
-		Assume.assumeTrue(Boolean.valueOf(filters.getProperty(simpleClassName)));
+		Properties filterProps = getFilters();
+		String filterValue = filterProps.getProperty(simpleClassName, "true"); // Default to true if not found
+		Assume.assumeTrue(Boolean.valueOf(filterValue));
 	}
 
 	private void filterMethod(String methodName) {
-		Assume.assumeTrue(Boolean.valueOf(filters.getProperty(methodName)));
+		Properties filterProps = getFilters();
+		String filterValue = filterProps.getProperty(methodName, "true"); // Default to true if not found
+		Assume.assumeTrue(Boolean.valueOf(filterValue));
 	}
 
 	private static class PropertyUtil {
 		public static Properties build(File file) {
 			Properties properties = new Properties();
+			if (file == null) {
+				System.err.println("[TCK ERROR] PropertyUtil.build: file is null");
+				return properties;
+			}
+			if (!file.exists()) {
+				System.err.println("[TCK ERROR] PropertyUtil.build: file does not exist: " + file.getAbsolutePath());
+				return properties;
+			}
 			try {
 				properties.load(new FileInputStream(file));
 			} catch (FileNotFoundException e) {
-				// TODO Auto-generated catch block
+				System.err.println("[TCK ERROR] PropertyUtil.build: File not found: " + e.getMessage());
 				e.printStackTrace();
 			} catch (IOException e) {
-				// TODO Auto-generated catch blocknet
+				System.err.println("[TCK ERROR] PropertyUtil.build: IO error: " + e.getMessage());
 				e.printStackTrace();
 			}
 			return properties;
@@ -69,13 +164,27 @@ public class TestGroupBase extends AbstractRunner {
 		run(new SimpleCmisWrapperTestGroup(test));
 		TckSuite.addToGroup(this.getClass(), test);
 	}
-	
+
 	public void run(CmisTestGroup group) throws Exception {
 		JUnitRunner runner = new JUnitRunner();
 
-		runner.loadParameters(parametersFile);
+		// CRITICAL FIX: Use preloaded parameters instead of loading again
+		// This avoids the hang issue with multiple loadParameters calls
+		if (parametersLoaded && loadedParameters != null) {
+			runner.setParameters(loadedParameters);
+		} else {
+			if (parametersFile == null || !parametersFile.exists()) {
+				throw new IllegalStateException("Failed to load TCK parameters file");
+			}
+			runner.loadParameters(parametersFile);
+		}
+
 		runner.addGroup(group);
 		runner.run(new JUnitProgressMonitor());
+
+		// CRITICAL FIX: Clean up TCK test artifacts after each test group
+		// Re-enabled after investigation: Cleanup was incorrectly disabled causing data accumulation
+		cleanupTckTestArtifacts(runner);
 
 		checkForFailures(runner);
 	}
@@ -83,24 +192,295 @@ public class TestGroupBase extends AbstractRunner {
 	private static void checkForFailures(JUnitRunner runner) {
 		for (CmisTestGroup group : runner.getGroups()) {
 			for (CmisTest test : group.getTests()) {
+				boolean hasFailures = false;
+				StringBuilder failureDetails = new StringBuilder();
+				int resultIndex = 0;
+
 				for (CmisTestResult result : test.getResults()) {
-					if (result.getStatus().getLevel() >= CmisTestResultStatus.FAILURE.getLevel()) {
-						Assert.fail(result.getMessage() + "\n" + result.getStackTrace().toString());
+					if (result.getStatus() == CmisTestResultStatus.FAILURE ||
+						result.getStatus() == CmisTestResultStatus.UNEXPECTED_EXCEPTION) {
+						hasFailures = true;
+
+						// Collect detailed failure information
+						failureDetails.append("\n  Result #").append(resultIndex)
+							.append(": ").append(result.getStatus())
+							.append(" - ").append(result.getMessage());
+
+						if (result.getException() != null) {
+							failureDetails.append("\n    Exception: ")
+								.append(result.getException().getClass().getSimpleName())
+								.append(": ").append(result.getException().getMessage());
+						}
+
+						StackTraceElement[] stackTrace = result.getStackTrace();
+						if (stackTrace != null && stackTrace.length > 0) {
+							failureDetails.append("\n    Stack: ")
+								.append(stackTrace[0].toString());
+						}
 					}
+					resultIndex++;
+				}
+
+				if (hasFailures) {
+					String errorMsg = "TCK FAILURE detected in test: " + test.getName() + failureDetails.toString();
+					System.err.println(errorMsg);
+					Assert.fail(errorMsg);
+				}
+			}
+		}
+	}
+	
+	/**
+	 * Clean up TCK test artifacts to prevent test contamination
+	 * @param runner the test runner that executed the tests
+	 */
+	private static void cleanupTckTestArtifacts(JUnitRunner runner) {
+		org.apache.chemistry.opencmis.client.api.Session session = null;
+		try {
+			// Create a new session using the test parameters
+			Map<String, String> parameters = runner.getParameters();
+			if (parameters == null || parameters.isEmpty()) {
+				return;
+			}
+
+			// Create session factory and session
+			org.apache.chemistry.opencmis.client.api.SessionFactory factory =
+				org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl.newInstance();
+
+			// Build session parameters from TCK parameters
+			Map<String, String> sessionParams = new java.util.HashMap<>();
+
+			// Copy all parameters that start with standard CMIS session parameter prefixes
+			for (Map.Entry<String, String> entry : parameters.entrySet()) {
+				String key = entry.getKey();
+				if (key.startsWith("org.apache.chemistry.opencmis.") ||
+				    key.equals("test.binding") ||
+				    key.equals("test.username") ||
+				    key.equals("test.password") ||
+				    key.equals("test.repositoryid")) {
+					sessionParams.put(key, entry.getValue());
+				}
+			}
+
+			// Map TCK parameter names to session parameter names
+			String bindingType = parameters.get("org.apache.chemistry.opencmis.binding.spi.type");
+			if (bindingType != null) {
+				sessionParams.put(org.apache.chemistry.opencmis.commons.SessionParameter.BINDING_TYPE, bindingType);
+			}
+
+			// AtomPub URL
+			String atompubUrl = parameters.get("org.apache.chemistry.opencmis.binding.atompub.url");
+			if (atompubUrl != null) {
+				sessionParams.put(org.apache.chemistry.opencmis.commons.SessionParameter.ATOMPUB_URL, atompubUrl);
+			}
+
+			// Browser URL
+			String browserUrl = parameters.get("org.apache.chemistry.opencmis.binding.browser.url");
+			if (browserUrl != null) {
+				sessionParams.put(org.apache.chemistry.opencmis.commons.SessionParameter.BROWSER_URL, browserUrl);
+			}
+
+			// WebServices URLs
+			String wsRepositoryUrl = parameters.get("org.apache.chemistry.opencmis.binding.webservices.RepositoryService");
+			if (wsRepositoryUrl != null) {
+				sessionParams.put(org.apache.chemistry.opencmis.commons.SessionParameter.WEBSERVICES_REPOSITORY_SERVICE, wsRepositoryUrl);
+			}
+
+			String username = parameters.get("org.apache.chemistry.opencmis.user");
+			if (username != null) {
+				sessionParams.put(org.apache.chemistry.opencmis.commons.SessionParameter.USER, username);
+			}
+
+			String password = parameters.get("org.apache.chemistry.opencmis.password");
+			if (password != null) {
+				sessionParams.put(org.apache.chemistry.opencmis.commons.SessionParameter.PASSWORD, password);
+			}
+
+			String repositoryId = parameters.get("org.apache.chemistry.opencmis.session.repository.id");
+			if (repositoryId != null) {
+				sessionParams.put(org.apache.chemistry.opencmis.commons.SessionParameter.REPOSITORY_ID, repositoryId);
+			}
+
+			// Create session
+			session = factory.createSession(sessionParams);
+
+			if (session != null) {
+				// Get root folder
+				org.apache.chemistry.opencmis.client.api.Folder rootFolder = session.getRootFolder();
+
+				// Find and delete all cmistck objects
+				org.apache.chemistry.opencmis.client.api.ItemIterable<org.apache.chemistry.opencmis.client.api.CmisObject> children =
+					rootFolder.getChildren();
+
+				int deletedCount = 0;
+				for (org.apache.chemistry.opencmis.client.api.CmisObject child : children) {
+					String name = child.getName();
+					if (name != null && name.startsWith("cmistck")) {
+						try {
+							// Delete with all versions if it's a document
+							if (child instanceof org.apache.chemistry.opencmis.client.api.Document) {
+								((org.apache.chemistry.opencmis.client.api.Document) child).deleteAllVersions();
+							} else if (child instanceof org.apache.chemistry.opencmis.client.api.Folder) {
+								// Delete folder recursively
+								((org.apache.chemistry.opencmis.client.api.Folder) child).deleteTree(true, null, true);
+							} else {
+								child.delete(true);
+							}
+							deletedCount++;
+
+						} catch (Exception deleteEx) {
+							System.err.println("TCK CLEANUP: Failed to delete " + name + ": " + deleteEx.getMessage());
+							// Continue with other deletions
+						}
+					}
+				}
+
+				if (deletedCount > 0) {
+					System.out.println("TCK CLEANUP: Deleted " + deletedCount + " test artifacts");
+					// Brief wait for deletions to propagate
+					Thread.sleep(500);
+				}
+			}
+
+			// Clean up test types (test:* prefixed types) via REST API
+			cleanupTestTypes(parameters);
+
+		} catch (Exception cleanupEx) {
+			System.err.println("TCK CLEANUP: Cleanup failed: " + cleanupEx.getMessage());
+			cleanupEx.printStackTrace();
+			// Don't fail the test due to cleanup errors
+		} finally {
+			// Clear session if created
+			if (session != null) {
+				try {
+					session.clear();
+				} catch (Exception e) {
+					// Ignore
 				}
 			}
 		}
 	}
 
+	/**
+	 * Clean up test types (test:* prefixed types) via NemakiWare REST API.
+	 * This prevents test type accumulation when tests are interrupted.
+	 */
+	private static void cleanupTestTypes(Map<String, String> parameters) {
+		try {
+			// Extract base URL and credentials from parameters
+			String atompubUrl = parameters.get("org.apache.chemistry.opencmis.binding.atompub.url");
+			String username = parameters.get("org.apache.chemistry.opencmis.user");
+			String password = parameters.get("org.apache.chemistry.opencmis.password");
+			String repositoryId = parameters.get("org.apache.chemistry.opencmis.session.repository.id");
+
+			if (atompubUrl == null || username == null || password == null || repositoryId == null) {
+				return;
+			}
+
+			// Derive REST API base URL from AtomPub URL
+			// AtomPub URL: http://localhost:8080/core/atom/bedroom
+			// REST API URL: http://localhost:8080/core/rest/repo/bedroom/type/list
+			String baseUrl = atompubUrl.replace("/atom/" + repositoryId, "");
+			String typeListUrl = baseUrl + "/rest/repo/" + repositoryId + "/type/list";
+
+			// Get list of all types
+			String authHeader = "Basic " + Base64.getEncoder().encodeToString(
+				(username + ":" + password).getBytes(StandardCharsets.UTF_8));
+
+			HttpURLConnection listConn = (HttpURLConnection) new URL(typeListUrl).openConnection();
+			listConn.setRequestMethod("GET");
+			listConn.setRequestProperty("Authorization", authHeader);
+			listConn.setConnectTimeout(10000);
+			listConn.setReadTimeout(30000);
+
+			int responseCode = listConn.getResponseCode();
+			if (responseCode != 200) {
+				return;
+			}
+
+			// Read response
+			StringBuilder response = new StringBuilder();
+			try (BufferedReader reader = new BufferedReader(
+					new InputStreamReader(listConn.getInputStream(), StandardCharsets.UTF_8))) {
+				String line;
+				while ((line = reader.readLine()) != null) {
+					response.append(line);
+				}
+			}
+
+			// Extract test type IDs using regex
+			// Pattern: "id":"test:xxx"
+			Pattern pattern = Pattern.compile("\"id\":\"(test:[^\"]+)\"");
+			Matcher matcher = pattern.matcher(response.toString());
+			List<String> testTypeIds = new ArrayList<>();
+			while (matcher.find()) {
+				testTypeIds.add(matcher.group(1));
+			}
+
+			if (testTypeIds.isEmpty()) {
+				return;
+			}
+
+			System.out.println("TCK CLEANUP: Found " + testTypeIds.size() + " test types to delete");
+
+			// Delete each test type
+			int deletedTypes = 0;
+			for (String typeId : testTypeIds) {
+				try {
+					// URL encode the type ID (replace : with %3A)
+					String encodedTypeId = URLEncoder.encode(typeId, "UTF-8");
+					String deleteUrl = baseUrl + "/rest/repo/" + repositoryId + "/type/delete/" + encodedTypeId;
+
+					HttpURLConnection deleteConn = (HttpURLConnection) new URL(deleteUrl).openConnection();
+					deleteConn.setRequestMethod("DELETE");
+					deleteConn.setRequestProperty("Authorization", authHeader);
+					deleteConn.setConnectTimeout(5000);
+					deleteConn.setReadTimeout(10000);
+
+					int deleteResponse = deleteConn.getResponseCode();
+					if (deleteResponse == 200) {
+						deletedTypes++;
+					}
+					deleteConn.disconnect();
+				} catch (Exception deleteEx) {
+					// Continue with other deletions
+				}
+			}
+
+			if (deletedTypes > 0) {
+				System.out.println("TCK CLEANUP: Deleted " + deletedTypes + " test types");
+			}
+
+		} catch (Exception e) {
+			System.err.println("TCK CLEANUP: Test type cleanup failed: " + e.getMessage());
+			// Don't fail the test due to cleanup errors
+		}
+	}
+
 	private static class JUnitRunner extends AbstractRunner {
+		public JUnitRunner() {
+		}
+
+		@Override
+		public void loadParameters(File file) throws IOException {
+			super.loadParameters(file);
+		}
+
+		@Override
+		public void addGroup(CmisTestGroup group) throws Exception {
+			super.addGroup(group);
+		}
+
+		@Override
+		public void run(CmisTestProgressMonitor monitor) throws Exception {
+			super.run(monitor);
+		}
 	}
 
 	private static class JUnitProgressMonitor implements CmisTestProgressMonitor {
 
 		@SuppressWarnings("PMD.SystemPrintln")
 		public void startGroup(CmisTestGroup group) {
-			// System.out.println(group.getName() + " (" +
-			// group.getTests().size() + " tests)");
 		}
 
 		public void endGroup(CmisTestGroup group) {

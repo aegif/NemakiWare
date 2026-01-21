@@ -188,6 +188,66 @@ public interface ContentDaoService {
 	Content getContent(String repositoryId, String objectId);
 
 	/**
+	 * Get content by object ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations
+	 * 
+	 * @param repositoryId
+	 * @param objectId
+	 * @return fresh content from database, if nothing found, return null
+	 */
+	Content getContentFresh(String repositoryId, String objectId);
+
+	/**
+	 * Get document by object ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations
+	 * 
+	 * @param repositoryId
+	 * @param objectId
+	 * @return fresh document from database, if nothing found, return null
+	 */
+	Document getDocumentFresh(String repositoryId, String objectId);
+
+	/**
+	 * Get folder by object ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations
+	 * 
+	 * @param repositoryId
+	 * @param objectId
+	 * @return fresh folder from database, if nothing found, return null
+	 */
+	Folder getFolderFresh(String repositoryId, String objectId);
+
+	/**
+	 * Get relationship by object ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations
+	 * 
+	 * @param repositoryId
+	 * @param objectId
+	 * @return fresh relationship from database, if nothing found, return null
+	 */
+	Relationship getRelationshipFresh(String repositoryId, String objectId);
+
+	/**
+	 * Get policy by object ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations
+	 * 
+	 * @param repositoryId
+	 * @param objectId
+	 * @return fresh policy from database, if nothing found, return null
+	 */
+	Policy getPolicyFresh(String repositoryId, String objectId);
+
+	/**
+	 * Get item by object ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations
+	 * 
+	 * @param repositoryId
+	 * @param objectId
+	 * @return fresh item from database, if nothing found, return null
+	 */
+	Item getItemFresh(String repositoryId, String objectId);
+
+	/**
 	 * Check if there are any object of the specified object type
 	 * @param repositoryId TODO
 	 * @param objectTypeId
@@ -355,6 +415,17 @@ public interface ContentDaoService {
 
 	GroupItem getGroupItem(String repositoryId, String objectId);
 	GroupItem getGroupItemById(String repositoryId, String userId);
+
+	/**
+	 * Get group item by group ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations (e.g., retry logic with optimistic locking)
+	 *
+	 * @param repositoryId
+	 * @param groupId
+	 * @return fresh group item from database, if nothing found, return null
+	 */
+	GroupItem getGroupItemByIdFresh(String repositoryId, String groupId);
+
 	List<GroupItem> getGroupItems(String repositoryId);
 	List<String> getJoinedGroupByUserId(String repositoryId, String userId);
 
@@ -496,6 +567,14 @@ public interface ContentDaoService {
 	 * @param objectId
 	 */
 	void delete(String repositoryId, String objectId);
+
+	/**
+	 * Delete a content with optional verification
+	 * @param repositoryId repository identifier
+	 * @param objectId object identifier
+	 * @param verifyDeletion if true, verify deletion after CouchDB delete (adds ~50ms per object)
+	 */
+	void delete(String repositoryId, String objectId, boolean verifyDeletion);
 
 	// ///////////////////////////////////////
 	// Attachment
@@ -706,4 +785,12 @@ public interface ContentDaoService {
 	void restoreAttachment(String repositoryId, Archive archive);
 
 	void restoreDocumentWithArchive(String repositoryId, Archive archive);
+
+	/**
+	 * Get the actual attachment size from CouchDB _attachments metadata
+	 * @param repositoryId Repository ID
+	 * @param attachmentId Attachment node ID
+	 * @return Actual size in bytes from CouchDB attachment metadata, or null if not available
+	 */
+	Long getAttachmentActualSize(String repositoryId, String attachmentId);
 }

@@ -197,4 +197,42 @@ public interface TypeManager{
      *            id of type to be deleted
      */
     void deleteTypeDefinition(String repositoryId, String typeId);
+    
+    /**
+     * Mark a type as being deleted to prevent infinite recursion during cache refresh
+     * @param typeId the type ID being deleted
+     */
+    void markTypeBeingDeleted(String typeId);
+    
+    /**
+     * Unmark a type as being deleted after deletion completes
+     * @param typeId the type ID that was deleted
+     */
+    void unmarkTypeBeingDeleted(String typeId);
+    
+    /**
+     * CRITICAL ENHANCEMENT: Clean up timed-out types that have been stuck in "being deleted" state
+     * This prevents memory leaks and race condition deadlocks
+     */
+    void cleanupTimedOutTypes();
+    
+    /**
+     * PRIORITY 4: Invalidate type cache for TCK compliance
+     * Forces TypeManager to reload type definitions from database
+     * Ensures PropertyDefinitionDetail changes are reflected immediately
+     *
+     * @param repositoryId repository ID to invalidate cache for
+     */
+    void invalidateTypeCache(String repositoryId);
+
+    /**
+     * CRITICAL FIX (2025-12-18): Find the secondary type that contains a given property
+     * This is needed for CMIS SQL query processing where secondary type properties
+     * require JOINs to be searchable.
+     *
+     * @param repositoryId repository ID
+     * @param propertyQueryName query name of the property (e.g., "nemaki:comment")
+     * @return TypeDefinition of the secondary type containing this property, or null if not found
+     */
+    TypeDefinition findSecondaryTypeByPropertyQueryName(String repositoryId, String propertyQueryName);
 }

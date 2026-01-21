@@ -23,7 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import javax.activation.FileTypeMap;
+import jakarta.activation.FileTypeMap;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
@@ -105,7 +105,7 @@ public class TestBase {
 		String parentId;
 		String name;
 		String text;
-		
+
 		public CreateDocumentTask(String taskId, String parentId, String name, String text) {
 			super();
 			this.taskId = taskId;
@@ -115,9 +115,10 @@ public class TestBase {
 		}
 		@Override
 		public String call() throws Exception {
-			String objectId = createDocument(parentId, name, text);
+			// Use versionable documents (nemaki:document) for checkOut/checkIn test support (2025-12-16)
+			String objectId = createVersionableDocument(parentId, name, text);
 			System.out.println(objectId + "(" + name + ") is created.");
-			return objectId; 
+			return objectId;
 		}
 	}
 	
@@ -152,9 +153,10 @@ public class TestBase {
 		map.put(PropertyIds.NAME, name);
 
 		ContentStream contentStream = convertFileToContentStream(session, file);
-		
-		ObjectId objectId = session.createDocument(map, new ObjectIdImpl(parentId), contentStream, VersioningState.MAJOR);
-	
+
+		// FIX: Use null instead of VersioningState.MAJOR for compatibility with non-versionable types
+		ObjectId objectId = session.createDocument(map, new ObjectIdImpl(parentId), contentStream, null);
+
 		return objectId.getId();
 	}
 	
@@ -164,9 +166,27 @@ public class TestBase {
 		map.put(PropertyIds.NAME, name);
 
 		ContentStream contentStream = new ContentStreamImpl(name, "text/plain", string);
-		
+
+		// FIX: Use null instead of VersioningState.MAJOR for compatibility with non-versionable types
+		ObjectId objectId = session.createDocument(map, new ObjectIdImpl(parentId), contentStream, null);
+
+		return objectId.getId();
+	}
+
+	/**
+	 * Create a versionable document using nemaki:document type.
+	 * Use this for tests that require checkOut/checkIn operations.
+	 */
+	public static String createVersionableDocument(String parentId, String name, String string){
+		Map<String, Object>map = new HashMap<>();
+		map.put(PropertyIds.OBJECT_TYPE_ID, "nemaki:document"); // versionable type
+		map.put(PropertyIds.NAME, name);
+
+		ContentStream contentStream = new ContentStreamImpl(name, "text/plain", string);
+
+		// Use MAJOR versioning state for versionable documents
 		ObjectId objectId = session.createDocument(map, new ObjectIdImpl(parentId), contentStream, VersioningState.MAJOR);
-	
+
 		return objectId.getId();
 	}
 	

@@ -14,6 +14,12 @@ public interface PropertyKey {
 	final String CMIS_SERVER_DEFAULT_MAX_DEPTH_OBJECTS = "cmis.server.default.depth.objects";
 	final String REPOSITORY_DEFINITION = "repository.definition";
 	final String REPOSITORY_DEFINITION_DEFAULT = "repository.definition.default";
+	/**
+	 * Default repository ID for service document requests (e.g., /atom without repository).
+	 * If not specified, uses the first repository defined in repositories.yml.
+	 * Example: cmis.server.default.repository=bedroom
+	 */
+	final String CMIS_SERVER_DEFAULT_REPOSITORY = "cmis.server.default.repository";
 
 	//Solr
 	final String SOLR_PROTOCOL = "solr.protocol";
@@ -79,6 +85,7 @@ public interface PropertyKey {
 	final String CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_CONTROLLABLE_POLICY = "capability.newTypeSettableAttributes.controllablePolicy";
 	final String CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_CONTROLLABLE_ACL = "capability.newTypeSettableAttributes.controllableACL";
 	final String CAPABILITY_ACL = "capability.acl";
+	final String CAPABILITY_TYPE_MANAGEMENT = "capability.typeManagement";
 
 	//Base types
 	final String BASETYPE_DOCUMENT_LOCAL_NAME = "basetype.document.localName";
@@ -245,6 +252,24 @@ public interface PropertyKey {
 	//Rendition service
 	final String JODCONVERTER_REGISTRY_DATAFORMATS = "jodconverter.registry.dataformats";
 	final String JODCONVERTER_OFFICEHOME = "jodconverter.officehome";
+	/** Port number for LibreOffice/OpenOffice headless process. Default: 8100 */
+	final String JODCONVERTER_PORT = "jodconverter.port";
+
+	// Rendition configuration
+	/** Enable/disable rendition feature. Default: true */
+	final String RENDITION_ENABLED = "rendition.enabled";
+	/** Default rendition kind. Default: cmis:preview (accepts 'preview' which is normalized) */
+	final String RENDITION_DEFAULT_KIND = "rendition.default.kind";
+	/** Path to rendition mapping YAML file. Default: rendition-mapping.yml */
+	final String RENDITION_MAPPING_DEFINITION = "rendition.mapping.definition";
+	/** Enable lazy rendition creation on preview request. Default: false (recommended) */
+	final String RENDITION_LAZY_CREATE_ON_PREVIEW = "rendition.lazy.createOnPreview";
+	/** Converter type: 'jod' (JODConverter) or 'external' (future). Default: jod */
+	final String RENDITION_CONVERTER_TYPE = "rendition.converter.type";
+	/** Path to external converter command (future use). Default: null */
+	final String RENDITION_EXTERNAL_COMMAND = "rendition.external.command";
+	/** URL of external converter service (future use). Default: null */
+	final String RENDITION_EXTERNAL_URL = "rendition.external.url";
 
 	//Log
 	final String LOG_ASPECT_DEFAULT = "log.aspect.default";
@@ -271,4 +296,10 @@ public interface PropertyKey {
 
 	//Thread
 	final String THREAD_MAX = "thread.max";
+
+	//Archive
+	final String ARCHIVE_CREATE_ENABLED = "archive.create.enabled";
+
+	//Deletion
+	final String DELETION_VERIFY_ENABLED = "deletion.verify.enabled";
 }

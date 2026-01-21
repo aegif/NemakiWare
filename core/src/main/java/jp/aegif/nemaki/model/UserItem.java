@@ -30,11 +30,9 @@ public class UserItem extends Item{
 		try {
 			BeanUtils.copyProperties(this, item);
 		} catch (IllegalAccessException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			throw new RuntimeException("Failed to copy properties from Item to UserItem", e);
 		} catch (InvocationTargetException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			throw new RuntimeException("Failed to copy properties from Item to UserItem", e);
 		}
 	}
 	
@@ -47,6 +45,11 @@ public class UserItem extends Item{
 	}
 
 	public String getPassowrd() {
+		return passowrd;
+	}
+	
+	// 後方互換性を保つため、正しいパスワードを返すgetPasswordメソッドも追加
+	public String getPassword() {
 		return passowrd;
 	}
 

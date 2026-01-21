@@ -1,0 +1,195 @@
+package jp.aegif.nemaki.cmis.tck.tests;
+
+import org.apache.chemistry.opencmis.client.api.Session;
+import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.junit.Test;
+
+import java.math.BigInteger;
+import java.util.List;
+import java.util.Map;
+
+import jp.aegif.nemaki.cmis.tck.TckSuite;
+
+/**
+ * TCKテストスイート問題調査用カスタムテスト
+ * Property definitionの比較ロジックを詳細検証
+ */
+public class PropertyDefinitionComparisonTest extends TckSuite {
+    
+    @Test
+    public void testPropertyDefinitionConsistency() throws Exception {
+        Session session = getSession();
+        
+        System.out.println("=== Property Definition Consistency Test ===");
+        System.out.println("Repository: " + session.getRepositoryInfo().getId());
+        
+        // カスタムタイプのテスト
+        testTypeConsistency(session, "nemaki:user");
+        testTypeConsistency(session, "nemaki:group");
+        
+        // ベースタイプのテスト（比較のため）
+        testTypeConsistency(session, BaseTypeId.CMIS_DOCUMENT.value());
+        testTypeConsistency(session, BaseTypeId.CMIS_FOLDER.value());
+    }
+    
+    private void testTypeConsistency(Session session, String typeId) {
+        System.out.println("\n=== Testing type: " + typeId + " ===");
+        
+        try {
+            // Method 1: getTypeDefinition
+            TypeDefinition typeDefFromGetType = session.getTypeDefinition(typeId);
+            System.out.println("getTypeDefinition() returned: " + 
+                (typeDefFromGetType != null ? "TypeDefinition@" + System.identityHashCode(typeDefFromGetType) : "null"));
+            
+            // Method 2: getTypeDescendants (parent type)
+            String parentTypeId = typeDefFromGetType != null ? typeDefFromGetType.getParentTypeId() : null;
+            if (parentTypeId != null) {
+                List<TypeDefinitionContainer> descendants = session.getTypeDescendants(
+                    parentTypeId, 1, true);
+                
+                TypeDefinition typeDefFromDescendants = findTypeInContainers(descendants, typeId);
+                System.out.println("getTypeDescendants() returned: " + 
+                    (typeDefFromDescendants != null ? "TypeDefinition@" + System.identityHashCode(typeDefFromDescendants) : "null"));
+                
+                // Object identity check (TCKが使用する比較方法)
+                boolean sameObject = (typeDefFromGetType == typeDefFromDescendants);
+                System.out.println("Object identity (==): " + sameObject);
+                
+                // Property definitions comparison
+                if (typeDefFromGetType != null && typeDefFromDescendants != null) {
+                    comparePropertyDefinitions(typeDefFromGetType, typeDefFromDescendants);
+                }
+            }
+            
+            // Method 3: getTypeChildren
+            TypeDefinitionList children = session.getTypeChildren(parentTypeId, true, 
+                BigInteger.valueOf(100), BigInteger.ZERO);
+            
+            TypeDefinition typeDefFromChildren = null;
+            for (TypeDefinition td : children.getList()) {
+                if (typeId.equals(td.getId())) {
+                    typeDefFromChildren = td;
+                    break;
+                }
+            }
+            
+            System.out.println("getTypeChildren() returned: " + 
+                (typeDefFromChildren != null ? "TypeDefinition@" + System.identityHashCode(typeDefFromChildren) : "null"));
+            
+            if (typeDefFromGetType != null && typeDefFromChildren != null) {
+                boolean sameObjectChildren = (typeDefFromGetType == typeDefFromChildren);
+                System.out.println("Object identity with getTypeChildren (==): " + sameObjectChildren);
+            }
+            
+        } catch (Exception e) {
+            System.err.println("Error testing type " + typeId + ": " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    private TypeDefinition findTypeInContainers(List<TypeDefinitionContainer> containers, String typeId) {
+        for (TypeDefinitionContainer container : containers) {
+            if (typeId.equals(container.getTypeDefinition().getId())) {
+                return container.getTypeDefinition();
+            }
+            
+            // Recursive search
+            List<TypeDefinitionContainer> children = container.getChildren();
+            if (children != null && !children.isEmpty()) {
+                TypeDefinition found = findTypeInContainers(children, typeId);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+    
+    private void comparePropertyDefinitions(TypeDefinition td1, TypeDefinition td2) {
+        System.out.println("\n  Property Definition Comparison:");
+        
+        Map<String, PropertyDefinition<?>> props1 = td1.getPropertyDefinitions();
+        Map<String, PropertyDefinition<?>> props2 = td2.getPropertyDefinitions();
+        
+        // 主要なCMISプロパティを比較
+        String[] cmisProperties = {
+            PropertyIds.OBJECT_ID,
+            PropertyIds.NAME,
+            PropertyIds.OBJECT_TYPE_ID,
+            PropertyIds.BASE_TYPE_ID,
+            PropertyIds.CREATED_BY,
+            PropertyIds.CREATION_DATE,
+            PropertyIds.LAST_MODIFIED_BY,
+            PropertyIds.LAST_MODIFICATION_DATE,
+            PropertyIds.CHANGE_TOKEN,
+            PropertyIds.DESCRIPTION,
+            PropertyIds.SECONDARY_OBJECT_TYPE_IDS
+        };
+        
+        for (String propId : cmisProperties) {
+            PropertyDefinition<?> prop1 = props1.get(propId);
+            PropertyDefinition<?> prop2 = props2.get(propId);
+            
+            if (prop1 != null && prop2 != null) {
+                boolean sameObject = (prop1 == prop2);
+                boolean sameInherited = (prop1.isInherited() == prop2.isInherited());
+                
+                System.out.println("    " + propId + ":");
+                System.out.println("      - Object identity: " + sameObject + 
+                    " (@" + System.identityHashCode(prop1) + " vs @" + System.identityHashCode(prop2) + ")");
+                System.out.println("      - Inherited flag: " + prop1.isInherited() + " vs " + prop2.isInherited() + 
+                    " (" + (sameInherited ? "MATCH" : "MISMATCH") + ")");
+                
+                if (!sameObject || !sameInherited) {
+                    System.out.println("      *** INCONSISTENCY DETECTED ***");
+                }
+            }
+        }
+    }
+    
+    @Test
+    public void testDirectTypeManagerComparison() throws Exception {
+        System.out.println("\n=== Direct TypeManager API Test ===");
+        
+        // TypeManagerに直接アクセスしてgetTypeDefinition vs getTypesDescendantsの比較
+        // この部分は実際のTypeManagerImplの実装に依存
+        
+        Session session = getSession();
+        String repositoryId = session.getRepositoryInfo().getId();
+        
+        System.out.println("Repository ID: " + repositoryId);
+        System.out.println("Testing TypeManager consistency for custom types...");
+        
+        // TCKが失敗しているカスタムタイプを重点的にテスト
+        String[] customTypes = {"nemaki:user", "nemaki:group"};
+        
+        for (String typeId : customTypes) {
+            System.out.println("\nChecking type: " + typeId);
+            
+            try {
+                TypeDefinition typeDef = session.getTypeDefinition(typeId);
+                if (typeDef != null) {
+                    System.out.println("  - Found via getTypeDefinition()");
+                    System.out.println("  - Parent type: " + typeDef.getParentTypeId());
+                    System.out.println("  - Property count: " + typeDef.getPropertyDefinitions().size());
+                    
+                    // inherited flagの状態を確認
+                    int inheritedCount = 0;
+                    for (PropertyDefinition<?> prop : typeDef.getPropertyDefinitions().values()) {
+                        if (prop.isInherited()) {
+                            inheritedCount++;
+                        }
+                    }
+                    System.out.println("  - Inherited properties: " + inheritedCount);
+                }
+            } catch (Exception e) {
+                System.err.println("  - Error: " + e.getMessage());
+            }
+        }
+    }
+}

@@ -31,17 +31,29 @@ import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
+import org.apache.chemistry.opencmis.commons.data.Acl;
+import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
+import org.apache.chemistry.opencmis.commons.data.ObjectData;
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.Properties;
-import org.apache.chemistry.opencmis.commons.data.*;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.GregorianCalendar;
+import java.util.List;
 import java.util.concurrent.locks.Lock;
 
 public class VersioningServiceImpl implements VersioningService {
+	private static final Log log = LogFactory.getLog(VersioningServiceImpl.class);
+	
 	private ContentService contentService;
 	private CompileService compileService;
 	private ExceptionService exceptionService;
@@ -54,10 +66,9 @@ public class VersioningServiceImpl implements VersioningService {
 	 */
 	public void checkOut(CallContext callContext, String repositoryId,
 			Holder<String> objectId, Holder<Boolean> contentCopied, ExtensionsData extension) {
-
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 		String originalId = objectId.getValue();
-		
+
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
 		
 		try{
@@ -84,6 +95,12 @@ public class VersioningServiceImpl implements VersioningService {
 			// Body of the method
 			// //////////////////
 			Document pwc = contentService.checkOut(callContext, repositoryId, objectId.getValue(), extension);
+
+			// CRITICAL TCK FIX (2025-11-03): Remove cache for original document AFTER checkout
+			// The original document was retrieved at Line 84 (before checkout) and cached with old properties
+			// After checkout, CouchDB has updated properties, so we must invalidate the stale cache
+			nemakiCachePool.get(repositoryId).removeCmisCache(originalId);
+
 			objectId.setValue(pwc.getId());
 			Holder<Boolean> copied = new Holder<Boolean>(true);
 			contentCopied = copied;
@@ -109,18 +126,30 @@ public class VersioningServiceImpl implements VersioningService {
 			// //////////////////
 			Document document = contentService.getDocument(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, document, objectId);
-			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
+			
+		// If the objectId is not a PWC, get the PWC from the version series
+		String pwcId = objectId;
+		if (!document.isPrivateWorkingCopy()) {
+			VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
+			if (vs != null && vs.isVersionSeriesCheckedOut()) {
+				pwcId = vs.getVersionSeriesCheckedOutId();
+				document = contentService.getDocument(repositoryId, pwcId);
+				exceptionService.objectNotFound(DomainType.OBJECT, document, pwcId);
+			}
+		}
+			
+		exceptionService.permissionDenied(callContext,
+				repositoryId, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, document);
 
 			// //////////////////
 			// Specific Exception
 			// //////////////////
 			exceptionService.constraintVersionable(repositoryId, document.getObjectType());
 
-			// //////////////////
-			// Body of the method
-			// //////////////////
-			contentService.cancelCheckOut(callContext, repositoryId, objectId, extension);
+		// //////////////////
+		// Body of the method
+		// //////////////////
+		contentService.cancelCheckOut(callContext, repositoryId, pwcId, extension);
 
 			//remove cache
 			
@@ -158,9 +187,12 @@ public class VersioningServiceImpl implements VersioningService {
 			// //////////////////
 
 			Document pwc = contentService.getDocument(repositoryId, objectId.getValue());
-			nemakiCachePool.get(repositoryId).removeCmisCache(pwc.getId());
-			
+
+			// CRITICAL FIX: Check for null BEFORE accessing pwc.getId()
 			exceptionService.objectNotFound(DomainType.OBJECT, pwc, objectId.getValue());
+
+			// Safe to access pwc.getId() now since objectNotFound throws if null
+			nemakiCachePool.get(repositoryId).removeCmisCache(pwc.getId());
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, pwc);
 
@@ -227,6 +259,16 @@ public class VersioningServiceImpl implements VersioningService {
 					.getDocumentOfLatestVersion(repositoryId, versionSeriesId);
 		}
 		
+		// CRITICAL FIX: Check for null document before accessing its properties
+		// CRITICAL FIX (2025-10-21 Code Review): Removed unreachable return statement
+		// exceptionService.objectNotFound() throws CmisObjectNotFoundException
+		if (document == null) {
+			log.error("Document not found for versionSeriesId: " + versionSeriesId +
+					" in repository: " + repositoryId + " (major: " + _major + ")");
+			exceptionService.objectNotFound(DomainType.OBJECT, null, versionSeriesId);
+			// Method execution ends here due to exception thrown above
+		}
+		
 		Lock lock = threadLockService.getReadLock(repositoryId, document.getId());
 		
 		try{
@@ -263,6 +305,17 @@ public class VersioningServiceImpl implements VersioningService {
 			exceptionService
 					.invalidArgumentRequiredString("objectId", objectId);
 			Document d = contentService.getDocument(repositoryId, objectId);
+
+			// CRITICAL FIX (2025-10-21): Check for null document before accessing properties
+			// CRITICAL FIX (2025-10-21 Code Review): Removed unreachable return statement
+			// exceptionService.objectNotFound() throws CmisObjectNotFoundException,
+			// so execution never proceeds beyond this point
+			if (d == null) {
+				log.error("Document not found for objectId: " + objectId + " in repository: " + repositoryId);
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+				// Method execution ends here due to exception thrown above
+			}
+
 			versionSeriesId = d.getVersionSeriesId();
 		}
 		

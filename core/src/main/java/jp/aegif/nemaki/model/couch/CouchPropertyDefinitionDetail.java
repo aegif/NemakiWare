@@ -25,6 +25,8 @@ package jp.aegif.nemaki.model.couch;
 import java.math.BigDecimal;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import jp.aegif.nemaki.model.Choice;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 
@@ -40,35 +42,78 @@ public class CouchPropertyDefinitionDetail extends CouchNodeBase {
 
 	private String coreNodeId;
 	
+	// CRITICAL FIX: Add @JsonProperty annotations to prevent field mapping contamination
+	// This fixes the property ID inversion issue where tck:boolean→cmis:name, tck:id→cmis:description
+	// Pattern matches CouchTypeDefinition which has proper @JsonProperty annotations
+	
 	// Attributes common
+	@JsonProperty("propertyId")  // CRITICAL: Prevents propertyId field contamination from CouchDB
 	private String propertyId;
+	
+	@JsonProperty("localName")   // CRITICAL: Prevents localName field contamination - primary contamination source
 	private String localName;
+	
+	@JsonProperty("localNameSpace")
 	private String localNameSpace;
+	
+	@JsonProperty("queryName")   // CRITICAL: Prevents queryName field contamination - fallback strategy source
 	private String queryName;
+	
+	@JsonProperty("displayName")
 	private String displayName;
+	
+	@JsonProperty("description")
 	private String description;
+	@JsonProperty("propertyType")
 	private PropertyType propertyType;
+	
+	@JsonProperty("cardinality")
 	private Cardinality cardinality;
+	
+	@JsonProperty("updatability")
 	private Updatability updatability;
+	
+	@JsonProperty("required")
 	private boolean required;
+	
+	@JsonProperty("queryable")
 	private boolean queryable;
+	
+	@JsonProperty("orderable")
 	private boolean orderable;
+	
+	@JsonProperty("choices")
 	private List<Choice> choices;
+	
+	@JsonProperty("openChoice")
 	private boolean openChoice;
+	
+	@JsonProperty("defaultValue")
 	private List<Object> defaultValue;
+	
 	// Attributes specific to Integer
+	@JsonProperty("minValue")
 	private Long minValue;
+	
+	@JsonProperty("maxValue")
 	private Long maxValue;
 
 	// Attributes specific to DateTime
+	@JsonProperty("resolution")
 	private Resolution resolution;
 
 	// Attributes specific to Decimal
+	@JsonProperty("decimalPrecision")
 	private DecimalPrecision decimalPrecision;
+	
+	@JsonProperty("decimalMinValue")
 	private BigDecimal decimalMinValue;
+	
+	@JsonProperty("decimalMaxValue")
 	private BigDecimal decimalMaxValue;
 
 	// Attributes specific to String
+	@JsonProperty("maxLength")
 	private Long maxLength;
 
 	public CouchPropertyDefinitionDetail(){
@@ -303,7 +348,8 @@ public class CouchPropertyDefinitionDetail extends CouchNodeBase {
 		p.setDefaultValue(getDefaultValue());
 		
 		p.setMinValue(getMinValue());
-		p.setMaxLength(getMaxValue());
+		// CRITICAL BUG FIX: Line 306 was incorrectly using getMaxValue() for setMaxLength()
+		p.setMaxValue(getMaxValue()); // Fixed: was setMaxLength(getMaxValue())
 		p.setResolution(getResolution());
 		p.setDecimalPrecision(getDecimalPrecision());
 		p.setDecimalMinValue(getDecimalMinValue());

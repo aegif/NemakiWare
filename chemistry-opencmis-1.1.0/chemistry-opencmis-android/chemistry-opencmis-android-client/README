@@ -1,0 +1,127 @@
+OpenCMIS Android Client
+=======================
+
+The OpenCMIS Android Client provides a collection of methods to access and manage CMIS Repository.
+
+
+OpenCMIS Client Bindings supported
+----------------------------------
+OpenCMIS Android Client supports the AtomPub Binding and the Browser Binding.
+The Web Service Binding (SOAP protocol) is not supported by this library.
+
+
+Android Version Supported
+-------------------------
+Previous versions of Android don't contain all dependencies required to run and use OpenCMIS Android client.  
+It's only since Android 2.3 (aka Gingerbread) everything works. 
+In other terms, Android client supports Android 2.3 and above.
+
+-------------------------
+ !!! IMPORTANT NOTE !!!
+-------------------------
+OpenCMIS Android Client is a SYNCHRONOUS library ! 
+It's highly recommended that you encapsulate all CMIS operations in background thread. 
+In Android it's possible to use
++	Services
++	Loaders
++	AsyncTask
++	Thread/Handler
+
+For more information on Thread and background task : <http://developer.android.com/guide/components/processes-and-threads.html>
+
+
+Importing the Android OpenCMIS Client into your Android Project
+---------------------------------------------------------------
+
+The Android OpenCMIS Client requires SLF4J for android.
+Download it from here: <http://www.slf4j.org/android/>
+
+Put the Android OpenCMIS Client Jar and SLF4J jar into your Android project libs folder. 
+Now you're ready to use OpenCMIS inside your project.
+
+For more information on Project libs folder : <http://tools.android.com/recent/dealingwithdependenciesinandroidprojects>
+
+Importing the Android OpenCMIS Client with Maven 
+------------------------------------------------
+If you use Maven to build your Android Project, it's possible to add this library as Maven dependency.
+
+Add to your pom project : 
+
+<dependencies>
+	...
+	<dependency>
+		<groupId>com.google.android</groupId>
+		<artifactId>annotations</artifactId>
+	</dependency>
+	<dependency>
+		<groupId>org.apache.chemistry.opencmis</groupId>
+		<artifactId>chemistry-opencmis-android-client</artifactId>
+		<version>x.z.y</version>
+		<exclusions>
+			<exclusion>
+				<groupId>org.slf4j</groupId>
+				<artifactId>slf4j-api</artifactId>
+			</exclusion>
+		</exclusions>
+	</dependency>
+	<dependency>
+		<groupId>org.slf4j</groupId>
+		<artifactId>slf4j-android</artifactId>
+		<version>1.7.5</version>
+	</dependency>
+	...
+</dependencies>
+
+
+Code sample
+-----------
+This code sample illustrates how to display in a simple TextView a list of folder children.
+  
+public class FirstOpenCMISActivity extends Activity {
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        new FirstOpenCMISAsyncTask().execute();
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.activity_main, menu);
+        return true;
+    }
+    
+    
+    private class FirstOpenCMISAsyncTask extends AsyncTask<Void, Void, String>
+    {
+    	@Override
+    	protected String doInBackground(Void... arg0) {
+    		
+    		SessionFactory sessionFactory = SessionFactoryImpl.newInstance();
+    		Map<String, String> parameter = new HashMap<String, String>();
+    		parameter.put(SessionParameter.USER, "admin");
+    		parameter.put(SessionParameter.PASSWORD, "admin");
+    		parameter.put(SessionParameter.ATOMPUB_URL, "http://192.168.1.100:8080/inmemory/atom/");
+    		parameter.put(SessionParameter.BINDING_TYPE, BindingType.ATOMPUB.value());
+    		Repository repository = sessionFactory.getRepositories(parameter).get(0);
+    		parameter.put(SessionParameter.REPOSITORY_ID, repository.getId());
+    		Session session = sessionFactory.createSession(parameter);
+    		
+    		String listChildren = "";
+    		Folder mediaFolder = (Folder) session.getObjectByPath("/media");
+    		ItemIterable<CmisObject> children = mediaFolder.getChildren();
+    	    for (CmisObject o : children) {
+    	    	listChildren += o.getName() + " - " + o.getType().getDisplayName() + " - " + o.getCreatedBy() + "\b\n";
+    	    }
+    		
+    		return listChildren;
+    	}
+
+    	@Override
+    	protected void onPostExecute(String result) {
+    		TextView tv = (TextView) (FirstOpenCMISActivity.this).findViewById(R.id.opencmis_text);
+    		tv.setText(result);
+    	}
+    }
+}

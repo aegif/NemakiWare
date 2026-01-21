@@ -7,10 +7,15 @@ import org.apache.chemistry.opencmis.tck.tests.query.QueryLikeTest;
 import org.apache.chemistry.opencmis.tck.tests.query.QueryRootFolderTest;
 import org.apache.chemistry.opencmis.tck.tests.query.QuerySmokeTest;
 import org.junit.Test;
+import org.junit.Ignore;
 
 import jp.aegif.nemaki.cmis.tck.TckSuite;
 
+// @Ignore("TCK tests temporarily disabled due to server connectivity issues - requires running CMIS server on localhost:8080") - ENABLED for investigation
 public class QueryTestGroup extends TckSuite{
+
+	// Static initialization and constructor - no debug logging needed
+
 	@Test
 	public void querySmokeTest() throws Exception{
 		QuerySmokeTest test = new QuerySmokeTest();

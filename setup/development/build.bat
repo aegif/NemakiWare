@@ -47,11 +47,8 @@ echo NemakiSolr war created.
 @echo on
 echo NemakiUI client packaging...
 @echo off
-cd /d "%SOURCE_HOME%\ui"
-call sbt war
-xcopy "%SOURCE_HOME%\ui\target\ui.war" "%OUTPUT_WAR_DIR%" /Y
 @echo on
-echo NemakiUI war created.
+echo UI module removed - using React SPA in core module.
 @echo off
 
 set EB_ZIP_ARCHIVE="%OUTPUT_BASE%NemakiWare.zip"

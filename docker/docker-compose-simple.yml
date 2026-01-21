@@ -1,0 +1,82 @@
+services:
+  # CouchDB 3.x - Current version
+  couchdb:
+    image: couchdb:3.3.3
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+    environment:
+      - COUCHDB_USER=${COUCHDB_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-u", "${COUCHDB_USER:-admin}:${COUCHDB_PASSWORD:-password}", "http://localhost:5984/_all_dbs"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # Database initialization is now handled automatically by the Core module's PatchService
+  # No external initializer containers required
+
+  # Solr Search Engine
+  solr:
+    build: ./solr
+    ports:
+      - "8983:8983"
+    environment:
+      - SOLR_HOME=/var/solr/data
+      - SOLR_HEAP=512m
+    volumes:
+      - solr_data:/var/solr/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8983/solr/admin/cores?action=STATUS"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Core CMIS Server
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile.simple
+    ports:
+      - "8080:8080"
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      solr:
+        condition: service_healthy
+    environment:
+      - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
+      - CATALINA_OPTS=-Xms1g -Xmx3g -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:-admin} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:-password} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/core"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # UI Web Interface - DISABLED for Core + CouchDB + Solr testing
+  # Note: UI requires Java 8 which conflicts with Core Java 11+ requirements
+  # ui:
+  #   build:
+  #     context: ./ui
+  #     dockerfile: Dockerfile.simple
+  #   ports:
+  #     - "9000:8080"
+  #   depends_on:
+  #     core:
+  #       condition: service_healthy
+  #   environment:
+  #     - CATALINA_OPTS=-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties
+
+volumes:
+  couchdb_data:
+  solr_data:
+
+networks:
+  default:
+    name: nemaki-network

@@ -62,7 +62,12 @@ public class AttachmentNode extends NodeBase {
 	private long length;
 	private String mimeType;
 	private InputStream inputStream;
-	
+
+	// CRITICAL FIX: Cache content bytes for reusable InputStreams
+	// Original inputStream can only be read once, so we cache it as bytes
+	// and create new ByteArrayInputStream instances for each getInputStream() call
+	private byte[] contentBytes;
+
 	private BigInteger rangeOffset;
 	private BigInteger rangeLength;
 	
@@ -108,32 +113,93 @@ public class AttachmentNode extends NodeBase {
 	}
 
 	public InputStream getInputStream() {
-		if(rangeOffset == null && rangeLength == null){
-			return inputStream;
-		}else{
-			if (rangeLength == null){
-				rangeLength = BigInteger.valueOf(length);
-			}
-			
-			if(rangeLength.intValue() + rangeOffset.intValue() > length){
-				rangeLength = BigInteger.valueOf(length - rangeOffset.intValue());
-			}
-			
-			byte[]bytes = new byte[1024];
-			try {
-				inputStream.read(bytes);
-				ByteArrayInputStream result = new ByteArrayInputStream(bytes, rangeOffset.intValue(), rangeLength.intValue());
-				return result;
-			} catch (IOException e) {
-				log.error("[attachment id=" + getId() + "]getInputStream with rangeOffset=" + rangeLength.toString() + " rangeLength=" + rangeLength.toString() + " failed.", e);
+		// CRITICAL FIX: Use cached contentBytes for reusable InputStreams
+		// If content has been cached, always use it to create new streams
+		if (contentBytes != null) {
+			if (rangeOffset == null && rangeLength == null) {
+				// No range request - return full content
+				return new ByteArrayInputStream(contentBytes);
+			} else {
+				// Range request - return portion of cached content
+				long offset = (rangeOffset != null) ? rangeOffset.longValue() : 0L;
+				long rangeLen = (rangeLength != null) ? rangeLength.longValue() : (contentBytes.length - offset);
+
+				// Validate range
+				if (offset < 0) offset = 0;
+				if (offset >= contentBytes.length) {
+					return new ByteArrayInputStream(new byte[0]);
+				}
+				if (offset + rangeLen > contentBytes.length) {
+					rangeLen = contentBytes.length - offset;
+				}
+
+				int actualOffset = (int) offset;
+				int actualLength = (int) Math.min(rangeLen, contentBytes.length - actualOffset);
+
+				if (actualLength <= 0) {
+					return new ByteArrayInputStream(new byte[0]);
+				}
+
+				return new ByteArrayInputStream(contentBytes, actualOffset, actualLength);
 			}
 		}
-		
-		return null;
+
+		// Fallback to original behavior if content not cached (legacy compatibility)
+		if (rangeOffset == null && rangeLength == null) {
+			return inputStream;
+		} else {
+			if (inputStream == null) {
+				return null;
+			}
+
+			// Calculate actual offset and length
+			long offset = (rangeOffset != null) ? rangeOffset.longValue() : 0L;
+			long rangeLen = (rangeLength != null) ? rangeLength.longValue() : (length - offset);
+
+			// Validate range
+			if (offset < 0) {
+				offset = 0;
+			}
+			if (offset >= length) {
+				return new ByteArrayInputStream(new byte[0]);
+			}
+			if (offset + rangeLen > length) {
+				rangeLen = length - offset;
+			}
+
+			try {
+				byte[] fullContent = inputStream.readAllBytes();
+				int actualOffset = (int) Math.min(offset, fullContent.length);
+				int actualLength = (int) Math.min(rangeLen, fullContent.length - actualOffset);
+
+				if (actualLength <= 0) {
+					return new ByteArrayInputStream(new byte[0]);
+				}
+
+				return new ByteArrayInputStream(fullContent, actualOffset, actualLength);
+			} catch (IOException e) {
+				log.error("[attachment id=" + getId() + "]getInputStream with rangeOffset=" + offset + " rangeLength=" + rangeLen + " failed.", e);
+				return inputStream;
+			}
+		}
 	}
 
 	public void setInputStream(InputStream inputStream) {
 		this.inputStream = inputStream;
+		// CRITICAL FIX: Cache InputStream content as bytes for reusability
+		// TCK tests read content multiple times, but InputStream can only be read once
+		if (inputStream != null && contentBytes == null) {
+			try {
+				contentBytes = inputStream.readAllBytes();
+				log.debug("[attachment id=" + getId() + "] Cached " + contentBytes.length + " bytes from InputStream");
+				// Clear the original stream reference since we've cached the content
+				this.inputStream = null;
+			} catch (IOException e) {
+				log.error("[attachment id=" + getId() + "] Failed to cache InputStream content", e);
+				// Keep the original inputStream if caching fails
+				contentBytes = null;
+			}
+		}
 	}
 
 	public BigInteger getRangeOffset() {

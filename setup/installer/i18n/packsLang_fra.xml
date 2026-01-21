@@ -1,8 +1,5 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
-
-<!-- The French langpack -->
-
-<langpack>
+<?xml version="1.0" encoding="utf-8"?>
+<izpack:langpack version="5.0" xmlns:izpack="http://izpack.org/schema/langpack" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://izpack.org/schema/langpack http://izpack.org/schema/5.0/izpack-langpack-5.0.xsd">
     <str id="pack.utility" txt="Utilitaire d'installation" />
     <str id="pack.application.server" txt="Tomcat" />
     <str id="pack.core" txt="Core" />
@@ -11,7 +8,6 @@
     <str id="pack.couchdb.configuration.description" txt="Initialisation de CouchDB" />
     <str id="pack.solr" txt="Solr" />
     <str id="pack.solr.description" txt="Moteur de recherche" />
-    <str id="pack.ui" txt="UI" />
-    <str id="pack.ui.description" txt="Client de CMIS" />
+    <!-- Legacy UI module removed - React SPA now integrated in core module -->
     <str id="pack.delete.tmp" txt="Supprimer les fichiers temporaires" />
-</langpack>
+</izpack:langpack>

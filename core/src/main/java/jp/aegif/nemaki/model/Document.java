@@ -48,6 +48,13 @@ public class Document extends Content {
 		private String versionLabel;
 		//The following properties should be moved away to VersionSeries object
 		private Boolean privateWorkingCopy;
+		
+		// CRITICAL CMIS 1.1 COMPLIANCE: isVersionSeriesCheckedOut property is MANDATORY
+		private Boolean versionSeriesCheckedOut;
+		
+		// ADDITIONAL CMIS 1.1 VERSIONING PROPERTIES - required for complete TCK compliance
+		private String versionSeriesCheckedOutBy;
+		private String versionSeriesCheckedOutId;
 
 		private Boolean immutable;
 
@@ -68,6 +75,9 @@ public class Document extends Content {
 		setSecondaryIds(c.getSecondaryIds());
 		setObjectType(c.getObjectType());
 		setChangeToken(c.getChangeToken());
+		
+		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from Content
+		setRevision(c.getRevision());
 	}
 
 	/**
@@ -120,6 +130,30 @@ public class Document extends Content {
 		this.privateWorkingCopy = privateWorkingCopy;
 	}
 
+	public Boolean isVersionSeriesCheckedOut() {
+		return (versionSeriesCheckedOut == null) ? false : versionSeriesCheckedOut;
+	}
+
+	public void setVersionSeriesCheckedOut(Boolean versionSeriesCheckedOut) {
+		this.versionSeriesCheckedOut = versionSeriesCheckedOut;
+	}
+
+	public String getVersionSeriesCheckedOutBy() {
+		return versionSeriesCheckedOutBy;
+	}
+
+	public void setVersionSeriesCheckedOutBy(String versionSeriesCheckedOutBy) {
+		this.versionSeriesCheckedOutBy = versionSeriesCheckedOutBy;
+	}
+
+	public String getVersionSeriesCheckedOutId() {
+		return versionSeriesCheckedOutId;
+	}
+
+	public void setVersionSeriesCheckedOutId(String versionSeriesCheckedOutId) {
+		this.versionSeriesCheckedOutId = versionSeriesCheckedOutId;
+	}
+
 	public String getVersionLabel() {
 		return versionLabel;
 	}
@@ -146,20 +180,16 @@ public class Document extends Content {
 
 	@Override
 	public String toString() {
-		@SuppressWarnings("serial")
-		Map<String, Object> m = new HashMap<String, Object>() {
-			{
-				put("id", getId());
-				put("name", getName());
-				put("type", getType());
-				put("creator", getCreator());
-				put("created", getCreated());
-				put("modifier", getModifier());
-				put("modified", getModified());
-				put("parentId", getParentId());
-				put("aspects", getAspects());
-			}
-		};
+		Map<String, Object> m = new HashMap<String, Object>();
+		m.put("id", getId());
+		m.put("name", getName());
+		m.put("type", getType());
+		m.put("creator", getCreator());
+		m.put("created", getCreated());
+		m.put("modifier", getModifier());
+		m.put("modified", getModified());
+		m.put("parentId", getParentId());
+		m.put("aspects", getAspects());
 		return m.toString();
 	}
 }

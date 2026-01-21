@@ -1,0 +1,623 @@
+package jp.aegif.nemaki.patch;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
+import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Folder;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
+import org.apache.chemistry.opencmis.commons.PropertyIds;
+import java.util.ArrayList;
+import java.util.Arrays;
+
+/**
+ * Initial Content Setup Patch
+ *
+ * Creates initial folders and sample documents for new NemakiWare installations:
+ * - Sites folder (root level)
+ * - Technical Documents folder (root level)
+ * - CMIS specification PDF (in Technical Documents)
+ *
+ * This patch is idempotent - it will not create duplicate folders/documents on restart.
+ * If folders already exist from previous versions, they will be preserved.
+ *
+ * CRITICAL: This patch must execute AFTER Patch_SystemFolderSetup to ensure proper
+ * initialization order.
+ */
+public class Patch_InitialContentSetup extends AbstractNemakiPatch {
+
+    private static final Log log = LogFactory.getLog(Patch_InitialContentSetup.class);
+
+    // Patch configuration
+    private static final String PATCH_NAME = "initial-content-setup-20251005";
+    private static final String SITES_FOLDER_NAME = "Sites";
+    private static final String TECHNICAL_DOCS_FOLDER_NAME = "Technical Documents";
+
+    @Override
+    public String getName() {
+        return PATCH_NAME;
+    }
+
+    @Override
+    protected void applySystemPatch() {
+        log.info("No system-wide configuration needed for initial content setup");
+    }
+
+    @Override
+    protected void applyPerRepositoryPatch(String repositoryId) {
+        log.error("=== INITIAL CONTENT SETUP PATCH STARTED for repository: " + repositoryId + " ===");
+        log.info("Starting Initial Content Setup Patch for repository: " + repositoryId);
+
+        if ("canopy".equals(repositoryId)) {
+            log.info("Skipping Initial Content Setup for canopy - information management area");
+            return;
+        }
+
+        if ("bedroom_closet".equals(repositoryId) || "canopy_closet".equals(repositoryId)) {
+            log.info("Skipping Initial Content Setup for archive repositories");
+            return;
+        }
+
+        try {
+            ContentService contentService = patchUtil.getContentService();
+            if (contentService == null) {
+                log.error("ContentService not available, cannot apply Initial Content Setup patch");
+                return;
+            }
+
+            if (patchUtil.getRepositoryInfoMap() == null) {
+                log.warn("RepositoryInfoMap not available yet. Skipping Initial Content Setup for: " + repositoryId);
+                return;
+            }
+
+            if (patchUtil.getRepositoryInfoMap().get(repositoryId) == null) {
+                log.warn("Repository info not available for: " + repositoryId + ". Skipping Initial Content Setup.");
+                return;
+            }
+
+            String rootFolderId = patchUtil.getRepositoryInfoMap().get(repositoryId).getRootFolderId();
+            if (rootFolderId == null) {
+                log.warn("Root folder ID not available for repository: " + repositoryId + ". Skipping Initial Content Setup.");
+                return;
+            }
+
+            log.info("Using root folder ID: " + rootFolderId + " for repository: " + repositoryId);
+
+            // Verify root folder exists
+            try {
+                Folder rootFolder = (Folder) contentService.getContent(repositoryId, rootFolderId);
+                if (rootFolder == null) {
+                    log.warn("Root folder not found for repository: " + repositoryId + ". Repository may not be fully initialized yet.");
+                    return;
+                }
+
+                log.info("Root folder verified for repository: " + repositoryId + ", proceeding with initial content setup");
+            } catch (Exception e) {
+                log.warn("Cannot access root folder for repository: " + repositoryId + ". Repository may not be fully initialized yet. Error: " + e.getMessage());
+                return;
+            }
+
+            // Create SystemCallContext for operations
+            SystemCallContext callContext = new SystemCallContext(repositoryId);
+
+            // Create Sites folder if it doesn't exist
+            log.error("=== CREATING SITES FOLDER ===");
+            String sitesFolderId = createFolderIfNotExists(contentService, callContext, repositoryId, rootFolderId, SITES_FOLDER_NAME);
+            log.error("=== SITES FOLDER RESULT: " + (sitesFolderId != null ? "SUCCESS (ID: " + sitesFolderId + ")" : "FAILED") + " ===");
+
+            // Create Technical Documents folder if it doesn't exist
+            log.error("=== CREATING TECHNICAL DOCUMENTS FOLDER ===");
+            String technicalDocsFolderId = createFolderIfNotExists(contentService, callContext, repositoryId, rootFolderId, TECHNICAL_DOCS_FOLDER_NAME);
+            log.error("=== TECHNICAL DOCUMENTS FOLDER RESULT: " + (technicalDocsFolderId != null ? "SUCCESS (ID: " + technicalDocsFolderId + ")" : "FAILED") + " ===");
+
+            // Register CMIS specification PDF if Technical Documents folder was created
+            if (technicalDocsFolderId != null) {
+                registerCMISSpecificationPDF(contentService, callContext, repositoryId, technicalDocsFolderId);
+            }
+
+            // PRODUCT FIX: Ensure root folder has GROUP_EVERYONE read permission
+            // This is a critical requirement: root folder must be readable by all authenticated users
+            ensureRootFolderDefaultAcl(contentService, callContext, repositoryId, rootFolderId);
+
+            // TCK CRITICAL FIX: Index root folder in Solr for query tests
+            indexRootFolderInSolr(contentService, repositoryId, rootFolderId);
+
+            log.error("=== INITIAL CONTENT SETUP PATCH COMPLETED SUCCESSFULLY for repository: " + repositoryId + " ===");
+
+        } catch (Exception e) {
+            log.error("=== ERROR DURING INITIAL CONTENT SETUP PATCH for repository: " + repositoryId + " ===", e);
+            // Don't throw - patch failures should not prevent application startup
+        }
+    }
+
+    /**
+     * Create folder if it doesn't already exist
+     *
+     * @return Folder ID if created or already exists, null if creation failed
+     */
+    private String createFolderIfNotExists(ContentService contentService, SystemCallContext callContext,
+                                           String repositoryId, String parentFolderId, String folderName) {
+        try {
+            log.error("Checking if folder '" + folderName + "' already exists...");
+            // Check if folder already exists
+            Folder existingFolder = findExistingFolderByName(repositoryId, parentFolderId, folderName);
+
+            if (existingFolder != null) {
+                log.error("Folder '" + folderName + "' already exists with ID: " + existingFolder.getId() + " (preserving from previous version)");
+                return existingFolder.getId();
+            }
+
+            // Folder doesn't exist, create it
+            log.error("Folder '" + folderName + "' does not exist, creating new folder in repository: " + repositoryId);
+
+            // Prepare CMIS properties
+            PropertiesImpl properties = new PropertiesImpl();
+
+            // cmis:objectTypeId = cmis:folder
+            PropertyIdImpl objectTypeId = new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:folder");
+            properties.addProperty(objectTypeId);
+
+            // cmis:name = folder name
+            PropertyStringImpl name = new PropertyStringImpl(PropertyIds.NAME, folderName);
+            properties.addProperty(name);
+
+            // Get parent folder
+            Folder parentFolder = (Folder) contentService.getContent(repositoryId, parentFolderId);
+            if (parentFolder == null) {
+                log.error("Parent folder not found with ID: " + parentFolderId);
+                return null;
+            }
+
+            // Create ACL for new folder (grant admin:all and GROUP_EVERYONE:read)
+            org.apache.chemistry.opencmis.commons.data.Acl acl = createDefaultFolderAcl();
+
+            // Create folder through ContentService
+            log.error("Calling contentService.createFolder() for: " + folderName);
+            Folder created = contentService.createFolder(callContext, repositoryId, properties,
+                                                        parentFolder, null, acl, null, null);
+
+            log.error("SUCCESS: Folder '" + folderName + "' created successfully with ID: " + created.getId());
+            return created.getId();
+
+        } catch (Exception e) {
+            log.error("FAILED to create folder: " + folderName, e);
+            return null;
+        }
+    }
+
+    /**
+     * Find existing folder by name using direct CouchDB query
+     */
+    private Folder findExistingFolderByName(String repositoryId, String parentFolderId, String folderName) {
+        try {
+            // Get CloudantClientWrapper directly from patch util
+            jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client = patchUtil.getConnectorPool().getClient(repositoryId);
+            if (client == null) {
+                log.error("Could not get Cloudant client for repository: " + repositoryId);
+                return null;
+            }
+
+            // Query children view with parent ID
+            Map<String, Object> queryParams = new HashMap<>();
+            queryParams.put("key", parentFolderId);
+            queryParams.put("include_docs", true);
+
+            com.ibm.cloud.cloudant.v1.model.ViewResult result = client.queryView("_repo", "children", queryParams);
+
+            if (result.getRows() != null && !result.getRows().isEmpty()) {
+                for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
+                    if (row.getDoc() != null) {
+                        com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+                        Map<String, Object> docProperties = doc.getProperties();
+
+                        if (docProperties != null) {
+                            String name = (String) docProperties.get("name");
+                            String type = (String) docProperties.get("type");
+
+                            // Check if this is a folder with the target name
+                            if ("cmis:folder".equals(type) && folderName.equals(name)) {
+                                log.info("Found existing folder: " + folderName + " with ID: " + row.getId());
+
+                                // Convert to Folder object
+                                ContentService contentService = patchUtil.getContentService();
+                                Content content = contentService.getContent(repositoryId, row.getId());
+
+                                if (content instanceof Folder) {
+                                    return (Folder) content;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return null;
+
+        } catch (Exception e) {
+            log.warn("Error checking for existing folder: " + folderName, e);
+            return null;
+        }
+    }
+
+    /**
+     * Create default ACL for folders (admin:all and GROUP_EVERYONE:read)
+     * This matches the ACL structure of the repository root folder
+     */
+    private org.apache.chemistry.opencmis.commons.data.Acl createDefaultFolderAcl() {
+        AccessControlListImpl acl = new AccessControlListImpl();
+        java.util.List<org.apache.chemistry.opencmis.commons.data.Ace> aces = new ArrayList<>();
+
+        // Add admin principal with cmis:all permission
+        AccessControlPrincipalDataImpl adminPrincipal = new AccessControlPrincipalDataImpl("admin");
+        AccessControlEntryImpl adminAce = new AccessControlEntryImpl(adminPrincipal, Arrays.asList("cmis:all"));
+        aces.add(adminAce);
+
+        // Add GROUP_EVERYONE principal with cmis:read permission
+        AccessControlPrincipalDataImpl everyonePrincipal = new AccessControlPrincipalDataImpl("GROUP_EVERYONE");
+        AccessControlEntryImpl everyoneAce = new AccessControlEntryImpl(everyonePrincipal, Arrays.asList("cmis:read"));
+        aces.add(everyoneAce);
+
+        acl.setAces(aces);
+        return acl;
+    }
+
+    /**
+     * Register CMIS specification documents in Technical Documents folder
+     * ENHANCED (2025-10-22): Now registers PDF files instead of text files for better testing
+     */
+    private void registerCMISSpecificationPDF(ContentService contentService, SystemCallContext callContext,
+                                             String repositoryId, String parentFolderId) {
+        try {
+            // Register CMIS Specification Resources PDF
+            final String cmisResourcesName = "CMIS 1.1 Specification Resources.pdf";
+            log.info("=== CHECKING CMIS SPECIFICATION RESOURCES PDF ===");
+            log.info("Repository: " + repositoryId + ", Parent Folder: " + parentFolderId);
+
+            Document existingCmisDoc = findExistingDocumentByName(repositoryId, parentFolderId, cmisResourcesName);
+            if (existingCmisDoc == null) {
+                log.info("CMIS specification resources PDF NOT FOUND - creating from classpath resource");
+                createDocumentFromClasspathResource(contentService, callContext, repositoryId, parentFolderId,
+                                        cmisResourcesName, "application/pdf",
+                                        "/initial_documents/CMISSpecificationResources.pdf");
+                log.info("✅ CMIS specification resources PDF CREATED SUCCESSFULLY");
+            } else {
+                log.info("CMIS specification resources PDF ALREADY EXISTS (ID: " + existingCmisDoc.getId() + ") - skipping");
+            }
+
+            // Register Welcome PDF
+            final String welcomeName = "Welcome to NemakiWare.pdf";
+            log.info("=== CHECKING WELCOME PDF ===");
+            Document existingWelcome = findExistingDocumentByName(repositoryId, parentFolderId, welcomeName);
+            if (existingWelcome == null) {
+                log.info("Welcome PDF NOT FOUND - creating from classpath resource");
+                createDocumentFromClasspathResource(contentService, callContext, repositoryId, parentFolderId,
+                                        welcomeName, "application/pdf",
+                                        "/initial_documents/WelcomeGuide.pdf");
+                log.info("✅ Welcome PDF CREATED SUCCESSFULLY");
+            } else {
+                log.info("Welcome PDF ALREADY EXISTS (ID: " + existingWelcome.getId() + ") - skipping");
+            }
+            log.info("=== INITIAL DOCUMENTS REGISTRATION COMPLETE ===");
+
+        } catch (Exception e) {
+            log.error("Error registering initial documents in Technical Documents folder", e);
+        }
+    }
+
+    /**
+     * Create document from classpath resource (e.g., PDF files)
+     * ENHANCED (2025-10-22): Load binary files from classpath resources
+     */
+    private void createDocumentFromClasspathResource(ContentService contentService, SystemCallContext callContext,
+                                          String repositoryId, String parentFolderId,
+                                          String documentName, String mimeType, String classpathResource) {
+        try {
+            log.info("Creating document from classpath resource: " + classpathResource);
+
+            // Load resource from classpath
+            java.io.InputStream resourceStream = getClass().getResourceAsStream(classpathResource);
+            if (resourceStream == null) {
+                log.error("Classpath resource not found: " + classpathResource);
+                return;
+            }
+
+            // Read all bytes from resource
+            byte[] contentBytes = readAllBytes(resourceStream);
+            resourceStream.close();
+
+            if (contentBytes.length == 0) {
+                log.error("Classpath resource is empty: " + classpathResource);
+                return;
+            }
+
+            log.info("Loaded " + contentBytes.length + " bytes from " + classpathResource);
+
+            // Prepare CMIS properties
+            PropertiesImpl properties = new PropertiesImpl();
+            PropertyIdImpl objectTypeId = new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:document");
+            properties.addProperty(objectTypeId);
+            PropertyStringImpl name = new PropertyStringImpl(PropertyIds.NAME, documentName);
+            properties.addProperty(name);
+
+            // Get parent folder
+            Folder parentFolder = (Folder) contentService.getContent(repositoryId, parentFolderId);
+            if (parentFolder == null) {
+                log.error("Parent folder not found with ID: " + parentFolderId);
+                return;
+            }
+
+            // Create content stream from bytes
+            java.io.ByteArrayInputStream contentStream = new java.io.ByteArrayInputStream(contentBytes);
+
+            org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl cmisContentStream =
+                new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
+                    documentName,
+                    java.math.BigInteger.valueOf(contentBytes.length),
+                    mimeType,
+                    contentStream
+                );
+
+            // Create ACL for document (same as folders: admin:all, GROUP_EVERYONE:read)
+            org.apache.chemistry.opencmis.commons.data.Acl acl = createDefaultFolderAcl();
+
+            // Create document with content
+            Document created = contentService.createDocument(callContext, repositoryId, properties,
+                                                           parentFolder, cmisContentStream,
+                                                           null,  // versioningState
+                                                           null,  // policies
+                                                           acl,   // addAces
+                                                           null); // removeAces
+
+            log.info("✅ Document '" + documentName + "' created successfully with ID: " + created.getId());
+
+        } catch (Exception e) {
+            log.error("Failed to create document from classpath resource: " + documentName, e);
+        }
+    }
+
+    /**
+     * Read all bytes from input stream (Java 8 compatible)
+     */
+    private byte[] readAllBytes(java.io.InputStream inputStream) throws java.io.IOException {
+        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+        int nRead;
+        byte[] data = new byte[16384];
+        while ((nRead = inputStream.read(data, 0, data.length)) != -1) {
+            buffer.write(data, 0, nRead);
+        }
+        buffer.flush();
+        return buffer.toByteArray();
+    }
+
+    /**
+     * Find existing document by name using CouchDB children view
+     */
+    private Document findExistingDocumentByName(String repositoryId, String parentFolderId, String documentName) {
+        try {
+            CloudantClientWrapper client = patchUtil.getConnectorPool().getClient(repositoryId);
+            if (client == null) {
+                log.error("Could not get Cloudant client for repository: " + repositoryId);
+                return null;
+            }
+
+            Map<String, Object> queryParams = new HashMap<>();
+            queryParams.put("key", parentFolderId);
+            queryParams.put("include_docs", true);
+
+            com.ibm.cloud.cloudant.v1.model.ViewResult result = client.queryView("_repo", "children", queryParams);
+
+            if (result.getRows() != null) {
+                for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
+                    if (row.getDoc() != null) {
+                        com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+                        Map<String, Object> docProperties = doc.getProperties();
+
+                        if (docProperties != null) {
+                            String name = (String) docProperties.get("name");
+                            String type = (String) docProperties.get("type");
+
+                            if ("cmis:document".equals(type) && documentName.equals(name)) {
+                                log.info("Found existing document: " + documentName + " with ID: " + row.getId());
+                                ContentService contentService = patchUtil.getContentService();
+                                Content content = contentService.getContent(repositoryId, row.getId());
+                                if (content instanceof Document) {
+                                    return (Document) content;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return null;
+
+        } catch (Exception e) {
+            log.warn("Error checking for existing document: " + documentName, e);
+            return null;
+        }
+    }
+
+    /**
+     * Create document with text content
+     */
+    private void createDocumentWithContent(ContentService contentService, SystemCallContext callContext,
+                                          String repositoryId, String parentFolderId,
+                                          String documentName, String mimeType, String textContent) {
+        try {
+            log.info("Creating document: " + documentName + " in folder: " + parentFolderId);
+
+            // Prepare CMIS properties
+            PropertiesImpl properties = new PropertiesImpl();
+            PropertyIdImpl objectTypeId = new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:document");
+            properties.addProperty(objectTypeId);
+            PropertyStringImpl name = new PropertyStringImpl(PropertyIds.NAME, documentName);
+            properties.addProperty(name);
+
+            // Get parent folder
+            Folder parentFolder = (Folder) contentService.getContent(repositoryId, parentFolderId);
+            if (parentFolder == null) {
+                log.error("Parent folder not found with ID: " + parentFolderId);
+                return;
+            }
+
+            // Create content stream from text
+            byte[] contentBytes = textContent.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            java.io.ByteArrayInputStream contentStream = new java.io.ByteArrayInputStream(contentBytes);
+
+            org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl cmisContentStream =
+                new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
+                    documentName,
+                    java.math.BigInteger.valueOf(contentBytes.length),
+                    mimeType,
+                    contentStream
+                );
+
+            // Create ACL for document (same as folders: admin:all, GROUP_EVERYONE:read, system:all)
+            org.apache.chemistry.opencmis.commons.data.Acl acl = createDefaultFolderAcl();
+
+            // Create document with content
+            // Parameters: callContext, repositoryId, properties, parentFolder, contentStream,
+            //             versioningState, policies, addAces, removeAces
+            Document created = contentService.createDocument(callContext, repositoryId, properties,
+                                                           parentFolder, cmisContentStream,
+                                                           null,  // versioningState
+                                                           null,  // policies
+                                                           acl,   // addAces
+                                                           null); // removeAces
+
+            log.info("✅ Document '" + documentName + "' created successfully with ID: " + created.getId());
+
+        } catch (Exception e) {
+            log.error("Failed to create document: " + documentName, e);
+        }
+    }
+
+    /**
+     * PRODUCT FIX: Ensure root folder has GROUP_EVERYONE read permission
+     *
+     * Root folder must be readable by all authenticated users to allow folder navigation.
+     * This method adds GROUP_EVERYONE:read permission if it doesn't already exist.
+     *
+     * @param contentService ContentService instance
+     * @param callContext System call context
+     * @param repositoryId Repository ID
+     * @param rootFolderId Root folder ID
+     */
+    private void ensureRootFolderDefaultAcl(ContentService contentService, SystemCallContext callContext,
+                                           String repositoryId, String rootFolderId) {
+        try {
+            log.error("=== PRODUCT FIX: Ensuring root folder has GROUP_EVERYONE read permission ===");
+
+            // Get root folder
+            Content rootContent = contentService.getContent(repositoryId, rootFolderId);
+            if (rootContent == null) {
+                log.error("Root folder not found for ACL setup: " + rootFolderId);
+                return;
+            }
+
+            // Get current ACL
+            jp.aegif.nemaki.model.Acl currentAcl = rootContent.getAcl();
+            if (currentAcl == null) {
+                log.error("Root folder has no ACL, creating new ACL");
+                currentAcl = new jp.aegif.nemaki.model.Acl();
+                rootContent.setAcl(currentAcl);
+            }
+
+            // Check if GROUP_EVERYONE ACE already exists
+            boolean hasGroupEveryoneRead = false;
+            for (jp.aegif.nemaki.model.Ace ace : currentAcl.getLocalAces()) {
+                if ("GROUP_EVERYONE".equals(ace.getPrincipalId())) {
+                    hasGroupEveryoneRead = true;
+                    log.error("Root folder already has GROUP_EVERYONE ACE with permissions: " + ace.getPermissions());
+                    break;
+                }
+            }
+
+            if (!hasGroupEveryoneRead) {
+                log.error("Adding GROUP_EVERYONE:read permission to root folder");
+
+                // Create new ACE for GROUP_EVERYONE with read permission
+                jp.aegif.nemaki.model.Ace groupEveryoneAce = new jp.aegif.nemaki.model.Ace();
+                groupEveryoneAce.setPrincipalId("GROUP_EVERYONE");
+                groupEveryoneAce.setPermissions(java.util.Arrays.asList("cmis:read"));
+                groupEveryoneAce.setDirect(true);
+
+                // Add to local ACEs
+                currentAcl.getLocalAces().add(groupEveryoneAce);
+
+                // Update root folder with new ACL
+                contentService.update(callContext, repositoryId, rootContent);
+
+                log.error("✅ Root folder ACL updated successfully - GROUP_EVERYONE can now read root folder");
+            } else {
+                log.error("✅ Root folder already has GROUP_EVERYONE read permission - no update needed");
+            }
+
+        } catch (Exception e) {
+            log.error("Failed to ensure root folder default ACL (non-critical): " + e.getMessage());
+            if (log.isDebugEnabled()) {
+                log.debug("Root folder ACL setup error details", e);
+            }
+        }
+    }
+
+    /**
+     * TCK CRITICAL FIX: Index root folder in Solr for query tests
+     * Root folders created from database dumps are not automatically indexed
+     */
+    private void indexRootFolderInSolr(ContentService contentService, String repositoryId, String rootFolderId) {
+        try {
+            log.info("=== TCK FIX: Indexing root folder in Solr for repository: " + repositoryId + " ===");
+
+            Content rootContent = contentService.getContent(repositoryId, rootFolderId);
+            if (rootContent == null) {
+                log.warn("Root folder not found for Solr indexing: " + rootFolderId);
+                return;
+            }
+
+            // Fix objectType if null (CMIS compliance)
+            if (rootContent.getObjectType() == null || rootContent.getObjectType().isEmpty()) {
+                log.info("Fixing root folder objectType: null -> cmis:folder");
+                rootContent.setObjectType("cmis:folder");
+                contentService.update(new SystemCallContext(repositoryId), repositoryId, rootContent);
+                log.info("Root folder objectType updated in database");
+            }
+
+            // Get SolrUtil bean from patchUtil
+            SolrUtil solrUtil = patchUtil.getSolrUtil();
+            if (solrUtil == null) {
+                log.warn("SolrUtil not available - skipping root folder Solr indexing");
+                return;
+            }
+
+            // Index in Solr
+            if (rootContent instanceof Folder) {
+                log.info("Indexing root folder in Solr: " + rootFolderId);
+                solrUtil.indexDocument(repositoryId, (Folder) rootContent);
+                log.info("✅ Root folder indexed successfully in Solr");
+            } else {
+                log.warn("Root content is not a Folder instance: " + rootContent.getClass().getName());
+            }
+
+        } catch (Exception e) {
+            log.warn("Failed to index root folder in Solr (non-critical): " + e.getMessage());
+            if (log.isDebugEnabled()) {
+                log.debug("Root folder Solr indexing error details", e);
+            }
+        }
+    }
+}

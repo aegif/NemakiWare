@@ -32,7 +32,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.context.ApplicationContext;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -52,32 +52,65 @@ public class NemakiAuthCallContextHandler extends org.apache.chemistry.opencmis.
 
 	/**
 	 * Return call context map. Throw exception if denied.
+	 * Jakarta EE compatible implementation with Basic Authentication.
+	 * Note: Temporarily removed @Override due to signature mismatch with Jakarta converted OpenCMIS
 	 *
 	 * @throws CmisPermissionDeniedException
 	 */
-	@Override
 	public Map<String, String> getCallContextMap(HttpServletRequest request) {
-		// Call superclass to get user and password via basic authentication.
-		Map<String, String> ctxMap = super.getCallContextMap(request);
-		if(ctxMap == null){
-			ctxMap = new HashMap<String, String>();
+		log.info("=== Jakarta EE HTTP Request Processing ===");
+		log.info("Request URI: " + request.getRequestURI());
+		log.info("Content Type: " + request.getContentType());
+		log.info("Method: " + request.getMethod());
+		
+		// Initialize context map
+		Map<String, String> ctxMap = new HashMap<String, String>();
+		
+		// Extract Basic Authentication manually for Jakarta EE compatibility
+		String authHeader = request.getHeader("Authorization");
+		if (authHeader != null && authHeader.startsWith("Basic ")) {
+			try {
+				String base64Credentials = authHeader.substring("Basic".length()).trim();
+				String credentials = new String(java.util.Base64.getDecoder().decode(base64Credentials), "UTF-8");
+				String[] values = credentials.split(":", 2);
+				if (values.length == 2) {
+					ctxMap.put(CallContext.USERNAME, values[0]);
+					ctxMap.put(CallContext.PASSWORD, values[1]);
+					log.info("Basic authentication extracted for user: " + values[0]);
+				}
+			} catch (Exception e) {
+				log.warn("Failed to parse Basic authentication header", e);
+			}
 		}
 		
 		//SSO header
-		final ApplicationContext applicationContext = SpringContext.getApplicationContext();
-		PropertyManager manager = applicationContext.getBean("propertyManager", PropertyManager.class);
-		String proxyHeaderKey = manager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
-		if(StringUtils.isNotBlank(proxyHeaderKey)){
-			String proxyHeaderVal = request.getHeader(proxyHeaderKey);
-			ctxMap.put(proxyHeaderKey, proxyHeaderVal);
-			if(StringUtils.isNotBlank(proxyHeaderVal)){
-				ctxMap.put(CallContext.USERNAME, proxyHeaderVal);
+		try {
+			final ApplicationContext applicationContext = SpringContext.getApplicationContext();
+			PropertyManager manager = applicationContext.getBean("propertyManager", PropertyManager.class);
+			String proxyHeaderKey = manager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
+			if(StringUtils.isNotBlank(proxyHeaderKey)){
+				String proxyHeaderVal = request.getHeader(proxyHeaderKey);
+				ctxMap.put(proxyHeaderKey, proxyHeaderVal);
+				if(StringUtils.isNotBlank(proxyHeaderVal)){
+					ctxMap.put(CallContext.USERNAME, proxyHeaderVal);
+					log.info("SSO authentication extracted for user: " + proxyHeaderVal);
+				}
 			}
+		} catch (Exception e) {
+			log.warn("Failed to process SSO headers", e);
 		}
 
 		//Nemaki auth token
 		ctxMap.put(CallContextKey.AUTH_TOKEN, request.getHeader(CallContextKey.AUTH_TOKEN));
 		ctxMap.put(CallContextKey.AUTH_TOKEN_APP, request.getHeader(CallContextKey.AUTH_TOKEN_APP));
+		
+		log.info("Call context map created with " + ctxMap.size() + " entries");
+		
+		// Debug: User authentication flow debugging
+		String username = ctxMap.get(CallContext.USERNAME);
+		if (username != null && log.isDebugEnabled()) {
+			log.debug("Call context map created - Username: " + username + ", Context map size: " + ctxMap.size());
+		}
 		
 		return ctxMap;
 	}

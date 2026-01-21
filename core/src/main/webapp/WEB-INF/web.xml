@@ -9,10 +9,11 @@
 	License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
 	OF ANY KIND, either express or implied. See the License for the specific
 	language governing permissions and limitations under the License. -->
-<web-app version="3.0" xmlns="http://java.sun.com/xml/ns/javaee"
+<web-app version="5.0" xmlns="https://jakarta.ee/xml/ns/jakartaee"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd"
-    xmlns:web="http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd">
+	xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/web-app_5_0.xsd"
+    xmlns:web="https://jakarta.ee/xml/ns/jakartaee/web-app_5_0.xsd"
+    metadata-complete="false">
 
 	<display-name>NemakiWare</display-name>
 
@@ -20,6 +21,12 @@
 		<welcome-file>index.html</welcome-file>
 	</welcome-file-list>
 
+	<!-- JAX-WS Provider Initializer - MUST run before OpenCMIS Web Services servlet -->
+	<listener>
+		<listener-class>jp.aegif.nemaki.init.JaxWsProviderInitializer</listener-class>
+	</listener>
+
+	<!-- Re-enable Spring context with Jakarta EE converted OpenCMIS JARs -->
 	<context-param>
 		<param-name>contextConfigLocation</param-name>
 		<param-value>classpath:applicationContext.xml</param-value>
@@ -28,9 +35,27 @@
 		<listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
     </listener>
 
+    <!-- NemakiWare Patch Initialization Listener - MUST execute AFTER Spring ContextLoaderListener -->
+    <!-- CRITICAL: This listener applies CMIS patches (folder creation, initial content) -->
+    <!-- after Spring context is fully initialized with all services available -->
+    <listener>
+		<listener-class>jp.aegif.nemaki.init.NemakiPatchInitializationListener</listener-class>
+    </listener>
+
+    <!-- EHCache Shutdown Listener to prevent memory leaks and thread issues -->
+    <listener>
+		<listener-class>jp.aegif.nemaki.util.EHCacheShutdownListener</listener-class>
+    </listener>
+
+	<!-- OpenCMIS servlets - All three bindings for CMIS 1.1 compliance -->
+	<!-- Web Services Binding with Jakarta EE 10 compatibility -->
 	<servlet>
 		<servlet-name>cmisws</servlet-name>
 		<servlet-class>org.apache.chemistry.opencmis.server.impl.webservices.CmisWebServicesServlet</servlet-class>
+		<init-param>
+			<param-name>callContextHandler</param-name>
+			<param-value>jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler</param-value>
+		</init-param>
 		<init-param>
             <param-name>cmisVersion</param-name>
             <param-value>1.1</param-value>
@@ -45,6 +70,10 @@
 			<param-value>jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler</param-value>
         </init-param>
 		<init-param>
+			<param-name>org.apache.chemistry.opencmis.serviceFactory</param-name>
+			<param-value>jp.aegif.nemaki.cmis.factory.CmisServiceFactory</param-value>
+		</init-param>
+		<init-param>
  			<param-name>cmisVersion</param-name>
  			<param-value>1.1</param-value>
  		</init-param>
@@ -52,20 +81,138 @@
 	</servlet>
 	<servlet>
 		<servlet-name>cmisbrowser</servlet-name>
-		<servlet-class>org.apache.chemistry.opencmis.server.impl.browser.CmisBrowserBindingServlet</servlet-class>
+		<servlet-class>jp.aegif.nemaki.cmis.servlet.NemakiBrowserBindingServlet</servlet-class>
 		<init-param>
 			<param-name>callContextHandler</param-name>
 			<param-value>jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler</param-value>
 		</init-param>
+		<init-param>
+			<param-name>org.apache.chemistry.opencmis.serviceFactory</param-name>
+			<param-value>jp.aegif.nemaki.cmis.factory.CmisServiceFactory</param-value>
+		</init-param>
+		<init-param>
+			<param-name>cmisVersion</param-name>
+			<param-value>1.1</param-value>
+		</init-param>
+		<!-- Multipart configuration for file uploads - enhanced limits for TCK compliance -->
+		<multipart-config>
+			<max-file-size>104857600</max-file-size>        <!-- 100MB - enhanced limit for TCK tests -->
+			<max-request-size>104857600</max-request-size>   <!-- 100MB - enhanced limit for TCK tests -->
+			<file-size-threshold>32768</file-size-threshold> <!-- 32KB - unchanged -->
+		</multipart-config>
 		<load-on-startup>2</load-on-startup>
 	</servlet>
+	<!-- CORS filter - must be first to handle preflight requests -->
+	<filter>
+		<filter-name>corsFilter</filter-name>
+		<filter-class>jp.aegif.nemaki.rest.SimpleCorsFilter</filter-class>
+	</filter>
+	
+	<!-- REST authentication filter - re-enabled with Spring integration -->
 	<filter>
 		<filter-name>restAuthenticationFilter</filter-name>
 		<filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
+		<init-param>
+			<param-name>targetBeanName</param-name>
+			<param-value>restAuthenticationFilter</param-value>
+		</init-param>
 	</filter>
+	
+	<!-- DeleteType Filter - TEMPORARILY DISABLED to allow query action support in Browser Binding -->
+	<!-- CRITICAL FIX: This filter prevents cmisaction=query from working in TCK tests -->
+	<!--
+	<filter>
+		<filter-name>deleteTypeFilter</filter-name>
+		<filter-class>jp.aegif.nemaki.cmis.servlet.DeleteTypeFilter</filter-class>
+	</filter>
+	-->
+	
+	<!-- CORS filter mapping - must be first -->
+	<filter-mapping>
+		<filter-name>corsFilter</filter-name>
+		<url-pattern>/rest/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>corsFilter</filter-name>
+		<url-pattern>/api/v1/cmis/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>corsFilter</filter-name>
+		<url-pattern>/odata/*</url-pattern>
+	</filter-mapping>
+	
+	<!-- DeleteType filter mapping - TEMPORARILY DISABLED to allow query action support -->
+	<!-- CRITICAL FIX: This filter mapping prevents cmisaction=query from working in TCK tests -->
+	<!--
+	<filter-mapping>
+		<filter-name>deleteTypeFilter</filter-name>
+		<url-pattern>/browser/*</url-pattern>
+		<dispatcher>REQUEST</dispatcher>
+		<dispatcher>FORWARD</dispatcher>
+	</filter-mapping>
+	-->
+	
+	<!-- Apply authentication to all /rest/* except /rest/all/* -->
 	<filter-mapping>
 		<filter-name>restAuthenticationFilter</filter-name>
-		<url-pattern>/rest/*</url-pattern>
+		<url-pattern>/rest/repositories/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/repo/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/user/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/cache/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/config/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/archive/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/type/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/log/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/authtoken/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/checkin/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/solr/*</url-pattern>
+	</filter-mapping>
+	<!-- Note: /rest/all/* paths bypass authentication by not having filter mapping -->
+	
+	<!-- Apply authentication to /api/* endpoints (Spring MVC controllers) -->
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/api/*</url-pattern>
+	</filter-mapping>
+	<!-- Apply authentication to /api/v1/cmis/* endpoints (OpenAPI REST API v1 - CMIS operations) -->
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/api/v1/cmis/*</url-pattern>
+	</filter-mapping>
+	<!-- Apply authentication to /odata/* endpoints (OData 4.0) -->
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/odata/*</url-pattern>
 	</filter-mapping>
 
 
@@ -90,6 +237,8 @@
         <load-on-startup>1</load-on-startup>
     </servlet> -->
 
+	<!-- OpenCMIS servlet mappings - All three bindings for CMIS 1.1 compliance -->
+	<!-- Web Services Binding mapping - Jakarta EE 10 compatible -->
 	<servlet-mapping>
 		<servlet-name>cmisws</servlet-name>
 		<url-pattern>/services/*</url-pattern>
@@ -104,21 +253,36 @@
 	</servlet-mapping>
 
 
+	<!-- Spring Web MVC DispatcherServlet for @RestController -->
+	<servlet>
+		<servlet-name>spring-mvc</servlet-name>
+		<servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
+		<init-param>
+			<param-name>contextConfigLocation</param-name>
+			<param-value>classpath:spring-mvc-context.xml</param-value>
+		</init-param>
+		<load-on-startup>5</load-on-startup>
+	</servlet>
+
+	<servlet-mapping>
+		<servlet-name>spring-mvc</servlet-name>
+		<url-pattern>/api/*</url-pattern>
+	</servlet-mapping>
+
+	<!-- Jersey application for legacy REST endpoints -->
 	<servlet>
   <servlet-name>jersey-app</servlet-name>
   <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
   <init-param>
-    <param-name>jersey.config.server.provider.packages</param-name>
-    <param-value>jp.aegif.nemaki.rest</param-value>
-  </init-param>
-  <init-param>
-    <param-name>jersey.config.server.provider.scanning.recursive</param-name>
-    <param-value>true</param-value>
-  </init-param>
-  <init-param>
-        <param-name>jersey.config.server.provider.classnames</param-name>
-        <param-value>org.glassfish.jersey.media.multipart.MultiPartFeature</param-value>
+        <param-name>jakarta.ws.rs.Application</param-name>
+        <param-value>jp.aegif.nemaki.rest.NemakiRestApplication</param-value>
     </init-param>
+    <!-- Enable Jersey-Spring integration -->
+    <init-param>
+        <param-name>jersey.config.server.provider.classnames</param-name>
+        <param-value>org.glassfish.jersey.server.spring.SpringLifecycleListener</param-value>
+    </init-param>
+    <load-on-startup>10</load-on-startup>
  </servlet>
 
  <servlet-mapping>
@@ -126,8 +290,240 @@
   <url-pattern>/rest/*</url-pattern>
  </servlet-mapping>
 
+ <!-- Jersey application for OpenAPI v1 REST endpoints (CMIS operations) -->
+ <!-- NOTE: Mapped to /api/v1/cmis/* to avoid conflict with legacy Spring MVC /api/v1/repo/* endpoints -->
+ <servlet>
+  <servlet-name>jersey-api-v1</servlet-name>
+  <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
+  <init-param>
+        <param-name>jakarta.ws.rs.Application</param-name>
+        <param-value>jp.aegif.nemaki.api.v1.ApiV1Application</param-value>
+    </init-param>
+    <!-- Enable Jersey-Spring integration -->
+    <init-param>
+        <param-name>jersey.config.server.provider.classnames</param-name>
+        <param-value>org.glassfish.jersey.server.spring.SpringLifecycleListener</param-value>
+    </init-param>
+    <load-on-startup>11</load-on-startup>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>jersey-api-v1</servlet-name>
+  <url-pattern>/api/v1/cmis/*</url-pattern>
+ </servlet-mapping>
+
+ <!-- OData 4.0 Servlet for CMIS data access -->
+ <servlet>
+  <servlet-name>odata</servlet-name>
+  <servlet-class>jp.aegif.nemaki.odata.ODataServlet</servlet-class>
+  <load-on-startup>12</load-on-startup>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>odata</servlet-name>
+  <url-pattern>/odata/*</url-pattern>
+ </servlet-mapping>
+
+ <!-- Simple servlet for /rest/all/repositories endpoint -->
+ <servlet>
+  <servlet-name>all-repositories</servlet-name>
+  <servlet-class>jp.aegif.nemaki.rest.AllRepositoriesServlet</servlet-class>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>all-repositories</servlet-name>
+  <url-pattern>/rest/all/repositories</url-pattern>
+ </servlet-mapping>
+
+ <!-- Type registration servlet - bypasses Jersey routing issues -->
+ <servlet>
+  <servlet-name>type-registration</servlet-name>
+  <servlet-class>jp.aegif.nemaki.rest.TypeRegistrationServlet</servlet-class>
+  <load-on-startup>11</load-on-startup>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>type-registration</servlet-name>
+  <url-pattern>/rest/type-register/*</url-pattern>
+ </servlet-mapping>
+
+ <!-- Default servlet for static resources -->
+ <servlet>
+  <servlet-name>default</servlet-name>
+  <servlet-class>org.apache.catalina.servlets.DefaultServlet</servlet-class>
+  <init-param>
+   <param-name>debug</param-name>
+   <param-value>0</param-value>
+  </init-param>
+  <init-param>
+   <param-name>listings</param-name>
+   <param-value>false</param-value>
+  </init-param>
+  <load-on-startup>1</load-on-startup>
+ </servlet>
+
+ <!-- React SPA Fallback Servlet - handles client-side routing -->
+ <servlet>
+  <servlet-name>react-spa-fallback</servlet-name>
+  <servlet-class>jp.aegif.nemaki.ui.ReactSpaFallbackServlet</servlet-class>
+  <load-on-startup>12</load-on-startup>
+ </servlet>
+
+<!-- Map React SPA fallback servlet to handle client-side routing -->
+<!-- CRITICAL FIX (2025-12-19): Updated from /ui/dist/* to /ui/* per UI Path Unification -->
+<!-- Maven war-plugin copies dist/ contents directly to ui/ in the WAR file -->
+<servlet-mapping>
+ <servlet-name>react-spa-fallback</servlet-name>
+ <url-pattern>/ui/*</url-pattern>
+</servlet-mapping>
+
+<!-- CRITICAL FIX: Exact mappings for HTML files to prevent SPA fallback loop -->
+<!-- Without this, forwarding to /ui/index.html re-enters ReactSpaFallbackServlet -->
+<!-- causing a StackOverflowError from recursive ApplicationHttpRequest.getAttribute calls -->
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/index.html</url-pattern>
+</servlet-mapping>
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/oidc-callback.html</url-pattern>
+</servlet-mapping>
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/saml-callback.html</url-pattern>
+</servlet-mapping>
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/silent-callback.html</url-pattern>
+</servlet-mapping>
+<!-- Static asset directories - served directly by default servlet -->
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/assets/*</url-pattern>
+</servlet-mapping>
+<servlet-mapping>
+ <servlet-name>default</servlet-name>
+ <url-pattern>/ui/pdf-worker/*</url-pattern>
+</servlet-mapping>
+
+ <!-- Map default servlet to handle static resources -->
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.js</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.mjs</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.css</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.png</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.jpg</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.jpeg</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.gif</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.svg</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.ico</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.woff</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.woff2</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.ttf</url-pattern>
+ </servlet-mapping>
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.eot</url-pattern>
+ </servlet-mapping>
+
+ <!-- UI directory mapping removed - now handled by react-spa-fallback servlet -->
+ <!-- REMOVED (2025-10-22): /ui/* mapping moved to ReactSpaFallbackServlet -->
+ <servlet-mapping>
+  <servlet-name>default</servlet-name>
+  <url-pattern>*.html</url-pattern>
+ </servlet-mapping>
 
 
+
+
+
+	<!-- MIME type mappings for static resources -->
+	<mime-mapping>
+		<extension>js</extension>
+		<mime-type>text/javascript</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>mjs</extension>
+		<mime-type>text/javascript</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>css</extension>
+		<mime-type>text/css</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>png</extension>
+		<mime-type>image/png</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>jpg</extension>
+		<mime-type>image/jpeg</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>jpeg</extension>
+		<mime-type>image/jpeg</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>gif</extension>
+		<mime-type>image/gif</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>svg</extension>
+		<mime-type>image/svg+xml</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>ico</extension>
+		<mime-type>image/x-icon</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>woff</extension>
+		<mime-type>font/woff</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>woff2</extension>
+		<mime-type>font/woff2</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>ttf</extension>
+		<mime-type>font/ttf</mime-type>
+	</mime-mapping>
+	<mime-mapping>
+		<extension>eot</extension>
+		<mime-type>application/vnd.ms-fontobject</mime-type>
+	</mime-mapping>
 
 	<!-- <servlet-mapping>
         <servlet-name>Jersey Web Application</servlet-name>

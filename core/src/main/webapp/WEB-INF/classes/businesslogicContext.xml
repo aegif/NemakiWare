@@ -2,8 +2,8 @@
 <beans xmlns="http://www.springframework.org/schema/beans"
 	xmlns:aop="http://www.springframework.org/schema/aop"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
-		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 
 	<!-- Cache -->
 	<bean id="nemakiCachePool" class="jp.aegif.nemaki.util.cache.impl.NemakiCachePoolImpl"
@@ -34,11 +34,11 @@
 		<property name="contentDaoService">
 			<ref bean="ContentDaoService" />
 		</property>
-		<property name="typeManager">
-			<ref bean="TypeManager" />
-		</property>
 		<property name="renditionManager">
 			<ref bean="RenditionManager" />
+		</property>
+		<property name="typeManager">
+			<ref bean="TypeManager" />
 		</property>
        <property name="propertyManager">
             <ref bean="propertyManager" />
@@ -84,6 +84,23 @@
 		<constructor-arg>
 			<ref bean="contentDaoService" />
 		</constructor-arg>
+		<property name="typeManager">
+			<ref bean="TypeManager" />
+		</property>
+	</bean>
+
+	<!-- Text Extraction Service for full-text search (NemakiWare 3.0) -->
+	<bean id="TextExtractionService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.businesslogic.TextExtractionService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="textExtractionService" />
+		</property>
+	</bean>
+	<bean id="textExtractionService" class="jp.aegif.nemaki.businesslogic.impl.TextExtractionServiceImpl">
 	</bean>
 
 	<!-- Rendition builder -->
@@ -97,8 +114,7 @@
 			<ref bean="jodRenditionManager" />
 		</property>
 	</bean>
-	<bean id="jodRenditionManager" class="jp.aegif.nemaki.businesslogic.rendition.impl.JodRenditionManagerImpl"
-	init-method="init">
+	<bean id="jodRenditionManager" class="jp.aegif.nemaki.businesslogic.rendition.impl.JodRenditionManagerImpl">
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>

@@ -23,9 +23,10 @@ package jp.aegif.nemaki.model.couch;
 
 
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-
+import com.fasterxml.jackson.annotation.JsonCreator;
 import jp.aegif.nemaki.model.Document;
 
 public class CouchDocument extends CouchContent {
@@ -45,11 +46,73 @@ public class CouchDocument extends CouchContent {
 	private String versionLabel;
 	//The following properties should be moved away to VersionSeries object
 	private Boolean privateWorkingCopy;
+	
+	// CRITICAL CMIS 1.1 COMPLIANCE: isVersionSeriesCheckedOut property is MANDATORY
+	private Boolean versionSeriesCheckedOut;
+	
+	// ADDITIONAL CMIS 1.1 VERSIONING PROPERTIES - required for complete TCK compliance
+	private String versionSeriesCheckedOutBy;
+	private String versionSeriesCheckedOutId;
 
 	private Boolean immutable;
 	
+	private static final org.apache.commons.logging.Log log = org.apache.commons.logging.LogFactory.getLog(CouchDocument.class);
+
 	public CouchDocument(){
 		super();
+	}
+
+	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	@JsonCreator
+	public CouchDocument(Map<String, Object> properties) {
+		super(properties); // 親クラスのMapコンストラクタを呼び出し
+
+		if (properties != null) {
+			// CouchDocument固有のフィールドマッピング
+			this.attachmentNodeId = (String) properties.get("attachmentNodeId");
+			this.versionSeriesId = (String) properties.get("versionSeriesId");
+			this.versionLabel = (String) properties.get("versionLabel");
+			this.checkinComment = (String) properties.get("checkinComment");
+			
+			// List型の処理
+			if (properties.containsKey("renditionIds")) {
+				Object renditionIdsValue = properties.get("renditionIds");
+				if (renditionIdsValue instanceof List) {
+					this.renditionIds = (List<String>) renditionIdsValue;
+				}
+			}
+			
+			// Boolean型の処理
+			if (properties.containsKey("latestVersion")) {
+				Object value = properties.get("latestVersion");
+				this.latestVersion = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+			}
+			if (properties.containsKey("latestMajorVersion")) {
+				Object value = properties.get("latestMajorVersion");
+				this.latestMajorVersion = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+			}
+			if (properties.containsKey("majorVersion")) {
+				Object value = properties.get("majorVersion");
+				this.majorVersion = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+			}
+			if (properties.containsKey("privateWorkingCopy")) {
+				Object value = properties.get("privateWorkingCopy");
+				this.privateWorkingCopy = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+			}
+			if (properties.containsKey("versionSeriesCheckedOut")) {
+				Object value = properties.get("versionSeriesCheckedOut");
+				this.versionSeriesCheckedOut = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+			}
+			
+			// Additional versioning properties for CMIS 1.1 compliance
+			this.versionSeriesCheckedOutBy = (String) properties.get("versionSeriesCheckedOutBy");
+			this.versionSeriesCheckedOutId = (String) properties.get("versionSeriesCheckedOutId");
+			
+			if (properties.containsKey("immutable")) {
+				Object value = properties.get("immutable");
+				this.immutable = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+			}
+		}
 	}
 	
 	public CouchDocument(Document d){
@@ -63,6 +126,9 @@ public class CouchDocument extends CouchContent {
 		setLatestMajorVersion(d.isLatestMajorVersion());
 		setCheckinComment(d.getCheckinComment());
 		setPrivateWorkingCopy(d.isPrivateWorkingCopy());
+		setVersionSeriesCheckedOut(d.isVersionSeriesCheckedOut());
+		setVersionSeriesCheckedOutBy(d.getVersionSeriesCheckedOutBy());
+		setVersionSeriesCheckedOutId(d.getVersionSeriesCheckedOutId());
 		setImmutable(d.isImmutable());
 	}
 	
@@ -126,6 +192,30 @@ public class CouchDocument extends CouchContent {
 	public void setPrivateWorkingCopy(Boolean privateWorkingCopy) {
 		this.privateWorkingCopy = privateWorkingCopy;
 	}
+	
+	@JsonProperty("versionSeriesCheckedOut")
+	public Boolean isVersionSeriesCheckedOut() {
+		return (versionSeriesCheckedOut == null) ? false : versionSeriesCheckedOut;
+	}
+	public void setVersionSeriesCheckedOut(Boolean versionSeriesCheckedOut) {
+		this.versionSeriesCheckedOut = versionSeriesCheckedOut;
+	}
+
+	public String getVersionSeriesCheckedOutBy() {
+		return versionSeriesCheckedOutBy;
+	}
+
+	public void setVersionSeriesCheckedOutBy(String versionSeriesCheckedOutBy) {
+		this.versionSeriesCheckedOutBy = versionSeriesCheckedOutBy;
+	}
+
+	public String getVersionSeriesCheckedOutId() {
+		return versionSeriesCheckedOutId;
+	}
+
+	public void setVersionSeriesCheckedOutId(String versionSeriesCheckedOutId) {
+		this.versionSeriesCheckedOutId = versionSeriesCheckedOutId;
+	}
 
 	
 	public String getVersionLabel() {
@@ -162,6 +252,9 @@ public class CouchDocument extends CouchContent {
 		d.setVersionSeriesId(getVersionSeriesId());
 		d.setVersionLabel(getVersionLabel());
 		d.setPrivateWorkingCopy(isPrivateWorkingCopy());
+		d.setVersionSeriesCheckedOut(isVersionSeriesCheckedOut());
+		d.setVersionSeriesCheckedOutBy(getVersionSeriesCheckedOutBy());
+		d.setVersionSeriesCheckedOutId(getVersionSeriesCheckedOutId());
 		d.setCheckinComment(getCheckinComment());
 		d.setImmutable(isImmutable());
 

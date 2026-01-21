@@ -22,22 +22,104 @@
 
 package jp.aegif.nemaki.model.couch;
 
+import java.util.Map;
+
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class CouchPropertyDefinitionCore extends CouchNodeBase{
-	
+
 	private static final long serialVersionUID = -213127366706433797L;
-	
+	private static final Logger log = LoggerFactory.getLogger(CouchPropertyDefinitionCore.class);
+
+
+	@JsonProperty("propertyId")
 	private String propertyId;
+	@JsonProperty("propertyType")
 	private PropertyType propertyType;
+	@JsonProperty("queryName")
 	private String queryName;
+	@JsonProperty("cardinality")
 	private Cardinality cardinality;
 	
 	public CouchPropertyDefinitionCore(){
 		super();	
+	}
+	
+	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	// CRITICAL FIX: 汚染防止システム統合 - setterメソッド経由で処理
+	@JsonCreator
+	public CouchPropertyDefinitionCore(Map<String, Object> properties) {
+		super(properties); // 親クラスのMapコンストラクタを呼び出し
+
+		// TCK DEBUG: Log entire Map contents
+		// CRITICAL FIX: super() doesn't preserve PropertyDefinitionCore-specific fields
+		// We need to manually set them from the properties map
+		if (properties != null) {
+			// TCK DEBUG: Log propertyId extraction
+			String propertyIdFromMap = (String) properties.get("propertyId");
+			// ✅ 汚染防止システム通過: setterメソッド経由で処理
+			setPropertyId(propertyIdFromMap);
+			setQueryName((String) properties.get("queryName"));
+
+			// TCK DEBUG: Verify propertyId was set
+			if (log.isDebugEnabled()) {
+				log.debug("After setPropertyId(), this.propertyId = " + this.propertyId);
+			}
+
+			// PropertyType列挙型の処理 - CRITICAL: super() doesn't preserve this!
+			if (properties.containsKey("propertyType")) {
+				Object propTypeObj = properties.get("propertyType");
+				if (log.isDebugEnabled()) {
+					log.debug("TCK PROPERTY TYPE DEBUG: Raw propertyType value: " + propTypeObj + " (class: " + (propTypeObj != null ? propTypeObj.getClass() : "null") + ")");
+				}
+
+				if (propTypeObj instanceof PropertyType) {
+					// Already a PropertyType enum
+					setPropertyType((PropertyType) propTypeObj);
+				} else if (propTypeObj instanceof String) {
+					String propTypeStr = (String) propTypeObj;
+					if (propTypeStr != null && !propTypeStr.isEmpty()) {
+						try {
+							PropertyType pt = PropertyType.fromValue(propTypeStr.toLowerCase());
+							setPropertyType(pt);
+						} catch (Exception e) {
+							// TCK FIX: Default to STRING if conversion fails
+							log.warn("TCK PROPERTY TYPE ERROR: Failed to convert ' " + propTypeStr + " ' to PropertyType: " + e.getMessage() + ". Defaulting to STRING");
+							setPropertyType(PropertyType.STRING);
+						}
+					}
+				}
+			} else {
+			}
+
+			// Verify PropertyType was set
+			// Cardinality列挙型の処理
+			if (properties.containsKey("cardinality")) {
+				Object cardinalityObj = properties.get("cardinality");
+				if (cardinalityObj instanceof String) {
+					String cardinalityStr = (String) cardinalityObj;
+					if (cardinalityStr != null && !cardinalityStr.isEmpty()) {
+						try {
+							setCardinality(Cardinality.fromValue(cardinalityStr.toLowerCase()));
+						} catch (Exception e) {
+							// 無効な値の場合は無視
+							if (log.isDebugEnabled()) {
+								log.debug("Failed to convert cardinality '" + cardinalityStr + "': " + e.getMessage());
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 	
 	public CouchPropertyDefinitionCore(NemakiPropertyDefinitionCore np){
@@ -74,12 +156,34 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 	}
 	
 	public NemakiPropertyDefinitionCore convert(){
-		NemakiPropertyDefinitionCore p = new NemakiPropertyDefinitionCore(super.convert());
-		
+		// TCK FIX: Create NemakiPropertyDefinitionCore directly instead of using super.convert()
+		// super.convert() returns NodeBase which loses PropertyDefinitionCore-specific fields
+		NemakiPropertyDefinitionCore p = new NemakiPropertyDefinitionCore();
+
+		// Set NodeBase fields directly
+		p.setId(getId());
+		p.setType(getType());
+		p.setCreated(getCreated());
+		p.setCreator(getCreator());
+		p.setModified(getModified());
+		p.setModifier(getModifier());
+		p.setRevision(getRevision());
+
+		// Set PropertyDefinitionCore-specific fields
 		p.setPropertyId(getPropertyId());
 		p.setQueryName(getQueryName());
-		p.setPropertyType(getPropertyType());
+		PropertyType pt = getPropertyType();
+		if (log.isDebugEnabled()) {
+			log.debug("CouchPropertyDefinitionCore.convert() - propertyId=" + getPropertyId() + ", propertyType=" + pt);
+		}
+		p.setPropertyType(pt);
 		p.setCardinality(getCardinality());
+
+		if (log.isDebugEnabled()) {
+			log.debug("After setting, NemakiPropertyDefinitionCore has propertyType=" + p.getPropertyType());
+		}
+
 		return p;
 	}
+	
 }

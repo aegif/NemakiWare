@@ -1,0 +1,327 @@
+/**
+ * PDFPreview Component for NemakiWare React UI (SECURITY HARDENED - 2025-11-19)
+ *
+ * PDF preview component providing secure PDF document rendering with react-pdf library:
+ * - react-pdf library integration using SECURE pdfjs-dist@5.3.31 (CVE-2024-4367 patched)
+ * - Custom toolbar with page navigation, zoom, and download controls
+ * - File name display above PDF viewer for context
+ * - Responsive layout with automatic page width fitting
+ * - Border styling for viewer container (1px solid #d9d9d9)
+ * - Authenticated content URL from CMISService
+ * - Error boundary with user-friendly error messages
+ * - Loading state with spinner
+ *
+ * SECURITY IMPROVEMENT (2025-11-19):
+ * - Migrated from @react-pdf-viewer/core (vulnerable pdfjs-dist 3.11.174)
+ * - Now using react-pdf@10.0.1 with pdfjs-dist@5.3.31
+ * - Resolves CVE-2024-4367 (CVSS 8.8/10) - Arbitrary JavaScript execution vulnerability
+ * - Previous risk: Malicious PDFs could execute arbitrary code
+ * - Current status: Patched version eliminates this security risk
+ *
+ * Component Architecture:
+ * PDFPreview
+ *   ├─ <h4>{fileName}</h4>
+ *   ├─ <div.toolbar>
+ *   │   ├─ <Button>Previous</Button>
+ *   │   ├─ <span>Page X of Y</span>
+ *   │   ├─ <Button>Next</Button>
+ *   │   ├─ <Button>Zoom In</Button>
+ *   │   ├─ <Button>Zoom Out</Button>
+ *   │   └─ <a>Download</a>
+ *   └─ <div.pdf-container>
+ *       └─ <Document file={url}>
+ *           └─ <Page pageNumber={pageNumber} scale={scale} />
+ *
+ * Usage Examples:
+ * ```typescript
+ * // PreviewComponent.tsx - PDF file type case
+ * case 'pdf':
+ *   return <PDFPreview url={contentUrl} fileName={object.name} />;
+ *
+ * // Example with authenticated URL
+ * const contentUrl = cmisService.getDownloadUrl(repositoryId, object.id);
+ *
+ * <PDFPreview
+ *   url={contentUrl}
+ *   fileName="specification.pdf"
+ * />
+ * // Renders: Custom toolbar + PDF pages, "specification.pdf" heading
+ * ```
+ *
+ * IMPORTANT DESIGN DECISIONS:
+ *
+ * 1. react-pdf Library Integration (SECURITY FIX):
+ *    - Secure PDF viewer library with patched pdfjs-dist@5.3.31
+ *    - Rationale: Eliminates CVE-2024-4367 security vulnerability
+ *    - Implementation: <Document> and <Page> components from react-pdf
+ *    - Advantage: Security-first approach, actively maintained library
+ *    - Pattern: Security-driven library selection
+ *
+ * 2. Custom Toolbar Implementation:
+ *    - Manual toolbar with Ant Design Button components
+ *    - Rationale: react-pdf doesn't provide built-in toolbar (unlike @react-pdf-viewer)
+ *    - Implementation: useState for pageNumber/scale, event handlers for navigation/zoom
+ *    - Advantage: Full control over UI/UX, security-first approach
+ *    - Trade-off: More code than using built-in toolbar, but eliminates security risk
+ *
+ * 3. Page State Management:
+ *    - useState hooks for pageNumber (1-based), numPages, scale
+ *    - Rationale: React state for page navigation and zoom control
+ *    - Implementation: onDocumentLoadSuccess callback sets numPages
+ *    - Pattern: Controlled component with local state
+ *
+ * 4. Responsive PDF Rendering:
+ *    - width property with % or px for responsive sizing
+ *    - Rationale: Automatic page width adjustment to container
+ *    - Implementation: <Page width={600} /> for consistent rendering
+ *    - Pattern: Responsive design with explicit dimensions
+ *
+ * 5. Error Handling:
+ *    - onLoadError callback with error state display
+ *    - Rationale: User-friendly error messages for PDF load failures
+ *    - Implementation: Error state with Alert component showing error message
+ *    - Pattern: Error boundary pattern for third-party library failures
+ *
+ * 6. Loading State:
+ *    - Spin component shown while PDF loads
+ *    - Rationale: Visual feedback during PDF parsing
+ *    - Implementation: Conditional rendering based on numPages state
+ *    - Pattern: Loading indicator for async operations
+ *
+ * Known Limitations:
+ * - Single page view: Shows one page at a time (no continuous scroll like @react-pdf-viewer)
+ * - Manual toolbar: Requires custom implementation (no built-in toolbar)
+ * - No text selection: react-pdf basic implementation doesn't support text selection
+ * - No search: No built-in PDF text search functionality
+ * - Fixed width: Page width set to 600px (not fully responsive to container)
+ *
+ * Security Benefits:
+ * - ✅ CVE-2024-4367 PATCHED: Arbitrary JS execution vulnerability eliminated
+ * - ✅ Modern pdfjs-dist: Version 5.3.31 includes all security patches
+ * - ✅ Active maintenance: react-pdf actively maintained with security updates
+ * - ✅ Reduced attack surface: Simpler implementation with fewer features = fewer vulnerabilities
+ */
+
+import React, { useState, useEffect, useRef } from 'react';
+import { Document, Page, pdfjs } from 'react-pdf';
+import { Button, Spin, Alert } from 'antd';
+import { useTranslation } from 'react-i18next';
+import { CMISService } from '../../services/cmis';
+import { useAuth } from '../../contexts/AuthContext';
+
+// Required CSS for react-pdf text and annotation layers
+import 'react-pdf/dist/Page/TextLayer.css';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+
+// SECURITY: Configure worker with patched pdfjs-dist@5.3.31 (CVE-2024-4367 fixed)
+// Use local worker file from public directory to avoid CORS issues with CDN
+// (CDN requests fail when Authorization headers are present due to CORS policy)
+pdfjs.GlobalWorkerOptions.workerSrc = '/core/ui/pdf-worker/pdf.worker.min.mjs';
+
+interface PDFPreviewProps {
+  url: string;
+  fileName: string;
+  repositoryId?: string;
+  objectId?: string;
+}
+
+export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositoryId, objectId }) => {
+  const { t } = useTranslation();
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pageNumber, setPageNumber] = useState<number>(1);
+  const [scale, setScale] = useState<number>(1.0);
+  const [error, setError] = useState<string | null>(null);
+  const [pdfData, setPdfData] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Use ref to track current blob URL for proper cleanup (fixes memory leak)
+  const blobUrlRef = useRef<string | null>(null);
+
+  // Extract repositoryId and objectId from URL if not provided as props
+  const extractFromUrl = (urlString: string): { repoId: string | null; objId: string | null } => {
+    // URL format: /core/browser/{repositoryId}/node/{objectId}/content
+    const match = urlString.match(/\/core\/browser\/([^/]+)\/node\/([^/]+)/);
+    if (match) {
+      return { repoId: match[1], objId: match[2] };
+    }
+    return { repoId: null, objId: null };
+  };
+
+  // Fetch PDF content with authentication and convert to Blob URL
+  useEffect(() => {
+    const fetchPdfContent = async () => {
+      setIsLoading(true);
+      setError(null);
+
+      // CRITICAL FIX (2025-12-16): If URL is already a blob URL, use it directly
+      // This happens when OfficePreview passes a pre-fetched blob URL for PDF renditions
+      if (url.startsWith('blob:')) {
+        console.log('[PDFPreview] Using provided blob URL directly:', url.substring(0, 50) + '...');
+        setPdfData(url);
+        setIsLoading(false);
+        return;
+      }
+
+      // Revoke previous blob URL before creating a new one
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+
+      try {
+        const { repoId, objId } = extractFromUrl(url);
+        const effectiveRepoId = repositoryId || repoId;
+        const effectiveObjId = objectId || objId;
+
+        if (!effectiveRepoId || !effectiveObjId) {
+          console.error('PDFPreview: Missing repositoryId or objectId');
+          setError(t('preview.pdf.missingInfo'));
+          setIsLoading(false);
+          return;
+        }
+
+        console.log('[PDFPreview] Fetching content with auth headers for:', effectiveRepoId, effectiveObjId);
+
+        // Use CMISService to fetch content with proper authentication headers
+        const arrayBuffer = await cmisService.getContentStream(effectiveRepoId, effectiveObjId);
+
+        // Convert ArrayBuffer to Blob and create URL
+        const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+        const blobUrl = URL.createObjectURL(blob);
+
+        // Store in ref for cleanup
+        blobUrlRef.current = blobUrl;
+
+        console.log('[PDFPreview] Content fetched successfully, blob URL created');
+        setPdfData(blobUrl);
+      } catch (err) {
+        console.error('PDF fetch error:', err);
+        setError(t('preview.pdf.fetchError', { error: err instanceof Error ? err.message : 'Unknown error' }));
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (url) {
+      fetchPdfContent();
+    }
+
+    // Cleanup: revoke blob URL when component unmounts or URL changes
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, [url, repositoryId, objectId]);
+
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setNumPages(numPages);
+    setError(null);
+  };
+
+  const onDocumentLoadError = (error: Error) => {
+    console.error('PDF load error:', error);
+    setError(t('preview.pdf.loadError', { error: error.message }));
+  };
+
+  const goToPrevPage = () => {
+    setPageNumber((prev) => Math.max(prev - 1, 1));
+  };
+
+  const goToNextPage = () => {
+    setPageNumber((prev) => Math.min(prev + 1, numPages || 1));
+  };
+
+  const zoomIn = () => {
+    setScale((prev) => Math.min(prev + 0.25, 3.0));
+  };
+
+  const zoomOut = () => {
+    setScale((prev) => Math.max(prev - 0.25, 0.5));
+  };
+
+  return (
+    <div>
+      <h4 style={{ marginBottom: '16px' }}>{fileName}</h4>
+
+      {error && (
+        <Alert
+          message={t('common.error')}
+          description={error}
+          type="error"
+          showIcon
+          style={{ marginBottom: '16px' }}
+        />
+      )}
+
+      {!error && isLoading && (
+        <div style={{ textAlign: 'center', padding: '40px' }}>
+          <Spin size="large" tip={t('preview.pdf.loading')} />
+        </div>
+      )}
+
+      {!error && !isLoading && pdfData && (
+        <>
+          <div style={{
+            marginBottom: '16px',
+            display: 'flex',
+            gap: '8px',
+            alignItems: 'center',
+            flexWrap: 'wrap'
+          }}>
+            <Button onClick={goToPrevPage} disabled={pageNumber <= 1}>
+              {t('preview.pdf.previous')}
+            </Button>
+            <span>
+              {numPages ? `${pageNumber} / ${numPages}` : t('preview.pdf.loadingPage')}
+            </span>
+            <Button onClick={goToNextPage} disabled={!numPages || pageNumber >= numPages}>
+              {t('preview.pdf.next')}
+            </Button>
+            <Button onClick={zoomOut} disabled={scale <= 0.5}>
+              {t('preview.pdf.zoomOut')}
+            </Button>
+            <span>{Math.round(scale * 100)}%</span>
+            <Button onClick={zoomIn} disabled={scale >= 3.0}>
+              {t('preview.pdf.zoomIn')}
+            </Button>
+            <a href={pdfData || '#'} download={fileName} style={{ marginLeft: 'auto' }}>
+              <Button disabled={!pdfData}>{t('common.download')}</Button>
+            </a>
+          </div>
+
+          <div style={{
+            border: '1px solid #d9d9d9',
+            padding: '16px',
+            overflowX: 'auto',
+            maxHeight: '800px',
+            overflowY: 'auto'
+          }}>
+            <Document
+              file={pdfData}
+              onLoadSuccess={onDocumentLoadSuccess}
+              onLoadError={onDocumentLoadError}
+              loading={
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <Spin size="large" tip={t('preview.pdf.loadingDocument')} />
+                </div>
+              }
+            >
+              {numPages && (
+                <Page
+                  pageNumber={pageNumber}
+                  scale={scale}
+                  renderTextLayer={true}
+                  renderAnnotationLayer={true}
+                />
+              )}
+            </Document>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};

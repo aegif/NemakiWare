@@ -48,12 +48,16 @@ import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  * Discovery Service implementation for CouchDB.
  *
  */
 public class AclServiceImpl implements AclService {
+
+	private static final Log log = LogFactory.getLog(AclServiceImpl.class);
 
 	private ContentService contentService;
 	private CompileService compileService;
@@ -86,7 +90,8 @@ public class AclServiceImpl implements AclService {
 			// Body of the method
 			// //////////////////
 			jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
-			return compileService.compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), onlyBasicPermissions);
+			Acl result = compileService.compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), onlyBasicPermissions);
+			return result;
 		}finally{
 			lock.unlock();
 		}
@@ -114,6 +119,14 @@ public class AclServiceImpl implements AclService {
 			// Specific Exception
 			// //////////////////
 			TypeDefinition td = typeManager.getTypeDefinition(repositoryId, content);
+			// CRITICAL FIX (2025-12-26): Handle orphaned documents with deleted type definitions
+			// When a custom type is deleted but documents using that type still exist,
+			// TypeDefinition will be null. In this case, deny ACL operations on orphaned documents.
+			if (td == null) {
+				log.warn("ORPHANED DOCUMENT ACL: Cannot apply ACL to document '" + content.getName() +
+						"' (id=" + objectId + ") - type '" + content.getObjectType() + "' no longer exists.");
+				exceptionService.constraint(objectId, "applyAcl cannot be performed on orphaned document - type definition not found");
+			}
 			if(!td.isControllableAcl()) exceptionService.constraint(objectId, "applyAcl cannot be performed on the object whose controllableAcl = false");
 			exceptionService.constraintAclPropagationDoesNotMatch(aclPropagation);
 			exceptionService.constraintPermissionDefined(repositoryId, acl, objectId);
@@ -123,32 +136,61 @@ public class AclServiceImpl implements AclService {
 			// //////////////////
 			//Check ACL inheritance
 			boolean inherited = true;	//Inheritance defaults to true if nothing input
+			boolean inheritedExplicitlySet = false;  // Track if inherited was explicitly set via extension
+			boolean breakingInheritance = false;
 			List<CmisExtensionElement> exts = acl.getExtensions();
 			if(!CollectionUtils.isEmpty(exts)){
 				for(CmisExtensionElement ext : exts){
 					if(ext.getName().equals("inherited")){
 						inherited = Boolean.valueOf(ext.getValue());
+						inheritedExplicitlySet = true;
+						// If changing from inherited=true to inherited=false, we're breaking inheritance
+						if(!inherited && contentService.getAclInheritedWithDefault(repositoryId, content)){
+							breakingInheritance = true;
+						}
 					}
 				}
-				if(!contentService.getAclInheritedWithDefault(repositoryId, content).equals(inherited)) content.setAclInherited(inherited);
 			}
 
 			jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
 			//REPOSITORYDETERMINED or PROPAGATE is considered as PROPAGATE
 			boolean objectOnly = (aclPropagation == AclPropagation.OBJECTONLY)? true : false;
-			for(Ace ace : acl.getAces()){
-				if(ace.isDirect()){
-					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), objectOnly);
+	
+			if(breakingInheritance){
+				jp.aegif.nemaki.model.Acl currentAcl = contentService.calculateAcl(repositoryId, content);
+
+				for(jp.aegif.nemaki.model.Ace localAce : currentAcl.getLocalAces()){
+					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(localAce.getPrincipalId(), localAce.getPermissions(), objectOnly);
 					nemakiAcl.getLocalAces().add(nemakiAce);
+				}
+
+				for(jp.aegif.nemaki.model.Ace inheritedAce : currentAcl.getInheritedAces()){
+					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(inheritedAce.getPrincipalId(), inheritedAce.getPermissions(), objectOnly);
+					nemakiAcl.getLocalAces().add(nemakiAce);
+				}
+			} else {
+				for(Ace ace : acl.getAces()){
+					if(ace.isDirect()){
+						jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), objectOnly);
+						nemakiAcl.getLocalAces().add(nemakiAce);
+					}
 				}
 			}
 
 			convertSystemPrinciaplId(repositoryId, nemakiAcl);
 			content.setAcl(nemakiAcl);
+
+			// CRITICAL: Set aclInherited flag AFTER building the ACL and BEFORE updating
+			if(inheritedExplicitlySet){
+				content.setAclInherited(inherited);
+			}
+	
 			contentService.updateInternal(repositoryId, content);
 			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
 
-			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
+			// CRITICAL FIX (2025-11-12): Clear BOTH CMIS and Content caches synchronously
+			// before calling getAcl() to return updated ACL. Without this, getAcl() returns stale cached data.
+			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
 
 			clearCachesRecursively(Executors.newWorkStealingPool(), callContext, repositoryId, content, true);
 
@@ -164,23 +206,38 @@ public class AclServiceImpl implements AclService {
 	}
 
 	private void clearCachesRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent){
+		clearCachesRecursively(executorService, callContext, repositoryId, content, executeOnParent, new java.util.HashSet<String>());
+	}
 
-		//Call threads for recursive applyAcl
-		if(content.isFolder()){
-			if(executeOnParent){
-				executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
+	private void clearCachesRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent, java.util.Set<String> visitedIds){
+		if (visitedIds.contains(content.getId())) {
+			return;
+		}
+		visitedIds.add(content.getId());
+
+		java.util.Queue<Content> queue = new java.util.LinkedList<>();
+		queue.offer(content);
+		
+		while (!queue.isEmpty()) {
+			Content current = queue.poll();
+			
+			if (visitedIds.contains(current.getId())) {
+				continue;
 			}
-			List<Content> children = contentService.getChildren(repositoryId, content.getId());
-			if(CollectionUtils.isEmpty(children)){
-				return;
-			}
-			for(Content child : children){
-				if(contentService.getAclInheritedWithDefault(repositoryId, child)){
-					executorService.submit(new ClearCachesRecursivelyTask(executorService, callContext, repositoryId, child));
+			visitedIds.add(current.getId());
+			
+			executorService.submit(new ClearCacheTask(repositoryId, current.getId()));
+			
+			if (current.isFolder()) {
+				List<Content> children = contentService.getChildren(repositoryId, current.getId());
+				if (!CollectionUtils.isEmpty(children)) {
+					for (Content child : children) {
+						if (contentService.getAclInheritedWithDefault(repositoryId, child) && !visitedIds.contains(child.getId())) {
+							queue.offer(child);
+						}
+					}
 				}
 			}
-		}else{
-			executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
 		}
 	}
 

@@ -22,17 +22,33 @@
 package jp.aegif.nemaki.model.couch;
 
 import jp.aegif.nemaki.model.Relationship;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import java.util.Map;
 
 public class CouchRelationship extends CouchContent {
 	private static final long serialVersionUID = 9105018834841974510L;
-	
+
 	private String sourceId;
 	private String targetId;
-	
+
 	public CouchRelationship(){
 		super();
 	}
-	
+
+	// Map-based constructor for Cloudant Document conversion with proper date handling
+	@JsonCreator
+	public CouchRelationship(Map<String, Object> properties) {
+		super(properties);
+		if (properties != null) {
+			if (properties.containsKey("sourceId")) {
+				this.sourceId = (String) properties.get("sourceId");
+			}
+			if (properties.containsKey("targetId")) {
+				this.targetId = (String) properties.get("targetId");
+			}
+		}
+	}
+
 	public CouchRelationship(Relationship r){
 		super(r);
 		setSourceId(r.getSourceId());

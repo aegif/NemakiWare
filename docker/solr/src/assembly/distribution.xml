@@ -1,0 +1,61 @@
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.1.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.1.0 
+          http://maven.apache.org/xsd/assembly-2.1.0.xsd">
+    
+    <id>distribution</id>
+    <formats>
+        <format>dir</format>
+        <format>zip</format>
+        <format>tar.gz</format>
+    </formats>
+    
+    <includeBaseDirectory>true</includeBaseDirectory>
+    
+    <fileSets>
+        <!-- Include the main JAR in lib directory -->
+        <fileSet>
+            <directory>${project.build.directory}</directory>
+            <includes>
+                <include>solr.jar</include>
+            </includes>
+            <outputDirectory>lib</outputDirectory>
+        </fileSet>
+        
+        <!-- Include copied dependencies from target/lib -->
+        <fileSet>
+            <directory>${project.build.directory}/lib</directory>
+            <includes>
+                <include>*.jar</include>
+            </includes>
+            <outputDirectory>lib</outputDirectory>
+        </fileSet>
+        
+        <!-- Include Solr configuration files -->
+        <fileSet>
+            <directory>${project.basedir}/solr</directory>
+            <includes>
+                <include>**/*</include>
+            </includes>
+            <excludes>
+                <exclude>**/target/**</exclude>
+                <exclude>**/.git/**</exclude>
+                <exclude>**/.svn/**</exclude>
+                <exclude>**/*.bak</exclude>
+                <exclude>**/*~</exclude>
+            </excludes>
+            <outputDirectory>solr</outputDirectory>
+        </fileSet>
+        
+        <!-- Include readme and documentation -->
+        <fileSet>
+            <directory>${project.basedir}</directory>
+            <includes>
+                <include>README*</include>
+                <include>*.md</include>
+                <include>LICENSE*</include>
+            </includes>
+            <outputDirectory>.</outputDirectory>
+        </fileSet>
+    </fileSets>
+</assembly>

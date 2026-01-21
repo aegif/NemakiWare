@@ -33,8 +33,7 @@ public class GroupItem extends Item{
 		try {
 			BeanUtils.copyProperties(this, item);
 		} catch (IllegalAccessException | InvocationTargetException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			throw new RuntimeException("Failed to copy properties from Item to GroupItem", e);
 		}
 	}
 
@@ -45,34 +44,62 @@ public class GroupItem extends Item{
 	public void setGroupId(String groupId) {
 		this.groupId = groupId;
 	}
-	@SuppressWarnings("unchecked")
 	public List<String> getUsers() {
 		Property users = getSubTypeProperty("nemaki:users");
 		if(users != null && users.getValue() != null && users.getValue() instanceof List){
-			return (List<String>)(users.getValue());
+			List<?> rawList = (List<?>) users.getValue();
+			List<String> result = new ArrayList<>();
+			for (Object item : rawList) {
+				if (item instanceof String) {
+					result.add((String) item);
+				}
+			}
+			return result;
 		}
 		return new ArrayList<>();
 	}
-	@SuppressWarnings("unchecked")
 	public List<String> getGroups() {
 		Property groups = getSubTypeProperty("nemaki:groups");
 		if(groups != null && groups.getValue() != null && groups.getValue() instanceof List){
-			return (List<String>)(groups.getValue());
+			List<?> rawList = (List<?>) groups.getValue();
+			List<String> result = new ArrayList<>();
+			for (Object item : rawList) {
+				if (item instanceof String) {
+					result.add((String) item);
+				}
+			}
+			return result;
 		}
 		return new ArrayList<>();
 	}
 
 	public void setUsers(List<String> userIds) {
 		Property users = getSubTypeProperty("nemaki:users");
-		if(users != null && users.getValue() != null && users.getValue() instanceof List){
+		if(users != null) {
 			users.setValue(userIds);
+		} else {
+			// プロパティが存在しない場合は新規作成
+			List<Property> subTypeProperties = getSubTypeProperties();
+			if (subTypeProperties == null) {
+				subTypeProperties = new ArrayList<>();
+				setSubTypeProperties(subTypeProperties);
+			}
+			subTypeProperties.add(new Property("nemaki:users", userIds));
 		}
 	}
 
 	public void setGroups(List<String> groupIds) {
 		Property groups = getSubTypeProperty("nemaki:groups");
-		if(groups != null && groups.getValue() != null && groups.getValue() instanceof List){
+		if(groups != null) {
 			groups.setValue(groupIds);
+		} else {
+			// プロパティが存在しない場合は新規作成
+			List<Property> subTypeProperties = getSubTypeProperties();
+			if (subTypeProperties == null) {
+				subTypeProperties = new ArrayList<>();
+				setSubTypeProperties(subTypeProperties);
+			}
+			subTypeProperties.add(new Property("nemaki:groups", groupIds));
 		}
 	}
 
