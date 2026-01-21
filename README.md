@@ -4,12 +4,11 @@ NemakiWare is an open source Enterprise Content Management system, compliant wit
 
 ## Features
 - **All-in-one package** including server, full-text search engine, and modern React client
-- **Easy installation** with automated installer
-- **Jakarta EE compatible** with Java 17 support
-- **Modern React SPA client interface** (replaces legacy Play Framework UI)
+- **Docker-based deployment** with simple Docker Compose setup
+- **Jakarta EE 10 compatible** with Java 17 support
+- **Modern React SPA client interface** with TypeScript and Vite
 - **SAML and OIDC authentication** support
 - **Full CMIS 1.1 compliance**
-- **Docker containerization** support
 
 ## Key Capabilities
 * **CMIS ver1.1 compliant and even CMIS-native server**
@@ -130,8 +129,6 @@ For detailed testing procedures and troubleshooting, see `CLAUDE.md` section "TC
 
 License
 ----------
-Copyright (c) 2013-2018 aegif.
+Copyright (c) 2013-2026 aegif.
 
 NemakiWare is Open Source software and licensed under the `GNU Affero General Public License version 3`. You are welcome to change and redistribute it under certain conditions. For more information see the `legal/LICENSE` file.
-
-[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/NemakiWare/NemakiWare/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
