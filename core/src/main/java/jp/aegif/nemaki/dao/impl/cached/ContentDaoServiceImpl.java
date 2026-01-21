@@ -22,10 +22,13 @@
 package jp.aegif.nemaki.dao.impl.cached;
 
 import java.text.MessageFormat;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.GregorianCalendar;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -1198,6 +1201,153 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		return updated;
 	}
 
+	// ///////////////////////////////////////
+	// Cache Invalidation Helpers
+	// ///////////////////////////////////////
+	
+	/**
+	 * Maximum number of groups to expand when collecting nested group users.
+	 * If this limit is exceeded, falls back to removeAll() for safety.
+	 */
+	private static final int MAX_NESTED_GROUP_EXPANSION = 100;
+	
+	/**
+	 * Collects all user IDs affected by a group deletion, including users in nested groups.
+	 * Uses iterative traversal with cycle detection to handle circular group references.
+	 * 
+	 * @param repositoryId the repository ID
+	 * @param groupId the group ID being deleted
+	 * @return Set of affected user IDs, or null if expansion limit exceeded (caller should use removeAll())
+	 */
+	private Set<String> collectNestedGroupUsers(String repositoryId, String groupId) {
+		Set<String> visitedGroups = new HashSet<>();
+		Set<String> affectedUsers = new HashSet<>();
+		Deque<String> stack = new ArrayDeque<>();
+		stack.push(groupId);
+		
+		while (!stack.isEmpty()) {
+			String currentGroupId = stack.pop();
+			
+			// Skip if already visited (cycle detection)
+			if (!visitedGroups.add(currentGroupId)) {
+				continue;
+			}
+			
+			// Safety valve: if we've expanded too many groups, fall back to removeAll()
+			if (visitedGroups.size() > MAX_NESTED_GROUP_EXPANSION) {
+				log.debug("Nested group expansion exceeded limit (" + MAX_NESTED_GROUP_EXPANSION + 
+					"). Falling back to removeAll() for joinedGroupCache.");
+				return null;
+			}
+			
+			// Use fresh data to avoid stale cache issues
+			GroupItem group = getGroupItemByIdFresh(repositoryId, currentGroupId);
+			if (group == null) {
+				log.debug("GroupItem not found for groupId=" + currentGroupId + " during nested expansion.");
+				continue;
+			}
+			
+			// Collect direct users
+			List<String> users = group.getUsers();
+			if (users != null) {
+				affectedUsers.addAll(users);
+			}
+			
+			// Add nested groups to stack for further expansion
+			List<String> nestedGroups = group.getGroups();
+			if (nestedGroups != null) {
+				for (String nestedGroupId : nestedGroups) {
+					if (!visitedGroups.contains(nestedGroupId)) {
+						stack.push(nestedGroupId);
+					}
+				}
+			}
+		}
+		
+		return affectedUsers;
+	}
+	
+	/**
+	 * Invalidates joinedGroupCache entries for users affected by a group deletion.
+	 * Uses targeted invalidation when possible, falls back to removeAll() for edge cases.
+	 * 
+	 * @param repositoryId the repository ID
+	 * @param objectId the object ID of the group being deleted
+	 * @param groupItem the GroupItem (may be null)
+	 */
+	private void invalidateJoinedGroupCacheForGroupDeletion(String repositoryId, String objectId, GroupItem groupItem) {
+		NemakiCache<List<String>> joinedGroupCache = nemakiCachePool.get(repositoryId).getJoinedGroupCache();
+		
+		if (groupItem == null) {
+			log.warn("GroupItem is null during delete for objectId=" + objectId + 
+				". Falling back to removeAll() for joinedGroupCache.");
+			joinedGroupCache.removeAll();
+			return;
+		}
+		
+		String groupId = groupItem.getGroupId();
+		
+		// Collect all affected users (including those in nested groups)
+		Set<String> affectedUsers = collectNestedGroupUsers(repositoryId, groupId);
+		
+		if (affectedUsers == null) {
+			// Expansion limit exceeded, fall back to removeAll()
+			joinedGroupCache.removeAll();
+			return;
+		}
+		
+		if (affectedUsers.isEmpty()) {
+			log.debug("No users affected by deletion of group " + groupId);
+			return;
+		}
+		
+		// Targeted invalidation for all affected users
+		log.debug("Invalidating joinedGroupCache for " + affectedUsers.size() + 
+			" users affected by deletion of group " + groupId);
+		for (String userId : affectedUsers) {
+			joinedGroupCache.remove(userId);
+		}
+	}
+	
+	/**
+	 * Invalidates cache entries for user/group deletion.
+	 * Extracted to avoid code duplication between delete() overloads.
+	 * 
+	 * Cache invalidation strategy:
+	 * - For users: Use targeted invalidation (remove only this user's cache entries)
+	 * - For groups: Use targeted invalidation for all affected users (including nested groups),
+	 *   with fallback to removeAll() if expansion limit exceeded or item is null
+	 * - Note: Group updates use removeAll() because membership changes can affect any user's
+	 *   group list. Deletion uses targeted approach when possible for better performance.
+	 * 
+	 * @param repositoryId the repository ID
+	 * @param objectId the object ID being deleted
+	 * @param nb the NodeBase of the object being deleted
+	 */
+	private void invalidateUserGroupCacheOnDelete(String repositoryId, String objectId, NodeBase nb) {
+		if (nb.isUser()) {
+			UserItem item = getUserItem(repositoryId, objectId);
+			if (item != null) {
+				String userId = item.getUserId();
+				nemakiCachePool.get(repositoryId).getUserItemCache().remove(userId);
+				// Targeted invalidation: only remove this user's joinedGroup cache entry
+				nemakiCachePool.get(repositoryId).getJoinedGroupCache().remove(userId);
+			} else {
+				log.warn("UserItem is null during delete for objectId=" + objectId + 
+					". Falling back to removeAll() for joinedGroupCache.");
+				// Fallback: clear all joinedGroupCache to ensure consistency
+				nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
+			}
+		} else if (nb.isGroup()) {
+			GroupItem item = getGroupItem(repositoryId, objectId);
+			if (item != null) {
+				nemakiCachePool.get(repositoryId).getGroupItemCache().remove(item.getGroupId());
+			}
+			// Invalidate joinedGroupCache for all affected users
+			invalidateJoinedGroupCacheForGroupDeletion(repositoryId, objectId, item);
+		}
+	}
+
 	@Override
 	public void delete(String repositoryId, String objectId) {
 		//Check if cache enabled
@@ -1228,57 +1378,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			tree = getOrCreateTreeCache(repositoryId, _c.getParentId());
 		}
 
-		// Cache invalidation strategy for User/Group deletion:
-		// - For users: Use targeted invalidation (remove only this user's cache entries)
-		// - For groups: Use targeted invalidation for direct members, but fall back to
-		//   removeAll() if the group has nested groups (to handle indirect membership)
-		// - Fall back to removeAll() if item is null to ensure cache consistency
-		// Note: Group updates use removeAll() because membership changes can affect
-		// any user's group list. Deletion uses targeted approach when possible for
-		// better performance, with fallbacks for edge cases.
-		if(nb.isUser()){
-			UserItem item = getUserItem(repositoryId, objectId);
-			if(item != null){
-				String userId = item.getUserId();
-				nemakiCachePool.get(repositoryId).getUserItemCache().remove(userId);
-				// Targeted invalidation: only remove this user's joinedGroup cache entry
-				nemakiCachePool.get(repositoryId).getJoinedGroupCache().remove(userId);
-			}else{
-				log.warn("UserItem is null during delete for objectId=" + objectId + 
-					". Falling back to removeAll() for joinedGroupCache.");
-				// Fallback: clear all joinedGroupCache to ensure consistency
-				nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
-			}
-		}else if(nb.isGroup()){
-			GroupItem item = getGroupItem(repositoryId, objectId);
-			if(item != null){
-				String groupId = item.getGroupId();
-				nemakiCachePool.get(repositoryId).getGroupItemCache().remove(groupId);
-				
-				// Check if this group has nested groups - if so, use removeAll() to handle
-				// indirect membership (users in nested groups are also affected)
-				List<String> nestedGroups = item.getGroups();
-				if(nestedGroups != null && !nestedGroups.isEmpty()){
-					// Fallback to removeAll() for groups with nested structure
-					log.info("Group " + groupId + " has nested groups. Using removeAll() for joinedGroupCache.");
-					nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
-				}else{
-					// Targeted invalidation: remove joinedGroup cache entries for direct users only
-					List<String> groupUsers = item.getUsers();
-					if(groupUsers != null && !groupUsers.isEmpty()){
-						NemakiCache<List<String>> joinedGroupCache = nemakiCachePool.get(repositoryId).getJoinedGroupCache();
-						for(String userId : groupUsers){
-							joinedGroupCache.remove(userId);
-						}
-					}
-				}
-			}else{
-				log.warn("GroupItem is null during delete for objectId=" + objectId + 
-					". Falling back to removeAll() for joinedGroupCache.");
-				// Fallback: clear all joinedGroupCache to ensure consistency
-				nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
-			}
-		}
+		// Invalidate user/group caches using helper method
+		invalidateUserGroupCacheOnDelete(repositoryId, objectId, nb);
 
 		// remove from cache FIRST
 		if(doc == null){
@@ -1343,57 +1444,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			tree = getOrCreateTreeCache(repositoryId, _c.getParentId());
 		}
 
-		// Cache invalidation strategy for User/Group deletion:
-		// - For users: Use targeted invalidation (remove only this user's cache entries)
-		// - For groups: Use targeted invalidation for direct members, but fall back to
-		//   removeAll() if the group has nested groups (to handle indirect membership)
-		// - Fall back to removeAll() if item is null to ensure cache consistency
-		// Note: Group updates use removeAll() because membership changes can affect
-		// any user's group list. Deletion uses targeted approach when possible for
-		// better performance, with fallbacks for edge cases.
-		if(nb.isUser()){
-			UserItem item = getUserItem(repositoryId, objectId);
-			if(item != null){
-				String userId = item.getUserId();
-				nemakiCachePool.get(repositoryId).getUserItemCache().remove(userId);
-				// Targeted invalidation: only remove this user's joinedGroup cache entry
-				nemakiCachePool.get(repositoryId).getJoinedGroupCache().remove(userId);
-			}else{
-				log.warn("UserItem is null during delete for objectId=" + objectId + 
-					". Falling back to removeAll() for joinedGroupCache.");
-				// Fallback: clear all joinedGroupCache to ensure consistency
-				nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
-			}
-		}else if(nb.isGroup()){
-			GroupItem item = getGroupItem(repositoryId, objectId);
-			if(item != null){
-				String groupId = item.getGroupId();
-				nemakiCachePool.get(repositoryId).getGroupItemCache().remove(groupId);
-				
-				// Check if this group has nested groups - if so, use removeAll() to handle
-				// indirect membership (users in nested groups are also affected)
-				List<String> nestedGroups = item.getGroups();
-				if(nestedGroups != null && !nestedGroups.isEmpty()){
-					// Fallback to removeAll() for groups with nested structure
-					log.info("Group " + groupId + " has nested groups. Using removeAll() for joinedGroupCache.");
-					nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
-				}else{
-					// Targeted invalidation: remove joinedGroup cache entries for direct users only
-					List<String> groupUsers = item.getUsers();
-					if(groupUsers != null && !groupUsers.isEmpty()){
-						NemakiCache<List<String>> joinedGroupCache = nemakiCachePool.get(repositoryId).getJoinedGroupCache();
-						for(String userId : groupUsers){
-							joinedGroupCache.remove(userId);
-						}
-					}
-				}
-			}else{
-				log.warn("GroupItem is null during delete for objectId=" + objectId + 
-					". Falling back to removeAll() for joinedGroupCache.");
-				// Fallback: clear all joinedGroupCache to ensure consistency
-				nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
-			}
-		}
+		// Invalidate user/group caches using helper method
+		invalidateUserGroupCacheOnDelete(repositoryId, objectId, nb);
 
 		// remove from cache FIRST
 		if(doc == null){
