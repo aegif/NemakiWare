@@ -41,6 +41,7 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.DateUtil;
+import jp.aegif.nemaki.util.cache.NemakiCachePool;
 
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
@@ -71,6 +72,9 @@ public class UserResource {
     
     @Autowired
     private ContentService contentService;
+    
+    @Autowired
+    private NemakiCachePool nemakiCachePool;
     
     @Context
     private UriInfo uriInfo;
@@ -487,11 +491,7 @@ public class UserResource {
 
             contentService.delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
 
-            // TODO: Cache invalidation issue - After deletion, getUserItemById() still returns
-            // the deleted user due to caching in ContentService. The user is deleted from CouchDB
-            // but the cache is not invalidated. Need to add cache invalidation for UserItem.
-            // See: ContentServiceImpl.getUserItemById() caching mechanism
-            // Related test: management-api.spec.ts "should create, get, update, and delete user"
+            nemakiCachePool.get(repositoryId).getUserItemCache().remove(userId);
 
             return Response.noContent().build();
             
