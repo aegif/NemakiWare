@@ -1330,31 +1330,46 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * - Note: Group updates use removeAll() because membership changes can affect any user's
 	 *   group list. Deletion uses targeted approach when possible for better performance.
 	 * 
+	 * IMPORTANT: UserItem and GroupItem extend Item, which sets type="cmis:item".
+	 * Therefore, nb.isUser() and nb.isGroup() always return false for these types.
+	 * We must check objectType ("nemaki:user" or "nemaki:group") instead.
+	 * 
 	 * @param repositoryId the repository ID
 	 * @param objectId the object ID being deleted
 	 * @param nb the NodeBase of the object being deleted
 	 */
 	private void invalidateUserGroupCacheOnDelete(String repositoryId, String objectId, NodeBase nb) {
-		if (nb.isUser()) {
-			UserItem item = getUserItem(repositoryId, objectId);
-			if (item != null) {
-				String userId = item.getUserId();
-				nemakiCachePool.get(repositoryId).getUserItemCache().remove(userId);
-				// Targeted invalidation: only remove this user's joinedGroup cache entry
-				nemakiCachePool.get(repositoryId).getJoinedGroupCache().remove(userId);
-			} else {
-				log.warn("UserItem is null during delete for objectId=" + objectId + 
-					". Falling back to removeAll() for joinedGroupCache.");
-				// Fallback: clear all joinedGroupCache to ensure consistency
-				nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
+		// UserItem and GroupItem are Items (type="cmis:item"), so we need to check objectType
+		// to determine if this is a user or group deletion
+		if (nb.isItem()) {
+			Content content = getContent(repositoryId, objectId);
+			if (content == null) {
+				log.warn("Content is null during delete for objectId=" + objectId);
+				return;
 			}
-		} else if (nb.isGroup()) {
-			GroupItem item = getGroupItem(repositoryId, objectId);
-			if (item != null) {
-				nemakiCachePool.get(repositoryId).getGroupItemCache().remove(item.getGroupId());
+			
+			String objectType = content.getObjectType();
+			if ("nemaki:user".equals(objectType)) {
+				UserItem item = getUserItem(repositoryId, objectId);
+				if (item != null) {
+					String userId = item.getUserId();
+					nemakiCachePool.get(repositoryId).getUserItemCache().remove(userId);
+					// Targeted invalidation: only remove this user's joinedGroup cache entry
+					nemakiCachePool.get(repositoryId).getJoinedGroupCache().remove(userId);
+				} else {
+					log.warn("UserItem is null during delete for objectId=" + objectId + 
+						". Falling back to removeAll() for joinedGroupCache.");
+					// Fallback: clear all joinedGroupCache to ensure consistency
+					nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
+				}
+			} else if ("nemaki:group".equals(objectType)) {
+				GroupItem item = getGroupItem(repositoryId, objectId);
+				if (item != null) {
+					nemakiCachePool.get(repositoryId).getGroupItemCache().remove(item.getGroupId());
+				}
+				// Invalidate joinedGroupCache for all affected users
+				invalidateJoinedGroupCacheForGroupDeletion(repositoryId, objectId, item);
 			}
-			// Invalidate joinedGroupCache for all affected users
-			invalidateJoinedGroupCacheForGroupDeletion(repositoryId, objectId, item);
 		}
 	}
 
