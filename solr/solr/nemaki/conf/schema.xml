@@ -193,6 +193,33 @@
 </dynamicField>
  	<dynamicField name="ignored_*" type="ignored"/>
 
+   <!-- ========================================
+        RAG (Retrieval-Augmented Generation) Fields
+        Parent-Child document structure with Block Join for chunk vectors
+        ======================================== -->
+
+   <!-- Document type: "document" (parent) or "chunk" (child) -->
+   <field name="doc_type" type="string" indexed="true" stored="true" required="false" multiValued="false" />
+
+   <!-- Parent document ID for chunk documents (used in Block Join queries) -->
+   <field name="parent_document_id" type="string" indexed="true" stored="true" required="false" multiValued="false" />
+
+   <!-- Chunk-specific fields (only for doc_type="chunk") -->
+   <field name="chunk_id" type="string" indexed="true" stored="true" required="false" multiValued="false" />
+   <field name="chunk_index" type="int" indexed="true" stored="true" required="false" multiValued="false" />
+   <field name="chunk_text" type="text_ja" indexed="true" stored="true" required="false" multiValued="false" />
+   <field name="chunk_vector" type="knn_vector_1024" indexed="true" stored="true" required="false" multiValued="false" />
+
+   <!-- Document-level vector for similarity search (only for doc_type="document") -->
+   <field name="document_vector" type="knn_vector_1024" indexed="true" stored="true" required="false" multiValued="false" />
+
+   <!-- ACL pre-expansion: list of users/groups with read permission -->
+   <!-- Format: "user:username" or "group:groupname" or "anyone" -->
+   <field name="readers" type="string" indexed="true" stored="true" required="false" multiValued="true" />
+
+   <!-- Block Join routing field (Solr 9 requires _root_ for nested documents) -->
+   <field name="_root_" type="string" indexed="true" stored="false" docValues="false" />
+
  </fields>
 
 
@@ -1062,6 +1089,18 @@
         <filter class="solr.SnowballPorterFilterFactory" language="Turkish"/>
       </analyzer>
     </fieldType>
+
+    <!-- ========================================
+         Dense Vector Field Type for RAG/Semantic Search
+         Solr 9.x DenseVectorField with HNSW algorithm
+         Using E5 multilingual model (1024 dimensions)
+         ======================================== -->
+    <fieldType name="knn_vector_1024" class="solr.DenseVectorField"
+               vectorDimension="1024"
+               similarityFunction="cosine"
+               knnAlgorithm="hnsw"
+               hnswMaxConnections="16"
+               hnswBeamWidth="100"/>
 
  </types>
 

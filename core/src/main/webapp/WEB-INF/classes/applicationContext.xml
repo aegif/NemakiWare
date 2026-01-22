@@ -14,6 +14,9 @@
 	<!-- This ensures ObjectMapper beans are available before any DAO contexts -->
 	<context:component-scan base-package="jp.aegif.nemaki.config" />
 
+	<!-- Enable component scanning for RAG (Retrieval-Augmented Generation) services -->
+	<context:component-scan base-package="jp.aegif.nemaki.rag" />
+
 	<!-- DatabasePreInitializer moved to patchContext.xml as explicit bean definition (2025-11-10) -->
 	<!-- This ensures it executes in child context after NemakiApplicationContextLoader.refresh() -->
 

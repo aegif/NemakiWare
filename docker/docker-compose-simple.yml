@@ -73,9 +73,44 @@ services:
   #   environment:
   #     - CATALINA_OPTS=-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties
 
+  # ========================================
+  # RAG (Retrieval-Augmented Generation) Components
+  # Enable with: docker compose --profile rag up -d
+  # ========================================
+
+  # Text Embeddings Inference (TEI) Service
+  # Hugging Face's embedding inference server for multilingual E5 model
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    profiles:
+      - rag
+    ports:
+      - "8081:80"
+    volumes:
+      - tei_cache:/data
+    environment:
+      # Model: intfloat/multilingual-e5-large (1024 dimensions)
+      - MODEL_ID=intfloat/multilingual-e5-large
+      # Performance tuning
+      - MAX_CLIENT_BATCH_SIZE=32
+      - MAX_BATCH_TOKENS=16384
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
 volumes:
   couchdb_data:
   solr_data:
+  tei_cache:  # RAG: TEI model cache
 
 networks:
   default:
