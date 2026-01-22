@@ -116,6 +116,31 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     }
   }, [repositoryId]);
 
+  // RAG handlers - must be defined before useEffect that uses them
+  const loadRagHealthStatus = useCallback(async () => {
+    setRagLoading(true);
+    try {
+      const status = await ragService.checkRAGHealth(repositoryId);
+      setRagHealthStatus(status);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('ragMaintenance.messages.healthCheckError')}: ${errorMessage}`);
+    } finally {
+      setRagLoading(false);
+    }
+  }, [repositoryId, t]);
+
+  const loadRagReindexStatus = useCallback(async () => {
+    try {
+      const status = await ragService.getRAGReindexStatus(repositoryId);
+      setRagReindexStatus(status);
+      return status;
+    } catch (error: unknown) {
+      console.error('Failed to load RAG reindex status:', error);
+      return null;
+    }
+  }, [repositoryId]);
+
   useEffect(() => {
     loadSolrUrl();
     loadHealthStatus();
@@ -246,31 +271,6 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       setLoading(false);
     }
   };
-
-  // RAG handlers
-  const loadRagHealthStatus = useCallback(async () => {
-    setRagLoading(true);
-    try {
-      const status = await ragService.checkRAGHealth(repositoryId);
-      setRagHealthStatus(status);
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      message.error(`${t('ragMaintenance.messages.healthCheckError')}: ${errorMessage}`);
-    } finally {
-      setRagLoading(false);
-    }
-  }, [repositoryId, t]);
-
-  const loadRagReindexStatus = useCallback(async () => {
-    try {
-      const status = await ragService.getRAGReindexStatus(repositoryId);
-      setRagReindexStatus(status);
-      return status;
-    } catch (error: unknown) {
-      console.error('Failed to load RAG reindex status:', error);
-      return null;
-    }
-  }, [repositoryId]);
 
   const handleFullRagReindex = async () => {
     try {
