@@ -396,6 +396,16 @@
   <fieldType name="tfloat" class="solr.FloatPointField" positionIncrementGap="0"/>
   <fieldType name="tint" class="solr.IntPointField" positionIncrementGap="0"/>
   <fieldType name="tlong" class="solr.LongPointField" positionIncrementGap="0"/>
+
+  <!-- RAG Vector Search Field Types (Solr 9.x Dense Vector Support) -->
+  <!-- multilingual-e5-large model produces 1024-dimensional vectors -->
+  <fieldType name="knn_vector_1024" class="solr.DenseVectorField"
+             vectorDimension="1024"
+             similarityFunction="cosine"
+             knnAlgorithm="hnsw"
+             hnswMaxConnections="16"
+             hnswBeamWidth="100"/>
+
   <field name="_version_" type="long" indexed="true" stored="true"/>
   <field name="author" type="text_general" indexed="true" stored="true"/>
   <field name="basetype" type="string" multiValued="false" indexed="true" stored="true"/>
@@ -445,6 +455,25 @@
   <field name="url" type="text_general" indexed="true" stored="true"/>
   <field name="version_label" type="string" multiValued="false" indexed="true" stored="true"/>
   <field name="version_series_id" type="string" multiValued="false" indexed="true" stored="true"/>
+
+  <!-- RAG (Retrieval-Augmented Generation) Fields -->
+  <!-- Chunk vector: embedding of document content chunk -->
+  <field name="chunk_vector" type="knn_vector_1024" indexed="true" stored="true"/>
+  <!-- Property vector: embedding of document metadata (name, description) -->
+  <field name="property_vector" type="knn_vector_1024" indexed="true" stored="true"/>
+  <!-- Unique chunk identifier -->
+  <field name="chunk_id" type="string" multiValued="false" indexed="true" stored="true"/>
+  <!-- Parent document ID for chunk -->
+  <field name="document_id" type="string" multiValued="false" indexed="true" stored="true"/>
+  <!-- Document name (for result display) -->
+  <field name="document_name" type="string" multiValued="false" indexed="true" stored="true"/>
+  <!-- Chunk text content -->
+  <field name="chunk_text" type="string" multiValued="false" indexed="false" stored="true"/>
+  <!-- Chunk index within document -->
+  <field name="chunk_index" type="int" multiValued="false" indexed="true" stored="true"/>
+  <!-- ACL-expanded readers list for permission filtering -->
+  <field name="readers" type="string" multiValued="true" indexed="true" stored="true"/>
+
   <dynamicField name="dynamicDate.*" type="date" multiValued="true" indexed="true" stored="true"/>
   <dynamicField name="dynamic.*" type="string" multiValued="true" indexed="true" stored="true"/>
   <dynamicField name="ignored_*" type="ignored"/>

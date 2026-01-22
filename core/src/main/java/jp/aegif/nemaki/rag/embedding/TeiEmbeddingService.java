@@ -12,9 +12,11 @@ import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.ParseException;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.apache.hc.core5.util.Timeout;
@@ -150,7 +152,7 @@ public class TeiEmbeddingService implements EmbeddingService {
                     objectMapper.writeValueAsString(requestBody),
                     ContentType.APPLICATION_JSON));
 
-            return httpClient.execute(httpPost, response -> {
+            try (CloseableHttpResponse response = httpClient.execute(httpPost)) {
                 int statusCode = response.getCode();
                 HttpEntity entity = response.getEntity();
                 String responseBody = entity != null ? EntityUtils.toString(entity) : "";
@@ -164,11 +166,11 @@ public class TeiEmbeddingService implements EmbeddingService {
                     throw new EmbeddingException(
                             "TEI request failed (HTTP " + statusCode + "): " + responseBody);
                 }
-            });
+            }
 
         } catch (SocketTimeoutException e) {
             throw EmbeddingException.timeout("TEI request timed out", e);
-        } catch (IOException e) {
+        } catch (IOException | ParseException e) {
             throw EmbeddingException.connectionError("Failed to connect to TEI service", e);
         }
     }
@@ -213,22 +215,28 @@ public class TeiEmbeddingService implements EmbeddingService {
 
     @Override
     public boolean isHealthy() {
+        log.info("TeiEmbeddingService.isHealthy() called");
+        log.info("ragConfig.isEnabled() = " + ragConfig.isEnabled());
+
         if (!ragConfig.isEnabled()) {
+            log.info("RAG is not enabled, returning false");
             return false;
         }
 
         String url = ragConfig.getTeiUrl() + "/health";
+        log.info("Checking TEI health at URL: " + url);
 
         try {
             HttpGet httpGet = new HttpGet(url);
-            return httpClient.execute(httpGet, response -> {
+            boolean result = httpClient.execute(httpGet, response -> {
                 int statusCode = response.getCode();
+                log.info("TEI health check response code: " + statusCode);
                 return statusCode == 200;
             });
+            log.info("TEI health check result: " + result);
+            return result;
         } catch (IOException e) {
-            if (log.isDebugEnabled()) {
-                log.debug("TEI health check failed: " + e.getMessage());
-            }
+            log.warn("TEI health check failed: " + e.getMessage(), e);
             return false;
         }
     }

@@ -25,6 +25,9 @@ import jp.aegif.nemaki.api.v1.exception.ApiException;
 import jp.aegif.nemaki.api.v1.exception.ProblemDetail;
 import jp.aegif.nemaki.api.v1.model.response.LinkInfo;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService;
+import jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService;
+import jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService.RAGReindexStatus;
+import jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService.RAGHealthStatus;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService.IndexHealthStatus;
@@ -54,7 +57,10 @@ public class SearchEngineResource {
     
     @Autowired
     private SolrIndexMaintenanceService solrIndexMaintenanceService;
-    
+
+    @Autowired
+    private RAGIndexMaintenanceService ragIndexMaintenanceService;
+
     @Context
     private UriInfo uriInfo;
     
@@ -965,6 +971,536 @@ public class SearchEngineResource {
         public void setQueryTime(long queryTime) { this.queryTime = queryTime; }
         public List<Map<String, Object>> getDocs() { return docs; }
         public void setDocs(List<Map<String, Object>> docs) { this.docs = docs; }
+        public Map<String, LinkInfo> getLinks() { return links; }
+        public void setLinks(Map<String, LinkInfo> links) { this.links = links; }
+    }
+
+    // ==================== RAG Endpoints ====================
+
+    @GET
+    @Path("/rag/enabled")
+    @Operation(
+            summary = "Check if RAG is enabled",
+            description = "Returns whether RAG (Retrieval-Augmented Generation) indexing and search is enabled and available"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "RAG enabled status retrieved successfully"
+            )
+    })
+    public Response isRAGEnabled(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId) {
+
+        logger.info("API v1: Checking RAG enabled status for repository " + repositoryId);
+
+        checkAdminAuthorization();
+
+        try {
+            Map<String, Object> response = new HashMap<>();
+            response.put("enabled", ragIndexMaintenanceService.isRAGEnabled());
+            response.put("repositoryId", repositoryId);
+            return Response.ok(response).build();
+        } catch (Exception e) {
+            logger.severe("Error checking RAG enabled status: " + e.getMessage());
+            throw ApiException.internalError("Failed to check RAG enabled status: " + e.getMessage(), e);
+        }
+    }
+
+    @GET
+    @Path("/rag/status")
+    @Operation(
+            summary = "Get RAG reindex status",
+            description = "Returns the current status of any ongoing RAG reindex operation"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "RAG reindex status retrieved successfully",
+                    content = @io.swagger.v3.oas.annotations.media.Content(
+                            mediaType = MediaType.APPLICATION_JSON,
+                            schema = @Schema(implementation = RAGReindexStatusResponse.class)
+                    )
+            )
+    })
+    public Response getRAGReindexStatus(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId) {
+
+        logger.info("API v1: Getting RAG reindex status for repository " + repositoryId);
+
+        checkAdminAuthorization();
+
+        try {
+            RAGReindexStatus status = ragIndexMaintenanceService.getRAGReindexStatus(repositoryId);
+            RAGReindexStatusResponse response = new RAGReindexStatusResponse();
+            response.setRepositoryId(status.getRepositoryId());
+            response.setStatus(status.getStatus());
+            response.setTotalDocuments(status.getTotalDocuments());
+            response.setIndexedCount(status.getIndexedCount());
+            response.setSkippedCount(status.getSkippedCount());
+            response.setErrorCount(status.getErrorCount());
+            response.setStartTime(status.getStartTime());
+            response.setEndTime(status.getEndTime());
+            response.setCurrentDocument(status.getCurrentDocument());
+            response.setErrorMessage(status.getErrorMessage());
+            response.setErrors(status.getErrors());
+
+            Map<String, LinkInfo> links = new HashMap<>();
+            links.put("self", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/status"));
+            links.put("health", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/health"));
+            links.put("reindex", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/reindex"));
+            response.setLinks(links);
+
+            return Response.ok(response).build();
+        } catch (Exception e) {
+            logger.severe("Error getting RAG reindex status: " + e.getMessage());
+            throw ApiException.internalError("Failed to get RAG reindex status: " + e.getMessage(), e);
+        }
+    }
+
+    @GET
+    @Path("/rag/health")
+    @Operation(
+            summary = "Check RAG index health",
+            description = "Performs a health check on the RAG index, showing document and chunk counts"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "RAG health check completed successfully",
+                    content = @io.swagger.v3.oas.annotations.media.Content(
+                            mediaType = MediaType.APPLICATION_JSON,
+                            schema = @Schema(implementation = RAGHealthResponse.class)
+                    )
+            )
+    })
+    public Response checkRAGHealth(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId) {
+
+        logger.info("API v1: Checking RAG health for repository " + repositoryId);
+
+        checkAdminAuthorization();
+
+        try {
+            RAGHealthStatus healthStatus = ragIndexMaintenanceService.checkRAGHealth(repositoryId);
+            RAGHealthResponse response = new RAGHealthResponse();
+            response.setRepositoryId(healthStatus.getRepositoryId());
+            response.setRagDocumentCount(healthStatus.getRagDocumentCount());
+            response.setRagChunkCount(healthStatus.getRagChunkCount());
+            response.setEligibleDocuments(healthStatus.getEligibleDocuments());
+            response.setEnabled(healthStatus.isEnabled());
+            response.setHealthy(healthStatus.isHealthy());
+            response.setMessage(healthStatus.getMessage());
+            response.setCheckTime(healthStatus.getCheckTime());
+
+            Map<String, LinkInfo> links = new HashMap<>();
+            links.put("self", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/health"));
+            links.put("status", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/status"));
+            links.put("reindex", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/reindex"));
+            response.setLinks(links);
+
+            return Response.ok(response).build();
+        } catch (Exception e) {
+            logger.severe("Error checking RAG health: " + e.getMessage());
+            throw ApiException.internalError("Failed to check RAG health: " + e.getMessage(), e);
+        }
+    }
+
+    @POST
+    @Path("/rag/reindex")
+    @Operation(
+            summary = "Start full RAG reindex",
+            description = "Starts a full RAG reindex operation for all documents in the repository. " +
+                    "The operation runs asynchronously. Use the status endpoint to monitor progress."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "RAG reindex started successfully",
+                    content = @io.swagger.v3.oas.annotations.media.Content(
+                            mediaType = MediaType.APPLICATION_JSON,
+                            schema = @Schema(implementation = OperationResponse.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "409",
+                    description = "Reindex already in progress"
+            ),
+            @ApiResponse(
+                    responseCode = "503",
+                    description = "RAG is not enabled"
+            )
+    })
+    public Response startFullRAGReindex(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId) {
+
+        logger.info("API v1: Starting full RAG reindex for repository " + repositoryId);
+
+        checkAdminAuthorization();
+
+        try {
+            if (!ragIndexMaintenanceService.isRAGEnabled()) {
+                throw ApiException.serviceUnavailable("RAG is not enabled or available");
+            }
+
+            boolean started = ragIndexMaintenanceService.startFullRAGReindex(repositoryId);
+
+            OperationResponse response = new OperationResponse();
+            response.setRepositoryId(repositoryId);
+
+            if (started) {
+                response.setSuccess(true);
+                response.setMessage("RAG reindex started successfully");
+            } else {
+                response.setSuccess(false);
+                response.setMessage("RAG reindex is already running");
+            }
+
+            Map<String, LinkInfo> links = new HashMap<>();
+            links.put("status", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/status"));
+            links.put("cancel", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/cancel"));
+            response.setLinks(links);
+
+            return Response.ok(response).build();
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.severe("Error starting RAG reindex: " + e.getMessage());
+            throw ApiException.internalError("Failed to start RAG reindex: " + e.getMessage(), e);
+        }
+    }
+
+    @POST
+    @Path("/rag/reindex/folder/{folderId}")
+    @Operation(
+            summary = "Start folder RAG reindex",
+            description = "Starts a RAG reindex operation for all documents in the specified folder. " +
+                    "The operation runs asynchronously."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Folder RAG reindex started successfully",
+                    content = @io.swagger.v3.oas.annotations.media.Content(
+                            mediaType = MediaType.APPLICATION_JSON,
+                            schema = @Schema(implementation = OperationResponse.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "409",
+                    description = "Reindex already in progress"
+            ),
+            @ApiResponse(
+                    responseCode = "503",
+                    description = "RAG is not enabled"
+            )
+    })
+    public Response startFolderRAGReindex(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId,
+            @Parameter(description = "Folder ID to reindex", required = true)
+            @PathParam("folderId") String folderId,
+            @Parameter(description = "Whether to include subfolders")
+            @QueryParam("recursive") @DefaultValue("true") boolean recursive) {
+
+        logger.info("API v1: Starting folder RAG reindex for repository " + repositoryId + ", folder " + folderId);
+
+        checkAdminAuthorization();
+
+        try {
+            if (!ragIndexMaintenanceService.isRAGEnabled()) {
+                throw ApiException.serviceUnavailable("RAG is not enabled or available");
+            }
+
+            boolean started = ragIndexMaintenanceService.startFolderRAGReindex(repositoryId, folderId, recursive);
+
+            OperationResponse response = new OperationResponse();
+            response.setRepositoryId(repositoryId);
+            response.setFolderId(folderId);
+            response.setRecursive(recursive);
+
+            if (started) {
+                response.setSuccess(true);
+                response.setMessage("Folder RAG reindex started successfully");
+            } else {
+                response.setSuccess(false);
+                response.setMessage("RAG reindex is already running");
+            }
+
+            Map<String, LinkInfo> links = new HashMap<>();
+            links.put("status", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/status"));
+            links.put("cancel", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/cancel"));
+            response.setLinks(links);
+
+            return Response.ok(response).build();
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.severe("Error starting folder RAG reindex: " + e.getMessage());
+            throw ApiException.internalError("Failed to start folder RAG reindex: " + e.getMessage(), e);
+        }
+    }
+
+    @POST
+    @Path("/rag/cancel")
+    @Operation(
+            summary = "Cancel RAG reindex",
+            description = "Cancels a running RAG reindex operation"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "RAG reindex cancelled successfully"
+            )
+    })
+    public Response cancelRAGReindex(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId) {
+
+        logger.info("API v1: Cancelling RAG reindex for repository " + repositoryId);
+
+        checkAdminAuthorization();
+
+        try {
+            boolean cancelled = ragIndexMaintenanceService.cancelRAGReindex(repositoryId);
+
+            OperationResponse response = new OperationResponse();
+            response.setRepositoryId(repositoryId);
+
+            if (cancelled) {
+                response.setSuccess(true);
+                response.setMessage("RAG reindex cancelled");
+            } else {
+                response.setSuccess(false);
+                response.setMessage("No RAG reindex operation to cancel");
+            }
+
+            Map<String, LinkInfo> links = new HashMap<>();
+            links.put("status", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/status"));
+            response.setLinks(links);
+
+            return Response.ok(response).build();
+        } catch (Exception e) {
+            logger.severe("Error cancelling RAG reindex: " + e.getMessage());
+            throw ApiException.internalError("Failed to cancel RAG reindex: " + e.getMessage(), e);
+        }
+    }
+
+    @POST
+    @Path("/rag/clear")
+    @Operation(
+            summary = "Clear RAG index",
+            description = "Clears all RAG index data for the repository"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "RAG index cleared successfully"
+            )
+    })
+    public Response clearRAGIndex(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId) {
+
+        logger.info("API v1: Clearing RAG index for repository " + repositoryId);
+
+        checkAdminAuthorization();
+
+        try {
+            boolean cleared = ragIndexMaintenanceService.clearRAGIndex(repositoryId);
+
+            OperationResponse response = new OperationResponse();
+            response.setRepositoryId(repositoryId);
+
+            if (cleared) {
+                response.setSuccess(true);
+                response.setMessage("RAG index cleared successfully");
+            } else {
+                response.setSuccess(false);
+                response.setMessage("Failed to clear RAG index");
+            }
+
+            Map<String, LinkInfo> links = new HashMap<>();
+            links.put("health", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/health"));
+            links.put("reindex", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/reindex"));
+            response.setLinks(links);
+
+            return Response.ok(response).build();
+        } catch (Exception e) {
+            logger.severe("Error clearing RAG index: " + e.getMessage());
+            throw ApiException.internalError("Failed to clear RAG index: " + e.getMessage(), e);
+        }
+    }
+
+    @POST
+    @Path("/rag/reindex/document/{objectId}")
+    @Operation(
+            summary = "RAG reindex single document",
+            description = "Reindexes a single document in the RAG index"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Document RAG reindexed successfully"
+            )
+    })
+    public Response reindexDocumentRAG(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId,
+            @Parameter(description = "Document object ID to reindex", required = true)
+            @PathParam("objectId") String objectId) {
+
+        logger.info("API v1: RAG reindexing document " + objectId + " in repository " + repositoryId);
+
+        checkAdminAuthorization();
+
+        try {
+            if (!ragIndexMaintenanceService.isRAGEnabled()) {
+                throw ApiException.serviceUnavailable("RAG is not enabled or available");
+            }
+
+            boolean reindexed = ragIndexMaintenanceService.reindexDocument(repositoryId, objectId);
+
+            OperationResponse response = new OperationResponse();
+            response.setRepositoryId(repositoryId);
+            response.setObjectId(objectId);
+
+            if (reindexed) {
+                response.setSuccess(true);
+                response.setMessage("Document RAG reindexed successfully");
+            } else {
+                response.setSuccess(false);
+                response.setMessage("Failed to RAG reindex document (may be a folder or unsupported type)");
+            }
+
+            Map<String, LinkInfo> links = new HashMap<>();
+            links.put("health", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/rag/health"));
+            response.setLinks(links);
+
+            return Response.ok(response).build();
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.severe("Error RAG reindexing document: " + e.getMessage());
+            throw ApiException.internalError("Failed to RAG reindex document: " + e.getMessage(), e);
+        }
+    }
+
+    // ==================== RAG Response DTOs ====================
+
+    @Schema(description = "RAG reindex status response")
+    public static class RAGReindexStatusResponse {
+        @Schema(description = "Repository ID")
+        private String repositoryId;
+
+        @Schema(description = "Status of the reindex operation (idle, running, completed, error, cancelled)")
+        private String status;
+
+        @Schema(description = "Total number of documents to process")
+        private long totalDocuments;
+
+        @Schema(description = "Number of documents indexed")
+        private long indexedCount;
+
+        @Schema(description = "Number of documents skipped (unsupported MIME type)")
+        private long skippedCount;
+
+        @Schema(description = "Number of errors")
+        private long errorCount;
+
+        @Schema(description = "Start time (epoch millis)")
+        private long startTime;
+
+        @Schema(description = "End time (epoch millis)")
+        private long endTime;
+
+        @Schema(description = "Currently processing document")
+        private String currentDocument;
+
+        @Schema(description = "Error message if status is error")
+        private String errorMessage;
+
+        @Schema(description = "List of error messages")
+        private List<String> errors;
+
+        @Schema(description = "HATEOAS links")
+        private Map<String, LinkInfo> links;
+
+        public String getRepositoryId() { return repositoryId; }
+        public void setRepositoryId(String repositoryId) { this.repositoryId = repositoryId; }
+        public String getStatus() { return status; }
+        public void setStatus(String status) { this.status = status; }
+        public long getTotalDocuments() { return totalDocuments; }
+        public void setTotalDocuments(long totalDocuments) { this.totalDocuments = totalDocuments; }
+        public long getIndexedCount() { return indexedCount; }
+        public void setIndexedCount(long indexedCount) { this.indexedCount = indexedCount; }
+        public long getSkippedCount() { return skippedCount; }
+        public void setSkippedCount(long skippedCount) { this.skippedCount = skippedCount; }
+        public long getErrorCount() { return errorCount; }
+        public void setErrorCount(long errorCount) { this.errorCount = errorCount; }
+        public long getStartTime() { return startTime; }
+        public void setStartTime(long startTime) { this.startTime = startTime; }
+        public long getEndTime() { return endTime; }
+        public void setEndTime(long endTime) { this.endTime = endTime; }
+        public String getCurrentDocument() { return currentDocument; }
+        public void setCurrentDocument(String currentDocument) { this.currentDocument = currentDocument; }
+        public String getErrorMessage() { return errorMessage; }
+        public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+        public List<String> getErrors() { return errors; }
+        public void setErrors(List<String> errors) { this.errors = errors; }
+        public Map<String, LinkInfo> getLinks() { return links; }
+        public void setLinks(Map<String, LinkInfo> links) { this.links = links; }
+    }
+
+    @Schema(description = "RAG health response")
+    public static class RAGHealthResponse {
+        @Schema(description = "Repository ID")
+        private String repositoryId;
+
+        @Schema(description = "Number of documents with RAG vectors")
+        private long ragDocumentCount;
+
+        @Schema(description = "Total number of chunks in RAG index")
+        private long ragChunkCount;
+
+        @Schema(description = "Number of documents eligible for RAG indexing")
+        private long eligibleDocuments;
+
+        @Schema(description = "Whether RAG is enabled")
+        private boolean enabled;
+
+        @Schema(description = "Whether the RAG index is healthy")
+        private boolean healthy;
+
+        @Schema(description = "Health check message")
+        private String message;
+
+        @Schema(description = "Time of the health check (epoch millis)")
+        private long checkTime;
+
+        @Schema(description = "HATEOAS links")
+        private Map<String, LinkInfo> links;
+
+        public String getRepositoryId() { return repositoryId; }
+        public void setRepositoryId(String repositoryId) { this.repositoryId = repositoryId; }
+        public long getRagDocumentCount() { return ragDocumentCount; }
+        public void setRagDocumentCount(long ragDocumentCount) { this.ragDocumentCount = ragDocumentCount; }
+        public long getRagChunkCount() { return ragChunkCount; }
+        public void setRagChunkCount(long ragChunkCount) { this.ragChunkCount = ragChunkCount; }
+        public long getEligibleDocuments() { return eligibleDocuments; }
+        public void setEligibleDocuments(long eligibleDocuments) { this.eligibleDocuments = eligibleDocuments; }
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public boolean isHealthy() { return healthy; }
+        public void setHealthy(boolean healthy) { this.healthy = healthy; }
+        public String getMessage() { return message; }
+        public void setMessage(String message) { this.message = message; }
+        public long getCheckTime() { return checkTime; }
+        public void setCheckTime(long checkTime) { this.checkTime = checkTime; }
         public Map<String, LinkInfo> getLinks() { return links; }
         public void setLinks(Map<String, LinkInfo> links) { this.links = links; }
     }

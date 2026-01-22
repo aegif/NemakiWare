@@ -14,8 +14,8 @@ import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.GroupItem;
-import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.model.Group;
+import jp.aegif.nemaki.model.User;
 
 /**
  * ACL Expander for RAG indexing.
@@ -96,9 +96,9 @@ public class ACLExpander {
         // If no readers found, default to admin only
         if (readers.isEmpty()) {
             // Get admin users
-            List<UserItem> admins = principalService.getAdmins(repositoryId);
+            List<User> admins = principalService.getAdmins(repositoryId);
             if (admins != null) {
-                for (UserItem admin : admins) {
+                for (User admin : admins) {
                     readers.add(PREFIX_USER + admin.getUserId());
                 }
             }
@@ -147,14 +147,14 @@ public class ACLExpander {
         }
 
         // Check if it's a user
-        UserItem user = principalService.getUserById(repositoryId, principalId);
+        User user = principalService.getUserById(repositoryId, principalId);
         if (user != null) {
             readers.add(PREFIX_USER + principalId);
             return;
         }
 
         // Check if it's a group
-        GroupItem group = principalService.getGroupById(repositoryId, principalId);
+        Group group = principalService.getGroupById(repositoryId, principalId);
         if (group != null) {
             readers.add(PREFIX_GROUP + principalId);
 
@@ -167,7 +167,7 @@ public class ACLExpander {
      * Recursively expand group members.
      * Includes all users in the group and nested subgroups.
      */
-    private void expandGroupMembers(String repositoryId, GroupItem group, Set<String> readers) {
+    private void expandGroupMembers(String repositoryId, Group group, Set<String> readers) {
         if (group == null) {
             return;
         }
@@ -176,12 +176,12 @@ public class ACLExpander {
         if (memberIds != null) {
             for (String memberId : memberIds) {
                 // Check if member is a user
-                UserItem user = principalService.getUserById(repositoryId, memberId);
+                User user = principalService.getUserById(repositoryId, memberId);
                 if (user != null) {
                     readers.add(PREFIX_USER + memberId);
                 } else {
                     // Check if member is a subgroup
-                    GroupItem subgroup = principalService.getGroupById(repositoryId, memberId);
+                    Group subgroup = principalService.getGroupById(repositoryId, memberId);
                     if (subgroup != null && !readers.contains(PREFIX_GROUP + memberId)) {
                         readers.add(PREFIX_GROUP + memberId);
                         // Recursively expand subgroup
@@ -210,6 +210,9 @@ public class ACLExpander {
      * Build a Solr filter query for the given user.
      * Includes the user, their groups, and "anyone".
      *
+     * Values containing colons are quoted to prevent Solr from interpreting
+     * them as field:value queries.
+     *
      * @param repositoryId Repository ID
      * @param userId User ID
      * @return Solr filter query string
@@ -218,17 +221,17 @@ public class ACLExpander {
         StringBuilder query = new StringBuilder();
         query.append("readers:(");
 
-        // Always include "anyone"
+        // Always include "anyone" (no colon, doesn't need quoting)
         query.append(READER_ANYONE);
 
-        // Include user
-        query.append(" OR ").append(PREFIX_USER).append(userId);
+        // Include user (quoted because it contains colon)
+        query.append(" OR \"").append(PREFIX_USER).append(userId).append("\"");
 
-        // Include user's groups
-        List<String> groupIds = principalService.getGroupIdsContainingUser(repositoryId, userId);
+        // Include user's groups (quoted because they contain colons)
+        Set<String> groupIds = principalService.getGroupIdsContainingUser(repositoryId, userId);
         if (groupIds != null) {
             for (String groupId : groupIds) {
-                query.append(" OR ").append(PREFIX_GROUP).append(groupId);
+                query.append(" OR \"").append(PREFIX_GROUP).append(groupId).append("\"");
             }
         }
 

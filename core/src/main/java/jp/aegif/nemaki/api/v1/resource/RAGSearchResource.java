@@ -31,7 +31,6 @@ import jp.aegif.nemaki.rag.search.VectorSearchService;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
 import java.util.List;
@@ -43,8 +42,12 @@ import java.util.logging.Logger;
  *
  * Provides vector-based semantic search capabilities for NemakiWare documents.
  * Uses dense vector embeddings for similarity search with ACL filtering.
+ * Supports weighted search combining property and content similarity.
+ *
+ * Note: This resource is discovered by Jersey package scanning and Spring-managed
+ * via Jersey-Spring integration. Do NOT add @Component annotation to avoid duplicate
+ * bean issues.
  */
-@Component
 @Path("/repositories/{repositoryId}/rag")
 @Tag(name = "rag", description = "RAG semantic search operations")
 @Produces(MediaType.APPLICATION_JSON)
@@ -70,7 +73,8 @@ public class RAGSearchResource {
     @Operation(
             summary = "Semantic search",
             description = "Performs semantic search using vector embeddings. " +
-                    "Finds documents similar in meaning to the query text, not just keyword matches."
+                    "Finds documents similar in meaning to the query text, not just keyword matches. " +
+                    "Supports weighted search combining property (metadata) and content similarity."
     )
     @ApiResponses(value = {
             @ApiResponse(
@@ -104,17 +108,20 @@ public class RAGSearchResource {
             @Parameter(description = "Search request", required = true)
             RAGSearchRequest request) {
 
+        logger.info("=== RAG Search called ===");
+        logger.info("Repository: " + repositoryId);
+        logger.info("Query: " + (request != null ? request.getQuery() : "null"));
+        logger.info("VectorSearchService: " + (vectorSearchService != null ? "present" : "null"));
+
         try {
             validateRepository(repositoryId);
 
             if (!vectorSearchService.isEnabled()) {
-                throw new ApiException(503, "RAG_NOT_AVAILABLE",
-                        "RAG semantic search is not available");
+                throw ApiException.serviceUnavailable("RAG semantic search is not available");
             }
 
             if (request == null || request.getQuery() == null || request.getQuery().trim().isEmpty()) {
-                throw new ApiException(400, "INVALID_REQUEST",
-                        "Query text is required");
+                throw ApiException.invalidArgument("Query text is required");
             }
 
             // Get current user
@@ -130,6 +137,12 @@ public class RAGSearchResource {
             if (request.getFolderId() != null && !request.getFolderId().isEmpty()) {
                 results = vectorSearchService.searchInFolder(
                         repositoryId, userId, request.getQuery(), request.getFolderId(), topK);
+            } else if (hasCustomBoost(request)) {
+                // Use weighted search with custom boost values
+                float propertyBoost = request.getPropertyBoost() != null ? request.getPropertyBoost() : 0.3f;
+                float contentBoost = request.getContentBoost() != null ? request.getContentBoost() : 0.7f;
+                results = vectorSearchService.searchWithBoost(
+                        repositoryId, userId, request.getQuery(), topK, minScore, propertyBoost, contentBoost);
             } else {
                 results = vectorSearchService.search(
                         repositoryId, userId, request.getQuery(), topK, minScore);
@@ -147,12 +160,10 @@ public class RAGSearchResource {
             throw e;
         } catch (VectorSearchException e) {
             logger.warning("Vector search failed: " + e.getMessage());
-            throw new ApiException(500, "SEARCH_ERROR",
-                    "Vector search failed: " + e.getMessage());
+            throw ApiException.internalError("Vector search failed: " + e.getMessage());
         } catch (Exception e) {
-            logger.severe("Unexpected error in RAG search: " + e.getMessage());
-            throw new ApiException(500, "INTERNAL_ERROR",
-                    "An unexpected error occurred");
+            logger.log(java.util.logging.Level.SEVERE, "Unexpected error in RAG search", e);
+            throw ApiException.internalError("An unexpected error occurred");
         }
     }
 
@@ -160,7 +171,8 @@ public class RAGSearchResource {
     @Path("/search")
     @Operation(
             summary = "Semantic search (GET)",
-            description = "Performs semantic search using query parameters"
+            description = "Performs semantic search using query parameters. " +
+                    "Supports weighted search with propertyBoost and contentBoost parameters."
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Search results"),
@@ -177,13 +189,19 @@ public class RAGSearchResource {
             @Parameter(description = "Minimum similarity score (0.0-1.0)")
             @QueryParam("minScore") @DefaultValue("0.7") float minScore,
             @Parameter(description = "Folder ID to search within")
-            @QueryParam("folderId") String folderId) {
+            @QueryParam("folderId") String folderId,
+            @Parameter(description = "Property boost factor (0.0-1.0, higher = more weight on metadata)")
+            @QueryParam("propertyBoost") Float propertyBoost,
+            @Parameter(description = "Content boost factor (0.0-1.0, higher = more weight on body content)")
+            @QueryParam("contentBoost") Float contentBoost) {
 
         RAGSearchRequest request = new RAGSearchRequest();
         request.setQuery(query);
         request.setTopK(topK);
         request.setMinScore(minScore);
         request.setFolderId(folderId);
+        request.setPropertyBoost(propertyBoost);
+        request.setContentBoost(contentBoost);
 
         return search(repositoryId, request);
     }
@@ -204,17 +222,20 @@ public class RAGSearchResource {
         return Response.ok(health).build();
     }
 
+    private boolean hasCustomBoost(RAGSearchRequest request) {
+        return request.getPropertyBoost() != null || request.getContentBoost() != null;
+    }
+
     private void validateRepository(String repositoryId) {
         try {
-            repositoryService.getRepositoryInfo(repositoryId, null);
+            repositoryService.getRepositoryInfo(repositoryId);
         } catch (Exception e) {
-            throw new ApiException(404, "REPOSITORY_NOT_FOUND",
-                    "Repository not found: " + repositoryId);
+            throw ApiException.repositoryNotFound(repositoryId);
         }
     }
 
     private CallContext getCallContext() {
-        return (CallContext) httpRequest.getAttribute("callContext");
+        return (CallContext) httpRequest.getAttribute("CallContext");
     }
 
     // Request/Response DTOs
@@ -232,6 +253,12 @@ public class RAGSearchResource {
 
         @Schema(description = "Folder ID to restrict search scope")
         private String folderId;
+
+        @Schema(description = "Property boost factor (0.0-1.0). Higher values give more weight to document metadata (name, description). Default: 0.3")
+        private Float propertyBoost;
+
+        @Schema(description = "Content boost factor (0.0-1.0). Higher values give more weight to document body content. Default: 0.7")
+        private Float contentBoost;
 
         public String getQuery() {
             return query;
@@ -263,6 +290,22 @@ public class RAGSearchResource {
 
         public void setFolderId(String folderId) {
             this.folderId = folderId;
+        }
+
+        public Float getPropertyBoost() {
+            return propertyBoost;
+        }
+
+        public void setPropertyBoost(Float propertyBoost) {
+            this.propertyBoost = propertyBoost;
+        }
+
+        public Float getContentBoost() {
+            return contentBoost;
+        }
+
+        public void setContentBoost(Float contentBoost) {
+            this.contentBoost = contentBoost;
         }
     }
 

@@ -50,6 +50,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { SolrMaintenanceService, ReindexStatus, IndexHealthStatus, SolrQueryResult } from '../../services/solrMaintenance';
+import { RAGMaintenanceService, RAGReindexStatus, RAGHealthStatus, RAGSearchResult } from '../../services/ragMaintenance';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -69,8 +70,18 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
   const [folderIdInput, setFolderIdInput] = useState<string>('');
   const [recursiveReindex, setRecursiveReindex] = useState<boolean>(true);
 
+  // RAG state
+  const [ragHealthStatus, setRagHealthStatus] = useState<RAGHealthStatus | null>(null);
+  const [ragReindexStatus, setRagReindexStatus] = useState<RAGReindexStatus | null>(null);
+  const [ragSearchResults, setRagSearchResults] = useState<RAGSearchResult[]>([]);
+  const [ragSearchForm] = Form.useForm();
+  const [ragFolderIdInput, setRagFolderIdInput] = useState<string>('');
+  const [ragRecursiveReindex, setRagRecursiveReindex] = useState<boolean>(true);
+  const [ragLoading, setRagLoading] = useState(false);
+
   const { handleAuthError } = useAuth();
   const service = new SolrMaintenanceService(() => handleAuthError(null));
+  const ragService = new RAGMaintenanceService(() => handleAuthError(null));
 
   const loadSolrUrl = useCallback(async () => {
     try {
@@ -109,11 +120,13 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     loadSolrUrl();
     loadHealthStatus();
     loadReindexStatus();
-  }, [repositoryId, loadSolrUrl, loadHealthStatus, loadReindexStatus]);
+    loadRagHealthStatus();
+    loadRagReindexStatus();
+  }, [repositoryId, loadSolrUrl, loadHealthStatus, loadReindexStatus, loadRagHealthStatus, loadRagReindexStatus]);
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
-    
+
     if (reindexStatus?.status === 'running') {
       intervalId = setInterval(async () => {
         const status = await loadReindexStatus();
@@ -132,6 +145,29 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       }
     };
   }, [reindexStatus?.status, loadReindexStatus, loadHealthStatus]);
+
+  // RAG reindex status polling
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    if (ragReindexStatus?.status === 'running') {
+      intervalId = setInterval(async () => {
+        const status = await loadRagReindexStatus();
+        if (status && status.status !== 'running') {
+          if (intervalId) {
+            clearInterval(intervalId);
+          }
+          loadRagHealthStatus();
+        }
+      }, 2000);
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [ragReindexStatus?.status, loadRagReindexStatus, loadRagHealthStatus]);
 
   const handleFullReindex = async () => {
     try {
@@ -208,6 +244,103 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       message.error(`${t('solrMaintenance.messages.queryError')}: ${errorMessage}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // RAG handlers
+  const loadRagHealthStatus = useCallback(async () => {
+    setRagLoading(true);
+    try {
+      const status = await ragService.checkRAGHealth(repositoryId);
+      setRagHealthStatus(status);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('ragMaintenance.messages.healthCheckError')}: ${errorMessage}`);
+    } finally {
+      setRagLoading(false);
+    }
+  }, [repositoryId, t]);
+
+  const loadRagReindexStatus = useCallback(async () => {
+    try {
+      const status = await ragService.getRAGReindexStatus(repositoryId);
+      setRagReindexStatus(status);
+      return status;
+    } catch (error: unknown) {
+      console.error('Failed to load RAG reindex status:', error);
+      return null;
+    }
+  }, [repositoryId]);
+
+  const handleFullRagReindex = async () => {
+    try {
+      await ragService.startFullRAGReindex(repositoryId);
+      message.success(t('ragMaintenance.messages.fullReindexStarted'));
+      loadRagReindexStatus();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('ragMaintenance.messages.fullReindexError')}: ${errorMessage}`);
+    }
+  };
+
+  const handleFolderRagReindex = async () => {
+    if (!ragFolderIdInput.trim()) {
+      message.warning(t('ragMaintenance.messages.folderIdRequired'));
+      return;
+    }
+    try {
+      await ragService.startFolderRAGReindex(repositoryId, ragFolderIdInput.trim(), ragRecursiveReindex);
+      message.success(t('ragMaintenance.messages.folderReindexStarted'));
+      loadRagReindexStatus();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('ragMaintenance.messages.folderReindexError')}: ${errorMessage}`);
+    }
+  };
+
+  const handleCancelRagReindex = async () => {
+    try {
+      await ragService.cancelRAGReindex(repositoryId);
+      message.success(t('ragMaintenance.messages.reindexCancelled'));
+      loadRagReindexStatus();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('ragMaintenance.messages.cancelError')}: ${errorMessage}`);
+    }
+  };
+
+  const handleClearRagIndex = async () => {
+    try {
+      await ragService.clearRAGIndex(repositoryId);
+      message.success(t('ragMaintenance.messages.indexCleared'));
+      loadRagHealthStatus();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('ragMaintenance.messages.clearError')}: ${errorMessage}`);
+    }
+  };
+
+  const handleRagSearch = async (values: { query: string; topK: number; minScore: number; propertyBoost?: number; contentBoost?: number }) => {
+    setRagLoading(true);
+    try {
+      const result = await ragService.search(
+        repositoryId,
+        values.query,
+        values.topK || 10,
+        values.minScore || 0.7,
+        undefined,
+        values.propertyBoost,
+        values.contentBoost
+      );
+      setRagSearchResults(result.results);
+      if (result.results.length === 0) {
+        message.info(t('ragMaintenance.search.noResults'));
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('ragMaintenance.messages.searchError')}: ${errorMessage}`);
+    } finally {
+      setRagLoading(false);
     }
   };
 
@@ -583,6 +716,274 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     </Card>
   );
 
+  // RAG render functions
+  const renderRagHealthStatus = () => {
+    if (!ragHealthStatus) {
+      return <Spin />;
+    }
+
+    return (
+      <Card title={t('ragMaintenance.healthCheck.title')} extra={
+        <Button icon={<ReloadOutlined />} onClick={loadRagHealthStatus} loading={ragLoading}>
+          {t('ragMaintenance.healthCheck.refresh')}
+        </Button>
+      }>
+        <Row gutter={16}>
+          <Col span={6}>
+            <Statistic
+              title={t('ragMaintenance.healthCheck.ragEnabled')}
+              value={ragHealthStatus.enabled ? t('ragMaintenance.healthCheck.available') : t('ragMaintenance.healthCheck.unavailable')}
+              valueStyle={{ color: ragHealthStatus.enabled ? '#3f8600' : '#cf1322' }}
+            />
+          </Col>
+          <Col span={6}>
+            <Statistic
+              title={t('ragMaintenance.healthCheck.documentCount')}
+              value={ragHealthStatus.ragDocumentCount}
+            />
+          </Col>
+          <Col span={6}>
+            <Statistic
+              title={t('ragMaintenance.healthCheck.chunkCount')}
+              value={ragHealthStatus.ragChunkCount}
+            />
+          </Col>
+          <Col span={6}>
+            <Statistic
+              title="Eligible Documents"
+              value={ragHealthStatus.eligibleDocuments}
+            />
+          </Col>
+        </Row>
+        <div style={{ marginTop: 16 }}>
+          {ragHealthStatus.healthy ? (
+            <Alert message={t('ragMaintenance.healthCheck.healthy')} type="success" showIcon />
+          ) : (
+            <Alert message={ragHealthStatus.message || t('ragMaintenance.healthCheck.unhealthy')} type="warning" showIcon />
+          )}
+        </div>
+      </Card>
+    );
+  };
+
+  const renderRagReindexStatus = () => {
+    if (!ragReindexStatus) {
+      return null;
+    }
+
+    const progress = ragReindexStatus.totalDocuments > 0
+      ? Math.round((ragReindexStatus.indexedCount / ragReindexStatus.totalDocuments) * 100)
+      : 0;
+
+    return (
+      <Card title={t('ragMaintenance.reindexStatus.title')} style={{ marginTop: 16 }}>
+        <Descriptions column={2}>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.status')}>{getStatusTag(ragReindexStatus.status)}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.currentFolder')}>{ragReindexStatus.currentFolder || '-'}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.totalDocuments')}>{ragReindexStatus.totalDocuments}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.indexed')}>{ragReindexStatus.indexedCount}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.errorCount')}>{ragReindexStatus.errorCount}</Descriptions.Item>
+          <Descriptions.Item label={t('ragMaintenance.reindexStatus.errorMessage')}>{ragReindexStatus.errorMessage || '-'}</Descriptions.Item>
+        </Descriptions>
+        {ragReindexStatus.status === 'running' && (
+          <div style={{ marginTop: 16 }}>
+            <Progress percent={progress} status="active" />
+            <Button
+              danger
+              icon={<StopOutlined />}
+              onClick={handleCancelRagReindex}
+              style={{ marginTop: 8 }}
+            >
+              {t('ragMaintenance.reindexStatus.cancel')}
+            </Button>
+          </div>
+        )}
+        {ragReindexStatus.errors && ragReindexStatus.errors.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <Collapse
+              items={[
+                {
+                  key: 'errors',
+                  label: t('ragMaintenance.reindexStatus.errorDetails', { count: ragReindexStatus.errors.length }),
+                  children: (
+                    <List
+                      size="small"
+                      dataSource={ragReindexStatus.errors}
+                      renderItem={(error: string, index: number) => (
+                        <List.Item>
+                          <Text type="danger" style={{ fontSize: '12px' }}>
+                            {index + 1}. {error}
+                          </Text>
+                        </List.Item>
+                      )}
+                      style={{ maxHeight: '300px', overflow: 'auto' }}
+                    />
+                  ),
+                },
+              ]}
+            />
+          </div>
+        )}
+      </Card>
+    );
+  };
+
+  const renderRagReindexActions = () => (
+    <Card title={t('ragMaintenance.reindexActions.title')} style={{ marginTop: 16 }}>
+      <Space direction="vertical" style={{ width: '100%' }}>
+        <div>
+          <Text strong>{t('ragMaintenance.reindexActions.fullReindex')}</Text>
+          <p style={{ color: '#666', marginBottom: 8 }}>
+            {t('ragMaintenance.reindexActions.fullReindexDesc')}
+          </p>
+          <Popconfirm
+            title={t('ragMaintenance.reindexActions.fullReindexConfirm')}
+            description={t('ragMaintenance.reindexActions.fullReindexConfirmDesc')}
+            onConfirm={handleFullRagReindex}
+            okText={t('ragMaintenance.reindexActions.execute')}
+            cancelText={t('common.cancel')}
+          >
+            <Button
+              type="primary"
+              icon={<SyncOutlined />}
+              disabled={ragReindexStatus?.status === 'running'}
+            >
+              {t('ragMaintenance.reindexActions.fullReindex')}
+            </Button>
+          </Popconfirm>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <Text strong>{t('ragMaintenance.reindexActions.folderReindex')}</Text>
+          <p style={{ color: '#666', marginBottom: 8 }}>
+            {t('ragMaintenance.reindexActions.folderReindexDesc')}
+          </p>
+          <Space>
+            <Input
+              placeholder={t('ragMaintenance.reindexActions.folderId')}
+              value={ragFolderIdInput}
+              onChange={(e) => setRagFolderIdInput(e.target.value)}
+              style={{ width: 300 }}
+            />
+            <label>
+              <input
+                type="checkbox"
+                checked={ragRecursiveReindex}
+                onChange={(e) => setRagRecursiveReindex(e.target.checked)}
+              />
+              {' '}{t('ragMaintenance.reindexActions.includeSubfolders')}
+            </label>
+            <Button
+              icon={<FolderOutlined />}
+              onClick={handleFolderRagReindex}
+              disabled={ragReindexStatus?.status === 'running'}
+            >
+              {t('ragMaintenance.reindexActions.folderReindexButton')}
+            </Button>
+          </Space>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <Text strong>{t('ragMaintenance.reindexActions.indexManagement')}</Text>
+          <p style={{ color: '#666', marginBottom: 8 }}>
+            {t('ragMaintenance.reindexActions.indexManagementDesc')}
+          </p>
+          <Popconfirm
+            title={t('ragMaintenance.reindexActions.clearIndexConfirm')}
+            description={t('ragMaintenance.reindexActions.clearIndexConfirmDesc')}
+            onConfirm={handleClearRagIndex}
+            okText={t('common.clear')}
+            cancelText={t('common.cancel')}
+          >
+            <Button danger icon={<ClearOutlined />}>
+              {t('ragMaintenance.reindexActions.clearIndex')}
+            </Button>
+          </Popconfirm>
+        </div>
+      </Space>
+    </Card>
+  );
+
+  const renderRagSearch = () => (
+    <Card title={t('ragMaintenance.search.title')} style={{ marginTop: 16 }}>
+      <Form
+        form={ragSearchForm}
+        layout="vertical"
+        onFinish={handleRagSearch}
+        initialValues={{ topK: 10, minScore: 0.5, propertyBoost: 0.3, contentBoost: 0.7 }}
+      >
+        <Form.Item
+          name="query"
+          label={t('ragMaintenance.search.queryLabel')}
+          rules={[{ required: true, message: t('ragMaintenance.search.queryRequired') }]}
+        >
+          <TextArea
+            placeholder={t('ragMaintenance.search.queryPlaceholder')}
+            rows={3}
+          />
+        </Form.Item>
+        <Row gutter={16}>
+          <Col span={6}>
+            <Form.Item name="topK" label={t('ragMaintenance.search.topK')}>
+              <InputNumber min={1} max={100} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item name="minScore" label={t('ragMaintenance.search.minScore')}>
+              <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item name="propertyBoost" label={t('ragMaintenance.search.propertyBoost')}>
+              <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item name="contentBoost" label={t('ragMaintenance.search.contentBoost')}>
+              <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Form.Item>
+          <Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={ragLoading}>
+            {t('ragMaintenance.search.executeSearch')}
+          </Button>
+        </Form.Item>
+      </Form>
+
+      {ragSearchResults.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <Alert
+            message={t('ragMaintenance.search.results', { count: ragSearchResults.length, queryTime: 0 })}
+            type="info"
+            style={{ marginBottom: 16 }}
+          />
+          {ragSearchResults.map((result, index) => (
+            <Card
+              key={result.chunkId}
+              size="small"
+              title={`${index + 1}. ${result.documentName}`}
+              extra={<Tag color="blue">{t('ragMaintenance.search.resultItem.score')}: {(result.score * 100).toFixed(1)}%</Tag>}
+              style={{ marginBottom: 8 }}
+            >
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label={t('ragMaintenance.search.resultItem.chunkIndex')}>
+                  {result.chunkIndex}
+                </Descriptions.Item>
+                <Descriptions.Item label={t('ragMaintenance.search.resultItem.objectType')}>
+                  {result.objectType}
+                </Descriptions.Item>
+                <Descriptions.Item label={t('ragMaintenance.search.resultItem.chunkText')}>
+                  <Text style={{ whiteSpace: 'pre-wrap' }}>{result.chunkText}</Text>
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+
   const tabItems = [
     {
       key: 'status',
@@ -603,6 +1004,26 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       key: 'query',
       label: t('solrMaintenance.tabs.query'),
       children: renderSolrQuery(),
+    },
+    {
+      key: 'rag-status',
+      label: t('ragMaintenance.tabs.status'),
+      children: (
+        <>
+          {renderRagHealthStatus()}
+          {renderRagReindexStatus()}
+        </>
+      ),
+    },
+    {
+      key: 'rag-reindex',
+      label: t('ragMaintenance.tabs.reindex'),
+      children: renderRagReindexActions(),
+    },
+    {
+      key: 'rag-search',
+      label: t('ragMaintenance.tabs.search'),
+      children: renderRagSearch(),
     },
   ];
 

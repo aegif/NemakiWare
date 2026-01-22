@@ -81,7 +81,8 @@ services:
   # Text Embeddings Inference (TEI) Service
   # Hugging Face's embedding inference server for multilingual E5 model
   tei:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+    platform: linux/amd64  # Required for Apple Silicon (Rosetta emulation)
     profiles:
       - rag
     ports:
@@ -91,6 +92,9 @@ services:
     environment:
       # Model: intfloat/multilingual-e5-large (1024 dimensions)
       - MODEL_ID=intfloat/multilingual-e5-large
+      # Hugging Face Hub settings
+      - HF_HUB_URL=https://huggingface.co
+      - HF_ENDPOINT=https://huggingface.co
       # Performance tuning
       - MAX_CLIENT_BATCH_SIZE=32
       - MAX_BATCH_TOKENS=16384

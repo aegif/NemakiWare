@@ -47,6 +47,8 @@
     "items": "{{count}} items",
     "moreResults": "More results available",
     "unknownError": "Unknown error",
+    "showSettings": "Show Settings",
+    "hideSettings": "Hide Settings",
     "validation": {
       "required": "{{field}} is required",
       "enterField": "Please enter {{field}}",
@@ -1299,10 +1301,128 @@
       "queryError": "Failed to execute query"
     }
   },
+  "semanticSearch": {
+    "title": "Semantic Search",
+    "placeholder": "Enter what you want to search in natural language...",
+    "searchButton": "Search",
+    "checkingAvailability": "Checking semantic search availability...",
+    "unavailable": "Semantic search is not available",
+    "unavailableDescription": "RAG feature is not enabled on the server or requires configuration. Please contact your administrator.",
+    "helpText": "Search documents based on meaning rather than keywords. You can search using natural language.",
+    "maxResults": "Max Results",
+    "minSimilarity": "Min Similarity",
+    "searchingInFolder": "Searching in this folder",
+    "searching": "Searching...",
+    "resultsCount": "{{count}} results",
+    "noResults": "No matching documents found",
+    "searchFailed": "Search failed",
+    "similarity": "Similarity",
+    "chunkIndex": "Chunk #{{index}}",
+    "boostSettings": "Search Weight Settings",
+    "boostHelpText": "Adjust search weight between properties (file name, description) and body content.",
+    "propertyBoost": "Property Weight",
+    "contentOnly": "Content Focus",
+    "balanced": "Balanced",
+    "propertyOnly": "Property Focus",
+    "propertyBoostDescription": "Move the slider right to prioritize file names and descriptions. Move left to prioritize body content."
+  },
   "apiDocs": {
     "title": "REST API Documentation",
     "description": "Interactive documentation for NemakiWare CMIS REST API (OpenAPI 3.0 compliant).",
     "note": "Authentication",
     "noteDescription": "API requests require Basic authentication or OIDC/SAML tokens. Current repository: {{repositoryId}}"
+  },
+  "ragMaintenance": {
+    "title": "RAG Index Maintenance",
+    "description": "Manage RAG (Retrieval-Augmented Generation) vector indexes for semantic search.",
+    "tabs": {
+      "status": "Status",
+      "reindex": "Reindexing",
+      "search": "Search Test"
+    },
+    "healthCheck": {
+      "title": "RAG Health Check",
+      "refresh": "Refresh",
+      "ragEnabled": "RAG Enabled",
+      "embeddingService": "Embedding Service",
+      "solrRagCore": "Solr RAG Core",
+      "documentCount": "Document Count",
+      "chunkCount": "Chunk Count",
+      "eligibleDocuments": "Eligible Documents",
+      "healthy": "RAG system is healthy",
+      "unhealthy": "RAG system has issues",
+      "available": "Available",
+      "unavailable": "Unavailable",
+      "error": "RAG health check failed"
+    },
+    "reindexStatus": {
+      "title": "RAG Reindex Status",
+      "status": "Status",
+      "currentFolder": "Current Folder",
+      "totalDocuments": "Total Documents",
+      "indexed": "Indexed",
+      "errorCount": "Error Count",
+      "errorMessage": "Error Message",
+      "errorDetails": "Error Details ({{count}} errors)",
+      "cancel": "Cancel"
+    },
+    "status": {
+      "idle": "Idle",
+      "running": "Running",
+      "completed": "Completed",
+      "error": "Error",
+      "cancelled": "Cancelled"
+    },
+    "reindexActions": {
+      "title": "RAG Reindex Operations",
+      "fullReindex": "Full RAG Reindex",
+      "fullReindexDesc": "Regenerate vector embeddings for all documents in the repository. This takes time due to embedding generation.",
+      "fullReindexConfirm": "Execute full RAG reindex?",
+      "fullReindexConfirmDesc": "This operation may take a significant amount of time. Embedding generation takes several seconds per document.",
+      "execute": "Execute",
+      "folderReindex": "Folder RAG Reindex",
+      "folderReindexDesc": "Regenerate vector embeddings for documents under the specified folder.",
+      "folderId": "Folder ID",
+      "includeSubfolders": "Include subfolders",
+      "folderReindexButton": "Folder RAG Reindex",
+      "indexManagement": "RAG Index Management",
+      "indexManagementDesc": "Clear the RAG index.",
+      "clearIndex": "Clear RAG Index",
+      "clearIndexConfirm": "Clear RAG index?",
+      "clearIndexConfirmDesc": "This operation cannot be undone. All vector embeddings will be deleted. Semantic search will be unavailable until reindexing."
+    },
+    "search": {
+      "title": "RAG Search Test",
+      "queryLabel": "Search Query",
+      "queryPlaceholder": "Enter search content in natural language...",
+      "queryRequired": "Please enter a search query",
+      "topK": "Max Results",
+      "minScore": "Min Similarity",
+      "propertyBoost": "Property Boost",
+      "contentBoost": "Content Boost",
+      "executeSearch": "Execute Search",
+      "results": "{{count}} results ({{queryTime}}ms)",
+      "noResults": "No results",
+      "resultItem": {
+        "documentName": "Document Name",
+        "score": "Similarity",
+        "chunkIndex": "Chunk Index",
+        "chunkText": "Chunk Text",
+        "objectType": "Object Type"
+      }
+    },
+    "messages": {
+      "fullReindexStarted": "Full RAG reindex started",
+      "fullReindexError": "Failed to start RAG reindex",
+      "folderIdRequired": "Please enter a folder ID",
+      "folderReindexStarted": "Folder RAG reindex started",
+      "folderReindexError": "Failed to start folder RAG reindex",
+      "reindexCancelled": "RAG reindex cancelled",
+      "cancelError": "Failed to cancel",
+      "indexCleared": "RAG index cleared",
+      "clearError": "Failed to clear RAG index",
+      "searchError": "Search failed",
+      "healthCheckError": "Health check failed"
+    }
   }
 }

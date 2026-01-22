@@ -47,6 +47,8 @@
     "items": "{{count}}個",
     "moreResults": "さらに結果があります",
     "unknownError": "不明なエラー",
+    "showSettings": "設定を表示",
+    "hideSettings": "設定を非表示",
     "validation": {
       "required": "{{field}}は必須です",
       "enterField": "{{field}}を入力してください",
@@ -1299,10 +1301,128 @@
       "queryError": "クエリの実行に失敗しました"
     }
   },
+  "semanticSearch": {
+    "title": "セマンティック検索",
+    "placeholder": "検索したい内容を自然言語で入力...",
+    "searchButton": "検索",
+    "checkingAvailability": "セマンティック検索の可用性を確認中...",
+    "unavailable": "セマンティック検索は利用できません",
+    "unavailableDescription": "RAG機能がサーバーで有効になっていないか、設定が必要です。管理者にお問い合わせください。",
+    "helpText": "キーワードではなく意味に基づいてドキュメントを検索します。自然な文章で検索できます。",
+    "maxResults": "最大結果数",
+    "minSimilarity": "最小類似度",
+    "searchingInFolder": "このフォルダ内を検索",
+    "searching": "検索中...",
+    "resultsCount": "{{count}}件の結果",
+    "noResults": "該当するドキュメントが見つかりませんでした",
+    "searchFailed": "検索に失敗しました",
+    "similarity": "類似度",
+    "chunkIndex": "チャンク #{{index}}",
+    "boostSettings": "検索重み設定",
+    "boostHelpText": "プロパティ（ファイル名・説明）と本文コンテンツの検索重みを調整します。",
+    "propertyBoost": "プロパティ重み",
+    "contentOnly": "本文重視",
+    "balanced": "バランス",
+    "propertyOnly": "プロパティ重視",
+    "propertyBoostDescription": "スライダーを右に動かすと、ファイル名や説明文がより重視されます。左に動かすと、本文の内容がより重視されます。"
+  },
   "apiDocs": {
     "title": "REST API仕様書",
     "description": "NemakiWare CMIS REST API (OpenAPI 3.0準拠) のインタラクティブドキュメントです。",
     "note": "認証について",
     "noteDescription": "APIリクエストにはBasic認証またはOIDC/SAMLトークンが必要です。現在のリポジトリ: {{repositoryId}}"
+  },
+  "ragMaintenance": {
+    "title": "RAGインデックスメンテナンス",
+    "description": "RAG（検索拡張生成）のベクトルインデックスを管理します。セマンティック検索に使用されます。",
+    "tabs": {
+      "status": "ステータス",
+      "reindex": "再インデクシング",
+      "search": "検索テスト"
+    },
+    "healthCheck": {
+      "title": "RAGヘルスチェック",
+      "refresh": "更新",
+      "ragEnabled": "RAG有効",
+      "embeddingService": "埋め込みサービス",
+      "solrRagCore": "Solr RAGコア",
+      "documentCount": "インデックス済みドキュメント数",
+      "chunkCount": "チャンク数",
+      "eligibleDocuments": "対象ドキュメント数",
+      "healthy": "RAGシステムは正常です",
+      "unhealthy": "RAGシステムに問題があります",
+      "available": "利用可能",
+      "unavailable": "利用不可",
+      "error": "RAGヘルスチェックに失敗しました"
+    },
+    "reindexStatus": {
+      "title": "RAG再インデクシング状態",
+      "status": "状態",
+      "currentFolder": "現在のフォルダ",
+      "totalDocuments": "総ドキュメント数",
+      "indexed": "インデックス済み",
+      "errorCount": "エラー数",
+      "errorMessage": "エラーメッセージ",
+      "errorDetails": "エラー詳細 ({{count}}件)",
+      "cancel": "キャンセル"
+    },
+    "status": {
+      "idle": "待機中",
+      "running": "実行中",
+      "completed": "完了",
+      "error": "エラー",
+      "cancelled": "キャンセル"
+    },
+    "reindexActions": {
+      "title": "RAG再インデクシング操作",
+      "fullReindex": "全体RAG再インデクシング",
+      "fullReindexDesc": "リポジトリ内の全ドキュメントのベクトル埋め込みを再生成します。埋め込み生成のため時間がかかります。",
+      "fullReindexConfirm": "全体RAG再インデクシングを実行しますか？",
+      "fullReindexConfirmDesc": "この操作にはかなりの時間がかかる場合があります。埋め込み生成にはドキュメント1つあたり数秒かかります。",
+      "execute": "実行",
+      "folderReindex": "フォルダ単位のRAG再インデクシング",
+      "folderReindexDesc": "指定したフォルダ配下のドキュメントのベクトル埋め込みを再生成します。",
+      "folderId": "フォルダID",
+      "includeSubfolders": "サブフォルダを含む",
+      "folderReindexButton": "フォルダRAG再インデクシング",
+      "indexManagement": "RAGインデックス管理",
+      "indexManagementDesc": "RAGインデックスのクリアを行います。",
+      "clearIndex": "RAGインデックスクリア",
+      "clearIndexConfirm": "RAGインデックスをクリアしますか？",
+      "clearIndexConfirmDesc": "この操作は取り消せません。全てのベクトル埋め込みが削除されます。セマンティック検索は再インデックスするまで利用できなくなります。"
+    },
+    "search": {
+      "title": "RAG検索テスト",
+      "queryLabel": "検索クエリ",
+      "queryPlaceholder": "自然言語で検索内容を入力...",
+      "queryRequired": "検索クエリを入力してください",
+      "topK": "最大結果数",
+      "minScore": "最小類似度",
+      "propertyBoost": "プロパティ重み",
+      "contentBoost": "コンテンツ重み",
+      "executeSearch": "検索実行",
+      "results": "{{count}}件の結果 ({{queryTime}}ms)",
+      "noResults": "結果なし",
+      "resultItem": {
+        "documentName": "ドキュメント名",
+        "score": "類似度",
+        "chunkIndex": "チャンク番号",
+        "chunkText": "チャンクテキスト",
+        "objectType": "オブジェクトタイプ"
+      }
+    },
+    "messages": {
+      "fullReindexStarted": "全体RAG再インデクシングを開始しました",
+      "fullReindexError": "RAG再インデクシングの開始に失敗しました",
+      "folderIdRequired": "フォルダIDを入力してください",
+      "folderReindexStarted": "フォルダRAG再インデクシングを開始しました",
+      "folderReindexError": "フォルダRAG再インデクシングの開始に失敗しました",
+      "reindexCancelled": "RAG再インデクシングをキャンセルしました",
+      "cancelError": "キャンセルに失敗しました",
+      "indexCleared": "RAGインデックスをクリアしました",
+      "clearError": "RAGインデックスのクリアに失敗しました",
+      "searchError": "検索に失敗しました",
+      "healthCheckError": "ヘルスチェックに失敗しました"
+    }
   }
 }

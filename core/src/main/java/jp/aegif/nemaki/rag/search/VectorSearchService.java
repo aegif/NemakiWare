@@ -38,6 +38,24 @@ public interface VectorSearchService {
                                     int topK, float minScore) throws VectorSearchException;
 
     /**
+     * Perform semantic search with custom property and content boost factors.
+     * Final score = (propertyBoost × property_similarity) + (contentBoost × content_similarity)
+     *
+     * @param repositoryId Repository ID
+     * @param userId Current user ID for ACL filtering
+     * @param query Query text (will be embedded)
+     * @param topK Maximum number of results
+     * @param minScore Minimum similarity score (0.0 to 1.0)
+     * @param propertyBoost Weight for property-based similarity (0.0 to 1.0)
+     * @param contentBoost Weight for content-based similarity (0.0 to 1.0)
+     * @return List of search results sorted by combined similarity score
+     * @throws VectorSearchException if search fails
+     */
+    List<VectorSearchResult> searchWithBoost(String repositoryId, String userId, String query,
+                                             int topK, float minScore,
+                                             float propertyBoost, float contentBoost) throws VectorSearchException;
+
+    /**
      * Perform semantic search within a specific folder.
      *
      * @param repositoryId Repository ID

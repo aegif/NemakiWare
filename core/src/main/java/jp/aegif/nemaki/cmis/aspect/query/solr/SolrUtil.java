@@ -24,6 +24,7 @@ package jp.aegif.nemaki.cmis.aspect.query.solr;
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TextExtractionService;
+import jp.aegif.nemaki.rag.indexing.RAGIndexingService;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -346,6 +347,8 @@ public class SolrUtil implements ApplicationContextAware {
 			
 			if (response.getStatus() == 0) {
 				log.info("Document indexed successfully in Solr: " + content.getId() + " for repository: " + repositoryId);
+				// Trigger RAG indexing asynchronously if enabled
+				triggerRAGIndexing(repositoryId, content);
 			} else {
 				log.error("Document indexing failed with status: " + response.getStatus() + " for document: " + content.getId());
 			}
@@ -367,6 +370,50 @@ public class SolrUtil implements ApplicationContextAware {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Trigger RAG indexing asynchronously if RAG is enabled.
+	 * This is called after successful Solr indexing.
+	 * Only Document objects are indexed for RAG (folders are skipped).
+	 */
+	private void triggerRAGIndexing(String repositoryId, Content content) {
+		// Only index documents (not folders or other content types)
+		if (!(content instanceof Document)) {
+			return;
+		}
+		Document document = (Document) content;
+
+		CompletableFuture.runAsync(() -> {
+			try {
+				RAGIndexingService ragService = getRAGIndexingServiceSafely();
+				if (ragService != null) {
+					ragService.indexDocument(repositoryId, document);
+					log.debug("RAG indexing triggered for document: " + document.getId());
+				}
+			} catch (Exception e) {
+				// RAG indexing failure should not affect normal operations
+				log.warn("RAG indexing failed for document: " + document.getId() + ", error: " + e.getMessage());
+			}
+		});
+	}
+
+	/**
+	 * Trigger RAG document deletion asynchronously if RAG is enabled.
+	 */
+	private void triggerRAGDeletion(String repositoryId, String documentId) {
+		CompletableFuture.runAsync(() -> {
+			try {
+				RAGIndexingService ragService = getRAGIndexingServiceSafely();
+				if (ragService != null) {
+					ragService.deleteDocument(repositoryId, documentId);
+					log.debug("RAG document deletion triggered for: " + documentId);
+				}
+			} catch (Exception e) {
+				// RAG deletion failure should not affect normal operations
+				log.warn("RAG document deletion failed for: " + documentId + ", error: " + e.getMessage());
+			}
+		});
 	}
 
 	/**
@@ -677,10 +724,12 @@ public class SolrUtil implements ApplicationContextAware {
 				
 				if (response.getStatus() == 0) {
 					log.debug("Document deleted successfully from Solr: " + documentId + " for repository: " + repositoryId);
+					// Trigger RAG deletion
+					triggerRAGDeletion(repositoryId, documentId);
 				} else {
 					log.warn("Document deletion failed with status: " + response.getStatus() + " for document: " + documentId);
 				}
-				
+
 				solrClient.close();
 			} catch (SolrServerException | IOException e) {
 				log.warn("Solr document deletion failed for document: " + documentId + " in repository: " + repositoryId + ", error: " + e.getMessage());
@@ -774,7 +823,29 @@ public class SolrUtil implements ApplicationContextAware {
 			return null;
 		}
 	}
-	
+
+	/**
+	 * Get RAGIndexingService lazily from ApplicationContext.
+	 * Returns null if RAG is not enabled or service is not available.
+	 */
+	private RAGIndexingService getRAGIndexingServiceSafely() {
+		if (applicationContext == null) {
+			return null;
+		}
+		try {
+			RAGIndexingService service = applicationContext.getBean(RAGIndexingService.class);
+			// Only return if RAG is enabled
+			if (service != null && service.isEnabled()) {
+				return service;
+			}
+			return null;
+		} catch (Exception e) {
+			// RAG service not available - this is normal when RAG is disabled
+			log.debug("RAGIndexingService not available: {}", e.getMessage());
+			return null;
+		}
+	}
+
 	/**
 	 * Extract text content from attachment for full-text search.
 	 * Uses Apache Tika via TextExtractionService to extract text from various document formats

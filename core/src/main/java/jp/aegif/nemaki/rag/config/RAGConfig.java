@@ -1,5 +1,8 @@
 package jp.aegif.nemaki.rag.config;
 
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -11,6 +14,17 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RAGConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(RAGConfig.class);
+
+    @PostConstruct
+    public void init() {
+        log.info("=== RAGConfig initialized ===");
+        log.info("RAG enabled: {}", enabled);
+        log.info("TEI URL: {}", teiUrl);
+        log.info("TEI connect timeout: {}", teiConnectTimeout);
+        log.info("TEI read timeout: {}", teiReadTimeout);
+    }
 
     // ========================================
     // Feature Toggle
@@ -63,6 +77,52 @@ public class RAGConfig {
 
     @Value("${rag.search.similarity.threshold:0.7}")
     private float searchSimilarityThreshold;
+
+    // ========================================
+    // Property Boost Settings (for weighted search)
+    // ========================================
+
+    /**
+     * Boost factor for property-based similarity (0.0 to 1.0).
+     * Higher values give more weight to metadata (name, description, etc.).
+     * Default: 0.3 (30% weight to properties)
+     */
+    @Value("${rag.search.property.boost:0.3}")
+    private float propertyBoost;
+
+    /**
+     * Boost factor for content-based similarity (0.0 to 1.0).
+     * Higher values give more weight to document body content.
+     * Default: 0.7 (70% weight to content)
+     */
+    @Value("${rag.search.content.boost:0.7}")
+    private float contentBoost;
+
+    /**
+     * Whether to enable property-based similarity search.
+     * When disabled, only content vectors are used for search.
+     */
+    @Value("${rag.search.property.enabled:true}")
+    private boolean propertySearchEnabled;
+
+    // ========================================
+    // Property Indexing Settings
+    // ========================================
+
+    /**
+     * Comma-separated list of CMIS property IDs to include in property embedding.
+     * Default: cmis:name (document name) and cmis:description (description).
+     * Custom properties can be added (e.g., nemaki:keywords, nemaki:category).
+     */
+    @Value("${rag.indexing.property.fields:cmis:name,cmis:description}")
+    private String propertyFields;
+
+    /**
+     * Whether to include custom (non-CMIS standard) properties in the property embedding.
+     * When true, all custom string/text properties will be included.
+     */
+    @Value("${rag.indexing.property.include.custom:false}")
+    private boolean includeCustomProperties;
 
     // ========================================
     // Indexing Settings
@@ -131,6 +191,33 @@ public class RAGConfig {
 
     public float getSearchSimilarityThreshold() {
         return searchSimilarityThreshold;
+    }
+
+    public float getPropertyBoost() {
+        return propertyBoost;
+    }
+
+    public float getContentBoost() {
+        return contentBoost;
+    }
+
+    public boolean isPropertySearchEnabled() {
+        return propertySearchEnabled;
+    }
+
+    public String getPropertyFields() {
+        return propertyFields;
+    }
+
+    public String[] getPropertyFieldsArray() {
+        if (propertyFields == null || propertyFields.trim().isEmpty()) {
+            return new String[0];
+        }
+        return propertyFields.split(",");
+    }
+
+    public boolean isIncludeCustomProperties() {
+        return includeCustomProperties;
     }
 
     public int getIndexingBatchSize() {

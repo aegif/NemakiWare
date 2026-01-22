@@ -19,6 +19,7 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TextExtractionService;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.rag.acl.ACLExpander;
 import jp.aegif.nemaki.rag.chunking.ChunkingService;
 import jp.aegif.nemaki.rag.chunking.TextChunk;
@@ -30,10 +31,11 @@ import jp.aegif.nemaki.rag.embedding.EmbeddingService;
  * Implementation of RAGIndexingService.
  *
  * Indexes documents with Block Join structure for semantic search:
- * - Parent document (doc_type="document"): Contains metadata and document-level vector
+ * - Parent document (doc_type="document"): Contains metadata, document-level vector, and property vector
  * - Child documents (doc_type="chunk"): Contains chunk text and chunk vector
  *
  * Uses Solr's Block Join to efficiently query chunks while filtering by parent ACL.
+ * Supports property-based weighted search with separate property_vector field.
  */
 @Service
 public class RAGIndexingServiceImpl implements RAGIndexingService {
@@ -112,11 +114,20 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             // Generate document-level embedding (average of first few chunks or title)
             float[] documentEmbedding = generateDocumentEmbedding(document, chunks, chunkEmbeddings);
 
+            // Generate property embedding for weighted search
+            String propertyText = extractPropertyText(document);
+            float[] propertyEmbedding = null;
+            if (ragConfig.isPropertySearchEnabled() && propertyText != null && !propertyText.trim().isEmpty()) {
+                propertyEmbedding = embeddingService.embed(propertyText, false);
+                log.debug("Generated property embedding for document: " + document.getId());
+            }
+
             // Get readers for ACL pre-expansion
             List<String> readers = getReaders(repositoryId, document);
 
             // Create and index Solr documents with Block Join structure
-            indexToSolr(repositoryId, document, chunks, chunkEmbeddings, documentEmbedding, readers);
+            indexToSolr(repositoryId, document, chunks, chunkEmbeddings, documentEmbedding,
+                       propertyEmbedding, propertyText, readers);
 
             log.info(String.format("RAG indexed document %s with %d chunks", document.getId(), chunks.size()));
 
@@ -184,6 +195,126 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
     @Override
     public boolean isMimeTypeSupported(String mimeType) {
         return ragConfig.isMimeTypeSupported(mimeType);
+    }
+
+    /**
+     * Extract property text from document for property embedding.
+     * Combines configured property fields into a single text for embedding.
+     *
+     * @param document Document to extract properties from
+     * @return Combined property text, or null if no properties available
+     */
+    private String extractPropertyText(Document document) {
+        StringBuilder sb = new StringBuilder();
+
+        String[] propertyFields = ragConfig.getPropertyFieldsArray();
+
+        for (String field : propertyFields) {
+            String fieldValue = getPropertyValue(document, field.trim());
+            if (fieldValue != null && !fieldValue.trim().isEmpty()) {
+                if (sb.length() > 0) {
+                    sb.append(" ");
+                }
+                sb.append(fieldValue.trim());
+            }
+        }
+
+        // Include custom properties if enabled
+        if (ragConfig.isIncludeCustomProperties()) {
+            String customProps = extractCustomProperties(document);
+            if (customProps != null && !customProps.isEmpty()) {
+                if (sb.length() > 0) {
+                    sb.append(" ");
+                }
+                sb.append(customProps);
+            }
+        }
+
+        return sb.length() > 0 ? sb.toString() : null;
+    }
+
+    /**
+     * Get a property value from document by CMIS property ID.
+     */
+    private String getPropertyValue(Document document, String propertyId) {
+        switch (propertyId) {
+            case "cmis:name":
+                return document.getName();
+            case "cmis:description":
+                return document.getDescription();
+            case "cmis:createdBy":
+                return document.getCreator();
+            case "cmis:lastModifiedBy":
+                return document.getModifier();
+            case "cmis:objectTypeId":
+                return document.getObjectType();
+            default:
+                // Try to get from custom properties
+                return getSubTypePropertyValue(document, propertyId);
+        }
+    }
+
+    /**
+     * Extract text from custom (non-standard CMIS) properties.
+     */
+    private String extractCustomProperties(Document document) {
+        List<Property> subTypeProperties = document.getSubTypeProperties();
+        if (subTypeProperties == null || subTypeProperties.isEmpty()) {
+            return null;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (Property prop : subTypeProperties) {
+            if (prop != null && prop.getValue() != null) {
+                Object value = prop.getValue();
+                if (value instanceof String) {
+                    String strValue = (String) value;
+                    if (!strValue.trim().isEmpty()) {
+                        if (sb.length() > 0) {
+                            sb.append(" ");
+                        }
+                        sb.append(strValue.trim());
+                    }
+                } else if (value instanceof List) {
+                    @SuppressWarnings("unchecked")
+                    List<Object> list = (List<Object>) value;
+                    for (Object item : list) {
+                        if (item instanceof String) {
+                            String strItem = (String) item;
+                            if (!strItem.trim().isEmpty()) {
+                                if (sb.length() > 0) {
+                                    sb.append(" ");
+                                }
+                                sb.append(strItem.trim());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return sb.length() > 0 ? sb.toString() : null;
+    }
+
+    /**
+     * Get property value from subtype properties by property ID.
+     */
+    private String getSubTypePropertyValue(Document document, String propertyId) {
+        List<Property> subTypeProperties = document.getSubTypeProperties();
+        if (subTypeProperties == null) {
+            return null;
+        }
+
+        for (Property prop : subTypeProperties) {
+            if (prop != null && propertyId.equals(prop.getKey())) {
+                Object value = prop.getValue();
+                if (value instanceof String) {
+                    return (String) value;
+                } else if (value != null) {
+                    return value.toString();
+                }
+            }
+        }
+        return null;
     }
 
     private String extractText(String repositoryId, Document document) {
@@ -260,6 +391,7 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
 
     private void indexToSolr(String repositoryId, Document document, List<TextChunk> chunks,
                              List<float[]> chunkEmbeddings, float[] documentEmbedding,
+                             float[] propertyEmbedding, String propertyText,
                              List<String> readers) throws Exception {
 
         try (SolrClient solrClient = getSolrClient()) {
@@ -278,6 +410,7 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 String chunkId = chunk.generateChunkId(document.getId());
 
                 chunkDoc.addField("id", chunkId);
+                chunkDoc.addField("object_id", chunkId);  // Required field
                 chunkDoc.addField("doc_type", DOC_TYPE_CHUNK);
                 chunkDoc.addField("parent_document_id", document.getId());
                 chunkDoc.addField("chunk_id", chunkId);
@@ -304,6 +437,14 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             parentDoc.addField("name", document.getName());
             parentDoc.addField("document_vector", floatArrayToList(documentEmbedding));
             parentDoc.addField("_root_", document.getId());
+
+            // Add property embedding and text for weighted search
+            if (propertyEmbedding != null) {
+                parentDoc.addField("property_vector", floatArrayToList(propertyEmbedding));
+            }
+            if (propertyText != null && !propertyText.isEmpty()) {
+                parentDoc.addField("property_text", propertyText);
+            }
 
             if (document.getObjectType() != null) {
                 parentDoc.addField("objecttype", document.getObjectType());

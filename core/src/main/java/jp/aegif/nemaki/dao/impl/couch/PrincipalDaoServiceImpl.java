@@ -166,9 +166,11 @@ public class PrincipalDaoServiceImpl implements
 
 		List<CouchGroup> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "groupsById", CouchGroup.class);
 
-		for (CouchGroup c : l) {
-			Group g = c.convert();
-			groups.add(g);
+		if (l != null) {
+			for (CouchGroup c : l) {
+				Group g = c.convert();
+				groups.add(g);
+			}
 		}
 
 		return groups;

@@ -213,6 +213,14 @@
    <!-- Document-level vector for similarity search (only for doc_type="document") -->
    <field name="document_vector" type="knn_vector_1024" indexed="true" stored="true" required="false" multiValued="false" />
 
+   <!-- Property-level vector for metadata similarity search (only for doc_type="document") -->
+   <!-- Combines name, description, and custom properties into a single embedding -->
+   <field name="property_vector" type="knn_vector_1024" indexed="true" stored="true" required="false" multiValued="false" />
+
+   <!-- Property text used for generating property_vector -->
+   <!-- Stored for debugging and potential re-indexing -->
+   <field name="property_text" type="text_ja" indexed="true" stored="true" required="false" multiValued="false" />
+
    <!-- ACL pre-expansion: list of users/groups with read permission -->
    <!-- Format: "user:username" or "group:groupname" or "anyone" -->
    <field name="readers" type="string" indexed="true" stored="true" required="false" multiValued="true" />

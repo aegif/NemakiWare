@@ -396,7 +396,29 @@
   <fieldType name="tfloat" class="solr.FloatPointField" positionIncrementGap="0"/>
   <fieldType name="tint" class="solr.IntPointField" positionIncrementGap="0"/>
   <fieldType name="tlong" class="solr.LongPointField" positionIncrementGap="0"/>
+  <!-- RAG: Dense Vector field type for 1024-dimensional embeddings (multilingual-e5-large) -->
+  <fieldType name="knn_vector_1024" class="solr.DenseVectorField" vectorDimension="1024" similarityFunction="cosine"/>
   <field name="_version_" type="long" indexed="true" stored="true"/>
+  <!-- RAG: Required for Block Join (nested document) support -->
+  <field name="_root_" type="string" indexed="true" stored="false" docValues="false"/>
+  <!-- RAG: Document type discriminator (document/chunk) -->
+  <field name="doc_type" type="string" indexed="true" stored="true"/>
+  <!-- RAG: Parent document ID for chunks -->
+  <field name="parent_document_id" type="string" indexed="true" stored="true"/>
+  <!-- RAG: Unique chunk identifier -->
+  <field name="chunk_id" type="string" indexed="true" stored="true"/>
+  <!-- RAG: Chunk position within document -->
+  <field name="chunk_index" type="int" indexed="true" stored="true"/>
+  <!-- RAG: Chunk text content -->
+  <field name="chunk_text" type="text_general" indexed="true" stored="true"/>
+  <!-- RAG: Dense vector for chunk embeddings -->
+  <field name="chunk_vector" type="knn_vector_1024" indexed="true" stored="true"/>
+  <!-- RAG: Dense vector for property embeddings -->
+  <field name="property_vector" type="knn_vector_1024" indexed="true" stored="true"/>
+  <!-- RAG: Property text for document-level search -->
+  <field name="property_text" type="text_general" indexed="true" stored="true"/>
+  <!-- RAG: ACL readers for security filtering -->
+  <field name="readers" type="string" multiValued="true" indexed="true" stored="true"/>
   <field name="author" type="text_general" indexed="true" stored="true"/>
   <field name="basetype" type="string" multiValued="false" indexed="true" stored="true"/>
   <field name="category" type="text_general" indexed="true" stored="true"/>
