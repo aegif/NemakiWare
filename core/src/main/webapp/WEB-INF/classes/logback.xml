@@ -30,27 +30,16 @@
 	<root level="WARN">
 		<appender-ref ref="FILE" />
 	</root>
+
+	<!-- NemakiWare Application -->
 	<logger name="jp.aegif.nemaki" level="INFO" additivity="false">
 		<appender-ref ref="FILE" />
 		<appender-ref ref="STDOUT" />
 	</logger>
-	<logger name="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor" level="DEBUG" additivity="false">
-		<appender-ref ref="FILE" />
-		<appender-ref ref="STDOUT" />
-	</logger>
-	<logger name="jp.aegif.nemaki.cmis.aspect.impl.CompileServiceImpl" level="DEBUG" additivity="false">
-		<appender-ref ref="FILE" />
-		<appender-ref ref="STDOUT" />
-	</logger>
 
-	<!-- Spring Bean Factory DEBUG for troubleshooting PatchService bean creation -->
-	<logger name="org.springframework.beans.factory" level="DEBUG" additivity="false">
+	<!-- Spring Framework - WARN level to reduce noise -->
+	<logger name="org.springframework" level="WARN" additivity="false">
 		<appender-ref ref="FILE" />
-		<appender-ref ref="STDOUT" />
-	</logger>
-	<logger name="org.springframework.context" level="DEBUG" additivity="false">
-		<appender-ref ref="FILE" />
-		<appender-ref ref="STDOUT" />
 	</logger>
 
 </configuration>
