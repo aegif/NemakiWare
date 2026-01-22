@@ -227,38 +227,45 @@ public class PermissionServiceImpl implements PermissionService {
 	}
 	
 	private boolean calcAnyonePermission(String repositoryId, String key, Content content, List<Ace> aces){
-		log.info(MessageFormat.format("[{0}]CheckAnyonePermission BEGIN:{1}",content.getName(), key));
-		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
-		
-		// Debug logging for troubleshooting
-		log.debug("calcAnyonePermission: repositoryId=" + repositoryId + ", principalIdAnyone=" + info.getPrincipalIdAnyone());
 		if (log.isDebugEnabled()) {
+			log.debug(MessageFormat.format("[{0}]CheckAnyonePermission BEGIN:{1}",content.getName(), key));
+		}
+		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+
+		// Debug logging for troubleshooting
+		if (log.isDebugEnabled()) {
+			log.debug("calcAnyonePermission: repositoryId=" + repositoryId + ", principalIdAnyone=" + info.getPrincipalIdAnyone());
 			log.debug("calcAnyonePermission: Available ACEs for content " + content.getId() + ":");
 			for (Ace ace : aces) {
 				log.debug("  ACE: principalId=" + ace.getPrincipalId() + ", permissions=" + ace.getPermissions());
 			}
 		}
-		
+
 		// CRITICAL FIX: GROUP_EVERYONE should apply to all authenticated users as virtual principal
 		// In CMIS, "Anyone" means any authenticated user automatically has these permissions
 		Set<String> anyonePermissions = aces.stream()
 				.filter(ace -> ace.getPrincipalId().equals(info.getPrincipalIdAnyone()))
 				.flatMap(ace -> ace.getPermissions().stream())
 				.collect(Collectors.toSet());
-		
-		log.info("calcAnyonePermission: Filtered Anyone permissions (" + info.getPrincipalIdAnyone() + "): " + anyonePermissions);
-		
+
+		if (log.isDebugEnabled()) {
+			log.debug("calcAnyonePermission: Filtered Anyone permissions (" + info.getPrincipalIdAnyone() + "): " + anyonePermissions);
+		}
+
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, anyonePermissions);
-		
-		log.info("calcAnyonePermission: checkCalculatedPermissions result for key '" + key + "': " + calcPermission);
-		
-		log.info(MessageFormat.format("[{0}]CheckAnyonePermission END:{1}",content.getName(),  calcPermission));
+
+		if (log.isDebugEnabled()) {
+			log.debug("calcAnyonePermission: checkCalculatedPermissions result for key '" + key + "': " + calcPermission);
+			log.debug(MessageFormat.format("[{0}]CheckAnyonePermission END:{1}",content.getName(),  calcPermission));
+		}
 		return calcPermission;
 	}
 
 
 	private boolean calcGroupPermission(String repositoryId, String key, Content content, Set<String> groups, List<Ace> aces) {
-		log.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission BEGIN:{2}",content.getName(), groups, key));
+		if (log.isDebugEnabled()) {
+			log.debug(MessageFormat.format("[{0}][{1}]CheckGroupPermission BEGIN:{2}",content.getName(), groups, key));
+		}
 		if( CollectionUtils.isEmpty(groups)) return false;
 		Set<String> groupPermissions = aces.stream()
 				.filter(ace -> groups.contains(ace.getPrincipalId()))
@@ -267,14 +274,18 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Check mapping between the group and the content
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, groupPermissions);
-		log.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission END:{2}",content.getName(), groups, calcPermission));
+		if (log.isDebugEnabled()) {
+			log.debug(MessageFormat.format("[{0}][{1}]CheckGroupPermission END:{2}",content.getName(), groups, calcPermission));
+		}
 		return calcPermission;
 	}
 
 
 	private boolean calcUserPermission(String repositoryId, String key, Content content, String userName,
 			List<Ace> aces) {
-		log.info(MessageFormat.format("[{0}][{1}]CheckUserPermission BEGIN:{2}",content.getName(), userName, key));
+		if (log.isDebugEnabled()) {
+			log.debug(MessageFormat.format("[{0}][{1}]CheckUserPermission BEGIN:{2}",content.getName(), userName, key));
+		}
 		Set<String> userPermissions = aces.stream()
 			.filter(ace -> ace.getPrincipalId().equals(userName))
 			.flatMap(ace -> ace.getPermissions().stream())
@@ -282,7 +293,9 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Check mapping between the user and the content
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, userPermissions);
-		log.info(MessageFormat.format("[{0}][{1}]CheckUserPermission END:{2}",content.getName(), userName, calcPermission));
+		if (log.isDebugEnabled()) {
+			log.debug(MessageFormat.format("[{0}][{1}]CheckUserPermission END:{2}",content.getName(), userName, calcPermission));
+		}
 		return calcPermission;
 	}
 
@@ -519,37 +532,28 @@ public class PermissionServiceImpl implements PermissionService {
 		String userName = callContext.getUsername();
 		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 
-		log.info("PermissionServiceImpl.getFiltered: Processing " + contents.size() + " items for user " + userName + " with groups " + groups);
 		if (log.isDebugEnabled()) {
-			log.debug("PermissionServiceImpl.getFiltered: Processing " + contents.size() + " items for user " + userName + " with groups " + groups);
+			log.debug("getFiltered: Processing {} items for user {} with {} groups", 
+				contents.size(), userName, groups.size());
 		}
-		// Force error log for visibility
-		log.debug("getFiltered START - Processing " + contents.size() + " items for user " + userName);
 
 		// Filtering
 		for (T _content : contents) {
 			Content content = (Content) _content;
 			Acl acl = contentService.calculateAcl(repositoryId, content);
 
-			log.info("PermissionServiceImpl.getFiltered: Checking permission for content " + content.getId() + " (name=" + content.getName() + ") with ACL " + (acl != null ? acl.getAllAces().size() + " ACEs" : "null"));
-			// Force error log for visibility
-			log.debug("Checking content " + content.getId() + " (name=" + content.getName() + ") for user " + userName);
-
 			Boolean filtered = checkPermissionInternal(callContext,
 					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, acl, content.getType(), content, userName, groups);
-			
-			log.info("PermissionServiceImpl.getFiltered: Permission check result for " + content.getId() + ": " + filtered);
-			// Force error log for visibility
-			log.debug("Permission result for " + content.getId() + ": " + filtered);
 			
 			if (filtered) {
 				result.add(_content);
 			}
 		}
 		
-		log.info("PermissionServiceImpl.getFiltered: Filtered " + contents.size() + " items down to " + result.size() + " items");
-		// Force error log for visibility
-		log.debug("getFiltered END - Filtered " + contents.size() + " items down to " + result.size() + " items");
+		if (log.isDebugEnabled()) {
+			log.debug("getFiltered: Filtered {} items down to {} items for user {}", 
+				contents.size(), result.size(), userName);
+		}
 		return result;
 	}
 
