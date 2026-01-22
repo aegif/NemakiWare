@@ -405,8 +405,9 @@ public class ContentServiceImpl implements ContentService {
 	public List<Relationship> getRelationsipsOfObject(String repositoryId, String objectId,
 			RelationshipDirection relationshipDirection) {
 
-		log.info(MessageFormat.format("ContentService#getRelationsipsOfObject START: Repo={0}, Id={1}", repositoryId,
-				objectId));
+		if (log.isDebugEnabled()) {
+			log.debug(MessageFormat.format("getRelationsipsOfObject START: Repo={0}, Id={1}", repositoryId, objectId));
+		}
 
 		// Set default (according to the specification)
 		relationshipDirection = (relationshipDirection == null) ? RelationshipDirection.SOURCE : relationshipDirection;
@@ -1878,9 +1879,9 @@ public class ContentServiceImpl implements ContentService {
 				if (properties.getProperties().containsKey(priorProperty.getKey())) {
 					// Overwrite by removing the prior property.
 					allSubTypeProperties.remove(priorProperty);
-					log.info("Remove " + priorProperty.getKey());
-				} else {
-					log.info("Leave " + priorProperty.getKey());
+					if (log.isDebugEnabled()) {
+						log.debug("Remove property: " + priorProperty.getKey());
+					}
 				}
 			}
 
@@ -2756,7 +2757,9 @@ public class ContentServiceImpl implements ContentService {
 				streamLength = calculateStreamSize(stream);
 
 				if (streamLength >= 0) {
-					log.info("Calculated actual stream size: " + streamLength + " bytes for: " + contentStream.getFileName());
+					if (log.isDebugEnabled()) {
+						log.debug("Calculated stream size: " + streamLength + " bytes for: " + contentStream.getFileName());
+					}
 				} else {
 					log.error("Failed to calculate stream size, using -1 (unknown) for: " + contentStream.getFileName());
 					streamLength = -1L; // Use -1 to indicate unknown size to DAO layer

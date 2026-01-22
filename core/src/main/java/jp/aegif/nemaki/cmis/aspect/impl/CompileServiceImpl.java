@@ -175,8 +175,9 @@ public class CompileServiceImpl implements CompileService {
 			Content content, String filter, Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includeAcl) {
 
-		log.info(MessageFormat.format("CompileService#compileObjectDataWithFullAttributes START : Repo={0}, Id={1}", repositoryId, content.getId()));
-
+		if (log.isDebugEnabled()) {
+			log.debug(MessageFormat.format("compileObjectDataWithFullAttributes START: Repo={0}, Id={1}", repositoryId, content.getId()));
+		}
 
 		ObjectDataImpl result = new ObjectDataImpl();
 
@@ -185,31 +186,23 @@ public class CompileServiceImpl implements CompileService {
 		PropertiesImpl properties = compileProperties(callContext, repositoryId, content);
 		result.setProperties(properties);
 
-		log.info(MessageFormat.format("CompileService#compileObjectDataWithFullAttributes compileProperties success : Repo={0}, Id={1}", repositoryId, content.getId()));
-
 		// Set acl and allowable actions
 		setAclAndAllowableActionsInternal(result, callContext, repositoryId, content, includeAllowableActions,
 				includeAcl);
 
-		log.info(MessageFormat.format("CompileService#compileObjectDataWithFullAttributes setAclAndAllowableActionsInternal success : Repo={0}, Id={1}", repositoryId, content.getId()));
-
-
 		// Set relationship
 		setRelationshipInternal(result, callContext, repositoryId, content, includeRelationships);
-
-		log.info(MessageFormat.format("CompileService#compileObjectDataWithFullAttributes setRelationshipInternal success : Repo={0}, Id={1}", repositoryId, content.getId()));
-
 
 		// Set Renditions
 		if (content.isDocument()) {
 			result.setRenditions(compileRenditions(callContext, repositoryId, content));
 		}
-		log.info(MessageFormat.format("CompileService#compileObjectDataWithFullAttributes setRenditions if document success : Repo={0}, Id={1}", repositoryId, content.getId()));
 
 		nemakiCachePool.get(repositoryId).getObjectDataCache().put(new Element(content.getId(), result));
 
-		log.info(MessageFormat.format("CompileService#compileObjectDataWithFullAttributes END : Repo={0}, Id={1}", repositoryId, content.getId()));
-
+		if (log.isDebugEnabled()) {
+			log.debug(MessageFormat.format("compileObjectDataWithFullAttributes END: Repo={0}, Id={1}", repositoryId, content.getId()));
+		}
 
 		return result;
 	}
@@ -689,7 +682,9 @@ public class CompileServiceImpl implements CompileService {
 				list.setObjects(new ArrayList<>(objectDataList));
 			}
 			// totalNumItem - set to the actual filtered count for consistency
-			log.info("CompileServiceImpl: Setting numItems to filtered count: " + objectDataList.size() + " (was " + numFound + ")");
+			if (log.isDebugEnabled()) {
+				log.debug("Setting numItems to filtered count: " + objectDataList.size() + " (was " + numFound + ")");
+			}
 			list.setNumItems(BigInteger.valueOf(objectDataList.size()));
 
 			return list;
@@ -733,7 +728,9 @@ public class CompileServiceImpl implements CompileService {
 			results.setHasMoreItems(true);
 		}
 
-		log.info(MessageFormat.format("compileChangeDataList : END M:{0}", Runtime.getRuntime().freeMemory() / 1024));
+		if (log.isDebugEnabled()) {
+			log.debug(MessageFormat.format("compileChangeDataList: END M:{0}", Runtime.getRuntime().freeMemory() / 1024));
+		}
 
 		return results;
 	}
@@ -1095,8 +1092,9 @@ public class CompileServiceImpl implements CompileService {
 	private List<ObjectData> compileRelationships(CallContext context, String repositoryId, Content content,
 			IncludeRelationships irl) {
 
-		log.info(MessageFormat.format("CompileService#compileRelationships START: Repo={0}, Id={1}", repositoryId, content.getId()));
-
+		if (log.isDebugEnabled()) {
+			log.debug(MessageFormat.format("compileRelationships START: Repo={0}, Id={1}", repositoryId, content.getId()));
+		}
 
 		if (IncludeRelationships.NONE == irl) {
 			return null;
