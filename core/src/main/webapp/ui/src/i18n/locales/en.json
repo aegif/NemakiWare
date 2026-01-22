@@ -1336,9 +1336,9 @@
     "title": "RAG Index Maintenance",
     "description": "Manage RAG (Retrieval-Augmented Generation) vector indexes for semantic search.",
     "tabs": {
-      "status": "Status",
-      "reindex": "Reindexing",
-      "search": "Search Test"
+      "status": "RAG Status",
+      "reindex": "RAG Reindexing",
+      "search": "RAG Search Test"
     },
     "healthCheck": {
       "title": "RAG Health Check",

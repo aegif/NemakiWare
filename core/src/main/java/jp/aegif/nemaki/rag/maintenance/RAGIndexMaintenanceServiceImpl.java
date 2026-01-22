@@ -307,9 +307,8 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
                 throw new RuntimeException("Root folder not found");
             }
 
-            // Count total documents
-            long totalDocs = countDocumentsInFolder(repositoryId, rootFolder.getId(), true);
-            status.setTotalDocuments(totalDocs);
+            // Skip pre-counting to avoid memory issues - count during processing
+            status.setTotalDocuments(-1); // -1 indicates unknown
 
             // Clear existing RAG index
             clearRAGIndex(repositoryId);
@@ -338,9 +337,8 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
         status.setStartTime(System.currentTimeMillis());
 
         try {
-            // Count total documents
-            long totalDocs = countDocumentsInFolder(repositoryId, folderId, recursive);
-            status.setTotalDocuments(totalDocs);
+            // Skip pre-counting to avoid memory issues - count during processing
+            status.setTotalDocuments(-1); // -1 indicates unknown
 
             // Process folder
             reindexFolderRecursive(repositoryId, folderId, recursive, status);

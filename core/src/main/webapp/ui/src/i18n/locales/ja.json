@@ -1336,9 +1336,9 @@
     "title": "RAGインデックスメンテナンス",
     "description": "RAG（検索拡張生成）のベクトルインデックスを管理します。セマンティック検索に使用されます。",
     "tabs": {
-      "status": "ステータス",
-      "reindex": "再インデクシング",
-      "search": "検索テスト"
+      "status": "RAGステータス",
+      "reindex": "RAG再インデクシング",
+      "search": "RAG検索テスト"
     },
     "healthCheck": {
       "title": "RAGヘルスチェック",
