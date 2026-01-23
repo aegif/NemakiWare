@@ -57,6 +57,9 @@ public class RAGSearchResource {
 
     private static final Log log = LogFactory.getLog(RAGSearchResource.class);
 
+    /** Maximum allowed value for topK to prevent Solr overload */
+    private static final int MAX_TOP_K = 100;
+
     @Autowired
     private VectorSearchService vectorSearchService;
 
@@ -121,7 +124,8 @@ public class RAGSearchResource {
         try {
             validateRepository(repositoryId);
 
-            if (!vectorSearchService.isEnabled()) {
+            // Check if VectorSearchService is available (DI failure protection)
+            if (vectorSearchService == null || !vectorSearchService.isEnabled()) {
                 throw ApiException.serviceUnavailable("RAG semantic search is not available");
             }
 
@@ -129,15 +133,19 @@ public class RAGSearchResource {
                 throw ApiException.invalidArgument("Query text is required");
             }
 
-            // Validate boost values (0.0 to 1.0 range)
+            // Validate boost values (0.0 to 1.0 range) and topK
             validateBoostValues(request);
+            validateTopK(request);
 
-            // Get current user
+            // Get current user with null safety
             CallContext context = getCallContext();
+            if (context == null || context.getUsername() == null) {
+                throw ApiException.unauthorized("Authentication required for RAG search");
+            }
             String userId = context.getUsername();
 
-            // Set defaults
-            int topK = request.getTopK() != null ? request.getTopK() : 10;
+            // Set defaults with topK upper limit
+            int topK = request.getTopK() != null ? Math.min(request.getTopK(), MAX_TOP_K) : 10;
             float minScore = request.getMinScore() != null ? request.getMinScore() : 0.7f;
 
             // Execute search
@@ -224,8 +232,9 @@ public class RAGSearchResource {
             @PathParam("repositoryId") String repositoryId) {
 
         Map<String, Object> health = new HashMap<>();
-        health.put("enabled", vectorSearchService.isEnabled());
-        health.put("status", vectorSearchService.isEnabled() ? "healthy" : "unavailable");
+        boolean enabled = vectorSearchService != null && vectorSearchService.isEnabled();
+        health.put("enabled", enabled);
+        health.put("status", enabled ? "healthy" : "unavailable");
 
         return Response.ok(health).build();
     }
@@ -254,6 +263,19 @@ public class RAGSearchResource {
             if (minScore < 0.0f || minScore > 1.0f) {
                 throw ApiException.invalidArgument(
                         "minScore must be between 0.0 and 1.0, got: " + minScore);
+            }
+        }
+    }
+
+    private void validateTopK(RAGSearchRequest request) {
+        if (request.getTopK() != null) {
+            int topK = request.getTopK();
+            if (topK < 1) {
+                throw ApiException.invalidArgument("topK must be at least 1, got: " + topK);
+            }
+            if (topK > MAX_TOP_K) {
+                throw ApiException.invalidArgument(
+                        "topK must not exceed " + MAX_TOP_K + ", got: " + topK);
             }
         }
     }

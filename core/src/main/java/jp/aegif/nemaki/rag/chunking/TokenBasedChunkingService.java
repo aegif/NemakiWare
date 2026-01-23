@@ -173,68 +173,7 @@ public class TokenBasedChunkingService implements ChunkingService {
         return new TextChunk(text.trim(), index, startOffset, endOffset, tokenCount);
     }
 
-    private String extractOverlap(String text, int overlapTokens) {
-        if (overlapTokens <= 0 || text.isEmpty()) {
-            return "";
-        }
-
-        // Estimate characters needed for overlap tokens
-        double cjkRatio = calculateCjkRatio(text);
-        double charsPerToken = ENGLISH_CHARS_PER_TOKEN * (1 - cjkRatio) + CJK_CHARS_PER_TOKEN * cjkRatio;
-        int overlapChars = (int) (overlapTokens * charsPerToken);
-
-        if (overlapChars >= text.length()) {
-            return text;
-        }
-
-        // Find word/sentence boundary near the overlap point
-        int startIndex = text.length() - overlapChars;
-        int boundaryIndex = text.indexOf(' ', startIndex);
-        if (boundaryIndex == -1 || boundaryIndex >= text.length() - 10) {
-            boundaryIndex = startIndex;
-        }
-
-        return text.substring(boundaryIndex).trim();
-    }
-
-    private List<TextChunk> splitLongText(String text, int startIndex, int startOffset,
-                                           int maxTokens, int overlapTokens) {
-        List<TextChunk> chunks = new ArrayList<>();
-
-        double cjkRatio = calculateCjkRatio(text);
-        double charsPerToken = ENGLISH_CHARS_PER_TOKEN * (1 - cjkRatio) + CJK_CHARS_PER_TOKEN * cjkRatio;
-        int charsPerChunk = (int) (maxTokens * charsPerToken);
-        int overlapChars = (int) (overlapTokens * charsPerToken);
-
-        int currentPos = 0;
-        int chunkIndex = startIndex;
-
-        while (currentPos < text.length()) {
-            int endPos = Math.min(currentPos + charsPerChunk, text.length());
-
-            // Try to find word boundary
-            if (endPos < text.length()) {
-                int boundaryPos = text.lastIndexOf(' ', endPos);
-                if (boundaryPos > currentPos + charsPerChunk / 2) {
-                    endPos = boundaryPos;
-                }
-            }
-
-            String chunkText = text.substring(currentPos, endPos).trim();
-            if (!chunkText.isEmpty()) {
-                chunks.add(new TextChunk(chunkText, chunkIndex++,
-                        startOffset + currentPos, startOffset + endPos,
-                        estimateTokenCount(chunkText)));
-            }
-
-            currentPos = endPos - overlapChars;
-            if (currentPos <= 0) {
-                currentPos = endPos;
-            }
-        }
-
-        return chunks;
-    }
+    // Note: extractOverlap and splitLongText methods removed - replaced by fast implementations below
 
     @Override
     public int estimateTokenCount(String text) {

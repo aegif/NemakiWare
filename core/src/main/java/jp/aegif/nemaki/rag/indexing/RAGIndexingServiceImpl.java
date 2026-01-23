@@ -10,6 +10,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
+import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.common.SolrInputDocument;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -401,7 +402,14 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
 
         try (SolrClient solrClient = getSolrClient()) {
             // First, delete any existing entries for this document
-            solrClient.deleteByQuery("nemaki", "_root_:" + document.getId());
+            // Use UpdateRequest with commitWithin to ensure delete is reflected promptly
+            int commitWithinMs = ragConfig.getSolrCommitWithinMs();
+            UpdateRequest deleteRequest = new UpdateRequest();
+            deleteRequest.deleteByQuery("_root_:" + document.getId());
+            if (commitWithinMs > 0) {
+                deleteRequest.setCommitWithin(commitWithinMs);
+            }
+            deleteRequest.process(solrClient, "nemaki");
 
             // Create parent document (must come AFTER children in Block Join)
             List<SolrInputDocument> childDocs = new ArrayList<>();
@@ -467,7 +475,7 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             parentDoc.addChildDocuments(childDocs);
 
             // Index the parent document with children using commitWithin for batching
-            int commitWithinMs = ragConfig.getSolrCommitWithinMs();
+            // (commitWithinMs already declared above for delete)
             if (commitWithinMs > 0) {
                 // Use commitWithin to allow Solr to batch commits
                 solrClient.add("nemaki", parentDoc, commitWithinMs);

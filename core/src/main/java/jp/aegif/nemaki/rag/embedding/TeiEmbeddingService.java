@@ -55,8 +55,11 @@ public class TeiEmbeddingService implements EmbeddingService {
 
     private static final Log log = LogFactory.getLog(TeiEmbeddingService.class);
 
-    // Health check cache TTL: 30 seconds
-    private static final long HEALTH_CACHE_TTL_MS = 30_000;
+    // Health check cache TTL settings:
+    // - On success: longer TTL to reduce healthy service checks
+    // - On failure: shorter TTL to detect recovery faster
+    private static final long HEALTH_CACHE_TTL_SUCCESS_MS = 30_000;  // 30 seconds when healthy
+    private static final long HEALTH_CACHE_TTL_FAILURE_MS = 5_000;   // 5 seconds when unhealthy
 
     private final RAGConfig ragConfig;
     private final ObjectMapper objectMapper;
@@ -242,11 +245,15 @@ public class TeiEmbeddingService implements EmbeddingService {
             return false;
         }
 
-        // Check cache first
+        // Check cache first with variable TTL
+        // Use shorter TTL when unhealthy to detect recovery faster
         long now = System.currentTimeMillis();
         long lastCheck = lastHealthCheckTime.get();
-        if (now - lastCheck < HEALTH_CACHE_TTL_MS) {
-            return cachedHealthStatus.get();
+        boolean lastStatus = cachedHealthStatus.get();
+        long ttl = lastStatus ? HEALTH_CACHE_TTL_SUCCESS_MS : HEALTH_CACHE_TTL_FAILURE_MS;
+
+        if (now - lastCheck < ttl) {
+            return lastStatus;
         }
 
         // Perform actual health check
