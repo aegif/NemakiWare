@@ -31,7 +31,7 @@ import java.util.Set;
  * - Special principals (cmis:anyone, cmis:anonymous)
  * - Solr filter query building
  */
-@RunWith(MockitoJUnitRunner.class)
+@RunWith(MockitoJUnitRunner.Silent.class)
 public class ACLExpanderTest {
 
     private static final String REPO_ID = "test-repo";

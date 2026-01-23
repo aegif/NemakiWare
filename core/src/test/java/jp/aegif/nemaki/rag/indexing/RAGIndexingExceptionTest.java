@@ -254,11 +254,13 @@ public class RAGIndexingExceptionTest {
     @Test
     public void testExceptionIsCheckedException() {
         RAGIndexingException exception = new RAGIndexingException("test");
-        
-        assertTrue("RAGIndexingException should be an Exception", 
+
+        assertTrue("RAGIndexingException should be an Exception",
                 exception instanceof Exception);
-        assertFalse("RAGIndexingException should not be a RuntimeException", 
-                exception instanceof RuntimeException);
+        // RAGIndexingException extends Exception (not RuntimeException)
+        // This is enforced by the type system - no runtime check needed
+        assertFalse("RAGIndexingException should not be a RuntimeException",
+                RuntimeException.class.isAssignableFrom(RAGIndexingException.class));
     }
 
     @Test

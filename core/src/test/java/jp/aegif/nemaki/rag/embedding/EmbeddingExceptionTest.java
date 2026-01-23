@@ -188,11 +188,13 @@ public class EmbeddingExceptionTest {
     @Test
     public void testExceptionIsCheckedException() {
         EmbeddingException exception = new EmbeddingException("test");
-        
-        assertTrue("EmbeddingException should be an Exception", 
+
+        assertTrue("EmbeddingException should be an Exception",
                 exception instanceof Exception);
-        assertFalse("EmbeddingException should not be a RuntimeException", 
-                exception instanceof RuntimeException);
+        // EmbeddingException extends Exception (not RuntimeException)
+        // This is enforced by the type system - no runtime check needed
+        assertFalse("EmbeddingException should not be a RuntimeException",
+                RuntimeException.class.isAssignableFrom(EmbeddingException.class));
     }
 
     @Test
