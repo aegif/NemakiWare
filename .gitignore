@@ -173,6 +173,9 @@ SimpleQueryTest.*
 # Exception: Keep important unit test files for Solr index maintenance
 !core/src/test/java/jp/aegif/nemaki/businesslogic/impl/SolrIndexMaintenanceServiceImpl*Test.java
 
+# Exception: Keep RAG unit test files
+!core/src/test/java/jp/aegif/nemaki/rag/**/*Test.java
+
 # Runtime logs and configuration
 jetty-*.log
 query-*.log
