@@ -306,6 +306,67 @@ public class McpToolsProviderTest {
         assertTrue(result.getContent().contains("88%"));
     }
 
+    // ========== URL Encoding Tests ==========
+
+    @Test
+    public void testRagSearchToolEncodesSpacesInUrls() throws Exception {
+        // Given: Document ID with spaces
+        String repositoryId = "bedroom";
+        String userId = "admin";
+        String query = "test";
+
+        authHandler.registerSessionToken("test-token", userId, repositoryId);
+
+        List<VectorSearchResult> mockResults = Arrays.asList(
+            createMockResult("doc with spaces", "Test Doc.pdf", "Test content", 0.9f)
+        );
+        when(vectorSearchService.search(eq(repositoryId), eq(userId), eq(query), anyInt(), anyFloat()))
+            .thenReturn(mockResults);
+
+        Map<String, Object> arguments = Map.of("query", query);
+
+        // When
+        McpToolResult result = toolsProvider.executeRagSearchTool(arguments, repositoryId, userId);
+
+        // Then
+        assertTrue(result.isSuccess());
+        // Spaces should be encoded as %20, not +
+        assertTrue(result.getContent().contains("/browse/bedroom/doc%20with%20spaces)"));
+    }
+
+    // ========== Markdown Escaping Tests ==========
+
+    @Test
+    public void testRagSearchToolEscapesMarkdownSpecialChars() throws Exception {
+        // Given: Document with Markdown special characters
+        String repositoryId = "bedroom";
+        String userId = "admin";
+        String query = "test [query]";
+
+        authHandler.registerSessionToken("test-token", userId, repositoryId);
+
+        List<VectorSearchResult> mockResults = Arrays.asList(
+            createMockResult("doc1", "File|with~special*chars.pdf", "Content with *bold* and _italic_", 0.9f)
+        );
+        when(vectorSearchService.search(eq(repositoryId), eq(userId), eq(query), anyInt(), anyFloat()))
+            .thenReturn(mockResults);
+
+        Map<String, Object> arguments = Map.of("query", query);
+
+        // When
+        McpToolResult result = toolsProvider.executeRagSearchTool(arguments, repositoryId, userId);
+
+        // Then
+        assertTrue(result.isSuccess());
+        // Query should be escaped
+        assertTrue(result.getContent().contains("test \\[query\\]"));
+        // Document name special chars should be escaped
+        assertTrue(result.getContent().contains("File\\|with\\~special\\*chars\\.pdf"));
+        // Content special chars should be escaped
+        assertTrue(result.getContent().contains("\\*bold\\*"));
+        assertTrue(result.getContent().contains("\\_italic\\_"));
+    }
+
     // ========== Tool Definitions Tests ==========
 
     @Test

@@ -100,14 +100,17 @@ public class McpToolsProvider {
             );
         } catch (JsonProcessingException e) {
             log.error("Failed to generate login tool schema", e);
-            // Fallback to safe hardcoded schema
-            String safeSchema = """
-                {"type":"object","properties":{"username":{"type":"string","description":"ユーザー名"},"password":{"type":"string","description":"パスワード"},"repositoryId":{"type":"string","description":"リポジトリID","default":"bedroom"}},"required":["username","password"]}
-                """;
+            // Fallback: use defaultRepository if it's safe (no quotes), otherwise use "bedroom"
+            String safeDefaultRepo = defaultRepository != null && !defaultRepository.contains("\"")
+                ? defaultRepository
+                : "bedroom";
+            String safeSchema = String.format(
+                "{\"type\":\"object\",\"properties\":{\"username\":{\"type\":\"string\",\"description\":\"ユーザー名\"},\"password\":{\"type\":\"string\",\"description\":\"パスワード\"},\"repositoryId\":{\"type\":\"string\",\"description\":\"リポジトリID\",\"default\":\"%s\"}},\"required\":[\"username\",\"password\"]}",
+                safeDefaultRepo);
             return new McpToolDefinition(
                 "nemakiware_login",
                 "NemakiWareにログインしてセッショントークンを取得します",
-                safeSchema.trim()
+                safeSchema
             );
         }
     }
@@ -362,8 +365,11 @@ public class McpToolsProvider {
 
     private String formatDocumentUrl(String repositoryId, String documentId) {
         // URL encode to handle special characters safely
-        String encodedRepoId = URLEncoder.encode(repositoryId, StandardCharsets.UTF_8);
-        String encodedDocId = URLEncoder.encode(documentId, StandardCharsets.UTF_8);
+        // URLEncoder uses + for spaces, but URL fragments should use %20
+        String encodedRepoId = URLEncoder.encode(repositoryId, StandardCharsets.UTF_8)
+            .replace("+", "%20");
+        String encodedDocId = URLEncoder.encode(documentId, StandardCharsets.UTF_8)
+            .replace("+", "%20");
         return baseUrl + "/ui/#/browse/" + encodedRepoId + "/" + encodedDocId;
     }
 
@@ -386,7 +392,9 @@ public class McpToolsProvider {
                    .replace("+", "\\+")
                    .replace("-", "\\-")
                    .replace(".", "\\.")
-                   .replace("!", "\\!");
+                   .replace("!", "\\!")
+                   .replace("|", "\\|")   // Table delimiter
+                   .replace("~", "\\~");  // Strikethrough
     }
 
     private String truncateText(String text, int maxLength) {
