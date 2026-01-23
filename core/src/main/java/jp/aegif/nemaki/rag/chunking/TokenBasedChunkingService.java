@@ -54,28 +54,43 @@ public class TokenBasedChunkingService implements ChunkingService {
 
     @Override
     public List<TextChunk> chunk(String text) {
+        System.out.println("=== TokenBasedChunkingService.chunk() ENTER ===");
         List<TextChunk> chunks = new ArrayList<>();
 
         if (text == null || text.trim().isEmpty()) {
+            System.out.println("=== chunk(): text is null or empty, returning empty ===");
             return chunks;
         }
 
+        System.out.println("=== chunk(): text length before normalize = " + text.length() + " ===");
         // Normalize whitespace
         text = text.replaceAll("\\s+", " ").trim();
+        System.out.println("=== chunk(): text length after normalize = " + text.length() + " ===");
 
-        int totalTokens = estimateTokenCount(text);
+        // Calculate CJK ratio once for the entire text (sampled) and cache it
+        System.out.println("=== chunk(): calculating CJK ratio ===");
+        double cjkRatio = calculateCjkRatio(text);
+        System.out.println("=== chunk(): CJK ratio = " + cjkRatio + " ===");
+        double charsPerToken = ENGLISH_CHARS_PER_TOKEN * (1 - cjkRatio) + CJK_CHARS_PER_TOKEN * cjkRatio;
+        System.out.println("=== chunk(): charsPerToken = " + charsPerToken + " ===");
+
+        int totalTokens = estimateTokenCountFast(text.length(), charsPerToken);
         int maxTokens = ragConfig.getChunkingMaxTokens();
         int overlapTokens = ragConfig.getChunkingOverlapTokens();
         int minTokens = ragConfig.getChunkingMinTokens();
+        System.out.println("=== chunk(): totalTokens=" + totalTokens + ", maxTokens=" + maxTokens + ", overlapTokens=" + overlapTokens + ", minTokens=" + minTokens + " ===");
 
         // If text fits in one chunk, return as single chunk
         if (totalTokens <= maxTokens) {
+            System.out.println("=== chunk(): fits in one chunk, returning single chunk ===");
             chunks.add(new TextChunk(text, 0, 0, text.length(), totalTokens));
             return chunks;
         }
 
         // Split into sentences
+        System.out.println("=== chunk(): splitting into sentences ===");
         String[] sentences = SENTENCE_PATTERN.split(text);
+        System.out.println("=== chunk(): sentence count = " + sentences.length + " ===");
 
         int chunkIndex = 0;
         int currentOffset = 0;
@@ -83,31 +98,43 @@ public class TokenBasedChunkingService implements ChunkingService {
         int currentTokens = 0;
         String overlapText = "";
 
+        System.out.println("=== chunk(): starting sentence loop ===");
+        int processedSentences = 0;
         for (String sentence : sentences) {
             sentence = sentence.trim();
             if (sentence.isEmpty()) {
                 continue;
             }
+            processedSentences++;
+            // Log every 1000 sentences, and all sentences after 24000
+            if (processedSentences % 1000 == 0 || processedSentences > 24000) {
+                System.out.println("=== chunk(): processed " + processedSentences + "/" + sentences.length + " sentences, chunks=" + chunks.size() + ", sentenceLen=" + sentence.length() + " ===");
+            }
 
-            int sentenceTokens = estimateTokenCount(sentence);
+            int sentenceTokens = estimateTokenCountFast(sentence.length(), charsPerToken);
 
             // Handle very long sentences (longer than max tokens)
             if (sentenceTokens > maxTokens) {
+                System.out.println("=== chunk(): LONG SENTENCE detected at " + processedSentences + ", len=" + sentence.length() + ", tokens=" + sentenceTokens + " ===");
                 // Flush current chunk if not empty
                 if (currentChunk.length() > 0) {
+                    System.out.println("=== chunk(): flushing current chunk ===");
                     chunks.add(createChunk(currentChunk.toString(), chunkIndex++,
                             currentOffset - currentChunk.length(), currentOffset, currentTokens));
-                    overlapText = extractOverlap(currentChunk.toString(), overlapTokens);
+                    overlapText = extractOverlapFast(currentChunk.toString(), overlapTokens, charsPerToken);
                     currentChunk = new StringBuilder();
                     currentTokens = 0;
                 }
 
                 // Split long sentence by character count
-                List<TextChunk> subChunks = splitLongText(sentence, chunkIndex, currentOffset, maxTokens, overlapTokens);
+                System.out.println("=== chunk(): calling splitLongTextFast ===");
+                List<TextChunk> subChunks = splitLongTextFast(sentence, chunkIndex, currentOffset, maxTokens, overlapTokens, charsPerToken);
+                System.out.println("=== chunk(): splitLongTextFast returned " + subChunks.size() + " sub-chunks ===");
                 for (TextChunk subChunk : subChunks) {
                     chunks.add(subChunk);
                     chunkIndex++;
                 }
+                System.out.println("=== chunk(): long sentence processed, chunks now=" + chunks.size() + " ===");
                 currentOffset += sentence.length() + 1;  // +1 for separator
                 continue;
             }
@@ -119,9 +146,9 @@ public class TokenBasedChunkingService implements ChunkingService {
                         currentOffset - currentChunk.length(), currentOffset, currentTokens));
 
                 // Prepare overlap for next chunk
-                overlapText = extractOverlap(currentChunk.toString(), overlapTokens);
+                overlapText = extractOverlapFast(currentChunk.toString(), overlapTokens, charsPerToken);
                 currentChunk = new StringBuilder(overlapText);
-                currentTokens = estimateTokenCount(overlapText);
+                currentTokens = estimateTokenCountFast(overlapText.length(), charsPerToken);
             }
 
             // Add sentence to current chunk
@@ -133,9 +160,11 @@ public class TokenBasedChunkingService implements ChunkingService {
             currentOffset += sentence.length() + 1;
         }
 
+        System.out.println("=== chunk(): loop completed, chunks=" + chunks.size() + ", currentChunk.length=" + currentChunk.length() + " ===");
         // Add final chunk if not empty and meets minimum size
         if (currentChunk.length() > 0) {
-            int finalTokens = estimateTokenCount(currentChunk.toString());
+            System.out.println("=== chunk(): adding final chunk ===");
+            int finalTokens = estimateTokenCountFast(currentChunk.toString().length(), charsPerToken);
             if (finalTokens >= minTokens || chunks.isEmpty()) {
                 chunks.add(createChunk(currentChunk.toString(), chunkIndex,
                         currentOffset - currentChunk.length(), currentOffset, finalTokens));
@@ -145,7 +174,7 @@ public class TokenBasedChunkingService implements ChunkingService {
                 String mergedText = lastChunk.getText() + " " + currentChunk.toString();
                 chunks.add(new TextChunk(mergedText, lastChunk.getIndex(),
                         lastChunk.getStartOffset(), currentOffset,
-                        estimateTokenCount(mergedText)));
+                        estimateTokenCountFast(mergedText.length(), charsPerToken)));
             }
         }
 
@@ -154,6 +183,7 @@ public class TokenBasedChunkingService implements ChunkingService {
                     chunks.size(), totalTokens, maxTokens));
         }
 
+        System.out.println("=== TokenBasedChunkingService.chunk() EXIT, returning " + chunks.size() + " chunks ===");
         return chunks;
     }
 
@@ -241,14 +271,103 @@ public class TokenBasedChunkingService implements ChunkingService {
             return 0.0;
         }
 
-        long cjkCount = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN ||
-                        Character.UnicodeScript.of(c) == Character.UnicodeScript.HIRAGANA ||
-                        Character.UnicodeScript.of(c) == Character.UnicodeScript.KATAKANA ||
-                        Character.UnicodeScript.of(c) == Character.UnicodeScript.HANGUL)
-                .count();
+        // Sample only first 10000 characters for performance
+        // This is sufficient to estimate the language mix for token calculation
+        final int SAMPLE_SIZE = 10000;
+        String sample = text.length() > SAMPLE_SIZE ? text.substring(0, SAMPLE_SIZE) : text;
 
-        return (double) cjkCount / text.length();
+        int cjkCount = 0;
+        for (int i = 0; i < sample.length(); i++) {
+            char c = sample.charAt(i);
+            Character.UnicodeScript script = Character.UnicodeScript.of(c);
+            if (script == Character.UnicodeScript.HAN ||
+                script == Character.UnicodeScript.HIRAGANA ||
+                script == Character.UnicodeScript.KATAKANA ||
+                script == Character.UnicodeScript.HANGUL) {
+                cjkCount++;
+            }
+        }
+
+        return (double) cjkCount / sample.length();
+    }
+
+    /**
+     * Fast token count estimation using pre-calculated charsPerToken.
+     */
+    private int estimateTokenCountFast(int textLength, double charsPerToken) {
+        if (textLength <= 0) {
+            return 0;
+        }
+        return (int) Math.ceil(textLength / charsPerToken);
+    }
+
+    /**
+     * Fast overlap extraction using pre-calculated charsPerToken.
+     */
+    private String extractOverlapFast(String text, int overlapTokens, double charsPerToken) {
+        if (overlapTokens <= 0 || text.isEmpty()) {
+            return "";
+        }
+
+        int overlapChars = (int) (overlapTokens * charsPerToken);
+
+        if (overlapChars >= text.length()) {
+            return text;
+        }
+
+        // Find word/sentence boundary near the overlap point
+        int startIndex = text.length() - overlapChars;
+        int boundaryIndex = text.indexOf(' ', startIndex);
+        if (boundaryIndex == -1 || boundaryIndex >= text.length() - 10) {
+            boundaryIndex = startIndex;
+        }
+
+        return text.substring(boundaryIndex).trim();
+    }
+
+    /**
+     * Fast long text splitting using pre-calculated charsPerToken.
+     */
+    private List<TextChunk> splitLongTextFast(String text, int startIndex, int startOffset,
+                                               int maxTokens, int overlapTokens, double charsPerToken) {
+        List<TextChunk> chunks = new ArrayList<>();
+
+        int charsPerChunk = (int) (maxTokens * charsPerToken);
+        int overlapChars = (int) (overlapTokens * charsPerToken);
+
+        int currentPos = 0;
+        int chunkIndex = startIndex;
+
+        while (currentPos < text.length()) {
+            int endPos = Math.min(currentPos + charsPerChunk, text.length());
+
+            // Try to find word boundary
+            if (endPos < text.length()) {
+                int boundaryPos = text.lastIndexOf(' ', endPos);
+                if (boundaryPos > currentPos + charsPerChunk / 2) {
+                    endPos = boundaryPos;
+                }
+            }
+
+            String chunkText = text.substring(currentPos, endPos).trim();
+            if (!chunkText.isEmpty()) {
+                chunks.add(new TextChunk(chunkText, chunkIndex++,
+                        startOffset + currentPos, startOffset + endPos,
+                        estimateTokenCountFast(chunkText.length(), charsPerToken)));
+            }
+
+            // Calculate next position with overlap
+            int nextPos = endPos - overlapChars;
+            // Ensure we always make forward progress to avoid infinite loop
+            // When near the end, we might not have room for overlap, so just advance to endPos
+            if (nextPos <= currentPos || endPos >= text.length()) {
+                currentPos = endPos;
+            } else {
+                currentPos = nextPos;
+            }
+        }
+
+        return chunks;
     }
 
     @Override

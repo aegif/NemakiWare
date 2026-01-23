@@ -79,61 +79,97 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
 
     @Override
     public void indexDocument(String repositoryId, Document document) throws RAGIndexingException {
+        System.out.println("=== RAG indexDocument CALLED for: " + document.getId() + " (" + document.getName() + ") ===");
+        log.info("RAG indexDocument called for: " + document.getId() + " (" + document.getName() + ")");
+
         if (!isEnabled()) {
-            log.debug("RAG indexing is disabled, skipping document: " + document.getId());
-            return;
+            log.info("RAG indexing is disabled, skipping document: " + document.getId());
+            throw new RAGIndexingException("RAG indexing is disabled");
         }
 
         String mimeType = getMimeType(repositoryId, document);
+        log.info("Document MIME type: " + mimeType);
         if (!isMimeTypeSupported(mimeType)) {
-            log.debug("MIME type not supported for RAG indexing: " + mimeType);
-            return;
+            log.info("MIME type not supported for RAG indexing: " + mimeType);
+            throw new RAGIndexingException("MIME type not supported: " + mimeType);
         }
 
         try {
             // Extract text content
+            System.out.println("=== Starting text extraction for: " + document.getId() + " ===");
             String textContent = extractText(repositoryId, document);
+            System.out.println("=== Text extraction completed, length: " + (textContent != null ? textContent.length() : "null") + " ===");
             if (textContent == null || textContent.trim().isEmpty()) {
-                log.debug("No text content extracted for document: " + document.getId());
-                return;
+                System.out.println("=== No text content extracted for: " + document.getId() + " ===");
+                throw new RAGIndexingException("No text content extracted");
             }
 
             // Chunk the text
-            List<TextChunk> chunks = chunkingService.chunk(textContent);
+            System.out.println("=== Starting chunking for: " + document.getId() + " ===");
+            System.out.println("=== Text length: " + textContent.length() + " chars ===");
+            System.out.println("=== ChunkingService class: " + chunkingService.getClass().getName() + " ===");
+            List<TextChunk> chunks;
+            try {
+                long start = System.currentTimeMillis();
+                chunks = chunkingService.chunk(textContent);
+                long elapsed = System.currentTimeMillis() - start;
+                System.out.println("=== Chunking completed in " + elapsed + "ms, chunks: " + chunks.size() + " ===");
+            } catch (Exception e) {
+                System.out.println("=== CHUNKING EXCEPTION: " + e.getClass().getName() + ": " + e.getMessage() + " ===");
+                e.printStackTrace();
+                throw e;
+            }
             if (chunks.isEmpty()) {
-                log.debug("No chunks generated for document: " + document.getId());
-                return;
+                System.out.println("=== No chunks generated for: " + document.getId() + " ===");
+                throw new RAGIndexingException("No text content: chunking produced no results");
             }
 
             // Generate embeddings for chunks
+            System.out.println("=== Starting embedding generation for " + chunks.size() + " chunks ===");
             List<String> chunkTexts = chunks.stream()
                     .map(TextChunk::getText)
                     .collect(Collectors.toList());
+            System.out.println("=== Chunk texts prepared, calling embeddingService.embedBatch ===");
+            long embedStart = System.currentTimeMillis();
             List<float[]> chunkEmbeddings = embeddingService.embedBatch(chunkTexts, false);
+            long embedElapsed = System.currentTimeMillis() - embedStart;
+            System.out.println("=== Embedding generation completed in " + embedElapsed + "ms, embeddings: " + chunkEmbeddings.size() + " ===");
 
             // Generate document-level embedding (average of first few chunks or title)
+            System.out.println("=== Generating document-level embedding ===");
             float[] documentEmbedding = generateDocumentEmbedding(document, chunks, chunkEmbeddings);
+            System.out.println("=== Document embedding generated ===");
 
             // Generate property embedding for weighted search
+            System.out.println("=== Extracting property text ===");
             String propertyText = extractPropertyText(document);
             float[] propertyEmbedding = null;
             if (ragConfig.isPropertySearchEnabled() && propertyText != null && !propertyText.trim().isEmpty()) {
                 propertyEmbedding = embeddingService.embed(propertyText, false);
                 log.debug("Generated property embedding for document: " + document.getId());
             }
+            System.out.println("=== Property processing complete ===");
 
             // Get readers for ACL pre-expansion
+            System.out.println("=== Getting readers for ACL ===");
             List<String> readers = getReaders(repositoryId, document);
+            System.out.println("=== Readers count: " + readers.size() + " ===");
 
             // Create and index Solr documents with Block Join structure
+            System.out.println("=== Starting Solr indexing ===");
             indexToSolr(repositoryId, document, chunks, chunkEmbeddings, documentEmbedding,
                        propertyEmbedding, propertyText, readers);
+            System.out.println("=== Solr indexing complete ===");
 
             log.info(String.format("RAG indexed document %s with %d chunks", document.getId(), chunks.size()));
+            System.out.println("=== RAG indexDocument SUCCESS for: " + document.getId() + " ===");
 
         } catch (EmbeddingException e) {
+            System.out.println("=== EmbeddingException: " + e.getMessage() + " ===");
             throw new RAGIndexingException("Failed to generate embeddings for document: " + document.getId(), e);
         } catch (Exception e) {
+            System.out.println("=== Exception in indexDocument: " + e.getClass().getName() + ": " + e.getMessage() + " ===");
+            e.printStackTrace();
             throw new RAGIndexingException("Failed to index document: " + document.getId(), e);
         }
     }
@@ -318,26 +354,36 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
     }
 
     private String extractText(String repositoryId, Document document) {
+        System.out.println("=== extractText called for: " + document.getId() + " ===");
         String attachmentId = document.getAttachmentNodeId();
         if (attachmentId == null) {
+            System.out.println("=== extractText: attachmentId is null ===");
             return null;
         }
+        System.out.println("=== extractText: attachmentId = " + attachmentId + " ===");
 
         try {
             AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
             if (attachment == null) {
+                System.out.println("=== extractText: attachment is null ===");
                 return null;
             }
+            System.out.println("=== extractText: got attachment, name = " + attachment.getName() + " ===");
 
             InputStream contentStream = attachment.getInputStream();
             if (contentStream == null) {
+                System.out.println("=== extractText: contentStream is null ===");
                 return null;
             }
+            System.out.println("=== extractText: got contentStream ===");
 
             try {
                 String mimeType = attachment.getMimeType();
                 String fileName = attachment.getName();
-                return textExtractionService.extractText(contentStream, mimeType, fileName);
+                System.out.println("=== extractText: calling textExtractionService.extractText for " + fileName + " (" + mimeType + ") ===");
+                String result = textExtractionService.extractText(contentStream, mimeType, fileName);
+                System.out.println("=== extractText: result length = " + (result != null ? result.length() : "null") + " ===");
+                return result;
             } finally {
                 try {
                     contentStream.close();
@@ -346,6 +392,8 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 }
             }
         } catch (Exception e) {
+            System.out.println("=== extractText: exception: " + e.getMessage() + " ===");
+            e.printStackTrace();
             log.warn("Failed to extract text for document: " + document.getId(), e);
             return null;
         }
