@@ -289,6 +289,117 @@ public class RAGSearchResource {
         return Response.ok(health).build();
     }
 
+
+    @GET
+    @Path("/similar/{documentId}")
+    @Operation(
+            summary = "Find similar documents",
+            description = "Finds documents that are semantically similar to the specified document. " +
+                    "Uses vector similarity on indexed document embeddings. " +
+                    "Only available for documents that have been RAG-indexed."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Similar documents",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON,
+                            schema = @Schema(implementation = SimilarDocumentsResponse.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Document not found or not RAG-indexed",
+                    content = @Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "503",
+                    description = "RAG search not available",
+                    content = @Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)
+                    )
+            )
+    })
+    public Response findSimilarDocuments(
+            @Parameter(description = "Repository ID", required = true)
+            @PathParam("repositoryId") String repositoryId,
+            @Parameter(description = "Document ID to find similar documents for", required = true)
+            @PathParam("documentId") String documentId,
+            @Parameter(description = "Maximum number of similar documents to return")
+            @QueryParam("topK") @DefaultValue("10") int topK,
+            @Parameter(description = "Minimum similarity score (0.0-1.0)")
+            @QueryParam("minScore") @DefaultValue("0.5") float minScore) {
+
+        if (log.isDebugEnabled()) {
+            log.debug(String.format("Find similar documents: repo=%s, docId=%s, topK=%d, minScore=%.2f",
+                    repositoryId, documentId, topK, minScore));
+        }
+
+        try {
+            validateRepository(repositoryId);
+
+            if (vectorSearchService == null || !vectorSearchService.isEnabled()) {
+                throw ApiException.serviceUnavailable("RAG semantic search is not available");
+            }
+
+            // Validate parameters
+            if (documentId == null || documentId.trim().isEmpty()) {
+                throw ApiException.invalidArgument("Document ID is required");
+            }
+            if (topK < 1) {
+                throw ApiException.invalidArgument("topK must be at least 1");
+            }
+            if (minScore < 0.0f || minScore > 1.0f) {
+                throw ApiException.invalidArgument("minScore must be between 0.0 and 1.0");
+            }
+
+            // Limit topK
+            int effectiveTopK = Math.min(topK, MAX_TOP_K);
+
+            // Get current user
+            CallContext context = getCallContext();
+            if (context == null || context.getUsername() == null) {
+                throw ApiException.unauthorized("Authentication required");
+            }
+            String userId = context.getUsername();
+
+            // Find similar documents
+            List<VectorSearchResult> results = vectorSearchService.findSimilarDocuments(
+                    repositoryId, userId, documentId, effectiveTopK, minScore);
+
+            // Security: Filter by current permissions
+            List<VectorSearchResult> filteredResults = filterByCurrentPermissions(
+                    repositoryId, context, results);
+
+            // Build response
+            SimilarDocumentsResponse response = new SimilarDocumentsResponse();
+            response.setSourceDocumentId(documentId);
+            response.setResults(filteredResults);
+            response.setTotalResults(filteredResults.size());
+            response.setTopK(effectiveTopK);
+            response.setMinScore(minScore);
+
+            return Response.ok(response).build();
+
+        } catch (ApiException e) {
+            throw e;
+        } catch (VectorSearchException e) {
+            // Check if it's a "not indexed" error
+            if (e.getMessage() != null && e.getMessage().contains("not found in RAG index")) {
+                throw ApiException.objectNotFound(documentId, repositoryId);
+            }
+            log.warn("Vector search failed: " + e.getMessage());
+            throw ApiException.internalError("Vector search failed: " + e.getMessage());
+        } catch (Exception e) {
+            log.error("Unexpected error in find similar documents", e);
+            throw ApiException.internalError("An unexpected error occurred");
+        }
+    }
+
     private boolean hasCustomBoost(RAGSearchRequest request) {
         return request.getPropertyBoost() != null || request.getContentBoost() != null;
     }
@@ -585,6 +696,65 @@ public class RAGSearchResource {
 
         public void setTopKLimit(Integer topKLimit) {
             this.topKLimit = topKLimit;
+        }
+    }
+
+
+    @Schema(description = "Similar documents response")
+    public static class SimilarDocumentsResponse {
+        @Schema(description = "Source document ID")
+        private String sourceDocumentId;
+
+        @Schema(description = "Total number of similar documents found")
+        private int totalResults;
+
+        @Schema(description = "List of similar documents")
+        private List<VectorSearchResult> results;
+
+        @Schema(description = "Requested topK value")
+        private int topK;
+
+        @Schema(description = "Minimum similarity score threshold used")
+        private float minScore;
+
+        public String getSourceDocumentId() {
+            return sourceDocumentId;
+        }
+
+        public void setSourceDocumentId(String sourceDocumentId) {
+            this.sourceDocumentId = sourceDocumentId;
+        }
+
+        public int getTotalResults() {
+            return totalResults;
+        }
+
+        public void setTotalResults(int totalResults) {
+            this.totalResults = totalResults;
+        }
+
+        public List<VectorSearchResult> getResults() {
+            return results;
+        }
+
+        public void setResults(List<VectorSearchResult> results) {
+            this.results = results;
+        }
+
+        public int getTopK() {
+            return topK;
+        }
+
+        public void setTopK(int topK) {
+            this.topK = topK;
+        }
+
+        public float getMinScore() {
+            return minScore;
+        }
+
+        public void setMinScore(float minScore) {
+            this.minScore = minScore;
         }
     }
 }

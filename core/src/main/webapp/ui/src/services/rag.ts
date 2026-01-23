@@ -58,6 +58,17 @@ export interface RAGHealthStatus {
 }
 
 /**
+ * Similar documents response.
+ */
+export interface SimilarDocumentsResponse {
+  sourceDocumentId: string;
+  totalResults: number;
+  results: RAGSearchResult[];
+  topK: number;
+  minScore: number;
+}
+
+/**
  * RAG Search Service class.
  */
 export class RAGService {
@@ -157,6 +168,42 @@ export class RAGService {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.detail || `RAG search failed: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Find documents similar to the specified document.
+   *
+   * @param documentId Document ID to find similar documents for
+   * @param topK Maximum number of similar documents to return (default: 10)
+   * @param minScore Minimum similarity score threshold (default: 0.5)
+   * @returns Similar documents with similarity scores
+   */
+  async findSimilarDocuments(
+    documentId: string,
+    topK: number = 10,
+    minScore: number = 0.5
+  ): Promise<SimilarDocumentsResponse> {
+    const params = new URLSearchParams({
+      topK: topK.toString(),
+      minScore: minScore.toString()
+    });
+
+    const url = `${this.baseUrl}/core/api/v1/cmis/repositories/${this.repositoryId}/rag/similar/${documentId}?${params.toString()}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        ...getAuthHeaders(),
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Find similar documents failed: ${response.status}`);
     }
 
     return response.json();

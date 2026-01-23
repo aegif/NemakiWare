@@ -165,6 +165,197 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         return ragConfig.isEnabled() && embeddingService.isHealthy();
     }
 
+
+    @Override
+    public List<VectorSearchResult> findSimilarDocuments(String repositoryId, String userId,
+                                                          String documentId, int topK, float minScore)
+            throws VectorSearchException {
+        if (log.isDebugEnabled()) {
+            log.debug(String.format("findSimilarDocuments called: repo=%s, docId=%s, topK=%d, minScore=%.2f",
+                    repositoryId, documentId, topK, minScore));
+        }
+
+        if (!isEnabled()) {
+            log.warn("Vector search is not enabled");
+            throw new VectorSearchException("Vector search is not enabled");
+        }
+
+        try {
+            SolrClient solrClient = solrClientProvider.getClient();
+
+            // 1. Retrieve the source document's vector from Solr
+            float[] documentVector = getDocumentVector(solrClient, documentId);
+            if (documentVector == null) {
+                throw new VectorSearchException("Document not found in RAG index: " + documentId);
+            }
+
+            // 2. Build ACL filter
+            String aclFilter = aclExpander.buildReaderFilterQuery(repositoryId, userId);
+
+            // 3. Execute KNN search using the document vector
+            // Request topK + 1 to account for the source document
+            List<VectorSearchResult> results = executeDocumentVectorSearch(
+                    solrClient, repositoryId, documentVector, aclFilter, topK + 1, minScore);
+
+            // 4. Filter out the source document from results
+            results.removeIf(r -> documentId.equals(r.getDocumentId()));
+
+            // 5. Limit to topK after filtering
+            if (results.size() > topK) {
+                results = new ArrayList<>(results.subList(0, topK));
+            }
+
+            if (log.isDebugEnabled()) {
+                log.debug(String.format("findSimilarDocuments returned %d results for document %s",
+                        results.size(), documentId));
+            }
+            return results;
+
+        } catch (VectorSearchException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to find similar documents for: " + documentId, e);
+            throw new VectorSearchException("Failed to find similar documents", e);
+        }
+    }
+
+    /**
+     * Retrieve the document_vector for a specific document from Solr.
+     *
+     * @param solrClient Solr client
+     * @param documentId Document ID
+     * @return document_vector as float array, or null if not found
+     */
+    private float[] getDocumentVector(SolrClient solrClient, String documentId) throws Exception {
+        SolrQuery query = new SolrQuery();
+        query.setQuery("id:" + documentId);
+        query.addFilterQuery("doc_type:document");
+        query.setFields("id", "document_vector");
+        query.setRows(1);
+
+        QueryResponse response = solrClient.query("nemaki", query);
+        SolrDocumentList docs = response.getResults();
+
+        if (docs == null || docs.isEmpty()) {
+            return null;
+        }
+
+        SolrDocument doc = docs.get(0);
+        Object vectorObj = doc.getFieldValue("document_vector");
+
+        if (vectorObj == null) {
+            return null;
+        }
+
+        // document_vector is stored as List<Float> in Solr
+        if (vectorObj instanceof List) {
+            @SuppressWarnings("unchecked")
+            List<Number> vectorList = (List<Number>) vectorObj;
+            float[] vector = new float[vectorList.size()];
+            for (int i = 0; i < vectorList.size(); i++) {
+                vector[i] = vectorList.get(i).floatValue();
+            }
+            return vector;
+        }
+
+        return null;
+    }
+
+    /**
+     * Execute KNN search using document_vector to find similar documents.
+     *
+     * @param solrClient Solr client
+     * @param repositoryId Repository ID
+     * @param documentVector Vector to search with
+     * @param aclFilter ACL filter query
+     * @param topK Maximum results
+     * @param minScore Minimum similarity score
+     * @return List of search results
+     */
+    private List<VectorSearchResult> executeDocumentVectorSearch(SolrClient solrClient, String repositoryId,
+                                                                  float[] documentVector, String aclFilter,
+                                                                  int topK, float minScore) throws Exception {
+        String vectorStr = floatArrayToString(documentVector);
+
+        SolrQuery solrQuery = new SolrQuery();
+        // Search on document_vector (parent documents)
+        solrQuery.setQuery("{!knn f=document_vector topK=" + topK + "}" + vectorStr);
+        solrQuery.addFilterQuery("doc_type:document");
+        solrQuery.addFilterQuery("repository_id:" + repositoryId);
+        solrQuery.addFilterQuery(aclFilter);
+        solrQuery.setFields("id", "name", "path", "objecttype", "score");
+        solrQuery.setRows(topK);
+
+        QueryResponse response;
+        try {
+            response = solrClient.query("nemaki", solrQuery, org.apache.solr.client.solrj.SolrRequest.METHOD.POST);
+        } catch (Exception e) {
+            if (e.getMessage() != null && (e.getMessage().contains("undefined field") ||
+                    e.getMessage().contains("no indexed vectors") ||
+                    e.getMessage().contains("Cannot parse"))) {
+                if (log.isDebugEnabled()) {
+                    log.debug("No RAG document vectors indexed yet - returning empty results");
+                }
+                return new ArrayList<>();
+            }
+            throw e;
+        }
+
+        SolrDocumentList docs = response.getResults();
+        List<VectorSearchResult> results = new ArrayList<>();
+
+        for (SolrDocument doc : docs) {
+            float score = doc.getFieldValue("score") != null ?
+                    ((Number) doc.getFieldValue("score")).floatValue() : 0f;
+
+            // Filter by minimum score
+            if (score < minScore) {
+                continue;
+            }
+
+            VectorSearchResult result = new VectorSearchResult();
+            result.setDocumentId(getStringField(doc, "id"));
+            result.setDocumentName(getStringField(doc, "name"));
+            result.setPath(getStringField(doc, "path"));
+            result.setObjectType(getStringField(doc, "objecttype"));
+            result.setScore(score);
+
+            // For similar documents, we use the first chunk as representative text
+            enrichWithFirstChunk(solrClient, result);
+
+            results.add(result);
+        }
+
+        return results;
+    }
+
+    /**
+     * Enrich a result with the first chunk's information.
+     * This provides context text for display in similar documents list.
+     */
+    private void enrichWithFirstChunk(SolrClient solrClient, VectorSearchResult result) {
+        try {
+            SolrQuery query = new SolrQuery();
+            query.setQuery("parent_document_id:" + result.getDocumentId());
+            query.addFilterQuery("doc_type:chunk");
+            query.setFields("chunk_id", "chunk_index", "chunk_text");
+            query.setSort("chunk_index", SolrQuery.ORDER.asc);
+            query.setRows(1);
+
+            QueryResponse response = solrClient.query("nemaki", query);
+            SolrDocumentList docs = response.getResults();
+
+            if (docs != null && !docs.isEmpty()) {
+                SolrDocument chunkDoc = docs.get(0);
+                result.setChunkId(getStringField(chunkDoc, "chunk_id"));
+                result.setChunkIndex(getIntField(chunkDoc, "chunk_index"));
+                result.setChunkText(getStringField(chunkDoc, "chunk_text"));
+            }
+        } catch (Exception e) {
+            log.warn("Failed to enrich similar document with chunk info: " + result.getDocumentId(), e);
+        }
+    }
+
     /**
      * Execute weighted KNN search combining property and content similarity.
      * Final score = (propertyBoost × property_score) + (contentBoost × content_score)

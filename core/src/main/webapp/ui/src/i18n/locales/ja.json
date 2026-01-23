@@ -513,6 +513,15 @@
       "typeCoercionRejected": "型変換失敗",
       "listElementDropped": "リスト要素の欠落",
       "elementCount": "要素数: {{count}}"
+    },
+    "similarDocuments": "類似ドキュメント",
+    "noSimilarDocuments": "類似ドキュメントが見つかりません",
+    "noSimilarDocumentsDescription": "このドキュメントはまだRAGインデックスに登録されていないか、意味的に類似したドキュメントが存在しません。",
+    "similarDocumentsTable": {
+      "name": "名前",
+      "path": "パス",
+      "similarity": "類似度",
+      "preview": "プレビュー"
     }
   },
   "folderBrowser": {

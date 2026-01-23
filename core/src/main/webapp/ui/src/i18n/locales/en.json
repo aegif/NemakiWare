@@ -513,6 +513,15 @@
       "typeCoercionRejected": "Type coercion failed",
       "listElementDropped": "List element dropped",
       "elementCount": "Element count: {{count}}"
+    },
+    "similarDocuments": "Similar Documents",
+    "noSimilarDocuments": "No similar documents found",
+    "noSimilarDocumentsDescription": "This document is not yet indexed in RAG or there are no semantically similar documents.",
+    "similarDocumentsTable": {
+      "name": "Name",
+      "path": "Path",
+      "similarity": "Similarity",
+      "preview": "Preview"
     }
   },
   "folderBrowser": {

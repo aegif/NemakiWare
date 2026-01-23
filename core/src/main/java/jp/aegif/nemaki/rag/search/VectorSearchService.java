@@ -69,6 +69,22 @@ public interface VectorSearchService {
     List<VectorSearchResult> searchInFolder(String repositoryId, String userId, String query,
                                             String folderId, int topK) throws VectorSearchException;
 
+
+    /**
+     * Find documents similar to a given document based on vector similarity.
+     *
+     * @param repositoryId Repository ID
+     * @param userId Current user ID for ACL filtering
+     * @param documentId Document ID to find similar documents for
+     * @param topK Maximum number of results (excluding the source document)
+     * @param minScore Minimum similarity score (0.0 to 1.0)
+     * @return List of similar documents sorted by similarity score
+     * @throws VectorSearchException if the document is not indexed or search fails
+     */
+    List<VectorSearchResult> findSimilarDocuments(String repositoryId, String userId,
+                                                   String documentId, int topK, float minScore)
+            throws VectorSearchException;
+
     /**
      * Check if vector search is enabled and available.
      *

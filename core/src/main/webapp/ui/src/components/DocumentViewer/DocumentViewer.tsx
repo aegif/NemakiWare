@@ -269,6 +269,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, VersionHistory, TypeDefinition, Relationship } from '../../types/cmis';
+import { RAGService, RAGSearchResult } from '../../services/rag';
 import { PropertyEditor } from '../PropertyEditor/PropertyEditor';
 import { PreviewComponent } from '../PreviewComponent/PreviewComponent';
 import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
@@ -306,6 +307,10 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [selectedRelationship, setSelectedRelationship] = useState<Relationship | null>(null);
   const [relationshipEditMode, setRelationshipEditMode] = useState(false);
   const [relationshipTypeDefinition, setRelationshipTypeDefinition] = useState<TypeDefinition | null>(null);
+  // RAG Similar Documents state
+  const [ragEnabled, setRagEnabled] = useState(false);
+  const [similarDocuments, setSimilarDocuments] = useState<RAGSearchResult[]>([]);
+  const [similarDocsLoading, setSimilarDocsLoading] = useState(false);
   const [form] = Form.useForm();
   const [relationshipForm] = Form.useForm();
   const [relationshipEditForm] = Form.useForm();
@@ -332,6 +337,44 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       loadRelationships();
     }
   }, [objectId, repositoryId]);
+
+  // Check RAG health and load similar documents
+  useEffect(() => {
+    if (objectId && object?.baseType === 'cmis:document') {
+      checkRagHealthAndLoadSimilar();
+    }
+  }, [objectId, object?.baseType]);
+
+  const checkRagHealthAndLoadSimilar = async () => {
+    try {
+      const ragService = new RAGService('', repositoryId);
+      const health = await ragService.getHealth();
+      setRagEnabled(health.enabled);
+
+      if (health.enabled && objectId) {
+        loadSimilarDocuments();
+      }
+    } catch (error) {
+      console.log('[DocumentViewer] RAG health check failed, RAG may not be available:', error);
+      setRagEnabled(false);
+    }
+  };
+
+  const loadSimilarDocuments = async () => {
+    if (!objectId) return;
+
+    setSimilarDocsLoading(true);
+    try {
+      const ragService = new RAGService('', repositoryId);
+      const response = await ragService.findSimilarDocuments(objectId, 10, 0.5);
+      setSimilarDocuments(response.results);
+    } catch (error) {
+      console.log('[DocumentViewer] Failed to load similar documents:', error);
+      setSimilarDocuments([]);
+    } finally {
+      setSimilarDocsLoading(false);
+    }
+  };
 
   const loadObject = async () => {
     if (!objectId) return;
@@ -977,6 +1020,76 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         </Space>
       ),
     },
+    // RAG Similar Documents Tab (only shown when RAG is enabled and this is a document)
+    ...(ragEnabled && object?.baseType === 'cmis:document' ? [{
+      key: 'similarDocuments',
+      label: t('documentViewer.similarDocuments'),
+      children: (
+        <div>
+          {similarDocsLoading ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              {t('common.loading')}
+            </div>
+          ) : similarDocuments.length > 0 ? (
+            <Table
+              dataSource={similarDocuments}
+              rowKey="documentId"
+              size="small"
+              pagination={{ pageSize: 10 }}
+              columns={[
+                {
+                  title: t('documentViewer.similarDocumentsTable.name'),
+                  dataIndex: 'documentName',
+                  key: 'documentName',
+                  render: (name: string, record: RAGSearchResult) => (
+                    <a
+                      onClick={() => {
+                        const folderIdParam = currentFolderId ? `?folderId=${currentFolderId}` : '';
+                        navigate(`/documents/${record.documentId}${folderIdParam}`);
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      {name}
+                    </a>
+                  ),
+                },
+                {
+                  title: t('documentViewer.similarDocumentsTable.path'),
+                  dataIndex: 'path',
+                  key: 'path',
+                  ellipsis: true,
+                },
+                {
+                  title: t('documentViewer.similarDocumentsTable.similarity'),
+                  dataIndex: 'score',
+                  key: 'score',
+                  width: 100,
+                  render: (score: number) => `${Math.round(score * 100)}%`,
+                },
+                {
+                  title: t('documentViewer.similarDocumentsTable.preview'),
+                  dataIndex: 'chunkText',
+                  key: 'chunkText',
+                  ellipsis: true,
+                  render: (text: string) => (
+                    <span title={text}>
+                      {text && text.length > 100 ? text.substring(0, 100) + '...' : text}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          ) : (
+            <Alert
+              message={t('documentViewer.noSimilarDocuments')}
+              description={t('documentViewer.noSimilarDocumentsDescription')}
+              type="info"
+              showIcon
+            />
+          )}
+        </div>
+      ),
+    }] : []),
   ];
 
   return (
