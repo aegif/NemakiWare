@@ -4,21 +4,22 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import jp.aegif.nemaki.rag.acl.ACLExpander;
 import jp.aegif.nemaki.rag.config.RAGConfig;
+import jp.aegif.nemaki.rag.config.SolrClientProvider;
 import jp.aegif.nemaki.rag.embedding.EmbeddingException;
 import jp.aegif.nemaki.rag.embedding.EmbeddingService;
 
@@ -37,25 +38,37 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
     private static final Log log = LogFactory.getLog(VectorSearchServiceImpl.class);
 
+    /**
+     * Multiplier for chunk vector search topK.
+     * We fetch more chunks than final topK because:
+     * - Multiple chunks may belong to the same document (only best one is kept)
+     * - We need candidates for score combination with property search
+     * - Higher multiplier = better recall but more processing
+     * Value of 3 provides good balance between recall and performance.
+     */
+    private static final int CHUNK_SEARCH_TOPK_MULTIPLIER = 3;
+
+    /**
+     * Multiplier for property vector search topK.
+     * Lower than chunk multiplier because:
+     * - Property search returns document-level results (no deduplication needed)
+     * - Used primarily for boosting relevance, not primary recall
+     * Value of 2 provides enough candidates for score combination.
+     */
+    private static final int PROPERTY_SEARCH_TOPK_MULTIPLIER = 2;
+
     private final RAGConfig ragConfig;
     private final EmbeddingService embeddingService;
     private final ACLExpander aclExpander;
-
-    @Value("${solr.host:solr}")
-    private String solrHost;
-
-    @Value("${solr.port:8983}")
-    private int solrPort;
-
-    @Value("${solr.protocol:http}")
-    private String solrProtocol;
+    private final SolrClientProvider solrClientProvider;
 
     @Autowired
     public VectorSearchServiceImpl(RAGConfig ragConfig, EmbeddingService embeddingService,
-                                   ACLExpander aclExpander) {
+                                   ACLExpander aclExpander, SolrClientProvider solrClientProvider) {
         this.ragConfig = ragConfig;
         this.embeddingService = embeddingService;
         this.aclExpander = aclExpander;
+        this.solrClientProvider = solrClientProvider;
         if (log.isDebugEnabled()) {
             log.debug("VectorSearchServiceImpl initialized");
         }
@@ -89,6 +102,17 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         if (!isEnabled()) {
             log.warn("Vector search is not enabled");
             throw new VectorSearchException("Vector search is not enabled");
+        }
+
+        // Validate API-provided boost values
+        if (propertyBoost < 0.0f || propertyBoost > 1.0f) {
+            throw new VectorSearchException("propertyBoost must be between 0.0 and 1.0, got: " + propertyBoost);
+        }
+        if (contentBoost < 0.0f || contentBoost > 1.0f) {
+            throw new VectorSearchException("contentBoost must be between 0.0 and 1.0, got: " + contentBoost);
+        }
+        if (propertyBoost == 0.0f && contentBoost == 0.0f) {
+            throw new VectorSearchException("At least one of propertyBoost or contentBoost must be greater than 0");
         }
 
         try {
@@ -143,6 +167,8 @@ public class VectorSearchServiceImpl implements VectorSearchService {
     /**
      * Execute weighted KNN search combining property and content similarity.
      * Final score = (propertyBoost × property_score) + (contentBoost × content_score)
+     *
+     * KNN queries are executed in parallel for better performance.
      */
     private List<VectorSearchResult> executeWeightedKnnSearch(String repositoryId, float[] queryVector,
                                                                String aclFilter, String additionalFilter,
@@ -150,23 +176,43 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                                                                float propertyBoost, float contentBoost)
             throws VectorSearchException {
 
-        try (SolrClient solrClient = getSolrClient()) {
+        try {
+            SolrClient solrClient = solrClientProvider.getClient();
             String vectorStr = floatArrayToString(queryVector);
 
-            // Map to store document scores: documentId -> {propertyScore, contentScore, bestChunk}
-            Map<String, ScoredDocument> documentScores = new HashMap<>();
+            // Use ConcurrentHashMap for thread-safe parallel access
+            Map<String, ScoredDocument> documentScores = new ConcurrentHashMap<>();
 
-            // 1. Search chunk_vector for content similarity
+            // Execute KNN searches in parallel for better performance
+            CompletableFuture<Void> chunkSearchFuture = CompletableFuture.completedFuture(null);
+            CompletableFuture<Void> propertySearchFuture = CompletableFuture.completedFuture(null);
+
+            // 1. Search chunk_vector for content similarity (async)
             if (contentBoost > 0) {
-                searchChunkVectors(solrClient, repositoryId, vectorStr, aclFilter, additionalFilter,
-                        topK * 3, documentScores, contentBoost);
+                chunkSearchFuture = CompletableFuture.runAsync(() -> {
+                    try {
+                        searchChunkVectors(solrClient, repositoryId, vectorStr, aclFilter, additionalFilter,
+                                topK * CHUNK_SEARCH_TOPK_MULTIPLIER, documentScores, contentBoost);
+                    } catch (Exception e) {
+                        log.error("Chunk vector search failed", e);
+                    }
+                });
             }
 
-            // 2. Search property_vector for property similarity (if enabled)
+            // 2. Search property_vector for property similarity (async, if enabled)
             if (propertyBoost > 0 && ragConfig.isPropertySearchEnabled()) {
-                searchPropertyVectors(solrClient, repositoryId, vectorStr, aclFilter, additionalFilter,
-                        topK * 2, documentScores, propertyBoost);
+                propertySearchFuture = CompletableFuture.runAsync(() -> {
+                    try {
+                        searchPropertyVectors(solrClient, repositoryId, vectorStr, aclFilter, additionalFilter,
+                                topK * PROPERTY_SEARCH_TOPK_MULTIPLIER, documentScores, propertyBoost);
+                    } catch (Exception e) {
+                        log.error("Property vector search failed", e);
+                    }
+                });
             }
+
+            // Wait for both searches to complete
+            CompletableFuture.allOf(chunkSearchFuture, propertySearchFuture).join();
 
             // 3. Calculate combined scores and create results
             List<VectorSearchResult> results = new ArrayList<>();
@@ -187,10 +233,6 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
                 VectorSearchResult result = scoredDoc.toResult();
                 result.setScore(combinedScore);
-
-                // Enrich with parent document info
-                enrichWithParentInfo(solrClient, repositoryId, result);
-
                 results.add(result);
             }
 
@@ -201,6 +243,9 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             if (results.size() > topK) {
                 results = results.subList(0, topK);
             }
+
+            // Batch enrich with parent document info (fixes N+1 query problem)
+            enrichResultsWithParentInfo(solrClient, repositoryId, results);
 
             if (log.isDebugEnabled()) {
                 log.debug(String.format("Weighted vector search returned %d results (minScore=%.2f, propertyBoost=%.2f, contentBoost=%.2f, totalCandidates=%d)",
@@ -339,28 +384,82 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         }
     }
 
-    private void enrichWithParentInfo(SolrClient solrClient, String repositoryId,
-                                      VectorSearchResult result) {
-        try {
-            SolrQuery parentQuery = new SolrQuery();
-            parentQuery.setQuery("id:" + result.getDocumentId());
-            parentQuery.addFilterQuery("doc_type:document");
-            parentQuery.setFields("name", "path", "objecttype");
-            parentQuery.setRows(1);
+    /**
+     * Batch enrich results with parent document info.
+     * Fetches all parent documents in a single Solr query to avoid N+1 problem.
+     *
+     * @param solrClient Solr client
+     * @param repositoryId Repository ID
+     * @param results List of results to enrich
+     */
+    private void enrichResultsWithParentInfo(SolrClient solrClient, String repositoryId,
+                                              List<VectorSearchResult> results) {
+        if (results.isEmpty()) {
+            return;
+        }
 
-            QueryResponse response = solrClient.query("nemaki", parentQuery);
+        try {
+            // Collect all document IDs that need enrichment
+            List<String> documentIds = new ArrayList<>();
+            for (VectorSearchResult result : results) {
+                if (result.getDocumentId() != null) {
+                    documentIds.add(result.getDocumentId());
+                }
+            }
+
+            if (documentIds.isEmpty()) {
+                return;
+            }
+
+            // Build a single query for all documents
+            StringBuilder queryBuilder = new StringBuilder("id:(");
+            for (int i = 0; i < documentIds.size(); i++) {
+                if (i > 0) {
+                    queryBuilder.append(" OR ");
+                }
+                queryBuilder.append(documentIds.get(i));
+            }
+            queryBuilder.append(")");
+
+            SolrQuery batchQuery = new SolrQuery();
+            batchQuery.setQuery(queryBuilder.toString());
+            batchQuery.addFilterQuery("doc_type:document");
+            batchQuery.setFields("id", "name", "path", "objecttype");
+            batchQuery.setRows(documentIds.size());
+
+            QueryResponse response = solrClient.query("nemaki", batchQuery);
             SolrDocumentList docs = response.getResults();
 
-            if (docs != null && !docs.isEmpty()) {
-                SolrDocument parentDoc = docs.get(0);
-                if (result.getDocumentName() == null) {
-                    result.setDocumentName(getStringField(parentDoc, "name"));
+            // Build a map for quick lookup
+            Map<String, SolrDocument> parentDocs = new HashMap<>();
+            if (docs != null) {
+                for (SolrDocument doc : docs) {
+                    String id = getStringField(doc, "id");
+                    if (id != null) {
+                        parentDocs.put(id, doc);
+                    }
                 }
-                result.setPath(getStringField(parentDoc, "path"));
-                result.setObjectType(getStringField(parentDoc, "objecttype"));
             }
+
+            // Enrich each result
+            for (VectorSearchResult result : results) {
+                SolrDocument parentDoc = parentDocs.get(result.getDocumentId());
+                if (parentDoc != null) {
+                    if (result.getDocumentName() == null) {
+                        result.setDocumentName(getStringField(parentDoc, "name"));
+                    }
+                    result.setPath(getStringField(parentDoc, "path"));
+                    result.setObjectType(getStringField(parentDoc, "objecttype"));
+                }
+            }
+
+            if (log.isDebugEnabled()) {
+                log.debug(String.format("Batch enriched %d results with parent info (fetched %d parent docs)",
+                        results.size(), parentDocs.size()));
+            }
+
         } catch (Exception e) {
-            log.warn("Failed to enrich parent info for document: " + result.getDocumentId(), e);
+            log.warn("Failed to batch enrich parent info for " + results.size() + " results", e);
         }
     }
 
@@ -387,15 +486,6 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         }
         sb.append("]");
         return sb.toString();
-    }
-
-    @SuppressWarnings("deprecation")
-    private SolrClient getSolrClient() {
-        String url = String.format("%s://%s:%d/solr", solrProtocol, solrHost, solrPort);
-        return new HttpSolrClient.Builder(url)
-                .withConnectionTimeout(30000)
-                .withSocketTimeout(30000)
-                .build();
     }
 
     /**

@@ -2,18 +2,15 @@ package jp.aegif.nemaki.rag.indexing;
 
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.common.SolrInputDocument;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -25,6 +22,7 @@ import jp.aegif.nemaki.rag.acl.ACLExpander;
 import jp.aegif.nemaki.rag.chunking.ChunkingService;
 import jp.aegif.nemaki.rag.chunking.TextChunk;
 import jp.aegif.nemaki.rag.config.RAGConfig;
+import jp.aegif.nemaki.rag.config.SolrClientProvider;
 import jp.aegif.nemaki.rag.embedding.EmbeddingException;
 import jp.aegif.nemaki.rag.embedding.EmbeddingService;
 
@@ -52,15 +50,7 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
     private final TextExtractionService textExtractionService;
     private final ContentService contentService;
     private final ACLExpander aclExpander;
-
-    @Value("${solr.host:solr}")
-    private String solrHost;
-
-    @Value("${solr.port:8983}")
-    private int solrPort;
-
-    @Value("${solr.protocol:http}")
-    private String solrProtocol;
+    private final SolrClientProvider solrClientProvider;
 
     @Autowired
     public RAGIndexingServiceImpl(
@@ -69,13 +59,15 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             ChunkingService chunkingService,
             TextExtractionService textExtractionService,
             ContentService contentService,
-            ACLExpander aclExpander) {
+            ACLExpander aclExpander,
+            SolrClientProvider solrClientProvider) {
         this.ragConfig = ragConfig;
         this.embeddingService = embeddingService;
         this.chunkingService = chunkingService;
         this.textExtractionService = textExtractionService;
         this.contentService = contentService;
         this.aclExpander = aclExpander;
+        this.solrClientProvider = solrClientProvider;
     }
 
     @Override
@@ -162,7 +154,8 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             return;
         }
 
-        try (SolrClient solrClient = getSolrClient()) {
+        try {
+            SolrClient solrClient = solrClientProvider.getClient();
             // Delete parent document and all children using Block Join delete
             // Delete by query: delete all documents where _root_ = documentId (parent and children)
             solrClient.deleteByQuery("nemaki", "_root_:" + documentId);
@@ -179,7 +172,8 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             return;
         }
 
-        try (SolrClient solrClient = getSolrClient()) {
+        try {
+            SolrClient solrClient = solrClientProvider.getClient();
             // Update readers field using atomic update
             SolrInputDocument updateDoc = new SolrInputDocument();
             updateDoc.addField("id", documentId);
@@ -400,90 +394,88 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                              float[] propertyEmbedding, String propertyText,
                              List<String> readers) throws Exception {
 
-        try (SolrClient solrClient = getSolrClient()) {
-            // First, delete any existing entries for this document
-            // Use UpdateRequest with commitWithin to ensure delete is reflected promptly
-            int commitWithinMs = ragConfig.getSolrCommitWithinMs();
-            UpdateRequest deleteRequest = new UpdateRequest();
-            deleteRequest.deleteByQuery("_root_:" + document.getId());
-            if (commitWithinMs > 0) {
-                deleteRequest.setCommitWithin(commitWithinMs);
-            }
-            deleteRequest.process(solrClient, "nemaki");
+        SolrClient solrClient = solrClientProvider.getClient();
+        // First, delete any existing entries for this document
+        // Use UpdateRequest with commitWithin to ensure delete is reflected promptly
+        int commitWithinMs = ragConfig.getSolrCommitWithinMs();
+        UpdateRequest deleteRequest = new UpdateRequest();
+        deleteRequest.deleteByQuery("_root_:" + document.getId());
+        if (commitWithinMs > 0) {
+            deleteRequest.setCommitWithin(commitWithinMs);
+        }
+        deleteRequest.process(solrClient, "nemaki");
 
-            // Create parent document (must come AFTER children in Block Join)
-            List<SolrInputDocument> childDocs = new ArrayList<>();
+        // Create parent document (must come AFTER children in Block Join)
+        List<SolrInputDocument> childDocs = new ArrayList<>();
 
-            // Create chunk (child) documents
-            for (int i = 0; i < chunks.size(); i++) {
-                TextChunk chunk = chunks.get(i);
-                float[] embedding = chunkEmbeddings.get(i);
+        // Create chunk (child) documents
+        for (int i = 0; i < chunks.size(); i++) {
+            TextChunk chunk = chunks.get(i);
+            float[] embedding = chunkEmbeddings.get(i);
 
-                SolrInputDocument chunkDoc = new SolrInputDocument();
-                String chunkId = chunk.generateChunkId(document.getId());
+            SolrInputDocument chunkDoc = new SolrInputDocument();
+            String chunkId = chunk.generateChunkId(document.getId());
 
-                chunkDoc.addField("id", chunkId);
-                chunkDoc.addField("object_id", chunkId);  // Required field
-                chunkDoc.addField("doc_type", DOC_TYPE_CHUNK);
-                chunkDoc.addField("parent_document_id", document.getId());
-                chunkDoc.addField("chunk_id", chunkId);
-                chunkDoc.addField("chunk_index", chunk.getIndex());
-                chunkDoc.addField("chunk_text", chunk.getText());
-                chunkDoc.addField("chunk_vector", floatArrayToList(embedding));
-                chunkDoc.addField("repository_id", repositoryId);
-                chunkDoc.addField("_root_", document.getId());
+            chunkDoc.addField("id", chunkId);
+            chunkDoc.addField("object_id", chunkId);  // Required field
+            chunkDoc.addField("doc_type", DOC_TYPE_CHUNK);
+            chunkDoc.addField("parent_document_id", document.getId());
+            chunkDoc.addField("chunk_id", chunkId);
+            chunkDoc.addField("chunk_index", chunk.getIndex());
+            chunkDoc.addField("chunk_text", chunk.getText());
+            chunkDoc.addField("chunk_vector", floatArrayToList(embedding));
+            chunkDoc.addField("repository_id", repositoryId);
+            chunkDoc.addField("_root_", document.getId());
 
-                // Copy readers to chunk for filtering
-                for (String reader : readers) {
-                    chunkDoc.addField("readers", reader);
-                }
-
-                childDocs.add(chunkDoc);
-            }
-
-            // Create parent document
-            SolrInputDocument parentDoc = new SolrInputDocument();
-            parentDoc.addField("id", document.getId());
-            parentDoc.addField("doc_type", DOC_TYPE_DOCUMENT);
-            parentDoc.addField("repository_id", repositoryId);
-            parentDoc.addField("object_id", document.getId());
-            parentDoc.addField("name", document.getName());
-            parentDoc.addField("document_vector", floatArrayToList(documentEmbedding));
-            parentDoc.addField("_root_", document.getId());
-
-            // Add property embedding and text for weighted search
-            if (propertyEmbedding != null) {
-                parentDoc.addField("property_vector", floatArrayToList(propertyEmbedding));
-            }
-            if (propertyText != null && !propertyText.isEmpty()) {
-                parentDoc.addField("property_text", propertyText);
-            }
-
-            if (document.getObjectType() != null) {
-                parentDoc.addField("objecttype", document.getObjectType());
-            }
-            if (document.getParentId() != null) {
-                parentDoc.addField("parent_id", document.getParentId());
-            }
-
-            // Add readers for ACL filtering
+            // Copy readers to chunk for filtering
             for (String reader : readers) {
-                parentDoc.addField("readers", reader);
+                chunkDoc.addField("readers", reader);
             }
 
-            // Add children to parent for Block Join
-            parentDoc.addChildDocuments(childDocs);
+            childDocs.add(chunkDoc);
+        }
 
-            // Index the parent document with children using commitWithin for batching
-            // (commitWithinMs already declared above for delete)
-            if (commitWithinMs > 0) {
-                // Use commitWithin to allow Solr to batch commits
-                solrClient.add("nemaki", parentDoc, commitWithinMs);
-            } else {
-                // Immediate hard commit (legacy behavior)
-                solrClient.add("nemaki", parentDoc);
-                solrClient.commit("nemaki");
-            }
+        // Create parent document
+        SolrInputDocument parentDoc = new SolrInputDocument();
+        parentDoc.addField("id", document.getId());
+        parentDoc.addField("doc_type", DOC_TYPE_DOCUMENT);
+        parentDoc.addField("repository_id", repositoryId);
+        parentDoc.addField("object_id", document.getId());
+        parentDoc.addField("name", document.getName());
+        parentDoc.addField("document_vector", floatArrayToList(documentEmbedding));
+        parentDoc.addField("_root_", document.getId());
+
+        // Add property embedding and text for weighted search
+        if (propertyEmbedding != null) {
+            parentDoc.addField("property_vector", floatArrayToList(propertyEmbedding));
+        }
+        if (propertyText != null && !propertyText.isEmpty()) {
+            parentDoc.addField("property_text", propertyText);
+        }
+
+        if (document.getObjectType() != null) {
+            parentDoc.addField("objecttype", document.getObjectType());
+        }
+        if (document.getParentId() != null) {
+            parentDoc.addField("parent_id", document.getParentId());
+        }
+
+        // Add readers for ACL filtering
+        for (String reader : readers) {
+            parentDoc.addField("readers", reader);
+        }
+
+        // Add children to parent for Block Join
+        parentDoc.addChildDocuments(childDocs);
+
+        // Index the parent document with children using commitWithin for batching
+        if (commitWithinMs > 0) {
+            // Use commitWithin to allow Solr to batch commits
+            solrClient.add("nemaki", parentDoc, commitWithinMs);
+        } else {
+            // Immediate hard commit (legacy behavior)
+            solrClient.add("nemaki", parentDoc);
+            solrClient.commit("nemaki");
         }
     }
 
@@ -493,14 +485,5 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             list.add(f);
         }
         return list;
-    }
-
-    @SuppressWarnings("deprecation")
-    private SolrClient getSolrClient() {
-        String url = String.format("%s://%s:%d/solr", solrProtocol, solrHost, solrPort);
-        return new HttpSolrClient.Builder(url)
-                .withConnectionTimeout(30000)
-                .withSocketTimeout(30000)
-                .build();
     }
 }

@@ -5,12 +5,15 @@
  * Uses vector embeddings to find documents similar in meaning to the query.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Input, Button, List, Card, Typography, Space, Spin, Alert, Tooltip, Slider, Empty } from 'antd';
 import { SearchOutlined, FileTextOutlined, FolderOutlined, InfoCircleOutlined, EyeOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { RAGService, RAGSearchResult, RAGHealthStatus } from '../../services/rag';
 import { useAuth } from '../../contexts/AuthContext';
+
+/** Minimum interval between searches in milliseconds (prevents rapid successive searches) */
+const SEARCH_DEBOUNCE_MS = 300;
 
 const { Search } = Input;
 const { Text, Paragraph } = Typography;
@@ -50,6 +53,9 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
   const [propertyBoost, setPropertyBoost] = useState(0.3);
   const [contentBoost, setContentBoost] = useState(0.7);
 
+  // Debounce tracking ref to prevent rapid successive searches
+  const lastSearchTime = useRef<number>(0);
+
   // Check RAG health on mount
   useEffect(() => {
     if (isAuthenticated && repositoryId) {
@@ -82,6 +88,14 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
       setResults([]);
       return;
     }
+
+    // Debounce: Prevent rapid successive searches
+    const now = Date.now();
+    if (now - lastSearchTime.current < SEARCH_DEBOUNCE_MS) {
+      console.log('[SemanticSearch] Search debounced - too soon after last search');
+      return;
+    }
+    lastSearchTime.current = now;
 
     setLoading(true);
     setError(null);

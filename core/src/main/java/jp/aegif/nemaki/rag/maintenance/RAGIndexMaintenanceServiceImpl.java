@@ -34,10 +34,8 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
@@ -47,6 +45,7 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.rag.config.RAGConfig;
+import jp.aegif.nemaki.rag.config.SolrClientProvider;
 import jp.aegif.nemaki.rag.indexing.RAGIndexingException;
 import jp.aegif.nemaki.rag.indexing.RAGIndexingService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -67,15 +66,7 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
     private final RAGIndexingService ragIndexingService;
     private final RAGConfig ragConfig;
     private final RepositoryInfoMap repositoryInfoMap;
-
-    @Value("${solr.host:solr}")
-    private String solrHost;
-
-    @Value("${solr.port:8983}")
-    private int solrPort;
-
-    @Value("${solr.protocol:http}")
-    private String solrProtocol;
+    private final SolrClientProvider solrClientProvider;
 
     private final Map<String, RAGReindexStatus> reindexStatuses = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
@@ -86,11 +77,13 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
             ContentService contentService,
             RAGIndexingService ragIndexingService,
             RAGConfig ragConfig,
-            RepositoryInfoMap repositoryInfoMap) {
+            RepositoryInfoMap repositoryInfoMap,
+            SolrClientProvider solrClientProvider) {
         this.contentService = contentService;
         this.ragIndexingService = ragIndexingService;
         this.ragConfig = ragConfig;
         this.repositoryInfoMap = repositoryInfoMap;
+        this.solrClientProvider = solrClientProvider;
     }
 
     @PreDestroy
@@ -205,7 +198,8 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
             return health;
         }
 
-        try (SolrClient solrClient = getSolrClient()) {
+        try {
+            SolrClient solrClient = solrClientProvider.getClient();
             // Count RAG documents (doc_type:document with vectors)
             SolrQuery docQuery = new SolrQuery();
             docQuery.setQuery("doc_type:document");
@@ -280,7 +274,8 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
 
     @Override
     public boolean clearRAGIndex(String repositoryId) {
-        try (SolrClient solrClient = getSolrClient()) {
+        try {
+            SolrClient solrClient = solrClientProvider.getClient();
             // Delete all RAG documents (doc_type:document or doc_type:chunk) for this repository
             solrClient.deleteByQuery("nemaki",
                     "(doc_type:document OR doc_type:chunk) AND repository_id:" + repositoryId);
@@ -519,14 +514,5 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
         if (status.getErrors().size() < MAX_ERRORS) {
             status.getErrors().add(error);
         }
-    }
-
-    @SuppressWarnings("deprecation")
-    private SolrClient getSolrClient() {
-        String url = String.format("%s://%s:%d/solr", solrProtocol, solrHost, solrPort);
-        return new HttpSolrClient.Builder(url)
-                .withConnectionTimeout(30000)
-                .withSocketTimeout(60000)
-                .build();
     }
 }

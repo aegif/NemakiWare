@@ -34,6 +34,21 @@ public class RAGConfig {
             log.warn("Invalid rag.search.content.boost value: {}. Must be between 0.0 and 1.0. Using default 0.7", contentBoost);
             contentBoost = 0.7f;
         }
+
+        // Validate that at least one boost is positive (otherwise search would return no results)
+        if (propertyBoost == 0.0f && contentBoost == 0.0f) {
+            log.warn("Both propertyBoost and contentBoost are 0. Setting contentBoost to 1.0 to enable content-only search.");
+            contentBoost = 1.0f;
+        }
+
+        // Log warning if boost values don't sum to 1.0 (affects score normalization)
+        float boostSum = propertyBoost + contentBoost;
+        if (Math.abs(boostSum - 1.0f) > 0.001f) {
+            log.info("Boost values sum to {} (propertyBoost={}, contentBoost={}). " +
+                    "For normalized scores, consider using values that sum to 1.0.",
+                    boostSum, propertyBoost, contentBoost);
+        }
+
         if (searchSimilarityThreshold < 0.0f || searchSimilarityThreshold > 1.0f) {
             log.warn("Invalid rag.search.similarity.threshold value: {}. Must be between 0.0 and 1.0. Using default 0.7", searchSimilarityThreshold);
             searchSimilarityThreshold = 0.7f;
