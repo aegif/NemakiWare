@@ -74,7 +74,7 @@ public class PrincipalDaoServiceImpl implements
 	}
 
 	private CouchUser getUserByIdInternal(String repositoryId, String userId) {
-		List<CouchUser> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "usersById", userId, CouchUser.class);
+		List<CouchUser> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "userItemsById", userId, CouchUser.class);
 
 		if (CollectionUtils.isEmpty(l))
 			return null;
@@ -85,7 +85,7 @@ public class PrincipalDaoServiceImpl implements
 	public List<User> getUsers(String repositoryId) {
 		List<User> users = new ArrayList<User>();
 
-		List<CouchUser> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "usersById", CouchUser.class);
+		List<CouchUser> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "userItemsById", CouchUser.class);
 
 		for (CouchUser c : l) {
 			User u = c.convert();
@@ -153,7 +153,7 @@ public class PrincipalDaoServiceImpl implements
 	}
 
 	private CouchGroup getGroupByIdInternal(String repositoryId, String groupId) {
-		List<CouchGroup> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "groupsById", groupId, CouchGroup.class);
+		List<CouchGroup> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "groupItemsById", groupId, CouchGroup.class);
 
 		if (CollectionUtils.isEmpty(l))
 			return null;
@@ -164,11 +164,13 @@ public class PrincipalDaoServiceImpl implements
 	public List<Group> getGroups(String repositoryId) {
 		List<Group> groups = new ArrayList<Group>();
 
-		List<CouchGroup> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "groupsById", CouchGroup.class);
+		List<CouchGroup> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "groupItemsById", CouchGroup.class);
 
-		for (CouchGroup c : l) {
-			Group g = c.convert();
-			groups.add(g);
+		if (l != null) {
+			for (CouchGroup c : l) {
+				Group g = c.convert();
+				groups.add(g);
+			}
 		}
 
 		return groups;

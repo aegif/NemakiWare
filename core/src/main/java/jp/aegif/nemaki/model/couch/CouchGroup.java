@@ -21,7 +21,9 @@
  ******************************************************************************/
 package jp.aegif.nemaki.model.couch;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import jp.aegif.nemaki.model.Group;
 
@@ -81,8 +83,47 @@ public class CouchGroup  extends CouchNodeBase{
 		Group g = new Group(super.convert());
 		g.setGroupId(getGroupId());
 		g.setName(getName());
-		g.setUsers(getUsers());
-		g.setGroups(getGroups());
+
+		List<String> usersList = getUsers();
+		if (usersList == null) {
+			usersList = extractSubTypeProperty("nemaki:users");
+		}
+		g.setUsers(usersList != null ? usersList : new ArrayList<>());
+
+		List<String> groupsList = getGroups();
+		if (groupsList == null) {
+			groupsList = extractSubTypeProperty("nemaki:groups");
+		}
+		g.setGroups(groupsList != null ? groupsList : new ArrayList<>());
+
 		return g;
+	}
+
+	@SuppressWarnings("unchecked")
+	private List<String> extractSubTypeProperty(String propertyKey) {
+		Map<String, Object> additionalProps = getAdditionalProperties();
+		if (additionalProps == null) {
+			return null;
+		}
+
+		Object subTypeProps = additionalProps.get("subTypeProperties");
+		if (!(subTypeProps instanceof List)) {
+			return null;
+		}
+
+		List<?> propsList = (List<?>) subTypeProps;
+		for (Object prop : propsList) {
+			if (prop instanceof Map) {
+				Map<String, Object> propMap = (Map<String, Object>) prop;
+				Object key = propMap.get("key");
+				if (propertyKey.equals(key)) {
+					Object value = propMap.get("value");
+					if (value instanceof List) {
+						return (List<String>) value;
+					}
+				}
+			}
+		}
+		return null;
 	}
 }
