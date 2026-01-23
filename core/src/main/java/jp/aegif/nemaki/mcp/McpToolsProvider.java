@@ -27,22 +27,27 @@ public class McpToolsProvider {
 
     private static final Logger log = LoggerFactory.getLogger(McpToolsProvider.class);
 
-    private static final String DEFAULT_REPOSITORY = "bedroom";
     private static final int DEFAULT_TOP_K = 5;
     private static final float DEFAULT_MIN_SCORE = 0.5f;
 
     private final McpAuthenticationHandler authHandler;
     private final VectorSearchService vectorSearchService;
+    private final McpToolResultFactory resultFactory;
     private final String baseUrl;
+    private final String defaultRepository;
 
     @Autowired
     public McpToolsProvider(
             McpAuthenticationHandler authHandler,
             VectorSearchService vectorSearchService,
-            @Value("${nemakiware.baseUrl:http://localhost:8080/core}") String baseUrl) {
+            McpToolResultFactory resultFactory,
+            @Value("${nemakiware.baseUrl:http://localhost:8080/core}") String baseUrl,
+            @Value("${cmis.server.default.repository:bedroom}") String defaultRepository) {
         this.authHandler = authHandler;
         this.vectorSearchService = vectorSearchService;
+        this.resultFactory = resultFactory;
         this.baseUrl = baseUrl;
+        this.defaultRepository = defaultRepository;
     }
 
     /**
@@ -174,12 +179,12 @@ public class McpToolsProvider {
      * Execute the login tool.
      */
     public McpToolResult executeLoginTool(Map<String, Object> arguments) {
-        String repositoryId = getStringArg(arguments, "repositoryId", DEFAULT_REPOSITORY);
+        String repositoryId = getStringArg(arguments, "repositoryId", defaultRepository);
         String username = getStringArg(arguments, "username", null);
         String password = getStringArg(arguments, "password", null);
 
         if (username == null || password == null) {
-            return McpToolResult.error("username and password are required");
+            return resultFactory.error("username and password are required");
         }
 
         McpLoginResult loginResult = authHandler.login(repositoryId, username, password);
@@ -192,10 +197,10 @@ public class McpToolsProvider {
                 loginResult.getUserId()
             );
             log.info("MCP login successful for user '{}' in repository '{}'", username, repositoryId);
-            return McpToolResult.success(response);
+            return resultFactory.success(response);
         } else {
             log.warn("MCP login failed for user '{}': {}", username, loginResult.getErrorMessage());
-            return McpToolResult.error(loginResult.getErrorMessage());
+            return resultFactory.error(loginResult.getErrorMessage());
         }
     }
 
@@ -206,12 +211,12 @@ public class McpToolsProvider {
         String sessionToken = getStringArg(arguments, "sessionToken", null);
 
         if (sessionToken == null) {
-            return McpToolResult.error("sessionToken is required");
+            return resultFactory.error("sessionToken is required");
         }
 
         authHandler.logout(sessionToken);
         log.info("MCP logout for session token");
-        return McpToolResult.success("Logged out successfully");
+        return resultFactory.success("Logged out successfully");
     }
 
     /**
@@ -223,7 +228,7 @@ public class McpToolsProvider {
         float minScore = getFloatArg(arguments, "minScore", DEFAULT_MIN_SCORE);
 
         if (query == null) {
-            return McpToolResult.error("query is required");
+            return resultFactory.error("query is required");
         }
 
         try {
@@ -231,11 +236,11 @@ public class McpToolsProvider {
                 repositoryId, userId, query, topK, minScore
             );
 
-            return McpToolResult.success(formatSearchResults(query, results, repositoryId));
+            return resultFactory.success(formatSearchResults(query, results, repositoryId));
 
         } catch (Exception e) {
             log.error("RAG search failed: {}", e.getMessage(), e);
-            return McpToolResult.error("Search failed: " + e.getMessage());
+            return resultFactory.error("Search failed: " + e.getMessage());
         }
     }
 
@@ -248,7 +253,7 @@ public class McpToolsProvider {
         float minScore = getFloatArg(arguments, "minScore", DEFAULT_MIN_SCORE);
 
         if (documentId == null) {
-            return McpToolResult.error("documentId is required");
+            return resultFactory.error("documentId is required");
         }
 
         try {
@@ -256,11 +261,11 @@ public class McpToolsProvider {
                 repositoryId, userId, documentId, topK, minScore
             );
 
-            return McpToolResult.success(formatSimilarDocumentsResults(documentId, results, repositoryId));
+            return resultFactory.success(formatSimilarDocumentsResults(documentId, results, repositoryId));
 
         } catch (Exception e) {
             log.error("Similar documents search failed: {}", e.getMessage(), e);
-            return McpToolResult.error("Search failed: " + e.getMessage());
+            return resultFactory.error("Search failed: " + e.getMessage());
         }
     }
 

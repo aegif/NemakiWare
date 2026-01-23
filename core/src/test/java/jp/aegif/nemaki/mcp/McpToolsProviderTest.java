@@ -13,6 +13,8 @@ import org.mindrot.jbcrypt.BCrypt;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.rag.search.VectorSearchResult;
@@ -37,15 +39,20 @@ public class McpToolsProviderTest {
 
     private McpToolsProvider toolsProvider;
     private McpAuthenticationHandler authHandler;
+    private McpToolResultFactory resultFactory;
 
     private static final String ADMIN_PASSWORD_HASH = BCrypt.hashpw("admin", BCrypt.gensalt());
     private static final long TEST_SESSION_TTL_SECONDS = 3600;
+    private static final String DEFAULT_REPOSITORY = "bedroom";
 
     @Before
     public void setUp() {
         MockitoAnnotations.openMocks(this);
+        ObjectMapper objectMapper = new ObjectMapper();
         authHandler = new McpAuthenticationHandler(principalService, TEST_SESSION_TTL_SECONDS);
-        toolsProvider = new McpToolsProvider(authHandler, vectorSearchService, "http://localhost:8080/core");
+        resultFactory = new McpToolResultFactory(objectMapper);
+        toolsProvider = new McpToolsProvider(authHandler, vectorSearchService, resultFactory,
+                "http://localhost:8080/core", DEFAULT_REPOSITORY);
     }
 
     // ========== Login Tool Tests ==========

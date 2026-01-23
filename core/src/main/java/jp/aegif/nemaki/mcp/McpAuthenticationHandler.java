@@ -46,20 +46,27 @@ public class McpAuthenticationHandler {
     private static final String AUTH_BASIC = "Basic ";
     private static final String AUTH_BEARER = "Bearer ";
 
-    // Cleanup interval in minutes
-    private static final long CLEANUP_INTERVAL_MINUTES = 15;
-
     private final PrincipalService principalService;
     private final Map<String, McpSession> sessionTokens = new ConcurrentHashMap<>();
     private final long sessionTtlSeconds;
+    private final long cleanupIntervalMinutes;
     private ScheduledExecutorService cleanupExecutor;
 
     @Autowired
     public McpAuthenticationHandler(
             PrincipalService principalService,
-            @Value("${mcp.session.ttl.seconds:86400}") long sessionTtlSeconds) {
+            @Value("${mcp.session.ttl.seconds:86400}") long sessionTtlSeconds,
+            @Value("${mcp.session.cleanup.interval.minutes:15}") long cleanupIntervalMinutes) {
         this.principalService = principalService;
         this.sessionTtlSeconds = sessionTtlSeconds;
+        this.cleanupIntervalMinutes = cleanupIntervalMinutes;
+    }
+
+    /**
+     * Constructor for testing with default cleanup interval.
+     */
+    McpAuthenticationHandler(PrincipalService principalService, long sessionTtlSeconds) {
+        this(principalService, sessionTtlSeconds, 15);
     }
 
     /**
@@ -74,12 +81,12 @@ public class McpAuthenticationHandler {
         });
         cleanupExecutor.scheduleAtFixedRate(
             this::cleanupExpiredSessions,
-            CLEANUP_INTERVAL_MINUTES,
-            CLEANUP_INTERVAL_MINUTES,
+            cleanupIntervalMinutes,
+            cleanupIntervalMinutes,
             TimeUnit.MINUTES
         );
         log.info("MCP session cleanup scheduler started (interval: {} minutes, TTL: {} seconds)",
-                CLEANUP_INTERVAL_MINUTES, sessionTtlSeconds);
+                cleanupIntervalMinutes, sessionTtlSeconds);
     }
 
     /**
@@ -195,9 +202,10 @@ public class McpAuthenticationHandler {
             return McpAuthResult.failure("Invalid or expired token");
         }
 
-        // Validate repository ID matches
+        // Validate repository ID matches (security: potential token reuse attempt across repositories)
         if (!repositoryId.equals(session.getRepositoryId())) {
-            log.warn("Session token repository mismatch: expected {}, got {}", repositoryId, session.getRepositoryId());
+            log.error("Session token repository mismatch (potential security issue): expected {}, got {}",
+                    repositoryId, session.getRepositoryId());
             return McpAuthResult.failure("Invalid or expired token");
         }
 

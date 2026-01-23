@@ -7,6 +7,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -39,16 +40,22 @@ public class NemakiwareMcpServer {
 
     private final McpToolsProvider toolsProvider;
     private final McpAuthenticationHandler authHandler;
+    private final McpToolResultFactory resultFactory;
     private final ObjectMapper objectMapper;
+    private final String defaultRepository;
 
     @Autowired
     public NemakiwareMcpServer(
             McpToolsProvider toolsProvider,
             McpAuthenticationHandler authHandler,
-            ObjectMapper objectMapper) {
+            McpToolResultFactory resultFactory,
+            ObjectMapper objectMapper,
+            @Value("${cmis.server.default.repository:bedroom}") String defaultRepository) {
         this.toolsProvider = toolsProvider;
         this.authHandler = authHandler;
+        this.resultFactory = resultFactory;
         this.objectMapper = objectMapper;
+        this.defaultRepository = defaultRepository;
     }
 
     /**
@@ -120,7 +127,7 @@ public class NemakiwareMcpServer {
 
             default:
                 log.warn("Unknown tool requested: {}", toolName);
-                return McpToolResult.error("Unknown tool: " + toolName);
+                return resultFactory.error("Unknown tool: " + toolName);
         }
     }
 
@@ -128,14 +135,14 @@ public class NemakiwareMcpServer {
      * Execute a tool that requires authentication.
      */
     private McpToolResult executeAuthenticatedTool(String toolName, Map<String, Object> arguments, Map<String, String> headers) {
-        // Get repository ID from arguments or use default
-        String repositoryId = getStringArg(arguments, "repositoryId", "bedroom");
+        // Get repository ID from arguments or use configured default
+        String repositoryId = getStringArg(arguments, "repositoryId", defaultRepository);
 
         // Authenticate the request
         McpAuthResult authResult = authHandler.authenticate(repositoryId, headers);
         if (!authResult.isSuccess()) {
             log.warn("Authentication failed for tool {}: {}", toolName, authResult.getErrorMessage());
-            return McpToolResult.error("Authentication required: " + authResult.getErrorMessage());
+            return resultFactory.error("Authentication required: " + authResult.getErrorMessage());
         }
 
         String userId = authResult.getUserId();
@@ -150,7 +157,7 @@ public class NemakiwareMcpServer {
                 return toolsProvider.executeSimilarDocumentsTool(arguments, repositoryId, userId);
 
             default:
-                return McpToolResult.error("Unknown tool: " + toolName);
+                return resultFactory.error("Unknown tool: " + toolName);
         }
     }
 
