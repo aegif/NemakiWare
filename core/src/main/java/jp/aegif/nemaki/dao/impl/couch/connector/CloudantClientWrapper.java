@@ -768,8 +768,18 @@ public class CloudantClientWrapper {
 	}
 
 	/**
+	 * Batch size for _all_docs requests to avoid request size limits and timeouts.
+	 * CouchDB/Cloudant can handle larger batches but 200 provides a safe balance.
+	 */
+	private static final int BULK_FETCH_BATCH_SIZE = 200;
+
+	/**
 	 * Bulk get documents by IDs using _all_docs endpoint with keys.
 	 * This is more efficient than multiple individual get() calls.
+	 *
+	 * <p><strong>Batch Processing:</strong> Large ID lists are automatically split into
+	 * batches of {@link #BULK_FETCH_BATCH_SIZE} to avoid CouchDB request size limits
+	 * and potential timeout issues.</p>
 	 *
 	 * @param ids List of document IDs to retrieve
 	 * @return Map of document ID to Document, excluding null/not-found documents
@@ -780,33 +790,51 @@ public class CloudantClientWrapper {
 			return result;
 		}
 
-		try {
-			// Use postAllDocs with keys parameter
-			PostAllDocsOptions options = new PostAllDocsOptions.Builder()
-				.db(databaseName)
-				.includeDocs(true)
-				.keys(ids)
-				.build();
+		// Split into batches to avoid request size limits and timeouts
+		int totalIds = ids.size();
+		int batchCount = (totalIds + BULK_FETCH_BATCH_SIZE - 1) / BULK_FETCH_BATCH_SIZE;
 
-			AllDocsResult allDocsResult = client.postAllDocs(options).execute().getResult();
+		for (int i = 0; i < batchCount; i++) {
+			int fromIndex = i * BULK_FETCH_BATCH_SIZE;
+			int toIndex = Math.min(fromIndex + BULK_FETCH_BATCH_SIZE, totalIds);
+			List<String> batchIds = ids.subList(fromIndex, toIndex);
 
-			// Process results
-			if (allDocsResult != null && allDocsResult.getRows() != null) {
-				for (DocsResultRow row : allDocsResult.getRows()) {
-					if (row.getDoc() != null && row.getId() != null) {
-						result.put(row.getId(), row.getDoc());
+			try {
+				// Use postAllDocs with keys parameter
+				PostAllDocsOptions options = new PostAllDocsOptions.Builder()
+					.db(databaseName)
+					.includeDocs(true)
+					.keys(batchIds)
+					.build();
+
+				AllDocsResult allDocsResult = client.postAllDocs(options).execute().getResult();
+
+				// Process results
+				if (allDocsResult != null && allDocsResult.getRows() != null) {
+					for (DocsResultRow row : allDocsResult.getRows()) {
+						if (row.getDoc() != null && row.getId() != null) {
+							result.put(row.getId(), row.getDoc());
+						}
+						// Skip rows with errors or deleted documents
 					}
-					// Skip rows with errors or deleted documents
 				}
+
+				if (log.isDebugEnabled() && batchCount > 1) {
+					log.debug("Bulk get batch " + (i + 1) + "/" + batchCount +
+							" retrieved " + (result.size() - fromIndex) + " documents");
+				}
+
+			} catch (Exception e) {
+				log.error("Error in bulk get documents batch " + (i + 1) + "/" + batchCount +
+						" from database '" + databaseName + "': " + e.getMessage(), e);
+				// Continue with next batch instead of failing entirely
 			}
-
-			log.debug("Bulk get retrieved " + result.size() + " documents out of " + ids.size() + " requested from database: " + databaseName);
-			return result;
-
-		} catch (Exception e) {
-			log.error("Error in bulk get documents from database '" + databaseName + "': " + e.getMessage(), e);
-			return result;
 		}
+
+		log.debug("Bulk get retrieved " + result.size() + " documents out of " + totalIds +
+				" requested from database: " + databaseName +
+				(batchCount > 1 ? " (in " + batchCount + " batches)" : ""));
+		return result;
 	}
 
 	/**

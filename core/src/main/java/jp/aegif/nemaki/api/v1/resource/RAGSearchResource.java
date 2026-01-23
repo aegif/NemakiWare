@@ -368,10 +368,11 @@ public class RAGSearchResource {
             return results;
         }
 
-        // Collect all document IDs
+        // Collect unique document IDs (RAG results may have multiple chunks from same document)
         List<String> documentIds = results.stream()
                 .map(VectorSearchResult::getDocumentId)
                 .filter(id -> id != null)
+                .distinct()
                 .collect(Collectors.toList());
 
         if (documentIds.isEmpty()) {
