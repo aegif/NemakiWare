@@ -42,7 +42,8 @@ public class RAGConfigTest {
         setField(ragConfig, "includeCustomProperties", false);
         setField(ragConfig, "indexingBatchSize", 100);
         setField(ragConfig, "indexingAsync", true);
-        setField(ragConfig, "supportedMimeTypes", 
+        setField(ragConfig, "solrCommitWithinMs", 10000);
+        setField(ragConfig, "supportedMimeTypes",
                 "text/plain,text/html,text/xml,application/pdf,application/msword," +
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     }
@@ -312,6 +313,31 @@ public class RAGConfigTest {
     public void testIsIndexingAsync() {
         assertTrue("Indexing async should be true by default", 
                 ragConfig.isIndexingAsync());
+    }
+
+    @Test
+    public void testGetSolrCommitWithinMs() {
+        assertEquals(10000, ragConfig.getSolrCommitWithinMs());
+    }
+
+    @Test
+    public void testGetSolrCommitWithinMsCustomValue() throws Exception {
+        setField(ragConfig, "solrCommitWithinMs", 5000);
+        assertEquals(5000, ragConfig.getSolrCommitWithinMs());
+    }
+
+    @Test
+    public void testGetSolrCommitWithinMsZero() throws Exception {
+        setField(ragConfig, "solrCommitWithinMs", 0);
+        assertEquals("Zero should be allowed for immediate commit", 
+                0, ragConfig.getSolrCommitWithinMs());
+    }
+
+    @Test
+    public void testGetSolrCommitWithinMsNegative() throws Exception {
+        setField(ragConfig, "solrCommitWithinMs", -1);
+        assertEquals("Negative should be allowed for immediate commit", 
+                -1, ragConfig.getSolrCommitWithinMs());
     }
 
     @Test
