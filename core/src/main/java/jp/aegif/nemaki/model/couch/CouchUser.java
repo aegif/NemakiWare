@@ -25,6 +25,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import jp.aegif.nemaki.model.User;
 
 public class CouchUser extends CouchNodeBase{
@@ -35,6 +37,7 @@ public class CouchUser extends CouchNodeBase{
 	private String lastName;
 	private String firstName;
 	private String email;
+	@JsonProperty("password")
 	private String passwordHash;
 	private Boolean admin;
 	private Set<String> favorites;

@@ -11,6 +11,10 @@
 	<!-- RAG services depend on PrincipalService, so scan must be in this child context -->
 	<context:component-scan base-package="jp.aegif.nemaki.rag" />
 
+	<!-- Enable component scanning for MCP (Model Context Protocol) services -->
+	<!-- MCP services depend on PrincipalService and VectorSearchService, so scan must be in this child context -->
+	<context:component-scan base-package="jp.aegif.nemaki.mcp" />
+
 	<!-- Enable component scanning for API v1 resources (Jersey REST resources with Spring DI) -->
 	<context:component-scan base-package="jp.aegif.nemaki.api.v1.resource" />
 

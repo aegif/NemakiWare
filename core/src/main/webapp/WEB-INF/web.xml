@@ -324,6 +324,28 @@
   <url-pattern>/odata/*</url-pattern>
  </servlet-mapping>
 
+ <!-- MCP (Model Context Protocol) application for LLM integration -->
+ <!-- Provides semantic search and document access for Claude Desktop, etc. -->
+ <servlet>
+  <servlet-name>jersey-mcp</servlet-name>
+  <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
+  <init-param>
+        <param-name>jakarta.ws.rs.Application</param-name>
+        <param-value>jp.aegif.nemaki.mcp.McpApplication</param-value>
+    </init-param>
+    <!-- Enable Jersey-Spring integration -->
+    <init-param>
+        <param-name>jersey.config.server.provider.classnames</param-name>
+        <param-value>org.glassfish.jersey.server.spring.SpringLifecycleListener</param-value>
+    </init-param>
+    <load-on-startup>13</load-on-startup>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>jersey-mcp</servlet-name>
+  <url-pattern>/mcp/*</url-pattern>
+ </servlet-mapping>
+
  <!-- Simple servlet for /rest/all/repositories endpoint -->
  <servlet>
   <servlet-name>all-repositories</servlet-name>

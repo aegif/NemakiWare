@@ -837,6 +837,21 @@
 			<artifactId>hibernate-validator</artifactId>
 			<version>8.0.1.Final</version>
 		</dependency>
+
+		<!-- MCP (Model Context Protocol) SDK for LLM integration -->
+		<!-- Official Java SDK maintained by Anthropic and Spring AI team -->
+		<dependency>
+			<groupId>io.modelcontextprotocol.sdk</groupId>
+			<artifactId>mcp</artifactId>
+			<version>0.10.0</version>
+		</dependency>
+
+		<!-- Project Reactor for MCP async support -->
+		<dependency>
+			<groupId>io.projectreactor</groupId>
+			<artifactId>reactor-core</artifactId>
+			<version>3.6.0</version>
+		</dependency>
 	</dependencies>
 
 	<build>
