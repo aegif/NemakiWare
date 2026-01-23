@@ -52,7 +52,7 @@ public class McpToolsProviderTest {
         authHandler = new McpAuthenticationHandler(principalService, TEST_SESSION_TTL_SECONDS);
         resultFactory = new McpToolResultFactory(objectMapper);
         toolsProvider = new McpToolsProvider(authHandler, vectorSearchService, resultFactory,
-                "http://localhost:8080/core", DEFAULT_REPOSITORY);
+                objectMapper, "http://localhost:8080/core", DEFAULT_REPOSITORY);
     }
 
     // ========== Login Tool Tests ==========

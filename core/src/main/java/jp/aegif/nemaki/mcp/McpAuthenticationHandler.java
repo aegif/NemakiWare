@@ -63,7 +63,11 @@ public class McpAuthenticationHandler {
     }
 
     /**
-     * Constructor for testing with default cleanup interval.
+     * Package-private constructor for unit testing only.
+     * Uses default cleanup interval of 15 minutes.
+     *
+     * @param principalService The principal service for user authentication
+     * @param sessionTtlSeconds Session TTL in seconds
      */
     McpAuthenticationHandler(PrincipalService principalService, long sessionTtlSeconds) {
         this(principalService, sessionTtlSeconds, 15);

@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.mcp;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -9,6 +10,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jp.aegif.nemaki.rag.search.VectorSearchResult;
 import jp.aegif.nemaki.rag.search.VectorSearchService;
@@ -33,6 +37,7 @@ public class McpToolsProvider {
     private final McpAuthenticationHandler authHandler;
     private final VectorSearchService vectorSearchService;
     private final McpToolResultFactory resultFactory;
+    private final ObjectMapper objectMapper;
     private final String baseUrl;
     private final String defaultRepository;
 
@@ -41,11 +46,13 @@ public class McpToolsProvider {
             McpAuthenticationHandler authHandler,
             VectorSearchService vectorSearchService,
             McpToolResultFactory resultFactory,
+            ObjectMapper objectMapper,
             @Value("${nemakiware.baseUrl:http://localhost:8080/core}") String baseUrl,
             @Value("${cmis.server.default.repository:bedroom}") String defaultRepository) {
         this.authHandler = authHandler;
         this.vectorSearchService = vectorSearchService;
         this.resultFactory = resultFactory;
+        this.objectMapper = objectMapper;
         this.baseUrl = baseUrl;
         this.defaultRepository = defaultRepository;
     }
@@ -65,7 +72,7 @@ public class McpToolsProvider {
     // ========== Tool Definitions ==========
 
     private McpToolDefinition createLoginToolDefinition() {
-        String schema = """
+        String schema = String.format("""
             {
               "type": "object",
               "properties": {
@@ -79,13 +86,13 @@ public class McpToolsProvider {
                 },
                 "repositoryId": {
                   "type": "string",
-                  "description": "リポジトリID（デフォルト: bedroom）",
-                  "default": "bedroom"
+                  "description": "リポジトリID（デフォルト: %s）",
+                  "default": "%s"
                 }
               },
               "required": ["username", "password"]
             }
-            """;
+            """, defaultRepository, defaultRepository);
         return new McpToolDefinition(
             "nemakiware_login",
             "NemakiWareにログインしてセッショントークンを取得します",
@@ -190,14 +197,20 @@ public class McpToolsProvider {
         McpLoginResult loginResult = authHandler.login(repositoryId, username, password);
 
         if (loginResult.isSuccess()) {
-            String response = String.format(
-                "{\"success\": true, \"session_token\": \"%s\", \"repository_id\": \"%s\", \"user_id\": \"%s\"}",
-                loginResult.getSessionToken(),
-                loginResult.getRepositoryId(),
-                loginResult.getUserId()
-            );
-            log.info("MCP login successful for user '{}' in repository '{}'", username, repositoryId);
-            return resultFactory.success(response);
+            try {
+                // Use ObjectMapper for safe JSON serialization (prevents injection attacks)
+                Map<String, Object> responseObj = new LinkedHashMap<>();
+                responseObj.put("success", true);
+                responseObj.put("session_token", loginResult.getSessionToken());
+                responseObj.put("repository_id", loginResult.getRepositoryId());
+                responseObj.put("user_id", loginResult.getUserId());
+                String response = objectMapper.writeValueAsString(responseObj);
+                // Note: Login success is already logged by McpAuthenticationHandler
+                return resultFactory.success(response);
+            } catch (JsonProcessingException e) {
+                log.error("Failed to serialize login response", e);
+                return resultFactory.error("Internal error");
+            }
         } else {
             log.warn("MCP login failed for user '{}': {}", username, loginResult.getErrorMessage());
             return resultFactory.error(loginResult.getErrorMessage());
