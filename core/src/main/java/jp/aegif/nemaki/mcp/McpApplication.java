@@ -1,12 +1,11 @@
 package jp.aegif.nemaki.mcp;
 
-import java.util.logging.Logger;
-
 import org.glassfish.jersey.jackson.JacksonFeature;
-import org.glassfish.jersey.message.filtering.EntityFilteringFeature;
 import org.glassfish.jersey.server.ResourceConfig;
 import org.glassfish.jersey.server.spring.SpringLifecycleListener;
 import org.glassfish.jersey.server.spring.SpringComponentProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jakarta.ws.rs.ApplicationPath;
 
@@ -37,10 +36,10 @@ import jakarta.ws.rs.ApplicationPath;
 @ApplicationPath("/mcp")
 public class McpApplication extends ResourceConfig {
 
-    private static final Logger logger = Logger.getLogger(McpApplication.class.getName());
+    private static final Logger log = LoggerFactory.getLogger(McpApplication.class);
 
     public McpApplication() {
-        logger.info("=== Initializing NemakiWare MCP Application ===");
+        log.info("=== Initializing NemakiWare MCP Application ===");
 
         // Enable Jersey-Spring integration
         register(SpringLifecycleListener.class);
@@ -57,7 +56,7 @@ public class McpApplication extends ResourceConfig {
         // Register MCP resource package
         packages("jp.aegif.nemaki.mcp");
 
-        logger.info("=== NemakiWare MCP Application initialized successfully ===");
-        logger.info("MCP endpoint available at: /core/mcp/message");
+        log.info("=== NemakiWare MCP Application initialized successfully ===");
+        log.info("MCP endpoint available at: /core/mcp/message");
     }
 }

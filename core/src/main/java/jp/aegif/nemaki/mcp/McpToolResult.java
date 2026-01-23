@@ -1,9 +1,15 @@
 package jp.aegif.nemaki.mcp;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
  * Result from executing an MCP tool.
  */
 public class McpToolResult {
+
+    // Thread-safe singleton ObjectMapper for JSON serialization
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final boolean success;
     private final String content;
@@ -20,7 +26,17 @@ public class McpToolResult {
     }
 
     public static McpToolResult error(String errorMessage) {
-        return new McpToolResult(false, "{\"error\": \"" + escapeJson(errorMessage) + "\"}", true);
+        String safeMessage;
+        try {
+            // Use ObjectMapper for proper JSON escaping (handles all control chars and Unicode)
+            safeMessage = OBJECT_MAPPER.writeValueAsString(errorMessage);
+            // Remove surrounding quotes added by writeValueAsString
+            safeMessage = safeMessage.substring(1, safeMessage.length() - 1);
+        } catch (JsonProcessingException e) {
+            // Fallback to simple replacement if ObjectMapper fails
+            safeMessage = errorMessage != null ? errorMessage.replaceAll("[\"\\\\]", "") : "";
+        }
+        return new McpToolResult(false, "{\"error\": \"" + safeMessage + "\"}", true);
     }
 
     public boolean isSuccess() {
@@ -33,14 +49,5 @@ public class McpToolResult {
 
     public boolean isError() {
         return isError;
-    }
-
-    private static String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
     }
 }

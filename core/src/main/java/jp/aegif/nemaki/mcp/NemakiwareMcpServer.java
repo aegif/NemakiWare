@@ -30,6 +30,13 @@ public class NemakiwareMcpServer {
 
     private static final Logger log = LoggerFactory.getLogger(NemakiwareMcpServer.class);
 
+    // JSON-RPC error codes
+    private static final int ERROR_PARSE = -32700;
+    private static final int ERROR_INVALID_REQUEST = -32600;
+    private static final int ERROR_METHOD_NOT_FOUND = -32601;
+    private static final int ERROR_INVALID_PARAMS = -32602;
+    private static final int ERROR_INTERNAL = -32603;
+
     private final McpToolsProvider toolsProvider;
     private final McpAuthenticationHandler authHandler;
     private final ObjectMapper objectMapper;
@@ -37,10 +44,11 @@ public class NemakiwareMcpServer {
     @Autowired
     public NemakiwareMcpServer(
             McpToolsProvider toolsProvider,
-            McpAuthenticationHandler authHandler) {
+            McpAuthenticationHandler authHandler,
+            ObjectMapper objectMapper) {
         this.toolsProvider = toolsProvider;
         this.authHandler = authHandler;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -164,16 +172,26 @@ public class NemakiwareMcpServer {
         try {
             Object result = handleMethod(method, params, headers);
             return createResponse(id, result, null);
+        } catch (IllegalArgumentException e) {
+            // Expected error: unknown method or invalid parameters
+            log.warn("Invalid MCP request: {}", e.getMessage());
+            return createErrorResponse(id, ERROR_METHOD_NOT_FOUND, e.getMessage(), null);
+        } catch (ClassCastException e) {
+            // Invalid request structure
+            log.warn("Invalid request structure: {}", e.getMessage());
+            return createErrorResponse(id, ERROR_INVALID_REQUEST, "Invalid request structure", e.getMessage());
         } catch (Exception e) {
-            log.error("Error handling MCP request: {}", e.getMessage(), e);
-            return createResponse(id, null, Map.of(
-                "code", -32603,
-                "message", "Internal error: " + e.getMessage()
-            ));
+            // Unexpected error - log with full stack trace
+            log.error("Unexpected error handling MCP request", e);
+            return createErrorResponse(id, ERROR_INTERNAL, "Internal error", e.getMessage());
         }
     }
 
     private Object handleMethod(String method, Map<String, Object> params, Map<String, String> headers) {
+        if (method == null) {
+            throw new IllegalArgumentException("Method is required");
+        }
+
         switch (method) {
             case "initialize":
                 return handleInitialize(params);
@@ -203,6 +221,10 @@ public class NemakiwareMcpServer {
     @SuppressWarnings("unchecked")
     private Map<String, Object> handleToolCall(Map<String, Object> params, Map<String, String> headers) {
         String toolName = (String) params.get("name");
+        if (toolName == null) {
+            throw new IllegalArgumentException("Tool name is required");
+        }
+
         Map<String, Object> arguments = (Map<String, Object>) params.getOrDefault("arguments", new HashMap<>());
 
         McpToolResult result = executeTool(toolName, arguments, headers);
@@ -229,6 +251,19 @@ public class NemakiwareMcpServer {
         }
 
         return response;
+    }
+
+    /**
+     * Create a JSON-RPC error response with optional data field.
+     */
+    private Map<String, Object> createErrorResponse(Object id, int code, String message, String data) {
+        Map<String, Object> error = new HashMap<>();
+        error.put("code", code);
+        error.put("message", message);
+        if (data != null) {
+            error.put("data", data);
+        }
+        return createResponse(id, null, error);
     }
 
     private String getStringArg(Map<String, Object> args, String key, String defaultValue) {
