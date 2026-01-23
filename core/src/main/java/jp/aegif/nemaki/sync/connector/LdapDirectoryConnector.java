@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.sync.connector;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.List;
@@ -30,10 +31,12 @@ import javax.naming.NamingEnumeration;
 import javax.naming.NamingException;
 import javax.naming.directory.Attribute;
 import javax.naming.directory.Attributes;
-import javax.naming.directory.DirContext;
-import javax.naming.directory.InitialDirContext;
 import javax.naming.directory.SearchControls;
 import javax.naming.directory.SearchResult;
+import javax.naming.ldap.InitialLdapContext;
+import javax.naming.ldap.LdapContext;
+import javax.naming.ldap.StartTlsRequest;
+import javax.naming.ldap.StartTlsResponse;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -46,7 +49,8 @@ public class LdapDirectoryConnector {
 
     private static final Log log = LogFactory.getLog(LdapDirectoryConnector.class);
 
-    private DirContext context;
+    private LdapContext context;
+    private StartTlsResponse tlsResponse;
     private DirectorySyncConfig config;
 
     public LdapDirectoryConnector(DirectorySyncConfig config) {
@@ -57,9 +61,6 @@ public class LdapDirectoryConnector {
         Hashtable<String, String> env = new Hashtable<>();
         env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
         env.put(Context.PROVIDER_URL, config.getLdapUrl());
-        env.put(Context.SECURITY_AUTHENTICATION, "simple");
-        env.put(Context.SECURITY_PRINCIPAL, config.getLdapBindDn());
-        env.put(Context.SECURITY_CREDENTIALS, config.getLdapBindPassword());
 
         env.put("com.sun.jndi.ldap.connect.timeout", String.valueOf(config.getConnectionTimeout()));
         env.put("com.sun.jndi.ldap.read.timeout", String.valueOf(config.getReadTimeout()));
@@ -69,11 +70,34 @@ public class LdapDirectoryConnector {
         }
 
         log.info("Connecting to LDAP server: " + config.getLdapUrl());
-        this.context = new InitialDirContext(env);
+        this.context = new InitialLdapContext(env, null);
+
+        if (config.isUseStartTls()) {
+            try {
+                tlsResponse = (StartTlsResponse) context.extendedOperation(new StartTlsRequest());
+                tlsResponse.negotiate();
+                log.info("STARTTLS negotiation successful");
+            } catch (IOException e) {
+                throw new NamingException("STARTTLS negotiation failed: " + e.getMessage());
+            }
+        }
+
+        context.addToEnvironment(Context.SECURITY_AUTHENTICATION, "simple");
+        context.addToEnvironment(Context.SECURITY_PRINCIPAL, config.getLdapBindDn());
+        context.addToEnvironment(Context.SECURITY_CREDENTIALS, config.getLdapBindPassword());
+
+        context.reconnect(null);
         log.info("Successfully connected to LDAP server");
     }
 
     public void disconnect() {
+        if (tlsResponse != null) {
+            try {
+                tlsResponse.close();
+            } catch (IOException e) {
+                log.warn("Error closing TLS connection: " + e.getMessage());
+            }
+        }
         if (context != null) {
             try {
                 context.close();
@@ -120,15 +144,20 @@ public class LdapDirectoryConnector {
             config.getGroupMemberAttribute()
         });
 
-        NamingEnumeration<SearchResult> results = context.search(searchBase, filter, controls);
+        NamingEnumeration<SearchResult> results = null;
+        try {
+            results = context.search(searchBase, filter, controls);
 
-        while (results.hasMore()) {
-            SearchResult result = results.next();
-            LdapGroup group = mapToLdapGroup(result);
-            if (group != null) {
-                groups.add(group);
-                log.debug("Found group: " + group.getGroupId());
+            while (results.hasMore()) {
+                SearchResult result = results.next();
+                LdapGroup group = mapToLdapGroup(result);
+                if (group != null) {
+                    groups.add(group);
+                    log.debug("Found group: " + group.getGroupId());
+                }
             }
+        } finally {
+            closeQuietly(results);
         }
 
         log.info("Found " + groups.size() + " groups in LDAP");
@@ -153,19 +182,24 @@ public class LdapDirectoryConnector {
 
         Attribute memberAttr = attrs.get(config.getGroupMemberAttribute());
         if (memberAttr != null) {
-            NamingEnumeration<?> members = memberAttr.getAll();
-            while (members.hasMore()) {
-                String memberDn = (String) members.next();
-                group.addMemberDn(memberDn);
-                
-                String memberId = extractIdFromDn(memberDn);
-                if (memberId != null) {
-                    if (isGroupDn(memberDn)) {
-                        group.addMemberGroupId(memberId);
-                    } else {
-                        group.addMemberUserId(memberId);
+            NamingEnumeration<?> members = null;
+            try {
+                members = memberAttr.getAll();
+                while (members.hasMore()) {
+                    String memberDn = (String) members.next();
+                    group.addMemberDn(memberDn);
+                    
+                    String memberId = extractIdFromDn(memberDn);
+                    if (memberId != null) {
+                        if (isGroupDn(memberDn)) {
+                            group.addMemberGroupId(memberId);
+                        } else {
+                            group.addMemberUserId(memberId);
+                        }
                     }
                 }
+            } finally {
+                closeQuietly(members);
             }
         }
 
@@ -258,19 +292,34 @@ public class LdapDirectoryConnector {
             "displayName"
         });
 
-        NamingEnumeration<SearchResult> results = context.search(searchBase, filter, controls);
+        NamingEnumeration<SearchResult> results = null;
+        try {
+            results = context.search(searchBase, filter, controls);
 
-        while (results.hasMore()) {
-            SearchResult result = results.next();
-            LdapUser user = mapToLdapUser(result);
-            if (user != null) {
-                users.add(user);
-                log.debug("Found user: " + user.getUserId());
+            while (results.hasMore()) {
+                SearchResult result = results.next();
+                LdapUser user = mapToLdapUser(result);
+                if (user != null) {
+                    users.add(user);
+                    log.debug("Found user: " + user.getUserId());
+                }
             }
+        } finally {
+            closeQuietly(results);
         }
 
         log.info("Found " + users.size() + " users in LDAP");
         return users;
+    }
+
+    private void closeQuietly(NamingEnumeration<?> enumeration) {
+        if (enumeration != null) {
+            try {
+                enumeration.close();
+            } catch (NamingException e) {
+                log.debug("Error closing NamingEnumeration: " + e.getMessage());
+            }
+        }
     }
 
     private LdapUser mapToLdapUser(SearchResult result) throws NamingException {

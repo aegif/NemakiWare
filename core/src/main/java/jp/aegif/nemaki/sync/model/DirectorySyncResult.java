@@ -46,7 +46,9 @@ public class DirectorySyncResult {
     private int groupsDeleted;
     private int groupsSkipped;
     private int usersAdded;
+    private int usersUpdated;
     private int usersRemoved;
+    private int usersSkipped;
 
     private List<SyncError> errors = new ArrayList<>();
     private List<SyncWarning> warnings = new ArrayList<>();
@@ -88,8 +90,16 @@ public class DirectorySyncResult {
         this.usersAdded++;
     }
 
+    public void incrementUsersUpdated() {
+        this.usersUpdated++;
+    }
+
     public void incrementUsersRemoved() {
         this.usersRemoved++;
+    }
+
+    public void incrementUsersSkipped() {
+        this.usersSkipped++;
     }
 
     public void addError(String groupId, String message) {
@@ -188,12 +198,28 @@ public class DirectorySyncResult {
         this.usersAdded = usersAdded;
     }
 
+    public int getUsersUpdated() {
+        return usersUpdated;
+    }
+
+    public void setUsersUpdated(int usersUpdated) {
+        this.usersUpdated = usersUpdated;
+    }
+
     public int getUsersRemoved() {
         return usersRemoved;
     }
 
     public void setUsersRemoved(int usersRemoved) {
         this.usersRemoved = usersRemoved;
+    }
+
+    public int getUsersSkipped() {
+        return usersSkipped;
+    }
+
+    public void setUsersSkipped(int usersSkipped) {
+        this.usersSkipped = usersSkipped;
     }
 
     public List<SyncError> getErrors() {

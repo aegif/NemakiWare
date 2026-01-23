@@ -323,8 +323,11 @@ public interface PropertyKey {
 	final String DIRECTORY_SYNC_USER_ID_ATTRIBUTE = "directory.sync.user.id.attribute";
 	final String DIRECTORY_SYNC_NESTED_GROUPS = "directory.sync.nested.groups";
 	final String DIRECTORY_SYNC_CREATE_MISSING_USERS = "directory.sync.create.missing.users";
+	final String DIRECTORY_SYNC_UPDATE_EXISTING_USERS = "directory.sync.update.existing.users";
 	final String DIRECTORY_SYNC_DELETE_ORPHAN_GROUPS = "directory.sync.delete.orphan.groups";
+	final String DIRECTORY_SYNC_DELETE_ORPHAN_USERS = "directory.sync.delete.orphan.users";
 	final String DIRECTORY_SYNC_GROUP_PREFIX = "directory.sync.group.prefix";
+	final String DIRECTORY_SYNC_USER_PREFIX = "directory.sync.user.prefix";
 	final String DIRECTORY_SYNC_SCHEDULE_ENABLED = "directory.sync.schedule.enabled";
 	final String DIRECTORY_SYNC_SCHEDULE_CRON = "directory.sync.schedule.cron";
 }

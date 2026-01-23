@@ -52,8 +52,11 @@ public class DirectorySyncConfig {
 
     private boolean syncNestedGroups;
     private boolean createMissingUsers;
+    private boolean updateExistingUsers;
     private boolean deleteOrphanGroups;
+    private boolean deleteOrphanUsers;
     private String groupPrefix;
+    private String userPrefix;
 
     private String cronExpression;
     private boolean scheduleEnabled;
@@ -224,6 +227,14 @@ public class DirectorySyncConfig {
         this.createMissingUsers = createMissingUsers;
     }
 
+    public boolean isUpdateExistingUsers() {
+        return updateExistingUsers;
+    }
+
+    public void setUpdateExistingUsers(boolean updateExistingUsers) {
+        this.updateExistingUsers = updateExistingUsers;
+    }
+
     public boolean isDeleteOrphanGroups() {
         return deleteOrphanGroups;
     }
@@ -232,12 +243,28 @@ public class DirectorySyncConfig {
         this.deleteOrphanGroups = deleteOrphanGroups;
     }
 
+    public boolean isDeleteOrphanUsers() {
+        return deleteOrphanUsers;
+    }
+
+    public void setDeleteOrphanUsers(boolean deleteOrphanUsers) {
+        this.deleteOrphanUsers = deleteOrphanUsers;
+    }
+
     public String getGroupPrefix() {
         return groupPrefix;
     }
 
     public void setGroupPrefix(String groupPrefix) {
         this.groupPrefix = groupPrefix;
+    }
+
+    public String getUserPrefix() {
+        return userPrefix;
+    }
+
+    public void setUserPrefix(String userPrefix) {
+        this.userPrefix = userPrefix;
     }
 
     public String getCronExpression() {
