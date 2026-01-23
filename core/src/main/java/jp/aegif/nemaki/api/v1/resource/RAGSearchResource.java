@@ -35,7 +35,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Logger;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  * REST API resource for RAG (Retrieval-Augmented Generation) semantic search.
@@ -53,7 +55,7 @@ import java.util.logging.Logger;
 @Produces(MediaType.APPLICATION_JSON)
 public class RAGSearchResource {
 
-    private static final Logger logger = Logger.getLogger(RAGSearchResource.class.getName());
+    private static final Log log = LogFactory.getLog(RAGSearchResource.class);
 
     @Autowired
     private VectorSearchService vectorSearchService;
@@ -108,10 +110,13 @@ public class RAGSearchResource {
             @Parameter(description = "Search request", required = true)
             RAGSearchRequest request) {
 
-        logger.info("=== RAG Search called ===");
-        logger.info("Repository: " + repositoryId);
-        logger.info("Query: " + (request != null ? request.getQuery() : "null"));
-        logger.info("VectorSearchService: " + (vectorSearchService != null ? "present" : "null"));
+        // Log search call at DEBUG level to avoid PII exposure in production logs
+        if (log.isDebugEnabled()) {
+            log.debug(String.format("RAG Search called: repo=%s, query=%s, service=%s",
+                    repositoryId,
+                    request != null ? request.getQuery() : "null",
+                    vectorSearchService != null ? "present" : "null"));
+        }
 
         try {
             validateRepository(repositoryId);
@@ -123,6 +128,9 @@ public class RAGSearchResource {
             if (request == null || request.getQuery() == null || request.getQuery().trim().isEmpty()) {
                 throw ApiException.invalidArgument("Query text is required");
             }
+
+            // Validate boost values (0.0 to 1.0 range)
+            validateBoostValues(request);
 
             // Get current user
             CallContext context = getCallContext();
@@ -159,10 +167,10 @@ public class RAGSearchResource {
         } catch (ApiException e) {
             throw e;
         } catch (VectorSearchException e) {
-            logger.warning("Vector search failed: " + e.getMessage());
+            log.warn("Vector search failed: " + e.getMessage());
             throw ApiException.internalError("Vector search failed: " + e.getMessage());
         } catch (Exception e) {
-            logger.log(java.util.logging.Level.SEVERE, "Unexpected error in RAG search", e);
+            log.error("Unexpected error in RAG search", e);
             throw ApiException.internalError("An unexpected error occurred");
         }
     }
@@ -224,6 +232,30 @@ public class RAGSearchResource {
 
     private boolean hasCustomBoost(RAGSearchRequest request) {
         return request.getPropertyBoost() != null || request.getContentBoost() != null;
+    }
+
+    private void validateBoostValues(RAGSearchRequest request) {
+        if (request.getPropertyBoost() != null) {
+            float propertyBoost = request.getPropertyBoost();
+            if (propertyBoost < 0.0f || propertyBoost > 1.0f) {
+                throw ApiException.invalidArgument(
+                        "propertyBoost must be between 0.0 and 1.0, got: " + propertyBoost);
+            }
+        }
+        if (request.getContentBoost() != null) {
+            float contentBoost = request.getContentBoost();
+            if (contentBoost < 0.0f || contentBoost > 1.0f) {
+                throw ApiException.invalidArgument(
+                        "contentBoost must be between 0.0 and 1.0, got: " + contentBoost);
+            }
+        }
+        if (request.getMinScore() != null) {
+            float minScore = request.getMinScore();
+            if (minScore < 0.0f || minScore > 1.0f) {
+                throw ApiException.invalidArgument(
+                        "minScore must be between 0.0 and 1.0, got: " + minScore);
+            }
+        }
     }
 
     private void validateRepository(String repositoryId) {
