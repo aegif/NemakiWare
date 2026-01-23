@@ -533,8 +533,7 @@ public class PermissionServiceImpl implements PermissionService {
 		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 
 		if (log.isDebugEnabled()) {
-			log.debug("getFiltered: Processing {} items for user {} with {} groups", 
-				contents.size(), userName, groups.size());
+			log.debug("getFiltered: Processing " + contents.size() + " items for user " + userName + " with " + groups.size() + " groups");
 		}
 
 		// Filtering
@@ -551,8 +550,7 @@ public class PermissionServiceImpl implements PermissionService {
 		}
 		
 		if (log.isDebugEnabled()) {
-			log.debug("getFiltered: Filtered {} items down to {} items for user {}", 
-				contents.size(), result.size(), userName);
+			log.debug("getFiltered: Filtered " + contents.size() + " items down to " + result.size() + " items for user " + userName);
 		}
 		return result;
 	}
