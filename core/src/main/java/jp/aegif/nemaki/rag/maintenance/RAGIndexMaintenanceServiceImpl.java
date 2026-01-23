@@ -128,15 +128,11 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
                 runFullRAGReindex(repositoryId, status);
             } catch (Exception e) {
                 log.error("RAG reindex failed for repository: " + repositoryId, e);
-                System.out.println("=== RAG reindex EXCEPTION: " + e.getClass().getName() + ": " + e.getMessage() + " ===");
-                e.printStackTrace();
                 status.setStatus("error");
                 status.setErrorMessage(e.getMessage());
                 status.setEndTime(System.currentTimeMillis());
             } catch (Throwable t) {
                 log.error("RAG reindex THROWABLE for repository: " + repositoryId, t);
-                System.out.println("=== RAG reindex THROWABLE: " + t.getClass().getName() + ": " + t.getMessage() + " ===");
-                t.printStackTrace();
                 status.setStatus("error");
                 status.setErrorMessage(t.getMessage());
                 status.setEndTime(System.currentTimeMillis());

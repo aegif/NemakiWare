@@ -5,6 +5,8 @@ import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -22,6 +24,8 @@ import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.apache.hc.core5.util.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
+import jakarta.annotation.PreDestroy;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -51,9 +55,16 @@ public class TeiEmbeddingService implements EmbeddingService {
 
     private static final Log log = LogFactory.getLog(TeiEmbeddingService.class);
 
+    // Health check cache TTL: 30 seconds
+    private static final long HEALTH_CACHE_TTL_MS = 30_000;
+
     private final RAGConfig ragConfig;
     private final ObjectMapper objectMapper;
     private final CloseableHttpClient httpClient;
+
+    // Health check caching to avoid excessive HTTP calls
+    private final AtomicBoolean cachedHealthStatus = new AtomicBoolean(false);
+    private final AtomicLong lastHealthCheckTime = new AtomicLong(0);
 
     @Autowired
     public TeiEmbeddingService(RAGConfig ragConfig) {
@@ -68,6 +79,18 @@ public class TeiEmbeddingService implements EmbeddingService {
         this.httpClient = HttpClientBuilder.create()
                 .setDefaultRequestConfig(requestConfig)
                 .build();
+    }
+
+    @PreDestroy
+    public void cleanup() {
+        try {
+            if (httpClient != null) {
+                httpClient.close();
+                log.info("TeiEmbeddingService HTTP client closed");
+            }
+        } catch (IOException e) {
+            log.warn("Error closing HTTP client", e);
+        }
     }
 
     @Override
@@ -215,28 +238,47 @@ public class TeiEmbeddingService implements EmbeddingService {
 
     @Override
     public boolean isHealthy() {
-        log.info("TeiEmbeddingService.isHealthy() called");
-        log.info("ragConfig.isEnabled() = " + ragConfig.isEnabled());
-
         if (!ragConfig.isEnabled()) {
-            log.info("RAG is not enabled, returning false");
             return false;
         }
 
+        // Check cache first
+        long now = System.currentTimeMillis();
+        long lastCheck = lastHealthCheckTime.get();
+        if (now - lastCheck < HEALTH_CACHE_TTL_MS) {
+            return cachedHealthStatus.get();
+        }
+
+        // Perform actual health check
+        boolean healthy = doHealthCheck();
+        cachedHealthStatus.set(healthy);
+        lastHealthCheckTime.set(now);
+        return healthy;
+    }
+
+    /**
+     * Perform actual HTTP health check to TEI service.
+     */
+    private boolean doHealthCheck() {
         String url = ragConfig.getTeiUrl() + "/health";
-        log.info("Checking TEI health at URL: " + url);
 
         try {
             HttpGet httpGet = new HttpGet(url);
             boolean result = httpClient.execute(httpGet, response -> {
                 int statusCode = response.getCode();
-                log.info("TEI health check response code: " + statusCode);
+                if (log.isDebugEnabled()) {
+                    log.debug("TEI health check response code: " + statusCode);
+                }
                 return statusCode == 200;
             });
-            log.info("TEI health check result: " + result);
+            if (log.isDebugEnabled()) {
+                log.debug("TEI health check result: " + result);
+            }
             return result;
         } catch (IOException e) {
-            log.warn("TEI health check failed: " + e.getMessage(), e);
+            if (log.isDebugEnabled()) {
+                log.debug("TEI health check failed: " + e.getMessage());
+            }
             return false;
         }
     }

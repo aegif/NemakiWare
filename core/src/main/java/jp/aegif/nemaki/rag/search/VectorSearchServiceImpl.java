@@ -5,8 +5,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
@@ -35,7 +35,7 @@ import jp.aegif.nemaki.rag.embedding.EmbeddingService;
 @Service
 public class VectorSearchServiceImpl implements VectorSearchService {
 
-    private static final Logger log = Logger.getLogger(VectorSearchServiceImpl.class.getName());
+    private static final Log log = LogFactory.getLog(VectorSearchServiceImpl.class);
 
     private final RAGConfig ragConfig;
     private final EmbeddingService embeddingService;
@@ -56,10 +56,9 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         this.ragConfig = ragConfig;
         this.embeddingService = embeddingService;
         this.aclExpander = aclExpander;
-        log.info("=== VectorSearchServiceImpl initialized ===");
-        log.info("RAGConfig: " + (ragConfig != null ? "present" : "null"));
-        log.info("EmbeddingService: " + (embeddingService != null ? "present" : "null"));
-        log.info("ACLExpander: " + (aclExpander != null ? "present" : "null"));
+        if (log.isDebugEnabled()) {
+            log.debug("VectorSearchServiceImpl initialized");
+        }
     }
 
     @Override
@@ -81,30 +80,30 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                                                     int topK, float minScore,
                                                     float propertyBoost, float contentBoost)
             throws VectorSearchException {
-        log.info(String.format("searchWithBoost called: repo=%s, user=%s, query=%s, topK=%d, minScore=%.2f",
-                repositoryId, userId, query, topK, minScore));
+        if (log.isDebugEnabled()) {
+            // Don't log query content at INFO/DEBUG to avoid PII exposure
+            log.debug(String.format("searchWithBoost called: repo=%s, topK=%d, minScore=%.2f",
+                    repositoryId, topK, minScore));
+        }
 
         if (!isEnabled()) {
-            log.warning("Vector search is not enabled");
+            log.warn("Vector search is not enabled");
             throw new VectorSearchException("Vector search is not enabled");
         }
 
         try {
             // Generate query embedding
-            log.info("Generating query embedding...");
             float[] queryVector = embeddingService.embedQuery(query);
-            log.info(String.format("Query embedding generated: dimension=%d", queryVector.length));
 
             // Build ACL filter
             String aclFilter = aclExpander.buildReaderFilterQuery(repositoryId, userId);
-            log.info(String.format("ACL filter: %s", aclFilter));
 
             // Execute weighted KNN search
             return executeWeightedKnnSearch(repositoryId, queryVector, aclFilter, null, topK, minScore,
                     propertyBoost, contentBoost);
 
         } catch (EmbeddingException e) {
-            log.log(Level.SEVERE, "Failed to generate query embedding", e);
+            log.error("Failed to generate query embedding", e);
             throw new VectorSearchException("Failed to generate query embedding", e);
         }
     }
@@ -179,8 +178,10 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                 // Filter by minimum score using raw (unweighted) score
                 // This ensures minScore represents actual similarity threshold
                 if (maxRawScore < minScore) {
-                    log.fine(String.format("Filtering out document %s: maxRawScore=%.4f < minScore=%.4f",
-                            entry.getKey(), maxRawScore, minScore));
+                    if (log.isTraceEnabled()) {
+                        log.trace(String.format("Filtering out document %s: maxRawScore=%.4f < minScore=%.4f",
+                                entry.getKey(), maxRawScore, minScore));
+                    }
                     continue;
                 }
 
@@ -201,12 +202,14 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                 results = results.subList(0, topK);
             }
 
-            log.info(String.format("Weighted vector search returned %d results (minScore=%.2f, propertyBoost=%.2f, contentBoost=%.2f, totalCandidates=%d)",
-                    results.size(), minScore, propertyBoost, contentBoost, documentScores.size()));
+            if (log.isDebugEnabled()) {
+                log.debug(String.format("Weighted vector search returned %d results (minScore=%.2f, propertyBoost=%.2f, contentBoost=%.2f, totalCandidates=%d)",
+                        results.size(), minScore, propertyBoost, contentBoost, documentScores.size()));
+            }
             return results;
 
         } catch (Exception e) {
-            log.log(Level.SEVERE, "Failed to execute weighted vector search", e);
+            log.error("Failed to execute weighted vector search", e);
             throw new VectorSearchException("Failed to execute weighted vector search", e);
         }
     }
@@ -217,9 +220,6 @@ public class VectorSearchServiceImpl implements VectorSearchService {
     private void searchChunkVectors(SolrClient solrClient, String repositoryId, String vectorStr,
                                     String aclFilter, String additionalFilter, int topK,
                                     Map<String, ScoredDocument> documentScores, float contentBoost) throws Exception {
-
-        log.info(String.format("searchChunkVectors: repo=%s, topK=%d, contentBoost=%.2f", repositoryId, topK, contentBoost));
-        log.info(String.format("ACL filter for chunk search: %s", aclFilter));
 
         SolrQuery solrQuery = new SolrQuery();
         solrQuery.setQuery("{!knn f=chunk_vector topK=" + topK + "}" + vectorStr);
@@ -240,21 +240,23 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             response = solrClient.query("nemaki", solrQuery, org.apache.solr.client.solrj.SolrRequest.METHOD.POST);
         } catch (Exception e) {
             // Handle case where there are no indexed vectors yet
-            log.info("Solr query exception: " + e.getMessage());
             if (e.getMessage() != null && (e.getMessage().contains("undefined field") ||
                     e.getMessage().contains("no indexed vectors") ||
                     e.getMessage().contains("Cannot parse"))) {
-                log.info("No RAG chunk vectors indexed yet - returning empty results for chunk search");
+                if (log.isDebugEnabled()) {
+                    log.debug("No RAG chunk vectors indexed yet - returning empty results for chunk search");
+                }
                 return;
             }
             throw e;
         }
         SolrDocumentList docs = response.getResults();
-        log.info(String.format("Chunk search returned %d results", docs.getNumFound()));
+        if (log.isDebugEnabled()) {
+            log.debug(String.format("Chunk search returned %d results", docs.getNumFound()));
+        }
 
         for (SolrDocument doc : docs) {
             String documentId = getStringField(doc, "parent_document_id");
-            log.fine(String.format("Processing chunk: parent_document_id=%s", documentId));
             if (documentId == null) continue;
 
             float score = doc.getFieldValue("score") != null ?
@@ -303,18 +305,21 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             response = solrClient.query("nemaki", solrQuery, org.apache.solr.client.solrj.SolrRequest.METHOD.POST);
         } catch (Exception e) {
             // Handle case where there are no indexed vectors yet
-            log.info("Property Solr query exception: " + e.getMessage());
             if (e.getMessage() != null && (e.getMessage().contains("undefined field") ||
                     e.getMessage().contains("no indexed vectors") ||
                     e.getMessage().contains("Cannot parse") ||
                     e.getMessage().contains("Field Queries are not supported"))) {
-                log.info("No RAG property vectors indexed yet - returning empty results for property search");
+                if (log.isDebugEnabled()) {
+                    log.debug("No RAG property vectors indexed yet - returning empty results for property search");
+                }
                 return;
             }
             throw e;
         }
         SolrDocumentList docs = response.getResults();
-        log.info(String.format("Property search returned %d results", docs.getNumFound()));
+        if (log.isDebugEnabled()) {
+            log.debug(String.format("Property search returned %d results", docs.getNumFound()));
+        }
 
         for (SolrDocument doc : docs) {
             String documentId = getStringField(doc, "id");
@@ -355,7 +360,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                 result.setObjectType(getStringField(parentDoc, "objecttype"));
             }
         } catch (Exception e) {
-            log.log(Level.WARNING, "Failed to enrich parent info for document: " + result.getDocumentId(), e);
+            log.warn("Failed to enrich parent info for document: " + result.getDocumentId(), e);
         }
     }
 

@@ -24,6 +24,20 @@ public class RAGConfig {
         log.info("TEI URL: {}", teiUrl);
         log.info("TEI connect timeout: {}", teiConnectTimeout);
         log.info("TEI read timeout: {}", teiReadTimeout);
+
+        // Validate boost values (0.0 to 1.0 range)
+        if (propertyBoost < 0.0f || propertyBoost > 1.0f) {
+            log.warn("Invalid rag.search.property.boost value: {}. Must be between 0.0 and 1.0. Using default 0.3", propertyBoost);
+            propertyBoost = 0.3f;
+        }
+        if (contentBoost < 0.0f || contentBoost > 1.0f) {
+            log.warn("Invalid rag.search.content.boost value: {}. Must be between 0.0 and 1.0. Using default 0.7", contentBoost);
+            contentBoost = 0.7f;
+        }
+        if (searchSimilarityThreshold < 0.0f || searchSimilarityThreshold > 1.0f) {
+            log.warn("Invalid rag.search.similarity.threshold value: {}. Must be between 0.0 and 1.0. Using default 0.7", searchSimilarityThreshold);
+            searchSimilarityThreshold = 0.7f;
+        }
     }
 
     // ========================================
@@ -134,6 +148,15 @@ public class RAGConfig {
     @Value("${rag.indexing.async:true}")
     private boolean indexingAsync;
 
+    /**
+     * Solr commitWithin time in milliseconds.
+     * Documents will be committed within this time window, allowing Solr to batch commits.
+     * Set to 0 or negative for immediate hard commit.
+     * Default: 10000ms (10 seconds)
+     */
+    @Value("${rag.indexing.solr.commitWithin:10000}")
+    private int solrCommitWithinMs;
+
     // ========================================
     // Supported MIME Types for RAG Indexing
     // ========================================
@@ -226,6 +249,10 @@ public class RAGConfig {
 
     public boolean isIndexingAsync() {
         return indexingAsync;
+    }
+
+    public int getSolrCommitWithinMs() {
+        return solrCommitWithinMs;
     }
 
     public String getSupportedMimeTypes() {
