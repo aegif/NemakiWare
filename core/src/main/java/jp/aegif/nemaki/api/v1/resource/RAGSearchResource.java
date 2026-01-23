@@ -168,7 +168,13 @@ public class RAGSearchResource {
                 if (currentUser == null || !currentUser.isAdmin()) {
                     throw ApiException.permissionDenied("Only administrators can simulate search as another user");
                 }
-                userId = request.getSimulateAsUserId().trim();
+                String targetUserId = request.getSimulateAsUserId().trim();
+                // Validate that the target user exists
+                UserItem targetUser = contentService.getUserItemById(repositoryId, targetUserId);
+                if (targetUser == null) {
+                    throw ApiException.invalidArgument("User not found: " + targetUserId);
+                }
+                userId = targetUserId;
                 log.info(String.format("Admin %s simulating RAG search as user %s",
                         context.getUsername(), userId));
             }
@@ -342,6 +348,16 @@ public class RAGSearchResource {
     /**
      * Filter search results by current CMIS permissions.
      * This provides a security double-check against potentially stale Solr ACL data.
+     *
+     * <p><strong>Performance Note:</strong> This method performs per-result permission checks,
+     * which involves database calls for each document. The cost is O(n) where n is the number
+     * of results. This trade-off prioritizes security over performance. The impact is mitigated by:
+     * <ul>
+     *   <li>MAX_TOP_K limit (100) capping the maximum number of results</li>
+     *   <li>Early exit for null/empty results</li>
+     *   <li>Solr ACL pre-filtering reducing the result set before this check</li>
+     * </ul>
+     * Future optimization: Consider batch ACL verification if this becomes a bottleneck.
      *
      * @param repositoryId Repository ID
      * @param context Current user's call context
