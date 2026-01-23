@@ -131,11 +131,11 @@ public class RAGSearchResource {
             @Parameter(description = "Search request", required = true)
             RAGSearchRequest request) {
 
-        // Log search call at DEBUG level to avoid PII exposure in production logs
+        // Log search call at DEBUG level - only log query length to avoid PII exposure
         if (log.isDebugEnabled()) {
-            log.debug(String.format("RAG Search called: repo=%s, query=%s, service=%s",
+            log.debug(String.format("RAG Search called: repo=%s, queryLength=%d, service=%s",
                     repositoryId,
-                    request != null ? request.getQuery() : "null",
+                    request != null && request.getQuery() != null ? request.getQuery().length() : 0,
                     vectorSearchService != null ? "present" : "null"));
         }
 
@@ -203,11 +203,13 @@ public class RAGSearchResource {
                         results.size() - filteredResults.size(), results.size()));
             }
 
-            // Build response
+            // Build response with topK transparency
             RAGSearchResponse response = new RAGSearchResponse();
             response.setQuery(request.getQuery());
             response.setResults(filteredResults);
             response.setTotalResults(filteredResults.size());
+            response.setTopK(topK);
+            response.setTopKLimit(MAX_TOP_K);
 
             return Response.ok(response).build();
 
@@ -309,16 +311,19 @@ public class RAGSearchResource {
         }
     }
 
+    /**
+     * Validates topK parameter.
+     * - If topK < 1, throws an error (invalid input)
+     * - If topK > MAX_TOP_K, it will be clamped to MAX_TOP_K (not an error, just adjusted)
+     *   This allows clients to request "as many as possible" without needing to know the limit.
+     */
     private void validateTopK(RAGSearchRequest request) {
         if (request.getTopK() != null) {
             int topK = request.getTopK();
             if (topK < 1) {
                 throw ApiException.invalidArgument("topK must be at least 1, got: " + topK);
             }
-            if (topK > MAX_TOP_K) {
-                throw ApiException.invalidArgument(
-                        "topK must not exceed " + MAX_TOP_K + ", got: " + topK);
-            }
+            // Note: topK > MAX_TOP_K is NOT an error - it will be clamped in search execution
         }
     }
 
@@ -502,6 +507,12 @@ public class RAGSearchResource {
         @Schema(description = "Search results")
         private List<VectorSearchResult> results;
 
+        @Schema(description = "Actual topK used (may be clamped to server limit)")
+        private Integer topK;
+
+        @Schema(description = "Server's maximum topK limit")
+        private Integer topKLimit;
+
         public String getQuery() {
             return query;
         }
@@ -524,6 +535,22 @@ public class RAGSearchResource {
 
         public void setResults(List<VectorSearchResult> results) {
             this.results = results;
+        }
+
+        public Integer getTopK() {
+            return topK;
+        }
+
+        public void setTopK(Integer topK) {
+            this.topK = topK;
+        }
+
+        public Integer getTopKLimit() {
+            return topKLimit;
+        }
+
+        public void setTopKLimit(Integer topKLimit) {
+            this.topKLimit = topKLimit;
         }
     }
 }
