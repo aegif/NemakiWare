@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -183,36 +184,61 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             // Use ConcurrentHashMap for thread-safe parallel access
             Map<String, ScoredDocument> documentScores = new ConcurrentHashMap<>();
 
+            // Exception holders for parallel search error handling
+            AtomicReference<Exception> chunkSearchException = new AtomicReference<>();
+            AtomicReference<Exception> propertySearchException = new AtomicReference<>();
+            boolean chunkSearchEnabled = contentBoost > 0;
+            boolean propertySearchEnabled = propertyBoost > 0 && ragConfig.isPropertySearchEnabled();
+
             // Execute KNN searches in parallel for better performance
             CompletableFuture<Void> chunkSearchFuture = CompletableFuture.completedFuture(null);
             CompletableFuture<Void> propertySearchFuture = CompletableFuture.completedFuture(null);
 
             // 1. Search chunk_vector for content similarity (async)
-            if (contentBoost > 0) {
+            if (chunkSearchEnabled) {
                 chunkSearchFuture = CompletableFuture.runAsync(() -> {
                     try {
                         searchChunkVectors(solrClient, repositoryId, vectorStr, aclFilter, additionalFilter,
                                 topK * CHUNK_SEARCH_TOPK_MULTIPLIER, documentScores, contentBoost);
                     } catch (Exception e) {
                         log.error("Chunk vector search failed", e);
+                        chunkSearchException.set(e);
                     }
                 });
             }
 
             // 2. Search property_vector for property similarity (async, if enabled)
-            if (propertyBoost > 0 && ragConfig.isPropertySearchEnabled()) {
+            if (propertySearchEnabled) {
                 propertySearchFuture = CompletableFuture.runAsync(() -> {
                     try {
                         searchPropertyVectors(solrClient, repositoryId, vectorStr, aclFilter, additionalFilter,
                                 topK * PROPERTY_SEARCH_TOPK_MULTIPLIER, documentScores, propertyBoost);
                     } catch (Exception e) {
                         log.error("Property vector search failed", e);
+                        propertySearchException.set(e);
                     }
                 });
             }
 
             // Wait for both searches to complete
             CompletableFuture.allOf(chunkSearchFuture, propertySearchFuture).join();
+
+            // Check if all enabled searches failed - if so, propagate exception
+            boolean chunkFailed = chunkSearchEnabled && chunkSearchException.get() != null;
+            boolean propertyFailed = propertySearchEnabled && propertySearchException.get() != null;
+
+            if (chunkSearchEnabled && propertySearchEnabled && chunkFailed && propertyFailed) {
+                // Both searches were enabled and both failed
+                throw new VectorSearchException("Both chunk and property vector searches failed",
+                        chunkSearchException.get());
+            } else if (chunkSearchEnabled && !propertySearchEnabled && chunkFailed) {
+                // Only chunk search was enabled and it failed
+                throw new VectorSearchException("Chunk vector search failed", chunkSearchException.get());
+            } else if (!chunkSearchEnabled && propertySearchEnabled && propertyFailed) {
+                // Only property search was enabled and it failed
+                throw new VectorSearchException("Property vector search failed", propertySearchException.get());
+            }
+            // If at least one search succeeded, continue with partial results
 
             // 3. Calculate combined scores and create results
             List<VectorSearchResult> results = new ArrayList<>();
@@ -313,12 +339,15 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             ScoredDocument scoredDoc = documentScores.computeIfAbsent(documentId, k -> new ScoredDocument(documentId));
 
             // Keep track of best chunk for this document (by weighted score for ranking)
-            if (scoredDoc.getContentScore() < weightedScore) {
-                scoredDoc.setContentScore(weightedScore);
-                scoredDoc.setRawContentScore(score);  // Store raw score for filtering
-                scoredDoc.setChunkId(getStringField(doc, "chunk_id"));
-                scoredDoc.setChunkIndex(getIntField(doc, "chunk_index"));
-                scoredDoc.setChunkText(getStringField(doc, "chunk_text"));
+            // Synchronized to prevent race condition in compare-then-update pattern
+            synchronized (scoredDoc) {
+                if (scoredDoc.getContentScore() < weightedScore) {
+                    scoredDoc.setContentScore(weightedScore);
+                    scoredDoc.setRawContentScore(score);  // Store raw score for filtering
+                    scoredDoc.setChunkId(getStringField(doc, "chunk_id"));
+                    scoredDoc.setChunkIndex(getIntField(doc, "chunk_index"));
+                    scoredDoc.setChunkText(getStringField(doc, "chunk_text"));
+                }
             }
         }
     }
@@ -377,10 +406,13 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             float weightedScore = score * propertyBoost;
 
             ScoredDocument scoredDoc = documentScores.computeIfAbsent(documentId, k -> new ScoredDocument(documentId));
-            scoredDoc.setPropertyScore(weightedScore);
-            scoredDoc.setRawPropertyScore(score);  // Store raw score for filtering
-            scoredDoc.setDocumentName(getStringField(doc, "name"));
-            scoredDoc.setPropertyText(getStringField(doc, "property_text"));
+            // Synchronized to ensure atomic update of all property-related fields
+            synchronized (scoredDoc) {
+                scoredDoc.setPropertyScore(weightedScore);
+                scoredDoc.setRawPropertyScore(score);  // Store raw score for filtering
+                scoredDoc.setDocumentName(getStringField(doc, "name"));
+                scoredDoc.setPropertyText(getStringField(doc, "property_text"));
+            }
         }
     }
 
@@ -488,101 +520,4 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         return sb.toString();
     }
 
-    /**
-     * Internal class to track document scores during weighted search.
-     * Tracks both raw (unweighted) scores for filtering and weighted scores for ranking.
-     */
-    private static class ScoredDocument {
-        private final String documentId;
-        private float propertyScore = 0f;      // Weighted property score for ranking
-        private float contentScore = 0f;       // Weighted content score for ranking
-        private float rawPropertyScore = 0f;   // Raw property score for filtering
-        private float rawContentScore = 0f;    // Raw content score for filtering
-        private String chunkId;
-        private int chunkIndex;
-        private String chunkText;
-        private String documentName;
-        private String propertyText;
-
-        public ScoredDocument(String documentId) {
-            this.documentId = documentId;
-        }
-
-        public float getPropertyScore() {
-            return propertyScore;
-        }
-
-        public void setPropertyScore(float propertyScore) {
-            this.propertyScore = propertyScore;
-        }
-
-        public float getContentScore() {
-            return contentScore;
-        }
-
-        public void setContentScore(float contentScore) {
-            this.contentScore = contentScore;
-        }
-
-        public float getRawPropertyScore() {
-            return rawPropertyScore;
-        }
-
-        public void setRawPropertyScore(float rawPropertyScore) {
-            this.rawPropertyScore = rawPropertyScore;
-        }
-
-        public float getRawContentScore() {
-            return rawContentScore;
-        }
-
-        public void setRawContentScore(float rawContentScore) {
-            this.rawContentScore = rawContentScore;
-        }
-
-        /**
-         * Get the combined weighted score for ranking.
-         */
-        public float getCombinedScore() {
-            return propertyScore + contentScore;
-        }
-
-        /**
-         * Get the maximum raw (unweighted) score for filtering.
-         * This represents the best similarity match before boost weighting.
-         */
-        public float getMaxRawScore() {
-            return Math.max(rawPropertyScore, rawContentScore);
-        }
-
-        public void setChunkId(String chunkId) {
-            this.chunkId = chunkId;
-        }
-
-        public void setChunkIndex(int chunkIndex) {
-            this.chunkIndex = chunkIndex;
-        }
-
-        public void setChunkText(String chunkText) {
-            this.chunkText = chunkText;
-        }
-
-        public void setDocumentName(String documentName) {
-            this.documentName = documentName;
-        }
-
-        public void setPropertyText(String propertyText) {
-            this.propertyText = propertyText;
-        }
-
-        public VectorSearchResult toResult() {
-            VectorSearchResult result = new VectorSearchResult();
-            result.setDocumentId(documentId);
-            result.setChunkId(chunkId);
-            result.setChunkIndex(chunkIndex);
-            result.setChunkText(chunkText);
-            result.setDocumentName(documentName);
-            return result;
-        }
-    }
 }
