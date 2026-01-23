@@ -806,4 +806,12 @@
         <property name="directorySyncService" ref="DirectorySyncService" />
     </bean>
 
+    <!-- Directory Sync Scheduler -->
+    <bean id="directorySyncScheduler" class="jp.aegif.nemaki.sync.scheduler.DirectorySyncScheduler"
+          init-method="init" destroy-method="destroy" depends-on="DirectorySyncService,repositoryInfoMap">
+        <property name="directorySyncService" ref="DirectorySyncService" />
+        <property name="propertyManager" ref="propertyManager" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+    </bean>
+
 </beans>

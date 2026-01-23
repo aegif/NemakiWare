@@ -51,6 +51,7 @@ import jp.aegif.nemaki.sync.model.DirectorySyncResult;
 import jp.aegif.nemaki.sync.model.DirectorySyncResult.SyncStatus;
 import jp.aegif.nemaki.sync.model.LdapGroup;
 import jp.aegif.nemaki.sync.model.LdapUser;
+import jp.aegif.nemaki.sync.util.PasswordEncryptionUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
@@ -343,7 +344,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
             DirectorySyncConfig config, DirectorySyncResult result, boolean dryRun) {
         
         String configPrefix = config.getGroupPrefix();
-        final String groupPrefix = (configPrefix == null) ? "ldap_" : configPrefix;
+        final String groupPrefix = (configPrefix == null) ? DirectorySyncConfig.DEFAULT_GROUP_PREFIX : configPrefix;
 
         List<GroupItem> existingGroups = contentService.getGroupItems(repositoryId);
         
@@ -552,7 +553,9 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         config.setLdapUrl(propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_LDAP_URL));
         config.setLdapBaseDn(propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_LDAP_BASE_DN));
         config.setLdapBindDn(propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_LDAP_BIND_DN));
-        config.setLdapBindPassword(propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_LDAP_BIND_PASSWORD));
+        
+        String rawPassword = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_LDAP_BIND_PASSWORD);
+        config.setLdapBindPassword(PasswordEncryptionUtil.resolvePassword(rawPassword));
         config.setUseTls(propertyManager.readBoolean(PropertyKey.DIRECTORY_SYNC_LDAP_USE_TLS));
         config.setUseStartTls(propertyManager.readBoolean(PropertyKey.DIRECTORY_SYNC_LDAP_USE_STARTTLS));
         
@@ -582,10 +585,10 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         config.setDeleteOrphanUsers(propertyManager.readBoolean(PropertyKey.DIRECTORY_SYNC_DELETE_ORPHAN_USERS));
         
         String groupPrefix = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_GROUP_PREFIX);
-        config.setGroupPrefix(groupPrefix != null && !groupPrefix.isEmpty() ? groupPrefix : "ldap_");
+        config.setGroupPrefix(groupPrefix != null && !groupPrefix.isEmpty() ? groupPrefix : DirectorySyncConfig.DEFAULT_GROUP_PREFIX);
         
         String userPrefix = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_USER_PREFIX);
-        config.setUserPrefix(userPrefix != null ? userPrefix : "");
+        config.setUserPrefix(userPrefix != null ? userPrefix : DirectorySyncConfig.DEFAULT_USER_PREFIX);
         
         config.setScheduleEnabled(propertyManager.readBoolean(PropertyKey.DIRECTORY_SYNC_SCHEDULE_ENABLED));
         config.setCronExpression(propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_SCHEDULE_CRON));
@@ -595,7 +598,9 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
 
     @Override
     public void saveConfig(String repositoryId, DirectorySyncConfig config) {
-        log.info("Config save requested - configuration is managed via nemakiware.properties");
+        throw new UnsupportedOperationException(
+            "Configuration save is not supported. Directory sync configuration is managed via nemakiware.properties file. " +
+            "Please update the properties file directly and restart the application to apply changes.");
     }
 
     @Override

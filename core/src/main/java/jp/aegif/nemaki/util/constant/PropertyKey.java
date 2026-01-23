@@ -330,4 +330,5 @@ public interface PropertyKey {
 	final String DIRECTORY_SYNC_USER_PREFIX = "directory.sync.user.prefix";
 	final String DIRECTORY_SYNC_SCHEDULE_ENABLED = "directory.sync.schedule.enabled";
 	final String DIRECTORY_SYNC_SCHEDULE_CRON = "directory.sync.schedule.cron";
+	final String DIRECTORY_SYNC_SCHEDULE_NODE_IP = "directory.sync.schedule.node.ip";
 }

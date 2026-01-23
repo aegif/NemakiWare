@@ -33,8 +33,11 @@ import javax.naming.directory.Attribute;
 import javax.naming.directory.Attributes;
 import javax.naming.directory.SearchControls;
 import javax.naming.directory.SearchResult;
+import javax.naming.ldap.Control;
 import javax.naming.ldap.InitialLdapContext;
 import javax.naming.ldap.LdapContext;
+import javax.naming.ldap.PagedResultsControl;
+import javax.naming.ldap.PagedResultsResponseControl;
 import javax.naming.ldap.StartTlsRequest;
 import javax.naming.ldap.StartTlsResponse;
 
@@ -45,19 +48,127 @@ import jp.aegif.nemaki.sync.model.DirectorySyncConfig;
 import jp.aegif.nemaki.sync.model.LdapGroup;
 import jp.aegif.nemaki.sync.model.LdapUser;
 
+/**
+ * LDAP Directory Connector for synchronizing users and groups from LDAP/AD.
+ * 
+ * Note: This class uses javax.naming.* which is part of the JDK and not Jakarta EE.
+ * The javax.naming package is NOT part of the javax to jakarta migration as it's
+ * a core JDK package (JNDI), not a Java EE package.
+ */
 public class LdapDirectoryConnector {
 
     private static final Log log = LogFactory.getLog(LdapDirectoryConnector.class);
 
+    private static final int DEFAULT_PAGE_SIZE = 500;
+    private static final int DEFAULT_MAX_RETRIES = 3;
+    private static final long DEFAULT_RETRY_DELAY_MS = 1000;
+
     private LdapContext context;
     private StartTlsResponse tlsResponse;
     private DirectorySyncConfig config;
+    private int pageSize = DEFAULT_PAGE_SIZE;
+    private int maxRetries = DEFAULT_MAX_RETRIES;
+    private long retryDelayMs = DEFAULT_RETRY_DELAY_MS;
 
     public LdapDirectoryConnector(DirectorySyncConfig config) {
         this.config = config;
     }
 
+    public void setPageSize(int pageSize) {
+        this.pageSize = pageSize;
+    }
+
+    public void setMaxRetries(int maxRetries) {
+        this.maxRetries = maxRetries;
+    }
+
+    public void setRetryDelayMs(long retryDelayMs) {
+        this.retryDelayMs = retryDelayMs;
+    }
+
+    /**
+     * Sanitize LDAP filter input to prevent LDAP injection attacks.
+     * Escapes special characters that could be used for injection.
+     */
+    public static String sanitizeLdapFilter(String input) {
+        if (input == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (char c : input.toCharArray()) {
+            switch (c) {
+                case '\\':
+                    sb.append("\\5c");
+                    break;
+                case '*':
+                    sb.append("\\2a");
+                    break;
+                case '(':
+                    sb.append("\\28");
+                    break;
+                case ')':
+                    sb.append("\\29");
+                    break;
+                case '\0':
+                    sb.append("\\00");
+                    break;
+                default:
+                    sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Validate that a filter string doesn't contain obvious injection attempts.
+     * This is a basic check - the filter should come from trusted configuration.
+     */
+    public static boolean isValidLdapFilter(String filter) {
+        if (filter == null || filter.isEmpty()) {
+            return false;
+        }
+        int openParens = 0;
+        for (char c : filter.toCharArray()) {
+            if (c == '(') openParens++;
+            if (c == ')') openParens--;
+            if (openParens < 0) return false;
+        }
+        return openParens == 0;
+    }
+
     public void connect() throws NamingException {
+        connectWithRetry(maxRetries);
+    }
+
+    private void connectWithRetry(int retriesLeft) throws NamingException {
+        try {
+            doConnect();
+        } catch (NamingException e) {
+            if (retriesLeft > 0 && isRetryableException(e)) {
+                log.warn("LDAP connection failed, retrying... (" + retriesLeft + " retries left): " + e.getMessage());
+                try {
+                    Thread.sleep(retryDelayMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+                connectWithRetry(retriesLeft - 1);
+            } else {
+                throw e;
+            }
+        }
+    }
+
+    private boolean isRetryableException(NamingException e) {
+        String message = e.getMessage();
+        if (message == null) return false;
+        return message.contains("Connection refused") ||
+               message.contains("Connection timed out") ||
+               message.contains("Connection reset") ||
+               message.contains("Read timed out");
+    }
+
+    private void doConnect() throws NamingException {
         Hashtable<String, String> env = new Hashtable<>();
         env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
         env.put(Context.PROVIDER_URL, config.getLdapUrl());
@@ -90,6 +201,19 @@ public class LdapDirectoryConnector {
         log.info("Successfully connected to LDAP server");
     }
 
+    private byte[] getPagedResultsCookie() throws NamingException {
+        Control[] responseControls = context.getResponseControls();
+        if (responseControls != null) {
+            for (Control control : responseControls) {
+                if (control instanceof PagedResultsResponseControl) {
+                    PagedResultsResponseControl prrc = (PagedResultsResponseControl) control;
+                    return prrc.getCookie();
+                }
+            }
+        }
+        return null;
+    }
+
     public void disconnect() {
         if (tlsResponse != null) {
             try {
@@ -120,6 +244,29 @@ public class LdapDirectoryConnector {
     }
 
     public List<LdapGroup> searchGroups() throws NamingException {
+        return searchGroupsWithRetry(maxRetries);
+    }
+
+    private List<LdapGroup> searchGroupsWithRetry(int retriesLeft) throws NamingException {
+        try {
+            return doSearchGroups();
+        } catch (NamingException e) {
+            if (retriesLeft > 0 && isRetryableException(e)) {
+                log.warn("LDAP group search failed, retrying... (" + retriesLeft + " retries left): " + e.getMessage());
+                try {
+                    Thread.sleep(retryDelayMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+                return searchGroupsWithRetry(retriesLeft - 1);
+            } else {
+                throw e;
+            }
+        }
+    }
+
+    private List<LdapGroup> doSearchGroups() throws NamingException {
         List<LdapGroup> groups = new ArrayList<>();
 
         String searchBase = config.getGroupSearchBase();
@@ -134,6 +281,10 @@ public class LdapDirectoryConnector {
             filter = "(objectClass=groupOfNames)";
         }
 
+        if (!isValidLdapFilter(filter)) {
+            throw new NamingException("Invalid LDAP filter: " + filter);
+        }
+
         log.info("Searching groups in: " + searchBase + " with filter: " + filter);
 
         SearchControls controls = new SearchControls();
@@ -144,21 +295,34 @@ public class LdapDirectoryConnector {
             config.getGroupMemberAttribute()
         });
 
-        NamingEnumeration<SearchResult> results = null;
-        try {
-            results = context.search(searchBase, filter, controls);
-
-            while (results.hasMore()) {
-                SearchResult result = results.next();
-                LdapGroup group = mapToLdapGroup(result);
-                if (group != null) {
-                    groups.add(group);
-                    log.debug("Found group: " + group.getGroupId());
-                }
+        byte[] cookie = null;
+        do {
+            try {
+                context.setRequestControls(new Control[]{
+                    new PagedResultsControl(pageSize, cookie, Control.CRITICAL)
+                });
+            } catch (IOException e) {
+                throw new NamingException("Failed to set paged results control: " + e.getMessage());
             }
-        } finally {
-            closeQuietly(results);
-        }
+
+            NamingEnumeration<SearchResult> results = null;
+            try {
+                results = context.search(searchBase, filter, controls);
+
+                while (results.hasMore()) {
+                    SearchResult result = results.next();
+                    LdapGroup group = mapToLdapGroup(result);
+                    if (group != null) {
+                        groups.add(group);
+                        log.debug("Found group: " + group.getGroupId());
+                    }
+                }
+            } finally {
+                closeQuietly(results);
+            }
+
+            cookie = getPagedResultsCookie();
+        } while (cookie != null && cookie.length > 0);
 
         log.info("Found " + groups.size() + " groups in LDAP");
         return groups;
@@ -278,6 +442,29 @@ public class LdapDirectoryConnector {
     }
 
     public List<LdapUser> searchUsers() throws NamingException {
+        return searchUsersWithRetry(maxRetries);
+    }
+
+    private List<LdapUser> searchUsersWithRetry(int retriesLeft) throws NamingException {
+        try {
+            return doSearchUsers();
+        } catch (NamingException e) {
+            if (retriesLeft > 0 && isRetryableException(e)) {
+                log.warn("LDAP user search failed, retrying... (" + retriesLeft + " retries left): " + e.getMessage());
+                try {
+                    Thread.sleep(retryDelayMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+                return searchUsersWithRetry(retriesLeft - 1);
+            } else {
+                throw e;
+            }
+        }
+    }
+
+    private List<LdapUser> doSearchUsers() throws NamingException {
         List<LdapUser> users = new ArrayList<>();
 
         String searchBase = config.getUserSearchBase();
@@ -290,6 +477,10 @@ public class LdapDirectoryConnector {
         String filter = config.getUserSearchFilter();
         if (filter == null || filter.isEmpty()) {
             filter = "(objectClass=inetOrgPerson)";
+        }
+
+        if (!isValidLdapFilter(filter)) {
+            throw new NamingException("Invalid LDAP filter: " + filter);
         }
 
         log.info("Searching users in: " + searchBase + " with filter: " + filter);
@@ -305,21 +496,34 @@ public class LdapDirectoryConnector {
             "displayName"
         });
 
-        NamingEnumeration<SearchResult> results = null;
-        try {
-            results = context.search(searchBase, filter, controls);
-
-            while (results.hasMore()) {
-                SearchResult result = results.next();
-                LdapUser user = mapToLdapUser(result);
-                if (user != null) {
-                    users.add(user);
-                    log.debug("Found user: " + user.getUserId());
-                }
+        byte[] cookie = null;
+        do {
+            try {
+                context.setRequestControls(new Control[]{
+                    new PagedResultsControl(pageSize, cookie, Control.CRITICAL)
+                });
+            } catch (IOException e) {
+                throw new NamingException("Failed to set paged results control: " + e.getMessage());
             }
-        } finally {
-            closeQuietly(results);
-        }
+
+            NamingEnumeration<SearchResult> results = null;
+            try {
+                results = context.search(searchBase, filter, controls);
+
+                while (results.hasMore()) {
+                    SearchResult result = results.next();
+                    LdapUser user = mapToLdapUser(result);
+                    if (user != null) {
+                        users.add(user);
+                        log.debug("Found user: " + user.getUserId());
+                    }
+                }
+            } finally {
+                closeQuietly(results);
+            }
+
+            cookie = getPagedResultsCookie();
+        } while (cookie != null && cookie.length > 0);
 
         log.info("Found " + users.size() + " users in LDAP");
         return users;

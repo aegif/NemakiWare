@@ -28,6 +28,17 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class DirectorySyncConfig {
 
+    public static final String DEFAULT_GROUP_PREFIX = "ldap_";
+    public static final String DEFAULT_USER_PREFIX = "";
+    public static final int DEFAULT_CONNECTION_TIMEOUT = 5000;
+    public static final int DEFAULT_READ_TIMEOUT = 30000;
+    public static final String DEFAULT_GROUP_SEARCH_FILTER = "(objectClass=groupOfNames)";
+    public static final String DEFAULT_USER_SEARCH_FILTER = "(objectClass=inetOrgPerson)";
+    public static final String DEFAULT_GROUP_ID_ATTRIBUTE = "cn";
+    public static final String DEFAULT_GROUP_NAME_ATTRIBUTE = "cn";
+    public static final String DEFAULT_GROUP_MEMBER_ATTRIBUTE = "member";
+    public static final String DEFAULT_USER_ID_ATTRIBUTE = "uid";
+
     private String repositoryId;
     private boolean enabled;
 
