@@ -1,5 +1,7 @@
 package jp.aegif.nemaki.mcp;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -72,32 +74,42 @@ public class McpToolsProvider {
     // ========== Tool Definitions ==========
 
     private McpToolDefinition createLoginToolDefinition() {
-        String schema = String.format("""
-            {
-              "type": "object",
-              "properties": {
-                "username": {
-                  "type": "string",
-                  "description": "ユーザー名"
-                },
-                "password": {
-                  "type": "string",
-                  "description": "パスワード"
-                },
-                "repositoryId": {
-                  "type": "string",
-                  "description": "リポジトリID（デフォルト: %s）",
-                  "default": "%s"
-                }
-              },
-              "required": ["username", "password"]
-            }
-            """, defaultRepository, defaultRepository);
-        return new McpToolDefinition(
-            "nemakiware_login",
-            "NemakiWareにログインしてセッショントークンを取得します",
-            schema
-        );
+        try {
+            // Use ObjectMapper to safely build JSON schema (prevents injection if defaultRepository contains special chars)
+            Map<String, Object> schemaObj = new LinkedHashMap<>();
+            schemaObj.put("type", "object");
+
+            Map<String, Object> properties = new LinkedHashMap<>();
+            properties.put("username", Map.of("type", "string", "description", "ユーザー名"));
+            properties.put("password", Map.of("type", "string", "description", "パスワード"));
+
+            Map<String, Object> repoIdProp = new LinkedHashMap<>();
+            repoIdProp.put("type", "string");
+            repoIdProp.put("description", "リポジトリID（デフォルト: " + defaultRepository + "）");
+            repoIdProp.put("default", defaultRepository);
+            properties.put("repositoryId", repoIdProp);
+
+            schemaObj.put("properties", properties);
+            schemaObj.put("required", Arrays.asList("username", "password"));
+
+            String schema = objectMapper.writeValueAsString(schemaObj);
+            return new McpToolDefinition(
+                "nemakiware_login",
+                "NemakiWareにログインしてセッショントークンを取得します",
+                schema
+            );
+        } catch (JsonProcessingException e) {
+            log.error("Failed to generate login tool schema", e);
+            // Fallback to safe hardcoded schema
+            String safeSchema = """
+                {"type":"object","properties":{"username":{"type":"string","description":"ユーザー名"},"password":{"type":"string","description":"パスワード"},"repositoryId":{"type":"string","description":"リポジトリID","default":"bedroom"}},"required":["username","password"]}
+                """;
+            return new McpToolDefinition(
+                "nemakiware_login",
+                "NemakiWareにログインしてセッショントークンを取得します",
+                safeSchema.trim()
+            );
+        }
     }
 
     private McpToolDefinition createLogoutToolDefinition() {
@@ -253,7 +265,8 @@ public class McpToolsProvider {
 
         } catch (Exception e) {
             log.error("RAG search failed: {}", e.getMessage(), e);
-            return resultFactory.error("Search failed: " + e.getMessage());
+            // Return generic error message to avoid exposing internal details
+            return resultFactory.error("Search failed. Please try again or contact support.");
         }
     }
 
@@ -278,7 +291,8 @@ public class McpToolsProvider {
 
         } catch (Exception e) {
             log.error("Similar documents search failed: {}", e.getMessage(), e);
-            return resultFactory.error("Search failed: " + e.getMessage());
+            // Return generic error message to avoid exposing internal details
+            return resultFactory.error("Search failed. Please try again or contact support.");
         }
     }
 
@@ -286,11 +300,11 @@ public class McpToolsProvider {
 
     private String formatSearchResults(String query, List<VectorSearchResult> results, String repositoryId) {
         if (results.isEmpty()) {
-            return "No documents found matching the query: " + query;
+            return "No documents found matching the query: " + escapeMarkdown(query);
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append("## 検索結果: \"").append(query).append("\"\n\n");
+        sb.append("## 検索結果: \"").append(escapeMarkdown(query)).append("\"\n\n");
         sb.append("**").append(results.size()).append("件の関連文書が見つかりました:**\n\n");
 
         for (int i = 0; i < results.size(); i++) {
@@ -298,16 +312,17 @@ public class McpToolsProvider {
             String docUrl = formatDocumentUrl(repositoryId, result.getDocumentId());
             int scorePercent = Math.round(result.getScore() * 100);
 
+            // Escape document name to prevent Markdown injection
             sb.append(String.format("%d. [%s](%s) (類似度: %d%%)\n",
                 i + 1,
-                result.getDocumentName(),
+                escapeMarkdown(result.getDocumentName()),
                 docUrl,
                 scorePercent
             ));
 
-            // Add excerpt
+            // Add excerpt (also escaped)
             String excerpt = truncateText(result.getChunkText(), 200);
-            sb.append("   > ").append(excerpt).append("\n\n");
+            sb.append("   > ").append(escapeMarkdown(excerpt)).append("\n\n");
         }
 
         return sb.toString();
@@ -315,7 +330,7 @@ public class McpToolsProvider {
 
     private String formatSimilarDocumentsResults(String sourceDocId, List<VectorSearchResult> results, String repositoryId) {
         if (results.isEmpty()) {
-            return "No similar documents found for document: " + sourceDocId;
+            return "No similar documents found for document: " + escapeMarkdown(sourceDocId);
         }
 
         StringBuilder sb = new StringBuilder();
@@ -327,16 +342,17 @@ public class McpToolsProvider {
             String docUrl = formatDocumentUrl(repositoryId, result.getDocumentId());
             int scorePercent = Math.round(result.getScore() * 100);
 
+            // Escape document name to prevent Markdown injection
             sb.append(String.format("%d. [%s](%s) (類似度: %d%%)\n",
                 i + 1,
-                result.getDocumentName(),
+                escapeMarkdown(result.getDocumentName()),
                 docUrl,
                 scorePercent
             ));
 
             if (result.getChunkText() != null && !result.getChunkText().isEmpty()) {
                 String excerpt = truncateText(result.getChunkText(), 150);
-                sb.append("   > ").append(excerpt).append("\n");
+                sb.append("   > ").append(escapeMarkdown(excerpt)).append("\n");
             }
             sb.append("\n");
         }
@@ -345,7 +361,32 @@ public class McpToolsProvider {
     }
 
     private String formatDocumentUrl(String repositoryId, String documentId) {
-        return baseUrl + "/ui/#/browse/" + repositoryId + "/" + documentId;
+        // URL encode to handle special characters safely
+        String encodedRepoId = URLEncoder.encode(repositoryId, StandardCharsets.UTF_8);
+        String encodedDocId = URLEncoder.encode(documentId, StandardCharsets.UTF_8);
+        return baseUrl + "/ui/#/browse/" + encodedRepoId + "/" + encodedDocId;
+    }
+
+    /**
+     * Escape special Markdown characters to prevent injection.
+     */
+    private String escapeMarkdown(String text) {
+        if (text == null) return "";
+        return text.replace("\\", "\\\\")
+                   .replace("`", "\\`")
+                   .replace("*", "\\*")
+                   .replace("_", "\\_")
+                   .replace("{", "\\{")
+                   .replace("}", "\\}")
+                   .replace("[", "\\[")
+                   .replace("]", "\\]")
+                   .replace("(", "\\(")
+                   .replace(")", "\\)")
+                   .replace("#", "\\#")
+                   .replace("+", "\\+")
+                   .replace("-", "\\-")
+                   .replace(".", "\\.")
+                   .replace("!", "\\!");
     }
 
     private String truncateText(String text, int maxLength) {

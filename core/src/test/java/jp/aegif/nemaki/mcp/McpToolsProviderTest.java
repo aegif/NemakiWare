@@ -198,8 +198,9 @@ public class McpToolsProviderTest {
 
         // Then
         assertTrue(result.isSuccess());
-        assertTrue(result.getContent().contains("Invoice_2024.pdf"));
-        assertTrue(result.getContent().contains("Contract.pdf"));
+        // Document names are Markdown-escaped: _ becomes \_ and . becomes \.
+        assertTrue(result.getContent().contains("Invoice\\_2024\\.pdf"));
+        assertTrue(result.getContent().contains("Contract\\.pdf"));
         assertTrue(result.getContent().contains("95%")); // Score as percentage
     }
 
@@ -225,8 +226,8 @@ public class McpToolsProviderTest {
 
         // Then
         assertTrue(result.isSuccess());
-        // Check markdown link format
-        assertTrue(result.getContent().contains("[TestDoc.pdf](http://localhost:8080/core/ui/#/browse/bedroom/abc123)"));
+        // Check markdown link format (document name is escaped: . becomes \.)
+        assertTrue(result.getContent().contains("[TestDoc\\.pdf](http://localhost:8080/core/ui/#/browse/bedroom/abc123)"));
     }
 
     @Test
@@ -300,7 +301,8 @@ public class McpToolsProviderTest {
 
         // Then
         assertTrue(result.isSuccess());
-        assertTrue(result.getContent().contains("Similar1.pdf"));
+        // Document names are Markdown-escaped: . becomes \.
+        assertTrue(result.getContent().contains("Similar1\\.pdf"));
         assertTrue(result.getContent().contains("88%"));
     }
 
