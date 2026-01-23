@@ -2974,6 +2974,66 @@ public class ContentServiceImpl implements ContentService {
 		return acl;
 	}
 
+	@Override
+	public Map<String, Content> getContentsByIds(String repositoryId, List<String> objectIds) {
+		return contentDaoService.getContentsByIds(repositoryId, objectIds);
+	}
+
+	@Override
+	public Map<String, Acl> calculateAcls(String repositoryId, Collection<Content> contents) {
+		Map<String, Acl> result = new HashMap<>();
+		if (contents == null || contents.isEmpty()) {
+			return result;
+		}
+
+		NemakiCache<Acl> aclCache = nemakiCachePool.get(repositoryId).getAclCache();
+
+		for (Content content : contents) {
+			if (content == null) {
+				continue;
+			}
+			String contentId = content.getId();
+
+			// Check cache first
+			Acl cachedAcl = aclCache.get(contentId);
+			if (cachedAcl != null) {
+				result.put(contentId, cachedAcl);
+				continue;
+			}
+
+			// Calculate ACL (same logic as calculateAcl)
+			Acl acl;
+			boolean iht = getAclInheritedWithDefault(repositoryId, content);
+			boolean isRootContent = isRoot(repositoryId, content);
+
+			if (!isRootContent && iht) {
+				List<Ace> aces = new ArrayList<Ace>();
+				List<Ace> calcResult = calculateAclInternal(repositoryId, aces, content);
+
+				// Convert result to Acl
+				acl = new Acl();
+				for (Ace r : calcResult) {
+					if (r.isDirect()) {
+						acl.getLocalAces().add(r);
+					} else {
+						acl.getInheritedAces().add(r);
+					}
+				}
+			} else {
+				acl = content.getAcl();
+			}
+
+			// Convert anonymous and anyone
+			convertSystemPrincipalId(repositoryId, acl.getAllAces());
+
+			// Cache the result
+			aclCache.put(contentId, acl);
+			result.put(contentId, acl);
+		}
+
+		return result;
+	}
+
 	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content) {
 		Acl contentAcl = content.getAcl();
 		List<Ace> aces = null;

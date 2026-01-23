@@ -21,7 +21,9 @@
 package jp.aegif.nemaki.businesslogic;
 
 import java.math.BigInteger;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import jp.aegif.nemaki.model.Acl;
@@ -611,6 +613,25 @@ public interface ContentService {
 	// Acl
 	// ///////////////////////////////////////
 	public Acl calculateAcl(String repositoryId, Content content);
+
+	/**
+	 * Get multiple contents by their IDs in a single batch operation.
+	 * 
+	 * @param repositoryId the repository identifier
+	 * @param objectIds list of object IDs to retrieve
+	 * @return map of objectId to Content (missing/inaccessible objects are omitted)
+	 */
+	public Map<String, Content> getContentsByIds(String repositoryId, List<String> objectIds);
+
+	/**
+	 * Calculate ACLs for multiple contents in a batch operation.
+	 * Uses cache where available, calculates and caches missing entries.
+	 * 
+	 * @param repositoryId the repository identifier
+	 * @param contents collection of Content objects
+	 * @return map of objectId to calculated Acl
+	 */
+	public Map<String, Acl> calculateAcls(String repositoryId, Collection<Content> contents);
 
 	public Boolean getAclInheritedWithDefault(String repositoryId, Content content);
 	

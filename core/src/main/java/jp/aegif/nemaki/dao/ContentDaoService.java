@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.dao;
 
 import java.util.List;
+import java.util.Map;
 
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.AttachmentNode;
@@ -186,6 +187,16 @@ public interface ContentDaoService {
 	 * @return if nothing found, return null
 	 */
 	Content getContent(String repositoryId, String objectId);
+
+	/**
+	 * Bulk get contents by IDs.
+	 * More efficient than multiple individual getContent() calls.
+	 *
+	 * @param repositoryId Repository ID
+	 * @param objectIds List of object IDs to retrieve
+	 * @return Map of object ID to Content, excluding null/not-found documents
+	 */
+	Map<String, Content> getContentsByIds(String repositoryId, List<String> objectIds);
 
 	/**
 	 * Get content by object ID, bypassing cache to get fresh database state

@@ -768,6 +768,48 @@ public class CloudantClientWrapper {
 	}
 
 	/**
+	 * Bulk get documents by IDs using _all_docs endpoint with keys.
+	 * This is more efficient than multiple individual get() calls.
+	 *
+	 * @param ids List of document IDs to retrieve
+	 * @return Map of document ID to Document, excluding null/not-found documents
+	 */
+	public Map<String, Document> getBulkDocuments(List<String> ids) {
+		Map<String, Document> result = new HashMap<>();
+		if (ids == null || ids.isEmpty()) {
+			return result;
+		}
+
+		try {
+			// Use postAllDocs with keys parameter
+			PostAllDocsOptions options = new PostAllDocsOptions.Builder()
+				.db(databaseName)
+				.includeDocs(true)
+				.keys(ids)
+				.build();
+
+			AllDocsResult allDocsResult = client.postAllDocs(options).execute().getResult();
+
+			// Process results
+			if (allDocsResult != null && allDocsResult.getRows() != null) {
+				for (DocsResultRow row : allDocsResult.getRows()) {
+					if (row.getDoc() != null && row.getId() != null) {
+						result.put(row.getId(), row.getDoc());
+					}
+					// Skip rows with errors or deleted documents
+				}
+			}
+
+			log.debug("Bulk get retrieved " + result.size() + " documents out of " + ids.size() + " requested from database: " + databaseName);
+			return result;
+
+		} catch (Exception e) {
+			log.error("Error in bulk get documents from database '" + databaseName + "': " + e.getMessage(), e);
+			return result;
+		}
+	}
+
+	/**
 	 * Check if document exists
 	 */
 	public boolean exists(String id) {

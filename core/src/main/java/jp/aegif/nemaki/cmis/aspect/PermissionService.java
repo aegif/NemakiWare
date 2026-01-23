@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.cmis.aspect;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import jp.aegif.nemaki.model.Acl;
@@ -59,4 +60,19 @@ public interface PermissionService {
 
 	Boolean checkPermissionWithGivenList(CallContext callContext, String repositoryId, String key, Acl acl,
 			String baseType, Content content, String userName, Set<String> groups);
+
+	/**
+	 * Check permissions for multiple contents in a batch operation.
+	 * User info and groups are fetched once and reused for all checks.
+	 *
+	 * @param callContext the call context containing user information
+	 * @param repositoryId the repository identifier
+	 * @param permissionKey the permission key to check (e.g., CAN_GET_PROPERTIES_OBJECT)
+	 * @param acls map of objectId to Acl
+	 * @param baseTypes map of objectId to base type string
+	 * @param contents map of objectId to Content
+	 * @return map of objectId to permission check result (true = allowed)
+	 */
+	Map<String, Boolean> checkPermissions(CallContext callContext, String repositoryId, String permissionKey,
+			Map<String, Acl> acls, Map<String, String> baseTypes, Map<String, Content> contents);
 }

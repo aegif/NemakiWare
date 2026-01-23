@@ -346,18 +346,15 @@ public class RAGSearchResource {
     }
 
     /**
-     * Filter search results by current CMIS permissions.
+     * Filter search results by current CMIS permissions using batch operations.
      * This provides a security double-check against potentially stale Solr ACL data.
      *
-     * <p><strong>Performance Note:</strong> This method performs per-result permission checks,
-     * which involves database calls for each document. The cost is O(n) where n is the number
-     * of results. This trade-off prioritizes security over performance. The impact is mitigated by:
+     * <p><strong>Performance Optimization:</strong> Uses batch APIs to reduce database calls:</p>
      * <ul>
-     *   <li>MAX_TOP_K limit (100) capping the maximum number of results</li>
-     *   <li>Early exit for null/empty results</li>
-     *   <li>Solr ACL pre-filtering reducing the result set before this check</li>
+     *   <li>Batch content retrieval: O(n) individual calls → O(1) bulk fetch</li>
+     *   <li>Batch ACL calculation: O(n) individual calls → O(1) with caching</li>
+     *   <li>Batch permission check: O(n) with single user/group lookup</li>
      * </ul>
-     * Future optimization: Consider batch ACL verification if this becomes a bottleneck.
      *
      * @param repositoryId Repository ID
      * @param context Current user's call context
@@ -371,60 +368,80 @@ public class RAGSearchResource {
             return results;
         }
 
-        List<VectorSearchResult> filtered = new ArrayList<>();
+        // Collect all document IDs
+        List<String> documentIds = results.stream()
+                .map(VectorSearchResult::getDocumentId)
+                .filter(id -> id != null)
+                .collect(Collectors.toList());
 
-        for (VectorSearchResult result : results) {
+        if (documentIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // Batch fetch all contents
+        Map<String, jp.aegif.nemaki.model.Content> contents = contentService.getContentsByIds(repositoryId, documentIds);
+
+        if (contents.isEmpty()) {
+            if (log.isDebugEnabled()) {
+                log.debug("RAG filter: none of " + documentIds.size() + " documents found");
+            }
+            return new ArrayList<>();
+        }
+
+        // Build baseTypes map from TypeManager
+        Map<String, String> baseTypes = new HashMap<>();
+        for (Map.Entry<String, jp.aegif.nemaki.model.Content> entry : contents.entrySet()) {
+            String docId = entry.getKey();
+            jp.aegif.nemaki.model.Content content = entry.getValue();
             try {
-                String documentId = result.getDocumentId();
-                if (documentId == null) {
-                    continue;
-                }
-
-                // Get the document content
-                jp.aegif.nemaki.model.Content content = contentService.getContent(repositoryId, documentId);
-                if (content == null) {
-                    // Document no longer exists
-                    if (log.isDebugEnabled()) {
-                        log.debug("RAG result filtered: document " + documentId + " not found");
-                    }
-                    continue;
-                }
-
-                // Get base type from TypeManager (required for permission check)
                 TypeDefinition td = typeManager.getTypeDefinition(repositoryId, content);
-                if (td == null) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("RAG result filtered: type definition not found for " + documentId);
-                    }
-                    continue;
-                }
-                String baseType = td.getBaseTypeId().value();
-
-                // Check read permission using calculated ACL
-                jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
-                String key = PermissionMapping.CAN_GET_PROPERTIES_OBJECT;
-
-                Boolean hasPermission = permissionService.checkPermission(
-                        context, repositoryId, key, acl, baseType, content);
-
-                if (hasPermission != null && hasPermission) {
-                    filtered.add(result);
-                } else {
-                    if (log.isDebugEnabled()) {
-                        log.debug("RAG result filtered: user " + context.getUsername() +
-                                " lacks permission for document " + documentId);
-                    }
+                if (td != null && td.getBaseTypeId() != null) {
+                    baseTypes.put(docId, td.getBaseTypeId().value());
                 }
             } catch (Exception e) {
-                // If permission check fails, exclude the result for security
-                log.warn("RAG permission check failed for document " + result.getDocumentId() +
-                        ": " + e.getMessage());
+                log.warn("Failed to get type definition for document " + docId + ": " + e.getMessage());
             }
         }
 
-        if (log.isDebugEnabled() && filtered.size() != results.size()) {
-            log.debug("RAG filter removed " + (results.size() - filtered.size()) +
-                    " results due to permission checks");
+        // Remove contents without valid base types
+        contents.keySet().retainAll(baseTypes.keySet());
+
+        if (contents.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // Batch calculate ACLs
+        Map<String, jp.aegif.nemaki.model.Acl> acls = contentService.calculateAcls(repositoryId, contents.values());
+
+        // Batch permission check
+        String permissionKey = PermissionMapping.CAN_GET_PROPERTIES_OBJECT;
+        Map<String, Boolean> permissions = permissionService.checkPermissions(
+                context, repositoryId, permissionKey, acls, baseTypes, contents);
+
+        // Filter results based on permissions
+        List<VectorSearchResult> filtered = new ArrayList<>();
+        int removedCount = 0;
+
+        for (VectorSearchResult result : results) {
+            String documentId = result.getDocumentId();
+            if (documentId == null) {
+                continue;
+            }
+
+            Boolean hasPermission = permissions.get(documentId);
+            if (hasPermission != null && hasPermission) {
+                filtered.add(result);
+            } else {
+                removedCount++;
+                if (log.isDebugEnabled()) {
+                    log.debug("RAG result filtered: user " + context.getUsername() +
+                            " lacks permission for document " + documentId);
+                }
+            }
+        }
+
+        if (log.isDebugEnabled() && removedCount > 0) {
+            log.debug("RAG filter removed " + removedCount + " results due to permission checks");
         }
 
         return filtered;

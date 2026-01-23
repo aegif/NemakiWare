@@ -28,8 +28,10 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.GregorianCalendar;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -360,6 +362,47 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			log.error("Exception in cache.getContent for " + objectId + ": " + e.getMessage(), e);
 			return null;
 		}
+	}
+
+	@Override
+	public Map<String, Content> getContentsByIds(String repositoryId, List<String> objectIds) {
+		Map<String, Content> result = new HashMap<>();
+		if (objectIds == null || objectIds.isEmpty()) {
+			return result;
+		}
+
+		// Check cache first and collect cache misses
+		List<String> cacheMisses = new ArrayList<>();
+		NemakiCache<Content> contentCache = nemakiCachePool.get(repositoryId).getContentCache();
+
+		for (String objectId : objectIds) {
+			if (objectId == null) continue;
+
+			Content cached = contentCache.get(objectId);
+			if (cached != null) {
+				result.put(objectId, cached);
+			} else {
+				cacheMisses.add(objectId);
+			}
+		}
+
+		// Fetch cache misses from database
+		if (!cacheMisses.isEmpty()) {
+			Map<String, Content> fetched = nonCachedContentDaoService.getContentsByIds(repositoryId, cacheMisses);
+			for (Map.Entry<String, Content> entry : fetched.entrySet()) {
+				Content content = entry.getValue();
+				if (content != null) {
+					result.put(entry.getKey(), content);
+					contentCache.put(new Element(entry.getKey(), content));
+				}
+			}
+		}
+
+		if (log.isDebugEnabled()) {
+			log.debug("getContentsByIds: requested=" + objectIds.size() + ", cacheHits=" + (objectIds.size() - cacheMisses.size()) + ", fetched=" + cacheMisses.size());
+		}
+
+		return result;
 	}
 
 	@Override

@@ -24,6 +24,7 @@ package jp.aegif.nemaki.cmis.aspect.impl;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -607,6 +608,56 @@ public class PermissionServiceImpl implements PermissionService {
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
+
+
+	@Override
+	public Map<String, Boolean> checkPermissions(CallContext callContext, String repositoryId, String permissionKey,
+			Map<String, Acl> acls, Map<String, String> baseTypes, Map<String, Content> contents) {
+
+		Map<String, Boolean> result = new HashMap<>();
+		if (contents == null || contents.isEmpty()) {
+			return result;
+		}
+
+		String userName = callContext.getUsername();
+
+		// Get user info once for all checks
+		UserItem userItem = contentService.getUserItemById(repositoryId, userName);
+		boolean isAdmin = (userItem != null && userItem.isAdmin());
+
+		// Admin always passes all permission checks
+		if (isAdmin) {
+			for (String objectId : contents.keySet()) {
+				result.put(objectId, true);
+			}
+			log.debug("Admin user " + userName + " granted access to all " + contents.size() + " objects");
+			return result;
+		}
+
+		// Get groups once for all checks
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+
+		// Check permission for each content
+		for (Map.Entry<String, Content> entry : contents.entrySet()) {
+			String objectId = entry.getKey();
+			Content content = entry.getValue();
+
+			if (content == null) {
+				result.put(objectId, false);
+				continue;
+			}
+
+			Acl acl = acls.get(objectId);
+			String baseType = baseTypes.get(objectId);
+
+			// Use existing checkPermissionInternal with pre-fetched user/groups
+			Boolean hasPermission = checkPermissionInternal(callContext, repositoryId, permissionKey,
+					acl, baseType, content, userName, groups);
+			result.put(objectId, hasPermission != null ? hasPermission : false);
+		}
+
+		return result;
+	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;

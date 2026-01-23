@@ -1022,6 +1022,177 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public Map<String, Content> getContentsByIds(String repositoryId, List<String> objectIds) {
+		Map<String, Content> result = new HashMap<>();
+		if (objectIds == null || objectIds.isEmpty()) {
+			return result;
+		}
+
+		log.debug("getContentsByIds START: Repo=" + repositoryId + ", count=" + objectIds.size());
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			Map<String, com.ibm.cloud.cloudant.v1.model.Document> docs = client.getBulkDocuments(objectIds);
+
+			log.debug("Bulk fetched " + docs.size() + " documents for " + objectIds.size() + " requested IDs");
+
+			for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Document> entry : docs.entrySet()) {
+				String objectId = entry.getKey();
+				com.ibm.cloud.cloudant.v1.model.Document doc = entry.getValue();
+
+				try {
+					Content content = convertCloudantDocumentToContent(doc);
+					if (content != null) {
+						result.put(objectId, content);
+					}
+				} catch (Exception e) {
+					log.warn("Failed to convert document " + objectId + ": " + e.getMessage());
+				}
+			}
+
+			log.debug("getContentsByIds completed: " + result.size() + " contents converted");
+			return result;
+
+		} catch (Exception e) {
+			log.error("ERROR in getContentsByIds for repository " + repositoryId + ": " + e.getMessage(), e);
+			return result;
+		}
+	}
+
+	/**
+	 * Convert a Cloudant Document to Content object.
+	 * This is a helper method extracted from getContent() for reuse in bulk operations.
+	 */
+	private Content convertCloudantDocumentToContent(com.ibm.cloud.cloudant.v1.model.Document doc) {
+		if (doc == null) {
+			return null;
+		}
+
+		// Create document map by directly accessing fields from Cloudant Document
+		Map<String, Object> actualDocMap = new HashMap<>();
+
+		// Copy standard document fields
+		actualDocMap.put("_id", doc.getId());
+		actualDocMap.put("_rev", doc.getRev());
+
+		// Use Document.get() to access custom fields
+		String type = (String) doc.get("type");
+		String objectType = (String) doc.get("objectType");
+		String name = (String) doc.get("name");
+		String creator = (String) doc.get("creator");
+		String modifier = (String) doc.get("modifier");
+		Object created = doc.get("created");
+		Object modified = doc.get("modified");
+		String changeToken = (String) doc.get("changeToken");
+
+		// Convert LazilyParsedNumber to Long for Jackson compatibility
+		if (created != null && created.getClass().getName().contains("LazilyParsedNumber")) {
+			created = ((Number) created).longValue();
+		}
+		if (modified != null && modified.getClass().getName().contains("LazilyParsedNumber")) {
+			modified = ((Number) modified).longValue();
+		}
+
+		// Add all accessible fields to the map
+		if (type != null) actualDocMap.put("type", type);
+		if (objectType != null) actualDocMap.put("objectType", objectType);
+		if (name != null) actualDocMap.put("name", name);
+		if (creator != null) actualDocMap.put("creator", creator);
+		if (modifier != null) actualDocMap.put("modifier", modifier);
+		if (created != null) actualDocMap.put("created", created);
+		if (modified != null) actualDocMap.put("modified", modified);
+		if (changeToken != null) actualDocMap.put("changeToken", changeToken);
+
+		// Get additional properties
+		try {
+			Map<String, Object> properties = doc.getProperties();
+			if (properties != null && !properties.isEmpty()) {
+				for (Map.Entry<String, Object> entry : properties.entrySet()) {
+					if (!actualDocMap.containsKey(entry.getKey())) {
+						actualDocMap.put(entry.getKey(), entry.getValue());
+					}
+				}
+			}
+		} catch (Exception e) {
+			// Add common fields individually
+			Object aclObj = doc.get("acl");
+			Object parentIdObj = doc.get("parentId");
+			Object aspectsObj = doc.get("aspects");
+			if (aclObj != null) actualDocMap.put("acl", aclObj);
+			if (parentIdObj != null) actualDocMap.put("parentId", parentIdObj);
+			if (aspectsObj != null) actualDocMap.put("aspects", aspectsObj);
+		}
+
+		// Explicitly retrieve aspects, secondaryIds, description
+		Object aspectsObj = doc.get("aspects");
+		if (aspectsObj != null) {
+			actualDocMap.put("aspects", aspectsObj);
+		}
+		Object secondaryIdsObj = doc.get("secondaryIds");
+		if (secondaryIdsObj != null) {
+			actualDocMap.put("secondaryIds", secondaryIdsObj);
+		}
+		Object descriptionObj = doc.get("description");
+		if (descriptionObj != null) {
+			actualDocMap.put("description", descriptionObj);
+		}
+
+		// Determine actual type
+		String actualType = (type != null) ? type : objectType;
+
+		// Ensure both type and objectType fields are set
+		if (type == null && objectType != null) {
+			actualDocMap.put("type", objectType);
+		}
+		if (objectType == null && type != null) {
+			actualDocMap.put("objectType", type);
+		}
+		if (!actualDocMap.containsKey("objectType") || actualDocMap.get("objectType") == null) {
+			actualDocMap.put("objectType", actualType);
+		}
+
+		// Create ObjectMapper for type conversion
+		ObjectMapper mapper = createConfiguredObjectMapper();
+
+		// Convert to appropriate type
+		Content content = null;
+		if ("folder".equals(actualType) || "cmis:folder".equals(actualType)) {
+			CouchFolder folder = mapper.convertValue(actualDocMap, CouchFolder.class);
+			content = folder.convert();
+		} else if ("document".equals(actualType) || "cmis:document".equals(actualType)) {
+			CouchDocument document = mapper.convertValue(actualDocMap, CouchDocument.class);
+			content = document.convert();
+		} else if ("cmis:item".equals(actualType)) {
+			String objectTypeValue = (String) actualDocMap.get("objectType");
+			if ("nemaki:user".equals(objectTypeValue)) {
+				CouchUserItem cui = mapper.convertValue(actualDocMap, CouchUserItem.class);
+				content = cui.convert();
+			} else if ("nemaki:group".equals(objectTypeValue)) {
+				CouchGroupItem cgi = mapper.convertValue(actualDocMap, CouchGroupItem.class);
+				content = cgi.convert();
+			} else {
+				CouchItem ci = mapper.convertValue(actualDocMap, CouchItem.class);
+				content = ci.convert();
+			}
+		} else if ("relationship".equals(actualType) || "cmis:relationship".equals(actualType)) {
+			CouchRelationship cr = mapper.convertValue(actualDocMap, CouchRelationship.class);
+			content = cr.convert();
+		} else if ("policy".equals(actualType) || "cmis:policy".equals(actualType)) {
+			CouchPolicy cp = mapper.convertValue(actualDocMap, CouchPolicy.class);
+			content = cp.convert();
+		} else {
+			CouchContent couchContent = mapper.convertValue(actualDocMap, CouchContent.class);
+			content = couchContent.convert();
+		}
+
+		// Set objectType if not set
+		if (content != null && content.getObjectType() == null) {
+			content.setObjectType(objectType != null ? objectType : actualType);
+		}
+
+		return content;
+	}
+
+	@Override
 	public Document getDocumentFresh(String repositoryId, String objectId) {
 		// For non-cached implementation, getDocumentFresh is same as getDocument
 		return getDocument(repositoryId, objectId);
