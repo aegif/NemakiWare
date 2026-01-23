@@ -140,8 +140,9 @@ public class PermissionResource extends ResourceBase {
 				addErrMsg(errMsg, "object", ErrorCode.ERR_NOTFOUND);
 			} else {
 				boolean aclInherited = getContentServiceSafe().getAclInheritedWithDefault(repositoryId, content);
-				
-				jp.aegif.nemaki.model.Acl acl = content.getAcl();
+
+				// Use calculateAcl to get both local and inherited ACLs
+				jp.aegif.nemaki.model.Acl acl = getContentServiceSafe().calculateAcl(repositoryId, content);
 				JSONObject aclJson;
 				if (acl != null) {
 					aclJson = convertAclToJson(acl);
@@ -224,19 +225,39 @@ public class PermissionResource extends ResourceBase {
 		JSONObject aclJson = new JSONObject();
 		JSONArray permissions = new JSONArray();
 
-		if (acl != null && acl.getLocalAces() != null) {
-			for (jp.aegif.nemaki.model.Ace ace : acl.getLocalAces()) {
-				JSONObject permission = new JSONObject();
-				permission.put("principalId", ace.getPrincipalId());
-				
-				JSONArray perms = new JSONArray();
-				if (ace.getPermissions() != null) {
-					perms.addAll(ace.getPermissions());
+		if (acl != null) {
+			// Add local (direct) ACEs
+			if (acl.getLocalAces() != null) {
+				for (jp.aegif.nemaki.model.Ace ace : acl.getLocalAces()) {
+					JSONObject permission = new JSONObject();
+					permission.put("principalId", ace.getPrincipalId());
+
+					JSONArray perms = new JSONArray();
+					if (ace.getPermissions() != null) {
+						perms.addAll(ace.getPermissions());
+					}
+					permission.put("permissions", perms);
+					permission.put("direct", true);  // Local ACEs are direct
+
+					permissions.add(permission);
 				}
-				permission.put("permissions", perms);
-				permission.put("direct", ace.isDirect());
-				
-				permissions.add(permission);
+			}
+
+			// Add inherited ACEs
+			if (acl.getInheritedAces() != null) {
+				for (jp.aegif.nemaki.model.Ace ace : acl.getInheritedAces()) {
+					JSONObject permission = new JSONObject();
+					permission.put("principalId", ace.getPrincipalId());
+
+					JSONArray perms = new JSONArray();
+					if (ace.getPermissions() != null) {
+						perms.addAll(ace.getPermissions());
+					}
+					permission.put("permissions", perms);
+					permission.put("direct", false);  // Inherited ACEs are not direct
+
+					permissions.add(permission);
+				}
 			}
 		}
 

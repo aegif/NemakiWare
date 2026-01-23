@@ -1324,7 +1324,22 @@
     "contentOnly": "Content Focus",
     "balanced": "Balanced",
     "propertyOnly": "Property Focus",
-    "propertyBoostDescription": "Move the slider right to prioritize file names and descriptions. Move left to prioritize body content."
+    "propertyBoostDescription": "Move the slider right to prioritize file names and descriptions. Move left to prioritize body content.",
+    "viewDocument": "View Document"
+  },
+  "search": {
+    "fulltext": "Full-text Search",
+    "semantic": "Semantic Search"
+  },
+  "rag": {
+    "admin": {
+      "simulateAs": "Search as User",
+      "selectUser": "Select a user (leave empty to search as yourself)",
+      "simulateDescription": "Administrators can search as other users to verify ACL settings",
+      "simulatingAs": "Searching as {{userId}}",
+      "loadUsersFailed": "Failed to load user list",
+      "adminOnly": "This feature is only available to administrators"
+    }
   },
   "apiDocs": {
     "title": "REST API Documentation",

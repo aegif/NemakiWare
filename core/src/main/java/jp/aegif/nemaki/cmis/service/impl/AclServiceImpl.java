@@ -33,10 +33,14 @@ import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.rag.acl.ACLExpander;
+import jp.aegif.nemaki.rag.indexing.RAGIndexingService;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -66,6 +70,8 @@ public class AclServiceImpl implements AclService {
 	private ThreadLockService threadLockService;
 	private NemakiCachePool nemakiCachePool;
 	private RepositoryInfoMap repositoryInfoMap;
+	private RAGIndexingService ragIndexingService;
+	private ACLExpander aclExpander;
 
 	@Override
 	public Acl getAcl(CallContext callContext, String repositoryId,
@@ -188,15 +194,12 @@ public class AclServiceImpl implements AclService {
 			contentService.updateInternal(repositoryId, content);
 			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
 
-			// CRITICAL FIX (2025-11-12): Clear BOTH CMIS and Content caches synchronously
-			// before calling getAcl() to return updated ACL. Without this, getAcl() returns stale cached data.
-			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
+			// CRITICAL FIX (2025-01-23): Synchronously clear ACL caches for this object and all descendants
+			// that inherit ACL. This prevents race conditions where child documents show stale permissions.
+			clearCachesRecursively(repositoryId, content);
 
-			clearCachesRecursively(Executors.newWorkStealingPool(), callContext, repositoryId, content, true);
-
-			// Temporary stopping write change evnets descendant
-			// TODO : depend on configuration
-			//writeChangeEventsRecursively(Executors.newWorkStealingPool(), callContext, repositoryId, content, true);
+			// Async update RAG index ACL for this object and descendants
+			updateRAGIndexACLAsync(Executors.newSingleThreadExecutor(), repositoryId, content);
 
 			return getAcl(callContext, repositoryId, objectId, false, null);
 		}finally{
@@ -205,33 +208,122 @@ public class AclServiceImpl implements AclService {
 
 	}
 
-	private void clearCachesRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent){
-		clearCachesRecursively(executorService, callContext, repositoryId, content, executeOnParent, new java.util.HashSet<String>());
+	/**
+	 * Get RAGIndexingService from Spring context (lazy loading, optional dependency).
+	 */
+	private RAGIndexingService getRagIndexingService() {
+		if (ragIndexingService != null) {
+			return ragIndexingService;
+		}
+		try {
+			return SpringContext.getApplicationContext().getBean(RAGIndexingService.class);
+		} catch (Exception e) {
+			// RAG service not available
+			return null;
+		}
 	}
 
-	private void clearCachesRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent, java.util.Set<String> visitedIds){
-		if (visitedIds.contains(content.getId())) {
+	/**
+	 * Get ACLExpander from Spring context (lazy loading, optional dependency).
+	 */
+	private ACLExpander getAclExpander() {
+		if (aclExpander != null) {
+			return aclExpander;
+		}
+		try {
+			return SpringContext.getApplicationContext().getBean(ACLExpander.class);
+		} catch (Exception e) {
+			// ACLExpander not available
+			return null;
+		}
+	}
+
+	/**
+	 * Asynchronously update RAG index ACL for a document/folder and its descendants.
+	 * This ensures that RAG search results reflect the latest permission changes.
+	 */
+	private void updateRAGIndexACLAsync(ExecutorService executorService, String repositoryId, Content content) {
+		// Get RAG services from Spring context (optional dependencies)
+		RAGIndexingService ragService = getRagIndexingService();
+		ACLExpander expander = getAclExpander();
+
+		// Skip if RAG indexing is not enabled or dependencies are not available
+		if (ragService == null || !ragService.isEnabled() || expander == null) {
+			return;
+		}
+
+		executorService.submit(() -> {
+			try {
+				updateRAGIndexACLRecursively(repositoryId, content, ragService, expander, new java.util.HashSet<>());
+				log.info("RAG index ACL update triggered for: " + content.getId());
+			} catch (Exception e) {
+				log.warn("Failed to update RAG index ACL for " + content.getId() + ": " + e.getMessage());
+			}
+		});
+	}
+
+	/**
+	 * Recursively update RAG index ACL for documents.
+	 */
+	private void updateRAGIndexACLRecursively(String repositoryId, Content content,
+			RAGIndexingService ragService, ACLExpander expander, java.util.Set<String> visitedIds) {
+		if (content == null || visitedIds.contains(content.getId())) {
 			return;
 		}
 		visitedIds.add(content.getId());
 
+		// Update this content's RAG ACL if it's a document
+		if (content instanceof Document) {
+			try {
+				java.util.List<String> readers = expander.expandToReaders(repositoryId, content);
+				ragService.updateDocumentACL(repositoryId, content.getId(), readers);
+			} catch (Exception e) {
+				log.warn("Failed to update RAG ACL for document " + content.getId() + ": " + e.getMessage());
+			}
+		}
+
+		// Recursively process children if this is a folder
+		if (content.isFolder()) {
+			List<Content> children = contentService.getChildren(repositoryId, content.getId());
+			if (!CollectionUtils.isEmpty(children)) {
+				for (Content child : children) {
+					// Only update children that inherit ACL
+					if (contentService.getAclInheritedWithDefault(repositoryId, child)) {
+						updateRAGIndexACLRecursively(repositoryId, child, ragService, expander, visitedIds);
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Synchronously clear ACL caches for a content item and all its descendants that inherit ACL.
+	 * This ensures that child documents immediately see updated permissions after parent ACL changes.
+	 *
+	 * CRITICAL FIX (2025-01-23): Changed from async to sync execution to prevent race conditions
+	 * where users see stale cached ACL data on child documents after changing parent permissions.
+	 */
+	private void clearCachesRecursively(String repositoryId, Content content) {
+		java.util.Set<String> visitedIds = new java.util.HashSet<>();
 		java.util.Queue<Content> queue = new java.util.LinkedList<>();
 		queue.offer(content);
-		
+
 		while (!queue.isEmpty()) {
 			Content current = queue.poll();
-			
+
 			if (visitedIds.contains(current.getId())) {
 				continue;
 			}
 			visitedIds.add(current.getId());
-			
-			executorService.submit(new ClearCacheTask(repositoryId, current.getId()));
-			
+
+			// SYNC: Clear cache immediately instead of submitting async task
+			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(current.getId());
+
 			if (current.isFolder()) {
 				List<Content> children = contentService.getChildren(repositoryId, current.getId());
 				if (!CollectionUtils.isEmpty(children)) {
 					for (Content child : children) {
+						// Only clear cache for children that inherit ACL (their calculated ACL depends on parent)
 						if (contentService.getAclInheritedWithDefault(repositoryId, child) && !visitedIds.contains(child.getId())) {
 							queue.offer(child);
 						}
@@ -239,107 +331,9 @@ public class AclServiceImpl implements AclService {
 				}
 			}
 		}
+
+		log.debug("Synchronously cleared ACL caches for " + visitedIds.size() + " items");
 	}
-
-	private class ClearCacheTask implements Runnable{
-		private String repositoryId;
-		private String objectId;
-
-		public ClearCacheTask(String repositoryId, String objectId) {
-			super();
-			this.repositoryId = repositoryId;
-			this.objectId = objectId;
-		}
-
-		@Override
-		public void run() {
-			// TODO Auto-generated method stub
-			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
-		}
-	}
-
-	private class ClearCachesRecursivelyTask implements Runnable{
-		private ExecutorService executorService;
-		private CallContext callContext;
-		private String repositoryId;
-		private Content content;
-
-		public ClearCachesRecursivelyTask(ExecutorService executorService, CallContext callContext, String repositoryId, Content content) {
-			super();
-			this.executorService = executorService;
-			this.callContext = callContext;
-			this.repositoryId = repositoryId;
-			this.content = content;
-		}
-
-		@Override
-		public void run() {
-			clearCachesRecursively(executorService, callContext, repositoryId, content, true);
-		}
-	}
-
-private void writeChangeEventsRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent){
-
-		//Call threads for recursive applyAcl
-		if(content.isFolder()){
-			if(executeOnParent){
-				executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
-			}
-
-			List<Content> children = contentService.getChildren(repositoryId, content.getId());
-			if(CollectionUtils.isEmpty(children)){
-				return;
-			}
-
-			for(Content child : children){
-				if(contentService.getAclInheritedWithDefault(repositoryId, child)){
-					executorService.submit(new WriteChangeEventsRecursivelyTask(executorService, callContext, repositoryId, child));
-				}
-			}
-		}else{
-			executorService.submit(new WriteChangeEventTask(callContext, repositoryId, content));
-		}
-	}
-
-	private class WriteChangeEventTask implements Runnable{
-		private CallContext callContext;
-		private String repositoryId;
-		private Content content;
-
-		public WriteChangeEventTask(CallContext callContext, String repositoryId, Content content) {
-			super();
-			this.callContext = callContext;
-			this.repositoryId = repositoryId;
-			this.content = content;
-		}
-
-		@Override
-		public void run() {
-			// TODO content.getAcl()? content.calculateAcl()?
-			contentService.writeChangeEvent(callContext, repositoryId, content, content.getAcl(), ChangeType.SECURITY);
-		}
-	}
-
-	private class WriteChangeEventsRecursivelyTask implements Runnable{
-		private ExecutorService executorService;
-		private CallContext callContext;
-		private String repositoryId;
-		private Content content;
-
-		public WriteChangeEventsRecursivelyTask(ExecutorService executorService, CallContext callContext, String repositoryId, Content content) {
-			super();
-			this.executorService = executorService;
-			this.callContext = callContext;
-			this.repositoryId = repositoryId;
-			this.content = content;
-		}
-
-		@Override
-		public void run() {
-			writeChangeEventsRecursively(executorService, callContext, repositoryId, content, true);
-		}
-	}
-
 	private void convertSystemPrinciaplId(String repositoryId, jp.aegif.nemaki.model.Acl acl){
 		List<jp.aegif.nemaki.model.Ace> aces = acl.getAllAces();
 		for (jp.aegif.nemaki.model.Ace ace : aces) {
@@ -386,5 +380,13 @@ private void writeChangeEventsRecursively(ExecutorService executorService, CallC
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
 		this.repositoryInfoMap = repositoryInfoMap;
+	}
+
+	public void setRagIndexingService(RAGIndexingService ragIndexingService) {
+		this.ragIndexingService = ragIndexingService;
+	}
+
+	public void setAclExpander(ACLExpander aclExpander) {
+		this.aclExpander = aclExpander;
 	}
 }

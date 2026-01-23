@@ -7,10 +7,10 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Input, Button, List, Card, Typography, Space, Spin, Alert, Tooltip, Slider, Empty } from 'antd';
-import { SearchOutlined, FileTextOutlined, FolderOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { SearchOutlined, FileTextOutlined, FolderOutlined, InfoCircleOutlined, EyeOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { RAGService, RAGSearchResult, RAGHealthStatus } from '../../services/rag';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 const { Search } = Input;
 const { Text, Paragraph } = Typography;
@@ -20,13 +20,16 @@ interface SemanticSearchProps {
   folderId?: string;
   onDocumentClick?: (documentId: string) => void;
   baseUrl?: string;
+  /** Admin only: Simulate search as another user */
+  simulateAsUserId?: string;
 }
 
 export const SemanticSearch: React.FC<SemanticSearchProps> = ({
   repositoryId,
   folderId,
   onDocumentClick,
-  baseUrl = ''
+  baseUrl = '',
+  simulateAsUserId
 }) => {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuth();
@@ -56,12 +59,18 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
 
   const checkHealth = async () => {
     setCheckingHealth(true);
+    console.log('[SemanticSearch] Starting health check...', { baseUrl, repositoryId, isAuthenticated });
     try {
       const service = new RAGService(baseUrl, repositoryId);
       const status = await service.getHealth();
+      console.log('[SemanticSearch] Health check result:', status);
       setHealthStatus(status);
     } catch (err) {
-      console.error('RAG health check failed:', err);
+      console.error('[SemanticSearch] RAG health check failed:', err);
+      console.error('[SemanticSearch] Error details:', {
+        message: err instanceof Error ? err.message : 'Unknown error',
+        stack: err instanceof Error ? err.stack : undefined
+      });
       setHealthStatus({ enabled: false, status: 'unavailable' });
     } finally {
       setCheckingHealth(false);
@@ -85,7 +94,8 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
         minScore,
         folderId,
         propertyBoost,
-        contentBoost
+        contentBoost,
+        simulateAsUserId
       });
       setResults(response.results);
     } catch (err) {
@@ -95,7 +105,7 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [baseUrl, repositoryId, topK, minScore, folderId, propertyBoost, contentBoost, t]);
+  }, [baseUrl, repositoryId, topK, minScore, folderId, propertyBoost, contentBoost, simulateAsUserId, t]);
 
   const handleDocumentClick = (documentId: string) => {
     if (onDocumentClick) {
@@ -266,14 +276,29 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
               renderItem={(item) => (
                 <List.Item
                   key={item.chunkId}
-                  onClick={() => handleDocumentClick(item.documentId)}
-                  style={{ cursor: 'pointer' }}
+                  style={{ cursor: 'default' }}
+                  actions={[
+                    <Button
+                      key="view"
+                      type="primary"
+                      icon={<EyeOutlined />}
+                      onClick={() => handleDocumentClick(item.documentId)}
+                    >
+                      {t('semanticSearch.viewDocument')}
+                    </Button>
+                  ]}
                 >
                   <List.Item.Meta
-                    avatar={<FileTextOutlined style={{ fontSize: 24 }} />}
+                    avatar={<FileTextOutlined style={{ fontSize: 24, color: '#1890ff' }} />}
                     title={
                       <Space>
-                        <Text strong>{item.documentName}</Text>
+                        <Button
+                          type="link"
+                          style={{ padding: 0, height: 'auto' }}
+                          onClick={() => handleDocumentClick(item.documentId)}
+                        >
+                          <Text strong style={{ fontSize: 16 }}>{item.documentName}</Text>
+                        </Button>
                         <Text type="secondary">
                           {t('semanticSearch.similarity')}: {formatScore(item.score)}
                         </Text>

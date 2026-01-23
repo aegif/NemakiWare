@@ -50,7 +50,8 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { SolrMaintenanceService, ReindexStatus, IndexHealthStatus, SolrQueryResult } from '../../services/solrMaintenance';
-import { RAGMaintenanceService, RAGReindexStatus, RAGHealthStatus, RAGSearchResult } from '../../services/ragMaintenance';
+import { RAGMaintenanceService, RAGReindexStatus, RAGHealthStatus } from '../../services/ragMaintenance';
+import { RAGSearchAdmin } from './RAGSearchAdmin';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -73,8 +74,6 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
   // RAG state
   const [ragHealthStatus, setRagHealthStatus] = useState<RAGHealthStatus | null>(null);
   const [ragReindexStatus, setRagReindexStatus] = useState<RAGReindexStatus | null>(null);
-  const [ragSearchResults, setRagSearchResults] = useState<RAGSearchResult[]>([]);
-  const [ragSearchForm] = Form.useForm();
   const [ragFolderIdInput, setRagFolderIdInput] = useState<string>('');
   const [ragRecursiveReindex, setRagRecursiveReindex] = useState<boolean>(true);
   const [ragLoading, setRagLoading] = useState(false);
@@ -317,30 +316,6 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       message.error(`${t('ragMaintenance.messages.clearError')}: ${errorMessage}`);
-    }
-  };
-
-  const handleRagSearch = async (values: { query: string; topK: number; minScore: number; propertyBoost?: number; contentBoost?: number }) => {
-    setRagLoading(true);
-    try {
-      const result = await ragService.search(
-        repositoryId,
-        values.query,
-        values.topK || 10,
-        values.minScore || 0.7,
-        undefined,
-        values.propertyBoost,
-        values.contentBoost
-      );
-      setRagSearchResults(result.results);
-      if (result.results.length === 0) {
-        message.info(t('ragMaintenance.search.noResults'));
-      }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      message.error(`${t('ragMaintenance.messages.searchError')}: ${errorMessage}`);
-    } finally {
-      setRagLoading(false);
     }
   };
 
@@ -904,86 +879,6 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     </Card>
   );
 
-  const renderRagSearch = () => (
-    <Card title={t('ragMaintenance.search.title')} style={{ marginTop: 16 }}>
-      <Form
-        form={ragSearchForm}
-        layout="vertical"
-        onFinish={handleRagSearch}
-        initialValues={{ topK: 10, minScore: 0.5, propertyBoost: 0.3, contentBoost: 0.7 }}
-      >
-        <Form.Item
-          name="query"
-          label={t('ragMaintenance.search.queryLabel')}
-          rules={[{ required: true, message: t('ragMaintenance.search.queryRequired') }]}
-        >
-          <TextArea
-            placeholder={t('ragMaintenance.search.queryPlaceholder')}
-            rows={3}
-          />
-        </Form.Item>
-        <Row gutter={16}>
-          <Col span={6}>
-            <Form.Item name="topK" label={t('ragMaintenance.search.topK')}>
-              <InputNumber min={1} max={100} style={{ width: '100%' }} />
-            </Form.Item>
-          </Col>
-          <Col span={6}>
-            <Form.Item name="minScore" label={t('ragMaintenance.search.minScore')}>
-              <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
-            </Form.Item>
-          </Col>
-          <Col span={6}>
-            <Form.Item name="propertyBoost" label={t('ragMaintenance.search.propertyBoost')}>
-              <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
-            </Form.Item>
-          </Col>
-          <Col span={6}>
-            <Form.Item name="contentBoost" label={t('ragMaintenance.search.contentBoost')}>
-              <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
-            </Form.Item>
-          </Col>
-        </Row>
-        <Form.Item>
-          <Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={ragLoading}>
-            {t('ragMaintenance.search.executeSearch')}
-          </Button>
-        </Form.Item>
-      </Form>
-
-      {ragSearchResults.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <Alert
-            message={t('ragMaintenance.search.results', { count: ragSearchResults.length, queryTime: 0 })}
-            type="info"
-            style={{ marginBottom: 16 }}
-          />
-          {ragSearchResults.map((result, index) => (
-            <Card
-              key={result.chunkId}
-              size="small"
-              title={`${index + 1}. ${result.documentName}`}
-              extra={<Tag color="blue">{t('ragMaintenance.search.resultItem.score')}: {(result.score * 100).toFixed(1)}%</Tag>}
-              style={{ marginBottom: 8 }}
-            >
-              <Descriptions column={1} size="small">
-                <Descriptions.Item label={t('ragMaintenance.search.resultItem.chunkIndex')}>
-                  {result.chunkIndex}
-                </Descriptions.Item>
-                <Descriptions.Item label={t('ragMaintenance.search.resultItem.objectType')}>
-                  {result.objectType}
-                </Descriptions.Item>
-                <Descriptions.Item label={t('ragMaintenance.search.resultItem.chunkText')}>
-                  <Text style={{ whiteSpace: 'pre-wrap' }}>{result.chunkText}</Text>
-                </Descriptions.Item>
-              </Descriptions>
-            </Card>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-
   const tabItems = [
     {
       key: 'status',
@@ -1023,7 +918,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     {
       key: 'rag-search',
       label: t('ragMaintenance.tabs.search'),
-      children: renderRagSearch(),
+      children: <RAGSearchAdmin repositoryId={repositoryId} />,
     },
   ];
 

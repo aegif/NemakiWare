@@ -1324,7 +1324,22 @@
     "contentOnly": "本文重視",
     "balanced": "バランス",
     "propertyOnly": "プロパティ重視",
-    "propertyBoostDescription": "スライダーを右に動かすと、ファイル名や説明文がより重視されます。左に動かすと、本文の内容がより重視されます。"
+    "propertyBoostDescription": "スライダーを右に動かすと、ファイル名や説明文がより重視されます。左に動かすと、本文の内容がより重視されます。",
+    "viewDocument": "ドキュメントを表示"
+  },
+  "search": {
+    "fulltext": "全文検索",
+    "semantic": "セマンティック検索"
+  },
+  "rag": {
+    "admin": {
+      "simulateAs": "検索実行ユーザー",
+      "selectUser": "ユーザーを選択（未選択時は自分として検索）",
+      "simulateDescription": "管理者は他のユーザーとして検索を実行し、ACL設定を確認できます",
+      "simulatingAs": "{{userId}} として検索を実行中",
+      "loadUsersFailed": "ユーザー一覧の読み込みに失敗しました",
+      "adminOnly": "この機能は管理者のみ利用できます"
+    }
   },
   "apiDocs": {
     "title": "REST API仕様書",

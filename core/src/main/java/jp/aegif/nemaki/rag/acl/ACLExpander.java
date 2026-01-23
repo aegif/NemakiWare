@@ -10,6 +10,7 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
@@ -54,14 +55,18 @@ public class ACLExpander {
     public static final String READER_ANYONE = "anyone";
 
     private final PrincipalService principalService;
+    private final ContentService contentService;
 
     @Autowired
-    public ACLExpander(PrincipalService principalService) {
+    public ACLExpander(PrincipalService principalService, ContentService contentService) {
         this.principalService = principalService;
+        this.contentService = contentService;
     }
 
     /**
      * Expand content ACL to a list of readers.
+     *
+     * Uses ContentService.calculateAcl() to properly include inherited ACLs from parent folders.
      *
      * @param repositoryId Repository ID
      * @param content Content object with ACL
@@ -70,19 +75,20 @@ public class ACLExpander {
     public List<String> expandToReaders(String repositoryId, Content content) {
         Set<String> readers = new HashSet<>();
 
-        Acl acl = content.getAcl();
+        // Use calculateAcl to get both local and inherited ACLs
+        Acl acl = contentService.calculateAcl(repositoryId, content);
         if (acl == null) {
-            // No ACL = public access
-            readers.add(READER_ANYONE);
-            return new ArrayList<>(readers);
+            // No ACL = default to admin only for security
+            log.warn(String.format("No ACL calculated for content %s, defaulting to admin-only access", content.getId()));
+            return getAdminOnlyReaders(repositoryId);
         }
 
         // Get all ACEs (merged inherited and local)
         List<Ace> allAces = acl.getAllAces();
         if (allAces == null || allAces.isEmpty()) {
-            // No ACEs = public access
-            readers.add(READER_ANYONE);
-            return new ArrayList<>(readers);
+            // No ACEs = default to admin only for security
+            log.warn(String.format("Empty ACL for content %s, defaulting to admin-only access", content.getId()));
+            return getAdminOnlyReaders(repositoryId);
         }
 
         // Process each ACE
@@ -93,15 +99,9 @@ public class ACLExpander {
             }
         }
 
-        // If no readers found, default to admin only
+        // If no readers found, default to admin only for security
         if (readers.isEmpty()) {
-            // Get admin users
-            List<User> admins = principalService.getAdmins(repositoryId);
-            if (admins != null) {
-                for (User admin : admins) {
-                    readers.add(PREFIX_USER + admin.getUserId());
-                }
-            }
+            return getAdminOnlyReaders(repositoryId);
         }
 
         if (log.isDebugEnabled()) {
@@ -109,6 +109,24 @@ public class ACLExpander {
                     content.getId(), readers.size(), readers));
         }
 
+        return new ArrayList<>(readers);
+    }
+
+    /**
+     * Get admin-only readers list for fallback security.
+     */
+    private List<String> getAdminOnlyReaders(String repositoryId) {
+        Set<String> readers = new HashSet<>();
+        List<User> admins = principalService.getAdmins(repositoryId);
+        if (admins != null) {
+            for (User admin : admins) {
+                readers.add(PREFIX_USER + admin.getUserId());
+            }
+        }
+        // Always include at least the system admin
+        if (readers.isEmpty()) {
+            readers.add(PREFIX_USER + "admin");
+        }
         return new ArrayList<>(readers);
     }
 

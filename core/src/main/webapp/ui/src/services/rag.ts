@@ -5,8 +5,10 @@
  * Requires RAG feature to be enabled on the server.
  */
 
-import { getAuthHeaders } from './auth';
-import type { BaseClient } from './clients/BaseClient';
+import { AuthService } from './auth';
+
+// Helper to get auth headers from singleton AuthService
+const getAuthHeaders = () => AuthService.getInstance().getAuthHeaders();
 
 /**
  * RAG search result representing a document chunk.
@@ -34,6 +36,8 @@ export interface RAGSearchRequest {
   propertyBoost?: number;
   /** Content boost factor (0.0-1.0). Higher values give more weight to body content. */
   contentBoost?: number;
+  /** Admin only: Simulate search as another user. */
+  simulateAsUserId?: string;
 }
 
 /**
@@ -69,7 +73,7 @@ export class RAGService {
    * Check if RAG semantic search is available.
    */
   async getHealth(): Promise<RAGHealthStatus> {
-    const url = `${this.baseUrl}/api/v1/cmis/repositories/${this.repositoryId}/rag/health`;
+    const url = `${this.baseUrl}/core/api/v1/cmis/repositories/${this.repositoryId}/rag/health`;
 
     const response = await fetch(url, {
       method: 'GET',
@@ -93,7 +97,7 @@ export class RAGService {
    * @returns Search results with matching document chunks
    */
   async search(request: RAGSearchRequest): Promise<RAGSearchResponse> {
-    const url = `${this.baseUrl}/api/v1/cmis/repositories/${this.repositoryId}/rag/search`;
+    const url = `${this.baseUrl}/core/api/v1/cmis/repositories/${this.repositoryId}/rag/search`;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -108,7 +112,8 @@ export class RAGService {
         minScore: request.minScore ?? 0.7,
         folderId: request.folderId,
         propertyBoost: request.propertyBoost,
-        contentBoost: request.contentBoost
+        contentBoost: request.contentBoost,
+        simulateAsUserId: request.simulateAsUserId
       })
     });
 
@@ -139,7 +144,7 @@ export class RAGService {
       params.append('folderId', folderId);
     }
 
-    const url = `${this.baseUrl}/api/v1/cmis/repositories/${this.repositoryId}/rag/search?${params.toString()}`;
+    const url = `${this.baseUrl}/core/api/v1/cmis/repositories/${this.repositoryId}/rag/search?${params.toString()}`;
 
     const response = await fetch(url, {
       method: 'GET',

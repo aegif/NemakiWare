@@ -24,17 +24,26 @@ import jakarta.ws.rs.core.UriInfo;
 
 import jp.aegif.nemaki.api.v1.exception.ApiException;
 import jp.aegif.nemaki.api.v1.exception.ProblemDetail;
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.cmis.aspect.PermissionService;
+import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
+import jp.aegif.nemaki.model.UserItem;
+
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import jp.aegif.nemaki.rag.search.VectorSearchException;
 import jp.aegif.nemaki.rag.search.VectorSearchResult;
 import jp.aegif.nemaki.rag.search.VectorSearchService;
 
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -65,6 +74,15 @@ public class RAGSearchResource {
 
     @Autowired
     private RepositoryService repositoryService;
+
+    @Autowired
+    private ContentService contentService;
+
+    @Autowired
+    private PermissionService permissionService;
+
+    @Autowired
+    private TypeManager typeManager;
 
     @Context
     private UriInfo uriInfo;
@@ -144,6 +162,17 @@ public class RAGSearchResource {
             }
             String userId = context.getUsername();
 
+            // Admin simulation: allow admins to search as another user
+            if (request.getSimulateAsUserId() != null && !request.getSimulateAsUserId().trim().isEmpty()) {
+                UserItem currentUser = contentService.getUserItemById(repositoryId, context.getUsername());
+                if (currentUser == null || !currentUser.isAdmin()) {
+                    throw ApiException.permissionDenied("Only administrators can simulate search as another user");
+                }
+                userId = request.getSimulateAsUserId().trim();
+                log.info(String.format("Admin %s simulating RAG search as user %s",
+                        context.getUsername(), userId));
+            }
+
             // Set defaults with topK upper limit
             int topK = request.getTopK() != null ? Math.min(request.getTopK(), MAX_TOP_K) : 10;
             float minScore = request.getMinScore() != null ? request.getMinScore() : 0.7f;
@@ -164,11 +193,21 @@ public class RAGSearchResource {
                         repositoryId, userId, request.getQuery(), topK, minScore);
             }
 
+            // SECURITY: Filter results by current CMIS permissions (double-check against stale Solr ACL)
+            // The CallContext for permission check must use the actual authenticated user, not simulated user
+            List<VectorSearchResult> filteredResults = filterByCurrentPermissions(
+                    repositoryId, context, results);
+
+            if (log.isDebugEnabled() && filteredResults.size() != results.size()) {
+                log.debug(String.format("RAG search filtered %d results due to permission changes (original: %d)",
+                        results.size() - filteredResults.size(), results.size()));
+            }
+
             // Build response
             RAGSearchResponse response = new RAGSearchResponse();
             response.setQuery(request.getQuery());
-            response.setResults(results);
-            response.setTotalResults(results.size());
+            response.setResults(filteredResults);
+            response.setTotalResults(filteredResults.size());
 
             return Response.ok(response).build();
 
@@ -209,7 +248,9 @@ public class RAGSearchResource {
             @Parameter(description = "Property boost factor (0.0-1.0, higher = more weight on metadata)")
             @QueryParam("propertyBoost") Float propertyBoost,
             @Parameter(description = "Content boost factor (0.0-1.0, higher = more weight on body content)")
-            @QueryParam("contentBoost") Float contentBoost) {
+            @QueryParam("contentBoost") Float contentBoost,
+            @Parameter(description = "Admin only: Simulate search as another user")
+            @QueryParam("simulateAsUserId") String simulateAsUserId) {
 
         RAGSearchRequest request = new RAGSearchRequest();
         request.setQuery(query);
@@ -218,6 +259,7 @@ public class RAGSearchResource {
         request.setFolderId(folderId);
         request.setPropertyBoost(propertyBoost);
         request.setContentBoost(contentBoost);
+        request.setSimulateAsUserId(simulateAsUserId);
 
         return search(repositoryId, request);
     }
@@ -292,6 +334,81 @@ public class RAGSearchResource {
         return (CallContext) httpRequest.getAttribute("CallContext");
     }
 
+    /**
+     * Filter search results by current CMIS permissions.
+     * This provides a security double-check against potentially stale Solr ACL data.
+     *
+     * @param repositoryId Repository ID
+     * @param context Current user's call context
+     * @param results Search results to filter
+     * @return Filtered results that the user can actually access
+     */
+    private List<VectorSearchResult> filterByCurrentPermissions(
+            String repositoryId, CallContext context, List<VectorSearchResult> results) {
+
+        if (results == null || results.isEmpty()) {
+            return results;
+        }
+
+        List<VectorSearchResult> filtered = new ArrayList<>();
+
+        for (VectorSearchResult result : results) {
+            try {
+                String documentId = result.getDocumentId();
+                if (documentId == null) {
+                    continue;
+                }
+
+                // Get the document content
+                jp.aegif.nemaki.model.Content content = contentService.getContent(repositoryId, documentId);
+                if (content == null) {
+                    // Document no longer exists
+                    if (log.isDebugEnabled()) {
+                        log.debug("RAG result filtered: document " + documentId + " not found");
+                    }
+                    continue;
+                }
+
+                // Get base type from TypeManager (required for permission check)
+                TypeDefinition td = typeManager.getTypeDefinition(repositoryId, content);
+                if (td == null) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("RAG result filtered: type definition not found for " + documentId);
+                    }
+                    continue;
+                }
+                String baseType = td.getBaseTypeId().value();
+
+                // Check read permission using calculated ACL
+                jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
+                String key = PermissionMapping.CAN_GET_PROPERTIES_OBJECT;
+
+                Boolean hasPermission = permissionService.checkPermission(
+                        context, repositoryId, key, acl, baseType, content);
+
+                if (hasPermission != null && hasPermission) {
+                    filtered.add(result);
+                } else {
+                    if (log.isDebugEnabled()) {
+                        log.debug("RAG result filtered: user " + context.getUsername() +
+                                " lacks permission for document " + documentId);
+                    }
+                }
+            } catch (Exception e) {
+                // If permission check fails, exclude the result for security
+                log.warn("RAG permission check failed for document " + result.getDocumentId() +
+                        ": " + e.getMessage());
+            }
+        }
+
+        if (log.isDebugEnabled() && filtered.size() != results.size()) {
+            log.debug("RAG filter removed " + (results.size() - filtered.size()) +
+                    " results due to permission checks");
+        }
+
+        return filtered;
+    }
+
     // Request/Response DTOs
 
     @Schema(description = "RAG search request")
@@ -313,6 +430,9 @@ public class RAGSearchResource {
 
         @Schema(description = "Content boost factor (0.0-1.0). Higher values give more weight to document body content. Default: 0.7")
         private Float contentBoost;
+
+        @Schema(description = "Admin only: Simulate search as another user. Requires admin privileges.")
+        private String simulateAsUserId;
 
         public String getQuery() {
             return query;
@@ -360,6 +480,14 @@ public class RAGSearchResource {
 
         public void setContentBoost(Float contentBoost) {
             this.contentBoost = contentBoost;
+        }
+
+        public String getSimulateAsUserId() {
+            return simulateAsUserId;
+        }
+
+        public void setSimulateAsUserId(String simulateAsUserId) {
+            this.simulateAsUserId = simulateAsUserId;
         }
     }
 

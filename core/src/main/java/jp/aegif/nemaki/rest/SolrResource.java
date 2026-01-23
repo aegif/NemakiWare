@@ -1,5 +1,8 @@
 package jp.aegif.nemaki.rest;
 
+import jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService;
+import jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService.RAGHealthStatus;
+import jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService.RAGReindexStatus;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService.IndexHealthStatus;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService.ReindexStatus;
@@ -43,6 +46,7 @@ public class SolrResource extends ResourceBase {
 
 	private SolrUtil solrUtil;
 	private SolrIndexMaintenanceService solrIndexMaintenanceService;
+	private RAGIndexMaintenanceService ragIndexMaintenanceService;
 
 	public void setSolrUtil(SolrUtil solrUtil) {
 		this.solrUtil = solrUtil;
@@ -50,6 +54,10 @@ public class SolrResource extends ResourceBase {
 
 	public void setSolrIndexMaintenanceService(SolrIndexMaintenanceService solrIndexMaintenanceService) {
 		this.solrIndexMaintenanceService = solrIndexMaintenanceService;
+	}
+
+	public void setRagIndexMaintenanceService(RAGIndexMaintenanceService ragIndexMaintenanceService) {
+		this.ragIndexMaintenanceService = ragIndexMaintenanceService;
 	}
 
 	/**
@@ -94,6 +102,26 @@ public class SolrResource extends ResourceBase {
 			log.error("Failed to get SolrIndexMaintenanceService from SpringContext: " + e.getMessage(), e);
 		}
 		log.error("SolrIndexMaintenanceService is null and SpringContext fallback failed");
+		return null;
+	}
+
+	/**
+	 * Get RAGIndexMaintenanceService with fallback to SpringContext lookup.
+	 */
+	private RAGIndexMaintenanceService getRAGMaintenanceService() {
+		if (ragIndexMaintenanceService != null) {
+			return ragIndexMaintenanceService;
+		}
+		try {
+			RAGIndexMaintenanceService service = SpringContext.getApplicationContext()
+					.getBean(RAGIndexMaintenanceService.class);
+			if (service != null) {
+				log.debug("RAGIndexMaintenanceService retrieved from SpringContext successfully");
+				return service;
+			}
+		} catch (Exception e) {
+			log.debug("RAGIndexMaintenanceService not available: " + e.getMessage());
+		}
 		return null;
 	}
 
@@ -582,6 +610,237 @@ public class SolrResource extends ResourceBase {
 		}
 
 		result.put("message", "Index optimized successfully");
+		return makeResult(status, result, errMsg).toString();
+	}
+
+	// ========================================
+	// RAG Index Maintenance Endpoints
+	// ========================================
+
+	@POST
+	@Path("/rag/reindex")
+	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public String ragReindex(@PathParam("repositoryId") String repositoryId,
+			@Context HttpServletRequest request) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		if (!checkAdmin(errMsg, request)) {
+			return makeResult(status, result, errMsg).toString();
+		}
+
+		RAGIndexMaintenanceService service = getRAGMaintenanceService();
+		if (service == null || !service.isRAGEnabled()) {
+			errMsg.add("RAG index maintenance service is not available or RAG is disabled");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		boolean started = service.startFullRAGReindex(repositoryId);
+		if (!started) {
+			errMsg.add("RAG reindex already in progress for this repository");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		result.put("message", "Full RAG reindex started");
+		result.put("repositoryId", repositoryId);
+		return makeResult(status, result, errMsg).toString();
+	}
+
+	@POST
+	@Path("/rag/reindex/folder/{folderId}")
+	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public String ragReindexFolder(@PathParam("repositoryId") String repositoryId,
+			@PathParam("folderId") String folderId,
+			@QueryParam("recursive") @DefaultValue("true") boolean recursive,
+			@Context HttpServletRequest request) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		if (!checkAdmin(errMsg, request)) {
+			return makeResult(status, result, errMsg).toString();
+		}
+
+		RAGIndexMaintenanceService service = getRAGMaintenanceService();
+		if (service == null || !service.isRAGEnabled()) {
+			errMsg.add("RAG index maintenance service is not available or RAG is disabled");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		boolean started = service.startFolderRAGReindex(repositoryId, folderId, recursive);
+		if (!started) {
+			errMsg.add("RAG reindex already in progress for this repository");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		result.put("message", "RAG folder reindex started");
+		result.put("folderId", folderId);
+		result.put("recursive", recursive);
+		return makeResult(status, result, errMsg).toString();
+	}
+
+	@GET
+	@Path("/rag/status")
+	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public String getRagStatus(@PathParam("repositoryId") String repositoryId,
+			@Context HttpServletRequest request) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		if (!checkAdmin(errMsg, request)) {
+			return makeResult(status, result, errMsg).toString();
+		}
+
+		RAGIndexMaintenanceService service = getRAGMaintenanceService();
+		if (service == null) {
+			errMsg.add("RAG index maintenance service is not available");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		RAGReindexStatus ragStatus = service.getRAGReindexStatus(repositoryId);
+		result.put("repositoryId", ragStatus.getRepositoryId());
+		result.put("status", ragStatus.getStatus());
+		result.put("totalDocuments", ragStatus.getTotalDocuments());
+		result.put("indexedCount", ragStatus.getIndexedCount());
+		result.put("skippedCount", ragStatus.getSkippedCount());
+		result.put("errorCount", ragStatus.getErrorCount());
+		result.put("startTime", ragStatus.getStartTime());
+		result.put("endTime", ragStatus.getEndTime());
+		result.put("currentDocument", ragStatus.getCurrentDocument());
+		result.put("errorMessage", ragStatus.getErrorMessage());
+
+		List<String> errors = ragStatus.getErrors();
+		JSONArray errorsArray = new JSONArray();
+		if (errors != null) {
+			errorsArray.addAll(errors);
+		}
+		result.put("errors", errorsArray);
+
+		return makeResult(status, result, errMsg).toString();
+	}
+
+	@GET
+	@Path("/rag/health")
+	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public String checkRagHealth(@PathParam("repositoryId") String repositoryId,
+			@Context HttpServletRequest request) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		if (!checkAdmin(errMsg, request)) {
+			return makeResult(status, result, errMsg).toString();
+		}
+
+		RAGIndexMaintenanceService service = getRAGMaintenanceService();
+		if (service == null) {
+			errMsg.add("RAG index maintenance service is not available");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		RAGHealthStatus healthStatus = service.checkRAGHealth(repositoryId);
+		result.put("repositoryId", healthStatus.getRepositoryId());
+		result.put("ragDocumentCount", healthStatus.getRagDocumentCount());
+		result.put("ragChunkCount", healthStatus.getRagChunkCount());
+		result.put("eligibleDocuments", healthStatus.getEligibleDocuments());
+		result.put("enabled", healthStatus.isEnabled());
+		result.put("healthy", healthStatus.isHealthy());
+		result.put("message", healthStatus.getMessage());
+		result.put("checkTime", healthStatus.getCheckTime());
+
+		return makeResult(status, result, errMsg).toString();
+	}
+
+	@POST
+	@Path("/rag/cancel")
+	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public String cancelRagReindex(@PathParam("repositoryId") String repositoryId,
+			@Context HttpServletRequest request) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		if (!checkAdmin(errMsg, request)) {
+			return makeResult(status, result, errMsg).toString();
+		}
+
+		RAGIndexMaintenanceService service = getRAGMaintenanceService();
+		if (service == null) {
+			errMsg.add("RAG index maintenance service is not available");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		boolean cancelled = service.cancelRAGReindex(repositoryId);
+		result.put("cancelled", cancelled);
+		return makeResult(status, result, errMsg).toString();
+	}
+
+	@POST
+	@Path("/rag/clear")
+	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public String clearRagIndex(@PathParam("repositoryId") String repositoryId,
+			@Context HttpServletRequest request) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		if (!checkAdmin(errMsg, request)) {
+			return makeResult(status, result, errMsg).toString();
+		}
+
+		RAGIndexMaintenanceService service = getRAGMaintenanceService();
+		if (service == null) {
+			errMsg.add("RAG index maintenance service is not available");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		boolean success = service.clearRAGIndex(repositoryId);
+		if (!success) {
+			errMsg.add("Failed to clear RAG index");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		result.put("message", "RAG index cleared successfully");
+		return makeResult(status, result, errMsg).toString();
+	}
+
+	@POST
+	@Path("/rag/reindex/document/{objectId}")
+	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public String ragReindexDocument(@PathParam("repositoryId") String repositoryId,
+			@PathParam("objectId") String objectId,
+			@Context HttpServletRequest request) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		if (!checkAdmin(errMsg, request)) {
+			return makeResult(status, result, errMsg).toString();
+		}
+
+		RAGIndexMaintenanceService service = getRAGMaintenanceService();
+		if (service == null || !service.isRAGEnabled()) {
+			errMsg.add("RAG index maintenance service is not available or RAG is disabled");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		boolean success = service.reindexDocument(repositoryId, objectId);
+		if (!success) {
+			errMsg.add("Failed to reindex document in RAG: " + objectId);
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		result.put("message", "Document reindexed in RAG successfully");
+		result.put("objectId", objectId);
 		return makeResult(status, result, errMsg).toString();
 	}
 

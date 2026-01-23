@@ -245,7 +245,8 @@ import {
   DatePicker,
   message,
   Tooltip,
-  Checkbox
+  Checkbox,
+  Tabs
 } from 'antd';
 import {
   SearchOutlined,
@@ -259,6 +260,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, SearchResult, TypeDefinition, PropertyDefinition } from '../../types/cmis';
+import { SemanticSearch } from '../SemanticSearch/SemanticSearch';
 import { InputNumber } from 'antd';
 
 interface SearchResultsProps {
@@ -711,14 +713,27 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
     },
   ];
 
+  // Handle document click from semantic search - navigate to document detail
+  const handleSemanticDocumentClick = (documentId: string) => {
+    navigate(`/documents/${documentId}`);
+  };
+
   return (
     <div>
-      <Card title={t('searchResults.title')} style={{ marginBottom: 16 }}>
-        <Form
-          form={form}
-          onFinish={handleSearch}
-          layout="vertical"
-        >
+      <Tabs
+        defaultActiveKey="fulltext"
+        items={[
+          {
+            key: 'fulltext',
+            label: t('search.fulltext'),
+            children: (
+              <>
+                <Card title={t('searchResults.title')} style={{ marginBottom: 16 }}>
+                  <Form
+                    form={form}
+                    onFinish={handleSearch}
+                    layout="vertical"
+                  >
           <Form.Item
             name="query"
             label={t('searchResults.fullTextSearch')}
@@ -1012,29 +1027,44 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
               color: '#666',
               fontFamily: 'monospace',
               wordBreak: 'break-all'
-            }}>
-              <span style={{ fontWeight: 'bold', marginRight: 8 }}>{t('searchResults.executedQuery')}:</span>
-              {lastExecutedQuery}
-            </div>
-          )}
-        </Form>
-      </Card>
+                }}>
+                  <span style={{ fontWeight: 'bold', marginRight: 8 }}>{t('searchResults.executedQuery')}:</span>
+                  {lastExecutedQuery}
+                </div>
+              )}
+              </Form>
+            </Card>
 
-      {searchResult && (
-        <Card 
-          title={t('searchResults.results', { count: searchResult.numItems })}
-          extra={searchResult.hasMoreItems && <span style={{ color: '#999' }}>{t('common.moreResults')}</span>}
-        >
-          <Table
-            columns={columns}
-            dataSource={searchResult.objects}
-            rowKey="id"
-            loading={loading}
-            pagination={{ pageSize: 20 }}
-            size="small"
-          />
-        </Card>
-      )}
+              {searchResult && (
+                <Card
+                  title={t('searchResults.results', { count: searchResult.numItems })}
+                  extra={searchResult.hasMoreItems && <span style={{ color: '#999' }}>{t('common.moreResults')}</span>}
+                >
+                  <Table
+                    columns={columns}
+                    dataSource={searchResult.objects}
+                    rowKey="id"
+                    loading={loading}
+                    pagination={{ pageSize: 20 }}
+                    size="small"
+                  />
+                </Card>
+              )}
+            </>
+          )
+        },
+        {
+          key: 'semantic',
+          label: t('search.semantic'),
+          children: (
+            <SemanticSearch
+              repositoryId={repositoryId}
+              onDocumentClick={handleSemanticDocumentClick}
+            />
+          )
+        }
+      ]}
+    />
     </div>
   );
 };

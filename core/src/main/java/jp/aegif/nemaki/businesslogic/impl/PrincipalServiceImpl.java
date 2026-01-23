@@ -86,13 +86,19 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 	private boolean containsUserInGroup(String repositoryId, String userId, Group group) {
 		log.debug("$$ group:" + group.getName());
-		if ( group.getUsers().contains(userId))
+		// Null check for users list
+		if (group.getUsers() != null && group.getUsers().contains(userId))
 			return true;
-		for(String groupId: group.getGroups() ) {
-			log.debug("$$ subgroup: " + groupId);
-			Group g = this.getGroupById(repositoryId, groupId);
-			boolean result = containsUserInGroup(repositoryId, userId, g);
-			if ( result ) return true;
+		// Null check for groups list
+		if (group.getGroups() != null) {
+			for(String groupId: group.getGroups() ) {
+				log.debug("$$ subgroup: " + groupId);
+				Group g = this.getGroupById(repositoryId, groupId);
+				if (g != null) {
+					boolean result = containsUserInGroup(repositoryId, userId, g);
+					if ( result ) return true;
+				}
+			}
 		}
 		return false;
 	}

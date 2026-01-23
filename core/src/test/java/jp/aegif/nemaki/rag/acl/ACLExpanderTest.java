@@ -8,6 +8,7 @@ import org.mockito.junit.MockitoJUnitRunner;
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
@@ -40,6 +41,9 @@ public class ACLExpanderTest {
     private PrincipalService principalService;
 
     @Mock
+    private ContentService contentService;
+
+    @Mock
     private Content content;
 
     @Mock
@@ -49,7 +53,10 @@ public class ACLExpanderTest {
 
     @Before
     public void setUp() {
-        aclExpander = new ACLExpander(principalService);
+        aclExpander = new ACLExpander(principalService, contentService);
+        // Default: contentService.calculateAcl returns the content's ACL
+        when(contentService.calculateAcl(eq(REPO_ID), any(Content.class))).thenAnswer(
+                invocation -> invocation.getArgument(1, Content.class).getAcl());
     }
 
     // ========== expandToReaders Tests ==========
@@ -57,36 +64,42 @@ public class ACLExpanderTest {
     @Test
     public void testExpandToReadersWithNullAcl() {
         when(content.getAcl()).thenReturn(null);
+        when(content.getId()).thenReturn("doc-1");
+        when(contentService.calculateAcl(REPO_ID, content)).thenReturn(null);
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
         assertNotNull("Readers should not be null", readers);
-        assertEquals("Null ACL should result in 'anyone' reader", 1, readers.size());
-        assertTrue("Should contain 'anyone'", readers.contains("anyone"));
+        // Null ACL should now default to admin-only for security
+        assertTrue("Null ACL should result in admin-only readers", readers.contains("user:admin"));
     }
 
     @Test
     public void testExpandToReadersWithEmptyAces() {
         when(content.getAcl()).thenReturn(acl);
+        when(content.getId()).thenReturn("doc-1");
         when(acl.getAllAces()).thenReturn(new ArrayList<>());
+        when(contentService.calculateAcl(REPO_ID, content)).thenReturn(acl);
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
         assertNotNull("Readers should not be null", readers);
-        assertEquals("Empty ACEs should result in 'anyone' reader", 1, readers.size());
-        assertTrue("Should contain 'anyone'", readers.contains("anyone"));
+        // Empty ACEs should now default to admin-only for security
+        assertTrue("Empty ACEs should result in admin-only readers", readers.contains("user:admin"));
     }
 
     @Test
     public void testExpandToReadersWithNullAces() {
         when(content.getAcl()).thenReturn(acl);
+        when(content.getId()).thenReturn("doc-1");
         when(acl.getAllAces()).thenReturn(null);
+        when(contentService.calculateAcl(REPO_ID, content)).thenReturn(acl);
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
         assertNotNull("Readers should not be null", readers);
-        assertEquals("Null ACEs should result in 'anyone' reader", 1, readers.size());
-        assertTrue("Should contain 'anyone'", readers.contains("anyone"));
+        // Null ACEs should now default to admin-only for security
+        assertTrue("Null ACEs should result in admin-only readers", readers.contains("user:admin"));
     }
 
     @Test
