@@ -786,4 +786,24 @@
         <property name="solrIndexMaintenanceService" ref="SolrIndexMaintenanceService" />
     </bean>
 
+    <!-- Directory Sync Service -->
+    <bean id="DirectorySyncService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.sync.service.DirectorySyncService</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="directorySyncService" />
+        </property>
+    </bean>
+    <bean id="directorySyncService" class="jp.aegif.nemaki.sync.service.DirectorySyncServiceImpl">
+        <property name="contentService" ref="ContentService" />
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
+    <bean id="directorySyncResource" class="jp.aegif.nemaki.rest.DirectorySyncResource">
+        <property name="directorySyncService" ref="DirectorySyncService" />
+    </bean>
+
 </beans>

@@ -1,0 +1,67 @@
+# Test users for NemakiWare Directory Sync testing
+# Password for all users: password (SSHA hashed)
+
+dn: uid=yamada,ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+uid: yamada
+cn: Taro Yamada
+sn: Yamada
+givenName: Taro
+displayName: Yamada Taro
+mail: yamada@example.org
+userPassword: {SSHA}5en6G6MezRroT3XKqkdPOmY/BfQ8YQw=
+
+dn: uid=suzuki,ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+uid: suzuki
+cn: Hanako Suzuki
+sn: Suzuki
+givenName: Hanako
+displayName: Suzuki Hanako
+mail: suzuki@example.org
+userPassword: {SSHA}5en6G6MezRroT3XKqkdPOmY/BfQ8YQw=
+
+dn: uid=tanaka,ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+uid: tanaka
+cn: Ichiro Tanaka
+sn: Tanaka
+givenName: Ichiro
+displayName: Tanaka Ichiro
+mail: tanaka@example.org
+userPassword: {SSHA}5en6G6MezRroT3XKqkdPOmY/BfQ8YQw=
+
+dn: uid=sato,ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+uid: sato
+cn: Yuki Sato
+sn: Sato
+givenName: Yuki
+displayName: Sato Yuki
+mail: sato@example.org
+userPassword: {SSHA}5en6G6MezRroT3XKqkdPOmY/BfQ8YQw=
+
+dn: uid=watanabe,ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+uid: watanabe
+cn: Kenji Watanabe
+sn: Watanabe
+givenName: Kenji
+displayName: Watanabe Kenji
+mail: watanabe@example.org
+userPassword: {SSHA}5en6G6MezRroT3XKqkdPOmY/BfQ8YQw=

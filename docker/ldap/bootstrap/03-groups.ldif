@@ -1,0 +1,47 @@
+# Test groups for NemakiWare Directory Sync testing
+# Using groupOfNames objectClass with member attribute
+
+dn: cn=engineering,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+objectClass: top
+cn: engineering
+description: Engineering Department
+member: uid=yamada,ou=users,dc=example,dc=org
+member: uid=tanaka,ou=users,dc=example,dc=org
+member: uid=watanabe,ou=users,dc=example,dc=org
+
+dn: cn=sales,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+objectClass: top
+cn: sales
+description: Sales Department
+member: uid=suzuki,ou=users,dc=example,dc=org
+member: uid=sato,ou=users,dc=example,dc=org
+
+dn: cn=managers,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+objectClass: top
+cn: managers
+description: Management Team
+member: uid=yamada,ou=users,dc=example,dc=org
+member: uid=suzuki,ou=users,dc=example,dc=org
+
+dn: cn=all-staff,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+objectClass: top
+cn: all-staff
+description: All Staff Members
+member: uid=yamada,ou=users,dc=example,dc=org
+member: uid=suzuki,ou=users,dc=example,dc=org
+member: uid=tanaka,ou=users,dc=example,dc=org
+member: uid=sato,ou=users,dc=example,dc=org
+member: uid=watanabe,ou=users,dc=example,dc=org
+
+dn: cn=project-alpha,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+objectClass: top
+cn: project-alpha
+description: Project Alpha Team
+member: uid=yamada,ou=users,dc=example,dc=org
+member: uid=tanaka,ou=users,dc=example,dc=org
+member: uid=sato,ou=users,dc=example,dc=org

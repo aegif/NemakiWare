@@ -379,6 +379,13 @@
 			<version>0.4</version>
 		</dependency>
 
+		<!-- Spring LDAP for Directory Sync feature -->
+		<dependency>
+			<groupId>org.springframework.ldap</groupId>
+			<artifactId>spring-ldap-core</artifactId>
+			<version>3.2.4</version>
+		</dependency>
+
 		<dependency>
 			<groupId>org.glassfish.jersey.core</groupId>
 			<artifactId>jersey-server</artifactId>

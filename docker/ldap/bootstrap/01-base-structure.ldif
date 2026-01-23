@@ -1,0 +1,17 @@
+# Base organizational structure for NemakiWare Directory Sync testing
+# This file creates the basic OU structure
+
+dn: ou=users,dc=example,dc=org
+objectClass: organizationalUnit
+ou: users
+description: Container for user accounts
+
+dn: ou=groups,dc=example,dc=org
+objectClass: organizationalUnit
+ou: groups
+description: Container for group definitions
+
+dn: ou=departments,dc=example,dc=org
+objectClass: organizationalUnit
+ou: departments
+description: Container for department-based groups
