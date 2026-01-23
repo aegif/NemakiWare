@@ -239,10 +239,23 @@ public class LdapDirectoryConnector {
             return false;
         }
         String lowerDn = dn.toLowerCase();
+        
+        String userSearchBase = config.getUserSearchBase();
+        if (userSearchBase != null && !userSearchBase.isEmpty()) {
+            if (lowerDn.contains(userSearchBase.toLowerCase())) {
+                return false;
+            }
+        }
+        
         String groupSearchBase = config.getGroupSearchBase();
         if (groupSearchBase != null && !groupSearchBase.isEmpty()) {
             return lowerDn.contains(groupSearchBase.toLowerCase());
         }
+        
+        if (lowerDn.contains("ou=users") || lowerDn.contains("cn=users")) {
+            return false;
+        }
+        
         return lowerDn.contains("ou=groups") || lowerDn.contains("cn=groups");
     }
 

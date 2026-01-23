@@ -62,11 +62,15 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
     private PropertyManager propertyManager;
     
     private final Map<String, DirectorySyncResult> lastSyncResults = new ConcurrentHashMap<>();
-    private final Object syncLock = new Object();
+    private final Map<String, Object> repositoryLocks = new ConcurrentHashMap<>();
+
+    private Object getRepositoryLock(String repositoryId) {
+        return repositoryLocks.computeIfAbsent(repositoryId, k -> new Object());
+    }
 
     @Override
     public DirectorySyncResult syncGroups(String repositoryId, boolean dryRun) {
-        synchronized (syncLock) {
+        synchronized (getRepositoryLock(repositoryId)) {
             DirectorySyncResult result = new DirectorySyncResult(repositoryId, dryRun);
             
             try {
@@ -217,6 +221,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 if (userId != null && userId.startsWith(userPrefix) && !ldapUserIds.contains(userId)) {
                     try {
                         if (!dryRun) {
+                            removeUserFromAllGroups(repositoryId, userId);
                             contentService.delete(new SystemCallContext(repositoryId), repositoryId, existingUser.getId(), false);
                         }
                         result.incrementUsersRemoved();
@@ -226,6 +231,22 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                         result.addWarning(userId, "Delete failed: " + e.getMessage());
                     }
                 }
+            }
+        }
+    }
+
+    private void removeUserFromAllGroups(String repositoryId, String userId) {
+        List<GroupItem> allGroups = contentService.getGroupItems(repositoryId);
+        for (GroupItem group : allGroups) {
+            List<String> users = group.getUsers();
+            if (users != null && users.contains(userId)) {
+                List<String> updatedUsers = new ArrayList<>(users);
+                updatedUsers.remove(userId);
+                group.setUsers(updatedUsers);
+                group.setModifier("system");
+                group.setModified(new GregorianCalendar());
+                contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
+                log.debug("Removed user " + userId + " from group " + group.getGroupId());
             }
         }
     }
@@ -384,10 +405,17 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
     }
 
     private boolean hasGroupChanges(GroupItem existingGroup, LdapGroup ldapGroup, String groupPrefix, DirectorySyncConfig config) {
-        Set<String> existingUsers = new HashSet<>(existingGroup.getUsers() != null ? existingGroup.getUsers() : new ArrayList<>());
-        Set<String> ldapUsers = new HashSet<>(ldapGroup.getMemberUserIds() != null ? ldapGroup.getMemberUserIds() : new ArrayList<>());
+        String userPrefix = config.getUserPrefix() != null ? config.getUserPrefix() : "";
         
-        if (!existingUsers.equals(ldapUsers)) {
+        Set<String> existingUsers = new HashSet<>(existingGroup.getUsers() != null ? existingGroup.getUsers() : new ArrayList<>());
+        Set<String> ldapUsersWithPrefix = new HashSet<>();
+        if (ldapGroup.getMemberUserIds() != null) {
+            for (String userId : ldapGroup.getMemberUserIds()) {
+                ldapUsersWithPrefix.add(userPrefix + userId);
+            }
+        }
+        
+        if (!existingUsers.equals(ldapUsersWithPrefix)) {
             return true;
         }
 
@@ -424,8 +452,13 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
     private void createGroup(String repositoryId, LdapGroup ldapGroup, String groupPrefix, DirectorySyncConfig config) {
         String nemakiGroupId = groupPrefix + ldapGroup.getGroupId();
         
-        List<String> users = ldapGroup.getMemberUserIds() != null ? 
-                new ArrayList<>(ldapGroup.getMemberUserIds()) : new ArrayList<>();
+        String userPrefix = config.getUserPrefix() != null ? config.getUserPrefix() : "";
+        List<String> users = new ArrayList<>();
+        if (ldapGroup.getMemberUserIds() != null) {
+            for (String userId : ldapGroup.getMemberUserIds()) {
+                users.add(userPrefix + userId);
+            }
+        }
         
         List<String> subGroups = new ArrayList<>();
         if (config.isSyncNestedGroups() && ldapGroup.getMemberGroupIds() != null) {
@@ -461,8 +494,13 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
     }
 
     private void updateGroup(String repositoryId, GroupItem existingGroup, LdapGroup ldapGroup, String groupPrefix, DirectorySyncConfig config) {
-        List<String> users = ldapGroup.getMemberUserIds() != null ? 
-                new ArrayList<>(ldapGroup.getMemberUserIds()) : new ArrayList<>();
+        String userPrefix = config.getUserPrefix() != null ? config.getUserPrefix() : "";
+        List<String> users = new ArrayList<>();
+        if (ldapGroup.getMemberUserIds() != null) {
+            for (String userId : ldapGroup.getMemberUserIds()) {
+                users.add(userPrefix + userId);
+            }
+        }
         
         List<String> subGroups = new ArrayList<>();
         if (config.isSyncNestedGroups() && ldapGroup.getMemberGroupIds() != null) {
@@ -563,6 +601,13 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
     @Override
     public boolean testConnection(String repositoryId) {
         DirectorySyncConfig config = getConfig(repositoryId);
+        
+        List<String> validationErrors = validateConfig(config);
+        if (!validationErrors.isEmpty()) {
+            log.warn("Configuration validation failed: " + String.join(", ", validationErrors));
+            return false;
+        }
+        
         LdapDirectoryConnector connector = new LdapDirectoryConnector(config);
         return connector.testConnection();
     }

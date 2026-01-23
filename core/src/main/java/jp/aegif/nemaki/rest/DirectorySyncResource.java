@@ -246,7 +246,9 @@ public class DirectorySyncResource extends ResourceBase {
         json.put("groupsDeleted", syncResult.getGroupsDeleted());
         json.put("groupsSkipped", syncResult.getGroupsSkipped());
         json.put("usersAdded", syncResult.getUsersAdded());
+        json.put("usersUpdated", syncResult.getUsersUpdated());
         json.put("usersRemoved", syncResult.getUsersRemoved());
+        json.put("usersSkipped", syncResult.getUsersSkipped());
         
         JSONArray errors = new JSONArray();
         if (syncResult.getErrors() != null) {
@@ -293,8 +295,11 @@ public class DirectorySyncResource extends ResourceBase {
         json.put("userIdAttribute", config.getUserIdAttribute());
         json.put("syncNestedGroups", config.isSyncNestedGroups());
         json.put("createMissingUsers", config.isCreateMissingUsers());
+        json.put("updateExistingUsers", config.isUpdateExistingUsers());
         json.put("deleteOrphanGroups", config.isDeleteOrphanGroups());
+        json.put("deleteOrphanUsers", config.isDeleteOrphanUsers());
         json.put("groupPrefix", config.getGroupPrefix());
+        json.put("userPrefix", config.getUserPrefix());
         json.put("scheduleEnabled", config.isScheduleEnabled());
         json.put("cronExpression", config.getCronExpression());
         json.put("lastSyncTime", config.getLastSyncTime() != null ? config.getLastSyncTime().getTimeInMillis() : null);
