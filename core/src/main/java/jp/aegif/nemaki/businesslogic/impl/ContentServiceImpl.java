@@ -302,26 +302,120 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public List<Document> getAllVersions(CallContext callContext, String repositoryId, String versionSeriesId) {
 		List<Document> results = new ArrayList<Document>();
+		String currentUser = (callContext != null) ? callContext.getUsername() : null;
 
-		// TODO hide PWC from a non-owner user
 		List<Document> versions = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
 
 		if (CollectionUtils.isNotEmpty(versions)) {
 			for (Document doc : versions) {
 				if (!doc.isPrivateWorkingCopy()) {
+					// Non-PWC documents are always visible
 					results.add(doc);
+				} else {
+					// PWC is only visible to its owner
+					String pwcOwner = doc.getVersionSeriesCheckedOutBy();
+					if (currentUser != null && currentUser.equals(pwcOwner)) {
+						results.add(doc);
+					} else {
+						log.debug("getAllVersions: Hiding PWC " + doc.getId() + " from user " + currentUser + " (owner: " + pwcOwner + ")");
+					}
 				}
 			}
 		}
 
-		return contentDaoService.getAllVersions(repositoryId, versionSeriesId);
+		return results;
 	}
 
-	// TODO enable orderBy
 	@Override
 	public List<Document> getCheckedOutDocs(String repositoryId, String folderId, String orderBy,
 			ExtensionsData extension) {
-		return contentDaoService.getCheckedOutDocuments(repositoryId, folderId);
+		List<Document> docs = contentDaoService.getCheckedOutDocuments(repositoryId, folderId);
+		
+		// Apply orderBy if specified
+		if (orderBy != null && !orderBy.trim().isEmpty() && CollectionUtils.isNotEmpty(docs)) {
+			docs = applySorting(docs, orderBy);
+		}
+		
+		return docs;
+	}
+	
+	/**
+	 * Apply CMIS orderBy sorting to a list of documents.
+	 * Supports: cmis:name, cmis:creationDate, cmis:lastModificationDate
+	 * Format: "propertyId [ASC|DESC], ..."
+	 */
+	private List<Document> applySorting(List<Document> docs, String orderBy) {
+		if (docs == null || docs.isEmpty()) {
+			return docs;
+		}
+		
+		// Parse first orderBy clause (multiple clauses would require more complex comparator)
+		String[] parts = orderBy.trim().split("\\s+");
+		String propertyId = parts[0].trim();
+		boolean ascending = true;
+		if (parts.length > 1) {
+			String direction = parts[1].trim().toUpperCase();
+			if ("DESC".equals(direction)) {
+				ascending = false;
+			}
+		}
+		
+		final boolean sortAscending = ascending;
+		
+		try {
+			List<Document> sorted = new ArrayList<>(docs);
+			sorted.sort((d1, d2) -> {
+				Comparable<?> v1 = getComparableValue(d1, propertyId);
+				Comparable<?> v2 = getComparableValue(d2, propertyId);
+				
+				if (v1 == null && v2 == null) return 0;
+				if (v1 == null) return sortAscending ? -1 : 1;
+				if (v2 == null) return sortAscending ? 1 : -1;
+				
+				@SuppressWarnings("unchecked")
+				int result = ((Comparable<Object>) v1).compareTo(v2);
+				return sortAscending ? result : -result;
+			});
+			return sorted;
+		} catch (Exception e) {
+			log.warn("getCheckedOutDocs: Failed to apply orderBy '" + orderBy + "': " + e.getMessage());
+			return docs;
+		}
+	}
+	
+	private Comparable<?> getComparableValue(Document doc, String propertyId) {
+		if (doc == null) return null;
+
+		// Use PropertyIds constants (cmis:name, cmis:creationDate, etc.)
+		if (PropertyIds.NAME.equals(propertyId)) {
+			return doc.getName();
+		} else if (PropertyIds.CREATION_DATE.equals(propertyId)) {
+			return doc.getCreated();
+		} else if (PropertyIds.LAST_MODIFICATION_DATE.equals(propertyId)) {
+			return doc.getModified();
+		} else if (PropertyIds.CREATED_BY.equals(propertyId)) {
+			return doc.getCreator();
+		} else if (PropertyIds.LAST_MODIFIED_BY.equals(propertyId)) {
+			return doc.getModifier();
+		} else if (PropertyIds.CONTENT_STREAM_LENGTH.equals(propertyId)) {
+			// Note: Would need to fetch attachment for actual size
+			return null;
+		} else {
+			// For custom properties, try to get from subTypeProperties
+			List<Property> subTypeProps = doc.getSubTypeProperties();
+			if (subTypeProps != null) {
+				for (Property prop : subTypeProps) {
+					if (prop != null && propertyId.equals(prop.getKey())) {
+						Object value = prop.getValue();
+						if (value instanceof Comparable) {
+							return (Comparable<?>) value;
+						}
+						break;
+					}
+				}
+			}
+			return null;
+		}
 	}
 
 	@Override
