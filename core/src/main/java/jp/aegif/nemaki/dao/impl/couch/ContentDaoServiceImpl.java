@@ -2564,9 +2564,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		try {
 			// Use CloudantClientWrapper's bulk delete capability
-			connectorPool.getClient(repositoryId).deleteDocumentsBatch(objectIds);
-			log.info("deleteBulk: Successfully deleted " + objectIds.size() + " objects in bulk");
-			return objectIds.size();
+			// Returns actual number of documents deleted
+			int deletedCount = connectorPool.getClient(repositoryId).deleteDocumentsBatch(objectIds);
+			log.info("deleteBulk: Bulk deletion completed. " + deletedCount + " of " + objectIds.size() + " objects deleted");
+			return deletedCount;
 		} catch (Exception e) {
 			log.error("deleteBulk: Bulk deletion failed for repository " + repositoryId + ": " + e.getMessage());
 			// Fall back to individual deletes
