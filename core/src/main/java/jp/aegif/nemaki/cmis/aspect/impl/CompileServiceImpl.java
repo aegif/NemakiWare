@@ -181,8 +181,8 @@ public class CompileServiceImpl implements CompileService {
 
 		ObjectDataImpl result = new ObjectDataImpl();
 
-		// Filter(any property filter MUST be done here
-		// TODO filtering ? (for performance)
+		// Filter (any property filter MUST be done here)
+		// Note: Property filtering could improve performance for large objects with many properties
 		PropertiesImpl properties = compileProperties(callContext, repositoryId, content);
 		result.setProperties(properties);
 
@@ -1421,8 +1421,7 @@ public class CompileServiceImpl implements CompileService {
 			}
 		}
 
-		// TODO If subType properties is not registered in DB, return void
-		// properties via CMIS
+		// Note: If subType properties are not registered in DB, they won't appear in CMIS response
 		// SubType properties
 		List<PropertyDefinition<?>> specificPropertyDefinitions = typeManager
 				.getSpecificPropertyDefinitions(tdf.getId());
@@ -1537,9 +1536,9 @@ public class CompileServiceImpl implements CompileService {
 
 			String checkedOutId = document.getVersionSeriesCheckedOutId();
 			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, checkedOutId);
-
-			// TODO comment
+			// End of versionable document properties
 		} else {
+			// Non-versionable document: set default/empty values for version properties
 			addProperty(properties, tdf, PropertyIds.IS_PRIVATE_WORKING_COPY, false);
 			addProperty(properties, tdf, PropertyIds.IS_LATEST_VERSION, false);
 			addProperty(properties, tdf, PropertyIds.IS_MAJOR_VERSION, false);
