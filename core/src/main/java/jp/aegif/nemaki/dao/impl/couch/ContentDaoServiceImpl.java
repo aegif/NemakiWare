@@ -1337,13 +1337,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		int depth = 0;
 
 		while (currentType != null && depth < maxDepth) {
-			// Detect circular reference
+			// Detect circular reference BEFORE adding to visitedTypes
 			if (visitedTypes.contains(currentType)) {
 				log.warn("isTypeOrDescendantOf: Circular type hierarchy detected at: " + currentType);
 				return false;
 			}
 			visitedTypes.add(currentType);
+			depth++;  // Increment depth when we add to visitedTypes (keeps depth == visitedTypes.size())
 
+			// Now check type hierarchy
 			TypeDefinitionContainer typeContainer = typeManager.getTypeById(repositoryId, currentType);
 			if (typeContainer == null || typeContainer.getTypeDefinition() == null) {
 				// Type not found in TypeManager
@@ -1362,7 +1364,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 
 			currentType = parentTypeId;
-			depth++;
 		}
 
 		return false;

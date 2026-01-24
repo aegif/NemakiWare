@@ -751,9 +751,12 @@ public class SolrUtil implements ApplicationContextAware {
 	// CRITICAL FIX (2025-11-19): Implement ApplicationContextAware to break circular dependency
 	@Override
 	public void setApplicationContext(ApplicationContext applicationContext) {
-		this.applicationContext = applicationContext;
-		// Clear cache when ApplicationContext is reset (e.g., during context refresh)
-		this.contentServiceCache = null;
+		// Clear cache BEFORE setting new context to ensure old cache is not used
+		// Use synchronized to coordinate with getContentServiceSafely()
+		synchronized (this) {
+			this.contentServiceCache = null;
+			this.applicationContext = applicationContext;
+		}
 	}
 
 	/**
