@@ -133,26 +133,35 @@ public class McpAuthenticationHandler {
     /**
      * Authenticate a request using the provided headers.
      *
+     * Priority order (highest to lowest):
+     * 1. MCP Session Token - from nemakiware_login tool, represents end-user identity
+     * 2. Bearer Token - API token authentication
+     * 3. Basic Authentication - transport-level auth (used by MCP bridge)
+     *
+     * This priority ensures that when a user logs in via the MCP login tool,
+     * their session token takes precedence over the bridge's transport-level
+     * Basic authentication.
+     *
      * @param repositoryId The target repository ID
      * @param headers Request headers map
      * @return Authentication result
      */
     public McpAuthResult authenticate(String repositoryId, Map<String, String> headers) {
-        // Priority 1: Basic Authentication
-        String authHeader = headers.get(HEADER_AUTHORIZATION);
-        if (authHeader != null && authHeader.startsWith(AUTH_BASIC)) {
-            return authenticateBasic(repositoryId, authHeader);
+        // Priority 1: MCP Session Token (end-user identity from nemakiware_login)
+        String sessionToken = headers.get(HEADER_MCP_SESSION_TOKEN);
+        if (sessionToken != null) {
+            return authenticateSessionToken(repositoryId, sessionToken);
         }
 
         // Priority 2: Bearer Token
+        String authHeader = headers.get(HEADER_AUTHORIZATION);
         if (authHeader != null && authHeader.startsWith(AUTH_BEARER)) {
             return authenticateBearer(repositoryId, authHeader);
         }
 
-        // Priority 3: MCP Session Token
-        String sessionToken = headers.get(HEADER_MCP_SESSION_TOKEN);
-        if (sessionToken != null) {
-            return authenticateSessionToken(repositoryId, sessionToken);
+        // Priority 3: Basic Authentication (transport-level, e.g., MCP bridge)
+        if (authHeader != null && authHeader.startsWith(AUTH_BASIC)) {
+            return authenticateBasic(repositoryId, authHeader);
         }
 
         return McpAuthResult.failure("Authentication required");
@@ -193,8 +202,12 @@ public class McpAuthenticationHandler {
 
     /**
      * Authenticate using MCP Session Token.
+     *
+     * @param repositoryId The target repository ID
+     * @param token The session token from nemakiware_login
+     * @return Authentication result
      */
-    private McpAuthResult authenticateSessionToken(String repositoryId, String token) {
+    public McpAuthResult authenticateSessionToken(String repositoryId, String token) {
         McpSession session = sessionTokens.get(token);
 
         if (session == null) {

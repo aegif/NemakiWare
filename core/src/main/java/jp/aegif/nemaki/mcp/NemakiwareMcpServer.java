@@ -133,16 +133,33 @@ public class NemakiwareMcpServer {
 
     /**
      * Execute a tool that requires authentication.
+     *
+     * Authentication priority:
+     * 1. sessionToken in tool arguments (from nemakiware_login)
+     * 2. HTTP headers (X-MCP-Session-Token, Bearer, or Basic auth)
      */
     private McpToolResult executeAuthenticatedTool(String toolName, Map<String, Object> arguments, Map<String, String> headers) {
         // Get repository ID from arguments or use configured default
         String repositoryId = getStringArg(arguments, "repositoryId", defaultRepository);
 
-        // Authenticate the request
-        McpAuthResult authResult = authHandler.authenticate(repositoryId, headers);
-        if (!authResult.isSuccess()) {
-            log.warn("Authentication failed for tool {}: {}", toolName, authResult.getErrorMessage());
-            return resultFactory.error("Authentication required: " + authResult.getErrorMessage());
+        // Check for session token in arguments first (from nemakiware_login)
+        String sessionToken = getStringArg(arguments, "sessionToken", null);
+        McpAuthResult authResult;
+
+        if (sessionToken != null) {
+            // Use session token from arguments
+            authResult = authHandler.authenticateSessionToken(repositoryId, sessionToken);
+            if (!authResult.isSuccess()) {
+                log.warn("Session token authentication failed for tool {}: {}", toolName, authResult.getErrorMessage());
+                return resultFactory.error("Invalid or expired session token: " + authResult.getErrorMessage());
+            }
+        } else {
+            // Fall back to HTTP header authentication
+            authResult = authHandler.authenticate(repositoryId, headers);
+            if (!authResult.isSuccess()) {
+                log.warn("Authentication failed for tool {}: {}", toolName, authResult.getErrorMessage());
+                return resultFactory.error("Authentication required: " + authResult.getErrorMessage());
+            }
         }
 
         String userId = authResult.getUserId();

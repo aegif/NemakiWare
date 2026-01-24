@@ -144,6 +144,10 @@ public class McpToolsProvider {
                   "type": "string",
                   "description": "検索クエリ（自然言語で質問や検索内容を入力）"
                 },
+                "sessionToken": {
+                  "type": "string",
+                  "description": "ログイン時に取得したセッショントークン（ユーザー権限で検索する場合は必須）"
+                },
                 "topK": {
                   "type": "integer",
                   "description": "取得する最大件数（デフォルト: 5）",
@@ -160,7 +164,7 @@ public class McpToolsProvider {
             """;
         return new McpToolDefinition(
             "nemakiware_rag_search",
-            "NemakiWareリポジトリから質問に関連する文書を意味的に検索します。検索結果には文書名、関連箇所、類似度スコアが含まれます。",
+            "NemakiWareリポジトリから質問に関連する文書を意味的に検索します。ログインしたユーザーの権限で検索するには、nemakiware_loginで取得したsessionTokenを渡してください。",
             schema
         );
     }
@@ -173,6 +177,10 @@ public class McpToolsProvider {
                 "documentId": {
                   "type": "string",
                   "description": "類似文書を検索する対象の文書ID"
+                },
+                "sessionToken": {
+                  "type": "string",
+                  "description": "ログイン時に取得したセッショントークン（ユーザー権限で検索する場合は必須）"
                 },
                 "topK": {
                   "type": "integer",
@@ -190,7 +198,7 @@ public class McpToolsProvider {
             """;
         return new McpToolDefinition(
             "nemakiware_similar_documents",
-            "指定した文書と意味的に類似した文書を検索します",
+            "指定した文書と意味的に類似した文書を検索します。ログインしたユーザーの権限で検索するには、nemakiware_loginで取得したsessionTokenを渡してください。",
             schema
         );
     }
