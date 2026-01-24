@@ -3314,16 +3314,22 @@ public class ContentServiceImpl implements ContentService {
 
 	private void destroyDocument(String repositoryId, Archive archive) {
 		try {
+			// Check versionSeriesId before calling getArchivesOfVersionSeries
+			String versionSeriesId = archive.getVersionSeriesId();
+			if (versionSeriesId == null) {
+				log.warn("destroyDocument: archive has no versionSeriesId, archiveId=" + archive.getId());
+				return;
+			}
+
 			// Get archives of the same version series
-			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId,
-					archive.getVersionSeriesId());
+			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId, versionSeriesId);
 
 			if (versions == null) {
-				log.warn("getArchivesOfVersionSeries returned null for versionSeriesId: " + archive.getVersionSeriesId());
+				log.warn("destroyDocument: getArchivesOfVersionSeries returned null, versionSeriesId=" + versionSeriesId);
 				return;
 			}
 			if (versions.isEmpty()) {
-				log.warn("No versions found for versionSeriesId: " + archive.getVersionSeriesId());
+				log.warn("destroyDocument: no versions found, versionSeriesId=" + versionSeriesId);
 				return;
 			}
 
@@ -3335,22 +3341,22 @@ public class ContentServiceImpl implements ContentService {
 				if (attachmentArchive != null) {
 					String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
 					if (deletedAttachmentId == null) {
-						log.warn("Attachment archive deletion returned null: " + attachmentArchive.getId());
+						log.warn("destroyDocument: attachment archive deletion returned null, attachmentId=" + attachmentArchive.getId());
 					}
 				} else {
-					log.warn("Attachment archive not found for version: " + version.getId());
+					log.warn("destroyDocument: attachment archive not found, versionId=" + version.getId());
 				}
 
 				// Then delete version archive
 				String deletedVersionId = contentDaoService.deleteArchive(repositoryId, version.getId());
 				if (deletedVersionId == null) {
-					log.warn("Document version archive deletion returned null: " + version.getId());
+					log.warn("destroyDocument: version archive deletion returned null, versionId=" + version.getId());
 				}
 			}
 		} catch (NotFoundException e) {
-			log.warn("Archive not found during destroy: " + archive.getId());
+			log.warn("destroyDocument: archive not found during destroy, archiveId=" + archive.getId());
 		} catch (Exception e) {
-			log.error("Failed to destroy document archive: " + archive.getId(), e);
+			log.error("destroyDocument: failed to destroy document archive, archiveId=" + archive.getId(), e);
 		}
 	}
 

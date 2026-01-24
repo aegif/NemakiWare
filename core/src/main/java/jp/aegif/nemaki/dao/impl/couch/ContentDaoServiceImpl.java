@@ -3541,15 +3541,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		try {
 			CouchArchive ca = connectorPool.get(archive).get(CouchArchive.class, archiveId);
 			if (ca == null) {
-				// get() returned null (archive not found)
-				log.warn(buildLogMsg(archiveId, "archive not found in database (may already be deleted)"));
+				// get() returned null without throwing exception
+				log.warn(buildLogMsg(archiveId, "archive not found in database (get() returned null)"));
 				return null;
 			}
 			connectorPool.get(archive).delete(ca);
 			return archiveId;
 		} catch (NotFoundException e) {
-			// Archive document does not exist - this is expected in some cases
-			log.warn(buildLogMsg(archiveId, "archive not found in database (may already be deleted)"));
+			// Archive document does not exist - thrown by get() or delete()
+			log.warn(buildLogMsg(archiveId, "archive not found in database (NotFoundException thrown)"));
 			return null;
 		} catch (ServiceResponseException e) {
 			// CouchDB/Cloudant service error (connection, timeout, 5xx errors)
