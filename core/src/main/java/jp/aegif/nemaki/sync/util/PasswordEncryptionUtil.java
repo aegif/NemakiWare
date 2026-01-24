@@ -114,6 +114,11 @@ public class PasswordEncryptionUtil {
     /**
      * Resolve an environment variable reference.
      * Format: ENV(VARIABLE_NAME)
+     * 
+     * @param envRef The environment variable reference in format ENV(VARIABLE_NAME)
+     * @return The value of the environment variable
+     * @throws IllegalArgumentException if the format is invalid
+     * @throws IllegalStateException if the environment variable is not set
      */
     public static String resolveEnvironmentVariable(String envRef) {
         if (!isEnvironmentVariable(envRef)) {
@@ -124,8 +129,10 @@ public class PasswordEncryptionUtil {
         String value = System.getenv(varName);
 
         if (value == null) {
-            log.warn("Environment variable not found: " + varName);
-            return "";
+            String errorMsg = "Environment variable not found: " + varName + 
+                    ". Please set this environment variable or use a different password format.";
+            log.error(errorMsg);
+            throw new IllegalStateException(errorMsg);
         }
 
         return value;

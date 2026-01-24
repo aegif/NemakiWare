@@ -115,12 +115,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     connector.disconnect();
                 }
 
-                if (!dryRun) {
-                    config.setLastSyncTime(new GregorianCalendar());
-                    config.setLastSyncStatus(result.getStatus().name());
-                }
-
-                log.info("Directory sync completed: " +
+                log.info("Directory sync completed:" +
                         "users added=" + result.getUsersAdded() + 
                         ", users updated=" + result.getUsersUpdated() +
                         ", users removed=" + result.getUsersRemoved() +
@@ -217,6 +212,9 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
 
         if (config.isDeleteOrphanUsers() && !userPrefix.isEmpty()) {
             List<UserItem> existingUsers = contentService.getUserItems(repositoryId);
+            if (existingUsers == null) {
+                existingUsers = new ArrayList<>();
+            }
             for (UserItem existingUser : existingUsers) {
                 String userId = existingUser.getUserId();
                 if (userId != null && userId.startsWith(userPrefix) && !ldapUserIds.contains(userId)) {
@@ -238,6 +236,9 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
 
     private void removeUserFromAllGroups(String repositoryId, String userId) {
         List<GroupItem> allGroups = contentService.getGroupItems(repositoryId);
+        if (allGroups == null) {
+            return;
+        }
         for (GroupItem group : allGroups) {
             List<String> users = group.getUsers();
             if (users != null && users.contains(userId)) {
@@ -347,6 +348,9 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         final String groupPrefix = (configPrefix == null) ? DirectorySyncConfig.DEFAULT_GROUP_PREFIX : configPrefix;
 
         List<GroupItem> existingGroups = contentService.getGroupItems(repositoryId);
+        if (existingGroups == null) {
+            existingGroups = new ArrayList<>();
+        }
         
         Map<String, GroupItem> syncedGroupMap = existingGroups.stream()
                 .filter(g -> g.getGroupId() != null && g.getGroupId().startsWith(groupPrefix))
@@ -561,11 +565,19 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         
         String connTimeout = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_LDAP_CONNECTION_TIMEOUT);
         if (connTimeout != null && !connTimeout.isEmpty()) {
-            config.setConnectionTimeout(Integer.parseInt(connTimeout));
+            try {
+                config.setConnectionTimeout(Integer.parseInt(connTimeout));
+            } catch (NumberFormatException e) {
+                log.warn("Invalid connection timeout value: " + connTimeout + ", using default");
+            }
         }
         String readTimeout = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_LDAP_READ_TIMEOUT);
         if (readTimeout != null && !readTimeout.isEmpty()) {
-            config.setReadTimeout(Integer.parseInt(readTimeout));
+            try {
+                config.setReadTimeout(Integer.parseInt(readTimeout));
+            } catch (NumberFormatException e) {
+                log.warn("Invalid read timeout value: " + readTimeout + ", using default");
+            }
         }
         
         config.setGroupSearchBase(propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_GROUP_SEARCH_BASE));
@@ -592,6 +604,12 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         
         config.setScheduleEnabled(propertyManager.readBoolean(PropertyKey.DIRECTORY_SYNC_SCHEDULE_ENABLED));
         config.setCronExpression(propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_SCHEDULE_CRON));
+        
+        DirectorySyncResult lastResult = lastSyncResults.get(repositoryId);
+        if (lastResult != null) {
+            config.setLastSyncTime(lastResult.getEndTime());
+            config.setLastSyncStatus(lastResult.getStatus() != null ? lastResult.getStatus().name() : null);
+        }
         
         return config;
     }

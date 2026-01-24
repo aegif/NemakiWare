@@ -285,6 +285,8 @@ public class DirectorySyncResource extends ResourceBase {
         json.put("ldapBindDn", config.getLdapBindDn());
         json.put("useTls", config.isUseTls());
         json.put("useStartTls", config.isUseStartTls());
+        json.put("connectionTimeout", config.getConnectionTimeout());
+        json.put("readTimeout", config.getReadTimeout());
         json.put("groupSearchBase", config.getGroupSearchBase());
         json.put("groupSearchFilter", config.getGroupSearchFilter());
         json.put("userSearchBase", config.getUserSearchBase());

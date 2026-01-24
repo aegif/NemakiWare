@@ -324,6 +324,12 @@ public class LdapDirectoryConnector {
             cookie = getPagedResultsCookie();
         } while (cookie != null && cookie.length > 0);
 
+        try {
+            context.setRequestControls(null);
+        } catch (NamingException e) {
+            log.debug("Failed to reset request controls: " + e.getMessage());
+        }
+
         log.info("Found " + groups.size() + " groups in LDAP");
         return groups;
     }
@@ -396,6 +402,25 @@ public class LdapDirectoryConnector {
             }
         }
         return null;
+    }
+
+    /**
+     * Build a safe LDAP filter by sanitizing user-provided values.
+     * Use this when constructing filters with dynamic values.
+     * 
+     * @param filterTemplate The filter template with %s placeholders
+     * @param values The values to substitute (will be sanitized)
+     * @return The safe filter string
+     */
+    public static String buildSafeFilter(String filterTemplate, String... values) {
+        if (filterTemplate == null) {
+            return null;
+        }
+        String[] sanitizedValues = new String[values.length];
+        for (int i = 0; i < values.length; i++) {
+            sanitizedValues[i] = sanitizeLdapFilter(values[i]);
+        }
+        return String.format(filterTemplate, (Object[]) sanitizedValues);
     }
 
     private boolean isGroupDn(String dn) {
@@ -524,6 +549,12 @@ public class LdapDirectoryConnector {
 
             cookie = getPagedResultsCookie();
         } while (cookie != null && cookie.length > 0);
+
+        try {
+            context.setRequestControls(null);
+        } catch (NamingException e) {
+            log.debug("Failed to reset request controls: " + e.getMessage());
+        }
 
         log.info("Found " + users.size() + " users in LDAP");
         return users;
