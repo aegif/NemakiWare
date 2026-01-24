@@ -71,6 +71,7 @@ public class PasswordEncryptionUtil {
 
     private static final String DEFAULT_ENCRYPTION_KEY_ENV = "NEMAKI_ENCRYPTION_KEY";
     private static final String DEFAULT_ENCRYPTION_KEY = "NemakiWare-Default-Key-Change-Me!";
+    private static final int MINIMUM_KEY_LENGTH = 16;
     
     private static volatile boolean defaultKeyWarningLogged = false;
 
@@ -256,6 +257,10 @@ public class PasswordEncryptionUtil {
     private static String getEncryptionKey() {
         String key = System.getenv(DEFAULT_ENCRYPTION_KEY_ENV);
         if (key != null && !key.isEmpty()) {
+            if (key.length() < MINIMUM_KEY_LENGTH) {
+                log.warn("SECURITY WARNING: Encryption key is shorter than recommended minimum of " + 
+                        MINIMUM_KEY_LENGTH + " characters. Consider using a longer key for better security.");
+            }
             return key;
         }
         
@@ -273,6 +278,10 @@ public class PasswordEncryptionUtil {
      * Main method for command-line encryption of passwords.
      * Usage: java PasswordEncryptionUtil encrypt <password>
      *        java PasswordEncryptionUtil decrypt <encrypted>
+     * 
+     * SECURITY WARNING: This utility outputs passwords to stdout.
+     * Ensure that command output is not captured in logs or shell history.
+     * Consider using input redirection or environment variables for sensitive data.
      */
     public static void main(String[] args) {
         if (args.length < 2) {
@@ -281,6 +290,9 @@ public class PasswordEncryptionUtil {
             System.out.println("  decrypt <encrypted> - Decrypt an encrypted password");
             System.out.println();
             System.out.println("Set NEMAKI_ENCRYPTION_KEY environment variable for custom encryption key.");
+            System.out.println();
+            System.out.println("SECURITY WARNING: This utility outputs passwords to stdout.");
+            System.out.println("Ensure command output is not captured in logs or shell history.");
             return;
         }
 
@@ -291,6 +303,7 @@ public class PasswordEncryptionUtil {
             String encrypted = encrypt(value);
             System.out.println("Encrypted: " + encrypted);
         } else if ("decrypt".equalsIgnoreCase(command)) {
+            System.err.println("SECURITY WARNING: Decrypted password will be displayed on screen.");
             String decrypted = decrypt(value);
             System.out.println("Decrypted: " + decrypted);
         } else {

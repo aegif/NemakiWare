@@ -24,6 +24,7 @@ package jp.aegif.nemaki.sync.model;
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
@@ -62,7 +63,7 @@ public class DirectorySyncResult {
         this();
         this.repositoryId = repositoryId;
         this.dryRun = dryRun;
-        this.syncId = "sync-" + System.currentTimeMillis();
+        this.syncId = "sync-" + UUID.randomUUID().toString();
     }
 
     public void complete(SyncStatus status) {

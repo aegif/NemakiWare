@@ -183,6 +183,8 @@ public class LdapDirectoryConnector {
 
         env.put("com.sun.jndi.ldap.connect.timeout", String.valueOf(config.getConnectionTimeout()));
         env.put("com.sun.jndi.ldap.read.timeout", String.valueOf(config.getReadTimeout()));
+        
+        env.put(Context.REFERRAL, "follow");
 
         if (config.isUseTls()) {
             env.put(Context.SECURITY_PROTOCOL, "ssl");
