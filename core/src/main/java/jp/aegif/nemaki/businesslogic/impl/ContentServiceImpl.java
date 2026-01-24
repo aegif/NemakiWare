@@ -314,6 +314,11 @@ public class ContentServiceImpl implements ContentService {
 				} else {
 					// PWC is only visible to its owner
 					String pwcOwner = doc.getVersionSeriesCheckedOutBy();
+					if (pwcOwner == null) {
+						// PWC with no owner is an inconsistent state - log warning and skip
+						log.warn("getAllVersions: PWC " + doc.getId() + " has no owner (versionSeriesCheckedOutBy is null)");
+						continue;
+					}
 					if (currentUser != null && currentUser.equals(pwcOwner)) {
 						results.add(doc);
 					} else {
