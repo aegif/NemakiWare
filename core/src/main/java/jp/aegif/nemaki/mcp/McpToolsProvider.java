@@ -146,7 +146,7 @@ public class McpToolsProvider {
                 },
                 "sessionToken": {
                   "type": "string",
-                  "description": "ログイン時に取得したセッショントークン（ユーザー権限で検索する場合は必須）"
+                  "description": "【必須】nemakiware_loginで取得したセッショントークン。検索結果はこのトークンに紐づくユーザーの権限でフィルタリングされます。"
                 },
                 "topK": {
                   "type": "integer",
@@ -159,12 +159,12 @@ public class McpToolsProvider {
                   "default": 0.5
                 }
               },
-              "required": ["query"]
+              "required": ["query", "sessionToken"]
             }
             """;
         return new McpToolDefinition(
             "nemakiware_rag_search",
-            "NemakiWareリポジトリから質問に関連する文書を意味的に検索します。ログインしたユーザーの権限で検索するには、nemakiware_loginで取得したsessionTokenを渡してください。",
+            "NemakiWareリポジトリから質問に関連する文書を意味的に検索します。【重要】まずnemakiware_loginでログインし、取得したsessionTokenを必ず渡してください。検索結果はユーザーのアクセス権限に基づいてフィルタリングされます。",
             schema
         );
     }
@@ -180,7 +180,7 @@ public class McpToolsProvider {
                 },
                 "sessionToken": {
                   "type": "string",
-                  "description": "ログイン時に取得したセッショントークン（ユーザー権限で検索する場合は必須）"
+                  "description": "【必須】nemakiware_loginで取得したセッショントークン。検索結果はこのトークンに紐づくユーザーの権限でフィルタリングされます。"
                 },
                 "topK": {
                   "type": "integer",
@@ -193,12 +193,12 @@ public class McpToolsProvider {
                   "default": 0.5
                 }
               },
-              "required": ["documentId"]
+              "required": ["documentId", "sessionToken"]
             }
             """;
         return new McpToolDefinition(
             "nemakiware_similar_documents",
-            "指定した文書と意味的に類似した文書を検索します。ログインしたユーザーの権限で検索するには、nemakiware_loginで取得したsessionTokenを渡してください。",
+            "指定した文書と意味的に類似した文書を検索します。【重要】まずnemakiware_loginでログインし、取得したsessionTokenを必ず渡してください。検索結果はユーザーのアクセス権限に基づいてフィルタリングされます。",
             schema
         );
     }
