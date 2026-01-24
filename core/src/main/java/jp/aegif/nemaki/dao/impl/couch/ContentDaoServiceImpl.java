@@ -3556,17 +3556,38 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public void deleteDocumentArchive(String repositoryId, String archiveId) {
-		Archive docArchive = getArchive(repositoryId, archiveId);
-		Archive attachmentArchive = getArchiveByOriginalId(repositoryId, docArchive.getAttachmentNodeId());
+		try {
+			Archive docArchive = getArchive(repositoryId, archiveId);
+			if (docArchive == null) {
+				log.warn(buildLogMsg(archiveId, "document archive not found"));
+				return;
+			}
 
-		String deletedDocArchiveId = deleteArchive(repositoryId, docArchive.getId());
-		if (deletedDocArchiveId == null) {
-			log.warn(buildLogMsg(docArchive.getId(), "document archive deletion returned null (may not have been deleted)"));
-		}
+			// Handle attachment archive deletion
+			String attachmentNodeId = docArchive.getAttachmentNodeId();
+			if (attachmentNodeId != null) {
+				Archive attachmentArchive = getArchiveByOriginalId(repositoryId, attachmentNodeId);
+				if (attachmentArchive != null) {
+					String deletedAttachmentArchiveId = deleteArchive(repositoryId, attachmentArchive.getId());
+					if (deletedAttachmentArchiveId == null) {
+						log.warn(buildLogMsg(attachmentArchive.getId(), "attachment archive deletion returned null"));
+					}
+				} else {
+					log.warn(buildLogMsg(attachmentNodeId, "attachment archive not found by original ID"));
+				}
+			} else {
+				log.warn(buildLogMsg(archiveId, "document archive has no attachment node ID"));
+			}
 
-		String deletedAttachmentArchiveId = deleteArchive(repositoryId, attachmentArchive.getId());
-		if (deletedAttachmentArchiveId == null) {
-			log.warn(buildLogMsg(attachmentArchive.getId(), "attachment archive deletion returned null (may not have been deleted)"));
+			// Delete the document archive itself
+			String deletedDocArchiveId = deleteArchive(repositoryId, docArchive.getId());
+			if (deletedDocArchiveId == null) {
+				log.warn(buildLogMsg(docArchive.getId(), "document archive deletion returned null"));
+			}
+		} catch (NotFoundException e) {
+			log.warn(buildLogMsg(archiveId, "document archive not found: " + e.getMessage()));
+		} catch (Exception e) {
+			log.error(buildLogMsg(archiveId, "error during document archive deletion"), e);
 		}
 	}
 

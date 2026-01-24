@@ -3317,16 +3317,21 @@ public class ContentServiceImpl implements ContentService {
 			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId,
 					archive.getVersionSeriesId());
 			for (Archive version : versions) {
-				// Get its attachment archive
-				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
-				// Delete archives with result checking
+				// Delete version archive with result checking
 				String deletedVersionId = contentDaoService.deleteArchive(repositoryId, version.getId());
 				if (deletedVersionId == null) {
 					log.warn("Document version archive deletion returned null: " + version.getId());
 				}
-				String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
-				if (deletedAttachmentId == null) {
-					log.warn("Attachment archive deletion returned null: " + attachmentArchive.getId());
+
+				// Get and delete attachment archive (with null check)
+				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
+				if (attachmentArchive != null) {
+					String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
+					if (deletedAttachmentId == null) {
+						log.warn("Attachment archive deletion returned null: " + attachmentArchive.getId());
+					}
+				} else {
+					log.warn("Attachment archive not found for version: " + version.getId());
 				}
 			}
 		} catch (Exception e) {

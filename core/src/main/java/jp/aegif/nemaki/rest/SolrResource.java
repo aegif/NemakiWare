@@ -273,9 +273,9 @@ public class SolrResource extends ResourceBase {
 	}
 
 	/**
-	 * Sanitize Solr response for logging.
-	 * Removes potentially sensitive information like file paths, internal URLs, etc.
-	 * Truncates to reasonable length for log readability.
+	 * Prepare Solr response for logging.
+	 * Truncates to reasonable length and removes newlines for single-line log readability.
+	 * Note: This does not remove sensitive information - Solr responses should not contain secrets.
 	 */
 	private String sanitizeSolrResponse(String response) {
 		if (response == null) {
