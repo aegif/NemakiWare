@@ -121,10 +121,13 @@ public class PermissionServiceImpl implements PermissionService {
 	}
 
 	/**
+	 * Check if the user has permission for the specified action.
 	 *
+	 * Future refactoring considerations:
+	 * - acl could be derived from content internally to simplify the signature
+	 * - baseType is redundant with content.getType() in most cases
+	 * - isAllowableBaseType logic could be consolidated
 	 */
-	//TODO Merge arguments(acl, content)
-	//FIXME Refactor duplicate isAllowableBaseType
 	@Override
 	public Boolean checkPermission(CallContext callContext, String repositoryId, String key,
 			Acl acl, String baseType, Content content) {
@@ -523,8 +526,7 @@ public class PermissionServiceImpl implements PermissionService {
 			String repositoryId, List<T> contents) {
 		List<T> result = new ArrayList<T>();
 
-		// Validation
-		// TODO refine the logic
+		// Early return for empty input (no filtering needed)
 		if (CollectionUtils.isEmpty(contents)){
 			return new ArrayList<T>();
 		}

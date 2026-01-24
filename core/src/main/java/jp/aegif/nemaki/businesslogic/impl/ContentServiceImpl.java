@@ -2706,10 +2706,9 @@ public class ContentServiceImpl implements ContentService {
 		
 		Content content = getContent(repositoryId, objectId);
 
-		// TODO workaround
+		// Handle case where content was already deleted (e.g., concurrent delete or cascade)
 		if (content == null) {
-			// If content is already deleted, do nothing;
-			log.error("Content is null for object: {} - exiting early", objectId);
+			log.warn("delete: Content not found for objectId=" + objectId + " - may have been deleted already");
 			return;
 		}
 
@@ -3382,7 +3381,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Overwrite
 		for (Entry<String, Ace> s : sourceMap.entrySet()) {
-			// TODO Deep copy
+			// Use deepCopy to avoid sharing mutable Ace objects between ACLs
 			if (!targetMap.containsKey(s.getKey())) {
 				Ace ace = deepCopy(s.getValue());
 				ace.setDirect(false);

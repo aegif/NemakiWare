@@ -1891,7 +1891,7 @@ public class CompileServiceImpl implements CompileService {
 		if (StringUtils.isEmpty(id))
 			throw new IllegalArgumentException("ID must not be null!");
 
-		// TODO :performance
+		// Note: For high-volume property processing, consider caching property definitions
 		if (!tdf.getPropertyDefinitions().containsKey(id))
 			throw new IllegalArgumentException("Unknown property: " + id);
 
