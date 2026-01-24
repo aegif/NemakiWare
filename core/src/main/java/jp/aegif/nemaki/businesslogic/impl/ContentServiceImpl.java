@@ -705,11 +705,14 @@ public class ContentServiceImpl implements ContentService {
 		// Apply policies to the newly created document
 		if (policies != null && !policies.isEmpty()) {
 			for (String policyId : policies) {
+				if (policyId == null || policyId.isEmpty()) {
+					continue;
+				}
 				try {
 					applyPolicy(callContext, repositoryId, policyId, atomicResult.getId(), null);
-					log.debug("createDocument: Applied policy {} to document {}", policyId, atomicResult.getId());
+					log.debug("createDocument: Applied policy " + policyId + " to document " + atomicResult.getId());
 				} catch (Exception e) {
-					log.warn("createDocument: Failed to apply policy {} to document {}: {}", policyId, atomicResult.getId(), e.getMessage());
+					log.warn("createDocument: Failed to apply policy " + policyId + " to document " + atomicResult.getId() + ": " + e.getMessage());
 				}
 			}
 		}
@@ -815,11 +818,14 @@ public class ContentServiceImpl implements ContentService {
 		// Apply policies to the newly created document
 		if (policies != null && !policies.isEmpty()) {
 			for (String policyId : policies) {
+				if (policyId == null || policyId.isEmpty()) {
+					continue;
+				}
 				try {
 					applyPolicy(callContext, repositoryId, policyId, atomicResult.getId(), null);
-					log.debug("createDocumentFromSource: Applied policy {} to document {}", policyId, atomicResult.getId());
+					log.debug("createDocumentFromSource: Applied policy " + policyId + " to document " + atomicResult.getId());
 				} catch (Exception e) {
-					log.warn("createDocumentFromSource: Failed to apply policy {} to document {}: {}", policyId, atomicResult.getId(), e.getMessage());
+					log.warn("createDocumentFromSource: Failed to apply policy " + policyId + " to document " + atomicResult.getId() + ": " + e.getMessage());
 				}
 			}
 		}
@@ -1249,11 +1255,14 @@ public class ContentServiceImpl implements ContentService {
 		// ACEs are already handled in buildCopyDocument via setAclOnCreated
 		if (policies != null && !policies.isEmpty()) {
 			for (String policyId : policies) {
+				if (policyId == null || policyId.isEmpty()) {
+					continue;
+				}
 				try {
 					applyPolicy(callContext, repositoryId, policyId, result.getId(), null);
-					log.debug("checkIn: Applied policy {} to document {}", policyId, result.getId());
+					log.debug("checkIn: Applied policy " + policyId + " to document " + result.getId());
 				} catch (Exception e) {
-					log.warn("checkIn: Failed to apply policy {} to document {}: {}", policyId, result.getId(), e.getMessage());
+					log.warn("checkIn: Failed to apply policy " + policyId + " to document " + result.getId() + ": " + e.getMessage());
 				}
 			}
 		}
@@ -1262,8 +1271,14 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		writeChangeEvent(callContext, repositoryId, latest, ChangeType.UPDATED);
 
-		// Call Solr indexing(optional)
-		solrUtil.indexDocument(repositoryId, result);
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, result);
+			}
+		} catch (Exception e) {
+			log.warn("checkIn: Solr indexing failed for document " + result.getId() + ": " + e.getMessage());
+		}
 
 		return result;
 	}
@@ -1297,8 +1312,14 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		writeChangeEvent(callContext, repositoryId, previousDoc, ChangeType.UPDATED);
 
-		// Call Solr indexing
-		solrUtil.indexDocument(repositoryId, result);
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, result);
+			}
+		} catch (Exception e) {
+			log.warn("updateWithoutCheckInOut: Solr indexing failed for document " + result.getId() + ": " + e.getMessage());
+		}
 
 		return result;
 	}
@@ -1612,11 +1633,14 @@ public class ContentServiceImpl implements ContentService {
 		// Apply policies to the newly created folder
 		if (policies != null && !policies.isEmpty()) {
 			for (String policyId : policies) {
+				if (policyId == null || policyId.isEmpty()) {
+					continue;
+				}
 				try {
 					applyPolicy(callContext, repositoryId, policyId, folder.getId(), null);
-					log.debug("createFolder: Applied policy {} to folder {}", policyId, folder.getId());
+					log.debug("createFolder: Applied policy " + policyId + " to folder " + folder.getId());
 				} catch (Exception e) {
-					log.warn("createFolder: Failed to apply policy {} to folder {}: {}", policyId, folder.getId(), e.getMessage());
+					log.warn("createFolder: Failed to apply policy " + policyId + " to folder " + folder.getId() + ": " + e.getMessage());
 				}
 			}
 		}
@@ -1625,8 +1649,14 @@ public class ContentServiceImpl implements ContentService {
 		// Content objects now maintain revision state, enabling proper writeChangeEvent
 		writeChangeEvent(callContext, repositoryId, folder, ChangeType.CREATED);
 
-		// Call Solr indexing(optional)
-		solrUtil.indexDocument(repositoryId, folder);
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, folder);
+			}
+		} catch (Exception e) {
+			log.warn("createFolder: Solr indexing failed for folder " + folder.getId() + ": " + e.getMessage());
+		}
 
 		return folder;
 	}
@@ -1651,17 +1681,26 @@ public class ContentServiceImpl implements ContentService {
 		// Apply policies to the newly created relationship
 		if (policies != null && !policies.isEmpty()) {
 			for (String policyId : policies) {
+				if (policyId == null || policyId.isEmpty()) {
+					continue;
+				}
 				try {
 					applyPolicy(callContext, repositoryId, policyId, relationship.getId(), null);
-					log.debug("createRelationship: Applied policy {} to relationship {}", policyId, relationship.getId());
+					log.debug("createRelationship: Applied policy " + policyId + " to relationship " + relationship.getId());
 				} catch (Exception e) {
-					log.warn("createRelationship: Failed to apply policy {} to relationship {}: {}", policyId, relationship.getId(), e.getMessage());
+					log.warn("createRelationship: Failed to apply policy " + policyId + " to relationship " + relationship.getId() + ": " + e.getMessage());
 				}
 			}
 		}
 
-		// Index relationship in Solr for CMIS query support
-		solrUtil.indexDocument(repositoryId, relationship);
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, relationship);
+			}
+		} catch (Exception e) {
+			log.warn("createRelationship: Solr indexing failed for relationship " + relationship.getId() + ": " + e.getMessage());
+		}
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, relationship, ChangeType.CREATED);
@@ -1711,11 +1750,14 @@ public class ContentServiceImpl implements ContentService {
 		// Apply policies to the newly created item
 		if (policies != null && !policies.isEmpty()) {
 			for (String policyId : policies) {
+				if (policyId == null || policyId.isEmpty()) {
+					continue;
+				}
 				try {
 					applyPolicy(callContext, repositoryId, policyId, item.getId(), null);
-					log.debug("createItem: Applied policy {} to item {}", policyId, item.getId());
+					log.debug("createItem: Applied policy " + policyId + " to item " + item.getId());
 				} catch (Exception e) {
-					log.warn("createItem: Failed to apply policy {} to item {}: {}", policyId, item.getId(), e.getMessage());
+					log.warn("createItem: Failed to apply policy " + policyId + " to item " + item.getId() + ": " + e.getMessage());
 				}
 			}
 		}
@@ -2389,28 +2431,63 @@ public class ContentServiceImpl implements ContentService {
 	public void applyPolicy(CallContext callContext, String repositoryId, String policyId, String objectId,
 			ExtensionsData extension) {
 		Policy policy = getPolicy(repositoryId, policyId);
+		if (policy == null) {
+			log.warn("applyPolicy: Policy not found: " + policyId);
+			return;
+		}
+		
 		List<String> ids = policy.getAppliedIds();
-		ids.add(objectId);
-		policy.setAppliedIds(ids);
-		contentDaoService.update(repositoryId, policy);
+		if (ids == null) {
+			ids = new ArrayList<>();
+		}
+		
+		// Check for duplicate to avoid adding same objectId twice
+		if (!ids.contains(objectId)) {
+			ids.add(objectId);
+			policy.setAppliedIds(ids);
+			contentDaoService.update(repositoryId, policy);
+		} else {
+			log.debug("applyPolicy: objectId {} already applied to policy {}", objectId, policyId);
+		}
 
 		// Record the change event
 		Content content = getContent(repositoryId, objectId);
-		writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
+		if (content != null) {
+			writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
+		} else {
+			log.warn("applyPolicy: Content not found for objectId: " + objectId);
+		}
 	}
 
 	@Override
 	public void removePolicy(CallContext callContext, String repositoryId, String policyId, String objectId,
 			ExtensionsData extension) {
 		Policy policy = getPolicy(repositoryId, policyId);
+		if (policy == null) {
+			log.warn("removePolicy: Policy not found: " + policyId);
+			return;
+		}
+		
 		List<String> ids = policy.getAppliedIds();
-		ids.remove(objectId);
-		policy.setAppliedIds(ids);
-		contentDaoService.update(repositoryId, policy);
+		if (ids == null || ids.isEmpty()) {
+			log.debug("removePolicy: Policy {} has no applied objects", policyId);
+			return;
+		}
+		
+		if (ids.remove(objectId)) {
+			policy.setAppliedIds(ids);
+			contentDaoService.update(repositoryId, policy);
+		} else {
+			log.debug("removePolicy: objectId {} was not applied to policy {}", objectId, policyId);
+		}
 
 		// Record the change event
 		Content content = getContent(repositoryId, objectId);
-		writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
+		if (content != null) {
+			writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
+		} else {
+			log.warn("removePolicy: Content not found for objectId: " + objectId);
+		}
 	}
 
 	/**
