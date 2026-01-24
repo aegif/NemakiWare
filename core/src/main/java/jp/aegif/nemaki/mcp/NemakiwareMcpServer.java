@@ -166,7 +166,7 @@ public class NemakiwareMcpServer {
      *
      * @param request The JSON-RPC request
      * @param headers Request headers
-     * @return JSON-RPC response
+     * @return JSON-RPC response, or null for notifications
      */
     public Map<String, Object> handleRequest(Map<String, Object> request, Map<String, String> headers) {
         String method = (String) request.get("method");
@@ -175,6 +175,13 @@ public class NemakiwareMcpServer {
         Map<String, Object> params = (Map<String, Object>) request.getOrDefault("params", new HashMap<>());
 
         log.debug("MCP request: method={}, id={}", method, id);
+
+        // Handle notifications (no id field) - they don't expect a response
+        if (id == null && method != null && method.startsWith("notifications/")) {
+            log.debug("Received MCP notification: {}", method);
+            // Return empty success response for notifications
+            return createResponse(null, Map.of(), null);
+        }
 
         try {
             Object result = handleMethod(method, params, headers);
