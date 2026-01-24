@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import jp.aegif.nemaki.util.constant.NodeType;
 
@@ -45,6 +46,7 @@ public class User extends NodeBase {
 	private String lastName;
 	private String firstName;
 	private String email;
+	@JsonProperty("password")
 	private String passwordHash;
 	private Boolean admin;
 	private Set<String> favorites;
