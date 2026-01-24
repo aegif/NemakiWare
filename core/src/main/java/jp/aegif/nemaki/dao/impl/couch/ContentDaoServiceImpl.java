@@ -2553,7 +2553,37 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 		}
 	}
-	
+
+	@Override
+	public int deleteBulk(String repositoryId, List<String> objectIds) {
+		if (objectIds == null || objectIds.isEmpty()) {
+			return 0;
+		}
+
+		log.debug("deleteBulk: Starting bulk deletion of " + objectIds.size() + " objects in repository " + repositoryId);
+
+		try {
+			// Use CloudantClientWrapper's bulk delete capability
+			connectorPool.getClient(repositoryId).deleteDocumentsBatch(objectIds);
+			log.info("deleteBulk: Successfully deleted " + objectIds.size() + " objects in bulk");
+			return objectIds.size();
+		} catch (Exception e) {
+			log.error("deleteBulk: Bulk deletion failed for repository " + repositoryId + ": " + e.getMessage());
+			// Fall back to individual deletes
+			int successCount = 0;
+			for (String objectId : objectIds) {
+				try {
+					delete(repositoryId, objectId, false);
+					successCount++;
+				} catch (Exception deleteEx) {
+					log.warn("deleteBulk: Failed to delete object " + objectId + " during fallback: " + deleteEx.getMessage());
+				}
+			}
+			log.info("deleteBulk: Fallback individual deletion completed. " + successCount + " of " + objectIds.size() + " objects deleted");
+			return successCount;
+		}
+	}
+
 	/**
 	 * Verify that an object has been successfully deleted from CouchDB
 	 * @param repositoryId repository identifier

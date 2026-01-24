@@ -1471,6 +1471,39 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		nonCachedContentDaoService.delete(repositoryId, objectId, verifyDeletion);
 	}
 
+	@Override
+	public int deleteBulk(String repositoryId, List<String> objectIds) {
+		if (objectIds == null || objectIds.isEmpty()) {
+			return 0;
+		}
+
+		// Remove from cache first for each object
+		for (String objectId : objectIds) {
+			try {
+				NodeBase nb = nonCachedContentDaoService.getNodeBase(repositoryId, objectId);
+				if (nb != null) {
+					// Clear relevant caches
+					nemakiCachePool.get(repositoryId).getContentCache().remove(objectId);
+					nemakiCachePool.get(repositoryId).getObjectDataCache().remove(objectId);
+					nemakiCachePool.get(repositoryId).getAclCache().remove(objectId);
+
+					if (nb.isDocument()) {
+						Document doc = (Document) getDocument(repositoryId, objectId);
+						if (doc != null) {
+							nemakiCachePool.get(repositoryId).getAttachmentCache().remove(doc.getAttachmentNodeId());
+							nemakiCachePool.get(repositoryId).getVersionSeriesCache().remove(doc.getVersionSeriesId());
+						}
+					}
+				}
+			} catch (Exception e) {
+				log.warn("deleteBulk: Failed to clear cache for object " + objectId + ": " + e.getMessage());
+			}
+		}
+
+		// Delegate bulk delete to non-cached service
+		return nonCachedContentDaoService.deleteBulk(repositoryId, objectIds);
+	}
+
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////

@@ -2409,6 +2409,8 @@ public class ContentServiceImpl implements ContentService {
 	
 	/**
 	 * CRITICAL: Batch deletion of relationships for better Cloudant SDK performance
+	 * Uses ContentDaoService.deleteBulk for efficient batch deletion via _bulk_docs API.
+	 *
 	 * @param repositoryId repository identifier
 	 * @param relationshipIds list of relationship IDs to delete
 	 */
@@ -2416,18 +2418,13 @@ public class ContentServiceImpl implements ContentService {
 		if (relationshipIds == null || relationshipIds.isEmpty()) {
 			return;
 		}
-		
-		// For now, use individual deletes with proper error handling
-		// TODO: Implement true bulk delete when available in ContentDaoService
-		for (String relationshipId : relationshipIds) {
-			try {
-				contentDaoService.delete(repositoryId, relationshipId);
-				// Brief pause to prevent overwhelming CouchDB
-				Thread.sleep(5);
-			} catch (Exception e) {
-				log.warn("Failed to delete relationship " + relationshipId + ": " + e.getMessage());
-				// Continue with other deletions
-			}
+
+		log.debug("deleteRelationshipsBatch: Deleting " + relationshipIds.size() + " relationships in bulk");
+		int deletedCount = contentDaoService.deleteBulk(repositoryId, relationshipIds);
+		if (deletedCount < relationshipIds.size()) {
+			log.warn("deleteRelationshipsBatch: Only " + deletedCount + " of " + relationshipIds.size() + " relationships were deleted");
+		} else {
+			log.debug("deleteRelationshipsBatch: Successfully deleted " + deletedCount + " relationships");
 		}
 	}
 
