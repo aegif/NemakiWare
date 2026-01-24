@@ -3283,7 +3283,7 @@ public class ContentServiceImpl implements ContentService {
 	public void destroyArchive(String repositoryId, String archiveId) {
 		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
 		if (archive == null) {
-			log.error("Archive does not exist!");
+			log.error("destroyArchive: archive does not exist, archiveId=" + archiveId);
 			return;
 		}
 
@@ -3292,9 +3292,9 @@ public class ContentServiceImpl implements ContentService {
 		} else if (archive.isDocument()) {
 			destroyDocument(repositoryId, archive);
 		} else if (archive.isAttachment()) {
-			log.error("Attachment can't be restored alone");
+			log.error("destroyArchive: attachment cannot be restored alone, archiveId=" + archiveId);
 		} else {
-			log.error("Only document or folder is supported for restoration");
+			log.error("destroyArchive: only document or folder is supported for restoration, archiveId=" + archiveId);
 		}
 	}
 
@@ -3308,7 +3308,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 		String deletedArchiveId = contentDaoService.deleteArchive(repositoryId, archive.getId());
 		if (deletedArchiveId == null) {
-			log.warn("Folder archive deletion returned null: " + archive.getId());
+			log.warn("destroyFolder: folder archive deletion returned null, archiveId=" + archive.getId());
 		}
 	}
 
