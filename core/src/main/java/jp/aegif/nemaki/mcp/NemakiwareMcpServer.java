@@ -146,8 +146,6 @@ public class NemakiwareMcpServer {
         String sessionToken = getStringArg(arguments, "sessionToken", null);
         McpAuthResult authResult;
 
-        log.info("MCP tool '{}' called. sessionToken in args: {}", toolName, sessionToken != null ? "YES" : "NO");
-
         if (sessionToken != null) {
             // Use session token from arguments
             authResult = authHandler.authenticateSessionToken(repositoryId, sessionToken);
@@ -165,7 +163,7 @@ public class NemakiwareMcpServer {
         }
 
         String userId = authResult.getUserId();
-        log.info("MCP tool '{}' executing as user '{}'", toolName, userId);
+        log.debug("Authenticated user {} for tool {}", userId, toolName);
 
         // Execute the tool
         switch (toolName) {
