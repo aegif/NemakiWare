@@ -869,7 +869,7 @@ public class CompileServiceImpl implements CompileService {
 
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
-			// TODO WORKAROUND. implement class cast check
+			// Note: permissionMap is type-safe Map<String, PermissionMapping>, no class cast check needed
 
 			// FIXME WORKAROUND: skip canCreatePolicy.Folder
 			if (PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key)) {

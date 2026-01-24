@@ -918,9 +918,19 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	private class VersionComparator implements Comparator<Content> {
 		@Override
 		public int compare(Content content0, Content content1) {
-			// TODO when created time is not set
 			GregorianCalendar created0 = content0.getCreated();
 			GregorianCalendar created1 = content1.getCreated();
+
+			// Handle null created times: null is considered "oldest" (sorted to end)
+			if (created0 == null && created1 == null) {
+				return 0;
+			}
+			if (created0 == null) {
+				return 1; // content0 is "older", sorted after content1
+			}
+			if (created1 == null) {
+				return -1; // content1 is "older", sorted after content0
+			}
 
 			if (created0.before(created1)) {
 				return 1;
@@ -1183,7 +1193,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * - This is a safety valve to prevent runaway expansion in pathological cases
 	 *   (e.g., circular references that somehow bypass cycle detection)
 	 * 
-	 * TODO: Consider externalizing this to nemakiware.properties for configurability
+	 * Future enhancement: This could be externalized to nemakiware.properties
+	 * using @Value annotation (e.g., @Value("${group.max.nested.expansion:100}"))
+	 * Default value of 100 is suitable for most organizations.
 	 */
 	private static final int MAX_NESTED_GROUP_EXPANSION = 100;
 	
@@ -1679,10 +1691,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		Content restored = getContent(repositoryId, originalId);
 		if(restored == null){
-			//TODO log
+			log.warn("restoreDocumentWithArchive: Could not retrieve restored content with originalId=" + originalId + " in repository=" + repositoryId);
 		}else{
-			//TODO rebuild cache into getChildren()
+			// Add restored content to tree cache for getChildren() calls
 			addToTreeCache(repositoryId, restored);
+			log.debug("restoreDocumentWithArchive: Successfully restored and cached content with originalId=" + originalId);
 		}
 	}
 

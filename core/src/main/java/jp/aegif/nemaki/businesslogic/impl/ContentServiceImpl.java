@@ -218,12 +218,36 @@ public class ContentServiceImpl implements ContentService {
 
 	private List<String> splitLeafPathSegment(String path) {
 		List<String> splitted = new LinkedList<String>();
+		
+		// Validation for irregular path
+		if (path == null || path.isEmpty()) {
+			log.warn("splitLeafPathSegment: path is null or empty");
+			return splitted;
+		}
+		
+		if (!path.startsWith(PATH_SEPARATOR)) {
+			log.warn("splitLeafPathSegment: path must start with '/': " + path);
+			return splitted;
+		}
+		
 		if (path.equals(PATH_SEPARATOR)) {
 			splitted.add(PATH_SEPARATOR);
 			return splitted;
 		}
-
-		// TODO validation for irregular path
+		
+		// Check for trailing slash (except root)
+		if (path.endsWith(PATH_SEPARATOR)) {
+			log.debug("splitLeafPathSegment: removing trailing slash from path: " + path);
+			path = path.substring(0, path.length() - 1);
+		}
+		
+		// Check for consecutive slashes
+		if (path.contains("//")) {
+			log.warn("splitLeafPathSegment: path contains consecutive slashes: " + path);
+			// Normalize by replacing multiple slashes with single slash
+			path = path.replaceAll("/+", "/");
+		}
+		
 		splitted = new LinkedList<String>(Arrays.asList(path.split(PATH_SEPARATOR)));
 		splitted.remove(0);
 		splitted.add(0, PATH_SEPARATOR);
@@ -3166,7 +3190,7 @@ public class ContentServiceImpl implements ContentService {
 
 		setSignature(callContext, rendition);
 		if (converted == null) {
-			// TODO logging
+			log.warn("createRendition: PDF conversion failed for document: " + document.getName() + " (id=" + document.getId() + ")");
 			return null;
 		} else {
 			String renditionId = contentDaoService.createRendition(repositoryId, rendition, converted);
@@ -3455,7 +3479,7 @@ public class ContentServiceImpl implements ContentService {
 	public String getLatestChangeToken(String repositoryId) {
 		Change latest = contentDaoService.getLatestChange(repositoryId);
 		if (latest == null) {
-			// TODO null is OK?
+			// Per CMIS spec: null is acceptable when there are no changes in the repository
 			return null;
 		} else {
 			// return String.valueOf(latest.getChangeToken());

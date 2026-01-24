@@ -163,8 +163,8 @@ public class PermissionServiceImpl implements PermissionService {
 		
 		log.debug("Non-admin user " + userName + " proceeding with permission checks, userItem=" + (u != null ? "exists" : "null"));
 
-		//PWC doesn't accept any actions from a non-owner user
-		//TODO admin can manipulate PWC even when it is checked out ?
+		// PWC doesn't accept any actions from a non-owner user
+		// Note: Admin users bypass this check (handled above), so they CAN manipulate PWC
 		if(content.isDocument()){
 			Document document = (Document)content;
 			if(document.isPrivateWorkingCopy()){
