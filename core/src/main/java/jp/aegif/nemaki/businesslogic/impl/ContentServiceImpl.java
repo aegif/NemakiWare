@@ -3261,7 +3261,10 @@ public class ContentServiceImpl implements ContentService {
 				}
 			}
 		}
-		contentDaoService.deleteArchive(repositoryId, archive.getId());
+		String deletedArchiveId = contentDaoService.deleteArchive(repositoryId, archive.getId());
+		if (deletedArchiveId == null) {
+			log.warn("Archive deletion returned null during restore: " + archive.getId());
+		}
 
 		return getFolder(repositoryId, archive.getOriginalId());
 	}
@@ -3295,14 +3298,17 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private void destroyFolder(String repositoryId, Archive archive) {
-		// Restore direct children
+		// Destroy direct children first
 		List<Archive> children = contentDaoService.getChildArchives(repositoryId, archive);
 		if (CollectionUtils.isNotEmpty(children)) {
 			for (Archive child : children) {
 				destroyArchive(repositoryId, child.getId());
 			}
 		}
-		contentDaoService.deleteArchive(repositoryId, archive.getId());
+		String deletedArchiveId = contentDaoService.deleteArchive(repositoryId, archive.getId());
+		if (deletedArchiveId == null) {
+			log.warn("Folder archive deletion returned null: " + archive.getId());
+		}
 	}
 
 	private void destoryDocument(String repositoryId, Archive archive) {
@@ -3311,14 +3317,20 @@ public class ContentServiceImpl implements ContentService {
 			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId,
 					archive.getVersionSeriesId());
 			for (Archive version : versions) {
-				// Restore its attachment
+				// Get its attachment archive
 				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
-				// delete archives
-				contentDaoService.deleteArchive(repositoryId, version.getId());
-				contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
+				// Delete archives with result checking
+				String deletedVersionId = contentDaoService.deleteArchive(repositoryId, version.getId());
+				if (deletedVersionId == null) {
+					log.warn("Document version archive deletion returned null: " + version.getId());
+				}
+				String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
+				if (deletedAttachmentId == null) {
+					log.warn("Attachment archive deletion returned null: " + attachmentArchive.getId());
+				}
 			}
 		} catch (Exception e) {
-			log.error("fail to restore a document", e);
+			log.error("Failed to destroy document archive: " + archive.getId(), e);
 		}
 	}
 

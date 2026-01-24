@@ -43,6 +43,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
+import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
+import com.ibm.cloud.sdk.core.service.exception.ServiceResponseException;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.ContentDaoService;
@@ -3537,8 +3539,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			CouchArchive ca = connectorPool.get(archive).get(CouchArchive.class, archiveId);
 			connectorPool.get(archive).delete(ca);
 			return archiveId;
+		} catch (NotFoundException e) {
+			// Archive document does not exist - this is expected in some cases
+			log.warn(buildLogMsg(archiveId, "archive not found in database (may already be deleted)"));
+			return null;
+		} catch (ServiceResponseException e) {
+			// CouchDB/Cloudant service error (connection, timeout, 5xx errors)
+			log.error(buildLogMsg(archiveId, "CouchDB service error during archive deletion: " + e.getMessage()), e);
+			return null;
 		} catch (Exception e) {
-			log.warn(buildLogMsg(archiveId, "the archive not found on db"));
+			// Unexpected error
+			log.error(buildLogMsg(archiveId, "unexpected error during archive deletion: " + e.getMessage()), e);
 			return null;
 		}
 	}
@@ -3548,8 +3559,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Archive docArchive = getArchive(repositoryId, archiveId);
 		Archive attachmentArchive = getArchiveByOriginalId(repositoryId, docArchive.getAttachmentNodeId());
 
-		deleteArchive(repositoryId, docArchive.getId());
-		deleteArchive(repositoryId, attachmentArchive.getId());
+		String deletedDocArchiveId = deleteArchive(repositoryId, docArchive.getId());
+		if (deletedDocArchiveId == null) {
+			log.warn(buildLogMsg(docArchive.getId(), "document archive deletion returned null (may not have been deleted)"));
+		}
+
+		String deletedAttachmentArchiveId = deleteArchive(repositoryId, attachmentArchive.getId());
+		if (deletedAttachmentArchiveId == null) {
+			log.warn(buildLogMsg(attachmentArchive.getId(), "attachment archive deletion returned null (may not have been deleted)"));
+		}
 	}
 
 	@Override

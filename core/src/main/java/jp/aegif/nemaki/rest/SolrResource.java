@@ -155,15 +155,18 @@ public class SolrResource extends ResourceBase {
 			});
 			status = checkSuccess(body);
 			if (!status) {
-				String errorMsg = "Solr init operation failed for repository: " + repositoryId;
-				log.error(errorMsg);
-				errMsg.add(errorMsg);
+				// Log with Solr response details for debugging
+				String sanitizedBody = sanitizeSolrResponse(body);
+				log.error("Solr init operation failed for repository: " + repositoryId + ", response: " + sanitizedBody);
+				// Client gets safe message only
+				errMsg.add("Solr init operation failed for repository: " + repositoryId);
 			}
 		} catch (Exception e) {
 			status = false;
-			String errorMsg = "Solr init operation error: " + e.getMessage();
-			log.error(errorMsg, e);
-			errMsg.add(errorMsg);
+			// Log full details for debugging
+			log.error("Solr init operation error for repository: " + repositoryId, e);
+			// Client gets safe, generic message (no internal details)
+			errMsg.add("Solr init operation failed. Please check server logs for details.");
 		}
 
 		// Output
@@ -251,19 +254,41 @@ public class SolrResource extends ResourceBase {
 			});
 			status = checkSuccess(body);
 			if (!status) {
-				String errorMsg = "Solr password change operation failed for repository: " + repositoryId;
-				log.error(errorMsg);
-				errMsg.add(errorMsg);
+				// Log with Solr response details for debugging
+				String sanitizedBody = sanitizeSolrResponse(body);
+				log.error("Solr password change operation failed for repository: " + repositoryId + ", response: " + sanitizedBody);
+				// Client gets safe message only
+				errMsg.add("Solr password change operation failed for repository: " + repositoryId);
 			}
 		} catch (Exception e) {
 			status = false;
-			String errorMsg = "Solr password change operation error: " + e.getMessage();
-			log.error(errorMsg, e);
-			errMsg.add(errorMsg);
+			// Log full details for debugging
+			log.error("Solr password change operation error for repository: " + repositoryId, e);
+			// Client gets safe, generic message (no internal details)
+			errMsg.add("Solr password change operation failed. Please check server logs for details.");
 		}
 
 		// Output
 		return makeResult(status, result, errMsg);
+	}
+
+	/**
+	 * Sanitize Solr response for logging.
+	 * Removes potentially sensitive information like file paths, internal URLs, etc.
+	 * Truncates to reasonable length for log readability.
+	 */
+	private String sanitizeSolrResponse(String response) {
+		if (response == null) {
+			return "[null response]";
+		}
+		// Truncate very long responses
+		final int maxLength = 500;
+		String sanitized = response.length() > maxLength
+			? response.substring(0, maxLength) + "...[truncated]"
+			: response;
+		// Remove newlines for single-line logging
+		sanitized = sanitized.replace("\n", " ").replace("\r", " ");
+		return sanitized;
 	}
 
 	private boolean checkSuccess(String xml) throws Exception {
