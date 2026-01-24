@@ -342,44 +342,79 @@ public class ContentServiceImpl implements ContentService {
 	/**
 	 * Apply CMIS orderBy sorting to a list of documents.
 	 * Supports: cmis:name, cmis:creationDate, cmis:lastModificationDate
-	 * Format: "propertyId [ASC|DESC], ..."
+	 * Format: "propertyId [ASC|DESC], propertyId2 [ASC|DESC], ..."
 	 */
 	private List<Document> applySorting(List<Document> docs, String orderBy) {
 		if (docs == null || docs.isEmpty()) {
 			return docs;
 		}
-		
-		// Parse first orderBy clause (multiple clauses would require more complex comparator)
-		String[] parts = orderBy.trim().split("\\s+");
-		String propertyId = parts[0].trim();
-		boolean ascending = true;
-		if (parts.length > 1) {
-			String direction = parts[1].trim().toUpperCase();
-			if ("DESC".equals(direction)) {
-				ascending = false;
+
+		// Parse orderBy clauses (comma-separated per CMIS spec)
+		String[] clauses = orderBy.trim().split(",");
+		List<SortClause> sortClauses = new ArrayList<>();
+
+		for (String clause : clauses) {
+			String[] parts = clause.trim().split("\\s+");
+			if (parts.length == 0 || parts[0].isEmpty()) {
+				continue;
 			}
+
+			String propertyId = parts[0].trim();
+			boolean ascending = true;
+			if (parts.length > 1) {
+				String direction = parts[1].trim().toUpperCase();
+				if ("DESC".equals(direction)) {
+					ascending = false;
+				}
+			}
+			sortClauses.add(new SortClause(propertyId, ascending));
 		}
-		
-		final boolean sortAscending = ascending;
-		
+
+		if (sortClauses.isEmpty()) {
+			return docs;
+		}
+
 		try {
 			List<Document> sorted = new ArrayList<>(docs);
 			sorted.sort((d1, d2) -> {
-				Comparable<?> v1 = getComparableValue(d1, propertyId);
-				Comparable<?> v2 = getComparableValue(d2, propertyId);
-				
-				if (v1 == null && v2 == null) return 0;
-				if (v1 == null) return sortAscending ? -1 : 1;
-				if (v2 == null) return sortAscending ? 1 : -1;
-				
-				@SuppressWarnings("unchecked")
-				int result = ((Comparable<Object>) v1).compareTo(v2);
-				return sortAscending ? result : -result;
+				for (SortClause sc : sortClauses) {
+					Comparable<?> v1 = getComparableValue(d1, sc.propertyId);
+					Comparable<?> v2 = getComparableValue(d2, sc.propertyId);
+
+					if (v1 == null && v2 == null) continue;
+					if (v1 == null) return sc.ascending ? -1 : 1;
+					if (v2 == null) return sc.ascending ? 1 : -1;
+
+					try {
+						@SuppressWarnings("unchecked")
+						int result = ((Comparable<Object>) v1).compareTo(v2);
+						if (result != 0) {
+							return sc.ascending ? result : -result;
+						}
+					} catch (ClassCastException e) {
+						log.debug("applySorting: Cannot compare values for property " + sc.propertyId);
+						continue;
+					}
+				}
+				return 0;
 			});
 			return sorted;
 		} catch (Exception e) {
 			log.warn("getCheckedOutDocs: Failed to apply orderBy '" + orderBy + "': " + e.getMessage());
 			return docs;
+		}
+	}
+
+	/**
+	 * Helper class for sort clause
+	 */
+	private static class SortClause {
+		final String propertyId;
+		final boolean ascending;
+
+		SortClause(String propertyId, boolean ascending) {
+			this.propertyId = propertyId;
+			this.ascending = ascending;
 		}
 	}
 	
@@ -2510,20 +2545,30 @@ public class ContentServiceImpl implements ContentService {
 
 		content.setParentId(target.getId());
 
-		move(repositoryId, content, sourceId);
+		Content result = move(repositoryId, content, sourceId);
 
 		Folder source = getFolder(repositoryId, sourceId);
-		writeChangeEvent(callContext, repositoryId, source, ChangeType.UPDATED);
-		writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
+		if (source != null) {
+			writeChangeEvent(callContext, repositoryId, source, ChangeType.UPDATED);
+		}
+		if (target != null) {
+			writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
+		}
 
 		// Solr indexing for moved content (failure won't affect main operation)
 		try {
 			if (solrUtil != null) {
-				// Index the moved content (parentId changed)
-				solrUtil.indexDocument(repositoryId, content);
+				// Index the moved content (parentId changed) - use result from move()
+				if (result != null) {
+					solrUtil.indexDocument(repositoryId, result);
+				}
 				// Index source and target folders if needed
-				solrUtil.indexDocument(repositoryId, source);
-				solrUtil.indexDocument(repositoryId, target);
+				if (source != null) {
+					solrUtil.indexDocument(repositoryId, source);
+				}
+				if (target != null) {
+					solrUtil.indexDocument(repositoryId, target);
+				}
 			}
 		} catch (Exception e) {
 			log.warn("moveObject: Solr indexing failed: " + e.getMessage());
