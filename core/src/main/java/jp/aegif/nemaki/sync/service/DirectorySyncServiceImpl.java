@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.sync.service;
 
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
@@ -28,7 +29,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -64,6 +64,10 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
     
     private final Map<String, DirectorySyncResult> lastSyncResults = new ConcurrentHashMap<>();
     private final Map<String, Object> repositoryLocks = new ConcurrentHashMap<>();
+    
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final String PASSWORD_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+    private static final int GENERATED_PASSWORD_LENGTH = 32;
 
     private Object getRepositoryLock(String repositoryId) {
         return repositoryLocks.computeIfAbsent(repositoryId, k -> new Object());
@@ -92,7 +96,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     return result;
                 }
 
-                log.info("Starting directory sync for repository: " + repositoryId + " (dryRun=" + dryRun + ")");
+                log.info("AUDIT: Starting directory sync for repository: " + repositoryId + " (dryRun=" + dryRun + ")");
 
                 LdapDirectoryConnector connector = new LdapDirectoryConnector(config);
                 
@@ -185,6 +189,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     if (config.isCreateMissingUsers()) {
                         if (!dryRun) {
                             createUser(repositoryId, ldapUser, userPrefix);
+                            log.info("AUDIT: User created via directory sync: " + nemakiUserId);
                         }
                         result.incrementUsersAdded();
                         log.debug("User created: " + nemakiUserId);
@@ -222,6 +227,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                         if (!dryRun) {
                             removeUserFromAllGroups(repositoryId, userId);
                             contentService.delete(new SystemCallContext(repositoryId), repositoryId, existingUser.getId(), false);
+                            log.info("AUDIT: User deleted via directory sync (orphan): " + userId);
                         }
                         result.incrementUsersRemoved();
                         log.debug("User deleted (orphan): " + userId);
@@ -290,7 +296,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
             throw new RuntimeException("Failed to get or create users folder");
         }
 
-        String randomPassword = UUID.randomUUID().toString();
+        String randomPassword = generateSecurePassword();
         String passwordHash = BCrypt.hashpw(randomPassword, BCrypt.gensalt());
 
         String displayName = ldapUser.getDisplayName();
@@ -381,6 +387,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 } else {
                     if (!dryRun) {
                         createGroup(repositoryId, ldapGroup, groupPrefix, config);
+                        log.info("AUDIT: Group created via directory sync: " + nemakiGroupId);
                     }
                     result.incrementGroupsCreated();
                     log.debug("Group created: " + nemakiGroupId);
@@ -397,6 +404,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     try {
                         if (!dryRun) {
                             contentService.delete(new SystemCallContext(repositoryId), repositoryId, existingGroup.getId(), false);
+                            log.info("AUDIT: Group deleted via directory sync (orphan): " + existingGroup.getGroupId());
                         }
                         result.incrementGroupsDeleted();
                         log.debug("Group deleted (orphan): " + existingGroup.getGroupId());
@@ -646,5 +654,14 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
 
     public void setPropertyManager(PropertyManager propertyManager) {
         this.propertyManager = propertyManager;
+    }
+    
+    private String generateSecurePassword() {
+        StringBuilder password = new StringBuilder(GENERATED_PASSWORD_LENGTH);
+        for (int i = 0; i < GENERATED_PASSWORD_LENGTH; i++) {
+            int index = SECURE_RANDOM.nextInt(PASSWORD_CHARS.length());
+            password.append(PASSWORD_CHARS.charAt(index));
+        }
+        return password.toString();
     }
 }

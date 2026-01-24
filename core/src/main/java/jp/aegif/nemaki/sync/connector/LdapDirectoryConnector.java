@@ -171,7 +171,15 @@ public class LdapDirectoryConnector {
     private void doConnect() throws NamingException {
         Hashtable<String, String> env = new Hashtable<>();
         env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
-        env.put(Context.PROVIDER_URL, config.getLdapUrl());
+        
+        String ldapUrl = config.getLdapUrl();
+        if (ldapUrl == null || ldapUrl.trim().isEmpty()) {
+            throw new NamingException("LDAP URL is not configured");
+        }
+        if (!ldapUrl.toLowerCase().startsWith("ldap://") && !ldapUrl.toLowerCase().startsWith("ldaps://")) {
+            throw new NamingException("Invalid LDAP URL: must start with ldap:// or ldaps://");
+        }
+        env.put(Context.PROVIDER_URL, ldapUrl);
 
         env.put("com.sun.jndi.ldap.connect.timeout", String.valueOf(config.getConnectionTimeout()));
         env.put("com.sun.jndi.ldap.read.timeout", String.valueOf(config.getReadTimeout()));
@@ -179,8 +187,14 @@ public class LdapDirectoryConnector {
         if (config.isUseTls()) {
             env.put(Context.SECURITY_PROTOCOL, "ssl");
         }
+        
+        if (!config.isUseTls() && !config.isUseStartTls() && !ldapUrl.toLowerCase().startsWith("ldaps://")) {
+            log.warn("SECURITY WARNING: LDAP connection is not encrypted! " +
+                    "Credentials will be transmitted in plain text. " +
+                    "Enable TLS (ldaps://) or StartTLS for production environments.");
+        }
 
-        log.info("Connecting to LDAP server: " + config.getLdapUrl());
+        log.info("Connecting to LDAP server: " + ldapUrl);
         this.context = new InitialLdapContext(env, null);
 
         if (config.isUseStartTls()) {

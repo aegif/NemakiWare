@@ -71,6 +71,8 @@ public class PasswordEncryptionUtil {
 
     private static final String DEFAULT_ENCRYPTION_KEY_ENV = "NEMAKI_ENCRYPTION_KEY";
     private static final String DEFAULT_ENCRYPTION_KEY = "NemakiWare-Default-Key-Change-Me!";
+    
+    private static volatile boolean defaultKeyWarningLogged = false;
 
     private PasswordEncryptionUtil() {
     }
@@ -256,8 +258,14 @@ public class PasswordEncryptionUtil {
         if (key != null && !key.isEmpty()) {
             return key;
         }
-        log.warn("Using default encryption key. Set " + DEFAULT_ENCRYPTION_KEY_ENV + 
-                " environment variable for production use.");
+        
+        if (!defaultKeyWarningLogged) {
+            defaultKeyWarningLogged = true;
+            log.error("SECURITY WARNING: Using default encryption key! " +
+                    "This is a critical security risk in production environments. " +
+                    "The default key is publicly known and passwords encrypted with it can be decrypted by anyone. " +
+                    "Set the " + DEFAULT_ENCRYPTION_KEY_ENV + " environment variable to a secure, unique key.");
+        }
         return DEFAULT_ENCRYPTION_KEY;
     }
 

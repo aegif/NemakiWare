@@ -86,7 +86,7 @@ public class DirectorySyncResource extends ResourceBase {
         } catch (Exception e) {
             log.error("Error triggering directory sync: " + e.getMessage(), e);
             status = false;
-            addErrMsg(errMsg, "sync", "ERR_SYNC_FAILED: " + e.getMessage());
+            addErrMsg(errMsg, "sync", "ERR_SYNC_FAILED: " + sanitizeErrorMessage(e.getMessage()));
         }
 
         result = makeResult(status, result, errMsg);
@@ -119,7 +119,7 @@ public class DirectorySyncResource extends ResourceBase {
         } catch (Exception e) {
             log.error("Error previewing directory sync: " + e.getMessage(), e);
             status = false;
-            addErrMsg(errMsg, "sync", "ERR_PREVIEW_FAILED: " + e.getMessage());
+            addErrMsg(errMsg, "sync", "ERR_PREVIEW_FAILED: " + sanitizeErrorMessage(e.getMessage()));
         }
 
         result = makeResult(status, result, errMsg);
@@ -155,7 +155,7 @@ public class DirectorySyncResource extends ResourceBase {
         } catch (Exception e) {
             log.error("Error getting sync status: " + e.getMessage(), e);
             status = false;
-            addErrMsg(errMsg, "sync", "ERR_STATUS_FAILED: " + e.getMessage());
+            addErrMsg(errMsg, "sync", "ERR_STATUS_FAILED: " + sanitizeErrorMessage(e.getMessage()));
         }
 
         result = makeResult(status, result, errMsg);
@@ -186,7 +186,7 @@ public class DirectorySyncResource extends ResourceBase {
         } catch (Exception e) {
             log.error("Error getting sync config: " + e.getMessage(), e);
             status = false;
-            addErrMsg(errMsg, "sync", "ERR_CONFIG_FAILED: " + e.getMessage());
+            addErrMsg(errMsg, "sync", "ERR_CONFIG_FAILED: " + sanitizeErrorMessage(e.getMessage()));
         }
 
         result = makeResult(status, result, errMsg);
@@ -225,7 +225,7 @@ public class DirectorySyncResource extends ResourceBase {
         } catch (Exception e) {
             log.error("Error testing LDAP connection: " + e.getMessage(), e);
             status = false;
-            addErrMsg(errMsg, "sync", "ERR_CONNECTION_TEST_FAILED: " + e.getMessage());
+            addErrMsg(errMsg, "sync", "ERR_CONNECTION_TEST_FAILED: " + sanitizeErrorMessage(e.getMessage()));
         }
 
         result = makeResult(status, result, errMsg);
@@ -320,5 +320,23 @@ public class DirectorySyncResource extends ResourceBase {
 
     public void setDirectorySyncService(DirectorySyncService directorySyncService) {
         this.directorySyncService = directorySyncService;
+    }
+    
+    private String sanitizeErrorMessage(String message) {
+        if (message == null) {
+            return "An unexpected error occurred";
+        }
+        
+        String sanitized = message;
+        sanitized = sanitized.replaceAll("(?i)(password|credential|secret|key)\\s*[=:]\\s*\\S+", "$1=[REDACTED]");
+        sanitized = sanitized.replaceAll("\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b", "[IP_REDACTED]");
+        sanitized = sanitized.replaceAll("(?i)(ldap://|ldaps://)([^/\\s]+)", "$1[HOST_REDACTED]");
+        sanitized = sanitized.replaceAll("(?i)(cn|ou|dc|uid)=[^,\\s]+", "$1=[REDACTED]");
+        
+        if (sanitized.length() > 200) {
+            sanitized = sanitized.substring(0, 200) + "...";
+        }
+        
+        return sanitized;
     }
 }
