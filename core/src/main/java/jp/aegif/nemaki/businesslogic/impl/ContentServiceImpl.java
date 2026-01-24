@@ -81,6 +81,7 @@ import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExistsException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
+import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 // CmisException import removed due to Jakarta EE compatibility issues
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -3316,11 +3317,21 @@ public class ContentServiceImpl implements ContentService {
 			// Get archives of the same version series
 			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId,
 					archive.getVersionSeriesId());
+
+			if (versions == null) {
+				log.warn("getArchivesOfVersionSeries returned null for versionSeriesId: " + archive.getVersionSeriesId());
+				return;
+			}
+			if (versions.isEmpty()) {
+				log.warn("No versions found for versionSeriesId: " + archive.getVersionSeriesId());
+				return;
+			}
+
 			for (Archive version : versions) {
 				// Get attachment archive FIRST (before deleting version)
 				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
 
-				// Delete attachment archive first
+				// Delete attachment archive first (continue even if fails - best effort cleanup)
 				if (attachmentArchive != null) {
 					String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
 					if (deletedAttachmentId == null) {
@@ -3336,6 +3347,8 @@ public class ContentServiceImpl implements ContentService {
 					log.warn("Document version archive deletion returned null: " + version.getId());
 				}
 			}
+		} catch (NotFoundException e) {
+			log.warn("Archive not found during destroy: " + archive.getId());
 		} catch (Exception e) {
 			log.error("Failed to destroy document archive: " + archive.getId(), e);
 		}

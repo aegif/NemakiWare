@@ -3540,6 +3540,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		try {
 			CouchArchive ca = connectorPool.get(archive).get(CouchArchive.class, archiveId);
+			if (ca == null) {
+				// get() returned null (archive not found)
+				log.warn(buildLogMsg(archiveId, "archive not found in database (may already be deleted)"));
+				return null;
+			}
 			connectorPool.get(archive).delete(ca);
 			return archiveId;
 		} catch (NotFoundException e) {
@@ -3548,11 +3553,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return null;
 		} catch (ServiceResponseException e) {
 			// CouchDB/Cloudant service error (connection, timeout, 5xx errors)
-			log.error(buildLogMsg(archiveId, "CouchDB service error during archive deletion: " + e.getMessage()), e);
+			log.error(buildLogMsg(archiveId, "CouchDB service error during archive deletion"), e);
 			return null;
 		} catch (Exception e) {
 			// Unexpected error
-			log.error(buildLogMsg(archiveId, "unexpected error during archive deletion: " + e.getMessage()), e);
+			log.error(buildLogMsg(archiveId, "unexpected error during archive deletion"), e);
 			return null;
 		}
 	}
