@@ -1284,12 +1284,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 */
 	private boolean isFolderType(String repositoryId, String objectType) {
 		if (objectType == null) return false;
-		
+
 		// Direct match for standard folder types
 		if ("cmis:folder".equals(objectType) || "folder".equals(objectType)) {
 			return true;
 		}
-		
+
 		// Use TypeManager to check type hierarchy
 		if (typeManager != null) {
 			try {
@@ -1297,13 +1297,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			} catch (Exception e) {
 				log.debug("isFolderType: TypeManager lookup failed for type '" + objectType + "', falling back to pattern matching");
 			}
+		} else {
+			log.debug("isFolderType: TypeManager not available, using fallback pattern matching");
 		}
-		
-		// Fallback: Check for custom folder types (nemaki:folder, etc.)
-		if (objectType.contains("folder")) {
+
+		// Fallback: Check for known folder type patterns (e.g., nemaki:folder)
+		// Use stricter matching to avoid false positives like "myfolder" or "folder123"
+		if (objectType.startsWith("nemaki:folder") || objectType.matches(".*:folder$")) {
 			return true;
 		}
-		
+
 		return false;
 	}
 
@@ -1311,7 +1314,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	/**
 	 * Check if the given objectType is the target type or inherits from the target type.
 	 * Walks up the type hierarchy using TypeManager.
-	 * 
+	 *
 	 * @param repositoryId the repository ID
 	 * @param objectType the type ID to check
 	 * @param targetBaseType the target base type ID (e.g., "cmis:folder", "cmis:document")
@@ -1321,39 +1324,45 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		if (objectType == null || targetBaseType == null) {
 			return false;
 		}
-		
+
 		// Direct match
 		if (objectType.equals(targetBaseType)) {
 			return true;
 		}
-		
-		// Walk up the type hierarchy
+
+		// Walk up the type hierarchy with circular reference detection
 		String currentType = objectType;
-		int maxDepth = 100; // Prevent infinite loops
-		int depth = 0;
-		
-		while (currentType != null && depth < maxDepth) {
+		Set<String> visitedTypes = new HashSet<>();
+		int maxDepth = 100; // Additional safeguard
+
+		while (currentType != null && visitedTypes.size() < maxDepth) {
+			// Detect circular reference
+			if (visitedTypes.contains(currentType)) {
+				log.warn("isTypeOrDescendantOf: Circular type hierarchy detected at: " + currentType);
+				return false;
+			}
+			visitedTypes.add(currentType);
+
 			TypeDefinitionContainer typeContainer = typeManager.getTypeById(repositoryId, currentType);
 			if (typeContainer == null || typeContainer.getTypeDefinition() == null) {
 				// Type not found in TypeManager
 				return false;
 			}
-			
+
 			TypeDefinition typeDef = typeContainer.getTypeDefinition();
 			String parentTypeId = typeDef.getParentTypeId();
 			if (parentTypeId == null) {
 				// Reached root type without finding target
 				return false;
 			}
-			
+
 			if (parentTypeId.equals(targetBaseType)) {
 				return true;
 			}
-			
+
 			currentType = parentTypeId;
-			depth++;
 		}
-		
+
 		return false;
 	}
 

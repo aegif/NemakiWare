@@ -82,6 +82,9 @@ public class SolrUtil implements ApplicationContextAware {
 	// to break circular dependency between SolrUtil and ContentService
 	private ApplicationContext applicationContext;
 
+	// Cached ContentService instance to avoid repeated applicationContext.getBean() calls
+	private volatile ContentService contentServiceCache;
+
 	public SolrUtil() {
 		map = new HashMap<String, String>();
 		map.put(PropertyIds.OBJECT_ID, "object_id");
@@ -754,13 +757,30 @@ public class SolrUtil implements ApplicationContextAware {
 	/**
 	 * Get ContentService lazily from ApplicationContext to avoid circular dependency.
 	 * This method returns null if ContentService is not yet available.
+	 * Uses double-checked locking with volatile field for thread-safe lazy initialization.
 	 */
 	private ContentService getContentServiceSafely() {
+		// Use cached instance if available
+		ContentService cached = contentServiceCache;
+		if (cached != null) {
+			return cached;
+		}
+
 		if (applicationContext == null) {
 			return null;
 		}
+
 		try {
-			return applicationContext.getBean("ContentService", ContentService.class);
+			// Double-checked locking pattern
+			synchronized (this) {
+				cached = contentServiceCache;
+				if (cached != null) {
+					return cached;
+				}
+				cached = applicationContext.getBean("ContentService", ContentService.class);
+				contentServiceCache = cached;
+				return cached;
+			}
 		} catch (Exception e) {
 			log.debug("ContentService not yet available: {}", e.getMessage());
 			return null;
