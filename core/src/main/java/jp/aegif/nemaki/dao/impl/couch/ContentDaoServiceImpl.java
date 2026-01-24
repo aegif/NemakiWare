@@ -3339,6 +3339,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Archive getArchive(String repositoryId, String objectId) {
 		String archive = repositoryInfoMap.getArchiveId(repositoryId);
 		CouchArchive ca = connectorPool.get(archive).get(CouchArchive.class, objectId);
+		if (ca == null) {
+			return null;
+		}
 		return ca.convert();
 	}
 

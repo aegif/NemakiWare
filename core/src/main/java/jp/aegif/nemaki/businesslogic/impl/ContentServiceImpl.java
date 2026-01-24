@@ -3289,7 +3289,7 @@ public class ContentServiceImpl implements ContentService {
 		if (archive.isFolder()) {
 			destroyFolder(repositoryId, archive);
 		} else if (archive.isDocument()) {
-			destoryDocument(repositoryId, archive);
+			destroyDocument(repositoryId, archive);
 		} else if (archive.isAttachment()) {
 			log.error("Attachment can't be restored alone");
 		} else {
@@ -3311,20 +3311,16 @@ public class ContentServiceImpl implements ContentService {
 		}
 	}
 
-	private void destoryDocument(String repositoryId, Archive archive) {
+	private void destroyDocument(String repositoryId, Archive archive) {
 		try {
 			// Get archives of the same version series
 			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId,
 					archive.getVersionSeriesId());
 			for (Archive version : versions) {
-				// Delete version archive with result checking
-				String deletedVersionId = contentDaoService.deleteArchive(repositoryId, version.getId());
-				if (deletedVersionId == null) {
-					log.warn("Document version archive deletion returned null: " + version.getId());
-				}
-
-				// Get and delete attachment archive (with null check)
+				// Get attachment archive FIRST (before deleting version)
 				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
+
+				// Delete attachment archive first
 				if (attachmentArchive != null) {
 					String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
 					if (deletedAttachmentId == null) {
@@ -3332,6 +3328,12 @@ public class ContentServiceImpl implements ContentService {
 					}
 				} else {
 					log.warn("Attachment archive not found for version: " + version.getId());
+				}
+
+				// Then delete version archive
+				String deletedVersionId = contentDaoService.deleteArchive(repositoryId, version.getId());
+				if (deletedVersionId == null) {
+					log.warn("Document version archive deletion returned null: " + version.getId());
 				}
 			}
 		} catch (Exception e) {
