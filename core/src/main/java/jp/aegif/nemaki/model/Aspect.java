@@ -41,10 +41,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * TODO This class is under construction.
- * 
+ * Represents an aspect (secondary type) attached to a content object.
+ * Aspects allow adding additional properties to documents/folders without changing their primary type.
+ * Used for CMIS secondary types support.
+ *
  * @author mryoshio
- * 
  */
 public class Aspect {
 

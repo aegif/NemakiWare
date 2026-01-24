@@ -181,8 +181,8 @@ public class CompileServiceImpl implements CompileService {
 
 		ObjectDataImpl result = new ObjectDataImpl();
 
-		// Filter(any property filter MUST be done here
-		// TODO filtering ? (for performance)
+		// Filter (any property filter MUST be done here)
+		// Note: Property filtering could improve performance for large objects with many properties
 		PropertiesImpl properties = compileProperties(callContext, repositoryId, content);
 		result.setProperties(properties);
 
@@ -869,9 +869,9 @@ public class CompileServiceImpl implements CompileService {
 
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
-			// TODO WORKAROUND. implement class cast check
+			// Note: permissionMap is type-safe Map<String, PermissionMapping>, no class cast check needed
 
-			// FIXME WORKAROUND: skip canCreatePolicy.Folder
+			// Skip CAN_CREATE_POLICY_FOLDER: Policy creation in folders is not supported
 			if (PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key)) {
 				continue;
 			}
@@ -1421,8 +1421,7 @@ public class CompileServiceImpl implements CompileService {
 			}
 		}
 
-		// TODO If subType properties is not registered in DB, return void
-		// properties via CMIS
+		// Note: If subType properties are not registered in DB, they won't appear in CMIS response
 		// SubType properties
 		List<PropertyDefinition<?>> specificPropertyDefinitions = typeManager
 				.getSpecificPropertyDefinitions(tdf.getId());
@@ -1537,9 +1536,9 @@ public class CompileServiceImpl implements CompileService {
 
 			String checkedOutId = document.getVersionSeriesCheckedOutId();
 			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, checkedOutId);
-
-			// TODO comment
+			// End of versionable document properties
 		} else {
+			// Non-versionable document: set default/empty values for version properties
 			addProperty(properties, tdf, PropertyIds.IS_PRIVATE_WORKING_COPY, false);
 			addProperty(properties, tdf, PropertyIds.IS_LATEST_VERSION, false);
 			addProperty(properties, tdf, PropertyIds.IS_MAJOR_VERSION, false);
@@ -1891,7 +1890,7 @@ public class CompileServiceImpl implements CompileService {
 		if (StringUtils.isEmpty(id))
 			throw new IllegalArgumentException("ID must not be null!");
 
-		// TODO :performance
+		// Note: For high-volume property processing, consider caching property definitions
 		if (!tdf.getPropertyDefinitions().containsKey(id))
 			throw new IllegalArgumentException("Unknown property: " + id);
 
@@ -2478,9 +2477,7 @@ public class CompileServiceImpl implements CompileService {
 			return Action.CAN_CREATE_DOCUMENT;
 		if (PermissionMapping.CAN_CREATE_FOLDER_FOLDER.equals(key))
 			return Action.CAN_CREATE_FOLDER;
-		// FIXME the constant already implemented?
-		// if (PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key))
-		// return null;
+		// Note: CAN_CREATE_POLICY_FOLDER is skipped in compileAllowableActions (policy creation not supported)
 		if (PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE.equals(key))
 			return Action.CAN_CREATE_RELATIONSHIP;
 		if (PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET.equals(key))

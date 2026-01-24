@@ -31,6 +31,8 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -43,6 +45,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
+import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
+import com.ibm.cloud.sdk.core.service.exception.ServiceResponseException;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.ContentDaoService;
@@ -1451,19 +1455,88 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 */
 	private boolean isFolderType(String repositoryId, String objectType) {
 		if (objectType == null) return false;
-		
+
 		// Direct match for standard folder types
 		if ("cmis:folder".equals(objectType) || "folder".equals(objectType)) {
 			return true;
 		}
-		
-		// Check for custom folder types (nemaki:folder, etc.)
-		if (objectType.contains("folder")) {
+
+		// Use TypeManager to check type hierarchy
+		if (typeManager != null) {
+			try {
+				return isTypeOrDescendantOf(repositoryId, objectType, "cmis:folder");
+			} catch (Exception e) {
+				log.debug("isFolderType: TypeManager lookup failed for type '" + objectType + "', falling back to pattern matching");
+			}
+		} else {
+			log.debug("isFolderType: TypeManager not available, using fallback pattern matching");
+		}
+
+		// Fallback: Check for known folder type patterns (e.g., nemaki:folder)
+		// Use stricter matching to avoid false positives like "myfolder" or "folder123"
+		if (objectType.startsWith("nemaki:folder") || objectType.matches(".*:folder$")) {
 			return true;
 		}
-		
-		// TODO: Add proper type hierarchy checking using TypeManager
-		// For now, use simple pattern matching as a temporary solution
+
+		return false;
+	}
+
+
+	/**
+	 * Check if the given objectType is the target type or inherits from the target type.
+	 * Walks up the type hierarchy using TypeManager.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param objectType the type ID to check
+	 * @param targetBaseType the target base type ID (e.g., "cmis:folder", "cmis:document")
+	 * @return true if objectType is targetBaseType or inherits from it
+	 */
+	private boolean isTypeOrDescendantOf(String repositoryId, String objectType, String targetBaseType) {
+		if (objectType == null || targetBaseType == null) {
+			return false;
+		}
+
+		// Direct match
+		if (objectType.equals(targetBaseType)) {
+			return true;
+		}
+
+		// Walk up the type hierarchy with circular reference detection
+		String currentType = objectType;
+		Set<String> visitedTypes = new HashSet<>();
+		int maxDepth = 100; // Safeguard against unexpected deep hierarchies
+		int depth = 0;
+
+		while (currentType != null && depth < maxDepth) {
+			// Detect circular reference BEFORE adding to visitedTypes
+			if (visitedTypes.contains(currentType)) {
+				log.warn("isTypeOrDescendantOf: Circular type hierarchy detected at: " + currentType);
+				return false;
+			}
+			visitedTypes.add(currentType);
+			depth++;  // Increment depth when we add to visitedTypes (keeps depth == visitedTypes.size())
+
+			// Now check type hierarchy
+			TypeDefinitionContainer typeContainer = typeManager.getTypeById(repositoryId, currentType);
+			if (typeContainer == null || typeContainer.getTypeDefinition() == null) {
+				// Type not found in TypeManager
+				return false;
+			}
+
+			TypeDefinition typeDef = typeContainer.getTypeDefinition();
+			String parentTypeId = typeDef.getParentTypeId();
+			if (parentTypeId == null) {
+				// Reached root type without finding target
+				return false;
+			}
+
+			if (parentTypeId.equals(targetBaseType)) {
+				return true;
+			}
+
+			currentType = parentTypeId;
+		}
+
 		return false;
 	}
 
@@ -2663,7 +2736,38 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 		}
 	}
-	
+
+	@Override
+	public int deleteBulk(String repositoryId, List<String> objectIds) {
+		if (objectIds == null || objectIds.isEmpty()) {
+			return 0;
+		}
+
+		log.debug("deleteBulk: Starting bulk deletion of " + objectIds.size() + " objects in repository " + repositoryId);
+
+		try {
+			// Use CloudantClientWrapper's bulk delete capability
+			// Returns actual number of documents deleted
+			int deletedCount = connectorPool.getClient(repositoryId).deleteDocumentsBatch(objectIds);
+			log.info("deleteBulk: Bulk deletion completed. " + deletedCount + " of " + objectIds.size() + " objects deleted");
+			return deletedCount;
+		} catch (Exception e) {
+			log.error("deleteBulk: Bulk deletion failed for repository " + repositoryId + ": " + e.getMessage());
+			// Fall back to individual deletes
+			int successCount = 0;
+			for (String objectId : objectIds) {
+				try {
+					delete(repositoryId, objectId, false);
+					successCount++;
+				} catch (Exception deleteEx) {
+					log.warn("deleteBulk: Failed to delete object " + objectId + " during fallback: " + deleteEx.getMessage());
+				}
+			}
+			log.info("deleteBulk: Fallback individual deletion completed. " + successCount + " of " + objectIds.size() + " objects deleted");
+			return successCount;
+		}
+	}
+
 	/**
 	 * Verify that an object has been successfully deleted from CouchDB
 	 * @param repositoryId repository identifier
@@ -3508,6 +3612,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Archive getArchive(String repositoryId, String objectId) {
 		String archive = repositoryInfoMap.getArchiveId(repositoryId);
 		CouchArchive ca = connectorPool.get(archive).get(CouchArchive.class, objectId);
+		if (ca == null) {
+			return null;
+		}
 		return ca.convert();
 	}
 
@@ -3701,26 +3808,68 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	// FIXME return archiveId or something when successfully deleted
-	public void deleteArchive(String repositoryId, String archiveId) {
+	public String deleteArchive(String repositoryId, String archiveId) {
 		String archive = repositoryInfoMap.getArchiveId(repositoryId);
 
 		try {
 			CouchArchive ca = connectorPool.get(archive).get(CouchArchive.class, archiveId);
+			if (ca == null) {
+				// get() returned null without throwing exception
+				log.warn(buildLogMsg(archiveId, "archive not found in database (get() returned null)"));
+				return null;
+			}
 			connectorPool.get(archive).delete(ca);
+			return archiveId;
+		} catch (NotFoundException e) {
+			// Archive document does not exist - thrown by get() or delete()
+			log.warn(buildLogMsg(archiveId, "archive not found in database (NotFoundException thrown)"));
+			return null;
+		} catch (ServiceResponseException e) {
+			// CouchDB/Cloudant service error (connection, timeout, 5xx errors)
+			log.error(buildLogMsg(archiveId, "CouchDB service error during archive deletion"), e);
+			return null;
 		} catch (Exception e) {
-			log.warn(buildLogMsg(archiveId, "the archive not found on db"));
-			return;
+			// Unexpected error
+			log.error(buildLogMsg(archiveId, "unexpected error during archive deletion"), e);
+			return null;
 		}
 	}
 
 	@Override
 	public void deleteDocumentArchive(String repositoryId, String archiveId) {
-		Archive docArchive = getArchive(repositoryId, archiveId);
-		Archive attachmentArchive = getArchiveByOriginalId(repositoryId, docArchive.getAttachmentNodeId());
+		try {
+			Archive docArchive = getArchive(repositoryId, archiveId);
+			if (docArchive == null) {
+				log.warn(buildLogMsg(archiveId, "document archive not found"));
+				return;
+			}
 
-		deleteArchive(repositoryId, docArchive.getId());
-		deleteArchive(repositoryId, attachmentArchive.getId());
+			// Handle attachment archive deletion
+			String attachmentNodeId = docArchive.getAttachmentNodeId();
+			if (attachmentNodeId != null) {
+				Archive attachmentArchive = getArchiveByOriginalId(repositoryId, attachmentNodeId);
+				if (attachmentArchive != null) {
+					String deletedAttachmentArchiveId = deleteArchive(repositoryId, attachmentArchive.getId());
+					if (deletedAttachmentArchiveId == null) {
+						log.warn(buildLogMsg(attachmentArchive.getId(), "attachment archive deletion returned null"));
+					}
+				} else {
+					log.warn(buildLogMsg(attachmentNodeId, "attachment archive not found by original ID"));
+				}
+			} else {
+				log.warn(buildLogMsg(archiveId, "document archive has no attachment node ID"));
+			}
+
+			// Delete the document archive itself
+			String deletedDocArchiveId = deleteArchive(repositoryId, docArchive.getId());
+			if (deletedDocArchiveId == null) {
+				log.warn(buildLogMsg(docArchive.getId(), "document archive deletion returned null"));
+			}
+		} catch (NotFoundException e) {
+			log.warn(buildLogMsg(archiveId, "document archive not found: " + e.getMessage()));
+		} catch (Exception e) {
+			log.error(buildLogMsg(archiveId, "error during document archive deletion"), e);
+		}
 	}
 
 	@Override

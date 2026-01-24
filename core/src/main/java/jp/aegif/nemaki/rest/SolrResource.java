@@ -177,16 +177,24 @@ public class SolrResource extends ResourceBase {
 			String body = httpClient.execute(httpGet, response -> {
 				int responseStatus = response.getCode();
 				if (HttpStatus.SC_OK != responseStatus) {
-					throw new RuntimeException("Solr server connection failed");
+					throw new RuntimeException("Solr server connection failed with status: " + responseStatus);
 				}
 				return EntityUtils.toString(response.getEntity(), "UTF-8");
 			});
-			// TODO error message
 			status = checkSuccess(body);
+			if (!status) {
+				// Log with Solr response details for debugging
+				String sanitizedBody = sanitizeSolrResponse(body);
+				log.error("Solr init operation failed for repository: " + repositoryId + ", response: " + sanitizedBody);
+				// Client gets safe message only
+				errMsg.add("Solr init operation failed for repository: " + repositoryId);
+			}
 		} catch (Exception e) {
 			status = false;
-			// TODO error message
-			e.printStackTrace();
+			// Log full details for debugging
+			log.error("Solr init operation error for repository: " + repositoryId, e);
+			// Client gets safe, generic message (no internal details)
+			errMsg.add("Solr init operation failed. Please check server logs for details.");
 		}
 
 		// Output
@@ -268,20 +276,47 @@ public class SolrResource extends ResourceBase {
 			String body = httpClient.execute(httpAction, response -> {
 				int responseStatus = response.getCode();
 				if (HttpStatus.SC_OK != responseStatus) {
-					throw new RuntimeException("Solr server connection failed");
+					throw new RuntimeException("Solr server connection failed with status: " + responseStatus);
 				}
 				return EntityUtils.toString(response.getEntity(), "UTF-8");
 			});
-			// TODO error message
 			status = checkSuccess(body);
+			if (!status) {
+				// Log with Solr response details for debugging
+				String sanitizedBody = sanitizeSolrResponse(body);
+				log.error("Solr password change operation failed for repository: " + repositoryId + ", response: " + sanitizedBody);
+				// Client gets safe message only
+				errMsg.add("Solr password change operation failed for repository: " + repositoryId);
+			}
 		} catch (Exception e) {
 			status = false;
-			// TODO error message
-			e.printStackTrace();
+			// Log full details for debugging
+			log.error("Solr password change operation error for repository: " + repositoryId, e);
+			// Client gets safe, generic message (no internal details)
+			errMsg.add("Solr password change operation failed. Please check server logs for details.");
 		}
 
 		// Output
 		return makeResult(status, result, errMsg);
+	}
+
+	/**
+	 * Prepare Solr response for logging.
+	 * Truncates to reasonable length and removes newlines for single-line log readability.
+	 * Note: This does not remove sensitive information - Solr responses should not contain secrets.
+	 */
+	private String sanitizeSolrResponse(String response) {
+		if (response == null) {
+			return "[null response]";
+		}
+		// Truncate very long responses
+		final int maxLength = 500;
+		String sanitized = response.length() > maxLength
+			? response.substring(0, maxLength) + "...[truncated]"
+			: response;
+		// Remove newlines for single-line logging
+		sanitized = sanitized.replace("\n", " ").replace("\r", " ");
+		return sanitized;
 	}
 
 	private boolean checkSuccess(String xml) throws Exception {

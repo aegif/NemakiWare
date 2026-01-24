@@ -587,6 +587,16 @@ public interface ContentDaoService {
 	 */
 	void delete(String repositoryId, String objectId, boolean verifyDeletion);
 
+	/**
+	 * Delete multiple contents in bulk for better performance.
+	 * Uses CouchDB/Cloudant _bulk_docs API for efficient batch deletion.
+	 *
+	 * @param repositoryId repository identifier
+	 * @param objectIds list of object IDs to delete
+	 * @return number of successfully deleted objects
+	 */
+	int deleteBulk(String repositoryId, List<String> objectIds);
+
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
@@ -772,10 +782,11 @@ public interface ContentDaoService {
 
 	/**
 	 * Delete an archive
-	 * @param repositoryId TODO
-	 * @param archiveId
+	 * @param repositoryId the repository ID
+	 * @param archiveId the archive ID to delete
+	 * @return the deleted archive ID on success, null if archive was not found
 	 */
-	void deleteArchive(String repositoryId, String archiveId);
+	String deleteArchive(String repositoryId, String archiveId);
 
 	void deleteDocumentArchive(String repositoryId, String archiveId);
 

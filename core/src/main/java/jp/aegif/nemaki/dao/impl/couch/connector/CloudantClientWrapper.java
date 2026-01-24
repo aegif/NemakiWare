@@ -44,30 +44,28 @@ public class CloudantClientWrapper {
 	}
 
 	/**
-	 * CRITICAL: Optimized deletion approach for related documents
-	 * This prevents overwhelming CouchDB with rapid individual delete requests
-	 * @param documentIds List of document IDs to delete
-	 */
-	/**
 	 * ENHANCED: True bulk delete using _bulk_docs endpoint for optimal performance
 	 * This is the preferred method for deleting multiple documents efficiently
-	 * 
+	 *
 	 * @param documentIds List of document IDs to delete
+	 * @return number of documents actually deleted (may be less than documentIds.size()
+	 *         if some documents were not found or failed to delete)
 	 */
-	public void deleteDocumentsBatch(List<String> documentIds) {
+	public int deleteDocumentsBatch(List<String> documentIds) {
 		if (documentIds == null || documentIds.isEmpty()) {
-			return;
+			return 0;
 		}
 
 		try {
 			log.debug("Starting bulk deletion of " + documentIds.size() + " documents in database: " + databaseName);
-			
+
 			// CLOUDANT BEST PRACTICE: Use _bulk_docs for efficient batch operations
 			// Batch size recommendation: Start with 1000 documents per batch
 			final int OPTIMAL_BATCH_SIZE = 1000;
-			
+			int totalDeleted = 0;
+
 			if (documentIds.size() <= OPTIMAL_BATCH_SIZE) {
-				performBulkDelete(documentIds);
+				totalDeleted = performBulkDelete(documentIds);
 			} else {
 				// Split large batches to prevent server overload
 				log.info("BULK DELETE: Splitting " + documentIds.size() + " documents into batches of " + OPTIMAL_BATCH_SIZE);
@@ -75,11 +73,12 @@ public class CloudantClientWrapper {
 					int endIndex = Math.min(i + OPTIMAL_BATCH_SIZE, documentIds.size());
 					List<String> batch = documentIds.subList(i, endIndex);
 					log.debug("BULK DELETE: Processing batch " + (i/OPTIMAL_BATCH_SIZE + 1) + " with " + batch.size() + " documents");
-					performBulkDelete(batch);
+					totalDeleted += performBulkDelete(batch);
 				}
 			}
 
-			log.info("Successfully completed bulk deletion of " + documentIds.size() + " documents");
+			log.info("Successfully completed bulk deletion: " + totalDeleted + " of " + documentIds.size() + " documents deleted");
+			return totalDeleted;
 		} catch (Exception e) {
 			log.error("Critical error during bulk deletion", e);
 			throw new RuntimeException("Bulk delete operation failed: " + e.getMessage(), e);
@@ -89,15 +88,20 @@ public class CloudantClientWrapper {
 	/**
 	 * Performs actual bulk delete using Cloudant _bulk_docs endpoint
 	 * This method implements the recommended pattern for bulk document deletion
-	 * 
+	 *
 	 * @param documentIds List of document IDs to delete in this batch
+	 * @return number of documents actually deleted
 	 */
-	private void performBulkDelete(List<String> documentIds) {
+	private int performBulkDelete(List<String> documentIds) {
 		try {
 			// STEP 1: Fetch all documents to get their current revisions
+			// Track both the documents and their IDs to maintain correspondence
 			log.debug("BULK DELETE: Fetching current revisions for " + documentIds.size() + " documents");
 			List<Document> documentsToDelete = new ArrayList<>();
-			
+			List<String> foundDocIds = new ArrayList<>();  // Track IDs of found documents
+			int notFoundCount = 0;
+			int fetchErrorCount = 0;
+
 			for (String docId : documentIds) {
 				try {
 					GetDocumentOptions getOptions = new GetDocumentOptions.Builder()
@@ -106,30 +110,54 @@ public class CloudantClientWrapper {
 						.build();
 					Document doc = client.getDocument(getOptions).execute().getResult();
 					documentsToDelete.add(doc);
+					foundDocIds.add(docId);  // Track this ID
 				} catch (NotFoundException e) {
 					log.warn("BULK DELETE: Document " + docId + " not found, skipping");
+					notFoundCount++;
 				} catch (Exception e) {
 					log.error("BULK DELETE: Error fetching document " + docId + ": " + e.getMessage());
+					fetchErrorCount++;
 					// Continue with other documents
 				}
 			}
-			
+
 			if (documentsToDelete.isEmpty()) {
-				log.warn("BULK DELETE: No documents found to delete");
-				return;
+				log.warn("BULK DELETE: No documents found to delete (all " + documentIds.size() + " were not found or errored)");
+				return 0;  // Return 0 instead of throwing exception
 			}
-			
+
+			// Warn if fetch error rate is high (more than 10% of requested documents)
+			if (fetchErrorCount > 0 && fetchErrorCount > documentIds.size() / 10) {
+				log.warn("BULK DELETE: High fetch error rate - " + fetchErrorCount + " of " + documentIds.size() + " documents failed to fetch. Check CouchDB connectivity.");
+			}
+
 			// STEP 2: Create bulk delete request using _bulk_docs
 			List<Document> bulkDeleteDocs = new ArrayList<>();
+			int createDocErrorCount = 0;
 			for (Document doc : documentsToDelete) {
-				// Create delete document by setting _deleted flag
-				Document deleteDoc = new Document();
-				deleteDoc.setId(doc.getId());
-				deleteDoc.setRev(doc.getRev());
-				deleteDoc.put("_deleted", true);  // This is the key for bulk deletion
-				bulkDeleteDocs.add(deleteDoc);
+				try {
+					// Create delete document by setting _deleted flag
+					Document deleteDoc = new Document();
+					deleteDoc.setId(doc.getId());
+					deleteDoc.setRev(doc.getRev());
+					deleteDoc.put("_deleted", true);  // This is the key for bulk deletion
+					bulkDeleteDocs.add(deleteDoc);
+				} catch (Exception e) {
+					log.error("BULK DELETE: Failed to create delete document for " + doc.getId() + ": " + e.getMessage());
+					createDocErrorCount++;
+				}
 			}
-			
+
+			// Verify bulkDeleteDocs size matches documentsToDelete
+			if (bulkDeleteDocs.size() != documentsToDelete.size()) {
+				log.warn("BULK DELETE: Some documents failed to create delete requests. bulkDeleteDocs: " + bulkDeleteDocs.size() + ", documentsToDelete: " + documentsToDelete.size());
+			}
+
+			if (bulkDeleteDocs.isEmpty()) {
+				log.error("BULK DELETE: Failed to create any delete documents");
+				return 0;
+			}
+
 			// STEP 3: Execute bulk delete using _bulk_docs endpoint
 			log.debug("BULK DELETE: Executing bulk delete for " + bulkDeleteDocs.size() + " documents");
 			PostBulkDocsOptions bulkOptions = new PostBulkDocsOptions.Builder()
@@ -138,17 +166,34 @@ public class CloudantClientWrapper {
 					.docs(bulkDeleteDocs)
 					.build())
 				.build();
-			
+
 			List<DocumentResult> results = client.postBulkDocs(bulkOptions).execute().getResult();
-			
+
 			// STEP 4: Process results and handle any errors
+			// results corresponds to bulkDeleteDocs (not original documentIds or foundDocIds)
+			// Verify size correspondence - mismatch indicates SDK bug or network issue
+			if (results.size() != bulkDeleteDocs.size()) {
+				log.error("BULK DELETE: CRITICAL - Mismatch between results size (" + results.size() +
+					") and bulkDeleteDocs size (" + bulkDeleteDocs.size() +
+					"). This indicates a bug in Cloudant SDK or network issue.");
+				if (results.size() > bulkDeleteDocs.size()) {
+					log.error("BULK DELETE: " + (results.size() - bulkDeleteDocs.size()) +
+						" extra results returned (possible SDK bug)");
+				} else {
+					log.error("BULK DELETE: " + (bulkDeleteDocs.size() - results.size()) +
+						" missing results (possible network issue or partial failure)");
+				}
+			}
+
 			int successCount = 0;
 			int errorCount = 0;
-			
+			int minSize = Math.min(results.size(), foundDocIds.size());
+
 			for (int i = 0; i < results.size(); i++) {
 				DocumentResult result = results.get(i);
-				String docId = documentIds.get(Math.min(i, documentIds.size() - 1));
-				
+				// Use foundDocIds which corresponds to results (not original documentIds)
+				String docId = (i < minSize) ? foundDocIds.get(i) : "unknown-" + i;
+
 				if (result.isOk()) {
 					successCount++;
 					log.debug("BULK DELETE: Successfully deleted document: " + docId);
@@ -157,13 +202,15 @@ public class CloudantClientWrapper {
 					log.error("BULK DELETE: Failed to delete document " + docId + ": " + result.getError() + " - " + result.getReason());
 				}
 			}
-			
-			log.info("BULK DELETE: Batch complete - Success: " + successCount + ", Errors: " + errorCount);
-			
+
+			log.info("BULK DELETE: Batch complete - Success: " + successCount + ", Errors: " + errorCount + ", NotFound: " + notFoundCount + ", FetchErrors: " + fetchErrorCount + ", CreateDocErrors: " + createDocErrorCount);
+
 			if (errorCount > 0 && successCount == 0) {
-				throw new RuntimeException("All documents failed to delete in batch");
+				throw new RuntimeException("All found documents failed to delete in batch");
 			}
-			
+
+			return successCount;  // Return actual number of deleted documents
+
 		} catch (Exception e) {
 			log.error("BULK DELETE: Error in performBulkDelete", e);
 			throw new RuntimeException("Bulk delete batch failed: " + e.getMessage(), e);
