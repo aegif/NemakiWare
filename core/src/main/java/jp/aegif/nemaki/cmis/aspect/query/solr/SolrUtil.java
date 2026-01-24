@@ -752,6 +752,8 @@ public class SolrUtil implements ApplicationContextAware {
 	@Override
 	public void setApplicationContext(ApplicationContext applicationContext) {
 		this.applicationContext = applicationContext;
+		// Clear cache when ApplicationContext is reset (e.g., during context refresh)
+		this.contentServiceCache = null;
 	}
 
 	/**

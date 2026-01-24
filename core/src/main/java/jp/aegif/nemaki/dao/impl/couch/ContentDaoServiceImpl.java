@@ -1333,9 +1333,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		// Walk up the type hierarchy with circular reference detection
 		String currentType = objectType;
 		Set<String> visitedTypes = new HashSet<>();
-		int maxDepth = 100; // Additional safeguard
+		int maxDepth = 100; // Safeguard against unexpected deep hierarchies
+		int depth = 0;
 
-		while (currentType != null && visitedTypes.size() < maxDepth) {
+		while (currentType != null && depth < maxDepth) {
 			// Detect circular reference
 			if (visitedTypes.contains(currentType)) {
 				log.warn("isTypeOrDescendantOf: Circular type hierarchy detected at: " + currentType);
@@ -1361,6 +1362,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 
 			currentType = parentTypeId;
+			depth++;
 		}
 
 		return false;

@@ -100,6 +100,7 @@ public class CloudantClientWrapper {
 			List<Document> documentsToDelete = new ArrayList<>();
 			List<String> foundDocIds = new ArrayList<>();  // Track IDs of found documents
 			int notFoundCount = 0;
+			int fetchErrorCount = 0;
 
 			for (String docId : documentIds) {
 				try {
@@ -115,6 +116,7 @@ public class CloudantClientWrapper {
 					notFoundCount++;
 				} catch (Exception e) {
 					log.error("BULK DELETE: Error fetching document " + docId + ": " + e.getMessage());
+					fetchErrorCount++;
 					// Continue with other documents
 				}
 			}
@@ -148,6 +150,11 @@ public class CloudantClientWrapper {
 
 			// STEP 4: Process results and handle any errors
 			// results corresponds to bulkDeleteDocs/foundDocIds (not original documentIds)
+			// Verify size correspondence for debugging
+			if (results.size() != foundDocIds.size()) {
+				log.warn("BULK DELETE: Mismatch between results size (" + results.size() + ") and foundDocIds size (" + foundDocIds.size() + ")");
+			}
+
 			int successCount = 0;
 			int errorCount = 0;
 
@@ -165,7 +172,7 @@ public class CloudantClientWrapper {
 				}
 			}
 
-			log.info("BULK DELETE: Batch complete - Success: " + successCount + ", Errors: " + errorCount + ", NotFound: " + notFoundCount);
+			log.info("BULK DELETE: Batch complete - Success: " + successCount + ", Errors: " + errorCount + ", NotFound: " + notFoundCount + ", FetchErrors: " + fetchErrorCount);
 
 			if (errorCount > 0 && successCount == 0) {
 				throw new RuntimeException("All found documents failed to delete in batch");
