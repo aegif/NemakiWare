@@ -695,13 +695,25 @@ public class ContentServiceImpl implements ContentService {
 		log.debug("atomicResult.attachmentNodeId AFTER version series update: {}", atomicResult.getAttachmentNodeId());
 	}
 		
-	// PHASE 6: Change event and indexing (non-critical operations)
+	// PHASE 6: Change event, policy application, and indexing (non-critical operations)
 	log.debug("atomicResult.attachmentNodeId BEFORE change event: {}", atomicResult.getAttachmentNodeId());
-	
+
 	writeChangeEvent(callContext, repositoryId, atomicResult, ChangeType.CREATED);
-	
+
 	log.debug("atomicResult.attachmentNodeId AFTER change event: {}", atomicResult.getAttachmentNodeId());
-		
+
+		// Apply policies to the newly created document
+		if (policies != null && !policies.isEmpty()) {
+			for (String policyId : policies) {
+				try {
+					applyPolicy(callContext, repositoryId, policyId, atomicResult.getId(), null);
+					log.debug("createDocument: Applied policy {} to document {}", policyId, atomicResult.getId());
+				} catch (Exception e) {
+					log.warn("createDocument: Failed to apply policy {} to document {}: {}", policyId, atomicResult.getId(), e.getMessage());
+				}
+			}
+		}
+
 		// Solr indexing (failure won't affect main operation)
 		try {
 			if (solrUtil != null) {
@@ -797,9 +809,21 @@ public class ContentServiceImpl implements ContentService {
 			updateVersionSeriesWithPwcAtomic(callContext, repositoryId, getVersionSeries(repositoryId, atomicResult), atomicResult);
 		}
 
-		// PHASE 6: Change events and indexing (non-critical operations)
+		// PHASE 6: Change events, policy application, and indexing (non-critical operations)
 		writeChangeEvent(callContext, repositoryId, atomicResult, ChangeType.CREATED);
-		
+
+		// Apply policies to the newly created document
+		if (policies != null && !policies.isEmpty()) {
+			for (String policyId : policies) {
+				try {
+					applyPolicy(callContext, repositoryId, policyId, atomicResult.getId(), null);
+					log.debug("createDocumentFromSource: Applied policy {} to document {}", policyId, atomicResult.getId());
+				} catch (Exception e) {
+					log.warn("createDocumentFromSource: Failed to apply policy {} to document {}: {}", policyId, atomicResult.getId(), e.getMessage());
+				}
+			}
+		}
+
 		// Solr indexing (failure won't affect main operation)
 		try {
 			if (solrUtil != null) {
@@ -811,7 +835,7 @@ public class ContentServiceImpl implements ContentService {
 
 		log.debug("=== ATOMIC DOCUMENT FROM SOURCE SUCCESS: {} ===", atomicResult.getId());
 		return atomicResult;
-		
+
 	} catch (Exception e) {
 		log.error("=== ATOMIC DOCUMENT FROM SOURCE FAILED - INITIATING ROLLBACK ===");
 		log.error("Error during atomic document from source: {}", e.getMessage(), e);
@@ -1218,18 +1242,28 @@ public class ContentServiceImpl implements ContentService {
 		VersioningState versioningState = (major) ? VersioningState.MAJOR : VersioningState.MINOR;
 		updateVersionProperties(callContext, repositoryId, versioningState, checkedIn, latest);
 
-		// TODO set policies & ACEs
-
 		// Create
 		Document result = contentDaoService.create(repositoryId, checkedIn);
+
+		// Apply policies to the newly created document
+		// ACEs are already handled in buildCopyDocument via setAclOnCreated
+		if (policies != null && !policies.isEmpty()) {
+			for (String policyId : policies) {
+				try {
+					applyPolicy(callContext, repositoryId, policyId, result.getId(), null);
+					log.debug("checkIn: Applied policy {} to document {}", policyId, result.getId());
+				} catch (Exception e) {
+					log.warn("checkIn: Failed to apply policy {} to document {}: {}", policyId, result.getId(), e.getMessage());
+				}
+			}
+		}
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		writeChangeEvent(callContext, repositoryId, latest, ChangeType.UPDATED);
 
 		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		solrUtil.indexDocument(repositoryId, result);
 
 		return result;
 	}
@@ -1252,18 +1286,19 @@ public class ContentServiceImpl implements ContentService {
 		VersioningState versioningState = (major) ? VersioningState.MAJOR : VersioningState.MINOR;
 		updateVersionProperties(callContext, repositoryId, versioningState, checkedIn, previousDoc);
 
-		// TODO set policies & ACEs
-
 		// Create
 		Document result = contentDaoService.create(repositoryId, checkedIn);
+
+		// Note: This method does not accept policies parameter.
+		// Policies should be applied separately via applyPolicy() if needed.
+		// ACEs are handled in buildCopyDocument via setAclOnCreated.
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		writeChangeEvent(callContext, repositoryId, previousDoc, ChangeType.UPDATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Call Solr indexing
+		solrUtil.indexDocument(repositoryId, result);
 
 		return result;
 	}
@@ -1574,6 +1609,18 @@ public class ContentServiceImpl implements ContentService {
 		// Create
 		Folder folder = contentDaoService.create(repositoryId, f);
 
+		// Apply policies to the newly created folder
+		if (policies != null && !policies.isEmpty()) {
+			for (String policyId : policies) {
+				try {
+					applyPolicy(callContext, repositoryId, policyId, folder.getId(), null);
+					log.debug("createFolder: Applied policy {} to folder {}", policyId, folder.getId());
+				} catch (Exception e) {
+					log.warn("createFolder: Failed to apply policy {} to folder {}: {}", policyId, folder.getId(), e.getMessage());
+				}
+			}
+		}
+
 		// Record the change event
 		// Content objects now maintain revision state, enabling proper writeChangeEvent
 		writeChangeEvent(callContext, repositoryId, folder, ChangeType.CREATED);
@@ -1600,6 +1647,18 @@ public class ContentServiceImpl implements ContentService {
 		setAclOnCreated(callContext, repositoryId, rel, addAces, removeAces);
 
 		Relationship relationship = contentDaoService.create(repositoryId, rel);
+
+		// Apply policies to the newly created relationship
+		if (policies != null && !policies.isEmpty()) {
+			for (String policyId : policies) {
+				try {
+					applyPolicy(callContext, repositoryId, policyId, relationship.getId(), null);
+					log.debug("createRelationship: Applied policy {} to relationship {}", policyId, relationship.getId());
+				} catch (Exception e) {
+					log.warn("createRelationship: Failed to apply policy {} to relationship {}: {}", policyId, relationship.getId(), e.getMessage());
+				}
+			}
+		}
 
 		// Index relationship in Solr for CMIS query support
 		solrUtil.indexDocument(repositoryId, relationship);
@@ -1648,6 +1707,19 @@ public class ContentServiceImpl implements ContentService {
 
 		Item i = buildItem(callContext, repositoryId, properties, folderId, policies, addAces, removeAces, extension);
 		Item item = contentDaoService.create(repositoryId, i);
+
+		// Apply policies to the newly created item
+		if (policies != null && !policies.isEmpty()) {
+			for (String policyId : policies) {
+				try {
+					applyPolicy(callContext, repositoryId, policyId, item.getId(), null);
+					log.debug("createItem: Applied policy {} to item {}", policyId, item.getId());
+				} catch (Exception e) {
+					log.warn("createItem: Failed to apply policy {} to item {}: {}", policyId, item.getId(), e.getMessage());
+				}
+			}
+		}
+
 		writeChangeEvent(callContext, repositoryId, item, ChangeType.CREATED);
 		return item;
 	}
