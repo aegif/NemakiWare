@@ -31,6 +31,8 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -1288,13 +1290,70 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return true;
 		}
 		
-		// Check for custom folder types (nemaki:folder, etc.)
+		// Use TypeManager to check type hierarchy
+		if (typeManager != null) {
+			try {
+				return isTypeOrDescendantOf(repositoryId, objectType, "cmis:folder");
+			} catch (Exception e) {
+				log.debug("isFolderType: TypeManager lookup failed for type '" + objectType + "', falling back to pattern matching");
+			}
+		}
+		
+		// Fallback: Check for custom folder types (nemaki:folder, etc.)
 		if (objectType.contains("folder")) {
 			return true;
 		}
 		
-		// TODO: Add proper type hierarchy checking using TypeManager
-		// For now, use simple pattern matching as a temporary solution
+		return false;
+	}
+
+
+	/**
+	 * Check if the given objectType is the target type or inherits from the target type.
+	 * Walks up the type hierarchy using TypeManager.
+	 * 
+	 * @param repositoryId the repository ID
+	 * @param objectType the type ID to check
+	 * @param targetBaseType the target base type ID (e.g., "cmis:folder", "cmis:document")
+	 * @return true if objectType is targetBaseType or inherits from it
+	 */
+	private boolean isTypeOrDescendantOf(String repositoryId, String objectType, String targetBaseType) {
+		if (objectType == null || targetBaseType == null) {
+			return false;
+		}
+		
+		// Direct match
+		if (objectType.equals(targetBaseType)) {
+			return true;
+		}
+		
+		// Walk up the type hierarchy
+		String currentType = objectType;
+		int maxDepth = 100; // Prevent infinite loops
+		int depth = 0;
+		
+		while (currentType != null && depth < maxDepth) {
+			TypeDefinitionContainer typeContainer = typeManager.getTypeById(repositoryId, currentType);
+			if (typeContainer == null || typeContainer.getTypeDefinition() == null) {
+				// Type not found in TypeManager
+				return false;
+			}
+			
+			TypeDefinition typeDef = typeContainer.getTypeDefinition();
+			String parentTypeId = typeDef.getParentTypeId();
+			if (parentTypeId == null) {
+				// Reached root type without finding target
+				return false;
+			}
+			
+			if (parentTypeId.equals(targetBaseType)) {
+				return true;
+			}
+			
+			currentType = parentTypeId;
+			depth++;
+		}
+		
 		return false;
 	}
 
