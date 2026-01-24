@@ -2446,16 +2446,16 @@ public class ContentServiceImpl implements ContentService {
 			ids.add(objectId);
 			policy.setAppliedIds(ids);
 			contentDaoService.update(repositoryId, policy);
+			
+			// Record the change event only when actually updated
+			Content content = getContent(repositoryId, objectId);
+			if (content != null) {
+				writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
+			} else {
+				log.warn("applyPolicy: Content not found for objectId: " + objectId);
+			}
 		} else {
-			log.debug("applyPolicy: objectId {} already applied to policy {}", objectId, policyId);
-		}
-
-		// Record the change event
-		Content content = getContent(repositoryId, objectId);
-		if (content != null) {
-			writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
-		} else {
-			log.warn("applyPolicy: Content not found for objectId: " + objectId);
+			log.debug("applyPolicy: objectId " + objectId + " already applied to policy " + policyId);
 		}
 	}
 
@@ -2470,23 +2470,23 @@ public class ContentServiceImpl implements ContentService {
 		
 		List<String> ids = policy.getAppliedIds();
 		if (ids == null || ids.isEmpty()) {
-			log.debug("removePolicy: Policy {} has no applied objects", policyId);
+			log.debug("removePolicy: Policy " + policyId + " has no applied objects");
 			return;
 		}
 		
 		if (ids.remove(objectId)) {
 			policy.setAppliedIds(ids);
 			contentDaoService.update(repositoryId, policy);
+			
+			// Record the change event only when actually updated
+			Content content = getContent(repositoryId, objectId);
+			if (content != null) {
+				writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
+			} else {
+				log.warn("removePolicy: Content not found for objectId: " + objectId);
+			}
 		} else {
-			log.debug("removePolicy: objectId {} was not applied to policy {}", objectId, policyId);
-		}
-
-		// Record the change event
-		Content content = getContent(repositoryId, objectId);
-		if (content != null) {
-			writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
-		} else {
-			log.warn("removePolicy: Content not found for objectId: " + objectId);
+			log.debug("removePolicy: objectId " + objectId + " was not applied to policy " + policyId);
 		}
 	}
 
