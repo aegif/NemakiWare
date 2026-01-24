@@ -65,6 +65,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 	@Override
 	public Set<String> getGroupIdsContainingUser(String repositoryId, String userId) {
 		String anonymous = getAnonymous(repositoryId);
+		String anyone = getAnyone(repositoryId);
 		
 		Set<String> groupIds = new HashSet<String>();
 
@@ -79,10 +80,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 				groupIds.add(g.getGroupId());
 			}
 		}
-		// Note: "anyone" principal is handled separately in ACLExpander.buildReaderFilterQuery()
-		// by always including READER_ANYONE in the filter. Do NOT add the "anyone" principal
-		// (e.g., GROUP_EVERYONE) to the user's group list, as that would grant access to
-		// documents explicitly assigned to GROUP_EVERYONE even if the user is not a member.
+		groupIds.add(anyone);
 		return groupIds;
 	}
 
