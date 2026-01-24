@@ -985,9 +985,14 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, originalPwc, ChangeType.UPDATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing
-		// solrUtil.indexDocument(repositoryId, content);
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, originalPwc);
+			}
+		} catch (Exception e) {
+			log.warn("setContentStream: Solr indexing failed for document " + originalPwc.getId() + ": " + e.getMessage());
+		}
 
 		return originalPwc;
 	}
@@ -1145,9 +1150,14 @@ public class ContentServiceImpl implements ContentService {
 		// Write change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, result);
+			}
+		} catch (Exception e) {
+			log.warn("checkOut: Solr indexing failed for PWC " + result.getId() + ": " + e.getMessage());
+		}
 
 		return result;
 	}
@@ -2412,9 +2422,18 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, source, ChangeType.UPDATED);
 		writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Solr indexing for moved content (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				// Index the moved content (parentId changed)
+				solrUtil.indexDocument(repositoryId, content);
+				// Index source and target folders if needed
+				solrUtil.indexDocument(repositoryId, source);
+				solrUtil.indexDocument(repositoryId, target);
+			}
+		} catch (Exception e) {
+			log.warn("moveObject: Solr indexing failed: " + e.getMessage());
+		}
 	}
 
 	private Content move(String repositoryId, Content content, String sourceId) {
@@ -3360,11 +3379,12 @@ public class ContentServiceImpl implements ContentService {
 		dummyContext.put(dummyContext.USERNAME, PrincipalId.SYSTEM_IN_DB);
 
 		// Switch over the operation depending on the type of archive
+		Content restored = null;
 		if (archive.isFolder()) {
-			Folder restored = restoreFolder(repositoryId, archive);
+			restored = restoreFolder(repositoryId, archive);
 			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
 		} else if (archive.isDocument()) {
-			Document restored = restoreDocument(repositoryId, archive);
+			restored = restoreDocument(repositoryId, archive);
 			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
 		} else if (archive.isAttachment()) {
 			log.error("Attachment can't be restored alone");
@@ -3372,9 +3392,16 @@ public class ContentServiceImpl implements ContentService {
 			log.error("Only document or folder is supported for restoration");
 		}
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Solr indexing for restored content (failure won't affect main operation)
+		if (restored != null) {
+			try {
+				if (solrUtil != null) {
+					solrUtil.indexDocument(repositoryId, restored);
+				}
+			} catch (Exception e) {
+				log.warn("restoreArchive: Solr indexing failed for " + restored.getId() + ": " + e.getMessage());
+			}
+		}
 	}
 
 	private Document restoreDocument(String repositoryId, Archive archive) {
