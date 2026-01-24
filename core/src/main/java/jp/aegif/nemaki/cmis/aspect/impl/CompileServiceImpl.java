@@ -871,7 +871,7 @@ public class CompileServiceImpl implements CompileService {
 			String key = mappingEntry.getValue().getKey();
 			// Note: permissionMap is type-safe Map<String, PermissionMapping>, no class cast check needed
 
-			// FIXME WORKAROUND: skip canCreatePolicy.Folder
+			// Skip CAN_CREATE_POLICY_FOLDER: Policy creation in folders is not supported
 			if (PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key)) {
 				continue;
 			}
@@ -2478,9 +2478,7 @@ public class CompileServiceImpl implements CompileService {
 			return Action.CAN_CREATE_DOCUMENT;
 		if (PermissionMapping.CAN_CREATE_FOLDER_FOLDER.equals(key))
 			return Action.CAN_CREATE_FOLDER;
-		// FIXME the constant already implemented?
-		// if (PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key))
-		// return null;
+		// Note: CAN_CREATE_POLICY_FOLDER is skipped in compileAllowableActions (policy creation not supported)
 		if (PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE.equals(key))
 			return Action.CAN_CREATE_RELATIONSHIP;
 		if (PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET.equals(key))
