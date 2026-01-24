@@ -450,10 +450,31 @@ public class ContentServiceImpl implements ContentService {
 						if (value instanceof Comparable) {
 							return (Comparable<?>) value;
 						}
-						break;
+						return null;
 					}
 				}
 			}
+
+			// Also search in aspects (secondary types)
+			List<Aspect> aspects = doc.getAspects();
+			if (aspects != null) {
+				for (Aspect aspect : aspects) {
+					if (aspect == null) continue;
+					List<Property> aspectProps = aspect.getProperties();
+					if (aspectProps != null) {
+						for (Property prop : aspectProps) {
+							if (prop != null && propertyId.equals(prop.getKey())) {
+								Object value = prop.getValue();
+								if (value instanceof Comparable) {
+									return (Comparable<?>) value;
+								}
+								return null;
+							}
+						}
+					}
+				}
+			}
+
 			return null;
 		}
 	}
