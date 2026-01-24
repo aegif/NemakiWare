@@ -3530,16 +3530,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	// FIXME return archiveId or something when successfully deleted
-	public void deleteArchive(String repositoryId, String archiveId) {
+	public String deleteArchive(String repositoryId, String archiveId) {
 		String archive = repositoryInfoMap.getArchiveId(repositoryId);
 
 		try {
 			CouchArchive ca = connectorPool.get(archive).get(CouchArchive.class, archiveId);
 			connectorPool.get(archive).delete(ca);
+			return archiveId;
 		} catch (Exception e) {
 			log.warn(buildLogMsg(archiveId, "the archive not found on db"));
-			return;
+			return null;
 		}
 	}
 

@@ -1620,8 +1620,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public void deleteArchive(String repositoryId, String archiveId) {
-		nonCachedContentDaoService.deleteArchive(repositoryId, archiveId);
+	public String deleteArchive(String repositoryId, String archiveId) {
+		return nonCachedContentDaoService.deleteArchive(repositoryId, archiveId);
 	}
 
 	@Override

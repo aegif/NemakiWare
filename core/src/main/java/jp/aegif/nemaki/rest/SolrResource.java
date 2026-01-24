@@ -149,16 +149,21 @@ public class SolrResource extends ResourceBase {
 			String body = httpClient.execute(httpGet, response -> {
 				int responseStatus = response.getCode();
 				if (HttpStatus.SC_OK != responseStatus) {
-					throw new RuntimeException("Solr server connection failed");
+					throw new RuntimeException("Solr server connection failed with status: " + responseStatus);
 				}
 				return EntityUtils.toString(response.getEntity(), "UTF-8");
 			});
-			// TODO error message
 			status = checkSuccess(body);
+			if (!status) {
+				String errorMsg = "Solr init operation failed for repository: " + repositoryId;
+				log.error(errorMsg);
+				errMsg.add(errorMsg);
+			}
 		} catch (Exception e) {
 			status = false;
-			// TODO error message
-			e.printStackTrace();
+			String errorMsg = "Solr init operation error: " + e.getMessage();
+			log.error(errorMsg, e);
+			errMsg.add(errorMsg);
 		}
 
 		// Output
@@ -240,16 +245,21 @@ public class SolrResource extends ResourceBase {
 			String body = httpClient.execute(httpAction, response -> {
 				int responseStatus = response.getCode();
 				if (HttpStatus.SC_OK != responseStatus) {
-					throw new RuntimeException("Solr server connection failed");
+					throw new RuntimeException("Solr server connection failed with status: " + responseStatus);
 				}
 				return EntityUtils.toString(response.getEntity(), "UTF-8");
 			});
-			// TODO error message
 			status = checkSuccess(body);
+			if (!status) {
+				String errorMsg = "Solr password change operation failed for repository: " + repositoryId;
+				log.error(errorMsg);
+				errMsg.add(errorMsg);
+			}
 		} catch (Exception e) {
 			status = false;
-			// TODO error message
-			e.printStackTrace();
+			String errorMsg = "Solr password change operation error: " + e.getMessage();
+			log.error(errorMsg, e);
+			errMsg.add(errorMsg);
 		}
 
 		// Output

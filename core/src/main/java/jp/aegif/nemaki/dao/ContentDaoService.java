@@ -761,10 +761,11 @@ public interface ContentDaoService {
 
 	/**
 	 * Delete an archive
-	 * @param repositoryId TODO
-	 * @param archiveId
+	 * @param repositoryId the repository ID
+	 * @param archiveId the archive ID to delete
+	 * @return the deleted archive ID on success, null if archive was not found
 	 */
-	void deleteArchive(String repositoryId, String archiveId);
+	String deleteArchive(String repositoryId, String archiveId);
 
 	void deleteDocumentArchive(String repositoryId, String archiveId);
 
