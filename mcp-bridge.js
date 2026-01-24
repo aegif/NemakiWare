@@ -24,7 +24,9 @@ function log(message) {
 log('=== MCP Bridge Started ===');
 
 const MCP_URL = process.env.MCP_URL || 'http://localhost:8080/core/mcp/message';
-const AUTH_HEADER = process.env.MCP_AUTH || 'Basic YWRtaW46YWRtaW4=';
+// Default to mcp-service account (non-admin) for security
+// User authentication is handled via sessionToken in tool calls
+const AUTH_HEADER = process.env.MCP_AUTH || 'Basic bWNwLXNlcnZpY2U6bWNwLXNlY3VyZS10b2tlbi0yMDI2';
 
 log(`MCP_URL: ${MCP_URL}`);
 log(`AUTH_HEADER: ${AUTH_HEADER ? 'set' : 'not set'}`);

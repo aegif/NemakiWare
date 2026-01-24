@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "nemakiware": {
+      "url": "http://localhost:8080/core/mcp/message",
+      "headers": {
+        "Authorization": "Basic bWNwLXNlcnZpY2U6bWNwLXNlY3VyZS10b2tlbi0yMDI2"
+      }
+    }
+  }
+}
