@@ -82,6 +82,9 @@ public class SolrUtil implements ApplicationContextAware {
 	// to break circular dependency between SolrUtil and ContentService
 	private ApplicationContext applicationContext;
 
+	// Cached ContentService instance to avoid repeated applicationContext.getBean() calls
+	private volatile ContentService contentServiceCache;
+
 	public SolrUtil() {
 		map = new HashMap<String, String>();
 		map.put(PropertyIds.OBJECT_ID, "object_id");
@@ -464,16 +467,8 @@ public class SolrUtil implements ApplicationContextAware {
 				}
 				
 				// Add content_length field for numeric range queries
-				// For now, set a default value to enable queries to work
-				// TODO: Implement proper content length calculation from AttachmentNode
-				if (document.getAttachmentNodeId() != null) {
-					// Document has content, but we can't get actual length without circular dependency
-					// Set a placeholder value > 0 to indicate content exists
-					doc.addField("content_length", 1000L); // Default value
-				} else {
-					// No attachment
-					doc.addField("content_length", 0L);
-				}
+				long contentLength = getContentLength(repositoryId, document.getAttachmentNodeId());
+				doc.addField("content_length", contentLength);
 			}
 			
 			// Versioning fields
@@ -756,25 +751,80 @@ public class SolrUtil implements ApplicationContextAware {
 	// CRITICAL FIX (2025-11-19): Implement ApplicationContextAware to break circular dependency
 	@Override
 	public void setApplicationContext(ApplicationContext applicationContext) {
-		this.applicationContext = applicationContext;
+		// Clear cache BEFORE setting new context to ensure old cache is not used
+		// Use synchronized to coordinate with getContentServiceSafely()
+		synchronized (this) {
+			this.contentServiceCache = null;
+			this.applicationContext = applicationContext;
+		}
 	}
 
 	/**
 	 * Get ContentService lazily from ApplicationContext to avoid circular dependency.
 	 * This method returns null if ContentService is not yet available.
+	 * Uses double-checked locking with volatile field for thread-safe lazy initialization.
 	 */
 	private ContentService getContentServiceSafely() {
+		// Use cached instance if available
+		ContentService cached = contentServiceCache;
+		if (cached != null) {
+			return cached;
+		}
+
 		if (applicationContext == null) {
 			return null;
 		}
+
 		try {
-			return applicationContext.getBean("ContentService", ContentService.class);
+			// Double-checked locking pattern
+			synchronized (this) {
+				cached = contentServiceCache;
+				if (cached != null) {
+					return cached;
+				}
+				cached = applicationContext.getBean("ContentService", ContentService.class);
+				contentServiceCache = cached;
+				return cached;
+			}
 		} catch (Exception e) {
 			log.debug("ContentService not yet available: {}", e.getMessage());
 			return null;
 		}
 	}
-	
+
+	/**
+	 * Get content length from AttachmentNode.
+	 * Uses ContentService to retrieve the attachment and get its length.
+	 *
+	 * @param repositoryId Repository ID
+	 * @param attachmentId Attachment node ID
+	 * @return Content length in bytes, or 0 if not available
+	 */
+	private long getContentLength(String repositoryId, String attachmentId) {
+		if (attachmentId == null || attachmentId.isEmpty()) {
+			return 0L;
+		}
+
+		try {
+			ContentService contentService = getContentServiceSafely();
+			if (contentService == null) {
+				log.debug("getContentLength: ContentService not available, returning 0");
+				return 0L;
+			}
+
+			AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
+			if (attachment == null) {
+				log.debug("getContentLength: Attachment not found: {}", attachmentId);
+				return 0L;
+			}
+
+			return attachment.getLength();
+		} catch (Exception e) {
+			log.warn("getContentLength: Failed to get content length for attachment {}: {}", attachmentId, e.getMessage());
+			return 0L;
+		}
+	}
+
 	/**
 	 * Extract text content from attachment for full-text search.
 	 * Uses Apache Tika via TextExtractionService to extract text from various document formats

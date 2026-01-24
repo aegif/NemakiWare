@@ -81,6 +81,7 @@ import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExistsException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
+import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 // CmisException import removed due to Jakarta EE compatibility issues
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -217,12 +218,36 @@ public class ContentServiceImpl implements ContentService {
 
 	private List<String> splitLeafPathSegment(String path) {
 		List<String> splitted = new LinkedList<String>();
+		
+		// Validation for irregular path
+		if (path == null || path.isEmpty()) {
+			log.warn("splitLeafPathSegment: path is null or empty");
+			return splitted;
+		}
+		
+		if (!path.startsWith(PATH_SEPARATOR)) {
+			log.warn("splitLeafPathSegment: path must start with '/': " + path);
+			return splitted;
+		}
+		
 		if (path.equals(PATH_SEPARATOR)) {
 			splitted.add(PATH_SEPARATOR);
 			return splitted;
 		}
-
-		// TODO validation for irregular path
+		
+		// Check for trailing slash (except root)
+		if (path.endsWith(PATH_SEPARATOR)) {
+			log.debug("splitLeafPathSegment: removing trailing slash from path: " + path);
+			path = path.substring(0, path.length() - 1);
+		}
+		
+		// Check for consecutive slashes
+		if (path.contains("//")) {
+			log.warn("splitLeafPathSegment: path contains consecutive slashes: " + path);
+			// Normalize by replacing multiple slashes with single slash
+			path = path.replaceAll("/+", "/");
+		}
+		
 		splitted = new LinkedList<String>(Arrays.asList(path.split(PATH_SEPARATOR)));
 		splitted.remove(0);
 		splitted.add(0, PATH_SEPARATOR);
@@ -301,26 +326,181 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public List<Document> getAllVersions(CallContext callContext, String repositoryId, String versionSeriesId) {
 		List<Document> results = new ArrayList<Document>();
+		String currentUser = (callContext != null) ? callContext.getUsername() : null;
 
-		// TODO hide PWC from a non-owner user
 		List<Document> versions = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
 
 		if (CollectionUtils.isNotEmpty(versions)) {
 			for (Document doc : versions) {
 				if (!doc.isPrivateWorkingCopy()) {
+					// Non-PWC documents are always visible
 					results.add(doc);
+				} else {
+					// PWC is only visible to its owner
+					String pwcOwner = doc.getVersionSeriesCheckedOutBy();
+					if (pwcOwner == null) {
+						// PWC with no owner is an inconsistent state - log warning and skip
+						log.warn("getAllVersions: PWC " + doc.getId() + " has no owner (versionSeriesCheckedOutBy is null)");
+						continue;
+					}
+					if (currentUser != null && currentUser.equals(pwcOwner)) {
+						results.add(doc);
+					} else {
+						log.debug("getAllVersions: Hiding PWC " + doc.getId() + " from user " + currentUser + " (owner: " + pwcOwner + ")");
+					}
 				}
 			}
 		}
 
-		return contentDaoService.getAllVersions(repositoryId, versionSeriesId);
+		return results;
 	}
 
-	// TODO enable orderBy
 	@Override
 	public List<Document> getCheckedOutDocs(String repositoryId, String folderId, String orderBy,
 			ExtensionsData extension) {
-		return contentDaoService.getCheckedOutDocuments(repositoryId, folderId);
+		List<Document> docs = contentDaoService.getCheckedOutDocuments(repositoryId, folderId);
+		
+		// Apply orderBy if specified
+		if (orderBy != null && !orderBy.trim().isEmpty() && CollectionUtils.isNotEmpty(docs)) {
+			docs = applySorting(docs, orderBy);
+		}
+		
+		return docs;
+	}
+	
+	/**
+	 * Apply CMIS orderBy sorting to a list of documents.
+	 * Supports: cmis:name, cmis:creationDate, cmis:lastModificationDate
+	 * Format: "propertyId [ASC|DESC], propertyId2 [ASC|DESC], ..."
+	 */
+	private List<Document> applySorting(List<Document> docs, String orderBy) {
+		if (docs == null || docs.isEmpty()) {
+			return docs;
+		}
+
+		// Parse orderBy clauses (comma-separated per CMIS spec)
+		String[] clauses = orderBy.trim().split(",");
+		List<SortClause> sortClauses = new ArrayList<>();
+
+		for (String clause : clauses) {
+			String[] parts = clause.trim().split("\\s+");
+			if (parts.length == 0 || parts[0].isEmpty()) {
+				continue;
+			}
+
+			String propertyId = parts[0].trim();
+			boolean ascending = true;
+			if (parts.length > 1) {
+				String direction = parts[1].trim().toUpperCase();
+				if ("DESC".equals(direction)) {
+					ascending = false;
+				}
+			}
+			sortClauses.add(new SortClause(propertyId, ascending));
+		}
+
+		if (sortClauses.isEmpty()) {
+			return docs;
+		}
+
+		try {
+			List<Document> sorted = new ArrayList<>(docs);
+			sorted.sort((d1, d2) -> {
+				for (SortClause sc : sortClauses) {
+					Comparable<?> v1 = getComparableValue(d1, sc.propertyId);
+					Comparable<?> v2 = getComparableValue(d2, sc.propertyId);
+
+					if (v1 == null && v2 == null) continue;
+					if (v1 == null) return sc.ascending ? -1 : 1;
+					if (v2 == null) return sc.ascending ? 1 : -1;
+
+					try {
+						@SuppressWarnings("unchecked")
+						int result = ((Comparable<Object>) v1).compareTo(v2);
+						if (result != 0) {
+							return sc.ascending ? result : -result;
+						}
+					} catch (ClassCastException e) {
+						log.debug("applySorting: Cannot compare values for property " + sc.propertyId);
+						continue;
+					}
+				}
+				return 0;
+			});
+			return sorted;
+		} catch (Exception e) {
+			log.warn("getCheckedOutDocs: Failed to apply orderBy '" + orderBy + "': " + e.getMessage());
+			return docs;
+		}
+	}
+
+	/**
+	 * Helper class for sort clause
+	 */
+	private static class SortClause {
+		final String propertyId;
+		final boolean ascending;
+
+		SortClause(String propertyId, boolean ascending) {
+			this.propertyId = propertyId;
+			this.ascending = ascending;
+		}
+	}
+	
+	private Comparable<?> getComparableValue(Document doc, String propertyId) {
+		if (doc == null) return null;
+
+		// Use PropertyIds constants (cmis:name, cmis:creationDate, etc.)
+		if (PropertyIds.NAME.equals(propertyId)) {
+			return doc.getName();
+		} else if (PropertyIds.CREATION_DATE.equals(propertyId)) {
+			return doc.getCreated();
+		} else if (PropertyIds.LAST_MODIFICATION_DATE.equals(propertyId)) {
+			return doc.getModified();
+		} else if (PropertyIds.CREATED_BY.equals(propertyId)) {
+			return doc.getCreator();
+		} else if (PropertyIds.LAST_MODIFIED_BY.equals(propertyId)) {
+			return doc.getModifier();
+		} else if (PropertyIds.CONTENT_STREAM_LENGTH.equals(propertyId)) {
+			// Note: Would need to fetch attachment for actual size
+			return null;
+		} else {
+			// For custom properties, try to get from subTypeProperties
+			List<Property> subTypeProps = doc.getSubTypeProperties();
+			if (subTypeProps != null) {
+				for (Property prop : subTypeProps) {
+					if (prop != null && propertyId.equals(prop.getKey())) {
+						Object value = prop.getValue();
+						if (value instanceof Comparable) {
+							return (Comparable<?>) value;
+						}
+						return null;
+					}
+				}
+			}
+
+			// Also search in aspects (secondary types)
+			List<Aspect> aspects = doc.getAspects();
+			if (aspects != null) {
+				for (Aspect aspect : aspects) {
+					if (aspect == null) continue;
+					List<Property> aspectProps = aspect.getProperties();
+					if (aspectProps != null) {
+						for (Property prop : aspectProps) {
+							if (prop != null && propertyId.equals(prop.getKey())) {
+								Object value = prop.getValue();
+								if (value instanceof Comparable) {
+									return (Comparable<?>) value;
+								}
+								return null;
+							}
+						}
+					}
+				}
+			}
+
+			return null;
+		}
 	}
 
 	@Override
@@ -694,13 +874,28 @@ public class ContentServiceImpl implements ContentService {
 		log.debug("atomicResult.attachmentNodeId AFTER version series update: {}", atomicResult.getAttachmentNodeId());
 	}
 		
-	// PHASE 6: Change event and indexing (non-critical operations)
+	// PHASE 6: Change event, policy application, and indexing (non-critical operations)
 	log.debug("atomicResult.attachmentNodeId BEFORE change event: {}", atomicResult.getAttachmentNodeId());
-	
+
 	writeChangeEvent(callContext, repositoryId, atomicResult, ChangeType.CREATED);
-	
+
 	log.debug("atomicResult.attachmentNodeId AFTER change event: {}", atomicResult.getAttachmentNodeId());
-		
+
+		// Apply policies to the newly created document
+		if (policies != null && !policies.isEmpty()) {
+			for (String policyId : policies) {
+				if (policyId == null || policyId.isEmpty()) {
+					continue;
+				}
+				try {
+					applyPolicy(callContext, repositoryId, policyId, atomicResult.getId(), null);
+					log.debug("createDocument: Applied policy " + policyId + " to document " + atomicResult.getId());
+				} catch (Exception e) {
+					log.warn("createDocument: Failed to apply policy " + policyId + " to document " + atomicResult.getId() + ": " + e.getMessage());
+				}
+			}
+		}
+
 		// Solr indexing (failure won't affect main operation)
 		try {
 			if (solrUtil != null) {
@@ -796,9 +991,24 @@ public class ContentServiceImpl implements ContentService {
 			updateVersionSeriesWithPwcAtomic(callContext, repositoryId, getVersionSeries(repositoryId, atomicResult), atomicResult);
 		}
 
-		// PHASE 6: Change events and indexing (non-critical operations)
+		// PHASE 6: Change events, policy application, and indexing (non-critical operations)
 		writeChangeEvent(callContext, repositoryId, atomicResult, ChangeType.CREATED);
-		
+
+		// Apply policies to the newly created document
+		if (policies != null && !policies.isEmpty()) {
+			for (String policyId : policies) {
+				if (policyId == null || policyId.isEmpty()) {
+					continue;
+				}
+				try {
+					applyPolicy(callContext, repositoryId, policyId, atomicResult.getId(), null);
+					log.debug("createDocumentFromSource: Applied policy " + policyId + " to document " + atomicResult.getId());
+				} catch (Exception e) {
+					log.warn("createDocumentFromSource: Failed to apply policy " + policyId + " to document " + atomicResult.getId() + ": " + e.getMessage());
+				}
+			}
+		}
+
 		// Solr indexing (failure won't affect main operation)
 		try {
 			if (solrUtil != null) {
@@ -810,7 +1020,7 @@ public class ContentServiceImpl implements ContentService {
 
 		log.debug("=== ATOMIC DOCUMENT FROM SOURCE SUCCESS: {} ===", atomicResult.getId());
 		return atomicResult;
-		
+
 	} catch (Exception e) {
 		log.error("=== ATOMIC DOCUMENT FROM SOURCE FAILED - INITIATING ROLLBACK ===");
 		log.error("Error during atomic document from source: {}", e.getMessage(), e);
@@ -954,9 +1164,14 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, originalPwc, ChangeType.UPDATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing
-		// solrUtil.indexDocument(repositoryId, content);
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, originalPwc);
+			}
+		} catch (Exception e) {
+			log.warn("setContentStream: Solr indexing failed for document " + originalPwc.getId() + ": " + e.getMessage());
+		}
 
 		return originalPwc;
 	}
@@ -1114,9 +1329,14 @@ public class ContentServiceImpl implements ContentService {
 		// Write change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, result);
+			}
+		} catch (Exception e) {
+			log.warn("checkOut: Solr indexing failed for PWC " + result.getId() + ": " + e.getMessage());
+		}
 
 		return result;
 	}
@@ -1217,18 +1437,37 @@ public class ContentServiceImpl implements ContentService {
 		VersioningState versioningState = (major) ? VersioningState.MAJOR : VersioningState.MINOR;
 		updateVersionProperties(callContext, repositoryId, versioningState, checkedIn, latest);
 
-		// TODO set policies & ACEs
-
 		// Create
 		Document result = contentDaoService.create(repositoryId, checkedIn);
+
+		// Apply policies to the newly created document
+		// ACEs are already handled in buildCopyDocument via setAclOnCreated
+		if (policies != null && !policies.isEmpty()) {
+			for (String policyId : policies) {
+				if (policyId == null || policyId.isEmpty()) {
+					continue;
+				}
+				try {
+					applyPolicy(callContext, repositoryId, policyId, result.getId(), null);
+					log.debug("checkIn: Applied policy " + policyId + " to document " + result.getId());
+				} catch (Exception e) {
+					log.warn("checkIn: Failed to apply policy " + policyId + " to document " + result.getId() + ": " + e.getMessage());
+				}
+			}
+		}
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		writeChangeEvent(callContext, repositoryId, latest, ChangeType.UPDATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, result);
+			}
+		} catch (Exception e) {
+			log.warn("checkIn: Solr indexing failed for document " + result.getId() + ": " + e.getMessage());
+		}
 
 		return result;
 	}
@@ -1251,18 +1490,25 @@ public class ContentServiceImpl implements ContentService {
 		VersioningState versioningState = (major) ? VersioningState.MAJOR : VersioningState.MINOR;
 		updateVersionProperties(callContext, repositoryId, versioningState, checkedIn, previousDoc);
 
-		// TODO set policies & ACEs
-
 		// Create
 		Document result = contentDaoService.create(repositoryId, checkedIn);
+
+		// Note: This method does not accept policies parameter.
+		// Policies should be applied separately via applyPolicy() if needed.
+		// ACEs are handled in buildCopyDocument via setAclOnCreated.
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		writeChangeEvent(callContext, repositoryId, previousDoc, ChangeType.UPDATED);
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, result);
+			}
+		} catch (Exception e) {
+			log.warn("updateWithoutCheckInOut: Solr indexing failed for document " + result.getId() + ": " + e.getMessage());
+		}
 
 		return result;
 	}
@@ -1573,12 +1819,33 @@ public class ContentServiceImpl implements ContentService {
 		// Create
 		Folder folder = contentDaoService.create(repositoryId, f);
 
+		// Apply policies to the newly created folder
+		if (policies != null && !policies.isEmpty()) {
+			for (String policyId : policies) {
+				if (policyId == null || policyId.isEmpty()) {
+					continue;
+				}
+				try {
+					applyPolicy(callContext, repositoryId, policyId, folder.getId(), null);
+					log.debug("createFolder: Applied policy " + policyId + " to folder " + folder.getId());
+				} catch (Exception e) {
+					log.warn("createFolder: Failed to apply policy " + policyId + " to folder " + folder.getId() + ": " + e.getMessage());
+				}
+			}
+		}
+
 		// Record the change event
 		// Content objects now maintain revision state, enabling proper writeChangeEvent
 		writeChangeEvent(callContext, repositoryId, folder, ChangeType.CREATED);
 
-		// Call Solr indexing(optional)
-		solrUtil.indexDocument(repositoryId, folder);
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, folder);
+			}
+		} catch (Exception e) {
+			log.warn("createFolder: Solr indexing failed for folder " + folder.getId() + ": " + e.getMessage());
+		}
 
 		return folder;
 	}
@@ -1600,8 +1867,29 @@ public class ContentServiceImpl implements ContentService {
 
 		Relationship relationship = contentDaoService.create(repositoryId, rel);
 
-		// Index relationship in Solr for CMIS query support
-		solrUtil.indexDocument(repositoryId, relationship);
+		// Apply policies to the newly created relationship
+		if (policies != null && !policies.isEmpty()) {
+			for (String policyId : policies) {
+				if (policyId == null || policyId.isEmpty()) {
+					continue;
+				}
+				try {
+					applyPolicy(callContext, repositoryId, policyId, relationship.getId(), null);
+					log.debug("createRelationship: Applied policy " + policyId + " to relationship " + relationship.getId());
+				} catch (Exception e) {
+					log.warn("createRelationship: Failed to apply policy " + policyId + " to relationship " + relationship.getId() + ": " + e.getMessage());
+				}
+			}
+		}
+
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, relationship);
+			}
+		} catch (Exception e) {
+			log.warn("createRelationship: Solr indexing failed for relationship " + relationship.getId() + ": " + e.getMessage());
+		}
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, relationship, ChangeType.CREATED);
@@ -1647,6 +1935,22 @@ public class ContentServiceImpl implements ContentService {
 
 		Item i = buildItem(callContext, repositoryId, properties, folderId, policies, addAces, removeAces, extension);
 		Item item = contentDaoService.create(repositoryId, i);
+
+		// Apply policies to the newly created item
+		if (policies != null && !policies.isEmpty()) {
+			for (String policyId : policies) {
+				if (policyId == null || policyId.isEmpty()) {
+					continue;
+				}
+				try {
+					applyPolicy(callContext, repositoryId, policyId, item.getId(), null);
+					log.debug("createItem: Applied policy " + policyId + " to item " + item.getId());
+				} catch (Exception e) {
+					log.warn("createItem: Failed to apply policy " + policyId + " to item " + item.getId() + ": " + e.getMessage());
+				}
+			}
+		}
+
 		writeChangeEvent(callContext, repositoryId, item, ChangeType.CREATED);
 		return item;
 	}
@@ -2291,15 +2595,34 @@ public class ContentServiceImpl implements ContentService {
 
 		content.setParentId(target.getId());
 
-		move(repositoryId, content, sourceId);
+		Content result = move(repositoryId, content, sourceId);
 
 		Folder source = getFolder(repositoryId, sourceId);
-		writeChangeEvent(callContext, repositoryId, source, ChangeType.UPDATED);
-		writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
+		if (source != null) {
+			writeChangeEvent(callContext, repositoryId, source, ChangeType.UPDATED);
+		}
+		if (target != null) {
+			writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
+		}
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Solr indexing for moved content (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				// Index the moved content (parentId changed) - use result from move()
+				if (result != null) {
+					solrUtil.indexDocument(repositoryId, result);
+				}
+				// Index source and target folders if needed
+				if (source != null) {
+					solrUtil.indexDocument(repositoryId, source);
+				}
+				if (target != null) {
+					solrUtil.indexDocument(repositoryId, target);
+				}
+			}
+		} catch (Exception e) {
+			log.warn("moveObject: Solr indexing failed: " + e.getMessage());
+		}
 	}
 
 	private Content move(String repositoryId, Content content, String sourceId) {
@@ -2316,28 +2639,63 @@ public class ContentServiceImpl implements ContentService {
 	public void applyPolicy(CallContext callContext, String repositoryId, String policyId, String objectId,
 			ExtensionsData extension) {
 		Policy policy = getPolicy(repositoryId, policyId);
+		if (policy == null) {
+			log.warn("applyPolicy: Policy not found: " + policyId);
+			return;
+		}
+		
 		List<String> ids = policy.getAppliedIds();
-		ids.add(objectId);
-		policy.setAppliedIds(ids);
-		contentDaoService.update(repositoryId, policy);
-
-		// Record the change event
-		Content content = getContent(repositoryId, objectId);
-		writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
+		if (ids == null) {
+			ids = new ArrayList<>();
+		}
+		
+		// Check for duplicate to avoid adding same objectId twice
+		if (!ids.contains(objectId)) {
+			ids.add(objectId);
+			policy.setAppliedIds(ids);
+			contentDaoService.update(repositoryId, policy);
+			
+			// Record the change event only when actually updated
+			Content content = getContent(repositoryId, objectId);
+			if (content != null) {
+				writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
+			} else {
+				log.warn("applyPolicy: Content not found for objectId: " + objectId);
+			}
+		} else {
+			log.debug("applyPolicy: objectId " + objectId + " already applied to policy " + policyId);
+		}
 	}
 
 	@Override
 	public void removePolicy(CallContext callContext, String repositoryId, String policyId, String objectId,
 			ExtensionsData extension) {
 		Policy policy = getPolicy(repositoryId, policyId);
+		if (policy == null) {
+			log.warn("removePolicy: Policy not found: " + policyId);
+			return;
+		}
+		
 		List<String> ids = policy.getAppliedIds();
-		ids.remove(objectId);
-		policy.setAppliedIds(ids);
-		contentDaoService.update(repositoryId, policy);
-
-		// Record the change event
-		Content content = getContent(repositoryId, objectId);
-		writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
+		if (ids == null || ids.isEmpty()) {
+			log.debug("removePolicy: Policy " + policyId + " has no applied objects");
+			return;
+		}
+		
+		if (ids.remove(objectId)) {
+			policy.setAppliedIds(ids);
+			contentDaoService.update(repositoryId, policy);
+			
+			// Record the change event only when actually updated
+			Content content = getContent(repositoryId, objectId);
+			if (content != null) {
+				writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
+			} else {
+				log.warn("removePolicy: Content not found for objectId: " + objectId);
+			}
+		} else {
+			log.debug("removePolicy: objectId " + objectId + " was not applied to policy " + policyId);
+		}
 	}
 
 	/**
@@ -2348,10 +2706,9 @@ public class ContentServiceImpl implements ContentService {
 		
 		Content content = getContent(repositoryId, objectId);
 
-		// TODO workaround
+		// Handle case where content was already deleted (e.g., concurrent delete or cascade)
 		if (content == null) {
-			// If content is already deleted, do nothing;
-			log.error("Content is null for object: {} - exiting early", objectId);
+			log.warn("delete: Content not found for objectId=" + objectId + " - may have been deleted already");
 			return;
 		}
 
@@ -2408,6 +2765,8 @@ public class ContentServiceImpl implements ContentService {
 	
 	/**
 	 * CRITICAL: Batch deletion of relationships for better Cloudant SDK performance
+	 * Uses ContentDaoService.deleteBulk for efficient batch deletion via _bulk_docs API.
+	 *
 	 * @param repositoryId repository identifier
 	 * @param relationshipIds list of relationship IDs to delete
 	 */
@@ -2415,18 +2774,13 @@ public class ContentServiceImpl implements ContentService {
 		if (relationshipIds == null || relationshipIds.isEmpty()) {
 			return;
 		}
-		
-		// For now, use individual deletes with proper error handling
-		// TODO: Implement true bulk delete when available in ContentDaoService
-		for (String relationshipId : relationshipIds) {
-			try {
-				contentDaoService.delete(repositoryId, relationshipId);
-				// Brief pause to prevent overwhelming CouchDB
-				Thread.sleep(5);
-			} catch (Exception e) {
-				log.warn("Failed to delete relationship " + relationshipId + ": " + e.getMessage());
-				// Continue with other deletions
-			}
+
+		log.debug("deleteRelationshipsBatch: Deleting " + relationshipIds.size() + " relationships in bulk");
+		int deletedCount = contentDaoService.deleteBulk(repositoryId, relationshipIds);
+		if (deletedCount < relationshipIds.size()) {
+			log.warn("deleteRelationshipsBatch: Only " + deletedCount + " of " + relationshipIds.size() + " relationships were deleted");
+		} else {
+			log.debug("deleteRelationshipsBatch: Successfully deleted " + deletedCount + " relationships");
 		}
 	}
 
@@ -2835,7 +3189,7 @@ public class ContentServiceImpl implements ContentService {
 
 		setSignature(callContext, rendition);
 		if (converted == null) {
-			// TODO logging
+			log.warn("createRendition: PDF conversion failed for document: " + document.getName() + " (id=" + document.getId() + ")");
 			return null;
 		} else {
 			String renditionId = contentDaoService.createRendition(repositoryId, rendition, converted);
@@ -3027,7 +3381,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Overwrite
 		for (Entry<String, Ace> s : sourceMap.entrySet()) {
-			// TODO Deep copy
+			// Use deepCopy to avoid sharing mutable Ace objects between ACLs
 			if (!targetMap.containsKey(s.getKey())) {
 				Ace ace = deepCopy(s.getValue());
 				ace.setDirect(false);
@@ -3124,7 +3478,7 @@ public class ContentServiceImpl implements ContentService {
 	public String getLatestChangeToken(String repositoryId) {
 		Change latest = contentDaoService.getLatestChange(repositoryId);
 		if (latest == null) {
-			// TODO null is OK?
+			// Per CMIS spec: null is acceptable when there are no changes in the repository
 			return null;
 		} else {
 			// return String.valueOf(latest.getChangeToken());
@@ -3213,11 +3567,12 @@ public class ContentServiceImpl implements ContentService {
 		dummyContext.put(dummyContext.USERNAME, PrincipalId.SYSTEM_IN_DB);
 
 		// Switch over the operation depending on the type of archive
+		Content restored = null;
 		if (archive.isFolder()) {
-			Folder restored = restoreFolder(repositoryId, archive);
+			restored = restoreFolder(repositoryId, archive);
 			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
 		} else if (archive.isDocument()) {
-			Document restored = restoreDocument(repositoryId, archive);
+			restored = restoreDocument(repositoryId, archive);
 			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
 		} else if (archive.isAttachment()) {
 			log.error("Attachment can't be restored alone");
@@ -3225,9 +3580,16 @@ public class ContentServiceImpl implements ContentService {
 			log.error("Only document or folder is supported for restoration");
 		}
 
-		// Call Solr indexing(optional)
-		// TODO: Update with specific document indexing 
-		// solrUtil.indexDocument(repositoryId, content);
+		// Solr indexing for restored content (failure won't affect main operation)
+		if (restored != null) {
+			try {
+				if (solrUtil != null) {
+					solrUtil.indexDocument(repositoryId, restored);
+				}
+			} catch (Exception e) {
+				log.warn("restoreArchive: Solr indexing failed for " + restored.getId() + ": " + e.getMessage());
+			}
+		}
 	}
 
 	private Document restoreDocument(String repositoryId, Archive archive) {
@@ -3261,7 +3623,10 @@ public class ContentServiceImpl implements ContentService {
 				}
 			}
 		}
-		contentDaoService.deleteArchive(repositoryId, archive.getId());
+		String deletedArchiveId = contentDaoService.deleteArchive(repositoryId, archive.getId());
+		if (deletedArchiveId == null) {
+			log.warn("Archive deletion returned null during restore: " + archive.getId());
+		}
 
 		return getFolder(repositoryId, archive.getOriginalId());
 	}
@@ -3279,46 +3644,80 @@ public class ContentServiceImpl implements ContentService {
 	public void destroyArchive(String repositoryId, String archiveId) {
 		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
 		if (archive == null) {
-			log.error("Archive does not exist!");
+			log.error("destroyArchive: archive does not exist, archiveId=" + archiveId);
 			return;
 		}
 
 		if (archive.isFolder()) {
 			destroyFolder(repositoryId, archive);
 		} else if (archive.isDocument()) {
-			destoryDocument(repositoryId, archive);
+			destroyDocument(repositoryId, archive);
 		} else if (archive.isAttachment()) {
-			log.error("Attachment can't be restored alone");
+			log.error("destroyArchive: attachment cannot be restored alone, archiveId=" + archiveId);
 		} else {
-			log.error("Only document or folder is supported for restoration");
+			log.error("destroyArchive: only document or folder is supported for restoration, archiveId=" + archiveId);
 		}
 	}
 
 	private void destroyFolder(String repositoryId, Archive archive) {
-		// Restore direct children
+		// Destroy direct children first
 		List<Archive> children = contentDaoService.getChildArchives(repositoryId, archive);
 		if (CollectionUtils.isNotEmpty(children)) {
 			for (Archive child : children) {
 				destroyArchive(repositoryId, child.getId());
 			}
 		}
-		contentDaoService.deleteArchive(repositoryId, archive.getId());
+		String deletedArchiveId = contentDaoService.deleteArchive(repositoryId, archive.getId());
+		if (deletedArchiveId == null) {
+			log.warn("destroyFolder: folder archive deletion returned null, archiveId=" + archive.getId());
+		}
 	}
 
-	private void destoryDocument(String repositoryId, Archive archive) {
+	private void destroyDocument(String repositoryId, Archive archive) {
 		try {
-			// Get archives of the same version series
-			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId,
-					archive.getVersionSeriesId());
-			for (Archive version : versions) {
-				// Restore its attachment
-				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
-				// delete archives
-				contentDaoService.deleteArchive(repositoryId, version.getId());
-				contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
+			// Check versionSeriesId before calling getArchivesOfVersionSeries
+			String versionSeriesId = archive.getVersionSeriesId();
+			if (versionSeriesId == null) {
+				log.warn("destroyDocument: archive has no versionSeriesId, archiveId=" + archive.getId());
+				return;
 			}
+
+			// Get archives of the same version series
+			List<Archive> versions = contentDaoService.getArchivesOfVersionSeries(repositoryId, versionSeriesId);
+
+			if (versions == null) {
+				log.warn("destroyDocument: getArchivesOfVersionSeries returned null, versionSeriesId=" + versionSeriesId);
+				return;
+			}
+			if (versions.isEmpty()) {
+				log.warn("destroyDocument: no versions found, versionSeriesId=" + versionSeriesId);
+				return;
+			}
+
+			for (Archive version : versions) {
+				// Get attachment archive FIRST (before deleting version)
+				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
+
+				// Delete attachment archive first (continue even if fails - best effort cleanup)
+				if (attachmentArchive != null) {
+					String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
+					if (deletedAttachmentId == null) {
+						log.warn("destroyDocument: attachment archive deletion returned null, attachmentId=" + attachmentArchive.getId());
+					}
+				} else {
+					log.warn("destroyDocument: attachment archive not found, versionId=" + version.getId());
+				}
+
+				// Then delete version archive
+				String deletedVersionId = contentDaoService.deleteArchive(repositoryId, version.getId());
+				if (deletedVersionId == null) {
+					log.warn("destroyDocument: version archive deletion returned null, versionId=" + version.getId());
+				}
+			}
+		} catch (NotFoundException e) {
+			log.warn("destroyDocument: archive not found during destroy, archiveId=" + archive.getId());
 		} catch (Exception e) {
-			log.error("fail to restore a document", e);
+			log.error("destroyDocument: failed to destroy document archive, archiveId=" + archive.getId(), e);
 		}
 	}
 
