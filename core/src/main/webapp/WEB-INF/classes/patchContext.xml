@@ -111,6 +111,13 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- MCP Service Account: non-admin account for MCP transport authentication -->
+				<!-- This account is used for transport-level auth, not for user permissions -->
+				<bean class="jp.aegif.nemaki.patch.Patch_McpServiceAccount">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>

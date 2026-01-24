@@ -1,11 +1,18 @@
 package jp.aegif.nemaki.patch;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.mindrot.jbcrypt.BCrypt;
 
-import jp.aegif.nemaki.businesslogic.PrincipalService;
-import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.common.NemakiObjectType;
+import jp.aegif.nemaki.model.Property;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.spring.SpringContext;
 
 /**
@@ -40,59 +47,89 @@ public class Patch_McpServiceAccount extends AbstractNemakiPatch {
 
     @Override
     protected void applySystemPatch() {
-        log.info("No system-wide configuration needed for MCP service account");
+        // Use ERROR level for visibility (consistent with other patches)
+        log.error("=== MCP SERVICE ACCOUNT PATCH: No system-wide configuration needed ===");
     }
 
     @Override
     protected void applyPerRepositoryPatch(String repositoryId) {
-        log.info("Creating MCP service account for repository: " + repositoryId);
+        // Use ERROR level for visibility (consistent with other patches in this codebase)
+        log.error("=== MCP SERVICE ACCOUNT PATCH STARTED for repository: " + repositoryId + " ===");
 
         // Skip archive repositories
         if (repositoryId.endsWith("_closet")) {
-            log.info("Skipping MCP service account for archive repository: " + repositoryId);
+            log.error("Skipping MCP service account for archive repository: " + repositoryId);
             return;
         }
 
         // Skip canopy (management repository)
         if ("canopy".equals(repositoryId)) {
-            log.info("Skipping MCP service account for canopy repository");
+            log.error("Skipping MCP service account for canopy repository");
             return;
         }
 
         try {
-            PrincipalService principalService = SpringContext.getApplicationContext()
-                    .getBean("PrincipalService", PrincipalService.class);
-            if (principalService == null) {
-                log.error("PrincipalService not available, cannot create MCP service account");
+            log.error("Getting ContentService from Spring context...");
+            ContentService contentService = SpringContext.getApplicationContext()
+                    .getBean("ContentService", ContentService.class);
+            if (contentService == null) {
+                log.error("ContentService not available, cannot create MCP service account");
                 return;
             }
+            log.error("ContentService obtained successfully");
 
             // Check if user already exists
-            User existingUser = principalService.getUserById(repositoryId, MCP_SERVICE_USER_ID);
-            if (existingUser != null) {
-                log.info("MCP service account already exists in repository: " + repositoryId);
-                return;
+            log.error("Checking if mcp-service user already exists...");
+            List<UserItem> existingUsers = contentService.getUserItems(repositoryId);
+            for (UserItem user : existingUsers) {
+                if (MCP_SERVICE_USER_ID.equals(user.getUserId())) {
+                    log.error("MCP service account already exists in repository: " + repositoryId);
+                    return;
+                }
+            }
+            log.error("User does not exist, creating new mcp-service account...");
+
+            // Create new MCP service user using UserItem (same as Patch_TestUserInitialization)
+            // Constructor: (id, type, userId, name, password, isAdmin, description)
+            UserItem mcpServiceUser = new UserItem(
+                null,                          // id - will be auto-generated
+                NemakiObjectType.nemakiUser,   // type
+                MCP_SERVICE_USER_ID,           // userId
+                MCP_SERVICE_USER_NAME,         // name
+                MCP_SERVICE_DEFAULT_PASSWORD,  // password (plain text - will be hashed internally)
+                false,                         // isAdmin - NOT an admin
+                null                           // description
+            );
+            mcpServiceUser.setDescription("MCP transport-level service account (non-admin)");
+
+            // Set additional properties (firstName, lastName, email)
+            Map<String, Object> propsMap = new HashMap<>();
+            propsMap.put("nemaki:firstName", "MCP");
+            propsMap.put("nemaki:lastName", "Service");
+            propsMap.put("nemaki:email", "mcp-service@localhost");
+
+            List<Property> properties = new ArrayList<>();
+            for (String key : propsMap.keySet()) {
+                properties.add(new Property(key, propsMap.get(key)));
             }
 
-            // Create new MCP service user
-            User mcpServiceUser = new User();
-            mcpServiceUser.setUserId(MCP_SERVICE_USER_ID);
-            mcpServiceUser.setName(MCP_SERVICE_USER_NAME);
-            mcpServiceUser.setFirstName("MCP");
-            mcpServiceUser.setLastName("Service");
-            mcpServiceUser.setEmail("mcp-service@localhost");
-            mcpServiceUser.setAdmin(false);  // NOT an admin
+            if (!properties.isEmpty()) {
+                mcpServiceUser.setSubTypeProperties(properties);
+            }
 
-            // Generate bcrypt password hash
-            String passwordHash = BCrypt.hashpw(MCP_SERVICE_DEFAULT_PASSWORD, BCrypt.gensalt(10));
-            mcpServiceUser.setPasswordHash(passwordHash);
+            // Create the user using ContentService
+            log.error("Calling contentService.createUserItem()...");
+            UserItem createdUser = contentService.createUserItem(
+                new SystemCallContext(repositoryId),
+                repositoryId,
+                mcpServiceUser
+            );
 
-            // Create the user
-            principalService.createUser(repositoryId, mcpServiceUser);
-
-            log.info("✅ MCP service account created successfully for repository: " + repositoryId);
-            log.info("   User ID: " + MCP_SERVICE_USER_ID);
-            log.info("   Admin: false (non-privileged)");
+            log.error("=== MCP SERVICE ACCOUNT PATCH COMPLETED SUCCESSFULLY ===");
+            log.error("   Repository: " + repositoryId);
+            log.error("   User ID: " + MCP_SERVICE_USER_ID);
+            log.error("   Internal ID: " + createdUser.getId());
+            log.error("   Admin: false (non-privileged)");
 
         } catch (Exception e) {
             log.error("Failed to create MCP service account for repository: " + repositoryId, e);
