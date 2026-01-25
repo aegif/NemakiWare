@@ -62,7 +62,8 @@ public class AuditLogger {
     private static final String HOSTNAME = initHostname();
 
     // Maximum length for request path in audit logs (prevent log flooding)
-    private static final int MAX_REQUEST_PATH_LENGTH = 2000;
+    private static final int DEFAULT_REQUEST_PATH_MAX_LENGTH = 2000;
+    private static volatile int maxRequestPathLength = DEFAULT_REQUEST_PATH_MAX_LENGTH;
     private static final String SERVICE = "nemakiware";
     private static final String ENVIRONMENT = initEnvironment();
     private static final String VERSION = initVersion();
@@ -88,6 +89,12 @@ public class AuditLogger {
 
     // ThreadLocal for storing request context (IP address, traceId, HTTP info, etc.)
     private static final ThreadLocal<RequestContext> requestContext = new ThreadLocal<>();
+
+    // Metrics counters for monitoring and alerting
+    private static final java.util.concurrent.atomic.AtomicLong auditEventCount = new java.util.concurrent.atomic.AtomicLong(0);
+    private static final java.util.concurrent.atomic.AtomicLong auditEventLogged = new java.util.concurrent.atomic.AtomicLong(0);
+    private static final java.util.concurrent.atomic.AtomicLong auditEventSkipped = new java.util.concurrent.atomic.AtomicLong(0);
+    private static final java.util.concurrent.atomic.AtomicLong auditEventFailed = new java.util.concurrent.atomic.AtomicLong(0);
 
     private PropertyManager propertyManager;
 
@@ -274,8 +281,25 @@ public class AuditLogger {
                 this.logFailuresAsWarn = logFailuresStr == null ||
                                          logFailuresStr.trim().isEmpty() ||
                                          "true".equalsIgnoreCase(logFailuresStr.trim());
+
+                // Request path max length (default: 2000)
+                String maxPathLengthStr = propertyManager.readValue(PropertyKey.AUDIT_REQUEST_PATH_MAX_LENGTH);
+                if (maxPathLengthStr != null && !maxPathLengthStr.trim().isEmpty()) {
+                    try {
+                        int parsed = Integer.parseInt(maxPathLengthStr.trim());
+                        if (parsed > 0) {
+                            maxRequestPathLength = parsed;
+                        } else {
+                            log.warn("Invalid audit.request.path.max.length: " + maxPathLengthStr +
+                                     " (must be positive). Using default: " + DEFAULT_REQUEST_PATH_MAX_LENGTH);
+                        }
+                    } catch (NumberFormatException e) {
+                        log.warn("Invalid audit.request.path.max.length: " + maxPathLengthStr +
+                                 ". Using default: " + DEFAULT_REQUEST_PATH_MAX_LENGTH);
+                    }
+                }
             }
-            
+
             // Create immutable snapshots for lock-free read access (Copy-on-Write pattern)
             // These snapshots are visible to readers after the volatile write completes
             this.excludedUsersSnapshot = java.util.Collections.unmodifiableSet(new HashSet<>(excludedUsers));
@@ -353,16 +377,22 @@ public class AuditLogger {
             ReadAuditLevel level = readAuditLevel;
             switch (level) {
                 case NONE:
+                    auditEventSkipped.incrementAndGet();
+                    auditEventCount.incrementAndGet();
                     return jp.proceed();  // Skip all read operations
                 case DOWNLOAD:
                     // Only log content downloads (highest risk)
                     if (!operation.isDownloadOperation()) {
+                        auditEventSkipped.incrementAndGet();
+                        auditEventCount.incrementAndGet();
                         return jp.proceed();
                     }
                     break;
                 case METADATA:
                     // Log downloads and metadata reads
                     if (!operation.isDownloadOperation() && !operation.isMetadataOperation()) {
+                        auditEventSkipped.incrementAndGet();
+                        auditEventCount.incrementAndGet();
                         return jp.proceed();
                     }
                     break;
@@ -389,11 +419,15 @@ public class AuditLogger {
         Set<String> excludedUsrs = excludedUsersSnapshot;
         
         if (excludedOps.contains(operation.name()) || excludedOps.contains(methodName)) {
+            auditEventSkipped.incrementAndGet();
+            auditEventCount.incrementAndGet();
             return jp.proceed();
         }
 
         // Skip excluded users
         if (userId != null && excludedUsrs.contains(userId)) {
+            auditEventSkipped.incrementAndGet();
+            auditEventCount.incrementAndGet();
             return jp.proceed();
         }
 
@@ -495,15 +529,20 @@ public class AuditLogger {
             return;
         }
 
+        // Increment total event count
+        auditEventCount.incrementAndGet();
+
         try {
             // Determine log level before serialization (performance optimization)
             boolean isWarn = logFailuresAsWarn && AuditEvent.Result.FAILURE.name().equals(event.getResult());
             
             // Check if the appropriate log level is enabled before serializing
             if (isWarn && !auditLogger.isWarnEnabled()) {
+                auditEventSkipped.incrementAndGet();
                 return;  // Skip serialization if log level is disabled
             }
             if (!isWarn && !auditLogger.isInfoEnabled()) {
+                auditEventSkipped.incrementAndGet();
                 return;  // Skip serialization if log level is disabled
             }
 
@@ -516,6 +555,9 @@ public class AuditLogger {
             } else {
                 auditLogger.info(json);
             }
+            
+            // Successfully logged
+            auditEventLogged.incrementAndGet();
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize audit event: " + e.getMessage(), e);
             // Fallback: output minimal structured JSON with essential fields only
@@ -530,14 +572,17 @@ public class AuditLogger {
                     escapeJson(e.getClass().getSimpleName())
                 );
                 auditLogger.warn(fallbackJson);
+                auditEventLogged.incrementAndGet();  // Fallback still counts as logged
             } catch (Exception e2) {
                 // Last resort: log critical error - audit log loss is serious
                 log.error("CRITICAL: Failed to log audit event even with fallback. EventId: " +
                          event.getEventId() + ", Operation: " + event.getOperation(), e2);
+                auditEventFailed.incrementAndGet();
             }
         } catch (Exception e) {
             // Unexpected exception (logger issues, etc.)
             log.error("Unexpected error logging audit event: " + e.getMessage(), e);
+            auditEventFailed.incrementAndGet();
         }
     }
 
@@ -852,8 +897,10 @@ public class AuditLogger {
                 requestPath = requestPath + "?" + maskSensitiveQueryParams(queryString);
             }
             // Truncate if too long (prevent log flooding)
-            if (requestPath != null && requestPath.length() > MAX_REQUEST_PATH_LENGTH) {
-                requestPath = requestPath.substring(0, MAX_REQUEST_PATH_LENGTH) + "...[truncated]";
+            // Use configurable max length (static volatile field)
+            int maxLen = maxRequestPathLength;
+            if (requestPath != null && requestPath.length() > maxLen) {
+                requestPath = requestPath.substring(0, maxLen) + "...[truncated]";
             }
             ctx.setRequestPath(requestPath);
 
@@ -931,6 +978,66 @@ public class AuditLogger {
      */
     public static void clearRequestContext() {
         requestContext.remove();
+    }
+
+
+    // ========== Metrics API ==========
+
+    /**
+     * Returns a snapshot of audit logging metrics.
+     * Useful for monitoring, alerting, and performance analysis.
+     * @return A map containing metric names and their values
+     */
+    public static java.util.Map<String, Long> getMetrics() {
+        java.util.Map<String, Long> metrics = new java.util.LinkedHashMap<>();
+        metrics.put("audit.events.total", auditEventCount.get());
+        metrics.put("audit.events.logged", auditEventLogged.get());
+        metrics.put("audit.events.skipped", auditEventSkipped.get());
+        metrics.put("audit.events.failed", auditEventFailed.get());
+        return metrics;
+    }
+
+    /**
+     * Returns the total number of audit events processed (logged + skipped + failed).
+     * @return Total event count
+     */
+    public static long getAuditEventCount() {
+        return auditEventCount.get();
+    }
+
+    /**
+     * Returns the number of audit events successfully logged.
+     * @return Logged event count
+     */
+    public static long getAuditEventLogged() {
+        return auditEventLogged.get();
+    }
+
+    /**
+     * Returns the number of audit events skipped (due to exclusion rules or disabled logging).
+     * @return Skipped event count
+     */
+    public static long getAuditEventSkipped() {
+        return auditEventSkipped.get();
+    }
+
+    /**
+     * Returns the number of audit events that failed to log (serialization errors, etc.).
+     * @return Failed event count
+     */
+    public static long getAuditEventFailed() {
+        return auditEventFailed.get();
+    }
+
+    /**
+     * Resets all metrics counters to zero.
+     * Useful for testing or periodic metric collection.
+     */
+    public static void resetMetrics() {
+        auditEventCount.set(0);
+        auditEventLogged.set(0);
+        auditEventSkipped.set(0);
+        auditEventFailed.set(0);
     }
 
     /**

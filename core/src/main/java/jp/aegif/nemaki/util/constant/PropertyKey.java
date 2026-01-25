@@ -311,4 +311,8 @@ public interface PropertyKey {
 	final String AUDIT_EXCLUDE_USERS = "audit.exclude.users";
 	final String AUDIT_EXCLUDE_OPERATIONS = "audit.exclude.operations";
 	final String AUDIT_LOG_FAILURES_AS_WARN = "audit.log.failures.as.warn";
+
+	// Audit logging - configurable limits
+	final String AUDIT_REQUEST_PATH_MAX_LENGTH = "audit.request.path.max.length";  // Default: 2000
+	final String AUDIT_ASYNC_QUEUE_SIZE = "audit.async.queue.size";  // Default: 512 (logback config)
 }
