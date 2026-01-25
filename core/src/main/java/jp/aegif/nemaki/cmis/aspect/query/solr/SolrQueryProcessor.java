@@ -92,9 +92,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 			this.typeManager = typeManager;
 		}
 		@Override
-		public void addTypeDefinition(TypeDefinition arg0, boolean arg1) {
-			// TODO Auto-generated method stub
-			
+		public void addTypeDefinition(TypeDefinition typeDefinition, boolean addInheritedProperties) {
+			// This adapter is read-only for query processing purposes.
+			// Type definitions are managed by the main TypeManager, not through queries.
+			throw new UnsupportedOperationException(
+					"CmisTypeManager is a read-only adapter for query processing. " +
+					"Use TypeManager directly to add type definitions.");
 		}
 		@Override
 		public void deleteTypeDefinition(String typeId) {
@@ -186,7 +189,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// requiring users to manually add "JOIN nemaki:commentable" to the query
 		statement = injectSecondaryTypeJoins(repositoryId, statement);
 
-		// TODO walker is required?
+		// Parse the CMIS query using QueryUtilStrict, then use SolrPredicateWalker
+		// to convert the WHERE clause AST into Solr query syntax.
 
 		if (logger.isDebugEnabled()) {
 			logger.debug("Creating QueryUtilStrict with statement: " + statement);

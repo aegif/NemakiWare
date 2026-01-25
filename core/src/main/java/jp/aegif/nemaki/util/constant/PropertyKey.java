@@ -294,6 +294,12 @@ public interface PropertyKey {
 	final String EXTERNAL_AUTHENTICATION_PROXY_HEADER = "external.authenticaion.proxyHeader";
 	final String EXTERNAL_AUTHENTICATION_AUTO_CREATE_USER = "external.authenticaion.isAutoCreateUser";
 
+	//SSO (Single Sign-On) configuration
+	/** Enable/disable OIDC login button on login page. Default: false */
+	final String SSO_OIDC_ENABLED = "sso.oidc.enabled";
+	/** Enable/disable SAML login button on login page. Default: false */
+	final String SSO_SAML_ENABLED = "sso.saml.enabled";
+
 	//Thread
 	final String THREAD_MAX = "thread.max";
 

@@ -36,7 +36,6 @@ public class SolrAllResource extends ResourceBase {
 
 	public SolrAllResource() {
 		super();
-		// TODO Auto-generated constructor stub
 	}
 
 	@GET
@@ -86,12 +85,15 @@ public class SolrAllResource extends ResourceBase {
 				status = true;
 			}else{
 				status = false;
-				//TODO error message
+				// Include truncated response for debugging (limit to 200 chars to avoid huge messages)
+				String truncatedBody = body.length() > 200 ? body.substring(0, 200) + "..." : body;
+				errMsg.add("Solr initialization returned non-success status");
+				log.warn("Solr init request returned non-success status. Response: " + truncatedBody);
 			}
 		} catch (Exception e) {
 			status = false;
-			//TODO error message
-			e.printStackTrace();
+			errMsg.add("Solr initialization failed: " + e.getMessage());
+			log.error("Solr init request failed", e);
 		}
 
 		// Output

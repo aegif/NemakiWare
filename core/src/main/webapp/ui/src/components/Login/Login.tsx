@@ -230,22 +230,47 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [form] = Form.useForm();
   const [coreBuildInfo, setCoreBuildInfo] = useState<{ version: string; buildTime: string } | null>(null);
 
+  // SSO configuration state (loaded asynchronously from backend)
+  const [ssoConfigLoaded, setSsoConfigLoaded] = useState(false);
+  const [oidcEnabled, setOidcEnabled] = useState(false);
+  const [samlEnabled, setSamlEnabled] = useState(false);
+
   const authService = AuthService.getInstance();
   const cmisService = new CMISService();
-  
-  const [oidcService] = useState(() => {
-    if (isOIDCEnabled()) {
-      return new OIDCService(getOIDCConfig());
-    }
-    return null;
-  });
 
-  const [samlService] = useState(() => {
-    if (isSAMLEnabled()) {
-      return new SAMLService(getSAMLConfig());
-    }
-    return null;
-  });
+  // SSO services (created lazily when config is loaded)
+  const [oidcService, setOidcService] = useState<OIDCService | null>(null);
+  const [samlService, setSamlService] = useState<SAMLService | null>(null);
+
+  // Load SSO configuration from backend
+  useEffect(() => {
+    const loadSsoConfig = async () => {
+      try {
+        const [oidcResult, samlResult] = await Promise.all([
+          isOIDCEnabled(),
+          isSAMLEnabled()
+        ]);
+
+        setOidcEnabled(oidcResult);
+        setSamlEnabled(samlResult);
+
+        // Initialize SSO services based on configuration
+        if (oidcResult) {
+          setOidcService(new OIDCService(getOIDCConfig()));
+        }
+        if (samlResult) {
+          setSamlService(new SAMLService(getSAMLConfig()));
+        }
+      } catch (error) {
+        console.warn('Failed to load SSO configuration:', error);
+        // Keep defaults (SSO disabled) on error
+      } finally {
+        setSsoConfigLoaded(true);
+      }
+    };
+
+    loadSsoConfig();
+  }, []);
   
   useEffect(() => {
     // SECURITY: Only expose authService in development mode for debugging
@@ -552,10 +577,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </Button>
           </Form.Item>
 
-          {(isOIDCEnabled() || isSAMLEnabled()) && (
+          {ssoConfigLoaded && (oidcEnabled || samlEnabled) && (
             <>
               <Divider>{t('login.or')}</Divider>
-              {isOIDCEnabled() && (
+              {oidcEnabled && (
                 <Form.Item>
                   <Button
                     type="default"
@@ -568,7 +593,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   </Button>
                 </Form.Item>
               )}
-              {isSAMLEnabled() && (
+              {samlEnabled && (
                 <Form.Item>
                   <Button
                     type="default"

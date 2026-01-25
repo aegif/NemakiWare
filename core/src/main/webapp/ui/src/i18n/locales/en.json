@@ -1217,7 +1217,8 @@
     "tabs": {
       "status": "Status",
       "reindex": "Reindexing",
-      "query": "Solr Query"
+      "query": "Solr Query",
+      "cmisQuery": "CMIS Search"
     },
     "healthCheck": {
       "title": "Index Health Check",
@@ -1288,12 +1289,35 @@
       "sortPlaceholder": "score desc",
       "fields": "Fields (fl)",
       "fieldsPlaceholder": "id,name,score",
+      "simulateAsUser": "User Permission Simulation",
+      "simulateAsUserTooltip": "Apply ACL filtering with the specified user's permissions. Admin only.",
+      "selectUser": "Select user (no filtering if not selected)",
       "executeQuery": "Execute Query",
       "results": "Showing {{start}}-{{end}} of {{numFound}} results ({{queryTime}}ms)",
+      "resultsWithAcl": "{{numFound}} total, {{visibleCount}} visible, {{aclFilteredCount}} filtered by ACL (showing {{start}}-{{end}}, {{queryTime}}ms)",
       "noResults": "0 results ({{queryTime}}ms)",
       "document": "Document {{number}}",
       "field": "Field",
       "value": "Value"
+    },
+    "cmisQuery": {
+      "title": "CMIS SQL Search",
+      "description": "Execute queries using CMIS standard SQL format. ACL permission filtering is automatically applied.",
+      "statementLabel": "CMIS Query (SELECT statement)",
+      "statementRequired": "Please enter a CMIS query",
+      "statementPlaceholder": "SELECT * FROM cmis:document WHERE cmis:name LIKE '%test%'",
+      "maxItems": "Max Items",
+      "skipCount": "Skip Count",
+      "simulateAsUser": "User Permission Simulation",
+      "simulateAsUserTooltip": "Execute search with the specified user's permissions. Admin only.",
+      "selectUser": "Select user (searches as yourself if not selected)",
+      "executeQuery": "Execute Query",
+      "results": "Showing {{displayed}} of {{numFound}} results (more: {{hasMore}}, {{queryTime}}ms)",
+      "noResults": "0 results ({{queryTime}}ms)",
+      "columnName": "Name",
+      "columnObjectId": "Object ID",
+      "columnType": "Type",
+      "columnPath": "Path"
     },
     "messages": {
       "fullReindexStarted": "Full reindex started",
@@ -1307,7 +1331,8 @@
       "clearError": "Failed to clear index",
       "indexOptimized": "Index optimized",
       "optimizeError": "Failed to optimize index",
-      "queryError": "Failed to execute query"
+      "queryError": "Failed to execute query",
+      "cmisQueryError": "Failed to execute CMIS query"
     }
   },
   "semanticSearch": {

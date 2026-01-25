@@ -786,4 +786,9 @@
         <property name="solrIndexMaintenanceService" ref="SolrIndexMaintenanceService" />
     </bean>
 
+    <!-- Auth Config Resource - Public endpoint for SSO button visibility settings -->
+    <bean id="authConfigResource" class="jp.aegif.nemaki.rest.AuthConfigResource">
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
 </beans>

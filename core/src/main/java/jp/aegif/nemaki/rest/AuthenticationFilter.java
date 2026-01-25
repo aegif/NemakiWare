@@ -132,6 +132,17 @@ public class AuthenticationFilter implements Filter {
 			return;
 		}
 
+		// Bypass authentication for auth config endpoint (SSO button visibility settings)
+		// This must be public because it's accessed before user login
+		// Only match specific patterns to prevent unintended bypasses
+		if (requestURI != null && (
+				requestURI.equals("/core/rest/auth/config") ||
+				requestURI.endsWith("/rest/auth/config"))) {
+			log.debug("Bypassing authentication for auth config endpoint: " + requestURI);
+			chain.doFilter(req, res);
+			return;
+		}
+
 		// Bypass authentication for API v1 auth endpoints (login, saml, oidc)
 		// These endpoints handle their own authentication through request body or SSO
 		if (requestURI != null && requestURI.contains("/api/v1/cmis/auth/") &&

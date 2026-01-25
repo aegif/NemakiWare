@@ -47,6 +47,34 @@ export interface SolrQueryResult {
   start: number;
   queryTime: number;
   docs: Record<string, unknown>[];
+  // ACL filtering info (when simulateAsUserId is used)
+  aclFilteredCount?: number;
+  visibleCount?: number;
+}
+
+export interface CmisQueryResult {
+  numFound: number;
+  start: number;
+  maxItems: number;
+  hasMoreItems: boolean;
+  queryTime: number;
+  objects: CmisQueryObject[];
+}
+
+export interface CmisQueryObject {
+  objectId: string;
+  name: string;
+  objectTypeId: string;
+  baseTypeId: string;
+  path?: string;
+  properties: Record<string, unknown>;
+}
+
+export interface UserInfo {
+  userId: string;
+  userName: string;
+  email?: string;
+  isAdmin: boolean;
 }
 
 // API v1 operation response format
@@ -165,7 +193,8 @@ export class SolrMaintenanceService {
     start: number = 0,
     rows: number = 10,
     sort?: string,
-    fields?: string
+    fields?: string,
+    simulateAsUserId?: string
   ): Promise<SolrQueryResult> {
     const formData = new URLSearchParams();
     formData.append('q', query);
@@ -177,12 +206,51 @@ export class SolrMaintenanceService {
     if (fields) {
       formData.append('fl', fields);
     }
+    if (simulateAsUserId) {
+      formData.append('simulateAsUserId', simulateAsUserId);
+    }
 
     const response = await this.httpClient.postUrlEncoded(
       `${this.getBaseUrl(repositoryId)}/query`,
       formData
     );
     return this.handleResponse<SolrQueryResult>(response);
+  }
+
+  /**
+   * Execute CMIS SQL query with optional user permission simulation.
+   * Admin only. Uses CMIS query syntax (e.g., "SELECT * FROM cmis:document WHERE cmis:name LIKE '%test%'")
+   */
+  async executeCmisQuery(
+    repositoryId: string,
+    statement: string,
+    maxItems: number = 100,
+    skipCount: number = 0,
+    simulateAsUserId?: string
+  ): Promise<CmisQueryResult> {
+    const formData = new URLSearchParams();
+    formData.append('statement', statement);
+    formData.append('maxItems', maxItems.toString());
+    formData.append('skipCount', skipCount.toString());
+    if (simulateAsUserId) {
+      formData.append('simulateAsUserId', simulateAsUserId);
+    }
+
+    const response = await this.httpClient.postUrlEncoded(
+      `${this.getBaseUrl(repositoryId)}/cmis-query`,
+      formData
+    );
+    return this.handleResponse<CmisQueryResult>(response);
+  }
+
+  /**
+   * Get list of users for simulation dropdown.
+   * Admin only.
+   */
+  async getUsers(repositoryId: string): Promise<UserInfo[]> {
+    const response = await this.httpClient.getJson(`${this.getBaseUrl(repositoryId)}/users`);
+    const data = await this.handleResponse<{ users: UserInfo[] }>(response);
+    return data.users;
   }
 
   async reindexDocument(repositoryId: string, objectId: string): Promise<{ message: string; objectId: string }> {

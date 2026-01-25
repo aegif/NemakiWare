@@ -1217,7 +1217,8 @@
     "tabs": {
       "status": "ステータス",
       "reindex": "再インデクシング",
-      "query": "Solrクエリ"
+      "query": "Solrクエリ",
+      "cmisQuery": "CMIS検索"
     },
     "healthCheck": {
       "title": "インデックスヘルスチェック",
@@ -1288,12 +1289,35 @@
       "sortPlaceholder": "score desc",
       "fields": "フィールド (fl)",
       "fieldsPlaceholder": "id,name,score",
+      "simulateAsUser": "ユーザー権限シミュレーション",
+      "simulateAsUserTooltip": "指定したユーザーの権限でACLフィルタリングを適用します。管理者のみ使用可能です。",
+      "selectUser": "ユーザーを選択（未選択時はフィルタリングなし）",
       "executeQuery": "クエリ実行",
       "results": "{{numFound}}件中 {{start}}〜{{end}}件を表示 ({{queryTime}}ms)",
+      "resultsWithAcl": "{{numFound}}件中 {{visibleCount}}件が閲覧可能、{{aclFilteredCount}}件がACLでフィルタ ({{start}}〜{{end}}件を表示, {{queryTime}}ms)",
       "noResults": "0件 ({{queryTime}}ms)",
       "document": "ドキュメント {{number}}",
       "field": "フィールド",
       "value": "値"
+    },
+    "cmisQuery": {
+      "title": "CMIS SQL検索",
+      "description": "CMIS標準のSQL形式でクエリを実行します。ACLによる権限フィルタリングが自動適用されます。",
+      "statementLabel": "CMISクエリ (SELECT文)",
+      "statementRequired": "CMISクエリを入力してください",
+      "statementPlaceholder": "SELECT * FROM cmis:document WHERE cmis:name LIKE '%test%'",
+      "maxItems": "最大件数",
+      "skipCount": "スキップ件数",
+      "simulateAsUser": "ユーザー権限シミュレーション",
+      "simulateAsUserTooltip": "指定したユーザーの権限で検索を実行します。管理者のみ使用可能です。",
+      "selectUser": "ユーザーを選択（未選択時は自分として検索）",
+      "executeQuery": "クエリ実行",
+      "results": "{{numFound}}件中 {{displayed}}件を表示 (さらに結果: {{hasMore}}, {{queryTime}}ms)",
+      "noResults": "0件 ({{queryTime}}ms)",
+      "columnName": "名前",
+      "columnObjectId": "オブジェクトID",
+      "columnType": "タイプ",
+      "columnPath": "パス"
     },
     "messages": {
       "fullReindexStarted": "全体再インデクシングを開始しました",
@@ -1307,7 +1331,8 @@
       "clearError": "インデックスのクリアに失敗しました",
       "indexOptimized": "インデックスを最適化しました",
       "optimizeError": "インデックスの最適化に失敗しました",
-      "queryError": "クエリの実行に失敗しました"
+      "queryError": "クエリの実行に失敗しました",
+      "cmisQueryError": "CMISクエリの実行に失敗しました"
     }
   },
   "semanticSearch": {

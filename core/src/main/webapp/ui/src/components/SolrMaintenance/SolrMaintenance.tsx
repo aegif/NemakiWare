@@ -34,7 +34,8 @@ import {
   Typography,
   Collapse,
   List,
-  Tooltip
+  Tooltip,
+  Select
 } from 'antd';
 import {
   SyncOutlined,
@@ -49,7 +50,7 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
-import { SolrMaintenanceService, ReindexStatus, IndexHealthStatus, SolrQueryResult } from '../../services/solrMaintenance';
+import { SolrMaintenanceService, ReindexStatus, IndexHealthStatus, SolrQueryResult, CmisQueryResult, UserInfo } from '../../services/solrMaintenance';
 import { RAGMaintenanceService, RAGReindexStatus, RAGHealthStatus } from '../../services/ragMaintenance';
 import { RAGSearchAdmin } from './RAGSearchAdmin';
 
@@ -68,8 +69,16 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
   const [queryResult, setQueryResult] = useState<SolrQueryResult | null>(null);
   const [solrUrl, setSolrUrl] = useState<string>('');
   const [queryForm] = Form.useForm();
+  const [cmisQueryForm] = Form.useForm();
   const [folderIdInput, setFolderIdInput] = useState<string>('');
   const [recursiveReindex, setRecursiveReindex] = useState<boolean>(true);
+
+  // User simulation state
+  const [users, setUsers] = useState<UserInfo[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [selectedSimulateUser, setSelectedSimulateUser] = useState<string | undefined>(undefined);
+  const [cmisSelectedSimulateUser, setCmisSelectedSimulateUser] = useState<string | undefined>(undefined);
+  const [cmisQueryResult, setCmisQueryResult] = useState<CmisQueryResult | null>(null);
 
   // RAG state
   const [ragHealthStatus, setRagHealthStatus] = useState<RAGHealthStatus | null>(null);
@@ -140,13 +149,26 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
     }
   }, [repositoryId]);
 
+  const loadUsers = useCallback(async () => {
+    setUsersLoading(true);
+    try {
+      const userList = await service.getUsers(repositoryId);
+      setUsers(userList);
+    } catch (error: unknown) {
+      console.error('Failed to load users:', error);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [repositoryId]);
+
   useEffect(() => {
     loadSolrUrl();
     loadHealthStatus();
     loadReindexStatus();
     loadRagHealthStatus();
     loadRagReindexStatus();
-  }, [repositoryId, loadSolrUrl, loadHealthStatus, loadReindexStatus, loadRagHealthStatus, loadRagReindexStatus]);
+    loadUsers();
+  }, [repositoryId, loadSolrUrl, loadHealthStatus, loadReindexStatus, loadRagHealthStatus, loadRagReindexStatus, loadUsers]);
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
@@ -260,12 +282,32 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
         values.start || 0,
         values.rows || 10,
         values.sort,
-        values.fields
+        values.fields,
+        selectedSimulateUser
       );
       setQueryResult(result);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       message.error(`${t('solrMaintenance.messages.queryError')}: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExecuteCmisQuery = async (values: { statement: string; maxItems: number; skipCount: number }) => {
+    setLoading(true);
+    try {
+      const result = await service.executeCmisQuery(
+        repositoryId,
+        values.statement,
+        values.maxItems || 100,
+        values.skipCount || 0,
+        cmisSelectedSimulateUser
+      );
+      setCmisQueryResult(result);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      message.error(`${t('solrMaintenance.messages.cmisQueryError')}: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -631,8 +673,8 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
             </Form.Item>
           </Col>
           <Col span={6}>
-            <Form.Item 
-              name="rows" 
+            <Form.Item
+              name="rows"
               label={t('solrMaintenance.query.rows')}
               tooltip={t('solrMaintenance.query.rowsTooltip')}
             >
@@ -650,6 +692,29 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
             </Form.Item>
           </Col>
         </Row>
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item
+              label={t('solrMaintenance.query.simulateAsUser')}
+              tooltip={t('solrMaintenance.query.simulateAsUserTooltip')}
+            >
+              <Select
+                allowClear
+                placeholder={t('solrMaintenance.query.selectUser')}
+                loading={usersLoading}
+                value={selectedSimulateUser}
+                onChange={setSelectedSimulateUser}
+                style={{ width: '100%' }}
+              >
+                {users.map(user => (
+                  <Select.Option key={user.userId} value={user.userId}>
+                    {user.userName} ({user.userId}){user.isAdmin ? ' [Admin]' : ''}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
+        </Row>
         <Form.Item>
           <Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={loading}>
             {t('solrMaintenance.query.executeQuery')}
@@ -660,14 +725,25 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       {queryResult && (
         <div style={{ marginTop: 16 }}>
           <Alert
-            message={queryResult.numFound === 0 
-              ? t('solrMaintenance.query.noResults', { queryTime: queryResult.queryTime })
-              : t('solrMaintenance.query.results', { 
-                  numFound: queryResult.numFound, 
-                  start: queryResult.start + 1, 
-                  end: queryResult.start + queryResult.docs.length, 
-                  queryTime: queryResult.queryTime 
-                })}
+            message={
+              queryResult.numFound === 0
+                ? t('solrMaintenance.query.noResults', { queryTime: queryResult.queryTime })
+                : selectedSimulateUser && queryResult.aclFilteredCount !== undefined
+                  ? t('solrMaintenance.query.resultsWithAcl', {
+                      numFound: queryResult.numFound,
+                      visibleCount: queryResult.visibleCount,
+                      aclFilteredCount: queryResult.aclFilteredCount,
+                      start: queryResult.start + 1,
+                      end: queryResult.start + queryResult.docs.length,
+                      queryTime: queryResult.queryTime
+                    })
+                  : t('solrMaintenance.query.results', {
+                      numFound: queryResult.numFound,
+                      start: queryResult.start + 1,
+                      end: queryResult.start + queryResult.docs.length,
+                      queryTime: queryResult.queryTime
+                    })
+            }
             type="info"
             style={{ marginBottom: 16 }}
           />
@@ -686,6 +762,127 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
               />
             </Card>
           ))}
+        </div>
+      )}
+    </Card>
+  );
+
+  const renderCmisQuery = () => (
+    <Card title={t('solrMaintenance.cmisQuery.title')} style={{ marginTop: 16 }}>
+      <Alert
+        message={t('solrMaintenance.cmisQuery.description')}
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+      />
+      <Form
+        form={cmisQueryForm}
+        layout="vertical"
+        onFinish={handleExecuteCmisQuery}
+        initialValues={{ maxItems: 100, skipCount: 0 }}
+      >
+        <Form.Item
+          name="statement"
+          label={t('solrMaintenance.cmisQuery.statementLabel')}
+          rules={[{ required: true, message: t('solrMaintenance.cmisQuery.statementRequired') }]}
+        >
+          <TextArea
+            placeholder={t('solrMaintenance.cmisQuery.statementPlaceholder')}
+            rows={4}
+          />
+        </Form.Item>
+        <Row gutter={16}>
+          <Col span={6}>
+            <Form.Item name="maxItems" label={t('solrMaintenance.cmisQuery.maxItems')}>
+              <InputNumber min={1} max={1000} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item name="skipCount" label={t('solrMaintenance.cmisQuery.skipCount')}>
+              <InputNumber min={0} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              label={t('solrMaintenance.cmisQuery.simulateAsUser')}
+              tooltip={t('solrMaintenance.cmisQuery.simulateAsUserTooltip')}
+            >
+              <Select
+                allowClear
+                placeholder={t('solrMaintenance.cmisQuery.selectUser')}
+                loading={usersLoading}
+                value={cmisSelectedSimulateUser}
+                onChange={setCmisSelectedSimulateUser}
+                style={{ width: '100%' }}
+              >
+                {users.map(user => (
+                  <Select.Option key={user.userId} value={user.userId}>
+                    {user.userName} ({user.userId}){user.isAdmin ? ' [Admin]' : ''}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
+        </Row>
+        <Form.Item>
+          <Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={loading}>
+            {t('solrMaintenance.cmisQuery.executeQuery')}
+          </Button>
+        </Form.Item>
+      </Form>
+
+      {cmisQueryResult && (
+        <div style={{ marginTop: 16 }}>
+          <Alert
+            message={
+              cmisQueryResult.numFound === 0
+                ? t('solrMaintenance.cmisQuery.noResults', { queryTime: cmisQueryResult.queryTime })
+                : t('solrMaintenance.cmisQuery.results', {
+                    numFound: cmisQueryResult.numFound,
+                    displayed: cmisQueryResult.objects.length,
+                    hasMore: cmisQueryResult.hasMoreItems ? t('common.yes') : t('common.no'),
+                    queryTime: cmisQueryResult.queryTime
+                  })
+            }
+            type="info"
+            style={{ marginBottom: 16 }}
+          />
+          <Table
+            dataSource={cmisQueryResult.objects.map((obj, index) => ({
+              ...obj,
+              key: obj.objectId || index
+            }))}
+            columns={[
+              {
+                title: t('solrMaintenance.cmisQuery.columnName'),
+                dataIndex: 'name',
+                key: 'name',
+                width: 200
+              },
+              {
+                title: t('solrMaintenance.cmisQuery.columnObjectId'),
+                dataIndex: 'objectId',
+                key: 'objectId',
+                width: 300,
+                render: (value: string) => <Text code>{value}</Text>
+              },
+              {
+                title: t('solrMaintenance.cmisQuery.columnType'),
+                dataIndex: 'objectTypeId',
+                key: 'objectTypeId',
+                width: 150
+              },
+              {
+                title: t('solrMaintenance.cmisQuery.columnPath'),
+                dataIndex: 'path',
+                key: 'path',
+                render: (value: string) => value || '-'
+              }
+            ]}
+            pagination={{ pageSize: 20, showSizeChanger: true }}
+            size="small"
+            scroll={{ x: 'max-content' }}
+          />
         </div>
       )}
     </Card>
@@ -899,6 +1096,11 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       key: 'query',
       label: t('solrMaintenance.tabs.query'),
       children: renderSolrQuery(),
+    },
+    {
+      key: 'cmis-query',
+      label: t('solrMaintenance.tabs.cmisQuery'),
+      children: renderCmisQuery(),
     },
     {
       key: 'rag-status',

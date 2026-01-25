@@ -160,22 +160,31 @@ public class SolrUtil implements ApplicationContextAware {
 	 * @param cmisColName
 	 * @return
 	 */
-	public String getPropertyNameInSolr(String repositoryId,String cmisColName) {
-		
-	//TODO: secondary types
+	public String getPropertyNameInSolr(String repositoryId, String cmisColName) {
+		// First check the static mapping for standard CMIS properties
 		String val = map.get(cmisColName);
-		NemakiPropertyDefinitionCore pd = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, cmisColName);
-		if (val == null) {
-			if(pd.getPropertyType().equals(PropertyType.DATETIME)){
-				val = "dynamicDate.property." + cmisColName;
-			}else{
-				// case for STRING
-				val = "dynamic.property." + cmisColName.replace(":", "\\:").replace("\\\\:", "\\:");				
-			}
-			
+		if (val != null) {
+			return val;
 		}
 
-		return val;
+		// For custom properties (including secondary type properties),
+		// look up the property definition to determine the field type
+		NemakiPropertyDefinitionCore pd = null;
+		if (typeService != null) {
+			pd = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, cmisColName);
+		} else {
+			log.warn("TypeService is null, cannot determine property type for: " + cmisColName);
+		}
+
+		// Handle DATETIME properties with special field type
+		if (pd != null && PropertyType.DATETIME.equals(pd.getPropertyType())) {
+			return "dynamicDate.property." + cmisColName;
+		}
+
+		// Default to STRING type for all other properties
+		// (including secondary type properties when pd is null)
+		// Note: Escape colons in field names for Solr query syntax
+		return "dynamic.property." + cmisColName.replace(":", "\\:").replace("\\\\:", "\\:");
 	}
 
 	public String convertToString(Tree propertyNode) {
@@ -1002,11 +1011,23 @@ public class SolrUtil implements ApplicationContextAware {
 	}
 	
 	/**
-	 * Calculate ancestors for IN_TREE queries
+	 * Calculate ancestors for IN_TREE queries.
+	 *
+	 * Note: Currently unused. IN_TREE queries are implemented using parent_id
+	 * relationships in SolrPredicateWalker.walkInTreeInternal() instead.
+	 *
+	 * Future consideration: If performance issues arise with deep folder hierarchies,
+	 * consider implementing ancestor indexing using the 'ancestor_path' field type
+	 * defined in Solr schema (managed-schema.xml). This would enable more efficient
+	 * IN_TREE queries by pre-computing and indexing ancestor paths at index time.
+	 *
+	 * @param repositoryId the repository ID
+	 * @param content the content object
+	 * @return list of ancestor IDs (currently returns empty list)
 	 */
+	@SuppressWarnings("unused")
 	private List<String> calculateAncestors(String repositoryId, Content content) {
-		// Note: Ancestors calculation temporarily disabled due to circular dependency
-		// TODO: Implement proper ancestors calculation without circular dependency
+		// Reserved for future implementation
 		return new ArrayList<>();
 	}
 }

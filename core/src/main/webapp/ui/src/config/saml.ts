@@ -1,4 +1,5 @@
 import { SAMLConfig } from '../services/saml';
+import { getAuthConfig } from '../services/authConfig';
 
 export const defaultSAMLConfig: SAMLConfig = {
   sso_url: 'https://demo.saml.provider.com/sso',
@@ -16,6 +17,16 @@ export const getSAMLConfig = (): SAMLConfig => {
   };
 };
 
-export const isSAMLEnabled = (): boolean => {
-  return true;
+/**
+ * Check if SAML login is enabled.
+ * Fetches configuration from backend API.
+ * Returns false (safe default) if backend is unavailable.
+ */
+export const isSAMLEnabled = async (): Promise<boolean> => {
+  try {
+    const config = await getAuthConfig();
+    return config.samlEnabled;
+  } catch {
+    return false;
+  }
 };
