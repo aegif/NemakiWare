@@ -25,6 +25,15 @@ public class BuildInfoResource {
 
     private static final String VERSION = "3.0.0";
 
+    /**
+     * Returns the current NemakiWare version.
+     * This is the single source of truth for version information.
+     * @return The version string
+     */
+    public static String getVersion() {
+        return VERSION;
+    }
+
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     public Response getBuildInfo() {

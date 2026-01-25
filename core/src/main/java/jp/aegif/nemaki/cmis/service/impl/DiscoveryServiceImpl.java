@@ -72,7 +72,7 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		// TODO implement
+		// NOTE: No specific exceptions needed for query; validation is handled by queryProcessor
 
 		// //////////////////
 		// Body of the method

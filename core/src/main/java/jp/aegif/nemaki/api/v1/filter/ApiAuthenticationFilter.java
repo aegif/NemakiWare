@@ -12,9 +12,12 @@ import jakarta.ws.rs.ext.Provider;
 import jp.aegif.nemaki.api.v1.exception.ProblemDetail;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -49,6 +52,18 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
 
     @Autowired(required = false)
     private PrincipalService principalService;
+
+    @Autowired(required = false)
+    private PropertyManager propertyManager;
+
+    @Autowired(required = false)
+    private RepositoryInfoMap repositoryInfoMap;
+
+    // Global paths that don't require a repository in the URL (use default repository for auth)
+    private static final String[] GLOBAL_PATHS = {
+        "audit/metrics",
+        "audit/"
+    };
 
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
@@ -224,11 +239,48 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
     }
 
     private String extractRepositoryId(String path) {
+        // First try to extract from path pattern
         Matcher matcher = REPO_PATTERN.matcher(path);
         if (matcher.matches()) {
             return matcher.group(1);
         }
+
+        // Check if this is a global path that should use default repository
+        for (String globalPath : GLOBAL_PATHS) {
+            if (path.startsWith(globalPath) || path.contains("/" + globalPath)) {
+                return getDefaultRepository();
+            }
+        }
+
         return null;
+    }
+
+    /**
+     * Gets the default repository ID for global endpoints.
+     * Uses RepositoryInfoMap.getDefaultRepositoryId() which respects cmis.server.default.repository property.
+     */
+    private String getDefaultRepository() {
+        // Use RepositoryInfoMap which handles default repository logic
+        if (repositoryInfoMap != null) {
+            String defaultRepo = repositoryInfoMap.getDefaultRepositoryId();
+            if (defaultRepo != null) {
+                logger.fine("ApiAuthenticationFilter: Using default repository: " + defaultRepo);
+                return defaultRepo;
+            }
+        }
+
+        // Fall back to property manager directly
+        if (propertyManager != null) {
+            String defaultRepo = propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_REPOSITORY);
+            if (defaultRepo != null && !defaultRepo.isEmpty()) {
+                logger.fine("ApiAuthenticationFilter: Using default repository from property: " + defaultRepo);
+                return defaultRepo;
+            }
+        }
+
+        // Hard-coded fallback
+        logger.warning("ApiAuthenticationFilter: No default repository found, using 'bedroom'");
+        return "bedroom";
     }
 
     private void abortWithUnauthorized(ContainerRequestContext requestContext, String message) {

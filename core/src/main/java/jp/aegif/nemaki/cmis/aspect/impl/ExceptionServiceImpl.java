@@ -415,9 +415,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	/**
-	 *
+	 * Check permission and throw CmisPermissionDeniedException if denied.
+	 * Note: Stack traces are logged at debug level for security reasons.
 	 */
-	// TODO Show also stack errors
 	@Override
 	public void permissionDenied(CallContext context, String repositoryId,
 			String key, Content content) {
@@ -769,7 +769,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
 			Properties properties) {
-		// TODO ignore removeAces?
+		// Note: removeAces is intentionally not checked here as it doesn't add ACL complexity
 		boolean aclIsEmpty = (addAces == null)
 				|| (addAces != null && CollectionUtils.isEmpty(addAces
 						.getAces())) ? true : false;

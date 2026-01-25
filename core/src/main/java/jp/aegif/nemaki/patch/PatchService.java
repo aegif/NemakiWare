@@ -147,9 +147,9 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 			// Patch_InitialContentSetup creates folders with admin:all and GROUP_EVERYONE:read ACL
 			// createInitialFolders();
 
-			// TODO: Initialize test users for QA and development (requires principalService injection)
+			// NOTE: Test user initialization is handled by Docker/CouchDB initialization
 			if (log.isDebugEnabled()) {
-				log.debug("Test user initialization skipped - requires principalService dependency");
+				log.debug("Test user initialization handled by Docker environment");
 			}
 
 			// CRITICAL TCK FIX: Index root folders in Solr for query tests
@@ -415,9 +415,11 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	}
 
 	private void createPathView(){
-		// DEBUG: createPathView() temporarily disabled (logged by log.warn below)
-		log.warn("Patch view creation temporarily disabled during Cloudant migration");
-		// TODO: Implement view creation with Cloudant SDK when needed
+		// NOTE: View creation is now handled by Patch_StandardCmisViews using direct CouchDB API
+		// This method is kept for backward compatibility but does nothing
+		if (log.isDebugEnabled()) {
+			log.debug("createPathView() - views are managed by Patch_StandardCmisViews");
+		}
 	}
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {

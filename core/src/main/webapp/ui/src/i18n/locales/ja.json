@@ -85,6 +85,7 @@
       "search": "検索",
       "archive": "アーカイブ",
       "solr": "Solrインデックス",
+      "auditDashboard": "監査ログ",
       "apiDocs": "API仕様"
     },
   "typeManagement": {
@@ -1304,5 +1305,31 @@
     "description": "NemakiWare CMIS REST API (OpenAPI 3.0準拠) のインタラクティブドキュメントです。",
     "note": "認証について",
     "noteDescription": "APIリクエストにはBasic認証またはOIDC/SAMLトークンが必要です。現在のリポジトリ: {{repositoryId}}"
+  },
+  "auditDashboard": {
+    "title": "監査ログ ダッシュボード",
+    "error": "エラー",
+    "retry": "再試行",
+    "fetchError": "メトリクスの取得に失敗しました",
+    "enabled": "有効",
+    "disabled": "無効",
+    "level": "レベル",
+    "refresh": "更新",
+    "reset": "リセット",
+    "resetConfirmTitle": "メトリクスをリセット",
+    "resetConfirmDesc": "すべてのメトリクスカウンターをリセットしますか？",
+    "resetSuccess": "メトリクスをリセットしました",
+    "resetError": "メトリクスのリセットに失敗しました",
+    "totalEvents": "総イベント数",
+    "logged": "ログ出力済み",
+    "skipped": "スキップ",
+    "failed": "失敗",
+    "successRate": "成功率",
+    "skipRate": "スキップ率",
+    "failureRate": "失敗率",
+    "config": "監査ログ設定",
+    "status": "状態",
+    "readAuditLevel": "READ監査レベル",
+    "lastUpdated": "最終更新"
   }
 }

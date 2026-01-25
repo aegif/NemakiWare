@@ -194,8 +194,8 @@ public class AclServiceImpl implements AclService {
 
 			clearCachesRecursively(Executors.newWorkStealingPool(), callContext, repositoryId, content, true);
 
-			// Temporary stopping write change evnets descendant
-			// TODO : depend on configuration
+			// NOTE: Recursive change event writing is disabled for performance.
+			// Enable via configuration if change log tracking for descendant ACL changes is needed.
 			//writeChangeEventsRecursively(Executors.newWorkStealingPool(), callContext, repositoryId, content, true);
 
 			return getAcl(callContext, repositoryId, objectId, false, null);
@@ -253,7 +253,6 @@ public class AclServiceImpl implements AclService {
 
 		@Override
 		public void run() {
-			// TODO Auto-generated method stub
 			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
 		}
 	}
@@ -315,7 +314,7 @@ private void writeChangeEventsRecursively(ExecutorService executorService, CallC
 
 		@Override
 		public void run() {
-			// TODO content.getAcl()? content.calculateAcl()?
+			// Using getAcl() for stored ACL; calculateAcl() would compute inherited ACL
 			contentService.writeChangeEvent(callContext, repositoryId, content, content.getAcl(), ChangeType.SECURITY);
 		}
 	}

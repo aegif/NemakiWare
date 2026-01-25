@@ -139,20 +139,19 @@ public class PatchUtil {
 	}
 
 	protected void addView(String repositoryId, String viewName, String map, boolean force){
-		// ViewQuery functionality temporarily disabled during Cloudant migration
-		// Views are assumed to be already created in the database initialization
+		// NOTE: View creation is now handled by Patch_StandardCmisViews using direct CouchDB API
+		// This legacy method is kept for backward compatibility but does nothing
 		if (log.isDebugEnabled()) {
-			log.debug("addView for '" + viewName + "' in repository '" + repositoryId + "' - assuming view exists in Docker environment");
+			log.debug("addView for '" + viewName + "' - views are managed by Patch_StandardCmisViews");
 		}
-		// TODO: Implement view creation with Cloudant SDK when full ViewQuery support is restored
 	}
 
 	protected void deleteView(String repositoryId, String viewName){
-		// ViewQuery functionality temporarily disabled during Cloudant migration
+		// NOTE: View deletion is now handled by Patch_StandardCmisViews using direct CouchDB API
+		// This legacy method is kept for backward compatibility but does nothing
 		if (log.isDebugEnabled()) {
-			log.debug("deleteView for '" + viewName + "' in repository '" + repositoryId + "' - skipping during Cloudant migration");
+			log.debug("deleteView for '" + viewName + "' - views are managed by Patch_StandardCmisViews");
 		}
-		// TODO: Implement view deletion with Cloudant SDK when full ViewQuery support is restored
 	}
 
 

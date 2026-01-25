@@ -115,8 +115,6 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequired("objectId", path);
 		// FIXME path is not preserved in db.
 		Content content = contentService.getContentByPath(repositoryId, path);
-
-		// TODO create objectNotFoundByPath method
 		exceptionService.objectNotFoundByPath(DomainType.OBJECT, content, path);
 
 		Lock lock = threadLockService.getReadLock(repositoryId, content.getId());
@@ -212,8 +210,8 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 	}
 
-	// TODO Implement HTTP range(offset and length of stream), though it is not
-	// obligatory.
+	// NOTE: HTTP range (offset and length of stream) is not yet implemented.
+	// This is optional per CMIS spec.
 	private ContentStream getContentStreamInternal(String repositoryId, Content content, BigInteger rangeOffset,
 			BigInteger rangeLength) {
 		if (!content.isDocument()) {
@@ -489,7 +487,8 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 
 		String objectId = null;
-		// TODO ACE can be set !
+		// NOTE: ACE parameters (addAces, removeAces) are currently passed as null.
+		// Future enhancement: support ACE setting during object creation.
 		if (type.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
 			objectId = createDocument(callContext, repositoryId, properties, folderId, contentStream, versioningState,
 					null, null, null, null);
@@ -1113,13 +1112,12 @@ public class ObjectServiceImpl implements ObjectService {
 					BulkUpdateObjectIdAndChangeToken result = _result.get();
 					results.add(result);
 				} catch (Exception e) {
-					// TODO log
-					// do nothing
+					log.debug("Bulk update task failed for one object", e);
 				}
 			}
 		} catch (InterruptedException e1) {
-			// TODO log
-			e1.printStackTrace();
+			log.warn("Bulk update operation was interrupted", e1);
+			Thread.currentThread().interrupt();
 		}
 
 		return results;
@@ -1172,7 +1170,7 @@ public class ObjectServiceImpl implements ObjectService {
 				lock.unlock();
 			}
 
-			// TODO Auto-generated method stub
+			// No BulkUpdateObjectIdAndChangeToken returned for this object
 			return null;
 		}
 
@@ -1374,11 +1372,10 @@ public class ObjectServiceImpl implements ObjectService {
 					ids.add(entry.getKey());
 				}
 			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+				log.warn("Delete operation interrupted for object: " + entry.getKey(), e);
+				Thread.currentThread().interrupt();
 			} catch (ExecutionException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+				log.warn("Delete operation failed for object: " + entry.getKey(), e);
 			}
 		}
 		fdd.setIds(ids);

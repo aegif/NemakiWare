@@ -331,4 +331,17 @@ public interface PropertyKey {
 	final String DIRECTORY_SYNC_SCHEDULE_ENABLED = "directory.sync.schedule.enabled";
 	final String DIRECTORY_SYNC_SCHEDULE_CRON = "directory.sync.schedule.cron";
 	final String DIRECTORY_SYNC_SCHEDULE_NODE_IP = "directory.sync.schedule.node.ip";
+
+	//Audit logging
+	final String AUDIT_ENABLED = "audit.enabled";
+	final String AUDIT_LOG_READ_OPERATIONS = "audit.log.read.operations";  // Deprecated: use AUDIT_READ_LEVEL
+	final String AUDIT_READ_LEVEL = "audit.read.level";  // NONE, DOWNLOAD, METADATA, ALL
+	final String AUDIT_DETAIL_LEVEL = "audit.detail.level";
+	final String AUDIT_EXCLUDE_USERS = "audit.exclude.users";
+	final String AUDIT_EXCLUDE_OPERATIONS = "audit.exclude.operations";
+	final String AUDIT_LOG_FAILURES_AS_WARN = "audit.log.failures.as.warn";
+
+	// Audit logging - configurable limits
+	final String AUDIT_REQUEST_PATH_MAX_LENGTH = "audit.request.path.max.length";  // Default: 2000
+	final String AUDIT_ASYNC_QUEUE_SIZE = "audit.async.queue.size";  // Default: 512 (logback config)
 }

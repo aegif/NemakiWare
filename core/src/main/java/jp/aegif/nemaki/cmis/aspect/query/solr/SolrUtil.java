@@ -930,12 +930,4 @@ public class SolrUtil implements ApplicationContextAware {
 		}
 	}
 	
-	/**
-	 * Calculate ancestors for IN_TREE queries
-	 */
-	private List<String> calculateAncestors(String repositoryId, Content content) {
-		// Note: Ancestors calculation temporarily disabled due to circular dependency
-		// TODO: Implement proper ancestors calculation without circular dependency
-		return new ArrayList<>();
-	}
 }
