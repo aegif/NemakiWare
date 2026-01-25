@@ -74,6 +74,9 @@ public class AuditLogger {
     // Configuration - use volatile for fast reads without lock
     // Default to false for safety (requires explicit enablement in production)
     private volatile boolean enabled = false;
+    // Static mirror for REST API access (updated in loadConfiguration)
+    private static volatile boolean enabledStatic = false;
+    private static volatile ReadAuditLevel readAuditLevelStatic = ReadAuditLevel.NONE;
     private volatile boolean logReadOperations = false;  // Deprecated: use readAuditLevel
     private volatile ReadAuditLevel readAuditLevel = ReadAuditLevel.NONE;  // Default: no READ logging
     private volatile DetailLevel detailLevel = DetailLevel.STANDARD;
@@ -213,6 +216,8 @@ public class AuditLogger {
                 this.enabled = enabledStr != null &&
                                !enabledStr.trim().isEmpty() &&
                                "true".equalsIgnoreCase(enabledStr.trim());
+                // Update static mirror for REST API
+                enabledStatic = this.enabled;
 
                 // Read audit level (NONE, DOWNLOAD, METADATA, ALL)
                 String readLevelStr = propertyManager.readValue(PropertyKey.AUDIT_READ_LEVEL);
@@ -237,6 +242,8 @@ public class AuditLogger {
                     this.readAuditLevel = ReadAuditLevel.ALL;
                     log.info("Deprecated audit.log.read.operations=true, migrated to audit.read.level=ALL");
                 }
+                // Update static mirror for REST API
+                readAuditLevelStatic = this.readAuditLevel;
 
                 // Detail level
                 String levelStr = propertyManager.readValue(PropertyKey.AUDIT_DETAIL_LEVEL);
@@ -1040,6 +1047,23 @@ public class AuditLogger {
         auditEventFailed.set(0);
     }
 
+
+    /**
+     * Returns whether audit logging is enabled.
+     * @return true if audit logging is enabled
+     */
+    public static boolean isEnabled() {
+        return enabledStatic;
+    }
+
+    /**
+     * Returns the current read audit level.
+     * @return The read audit level (NONE, DOWNLOAD, METADATA, ALL)
+     */
+    public static String getReadAuditLevel() {
+        return readAuditLevelStatic != null ? readAuditLevelStatic.name() : "NONE";
+    }
+
     /**
      * Gets the client IP address from the request.
      */
@@ -1067,11 +1091,6 @@ public class AuditLogger {
         } finally {
             configLock.writeLock().unlock();
         }
-    }
-
-    public boolean isEnabled() {
-        // Volatile read - no lock needed for simple boolean check
-        return enabled;
     }
 
     public void setDetailLevel(DetailLevel level) {
