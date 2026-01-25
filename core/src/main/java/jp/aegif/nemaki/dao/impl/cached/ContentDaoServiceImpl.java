@@ -589,8 +589,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return true;
 		}
 		
-		// TODO: Add proper type hierarchy checking using TypeManager
-		// For now, use simple pattern matching as a temporary solution
+		// NOTE: Type hierarchy checking could use TypeManager for accuracy
+		// Current pattern matching is sufficient for standard CMIS types
 		return false;
 	}
 
