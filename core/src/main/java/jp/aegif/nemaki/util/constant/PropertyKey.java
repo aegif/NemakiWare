@@ -302,4 +302,11 @@ public interface PropertyKey {
 
 	//Deletion
 	final String DELETION_VERIFY_ENABLED = "deletion.verify.enabled";
+
+	//Audit logging
+	final String AUDIT_ENABLED = "audit.enabled";
+	final String AUDIT_LOG_READ_OPERATIONS = "audit.log.read.operations";
+	final String AUDIT_DETAIL_LEVEL = "audit.detail.level";
+	final String AUDIT_EXCLUDE_USERS = "audit.exclude.users";
+	final String AUDIT_EXCLUDE_OPERATIONS = "audit.exclude.operations";
 }
