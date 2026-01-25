@@ -38,9 +38,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -56,6 +58,12 @@ public class AuditLogger {
     // Dedicated SLF4J logger for audit events (separate log file)
     private static final Logger auditLogger = LoggerFactory.getLogger("jp.aegif.nemaki.audit.AUDIT");
 
+    // Server metadata - initialized once at startup
+    private static final String HOSTNAME = initHostname();
+    private static final String SERVICE = "nemakiware";
+    private static final String ENVIRONMENT = initEnvironment();
+    private static final String VERSION = initVersion();
+
     private final ObjectMapper objectMapper;
     private final ReadWriteLock configLock = new ReentrantReadWriteLock(true);
 
@@ -70,10 +78,32 @@ public class AuditLogger {
     private Set<String> excludedUsers = new HashSet<>();
     private Set<String> excludedOperations = new HashSet<>();
 
-    // ThreadLocal for storing request context (IP address, etc.)
+    // ThreadLocal for storing request context (IP address, traceId, HTTP info, etc.)
     private static final ThreadLocal<RequestContext> requestContext = new ThreadLocal<>();
 
     private PropertyManager propertyManager;
+
+    // Server metadata initialization methods
+
+    private static String initHostname() {
+        try {
+            return InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            return System.getProperty("nemakiware.hostname", "unknown");
+        }
+    }
+
+    private static String initEnvironment() {
+        String env = System.getProperty("nemakiware.environment");
+        if (env == null || env.isEmpty()) {
+            env = System.getenv("NEMAKIWARE_ENV");
+        }
+        return env;
+    }
+
+    private static String initVersion() {
+        return System.getProperty("nemakiware.version", "3.0.0");
+    }
 
     public enum DetailLevel {
         MINIMAL,    // Only basic info (user, operation, object ID, result)
@@ -219,16 +249,29 @@ public class AuditLogger {
 
         // Re-extract context for building audit event (after lock release)
         CallContext callContext = extractCallContext(args);
-        String userId = callContext != null ? callContext.getUsername() : null;
 
         // Build audit event
         AuditEventBuilder builder = AuditEventBuilder.fromCallContext(callContext)
                 .operation(operation);
 
-        // Add client IP if available
+        // Add server metadata (static fields, always available)
+        builder.hostname(HOSTNAME)
+               .service(SERVICE)
+               .version(VERSION);
+
+        // Add environment if configured
+        if (ENVIRONMENT != null && !ENVIRONMENT.isEmpty()) {
+            builder.environment(ENVIRONMENT);
+        }
+
+        // Add HTTP request context if available (from ThreadLocal)
         RequestContext reqCtx = requestContext.get();
         if (reqCtx != null) {
-            builder.clientIp(reqCtx.getClientIp());
+            builder.clientIp(reqCtx.getClientIp())
+                   .traceId(reqCtx.getTraceId())
+                   .httpMethod(reqCtx.getHttpMethod())
+                   .requestPath(reqCtx.getRequestPath())
+                   .userAgent(reqCtx.getUserAgent());
         }
 
         // Extract object information from arguments
@@ -532,13 +575,65 @@ public class AuditLogger {
     /**
      * Sets the request context for the current thread.
      * Should be called by filters at the start of request processing.
+     * Captures HTTP request details and generates/extracts trace ID.
      */
     public static void setRequestContext(HttpServletRequest request) {
         if (request != null) {
             RequestContext ctx = new RequestContext();
+
+            // Client IP (handles proxies)
             ctx.setClientIp(getClientIp(request));
+
+            // Trace ID - check common headers or generate new
+            String traceId = request.getHeader("X-Request-ID");
+            if (traceId == null || traceId.isEmpty()) {
+                traceId = request.getHeader("X-Trace-ID");
+            }
+            if (traceId == null || traceId.isEmpty()) {
+                traceId = request.getHeader("X-Correlation-ID");
+            }
+            if (traceId == null || traceId.isEmpty()) {
+                // Generate a new trace ID
+                traceId = java.util.UUID.randomUUID().toString();
+            }
+            ctx.setTraceId(traceId);
+
+            // HTTP method
+            ctx.setHttpMethod(request.getMethod());
+
+            // Request path (URI + query string if present)
+            String requestPath = request.getRequestURI();
+            String queryString = request.getQueryString();
+            if (queryString != null && !queryString.isEmpty()) {
+                // Mask sensitive query parameters
+                requestPath = requestPath + "?" + maskSensitiveQueryParams(queryString);
+            }
+            ctx.setRequestPath(requestPath);
+
+            // User-Agent (truncated for safety)
+            String userAgent = request.getHeader("User-Agent");
+            if (userAgent != null && userAgent.length() > 200) {
+                userAgent = userAgent.substring(0, 200) + "...";
+            }
+            ctx.setUserAgent(userAgent);
+
             requestContext.set(ctx);
         }
+    }
+
+    /**
+     * Masks sensitive query parameters in a query string.
+     * @param queryString The original query string
+     * @return The query string with sensitive values masked
+     */
+    private static String maskSensitiveQueryParams(String queryString) {
+        if (queryString == null || queryString.isEmpty()) {
+            return queryString;
+        }
+        // Mask common sensitive parameter names
+        return queryString.replaceAll(
+            "(?i)(password|passwd|pwd|token|apikey|api_key|secret|credential|auth)=([^&]*)",
+            "$1=***");
     }
 
     /**
@@ -611,9 +706,14 @@ public class AuditLogger {
 
     /**
      * Internal class to hold request context information.
+     * Stores HTTP request details for audit logging.
      */
     private static class RequestContext {
         private String clientIp;
+        private String traceId;
+        private String httpMethod;
+        private String requestPath;
+        private String userAgent;
 
         public String getClientIp() {
             return clientIp;
@@ -621,6 +721,38 @@ public class AuditLogger {
 
         public void setClientIp(String clientIp) {
             this.clientIp = clientIp;
+        }
+
+        public String getTraceId() {
+            return traceId;
+        }
+
+        public void setTraceId(String traceId) {
+            this.traceId = traceId;
+        }
+
+        public String getHttpMethod() {
+            return httpMethod;
+        }
+
+        public void setHttpMethod(String httpMethod) {
+            this.httpMethod = httpMethod;
+        }
+
+        public String getRequestPath() {
+            return requestPath;
+        }
+
+        public void setRequestPath(String requestPath) {
+            this.requestPath = requestPath;
+        }
+
+        public String getUserAgent() {
+            return userAgent;
+        }
+
+        public void setUserAgent(String userAgent) {
+            this.userAgent = userAgent;
         }
     }
 }

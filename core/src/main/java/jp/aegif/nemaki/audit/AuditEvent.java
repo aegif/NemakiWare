@@ -26,7 +26,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.time.Instant;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
@@ -36,28 +36,61 @@ import java.util.UUID;
  * Represents an audit event for CMIS/REST API operations.
  * This class is designed for JSON serialization to be consumed by
  * log aggregation systems like ELK Stack or Splunk.
+ *
+ * Includes ECS (Elastic Common Schema) compatible fields for better
+ * integration with Elasticsearch/Kibana.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonPropertyOrder({
-    "eventId", "timestamp", "repositoryId", "userId", "clientIp",
+    // Core identification
+    "eventId", "timestamp", "timestampMs", "traceId",
+    // Server metadata
+    "hostname", "service", "environment", "version",
+    // Request context
+    "repositoryId", "userId", "clientIp", "httpMethod", "requestPath", "userAgent",
+    // Operation details
     "operation", "operationDescription", "objectId", "objectName",
-    "objectPath", "objectType", "result", "errorMessage", "durationMs", "details"
+    "objectPath", "objectType", "result", "errorMessage", "durationMs",
+    // Extended details
+    "details"
 })
 public class AuditEvent {
 
+    // Use UTC for consistent timestamps across servers
     private static final DateTimeFormatter ISO_FORMATTER =
-            DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(ZoneId.systemDefault());
+            DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(ZoneOffset.UTC);
 
     public enum Result {
         SUCCESS, FAILURE, PARTIAL
     }
 
+    // Core identification
     @JsonProperty("eventId")
     private String eventId;
 
     @JsonProperty("timestamp")
     private String timestamp;
 
+    @JsonProperty("timestampMs")
+    private Long timestampMs;
+
+    @JsonProperty("traceId")
+    private String traceId;
+
+    // Server metadata
+    @JsonProperty("hostname")
+    private String hostname;
+
+    @JsonProperty("service")
+    private String service;
+
+    @JsonProperty("environment")
+    private String environment;
+
+    @JsonProperty("version")
+    private String version;
+
+    // Request context
     @JsonProperty("repositoryId")
     private String repositoryId;
 
@@ -67,6 +100,16 @@ public class AuditEvent {
     @JsonProperty("clientIp")
     private String clientIp;
 
+    @JsonProperty("httpMethod")
+    private String httpMethod;
+
+    @JsonProperty("requestPath")
+    private String requestPath;
+
+    @JsonProperty("userAgent")
+    private String userAgent;
+
+    // Operation details
     @JsonProperty("operation")
     private String operation;
 
@@ -94,19 +137,113 @@ public class AuditEvent {
     @JsonProperty("durationMs")
     private Long durationMs;
 
+    // Extended details
     @JsonProperty("details")
     private Map<String, Object> details;
 
     /**
-     * Private constructor - use AuditEventBuilder to create instances.
+     * Package-private constructor - use AuditEventBuilder to create instances.
      */
     AuditEvent() {
+        Instant now = Instant.now();
         this.eventId = UUID.randomUUID().toString();
-        this.timestamp = ISO_FORMATTER.format(Instant.now());
+        this.timestamp = ISO_FORMATTER.format(now);
+        this.timestampMs = now.toEpochMilli();
         this.details = new HashMap<>();
     }
 
-    // Getters
+    // ECS (Elastic Common Schema) compatible getters
+    // These provide aliases for standard ECS field names
+
+    /**
+     * ECS compatible timestamp field.
+     * @return Same value as timestamp
+     */
+    @JsonProperty("@timestamp")
+    public String getAtTimestamp() {
+        return timestamp;
+    }
+
+    /**
+     * ECS event.category field.
+     * @return Always "audit" for audit events
+     */
+    @JsonProperty("event.category")
+    public String getEventCategory() {
+        return "audit";
+    }
+
+    /**
+     * ECS event.type field derived from operation.
+     * @return "change", "deletion", "access", or "info"
+     */
+    @JsonProperty("event.type")
+    public String getEventType() {
+        if (operation != null) {
+            if (operation.contains("CREATE") || operation.contains("UPDATE") ||
+                operation.contains("CHECK_IN") || operation.contains("CHECK_OUT") ||
+                operation.contains("SET_") || operation.contains("APPEND_") ||
+                operation.contains("APPLY_") || operation.contains("ADD_") ||
+                operation.contains("MOVE") || operation.contains("COPY")) {
+                return "change";
+            } else if (operation.contains("DELETE") || operation.contains("REMOVE") ||
+                       operation.contains("CANCEL")) {
+                return "deletion";
+            } else if (operation.contains("GET") || operation.contains("QUERY")) {
+                return "access";
+            }
+        }
+        return "info";
+    }
+
+    /**
+     * ECS event.action field.
+     * @return Same value as operation
+     */
+    @JsonProperty("event.action")
+    public String getEventAction() {
+        return operation;
+    }
+
+    /**
+     * ECS event.outcome field.
+     * @return "success", "failure", or lowercase result
+     */
+    @JsonProperty("event.outcome")
+    public String getEventOutcome() {
+        if ("SUCCESS".equals(result)) return "success";
+        if ("FAILURE".equals(result)) return "failure";
+        return result != null ? result.toLowerCase() : null;
+    }
+
+    /**
+     * ECS user.id field alias.
+     * @return Same value as userId
+     */
+    @JsonProperty("user.id")
+    public String getUserIdEcs() {
+        return userId;
+    }
+
+    /**
+     * ECS source.ip field alias.
+     * @return Same value as clientIp
+     */
+    @JsonProperty("source.ip")
+    public String getSourceIp() {
+        return clientIp;
+    }
+
+    /**
+     * ECS service.name field alias.
+     * @return Same value as service
+     */
+    @JsonProperty("service.name")
+    public String getServiceName() {
+        return service;
+    }
+
+    // Standard getters
 
     public String getEventId() {
         return eventId;
@@ -114,6 +251,30 @@ public class AuditEvent {
 
     public String getTimestamp() {
         return timestamp;
+    }
+
+    public Long getTimestampMs() {
+        return timestampMs;
+    }
+
+    public String getTraceId() {
+        return traceId;
+    }
+
+    public String getHostname() {
+        return hostname;
+    }
+
+    public String getService() {
+        return service;
+    }
+
+    public String getEnvironment() {
+        return environment;
+    }
+
+    public String getVersion() {
+        return version;
     }
 
     public String getRepositoryId() {
@@ -126,6 +287,18 @@ public class AuditEvent {
 
     public String getClientIp() {
         return clientIp;
+    }
+
+    public String getHttpMethod() {
+        return httpMethod;
+    }
+
+    public String getRequestPath() {
+        return requestPath;
+    }
+
+    public String getUserAgent() {
+        return userAgent;
     }
 
     public String getOperation() {
@@ -178,6 +351,30 @@ public class AuditEvent {
         this.timestamp = timestamp;
     }
 
+    void setTimestampMs(Long timestampMs) {
+        this.timestampMs = timestampMs;
+    }
+
+    void setTraceId(String traceId) {
+        this.traceId = traceId;
+    }
+
+    void setHostname(String hostname) {
+        this.hostname = hostname;
+    }
+
+    void setService(String service) {
+        this.service = service;
+    }
+
+    void setEnvironment(String environment) {
+        this.environment = environment;
+    }
+
+    void setVersion(String version) {
+        this.version = version;
+    }
+
     void setRepositoryId(String repositoryId) {
         this.repositoryId = repositoryId;
     }
@@ -188,6 +385,18 @@ public class AuditEvent {
 
     void setClientIp(String clientIp) {
         this.clientIp = clientIp;
+    }
+
+    void setHttpMethod(String httpMethod) {
+        this.httpMethod = httpMethod;
+    }
+
+    void setRequestPath(String requestPath) {
+        this.requestPath = requestPath;
+    }
+
+    void setUserAgent(String userAgent) {
+        this.userAgent = userAgent;
     }
 
     void setOperation(String operation) {
@@ -244,6 +453,8 @@ public class AuditEvent {
         return "AuditEvent{" +
                 "eventId='" + eventId + '\'' +
                 ", timestamp='" + timestamp + '\'' +
+                ", traceId='" + traceId + '\'' +
+                ", hostname='" + hostname + '\'' +
                 ", repositoryId='" + repositoryId + '\'' +
                 ", userId='" + userId + '\'' +
                 ", operation='" + operation + '\'' +

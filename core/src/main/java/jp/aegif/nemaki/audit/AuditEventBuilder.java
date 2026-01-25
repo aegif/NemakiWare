@@ -75,6 +75,56 @@ public class AuditEventBuilder {
         return this;
     }
 
+    // Server metadata
+
+    public AuditEventBuilder hostname(String hostname) {
+        event.setHostname(hostname);
+        return this;
+    }
+
+    public AuditEventBuilder service(String service) {
+        event.setService(service);
+        return this;
+    }
+
+    public AuditEventBuilder environment(String environment) {
+        event.setEnvironment(environment);
+        return this;
+    }
+
+    public AuditEventBuilder version(String version) {
+        event.setVersion(version);
+        return this;
+    }
+
+    // Tracing
+
+    public AuditEventBuilder traceId(String traceId) {
+        event.setTraceId(traceId);
+        return this;
+    }
+
+    // HTTP request context
+
+    public AuditEventBuilder httpMethod(String httpMethod) {
+        event.setHttpMethod(httpMethod);
+        return this;
+    }
+
+    public AuditEventBuilder requestPath(String requestPath) {
+        event.setRequestPath(requestPath);
+        return this;
+    }
+
+    public AuditEventBuilder userAgent(String userAgent) {
+        // Truncate long user agent strings
+        if (userAgent != null && userAgent.length() > 200) {
+            userAgent = userAgent.substring(0, 200) + "...";
+        }
+        event.setUserAgent(userAgent);
+        return this;
+    }
+
     public AuditEventBuilder operation(AuditOperation operation) {
         if (operation != null) {
             event.setOperation(operation.name());
