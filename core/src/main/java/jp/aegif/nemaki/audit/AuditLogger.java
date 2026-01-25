@@ -415,6 +415,11 @@ public class AuditLogger {
                 builder.objectType("cmis:document");
             }
 
+            // Version series ID detection (for versioning operations)
+            if ("versionSeriesId".equals(paramName) && arg instanceof String) {
+                builder.detail("versionSeriesId", arg);
+            }
+
             // Parent folder detection
             if ("parentId".equals(paramName) && arg instanceof String) {
                 builder.parentId((String) arg);
@@ -457,6 +462,18 @@ public class AuditLogger {
             builder.objectType(typeProp.getFirstValue().toString());
         }
 
+        // Extract version series ID (useful for versioning operations audit trail)
+        PropertyData<?> versionSeriesProp = properties.getProperties().get("cmis:versionSeriesId");
+        if (versionSeriesProp != null && versionSeriesProp.getFirstValue() != null) {
+            builder.detail("versionSeriesId", versionSeriesProp.getFirstValue().toString());
+        }
+
+        // Extract version label if available
+        PropertyData<?> versionLabelProp = properties.getProperties().get("cmis:versionLabel");
+        if (versionLabelProp != null && versionLabelProp.getFirstValue() != null) {
+            builder.detail("versionLabel", versionLabelProp.getFirstValue().toString());
+        }
+
         // Add property count for verbose logging
         if (detailLevel == DetailLevel.VERBOSE) {
             builder.detail("propertyCount", properties.getProperties().size());
@@ -465,11 +482,48 @@ public class AuditLogger {
 
     /**
      * Adds result information to the audit event.
+     * Extracts useful information from result objects for audit trail.
      */
     private void addResultInfo(AuditEventBuilder builder, Object result) {
         if (result instanceof String) {
             // Likely an object ID returned from create operations
             builder.detail("resultObjectId", result);
+        } else if (result instanceof org.apache.chemistry.opencmis.commons.data.ObjectData) {
+            // Extract info from ObjectData result (common return type)
+            org.apache.chemistry.opencmis.commons.data.ObjectData objData =
+                (org.apache.chemistry.opencmis.commons.data.ObjectData) result;
+
+            if (objData.getId() != null) {
+                builder.detail("resultObjectId", objData.getId());
+            }
+
+            // Extract version info from result properties
+            if (objData.getProperties() != null && objData.getProperties().getProperties() != null) {
+                PropertyData<?> versionSeriesProp = objData.getProperties().getProperties().get("cmis:versionSeriesId");
+                if (versionSeriesProp != null && versionSeriesProp.getFirstValue() != null) {
+                    builder.detail("versionSeriesId", versionSeriesProp.getFirstValue().toString());
+                }
+
+                PropertyData<?> versionLabelProp = objData.getProperties().getProperties().get("cmis:versionLabel");
+                if (versionLabelProp != null && versionLabelProp.getFirstValue() != null) {
+                    builder.detail("versionLabel", versionLabelProp.getFirstValue().toString());
+                }
+
+                // Also extract name if not already set
+                PropertyData<?> nameProp = objData.getProperties().getProperties().get("cmis:name");
+                if (nameProp != null && nameProp.getFirstValue() != null) {
+                    builder.objectName(nameProp.getFirstValue().toString());
+                }
+            }
+        } else if (result instanceof org.apache.chemistry.opencmis.commons.data.ObjectList) {
+            // Query results - add count
+            org.apache.chemistry.opencmis.commons.data.ObjectList list =
+                (org.apache.chemistry.opencmis.commons.data.ObjectList) result;
+            if (list.getNumItems() != null) {
+                builder.detail("resultCount", list.getNumItems().intValue());
+            } else if (list.getObjects() != null) {
+                builder.detail("resultCount", list.getObjects().size());
+            }
         }
     }
 
