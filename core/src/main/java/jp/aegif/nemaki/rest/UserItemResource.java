@@ -799,58 +799,6 @@ private ContentService getContentServiceSafe() {
 
 		makeResult(status, result, errMsg);
 		return result.toJSONString();
-
-		/*User user = principalService.getUserById(repositoryId, userId);
-
-		// Validation
-		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
-		if (status) {
-
-			if (!AuthenticationUtil.passwordMatches(oldPassword, user.getPasswordHash())) {
-				status = false;
-				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_WRONGPASSWORD);
-			}
-
-			// Edit & Update
-			if (status) {
-				// Edit the user info
-				String passwordHash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
-				user.setPasswordHash(passwordHash);
-				setModifiedSignature(httpRequest, user);
-
-				try {
-					principalService.updateUser(repositoryId, user);
-				} catch (Exception e) {
-					e.printStackTrace();
-					status = false;
-					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
-				}
-
-				setModifiedSignature(httpRequest, user);
-				try {
-					principalService.updateUser(repositoryId, user);
-				} catch (Exception e) {
-					e.printStackTrace();
-					status = false;
-					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
-				}
-
-				if(status){
-					String solrUserId = getPropertyManager().readValue(PropertyKey.SOLR_NEMAKI_USERID);
-					if(user.getUserId().equals(solrUserId)){
-						JSONObject capResult = solrResource.changeAdminPasswordImpl(repositoryId, newPassword, oldPassword, httpRequest);
-						if (capResult.get(ITEM_STATUS).toString()  != SUCCESS){
-							// TODO: Error handling
-							status = false;
-							addErrMsg(errMsg, ITEM_USER, capResult.get(ITEM_ERROR).toString());
-						}
-					}
-				}
-			}
-		}
-		makeResult(status, result, errMsg);
-		return result.toJSONString();*/
-
 	}
 
 	@PUT
