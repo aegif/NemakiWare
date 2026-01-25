@@ -433,6 +433,7 @@ public class AuditLogger {
 
     /**
      * Extracts object information from method arguments.
+     * This uses parameters passed to CMIS operations - no additional DB queries needed.
      */
     private void extractObjectInfo(AuditEventBuilder builder, Object[] args, String[] paramNames) {
         if (args == null) {
@@ -459,13 +460,29 @@ public class AuditLogger {
             }
 
             // Version series ID detection (for versioning operations)
+            // Set as top-level field (not just detail)
             if ("versionSeriesId".equals(paramName) && arg instanceof String) {
-                builder.detail("versionSeriesId", arg);
+                builder.versionSeriesId((String) arg);
             }
 
-            // Parent folder detection
+            // Parent folder detection (for create operations)
             if ("parentId".equals(paramName) && arg instanceof String) {
                 builder.parentId((String) arg);
+            }
+
+            // Move/Copy operation: source folder
+            if ("sourceFolderId".equals(paramName) && arg instanceof String) {
+                builder.detail("sourceFolderId", arg);
+            }
+
+            // Move/Copy operation: target folder
+            if ("targetFolderId".equals(paramName) && arg instanceof String) {
+                builder.detail("targetFolderId", arg);
+            }
+
+            // Path parameter (for getObjectByPath operations)
+            if ("path".equals(paramName) && arg instanceof String) {
+                builder.objectPath((String) arg);
             }
 
             // Properties extraction (for create/update operations)
@@ -488,6 +505,8 @@ public class AuditLogger {
 
     /**
      * Extracts information from CMIS Properties.
+     * This leverages data already loaded during CMIS operation processing,
+     * avoiding additional database queries.
      */
     private void extractPropertiesInfo(AuditEventBuilder builder, Properties properties) {
         if (properties == null || properties.getProperties() == null) {
@@ -505,13 +524,25 @@ public class AuditLogger {
             builder.objectType(typeProp.getFirstValue().toString());
         }
 
-        // Extract version series ID (useful for versioning operations audit trail)
-        PropertyData<?> versionSeriesProp = properties.getProperties().get("cmis:versionSeriesId");
-        if (versionSeriesProp != null && versionSeriesProp.getFirstValue() != null) {
-            builder.detail("versionSeriesId", versionSeriesProp.getFirstValue().toString());
+        // Extract path (available in folder objects and documents with path)
+        PropertyData<?> pathProp = properties.getProperties().get("cmis:path");
+        if (pathProp != null && pathProp.getFirstValue() != null) {
+            builder.objectPath(pathProp.getFirstValue().toString());
         }
 
-        // Extract version label if available
+        // Extract parent ID (useful for tracking document location)
+        PropertyData<?> parentIdProp = properties.getProperties().get("cmis:parentId");
+        if (parentIdProp != null && parentIdProp.getFirstValue() != null) {
+            builder.parentId(parentIdProp.getFirstValue().toString());
+        }
+
+        // Extract version series ID (key identifier for document tracking across versions)
+        PropertyData<?> versionSeriesProp = properties.getProperties().get("cmis:versionSeriesId");
+        if (versionSeriesProp != null && versionSeriesProp.getFirstValue() != null) {
+            builder.versionSeriesId(versionSeriesProp.getFirstValue().toString());
+        }
+
+        // Extract version label if available (for identifying specific version)
         PropertyData<?> versionLabelProp = properties.getProperties().get("cmis:versionLabel");
         if (versionLabelProp != null && versionLabelProp.getFirstValue() != null) {
             builder.detail("versionLabel", versionLabelProp.getFirstValue().toString());
@@ -526,6 +557,7 @@ public class AuditLogger {
     /**
      * Adds result information to the audit event.
      * Extracts useful information from result objects for audit trail.
+     * This uses data already returned from CMIS operations - no additional DB queries.
      */
     private void addResultInfo(AuditEventBuilder builder, Object result) {
         if (result instanceof String) {
@@ -540,22 +572,44 @@ public class AuditLogger {
                 builder.detail("resultObjectId", objData.getId());
             }
 
-            // Extract version info from result properties
+            // Extract info from result properties
             if (objData.getProperties() != null && objData.getProperties().getProperties() != null) {
-                PropertyData<?> versionSeriesProp = objData.getProperties().getProperties().get("cmis:versionSeriesId");
+                java.util.Map<String, PropertyData<?>> props = objData.getProperties().getProperties();
+
+                // Version series ID (top-level field - key for document tracking)
+                PropertyData<?> versionSeriesProp = props.get("cmis:versionSeriesId");
                 if (versionSeriesProp != null && versionSeriesProp.getFirstValue() != null) {
-                    builder.detail("versionSeriesId", versionSeriesProp.getFirstValue().toString());
+                    builder.versionSeriesId(versionSeriesProp.getFirstValue().toString());
                 }
 
-                PropertyData<?> versionLabelProp = objData.getProperties().getProperties().get("cmis:versionLabel");
+                // Version label (detail)
+                PropertyData<?> versionLabelProp = props.get("cmis:versionLabel");
                 if (versionLabelProp != null && versionLabelProp.getFirstValue() != null) {
                     builder.detail("versionLabel", versionLabelProp.getFirstValue().toString());
                 }
 
-                // Also extract name if not already set
-                PropertyData<?> nameProp = objData.getProperties().getProperties().get("cmis:name");
+                // Object name if not already set
+                PropertyData<?> nameProp = props.get("cmis:name");
                 if (nameProp != null && nameProp.getFirstValue() != null) {
                     builder.objectName(nameProp.getFirstValue().toString());
+                }
+
+                // Object path (available in results for fileable objects)
+                PropertyData<?> pathProp = props.get("cmis:path");
+                if (pathProp != null && pathProp.getFirstValue() != null) {
+                    builder.objectPath(pathProp.getFirstValue().toString());
+                }
+
+                // Parent ID
+                PropertyData<?> parentIdProp = props.get("cmis:parentId");
+                if (parentIdProp != null && parentIdProp.getFirstValue() != null) {
+                    builder.parentId(parentIdProp.getFirstValue().toString());
+                }
+
+                // Object type if not already set
+                PropertyData<?> typeProp = props.get("cmis:objectTypeId");
+                if (typeProp != null && typeProp.getFirstValue() != null) {
+                    builder.objectType(typeProp.getFirstValue().toString());
                 }
             }
         } else if (result instanceof org.apache.chemistry.opencmis.commons.data.ObjectList) {

@@ -162,6 +162,39 @@ public class AuditEventBuilder {
         return this;
     }
 
+    // CMIS-specific identifiers
+
+    /**
+     * Sets the version series ID (identifies the document across all versions).
+     * This is the key identifier for tracking document history.
+     * @param versionSeriesId The CMIS version series ID
+     * @return This builder
+     */
+    public AuditEventBuilder versionSeriesId(String versionSeriesId) {
+        event.setVersionSeriesId(versionSeriesId);
+        return this;
+    }
+
+    /**
+     * Sets the parent folder ID.
+     * @param parentId The parent folder's object ID
+     * @return This builder
+     */
+    public AuditEventBuilder parentId(String parentId) {
+        event.setParentId(parentId);
+        return this;
+    }
+
+    /**
+     * Sets the parent folder path.
+     * @param parentPath The parent folder's path
+     * @return This builder
+     */
+    public AuditEventBuilder parentPath(String parentPath) {
+        event.setParentPath(parentPath);
+        return this;
+    }
+
     public AuditEventBuilder success() {
         event.setResult(AuditEvent.Result.SUCCESS.name());
         return this;
@@ -232,15 +265,6 @@ public class AuditEventBuilder {
             }
         }
         return this;
-    }
-
-    /**
-     * Adds parent folder information.
-     * @param parentId The parent folder ID
-     * @return This builder
-     */
-    public AuditEventBuilder parentId(String parentId) {
-        return detail("parentId", parentId);
     }
 
     /**

@@ -49,8 +49,12 @@ import java.util.UUID;
     // Request context
     "repositoryId", "userId", "clientIp", "httpMethod", "requestPath", "userAgent",
     // Operation details
-    "operation", "operationDescription", "objectId", "objectName",
-    "objectPath", "objectType", "result", "errorMessage", "durationMs",
+    "operation", "operationDescription",
+    // Object identification (CMIS-specific)
+    "objectId", "objectName", "objectPath", "objectType",
+    "versionSeriesId", "parentId", "parentPath",
+    // Result
+    "result", "errorMessage", "durationMs",
     // Extended details
     "details"
 })
@@ -127,6 +131,16 @@ public class AuditEvent {
 
     @JsonProperty("objectType")
     private String objectType;
+
+    // CMIS-specific identifiers (important for document tracking)
+    @JsonProperty("versionSeriesId")
+    private String versionSeriesId;
+
+    @JsonProperty("parentId")
+    private String parentId;
+
+    @JsonProperty("parentPath")
+    private String parentPath;
 
     @JsonProperty("result")
     private String result;
@@ -325,6 +339,18 @@ public class AuditEvent {
         return objectType;
     }
 
+    public String getVersionSeriesId() {
+        return versionSeriesId;
+    }
+
+    public String getParentId() {
+        return parentId;
+    }
+
+    public String getParentPath() {
+        return parentPath;
+    }
+
     public String getResult() {
         return result;
     }
@@ -421,6 +447,18 @@ public class AuditEvent {
 
     void setObjectType(String objectType) {
         this.objectType = objectType;
+    }
+
+    void setVersionSeriesId(String versionSeriesId) {
+        this.versionSeriesId = versionSeriesId;
+    }
+
+    void setParentId(String parentId) {
+        this.parentId = parentId;
+    }
+
+    void setParentPath(String parentPath) {
+        this.parentPath = parentPath;
     }
 
     void setResult(String result) {
