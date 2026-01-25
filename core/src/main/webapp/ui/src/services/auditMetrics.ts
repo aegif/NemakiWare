@@ -84,7 +84,8 @@ export function isErrorResponse(
 }
 
 export class AuditMetricsService {
-  private baseUrl = '/core/rest/all/audit/metrics';
+  // Use the OpenAPI compliant endpoint (legacy endpoint also available at /core/rest/all/audit/metrics)
+  private baseUrl = '/core/api/v1/cmis/audit/metrics';
   private onAuthError: () => void;
 
   constructor(onAuthError: () => void) {

@@ -40,6 +40,10 @@ import jakarta.ws.rs.core.UriInfo;
 
 import jp.aegif.nemaki.api.v1.exception.ApiException;
 import jp.aegif.nemaki.api.v1.exception.ProblemDetail;
+import jp.aegif.nemaki.api.v1.model.response.AuditMetricsData;
+import jp.aegif.nemaki.api.v1.model.response.AuditMetricsResetResponse;
+import jp.aegif.nemaki.api.v1.model.response.AuditMetricsResponse;
+import jp.aegif.nemaki.api.v1.model.response.AuditRatesData;
 import jp.aegif.nemaki.api.v1.model.response.LinkInfo;
 import jp.aegif.nemaki.audit.AuditLogger;
 import jp.aegif.nemaki.util.constant.CallContextKey;
@@ -127,24 +131,25 @@ public class AuditMetricsResource {
         try {
             Map<String, Long> metrics = AuditLogger.getMetrics();
 
+            // Build metrics data
+            AuditMetricsData metricsData = new AuditMetricsData();
+            metricsData.setTotal(metrics.getOrDefault("audit.events.total", 0L));
+            metricsData.setLogged(metrics.getOrDefault("audit.events.logged", 0L));
+            metricsData.setSkipped(metrics.getOrDefault("audit.events.skipped", 0L));
+            metricsData.setFailed(metrics.getOrDefault("audit.events.failed", 0L));
+
+            // Build rates data (only if total > 0)
+            AuditRatesData ratesData = AuditRatesData.fromCounts(
+                    metricsData.getTotal(),
+                    metricsData.getLogged(),
+                    metricsData.getSkipped(),
+                    metricsData.getFailed()
+            );
+
+            // Build response
             AuditMetricsResponse response = new AuditMetricsResponse();
-            response.setMetrics(new MetricsData());
-            response.getMetrics().setTotal(metrics.getOrDefault("audit.events.total", 0L));
-            response.getMetrics().setLogged(metrics.getOrDefault("audit.events.logged", 0L));
-            response.getMetrics().setSkipped(metrics.getOrDefault("audit.events.skipped", 0L));
-            response.getMetrics().setFailed(metrics.getOrDefault("audit.events.failed", 0L));
-
-            // Calculate rates
-            long total = response.getMetrics().getTotal();
-            if (total > 0) {
-                RatesData rates = new RatesData();
-                rates.setSuccessRate((double) response.getMetrics().getLogged() / total * 100);
-                rates.setSkipRate((double) response.getMetrics().getSkipped() / total * 100);
-                rates.setFailureRate((double) response.getMetrics().getFailed() / total * 100);
-                response.setRates(rates);
-            }
-
-            // Configuration status
+            response.setMetrics(metricsData);
+            response.setRates(ratesData);
             response.setEnabled(AuditLogger.isEnabled());
             response.setReadAuditLevel(AuditLogger.getReadAuditLevel());
             response.setTimestamp(System.currentTimeMillis());
@@ -211,18 +216,17 @@ public class AuditMetricsResource {
             // Reset metrics
             AuditLogger.resetMetrics();
 
+            // Build previous values
+            AuditMetricsData previousValues = new AuditMetricsData();
+            previousValues.setTotal(beforeReset.getOrDefault("audit.events.total", 0L));
+            previousValues.setLogged(beforeReset.getOrDefault("audit.events.logged", 0L));
+            previousValues.setSkipped(beforeReset.getOrDefault("audit.events.skipped", 0L));
+            previousValues.setFailed(beforeReset.getOrDefault("audit.events.failed", 0L));
+
+            // Build response
             AuditMetricsResetResponse response = new AuditMetricsResetResponse();
-            response.setSuccess(true);
             response.setMessage("Audit metrics reset successfully");
-
-            // Previous values
-            MetricsData previous = new MetricsData();
-            previous.setTotal(beforeReset.getOrDefault("audit.events.total", 0L));
-            previous.setLogged(beforeReset.getOrDefault("audit.events.logged", 0L));
-            previous.setSkipped(beforeReset.getOrDefault("audit.events.skipped", 0L));
-            previous.setFailed(beforeReset.getOrDefault("audit.events.failed", 0L));
-            response.setPreviousValues(previous);
-
+            response.setPreviousValues(previousValues);
             response.setTimestamp(System.currentTimeMillis());
 
             // HATEOAS links
@@ -323,113 +327,5 @@ public class AuditMetricsResource {
                     .entity("# Error: Internal server error\n")
                     .build();
         }
-    }
-
-    // Response DTOs with OpenAPI Schema annotations
-
-    @Schema(description = "Audit metrics response")
-    public static class AuditMetricsResponse {
-        @Schema(description = "Audit event metrics")
-        private MetricsData metrics;
-
-        @Schema(description = "Calculated success/skip/failure rates (only present if total > 0)")
-        private RatesData rates;
-
-        @Schema(description = "Whether audit logging is enabled")
-        private boolean enabled;
-
-        @Schema(description = "Read audit level (NONE, BASIC, FULL)")
-        private String readAuditLevel;
-
-        @Schema(description = "Timestamp when metrics were retrieved (epoch millis)")
-        private long timestamp;
-
-        @Schema(description = "HATEOAS links")
-        private Map<String, LinkInfo> links;
-
-        public MetricsData getMetrics() { return metrics; }
-        public void setMetrics(MetricsData metrics) { this.metrics = metrics; }
-        public RatesData getRates() { return rates; }
-        public void setRates(RatesData rates) { this.rates = rates; }
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public String getReadAuditLevel() { return readAuditLevel; }
-        public void setReadAuditLevel(String readAuditLevel) { this.readAuditLevel = readAuditLevel; }
-        public long getTimestamp() { return timestamp; }
-        public void setTimestamp(long timestamp) { this.timestamp = timestamp; }
-        public Map<String, LinkInfo> getLinks() { return links; }
-        public void setLinks(Map<String, LinkInfo> links) { this.links = links; }
-    }
-
-    @Schema(description = "Audit metrics data")
-    public static class MetricsData {
-        @Schema(description = "Total number of audit events processed")
-        private long total;
-
-        @Schema(description = "Number of events successfully logged")
-        private long logged;
-
-        @Schema(description = "Number of events skipped")
-        private long skipped;
-
-        @Schema(description = "Number of events that failed to log")
-        private long failed;
-
-        public long getTotal() { return total; }
-        public void setTotal(long total) { this.total = total; }
-        public long getLogged() { return logged; }
-        public void setLogged(long logged) { this.logged = logged; }
-        public long getSkipped() { return skipped; }
-        public void setSkipped(long skipped) { this.skipped = skipped; }
-        public long getFailed() { return failed; }
-        public void setFailed(long failed) { this.failed = failed; }
-    }
-
-    @Schema(description = "Calculated rate data (percentages)")
-    public static class RatesData {
-        @Schema(description = "Success rate as percentage (0-100)")
-        private double successRate;
-
-        @Schema(description = "Skip rate as percentage (0-100)")
-        private double skipRate;
-
-        @Schema(description = "Failure rate as percentage (0-100)")
-        private double failureRate;
-
-        public double getSuccessRate() { return successRate; }
-        public void setSuccessRate(double successRate) { this.successRate = successRate; }
-        public double getSkipRate() { return skipRate; }
-        public void setSkipRate(double skipRate) { this.skipRate = skipRate; }
-        public double getFailureRate() { return failureRate; }
-        public void setFailureRate(double failureRate) { this.failureRate = failureRate; }
-    }
-
-    @Schema(description = "Audit metrics reset response")
-    public static class AuditMetricsResetResponse {
-        @Schema(description = "Whether the reset was successful")
-        private boolean success;
-
-        @Schema(description = "Status message")
-        private String message;
-
-        @Schema(description = "Metrics values before reset")
-        private MetricsData previousValues;
-
-        @Schema(description = "Timestamp when reset occurred (epoch millis)")
-        private long timestamp;
-
-        @Schema(description = "HATEOAS links")
-        private Map<String, LinkInfo> links;
-
-        public boolean isSuccess() { return success; }
-        public void setSuccess(boolean success) { this.success = success; }
-        public String getMessage() { return message; }
-        public void setMessage(String message) { this.message = message; }
-        public MetricsData getPreviousValues() { return previousValues; }
-        public void setPreviousValues(MetricsData previousValues) { this.previousValues = previousValues; }
-        public long getTimestamp() { return timestamp; }
-        public void setTimestamp(long timestamp) { this.timestamp = timestamp; }
-        public Map<String, LinkInfo> getLinks() { return links; }
-        public void setLinks(Map<String, LinkInfo> links) { this.links = links; }
     }
 }
