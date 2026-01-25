@@ -17,7 +17,6 @@ public class SystemCallContext extends CallContextImpl{
 			ServletContext servletContext, HttpServletRequest request, HttpServletResponse response,
 			CmisServiceFactory factory, TempStoreOutputStreamFactory streamFactory) {
 		super(binding, cmisVersion, repositoryId, servletContext, request, response, factory, streamFactory);
-		// TODO Auto-generated constructor stub
 	}
 	
 	public SystemCallContext(String repositoryId){

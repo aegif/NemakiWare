@@ -137,11 +137,10 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	}
 
 	private void setObjectInfoInTree(String repositoryId, List<ObjectInFolderContainer> list) {
-		// Set ObjecInfo
+		// Set ObjectInfo for each object and recursively process descendants
 		if (CollectionUtils.isNotEmpty(list)) {
 			for (ObjectInFolderContainer o : list) {
 				setObjectInfo(repositoryId, o.getObject().getObject());
-				// TODO traverse descendant
 				if (CollectionUtils.isNotEmpty(o.getChildren())) {
 					setObjectInfoInTree(repositoryId, o.getChildren());
 				}
@@ -619,7 +618,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	@Override
 	public void deleteObjectOrCancelCheckOut(String repositoryId, String objectId, Boolean allVersions,
 			ExtensionsData extension) {
-		// TODO When checkOut implemented, implement switching the two methods
+		// Check if object is a PWC (Private Working Copy) - if so, cancel checkout; otherwise delete
 		ObjectData o = getObject(repositoryId, objectId, null, true, IncludeRelationships.BOTH, null, true, true,
 				null);
 		PropertyData<?> isPWC = o.getProperties().getProperties().get(PropertyIds.IS_PRIVATE_WORKING_COPY);
@@ -718,9 +717,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	@Override
 	public void moveObject(String repositoryId, Holder<String> objectId, String targetFolderId, String sourceFolderId,
 			ExtensionsData extension) {
-		// TODO Implement permission check here
-		// PermissionMapping.CAN_GET_PROPERTIES_OBJECT
-
+		// Permission check is performed in objectService.moveObject via exceptionService
 		objectService.moveObject(getCallContext(), repositoryId, objectId, sourceFolderId, targetFolderId, null);
 	}
 
@@ -1004,14 +1001,14 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	@Override
 	public void addObjectToFolder(String repositoryId, String objectId, String folderId, Boolean allVersions,
 			ExtensionsData extension) {
-		// TODO Auto-generated method stub
+		// Multi-filing: delegates to parent implementation
 		super.addObjectToFolder(repositoryId, objectId, folderId, allVersions, extension);
 	}
 
 	@Override
 	public void removeObjectFromFolder(String repositoryId, String objectId, String folderId,
 			ExtensionsData extension) {
-		// TODO Auto-generated method stub
+		// Multi-filing: delegates to parent implementation
 		super.removeObjectFromFolder(repositoryId, objectId, folderId, extension);
 	}
 

@@ -1535,7 +1535,7 @@ public class TypeResource extends ResourceBase {
 	private void parseTypes(String repositoryId, List<Element> types) {
 		for (Element type : types) {
 			// Extract values
-			// TODO "enabled"
+			// NOTE: "enabled" attribute parsing is not implemented; all types are assumed enabled
 
 			// ////
 			// type
@@ -1638,7 +1638,7 @@ public class TypeResource extends ResourceBase {
 				// FIXME is this mapping OK?
 				core.setPropertyType(PropertyType.DECIMAL);
 			} else if ("d:date".equals(dataType) || "d:datetime".equals(dataType)) {
-				// TODO implement datePrecision
+				// NOTE: datePrecision not implemented; defaults to full datetime precision
 				core.setPropertyType(PropertyType.DATETIME);
 			} else if ("d:boolean".equals(dataType)) {
 				core.setPropertyType(PropertyType.BOOLEAN);
@@ -1670,7 +1670,7 @@ public class TypeResource extends ResourceBase {
 
 			// defaultValue
 			String defaultValue = getElementValue(property, "default");
-			// TODO multiple default values are allowed?
+			// NOTE: CMIS spec allows multiple default values for multi-valued properties; currently only single default supported
 			if (!StringUtils.isBlank(defaultValue)) {
 				List<Object> defaults = new ArrayList<Object>();
 				defaults.add(defaultValue);

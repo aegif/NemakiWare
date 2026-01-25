@@ -639,8 +639,7 @@ public class GroupItemResource extends ResourceBase{
 			JSONArray result = (JSONArray)obj;
 			return result;
 		} catch (ParseException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			log.warn("Failed to parse JSON array: " + e.getMessage());
 		}
 
 		return new JSONArray();

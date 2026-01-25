@@ -93,8 +93,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		}
 		@Override
 		public void addTypeDefinition(TypeDefinition arg0, boolean arg1) {
-			// TODO Auto-generated method stub
-			
+			throw new UnsupportedOperationException("Type creation via query processor is not supported");
 		}
 		@Override
 		public void deleteTypeDefinition(String typeId) {
@@ -185,8 +184,6 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// This allows queries like "WHERE nemaki:comment LIKE '%test%'" to work without
 		// requiring users to manually add "JOIN nemaki:commentable" to the query
 		statement = injectSecondaryTypeJoins(repositoryId, statement);
-
-		// TODO walker is required?
 
 		if (logger.isDebugEnabled()) {
 			logger.debug("Creating QueryUtilStrict with statement: " + statement);

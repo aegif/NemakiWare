@@ -358,8 +358,7 @@ public class AuthenticationFilter implements Filter {
 
 	@Override
 	public void destroy() {
-		// TODO Auto-generated method stub
-
+		// No cleanup required
 	}
 
 	private boolean checkResourceEnabled(HttpServletRequest request){

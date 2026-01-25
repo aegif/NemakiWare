@@ -160,9 +160,9 @@ public class BulkCheckInResource extends ResourceBase {
 		TypeDefinition typeDef = typeManager.getTypeByQueryName(repositoryId, typeId);
 
 		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
-		// TODO: error checks
+		// Validate input parameters
 		if (propertyIds.size() != propertyValues.size()){
-			//
+			log.warn("Property IDs and values count mismatch: " + propertyIds.size() + " vs " + propertyValues.size());
 		}
 		//if (objectIds.size() != changeTokens.size()){
 			//

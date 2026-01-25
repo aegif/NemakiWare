@@ -96,7 +96,6 @@ public class UserItemResource extends ResourceBase {
 
 	public UserItemResource() {
 		super();
-		// TODO Auto-generated constructor stub
 	}
 
 	private ContentService getContentService() {
@@ -927,8 +926,12 @@ private ContentService getContentServiceSafe() {
 
 			// update
 			if (StringUtils.isNotBlank(password)) {
-				// TODO Error handling
 				user = getContentServiceSafe().getUserItemById(repositoryId, userId);
+				if (user == null) {
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
+					return makeResult(status, result, errMsg).toJSONString();
+				}
 
 				// Edit & Update
 				if (status) {
