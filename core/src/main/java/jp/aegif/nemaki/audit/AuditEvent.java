@@ -189,24 +189,54 @@ public class AuditEvent {
 
     /**
      * ECS event.type field derived from operation.
+     * Uses startsWith for more accurate matching with AuditOperation enum names.
      * @return "change", "deletion", "access", or "info"
      */
     @JsonProperty("event.type")
     public String getEventType() {
-        if (operation != null) {
-            if (operation.contains("CREATE") || operation.contains("UPDATE") ||
-                operation.contains("CHECK_IN") || operation.contains("CHECK_OUT") ||
-                operation.contains("SET_") || operation.contains("APPEND_") ||
-                operation.contains("APPLY_") || operation.contains("ADD_") ||
-                operation.contains("MOVE") || operation.contains("COPY")) {
-                return "change";
-            } else if (operation.contains("DELETE") || operation.contains("REMOVE") ||
-                       operation.contains("CANCEL")) {
-                return "deletion";
-            } else if (operation.contains("GET") || operation.contains("QUERY")) {
-                return "access";
-            }
+        if (operation == null || operation.isEmpty()) {
+            return "info";
         }
+        
+        // Change operations (create, update, modify)
+        if (operation.startsWith("CREATE_") ||
+            operation.startsWith("UPDATE_") ||
+            operation.startsWith("CHECK_IN") ||
+            operation.startsWith("CHECK_OUT") ||
+            operation.startsWith("SET_") ||
+            operation.startsWith("APPEND_") ||
+            operation.startsWith("APPLY_") ||
+            operation.startsWith("ADD_") ||
+            operation.startsWith("MOVE_") ||
+            operation.startsWith("COPY_") ||
+            operation.startsWith("BULK_")) {
+            return "change";
+        }
+        
+        // Deletion operations
+        if (operation.startsWith("DELETE_") ||
+            operation.startsWith("REMOVE_") ||
+            operation.startsWith("CANCEL_") ||
+            operation.startsWith("ARCHIVE_DELETE") ||
+            operation.startsWith("SOLR_CLEAR")) {
+            return "deletion";
+        }
+        
+        // Access operations (read, query, get)
+        if (operation.startsWith("GET_") ||
+            operation.equals("QUERY") ||
+            operation.startsWith("TOKEN_VALIDATE") ||
+            operation.startsWith("ARCHIVE_RESTORE")) {
+            return "access";
+        }
+        
+        // Authentication operations
+        if (operation.equals("LOGIN") || operation.equals("LOGOUT") ||
+            operation.equals("TOKEN_CREATE") || operation.startsWith("CHANGE_PASSWORD")) {
+            return "authentication";
+        }
+        
+        // Default to info for unknown operations
         return "info";
     }
 

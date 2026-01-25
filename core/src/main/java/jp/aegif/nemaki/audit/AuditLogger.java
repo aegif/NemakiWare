@@ -60,6 +60,9 @@ public class AuditLogger {
 
     // Server metadata - initialized once at startup
     private static final String HOSTNAME = initHostname();
+
+    // Maximum length for request path in audit logs (prevent log flooding)
+    private static final int MAX_REQUEST_PATH_LENGTH = 2000;
     private static final String SERVICE = "nemakiware";
     private static final String ENVIRONMENT = initEnvironment();
     private static final String VERSION = initVersion();
@@ -75,9 +78,13 @@ public class AuditLogger {
     private volatile DetailLevel detailLevel = DetailLevel.STANDARD;
     private volatile boolean logFailuresAsWarn = true;  // Log failures at WARN level
 
-    // These require lock for iteration, but are read less frequently
+    // These require lock for iteration when updating
     private Set<String> excludedUsers = new HashSet<>();
     private Set<String> excludedOperations = new HashSet<>();
+
+    // Volatile snapshots for lock-free read access (Copy-on-Write pattern)
+    private volatile Set<String> excludedUsersSnapshot = java.util.Collections.emptySet();
+    private volatile Set<String> excludedOperationsSnapshot = java.util.Collections.emptySet();
 
     // ThreadLocal for storing request context (IP address, traceId, HTTP info, etc.)
     private static final ThreadLocal<RequestContext> requestContext = new ThreadLocal<>();
@@ -87,11 +94,36 @@ public class AuditLogger {
     // Server metadata initialization methods
 
     private static String initHostname() {
-        try {
-            return InetAddress.getLocalHost().getHostName();
-        } catch (Exception e) {
-            return System.getProperty("nemakiware.hostname", "unknown");
+        // 1. Check system property first (explicit override)
+        String hostname = System.getProperty("nemakiware.hostname");
+        if (hostname != null && !hostname.isEmpty()) {
+            return hostname;
         }
+        
+        // 2. Check HOSTNAME environment variable (common in Docker/K8s)
+        hostname = System.getenv("HOSTNAME");
+        if (hostname != null && !hostname.isEmpty()) {
+            return hostname;
+        }
+        
+        // 3. Check COMPUTERNAME (Windows)
+        hostname = System.getenv("COMPUTERNAME");
+        if (hostname != null && !hostname.isEmpty()) {
+            return hostname;
+        }
+        
+        // 4. Fallback to InetAddress (may be slow in some networks)
+        try {
+            hostname = InetAddress.getLocalHost().getHostName();
+            if (hostname != null && !hostname.isEmpty()) {
+                return hostname;
+            }
+        } catch (Exception e) {
+            // Ignore - will use fallback
+        }
+        
+        // 5. Final fallback
+        return "unknown";
     }
 
     private static String initEnvironment() {
@@ -103,7 +135,18 @@ public class AuditLogger {
     }
 
     private static String initVersion() {
-        return System.getProperty("nemakiware.version", "3.0.0");
+        // First check system property for override
+        String version = System.getProperty("nemakiware.version");
+        if (version != null && !version.isEmpty()) {
+            return version;
+        }
+        // Use BuildInfoResource as single source of truth
+        try {
+            return jp.aegif.nemaki.rest.BuildInfoResource.getVersion();
+        } catch (Exception e) {
+            // Fallback if BuildInfoResource is not available (e.g., unit tests)
+            return "3.0.0";
+        }
     }
 
     public enum DetailLevel {
@@ -125,7 +168,17 @@ public class AuditLogger {
 
     public AuditLogger() {
         this.objectMapper = new ObjectMapper();
+        
+        // Performance optimization settings
         this.objectMapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
+        this.objectMapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+        
+        // Disable sorting (already controlled by @JsonPropertyOrder)
+        this.objectMapper.configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, false);
+        this.objectMapper.configure(com.fasterxml.jackson.databind.MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, false);
+        
+        // Enable efficient serialization
+        this.objectMapper.configure(com.fasterxml.jackson.databind.MapperFeature.USE_STD_BEAN_NAMING, false);
     }
 
     /**
@@ -157,10 +210,13 @@ public class AuditLogger {
                 // Read audit level (NONE, DOWNLOAD, METADATA, ALL)
                 String readLevelStr = propertyManager.readValue(PropertyKey.AUDIT_READ_LEVEL);
                 if (readLevelStr != null && !readLevelStr.trim().isEmpty()) {
-                    try {
-                        this.readAuditLevel = ReadAuditLevel.valueOf(readLevelStr.trim().toUpperCase());
-                    } catch (IllegalArgumentException e) {
-                        log.warn("Invalid audit read level: " + readLevelStr + ", using NONE");
+                    String normalizedLevel = readLevelStr.trim().toUpperCase();
+                    ReadAuditLevel parsedLevel = parseReadAuditLevel(normalizedLevel);
+                    if (parsedLevel != null) {
+                        this.readAuditLevel = parsedLevel;
+                    } else {
+                        log.warn("Invalid audit read level: '" + readLevelStr +
+                                 "'. Valid values are: NONE, DOWNLOAD, METADATA, ALL. Using default: NONE");
                         this.readAuditLevel = ReadAuditLevel.NONE;
                     }
                 }
@@ -181,7 +237,8 @@ public class AuditLogger {
                     try {
                         this.detailLevel = DetailLevel.valueOf(levelStr.trim().toUpperCase());
                     } catch (IllegalArgumentException e) {
-                        log.warn("Invalid audit detail level: " + levelStr + ", using STANDARD");
+                        log.warn("Invalid audit detail level: '" + levelStr +
+                                 "'. Valid values are: MINIMAL, STANDARD, VERBOSE. Using default: STANDARD");
                         this.detailLevel = DetailLevel.STANDARD;
                     }
                 }
@@ -218,8 +275,47 @@ public class AuditLogger {
                                          logFailuresStr.trim().isEmpty() ||
                                          "true".equalsIgnoreCase(logFailuresStr.trim());
             }
+            
+            // Create immutable snapshots for lock-free read access (Copy-on-Write pattern)
+            // These snapshots are visible to readers after the volatile write completes
+            this.excludedUsersSnapshot = java.util.Collections.unmodifiableSet(new HashSet<>(excludedUsers));
+            this.excludedOperationsSnapshot = java.util.Collections.unmodifiableSet(new HashSet<>(excludedOperations));
         } finally {
             configLock.writeLock().unlock();
+        }
+    }
+
+
+    /**
+     * Parses a ReadAuditLevel from string with typo tolerance.
+     * @param value The value to parse (should be uppercase)
+     * @return The parsed level, or null if invalid
+     */
+    private ReadAuditLevel parseReadAuditLevel(String value) {
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        
+        // Exact match first
+        for (ReadAuditLevel level : ReadAuditLevel.values()) {
+            if (level.name().equals(value)) {
+                return level;
+            }
+        }
+        
+        // Typo tolerance: check common misspellings
+        switch (value) {
+            case "DONWLOAD":
+            case "DOWNLAOD":
+                log.info("Correcting typo in audit.read.level: '" + value + "' -> 'DOWNLOAD'");
+                return ReadAuditLevel.DOWNLOAD;
+            case "META":
+            case "METDATA":
+            case "METADTA":
+                log.info("Correcting typo in audit.read.level: '" + value + "' -> 'METADATA'");
+                return ReadAuditLevel.METADATA;
+            default:
+                return null;
         }
     }
 
@@ -276,79 +372,110 @@ public class AuditLogger {
             }
         }
 
-        // Skip excluded operations/users (requires lock for Set iteration)
-        configLock.readLock().lock();
+        // Extract context information (do this early)
+        CallContext callContext = null;
+        String userId = null;
         try {
-            if (excludedOperations.contains(operation.name()) ||
-                    excludedOperations.contains(methodName)) {
-                return jp.proceed();
+            callContext = extractCallContext(args);
+            userId = callContext != null ? callContext.getUsername() : null;
+        } catch (Exception e) {
+            // Log but don't fail - continue with null context
+            log.debug("Failed to extract call context for audit: " + e.getMessage());
+        }
+
+        // Skip excluded operations/users using volatile snapshots (lock-free, fast path)
+        // Copy-on-Write pattern: snapshots are immutable and updated atomically on config change
+        Set<String> excludedOps = excludedOperationsSnapshot;
+        Set<String> excludedUsrs = excludedUsersSnapshot;
+        
+        if (excludedOps.contains(operation.name()) || excludedOps.contains(methodName)) {
+            return jp.proceed();
+        }
+
+        // Skip excluded users
+        if (userId != null && excludedUsrs.contains(userId)) {
+            return jp.proceed();
+        }
+
+        // Build audit event (wrap in try-catch to ensure business logic continues)
+        AuditEventBuilder builder = null;
+        try {
+            builder = AuditEventBuilder.fromCallContext(callContext)
+                    .operation(operation);
+
+            // Add server metadata (static fields, always available)
+            builder.hostname(HOSTNAME)
+                   .service(SERVICE)
+                   .version(VERSION);
+
+            // Add environment if configured
+            if (ENVIRONMENT != null && !ENVIRONMENT.isEmpty()) {
+                builder.environment(ENVIRONMENT);
             }
 
-            // Extract context information
-            CallContext callContext = extractCallContext(args);
-            String userId = callContext != null ? callContext.getUsername() : null;
-
-            // Skip excluded users
-            if (userId != null && excludedUsers.contains(userId)) {
-                return jp.proceed();
+            // Add HTTP request context if available (from ThreadLocal)
+            RequestContext reqCtx = requestContext.get();
+            if (reqCtx != null) {
+                builder.clientIp(reqCtx.getClientIp())
+                       .traceId(reqCtx.getTraceId())
+                       .httpMethod(reqCtx.getHttpMethod())
+                       .requestPath(reqCtx.getRequestPath())
+                       .userAgent(reqCtx.getUserAgent());
             }
-        } finally {
-            configLock.readLock().unlock();
+
+            // Extract object information from arguments (wrapped for safety)
+            try {
+                extractObjectInfo(builder, args, signature.getParameterNames());
+            } catch (Exception e) {
+                log.debug("Failed to extract object info for audit: " + e.getMessage());
+                builder.detail("_objectInfoError", e.getClass().getSimpleName());
+            }
+        } catch (Exception e) {
+            // If builder creation fails, log and continue without audit
+            log.warn("Failed to create audit event builder: " + e.getMessage());
+            builder = null;
         }
 
-        // Re-extract context for building audit event (after lock release)
-        CallContext callContext = extractCallContext(args);
-
-        // Build audit event
-        AuditEventBuilder builder = AuditEventBuilder.fromCallContext(callContext)
-                .operation(operation);
-
-        // Add server metadata (static fields, always available)
-        builder.hostname(HOSTNAME)
-               .service(SERVICE)
-               .version(VERSION);
-
-        // Add environment if configured
-        if (ENVIRONMENT != null && !ENVIRONMENT.isEmpty()) {
-            builder.environment(ENVIRONMENT);
-        }
-
-        // Add HTTP request context if available (from ThreadLocal)
-        RequestContext reqCtx = requestContext.get();
-        if (reqCtx != null) {
-            builder.clientIp(reqCtx.getClientIp())
-                   .traceId(reqCtx.getTraceId())
-                   .httpMethod(reqCtx.getHttpMethod())
-                   .requestPath(reqCtx.getRequestPath())
-                   .userAgent(reqCtx.getUserAgent());
-        }
-
-        // Extract object information from arguments
-        extractObjectInfo(builder, args, signature.getParameterNames());
-
-        // Execute the method
+        // Execute the method (this is the critical business logic)
         Object result = null;
         Throwable error = null;
         try {
             result = jp.proceed();
-            builder.success();
+            if (builder != null) {
+                builder.success();
+            }
         } catch (Throwable t) {
             error = t;
-            builder.failure(t);
+            if (builder != null) {
+                builder.failure(t);
+            }
         }
 
-        // Calculate duration
-        long durationMs = System.currentTimeMillis() - startTime;
-        builder.durationMs(durationMs);
+        // Post-execution audit (all wrapped to not affect result)
+        if (builder != null) {
+            try {
+                // Calculate duration
+                long durationMs = System.currentTimeMillis() - startTime;
+                builder.durationMs(durationMs);
 
-        // Add result information if verbose
-        if (detailLevel == DetailLevel.VERBOSE && result != null) {
-            addResultInfo(builder, result);
+                // Add result information if verbose
+                if (detailLevel == DetailLevel.VERBOSE && result != null) {
+                    try {
+                        addResultInfo(builder, result);
+                    } catch (Exception e) {
+                        log.debug("Failed to add result info for audit: " + e.getMessage());
+                        builder.detail("_resultInfoError", e.getClass().getSimpleName());
+                    }
+                }
+
+                // Log the audit event
+                AuditEvent event = builder.build();
+                logAuditEvent(event);
+            } catch (Exception e) {
+                // Audit logging should never affect the business operation
+                log.warn("Failed to complete audit logging: " + e.getMessage());
+            }
         }
-
-        // Log the audit event
-        AuditEvent event = builder.build();
-        logAuditEvent(event);
 
         // Re-throw exception if occurred
         if (error != null) {
@@ -369,9 +496,22 @@ public class AuditLogger {
         }
 
         try {
+            // Determine log level before serialization (performance optimization)
+            boolean isWarn = logFailuresAsWarn && AuditEvent.Result.FAILURE.name().equals(event.getResult());
+            
+            // Check if the appropriate log level is enabled before serializing
+            if (isWarn && !auditLogger.isWarnEnabled()) {
+                return;  // Skip serialization if log level is disabled
+            }
+            if (!isWarn && !auditLogger.isInfoEnabled()) {
+                return;  // Skip serialization if log level is disabled
+            }
+
+            // Serialize to JSON (only if we're going to log it)
             String json = objectMapper.writeValueAsString(event);
-            // Dynamic log level: WARN for failures if configured, INFO otherwise
-            if (logFailuresAsWarn && AuditEvent.Result.FAILURE.name().equals(event.getResult())) {
+            
+            // Output to appropriate level
+            if (isWarn) {
                 auditLogger.warn(json);
             } else {
                 auditLogger.info(json);
@@ -705,11 +845,15 @@ public class AuditLogger {
             ctx.setHttpMethod(request.getMethod());
 
             // Request path (URI + query string if present)
-            String requestPath = request.getRequestURI();
+            String requestPath = sanitizeRequestPath(request.getRequestURI());
             String queryString = request.getQueryString();
             if (queryString != null && !queryString.isEmpty()) {
                 // Mask sensitive query parameters
                 requestPath = requestPath + "?" + maskSensitiveQueryParams(queryString);
+            }
+            // Truncate if too long (prevent log flooding)
+            if (requestPath != null && requestPath.length() > MAX_REQUEST_PATH_LENGTH) {
+                requestPath = requestPath.substring(0, MAX_REQUEST_PATH_LENGTH) + "...[truncated]";
             }
             ctx.setRequestPath(requestPath);
 
@@ -733,10 +877,52 @@ public class AuditLogger {
         if (queryString == null || queryString.isEmpty()) {
             return queryString;
         }
-        // Mask common sensitive parameter names
-        return queryString.replaceAll(
-            "(?i)(password|passwd|pwd|token|apikey|api_key|secret|credential|auth)=([^&]*)",
+        // Mask common sensitive parameter names (case-insensitive)
+        String masked = queryString.replaceAll(
+            "(?i)(password|passwd|pwd|token|apikey|api_key|api-key|secret|credential|auth|authorization|bearer|session|sessionid|session_id|jsessionid|cookie)=([^&]*)",
             "$1=***");
+        // Also mask Base64-like long values that might be tokens
+        masked = masked.replaceAll("=([A-Za-z0-9+/=_-]{32,})(&|$)", "=***$2");
+        return masked;
+    }
+
+
+    /**
+     * Sanitizes a request path for safe logging.
+     * - Normalizes URL encoding
+     * - Detects and flags potential path traversal attempts
+     * - Removes null bytes and control characters
+     * @param path The original request path
+     * @return The sanitized path
+     */
+    private static String sanitizeRequestPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return path;
+        }
+
+        String sanitized = path;
+
+        // Decode URL-encoded characters for normalization (but don't double-decode)
+        try {
+            // Only decode if it looks encoded
+            if (sanitized.contains("%")) {
+                sanitized = java.net.URLDecoder.decode(sanitized, "UTF-8");
+            }
+        } catch (Exception e) {
+            // Keep original if decoding fails (malformed URL)
+        }
+
+        // Remove null bytes and control characters (potential injection attacks)
+        sanitized = sanitized.replaceAll("[\u0000-\u001F\u007F]", "");
+
+        // Detect path traversal patterns and flag them (don't remove - useful for security analysis)
+        if (sanitized.contains("..") || sanitized.contains("./") ||
+            sanitized.matches(".*//+.*") || sanitized.contains("\\")) {
+            // Flag suspicious path but keep for security analysis
+            sanitized = "[SUSPICIOUS_PATH] " + sanitized;
+        }
+
+        return sanitized;
     }
 
     /**

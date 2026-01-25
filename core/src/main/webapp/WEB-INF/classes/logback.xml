@@ -27,6 +27,42 @@
 		</encoder>
 	</appender>
 
+	<!-- Audit Log File Appender (dedicated file for audit events) -->
+	<property name="AUDIT_LOG_FILE" value="${catalina.home}/logs/audit.log" />
+	<appender name="AUDIT_FILE"
+		class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<file>${AUDIT_LOG_FILE}</file>
+		<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+			<fileNamePattern>${AUDIT_LOG_FILE}.%d{yyyy-MM-dd}.gz</fileNamePattern>
+			<maxHistory>90</maxHistory>
+			<totalSizeCap>10GB</totalSizeCap>
+		</rollingPolicy>
+		<!-- Raw JSON output (already formatted by AuditLogger) -->
+		<encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+			<pattern>%msg%n</pattern>
+		</encoder>
+	</appender>
+
+	<!-- Async Appender for Audit Logs (high performance, non-blocking) -->
+	<appender name="AUDIT_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+		<!-- Queue size: default 256, increase for high load -->
+		<queueSize>512</queueSize>
+		<!-- Don't discard any audit events (0 = never discard) -->
+		<discardingThreshold>0</discardingThreshold>
+		<!-- Max time to wait for flush on shutdown (ms) -->
+		<maxFlushTime>3000</maxFlushTime>
+		<!-- Don't include caller data (performance optimization) -->
+		<includeCallerData>false</includeCallerData>
+		<!-- Never block the application even if queue is full -->
+		<neverBlock>true</neverBlock>
+		<appender-ref ref="AUDIT_FILE" />
+	</appender>
+
+	<!-- Audit Logger (dedicated, separate from application logs) -->
+	<logger name="jp.aegif.nemaki.audit.AUDIT" level="INFO" additivity="false">
+		<appender-ref ref="AUDIT_ASYNC" />
+	</logger>
+
 	<root level="WARN">
 		<appender-ref ref="FILE" />
 	</root>
