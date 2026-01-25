@@ -349,6 +349,12 @@ public class AuthenticationFilter implements Filter {
         		}else{
         			log.warn("Could not extract repositoryId from auth path: " + java.util.Arrays.toString(pathFragments));
         		}
+        	}else if("audit".equals(pathFragments[0])){
+        		// Handle /audit/... paths (global endpoints that use default repository)
+        		// pathFragments = ["audit", "metrics", ...]
+        		String defaultRepo = repositoryInfoMap.getDefaultRepositoryId();
+        		log.debug("=== AUTH: Using default repository for /audit/ path=" + defaultRepo + " ===");
+        		return defaultRepo;
         	}else{
         		// For paths like /user/bedroom, /group/bedroom, etc.
         		// The repository ID is typically the second fragment

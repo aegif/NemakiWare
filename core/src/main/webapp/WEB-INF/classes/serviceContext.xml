@@ -4,7 +4,10 @@
 
 <beans xmlns="http://www.springframework.org/schema/beans"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
-    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
+    xmlns:context="http://www.springframework.org/schema/context"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
+    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
 
 
     <!-- Phase 1: Database Pre-Initialization -->
@@ -785,5 +788,11 @@
         <property name="solrUtil" ref="solrUtil" />
         <property name="solrIndexMaintenanceService" ref="SolrIndexMaintenanceService" />
     </bean>
+
+    <!-- API v1 Component Scanning -->
+    <!-- Enable component scanning for OpenAPI v1 resources and filters -->
+    <!-- This allows @Autowired dependencies to be injected via Jersey-Spring bridge -->
+    <context:component-scan base-package="jp.aegif.nemaki.api.v1.filter" />
+    <context:component-scan base-package="jp.aegif.nemaki.api.v1.resource" />
 
 </beans>
