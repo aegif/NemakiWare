@@ -41,7 +41,8 @@ import java.util.Map;
  * Provides monitoring and alerting capabilities for audit log statistics.
  *
  * Endpoints:
- * - GET /rest/all/audit/metrics - Returns audit event statistics
+ * - GET /rest/all/audit/metrics - Returns audit event statistics (JSON)
+ * - GET /rest/all/audit/metrics/prometheus - Returns metrics in Prometheus format
  * - POST /rest/all/audit/metrics/reset - Resets all metrics counters (admin only)
  */
 @Path("/all/audit/metrics")
@@ -161,6 +162,73 @@ public class AuditMetricsResource extends ResourceBase {
             error.put("status", "error");
             error.put("message", "Failed to reset audit metrics: " + e.getMessage());
             return Response.status(500).entity(error.toJSONString()).build();
+        }
+    }
+
+    /**
+     * Returns audit metrics in Prometheus format.
+     * Compatible with Prometheus scraping and Grafana dashboards.
+     * This endpoint is restricted to admin users only for security reasons.
+     *
+     * @param httpRequest The HTTP request
+     * @return Prometheus-formatted metrics (text/plain)
+     */
+    @GET
+    @Path("/prometheus")
+    @Produces("text/plain; version=0.0.4; charset=utf-8")
+    public Response getPrometheusMetrics(@Context HttpServletRequest httpRequest) {
+        JSONArray errMsg = new JSONArray();
+
+        // Check admin permission
+        if (!checkAdmin(errMsg, httpRequest)) {
+            return Response.status(403).entity("# Access denied\n").build();
+        }
+
+        try {
+            Map<String, Long> metrics = AuditLogger.getMetrics();
+            StringBuilder prometheus = new StringBuilder();
+
+            // Total events (counter)
+            prometheus.append("# HELP nemakiware_audit_events_total Total number of audit events processed\n");
+            prometheus.append("# TYPE nemakiware_audit_events_total counter\n");
+            prometheus.append("nemakiware_audit_events_total ")
+                      .append(metrics.getOrDefault("audit.events.total", 0L))
+                      .append("\n\n");
+
+            // Logged events (counter)
+            prometheus.append("# HELP nemakiware_audit_events_logged Number of audit events successfully logged\n");
+            prometheus.append("# TYPE nemakiware_audit_events_logged counter\n");
+            prometheus.append("nemakiware_audit_events_logged ")
+                      .append(metrics.getOrDefault("audit.events.logged", 0L))
+                      .append("\n\n");
+
+            // Skipped events (counter)
+            prometheus.append("# HELP nemakiware_audit_events_skipped Number of audit events skipped\n");
+            prometheus.append("# TYPE nemakiware_audit_events_skipped counter\n");
+            prometheus.append("nemakiware_audit_events_skipped ")
+                      .append(metrics.getOrDefault("audit.events.skipped", 0L))
+                      .append("\n\n");
+
+            // Failed events (counter)
+            prometheus.append("# HELP nemakiware_audit_events_failed Number of audit events that failed to log\n");
+            prometheus.append("# TYPE nemakiware_audit_events_failed counter\n");
+            prometheus.append("nemakiware_audit_events_failed ")
+                      .append(metrics.getOrDefault("audit.events.failed", 0L))
+                      .append("\n\n");
+
+            // Audit enabled status (gauge)
+            prometheus.append("# HELP nemakiware_audit_enabled Whether audit logging is enabled (1=enabled, 0=disabled)\n");
+            prometheus.append("# TYPE nemakiware_audit_enabled gauge\n");
+            prometheus.append("nemakiware_audit_enabled ")
+                      .append(AuditLogger.isEnabled() ? 1 : 0)
+                      .append("\n");
+
+            return Response.ok(prometheus.toString()).build();
+
+        } catch (Exception e) {
+            return Response.status(500)
+                .entity("# Error: " + e.getMessage() + "\n")
+                .build();
         }
     }
 }
