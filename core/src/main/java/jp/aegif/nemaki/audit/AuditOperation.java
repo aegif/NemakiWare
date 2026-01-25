@@ -286,31 +286,66 @@ public enum AuditOperation {
      * @return true if the operation only reads data without modifying it
      */
     public boolean isReadOnly() {
+        return isDownloadOperation() || isMetadataOperation() || isNavigationOperation();
+    }
+
+    /**
+     * Checks if this operation is a content download operation.
+     * These are HIGH importance for audit as they involve actual data extraction.
+     * @return true if the operation downloads content (file data)
+     */
+    public boolean isDownloadOperation() {
         switch (this) {
-            case GET_DOCUMENT:
-            case GET_CONTENT_STREAM:
-            case GET_ALL_VERSIONS:
-            case GET_CHILDREN:
-            case GET_DESCENDANTS:
-            case GET_FOLDER_TREE:
-            case GET_OBJECT:
-            case GET_OBJECT_BY_PATH:
-            case GET_ACL:
-            case GET_OBJECT_RELATIONSHIPS:
-            case GET_APPLIED_POLICIES:
-            case QUERY:
-            case GET_OBJECT_PARENTS:
-            case GET_FOLDER_PARENT:
-            case GET_CHECKED_OUT_DOCS:
-            case GET_CONTENT_CHANGES:
-            case GET_TYPE_DEFINITION:
-            case GET_TYPE_CHILDREN:
-            case GET_TYPE_DESCENDANTS:
-            case GET_USER:
-            case GET_GROUP:
-            case GET_REPOSITORY_INFO:
-            case GET_RENDITIONS:
-            case TOKEN_VALIDATE:
+            case GET_CONTENT_STREAM:   // File download - highest risk
+            case GET_RENDITIONS:       // Preview/thumbnail download
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Checks if this operation is a metadata read operation.
+     * These are MEDIUM importance - expose document properties but not content.
+     * @return true if the operation reads object metadata/properties
+     */
+    public boolean isMetadataOperation() {
+        switch (this) {
+            case GET_OBJECT:           // Full object with properties
+            case GET_OBJECT_BY_PATH:   // Object lookup by path
+            case GET_DOCUMENT:         // Document properties
+            case GET_ACL:              // Access control info
+            case GET_ALL_VERSIONS:     // Version history
+            case GET_APPLIED_POLICIES: // Applied policies
+            case GET_OBJECT_RELATIONSHIPS: // Relationships
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Checks if this operation is a navigation/browse operation.
+     * These are LOW importance - just listing/browsing structure.
+     * @return true if the operation is for navigation/browsing
+     */
+    public boolean isNavigationOperation() {
+        switch (this) {
+            case GET_CHILDREN:         // List folder contents
+            case GET_DESCENDANTS:      // List descendants
+            case GET_FOLDER_TREE:      // Folder tree structure
+            case GET_OBJECT_PARENTS:   // Parent folders
+            case GET_FOLDER_PARENT:    // Parent folder
+            case GET_CHECKED_OUT_DOCS: // Checked out documents list
+            case GET_CONTENT_CHANGES:  // Change log
+            case QUERY:                // Search results
+            case GET_TYPE_DEFINITION:  // Type schema
+            case GET_TYPE_CHILDREN:    // Type hierarchy
+            case GET_TYPE_DESCENDANTS: // Type hierarchy
+            case GET_USER:             // User info
+            case GET_GROUP:            // Group info
+            case GET_REPOSITORY_INFO:  // Repository info
+            case TOKEN_VALIDATE:       // Token validation
                 return true;
             default:
                 return false;

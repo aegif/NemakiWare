@@ -70,7 +70,8 @@ public class AuditLogger {
     // Configuration - use volatile for fast reads without lock
     // Default to false for safety (requires explicit enablement in production)
     private volatile boolean enabled = false;
-    private volatile boolean logReadOperations = false;
+    private volatile boolean logReadOperations = false;  // Deprecated: use readAuditLevel
+    private volatile ReadAuditLevel readAuditLevel = ReadAuditLevel.NONE;  // Default: no READ logging
     private volatile DetailLevel detailLevel = DetailLevel.STANDARD;
     private volatile boolean logFailuresAsWarn = true;  // Log failures at WARN level
 
@@ -111,6 +112,17 @@ public class AuditLogger {
         VERBOSE     // All details including properties and content info
     }
 
+    /**
+     * Controls which READ operations are logged.
+     * WRITE/DELETE/ACL operations are ALWAYS logged regardless of this setting.
+     */
+    public enum ReadAuditLevel {
+        NONE,       // No READ operations logged (default - low overhead)
+        DOWNLOAD,   // Content downloads only (getContentStream, getRenditions) - highest risk
+        METADATA,   // + Object/property reads (getObject, getObjectByPath, getAcl)
+        ALL         // + Navigation (getChildren, getFolderTree, query) - high volume
+    }
+
     public AuditLogger() {
         this.objectMapper = new ObjectMapper();
         this.objectMapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
@@ -124,7 +136,7 @@ public class AuditLogger {
         if (log.isInfoEnabled()) {
             log.info("AuditLogger initialized. Enabled: " + enabled +
                     ", DetailLevel: " + detailLevel +
-                    ", LogReadOperations: " + logReadOperations);
+                    ", ReadAuditLevel: " + readAuditLevel);
         }
     }
 
@@ -142,10 +154,26 @@ public class AuditLogger {
                                !enabledStr.trim().isEmpty() &&
                                "true".equalsIgnoreCase(enabledStr.trim());
 
-                // Log read operations (strict parsing)
+                // Read audit level (NONE, DOWNLOAD, METADATA, ALL)
+                String readLevelStr = propertyManager.readValue(PropertyKey.AUDIT_READ_LEVEL);
+                if (readLevelStr != null && !readLevelStr.trim().isEmpty()) {
+                    try {
+                        this.readAuditLevel = ReadAuditLevel.valueOf(readLevelStr.trim().toUpperCase());
+                    } catch (IllegalArgumentException e) {
+                        log.warn("Invalid audit read level: " + readLevelStr + ", using NONE");
+                        this.readAuditLevel = ReadAuditLevel.NONE;
+                    }
+                }
+
+                // Deprecated: Log read operations (for backward compatibility)
+                // If audit.log.read.operations=true and audit.read.level not set, use ALL
                 String logReadsStr = propertyManager.readValue(PropertyKey.AUDIT_LOG_READ_OPERATIONS);
                 this.logReadOperations = logReadsStr != null &&
                                          "true".equalsIgnoreCase(logReadsStr.trim());
+                if (this.logReadOperations && readLevelStr == null) {
+                    this.readAuditLevel = ReadAuditLevel.ALL;
+                    log.info("Deprecated audit.log.read.operations=true, migrated to audit.read.level=ALL");
+                }
 
                 // Detail level
                 String levelStr = propertyManager.readValue(PropertyKey.AUDIT_DETAIL_LEVEL);
@@ -222,9 +250,30 @@ public class AuditLogger {
         // Determine operation
         AuditOperation operation = AuditOperation.fromMethodName(methodName);
 
-        // Skip read operations if not configured to log them (volatile read)
-        if (operation.isReadOnly() && !logReadOperations) {
-            return jp.proceed();
+        // WRITE/DELETE/ACL operations are ALWAYS logged
+        // READ operations are filtered by readAuditLevel
+        if (operation.isReadOnly()) {
+            // Volatile read for fast path
+            ReadAuditLevel level = readAuditLevel;
+            switch (level) {
+                case NONE:
+                    return jp.proceed();  // Skip all read operations
+                case DOWNLOAD:
+                    // Only log content downloads (highest risk)
+                    if (!operation.isDownloadOperation()) {
+                        return jp.proceed();
+                    }
+                    break;
+                case METADATA:
+                    // Log downloads and metadata reads
+                    if (!operation.isDownloadOperation() && !operation.isMetadataOperation()) {
+                        return jp.proceed();
+                    }
+                    break;
+                case ALL:
+                    // Log all read operations (including navigation)
+                    break;
+            }
         }
 
         // Skip excluded operations/users (requires lock for Set iteration)
