@@ -144,9 +144,11 @@ public class AuditEventBuilder {
             return null;
         }
         // Mask password, token, key, secret patterns in error messages
-        // Pattern: key=value or key:value (case-insensitive)
+        // Pattern: key = value or key : value (case-insensitive, allows spaces around delimiter)
         String sanitized = message;
-        sanitized = sanitized.replaceAll("(?i)(password|passwd|pwd|token|apikey|api_key|secret|credential|auth)[=:][^\\s,;\"'\\]\\)]+", "$1=***");
+        sanitized = sanitized.replaceAll(
+            "(?i)(password|passwd|pwd|token|apikey|api_key|secret|credential|auth)\\s*[=:]\\s*[^\\s,;\"'\\]()]+",
+            "$1=***");
         // Also mask Bearer tokens in error messages
         sanitized = sanitized.replaceAll("(?i)Bearer\\s+[A-Za-z0-9\\-_\\.]+", "Bearer ***");
         // Truncate very long messages (might contain stack traces)
@@ -158,7 +160,8 @@ public class AuditEventBuilder {
 
     public AuditEventBuilder partial(String message) {
         event.setResult(AuditEvent.Result.PARTIAL.name());
-        event.setErrorMessage(message);
+        // Sanitize partial result messages to prevent sensitive data leakage
+        event.setErrorMessage(sanitizeErrorMessage(message));
         return this;
     }
 

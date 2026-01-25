@@ -309,4 +309,5 @@ public interface PropertyKey {
 	final String AUDIT_DETAIL_LEVEL = "audit.detail.level";
 	final String AUDIT_EXCLUDE_USERS = "audit.exclude.users";
 	final String AUDIT_EXCLUDE_OPERATIONS = "audit.exclude.operations";
+	final String AUDIT_LOG_FAILURES_AS_WARN = "audit.log.failures.as.warn";
 }

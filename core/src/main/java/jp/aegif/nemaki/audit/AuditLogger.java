@@ -153,6 +153,12 @@ public class AuditLogger {
                     }
                     this.excludedOperations = ops;
                 }
+
+                // Log failures as WARN level (default: true if not specified)
+                String logFailuresStr = propertyManager.readValue(PropertyKey.AUDIT_LOG_FAILURES_AS_WARN);
+                this.logFailuresAsWarn = logFailuresStr == null ||
+                                         logFailuresStr.trim().isEmpty() ||
+                                         "true".equalsIgnoreCase(logFailuresStr.trim());
             }
         } finally {
             configLock.writeLock().unlock();
@@ -519,12 +525,8 @@ public class AuditLogger {
     }
 
     public boolean isEnabled() {
-        configLock.readLock().lock();
-        try {
-            return enabled;
-        } finally {
-            configLock.readLock().unlock();
-        }
+        // Volatile read - no lock needed for simple boolean check
+        return enabled;
     }
 
     public void setDetailLevel(DetailLevel level) {
