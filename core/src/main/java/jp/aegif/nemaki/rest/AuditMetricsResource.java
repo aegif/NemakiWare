@@ -50,6 +50,7 @@ public class AuditMetricsResource extends ResourceBase {
     /**
      * Returns audit logging metrics.
      * Useful for monitoring dashboards, alerting, and performance analysis.
+     * This endpoint is restricted to admin users only for security reasons.
      *
      * @param httpRequest The HTTP request
      * @return JSON object containing audit metrics
@@ -58,6 +59,17 @@ public class AuditMetricsResource extends ResourceBase {
     @Produces(MediaType.APPLICATION_JSON)
     @SuppressWarnings("unchecked")
     public Response getMetrics(@Context HttpServletRequest httpRequest) {
+        JSONArray errMsg = new JSONArray();
+
+        // Check admin permission (audit metrics may contain sensitive information)
+        if (!checkAdmin(errMsg, httpRequest)) {
+            JSONObject error = new JSONObject();
+            error.put("status", "error");
+            error.put("message", "Only administrators can view audit metrics");
+            error.put("errors", errMsg);
+            return Response.status(403).entity(error.toJSONString()).build();
+        }
+
         try {
             Map<String, Long> metrics = AuditLogger.getMetrics();
 
@@ -87,6 +99,7 @@ public class AuditMetricsResource extends ResourceBase {
 
             // Add audit configuration status
             result.put("enabled", AuditLogger.isEnabled());
+            result.put("readAuditLevel", AuditLogger.getReadAuditLevel());
             result.put("timestamp", System.currentTimeMillis());
 
             return Response.ok(result.toJSONString()).build();
