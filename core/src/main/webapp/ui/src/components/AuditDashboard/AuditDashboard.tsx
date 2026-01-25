@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Card,
   Row,
@@ -24,6 +24,9 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { AuditMetricsService, AuditMetricsResponse } from '../../services/auditMetrics';
 
+/** Auto-refresh interval in milliseconds */
+const AUTO_REFRESH_INTERVAL_MS = 30000;
+
 export const AuditDashboard: React.FC = () => {
   const { t } = useTranslation();
   const { handleAuthError } = useAuth();
@@ -32,7 +35,11 @@ export const AuditDashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
 
-  const service = new AuditMetricsService(() => handleAuthError(null));
+  // Memoize the service to prevent recreation on every render
+  const service = useMemo(
+    () => new AuditMetricsService(() => handleAuthError(null)),
+    [handleAuthError]
+  );
 
   const fetchMetrics = useCallback(async () => {
     setLoading(true);
@@ -45,9 +52,16 @@ export const AuditDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [service, t]);
 
-  const handleReset = async () => {
+  // Use ref to store the latest fetchMetrics function for the interval
+  // This prevents unnecessary interval re-registration when fetchMetrics changes
+  const fetchMetricsRef = useRef(fetchMetrics);
+  useEffect(() => {
+    fetchMetricsRef.current = fetchMetrics;
+  }, [fetchMetrics]);
+
+  const handleReset = useCallback(async () => {
     setResetting(true);
     try {
       await service.resetMetrics();
@@ -58,26 +72,35 @@ export const AuditDashboard: React.FC = () => {
     } finally {
       setResetting(false);
     }
-  };
+  }, [service, t, fetchMetrics]);
 
+  // Initial fetch and auto-refresh setup
   useEffect(() => {
+    // Initial fetch
     fetchMetrics();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchMetrics, 30000);
+
+    // Auto-refresh using ref to avoid re-registration
+    const interval = setInterval(() => {
+      fetchMetricsRef.current();
+    }, AUTO_REFRESH_INTERVAL_MS);
+
     return () => clearInterval(interval);
-  }, [fetchMetrics]);
+    // Only run on mount and unmount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (loading && !metrics) {
     return <Spin size="large" style={{ display: 'block', textAlign: 'center', padding: '50px' }} />;
   }
 
   if (error) {
+    const isAuthError = error.includes('Authentication') || error.includes('401') || error.includes('403');
     return (
       <div style={{ padding: '24px' }}>
         <Alert
           message={t('auditDashboard.error', 'Error')}
           description={error}
-          type="error"
+          type={isAuthError ? 'warning' : 'error'}
           action={
             <Button size="small" onClick={fetchMetrics}>
               {t('auditDashboard.retry', 'Retry')}

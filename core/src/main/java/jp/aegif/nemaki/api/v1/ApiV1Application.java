@@ -49,7 +49,9 @@ import jakarta.ws.rs.ApplicationPath;
         @Tag(name = "query", description = "CMIS query operations"),
         @Tag(name = "users", description = "User management operations"),
         @Tag(name = "groups", description = "Group management operations"),
-        @Tag(name = "auth", description = "Authentication operations")
+        @Tag(name = "auth", description = "Authentication operations"),
+        @Tag(name = "audit", description = "Audit logging metrics and monitoring"),
+        @Tag(name = "search-engine", description = "Search engine (Solr) management operations")
     }
 )
 public class ApiV1Application extends ResourceConfig {

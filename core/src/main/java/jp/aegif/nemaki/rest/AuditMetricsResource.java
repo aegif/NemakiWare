@@ -106,9 +106,12 @@ public class AuditMetricsResource extends ResourceBase {
             return Response.ok(result.toJSONString()).build();
 
         } catch (Exception e) {
+            // Log the actual error for debugging, but return a generic message
+            java.util.logging.Logger.getLogger(AuditMetricsResource.class.getName())
+                .severe("Failed to get audit metrics: " + e.getMessage());
             JSONObject error = new JSONObject();
             error.put("status", "error");
-            error.put("message", "Failed to get audit metrics: " + e.getMessage());
+            error.put("message", "Failed to get audit metrics");
             return Response.status(500).entity(error.toJSONString()).build();
         }
     }
@@ -158,9 +161,12 @@ public class AuditMetricsResource extends ResourceBase {
             return Response.ok(result.toJSONString()).build();
 
         } catch (Exception e) {
+            // Log the actual error for debugging, but return a generic message
+            java.util.logging.Logger.getLogger(AuditMetricsResource.class.getName())
+                .severe("Failed to reset audit metrics: " + e.getMessage());
             JSONObject error = new JSONObject();
             error.put("status", "error");
-            error.put("message", "Failed to reset audit metrics: " + e.getMessage());
+            error.put("message", "Failed to reset audit metrics");
             return Response.status(500).entity(error.toJSONString()).build();
         }
     }
@@ -223,11 +229,17 @@ public class AuditMetricsResource extends ResourceBase {
                       .append(AuditLogger.isEnabled() ? 1 : 0)
                       .append("\n");
 
-            return Response.ok(prometheus.toString()).build();
+            return Response.ok(prometheus.toString())
+                    .type("text/plain; version=0.0.4; charset=utf-8")
+                    .build();
 
         } catch (Exception e) {
+            // Log the actual error for debugging, but return a generic message
+            java.util.logging.Logger.getLogger(AuditMetricsResource.class.getName())
+                .severe("Failed to get Prometheus metrics: " + e.getMessage());
             return Response.status(500)
-                .entity("# Error: " + e.getMessage() + "\n")
+                .type("text/plain")
+                .entity("# Error: Internal server error\n")
                 .build();
         }
     }
