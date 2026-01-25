@@ -59,12 +59,16 @@ public class AuditLogger {
     private final ObjectMapper objectMapper;
     private final ReadWriteLock configLock = new ReentrantReadWriteLock(true);
 
-    // Configuration
-    private boolean enabled = true;
-    private boolean logReadOperations = false;
+    // Configuration - use volatile for fast reads without lock
+    // Default to false for safety (requires explicit enablement in production)
+    private volatile boolean enabled = false;
+    private volatile boolean logReadOperations = false;
+    private volatile DetailLevel detailLevel = DetailLevel.STANDARD;
+    private volatile boolean logFailuresAsWarn = true;  // Log failures at WARN level
+
+    // These require lock for iteration, but are read less frequently
     private Set<String> excludedUsers = new HashSet<>();
     private Set<String> excludedOperations = new HashSet<>();
-    private DetailLevel detailLevel = DetailLevel.STANDARD;
 
     // ThreadLocal for storing request context (IP address, etc.)
     private static final ThreadLocal<RequestContext> requestContext = new ThreadLocal<>();
@@ -101,35 +105,53 @@ public class AuditLogger {
         configLock.writeLock().lock();
         try {
             if (propertyManager != null) {
-                // Enable/disable audit logging
+                // Enable/disable audit logging (strict parsing - only "true" enables)
+                // Default to false for safety - requires explicit enablement
                 String enabledStr = propertyManager.readValue(PropertyKey.AUDIT_ENABLED);
-                this.enabled = enabledStr == null || Boolean.parseBoolean(enabledStr);
+                this.enabled = enabledStr != null &&
+                               !enabledStr.trim().isEmpty() &&
+                               "true".equalsIgnoreCase(enabledStr.trim());
 
-                // Log read operations
+                // Log read operations (strict parsing)
                 String logReadsStr = propertyManager.readValue(PropertyKey.AUDIT_LOG_READ_OPERATIONS);
-                this.logReadOperations = logReadsStr != null && Boolean.parseBoolean(logReadsStr);
+                this.logReadOperations = logReadsStr != null &&
+                                         "true".equalsIgnoreCase(logReadsStr.trim());
 
                 // Detail level
                 String levelStr = propertyManager.readValue(PropertyKey.AUDIT_DETAIL_LEVEL);
-                if (levelStr != null) {
+                if (levelStr != null && !levelStr.trim().isEmpty()) {
                     try {
-                        this.detailLevel = DetailLevel.valueOf(levelStr.toUpperCase());
+                        this.detailLevel = DetailLevel.valueOf(levelStr.trim().toUpperCase());
                     } catch (IllegalArgumentException e) {
                         log.warn("Invalid audit detail level: " + levelStr + ", using STANDARD");
                         this.detailLevel = DetailLevel.STANDARD;
                     }
                 }
 
-                // Excluded users
+                // Excluded users (trim each entry)
                 String excludedUsersStr = propertyManager.readValue(PropertyKey.AUDIT_EXCLUDE_USERS);
-                if (excludedUsersStr != null && !excludedUsersStr.isEmpty()) {
-                    this.excludedUsers = new HashSet<>(Arrays.asList(excludedUsersStr.split(",")));
+                if (excludedUsersStr != null && !excludedUsersStr.trim().isEmpty()) {
+                    Set<String> users = new HashSet<>();
+                    for (String user : excludedUsersStr.split(",")) {
+                        String trimmed = user.trim();
+                        if (!trimmed.isEmpty()) {
+                            users.add(trimmed);
+                        }
+                    }
+                    this.excludedUsers = users;
                 }
 
-                // Excluded operations
+                // Excluded operations (trim each entry)
                 String excludedOpsStr = propertyManager.readValue(PropertyKey.AUDIT_EXCLUDE_OPERATIONS);
-                if (excludedOpsStr != null && !excludedOpsStr.isEmpty()) {
-                    this.excludedOperations = new HashSet<>(Arrays.asList(excludedOpsStr.split(",")));
+                if (excludedOpsStr != null && !excludedOpsStr.trim().isEmpty()) {
+                    Set<String> ops = new HashSet<>();
+                    for (String op : excludedOpsStr.split(",")) {
+                        String trimmed = op.trim();
+                        if (!trimmed.isEmpty()) {
+                            ops.add(trimmed);
+                        }
+                    }
+                    this.excludedOperations = ops;
                 }
             }
         } finally {
@@ -139,20 +161,18 @@ public class AuditLogger {
 
     /**
      * Spring AOP Around advice for auditing CMIS service methods.
+     * Uses volatile reads for fast path when audit is disabled.
      * @param jp The join point
      * @return The method result
      * @throws Throwable If the method throws an exception
      */
     public Object aroundMethod(ProceedingJoinPoint jp) throws Throwable {
-        configLock.readLock().lock();
-        try {
-            if (!enabled) {
-                return jp.proceed();
-            }
-            return aroundMethodBody(jp);
-        } finally {
-            configLock.readLock().unlock();
+        // Fast path: volatile read without lock for disabled check
+        if (!enabled) {
+            return jp.proceed();
         }
+        // Audit is enabled - proceed with full processing
+        return aroundMethodBody(jp);
     }
 
     private Object aroundMethodBody(ProceedingJoinPoint jp) throws Throwable {
@@ -166,25 +186,34 @@ public class AuditLogger {
         // Determine operation
         AuditOperation operation = AuditOperation.fromMethodName(methodName);
 
-        // Skip read operations if not configured to log them
+        // Skip read operations if not configured to log them (volatile read)
         if (operation.isReadOnly() && !logReadOperations) {
             return jp.proceed();
         }
 
-        // Skip excluded operations
-        if (excludedOperations.contains(operation.name()) ||
-                excludedOperations.contains(methodName)) {
-            return jp.proceed();
+        // Skip excluded operations/users (requires lock for Set iteration)
+        configLock.readLock().lock();
+        try {
+            if (excludedOperations.contains(operation.name()) ||
+                    excludedOperations.contains(methodName)) {
+                return jp.proceed();
+            }
+
+            // Extract context information
+            CallContext callContext = extractCallContext(args);
+            String userId = callContext != null ? callContext.getUsername() : null;
+
+            // Skip excluded users
+            if (userId != null && excludedUsers.contains(userId)) {
+                return jp.proceed();
+            }
+        } finally {
+            configLock.readLock().unlock();
         }
 
-        // Extract context information
+        // Re-extract context for building audit event (after lock release)
         CallContext callContext = extractCallContext(args);
         String userId = callContext != null ? callContext.getUsername() : null;
-
-        // Skip excluded users
-        if (userId != null && excludedUsers.contains(userId)) {
-            return jp.proceed();
-        }
 
         // Build audit event
         AuditEventBuilder builder = AuditEventBuilder.fromCallContext(callContext)
@@ -233,6 +262,7 @@ public class AuditLogger {
 
     /**
      * Logs an audit event to the dedicated audit log.
+     * Uses dynamic log level: WARN for failures, INFO for success.
      * @param event The audit event to log
      */
     public void logAuditEvent(AuditEvent event) {
@@ -242,12 +272,50 @@ public class AuditLogger {
 
         try {
             String json = objectMapper.writeValueAsString(event);
-            auditLogger.info(json);
+            // Dynamic log level: WARN for failures if configured, INFO otherwise
+            if (logFailuresAsWarn && AuditEvent.Result.FAILURE.name().equals(event.getResult())) {
+                auditLogger.warn(json);
+            } else {
+                auditLogger.info(json);
+            }
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize audit event: " + e.getMessage(), e);
-            // Fallback to toString
-            auditLogger.info(event.toString());
+            // Fallback: output minimal structured JSON with essential fields only
+            try {
+                String fallbackJson = String.format(
+                    "{\"eventId\":\"%s\",\"timestamp\":\"%s\",\"operation\":\"%s\",\"userId\":\"%s\",\"result\":\"%s\",\"_serializationError\":\"%s\"}",
+                    escapeJson(event.getEventId()),
+                    escapeJson(event.getTimestamp()),
+                    escapeJson(event.getOperation()),
+                    escapeJson(event.getUserId()),
+                    escapeJson(event.getResult()),
+                    escapeJson(e.getClass().getSimpleName())
+                );
+                auditLogger.warn(fallbackJson);
+            } catch (Exception e2) {
+                // Last resort: log critical error - audit log loss is serious
+                log.error("CRITICAL: Failed to log audit event even with fallback. EventId: " +
+                         event.getEventId() + ", Operation: " + event.getOperation(), e2);
+            }
+        } catch (Exception e) {
+            // Unexpected exception (logger issues, etc.)
+            log.error("Unexpected error logging audit event: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Escapes special characters for JSON string values.
+     * Simple implementation for fallback logging only.
+     */
+    private String escapeJson(String value) {
+        if (value == null) {
+            return "null";
+        }
+        return value.replace("\\", "\\\\")
+                    .replace("\"", "\\\"")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t");
     }
 
     /**
@@ -261,6 +329,7 @@ public class AuditLogger {
      */
     public void logOperation(AuditOperation operation, String repositoryId,
                              String userId, String objectId, boolean success, String errorMessage) {
+        // Fast path: volatile reads
         if (!enabled) {
             return;
         }
@@ -269,8 +338,14 @@ public class AuditLogger {
             return;
         }
 
-        if (excludedUsers.contains(userId)) {
-            return;
+        // Check excluded users with lock
+        configLock.readLock().lock();
+        try {
+            if (userId != null && excludedUsers.contains(userId)) {
+                return;
+            }
+        } finally {
+            configLock.readLock().unlock();
         }
 
         AuditEventBuilder builder = AuditEventBuilder.forOperation(operation)

@@ -173,31 +173,110 @@ public enum AuditOperation {
         }
 
         // Pattern-based mapping
+        // IMPORTANT: More specific patterns MUST come before more general patterns
+        // e.g., "getobjectbypath" before "getobject", "cancelcheckout" before "checkout"
         String lowerMethod = methodName.toLowerCase();
 
-        if (lowerMethod.contains("createdocument")) return CREATE_DOCUMENT;
-        if (lowerMethod.contains("createfolder")) return CREATE_FOLDER;
-        if (lowerMethod.contains("deleteobject")) return DELETE_OBJECT;
-        if (lowerMethod.contains("deletetree")) return DELETE_TREE;
-        if (lowerMethod.contains("updateproperties")) return UPDATE_PROPERTIES;
+        // Versioning operations (more specific first)
+        if (lowerMethod.contains("cancelcheckout")) return CANCEL_CHECK_OUT;
         if (lowerMethod.contains("checkout")) return CHECK_OUT;
         if (lowerMethod.contains("checkin")) return CHECK_IN;
-        if (lowerMethod.contains("cancelcheckout")) return CANCEL_CHECK_OUT;
+        if (lowerMethod.contains("getallversions")) return GET_ALL_VERSIONS;
+
+        // Content stream operations
         if (lowerMethod.contains("setcontentstream")) return SET_CONTENT_STREAM;
         if (lowerMethod.contains("deletecontentstream")) return DELETE_CONTENT_STREAM;
         if (lowerMethod.contains("appendcontentstream")) return APPEND_CONTENT_STREAM;
         if (lowerMethod.contains("getcontentstream")) return GET_CONTENT_STREAM;
-        if (lowerMethod.contains("applyacl")) return APPLY_ACL;
-        if (lowerMethod.contains("getacl")) return GET_ACL;
-        if (lowerMethod.contains("query")) return QUERY;
+
+        // Object operations (more specific first)
+        if (lowerMethod.contains("getobjectbypath")) return GET_OBJECT_BY_PATH;
+        if (lowerMethod.contains("getobjectparents")) return GET_OBJECT_PARENTS;
+        if (lowerMethod.contains("getobjectrelationships")) return GET_OBJECT_RELATIONSHIPS;
+        if (lowerMethod.contains("getobject")) return GET_OBJECT;
         if (lowerMethod.contains("moveobject")) return MOVE_OBJECT;
         if (lowerMethod.contains("copyobject")) return COPY_OBJECT;
+        if (lowerMethod.contains("deleteobject")) return DELETE_OBJECT;
+        if (lowerMethod.contains("updateproperties")) return UPDATE_PROPERTIES;
+        if (lowerMethod.contains("bulkupdateproperties")) return BULK_UPDATE_PROPERTIES;
+
+        // Folder operations (more specific first)
+        if (lowerMethod.contains("getfoldertree")) return GET_FOLDER_TREE;
+        if (lowerMethod.contains("getfolderparent")) return GET_FOLDER_PARENT;
+        if (lowerMethod.contains("createfolder")) return CREATE_FOLDER;
+        if (lowerMethod.contains("deletefolder")) return DELETE_FOLDER;
+        if (lowerMethod.contains("deletetree")) return DELETE_TREE;
         if (lowerMethod.contains("getchildren")) return GET_CHILDREN;
         if (lowerMethod.contains("getdescendants")) return GET_DESCENDANTS;
-        if (lowerMethod.contains("getobjectbypath")) return GET_OBJECT_BY_PATH;
-        if (lowerMethod.contains("getobject")) return GET_OBJECT;
+        if (lowerMethod.contains("getcheckedoutdocs")) return GET_CHECKED_OUT_DOCS;
+
+        // Document operations
+        if (lowerMethod.contains("createdocument")) return CREATE_DOCUMENT;
+        if (lowerMethod.contains("deletedocument")) return DELETE_DOCUMENT;
+
+        // ACL operations
+        if (lowerMethod.contains("applyacl")) return APPLY_ACL;
+        if (lowerMethod.contains("getacl")) return GET_ACL;
+
+        // Query operations
+        if (lowerMethod.contains("query")) return QUERY;
+
+        // Type operations (more specific first)
+        if (lowerMethod.contains("gettypechildren")) return GET_TYPE_CHILDREN;
+        if (lowerMethod.contains("gettypedescendants")) return GET_TYPE_DESCENDANTS;
+        if (lowerMethod.contains("gettypedefinition")) return GET_TYPE_DEFINITION;
+        if (lowerMethod.contains("createtype")) return CREATE_TYPE;
+        if (lowerMethod.contains("updatetype")) return UPDATE_TYPE;
+        if (lowerMethod.contains("deletetype")) return DELETE_TYPE;
+
+        // Policy operations
+        if (lowerMethod.contains("applypolicy")) return APPLY_POLICY;
+        if (lowerMethod.contains("removepolicy")) return REMOVE_POLICY;
+        if (lowerMethod.contains("getappliedpolicies")) return GET_APPLIED_POLICIES;
+
+        // Relationship operations
+        if (lowerMethod.contains("createrelationship")) return CREATE_RELATIONSHIP;
+        if (lowerMethod.contains("deleterelationship")) return DELETE_RELATIONSHIP;
+
+        // Rendition operations
+        if (lowerMethod.contains("getrenditions")) return GET_RENDITIONS;
+
+        // Discovery operations
+        if (lowerMethod.contains("getcontentchanges")) return GET_CONTENT_CHANGES;
+
+        // Secondary type operations
+        if (lowerMethod.contains("addsecondarytype")) return ADD_SECONDARY_TYPE;
+        if (lowerMethod.contains("removesecondarytype")) return REMOVE_SECONDARY_TYPE;
+
+        // Repository operations
+        if (lowerMethod.contains("getrepositoryinfo")) return GET_REPOSITORY_INFO;
+
+        // Authentication operations
         if (lowerMethod.contains("login")) return LOGIN;
         if (lowerMethod.contains("logout")) return LOGOUT;
+
+        // User operations (more specific first)
+        if (lowerMethod.contains("changepassword")) return CHANGE_PASSWORD;
+        if (lowerMethod.contains("createuser")) return CREATE_USER;
+        if (lowerMethod.contains("updateuser")) return UPDATE_USER;
+        if (lowerMethod.contains("deleteuser")) return DELETE_USER;
+        if (lowerMethod.contains("getuser")) return GET_USER;
+
+        // Group operations (more specific first)
+        if (lowerMethod.contains("addgroupmember")) return ADD_GROUP_MEMBER;
+        if (lowerMethod.contains("removegroupmember")) return REMOVE_GROUP_MEMBER;
+        if (lowerMethod.contains("creategroup")) return CREATE_GROUP;
+        if (lowerMethod.contains("updategroup")) return UPDATE_GROUP;
+        if (lowerMethod.contains("deletegroup")) return DELETE_GROUP;
+        if (lowerMethod.contains("getgroup")) return GET_GROUP;
+
+        // Archive operations
+        if (lowerMethod.contains("archiverestore")) return ARCHIVE_RESTORE;
+        if (lowerMethod.contains("archivedelete")) return ARCHIVE_DELETE;
+
+        // Solr operations
+        if (lowerMethod.contains("reindex")) return SOLR_REINDEX;
+        if (lowerMethod.contains("solrclear")) return SOLR_CLEAR;
 
         return UNKNOWN;
     }

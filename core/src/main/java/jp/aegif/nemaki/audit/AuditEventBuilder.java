@@ -119,16 +119,41 @@ public class AuditEventBuilder {
 
     public AuditEventBuilder failure(String errorMessage) {
         event.setResult(AuditEvent.Result.FAILURE.name());
-        event.setErrorMessage(errorMessage);
+        // Sanitize error message to prevent sensitive data leakage
+        event.setErrorMessage(sanitizeErrorMessage(errorMessage));
         return this;
     }
 
     public AuditEventBuilder failure(Throwable throwable) {
         event.setResult(AuditEvent.Result.FAILURE.name());
         if (throwable != null) {
-            event.setErrorMessage(throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+            // Sanitize error message to prevent sensitive data leakage
+            String sanitizedMessage = sanitizeErrorMessage(throwable.getMessage());
+            event.setErrorMessage(throwable.getClass().getSimpleName() + ": " + sanitizedMessage);
         }
         return this;
+    }
+
+    /**
+     * Sanitizes error messages to mask potentially sensitive information.
+     * @param message The original error message
+     * @return The sanitized message with sensitive data masked
+     */
+    private String sanitizeErrorMessage(String message) {
+        if (message == null) {
+            return null;
+        }
+        // Mask password, token, key, secret patterns in error messages
+        // Pattern: key=value or key:value (case-insensitive)
+        String sanitized = message;
+        sanitized = sanitized.replaceAll("(?i)(password|passwd|pwd|token|apikey|api_key|secret|credential|auth)[=:][^\\s,;\"'\\]\\)]+", "$1=***");
+        // Also mask Bearer tokens in error messages
+        sanitized = sanitized.replaceAll("(?i)Bearer\\s+[A-Za-z0-9\\-_\\.]+", "Bearer ***");
+        // Truncate very long messages (might contain stack traces)
+        if (sanitized.length() > 500) {
+            sanitized = sanitized.substring(0, 500) + "...[truncated]";
+        }
+        return sanitized;
     }
 
     public AuditEventBuilder partial(String message) {
@@ -208,9 +233,29 @@ public class AuditEventBuilder {
      * @return This builder
      */
     public AuditEventBuilder query(String statement, Integer resultCount) {
-        detail("queryStatement", truncateForLog(statement, 500));
+        // Sanitize query statement to mask potential sensitive values in WHERE clauses
+        String sanitizedStatement = sanitizeQueryStatement(statement);
+        detail("queryStatement", truncateForLog(sanitizedStatement, 500));
         detail("resultCount", resultCount);
         return this;
+    }
+
+    /**
+     * Sanitizes CMIS query statements to mask potentially sensitive values.
+     * @param statement The original query statement
+     * @return The sanitized statement with sensitive values masked
+     */
+    private String sanitizeQueryStatement(String statement) {
+        if (statement == null) {
+            return null;
+        }
+        // Mask string literals in WHERE clauses that might contain sensitive data
+        // Pattern: 'value' or "value" - mask values that look like passwords, tokens, etc.
+        String sanitized = statement;
+        // Mask patterns that look like password/token comparisons
+        sanitized = sanitized.replaceAll("(?i)(password|token|secret|credential)\\s*=\\s*'[^']*'", "$1='***'");
+        sanitized = sanitized.replaceAll("(?i)(password|token|secret|credential)\\s*=\\s*\"[^\"]*\"", "$1=\"***\"");
+        return sanitized;
     }
 
     /**
