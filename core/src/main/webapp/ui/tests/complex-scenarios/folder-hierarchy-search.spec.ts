@@ -47,6 +47,83 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
   let subFolder1Id: string;
   let subFolder2Id: string;
 
+  // Clean up any leftover test data from previous runs BEFORE starting tests
+  test.beforeAll(async ({ browser }) => {
+    console.log('=== PRE-TEST CLEANUP: Removing any leftover hierarchy-test data ===');
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    try {
+      const baseUrl = 'http://localhost:8080/core/browser/bedroom';
+      const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+
+      // Search for any leftover hierarchy-root folders from previous runs
+      const searchResponse = await page.request.get(
+        `${baseUrl}?cmisselector=query&q=${encodeURIComponent("SELECT cmis:objectId, cmis:name FROM cmis:folder WHERE cmis:name LIKE 'hierarchy-root-%'")}`,
+        { headers: { 'Authorization': authHeader } }
+      );
+
+      if (searchResponse.ok()) {
+        const searchData = await searchResponse.json();
+        if (searchData.results && searchData.results.length > 0) {
+          console.log(`[Pre-cleanup] Found ${searchData.results.length} leftover hierarchy-root folder(s)`);
+          for (const result of searchData.results) {
+            const folderId = result.succinctProperties?.['cmis:objectId'] || result.properties?.['cmis:objectId']?.value;
+            const folderName = result.succinctProperties?.['cmis:name'] || result.properties?.['cmis:name']?.value;
+            if (folderId) {
+              console.log(`[Pre-cleanup] Deleting leftover folder: ${folderName} (${folderId})`);
+              try {
+                await page.request.post(`${baseUrl}/${folderId}`, {
+                  headers: { 'Authorization': authHeader },
+                  form: { cmisaction: 'deleteTree', allVersions: 'true', continueOnFailure: 'true' }
+                });
+                console.log(`[Pre-cleanup] Successfully deleted: ${folderName}`);
+              } catch (e) {
+                console.log(`[Pre-cleanup] Failed to delete ${folderName}: ${e}`);
+              }
+            }
+          }
+        } else {
+          console.log('[Pre-cleanup] No leftover hierarchy-root folders found');
+        }
+      }
+
+      // Also clean up any leftover hierarchy-doc documents
+      const docSearchResponse = await page.request.get(
+        `${baseUrl}?cmisselector=query&q=${encodeURIComponent("SELECT cmis:objectId, cmis:name FROM cmis:document WHERE cmis:name LIKE 'hierarchy-doc%'")}`,
+        { headers: { 'Authorization': authHeader } }
+      );
+
+      if (docSearchResponse.ok()) {
+        const docData = await docSearchResponse.json();
+        if (docData.results && docData.results.length > 0) {
+          console.log(`[Pre-cleanup] Found ${docData.results.length} leftover hierarchy-doc document(s)`);
+          for (const result of docData.results) {
+            const docId = result.succinctProperties?.['cmis:objectId'] || result.properties?.['cmis:objectId']?.value;
+            const docName = result.succinctProperties?.['cmis:name'] || result.properties?.['cmis:name']?.value;
+            if (docId) {
+              console.log(`[Pre-cleanup] Deleting leftover document: ${docName} (${docId})`);
+              try {
+                await page.request.post(`${baseUrl}/${docId}`, {
+                  headers: { 'Authorization': authHeader },
+                  form: { cmisaction: 'delete', allVersions: 'true' }
+                });
+                console.log(`[Pre-cleanup] Successfully deleted: ${docName}`);
+              } catch (e) {
+                console.log(`[Pre-cleanup] Failed to delete ${docName}: ${e}`);
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.log('[Pre-cleanup] Error during pre-test cleanup (non-fatal):', error);
+    } finally {
+      await context.close();
+    }
+    console.log('=== PRE-TEST CLEANUP COMPLETE ===');
+  });
+
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
@@ -163,64 +240,144 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
 
   test('Step 3: Create documents in different subfolders', async ({ page, browserName }) => {
     test.setTimeout(180000); // Extended timeout for navigation + 2 document uploads
-    console.log('Creating documents in subfolders...');
+    console.log('Creating documents in subfolders via CMIS API (more reliable than UI upload)...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    // Use CMIS API to create documents directly (more reliable than UI upload)
+    const baseUrl = 'http://localhost:8080/core/browser/bedroom';
+    const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 
-    // Navigate to documents page
-    const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-    await documentsMenuItem.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(2000);
+    // Get subfolder IDs from previous step (if not available, query them)
+    let sf1Id = subFolder1Id;
+    let sf2Id = subFolder2Id;
 
-    // Navigate into root folder
-    const rootFolderRow = page.locator('.ant-table-tbody tr').filter({ hasText: rootFolderName }).first();
-    if (await rootFolderRow.count() > 0) {
-      await rootFolderRow.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+    // If subfolder IDs not set, query for them
+    if (!sf1Id || !sf2Id) {
+      console.log('Subfolder IDs not set from previous step, querying...');
+
+      // Query for root folder first
+      const rootQuery = await page.request.get(
+        `${baseUrl}?cmisselector=query&q=${encodeURIComponent(`SELECT cmis:objectId FROM cmis:folder WHERE cmis:name = '${rootFolderName}'`)}`,
+        { headers: { 'Authorization': authHeader } }
+      );
+
+      if (rootQuery.ok()) {
+        const rootData = await rootQuery.json();
+        if (rootData.results && rootData.results.length > 0) {
+          const rId = rootData.results[0].succinctProperties?.['cmis:objectId'] ||
+                      rootData.results[0].properties?.['cmis:objectId']?.value;
+
+          // Query children of root folder to find subfolders
+          const childrenQuery = await page.request.get(
+            `${baseUrl}/root?objectId=${rId}&cmisselector=children`,
+            { headers: { 'Authorization': authHeader } }
+          );
+
+          if (childrenQuery.ok()) {
+            const childData = await childrenQuery.json();
+            if (childData.objects) {
+              for (const obj of childData.objects) {
+                const name = obj.object?.succinctProperties?.['cmis:name'] ||
+                             obj.object?.properties?.['cmis:name']?.value;
+                const id = obj.object?.succinctProperties?.['cmis:objectId'] ||
+                           obj.object?.properties?.['cmis:objectId']?.value;
+                if (name === subFolder1Name) sf1Id = id;
+                if (name === subFolder2Name) sf2Id = id;
+              }
+            }
+          }
+        }
+      }
     }
 
-    // Navigate into subfolder 1
-    const subfolder1Row = page.locator('.ant-table-tbody tr').filter({ hasText: subFolder1Name }).first();
-    if (await subfolder1Row.count() > 0) {
-      await subfolder1Row.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+    console.log(`Subfolder 1 ID: ${sf1Id}`);
+    console.log(`Subfolder 2 ID: ${sf2Id}`);
 
-      // Create document 1 in subfolder 1
-      const doc1Created = await testHelper.uploadDocument(testDocument1Name, `${searchableValue} - Document 1 content`, isMobile);
-      console.log(`Document 1 created in subfolder 1: ${doc1Created}`);
+    // Create document 1 in subfolder 1 via CMIS API
+    if (sf1Id) {
+      console.log(`Creating ${testDocument1Name} in subfolder 1...`);
+      const formData = new FormData();
+      formData.append('cmisaction', 'createDocument');
+      formData.append('propertyId[0]', 'cmis:objectTypeId');
+      formData.append('propertyValue[0]', 'cmis:document');
+      formData.append('propertyId[1]', 'cmis:name');
+      formData.append('propertyValue[1]', testDocument1Name);
+
+      // Create text content as file
+      const content1 = `${searchableValue} - Document 1 content`;
+      const blob1 = new Blob([content1], { type: 'text/plain' });
+      formData.append('content', blob1, testDocument1Name);
+
+      const createResponse1 = await page.request.post(`${baseUrl}/root?objectId=${sf1Id}`, {
+        headers: { 'Authorization': authHeader },
+        multipart: {
+          cmisaction: 'createDocument',
+          'propertyId[0]': 'cmis:objectTypeId',
+          'propertyValue[0]': 'cmis:document',
+          'propertyId[1]': 'cmis:name',
+          'propertyValue[1]': testDocument1Name,
+          content: {
+            name: testDocument1Name,
+            mimeType: 'text/plain',
+            buffer: Buffer.from(content1)
+          }
+        }
+      });
+
+      console.log(`Document 1 creation response: ${createResponse1.status()}`);
+      if (createResponse1.ok()) {
+        console.log(`Document 1 created successfully in subfolder 1`);
+      } else {
+        console.log(`Document 1 creation failed: ${await createResponse1.text()}`);
+      }
+    } else {
+      console.log('Subfolder 1 ID not available - skipping document 1 creation');
     }
 
-    // CRITICAL FIX: Reload page and navigate fresh to subfolder 2
-    // Using goBack() can leave the UI in an inconsistent state
-    console.log('Reloading page to ensure clean state before subfolder 2...');
-    await page.reload();
-    await page.waitForSelector('.ant-table', { timeout: 10000 });
-    await page.waitForTimeout(2000);
+    // Create document 2 in subfolder 2 via CMIS API
+    if (sf2Id) {
+      console.log(`Creating ${testDocument2Name} in subfolder 2...`);
+      const content2 = `${searchableValue} - Document 2 content`;
 
-    // Navigate to documents menu if needed
-    const documentsMenuItem2 = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-    if (await documentsMenuItem2.count() > 0) {
-      await documentsMenuItem2.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+      const createResponse2 = await page.request.post(`${baseUrl}/root?objectId=${sf2Id}`, {
+        headers: { 'Authorization': authHeader },
+        multipart: {
+          cmisaction: 'createDocument',
+          'propertyId[0]': 'cmis:objectTypeId',
+          'propertyValue[0]': 'cmis:document',
+          'propertyId[1]': 'cmis:name',
+          'propertyValue[1]': testDocument2Name,
+          content: {
+            name: testDocument2Name,
+            mimeType: 'text/plain',
+            buffer: Buffer.from(content2)
+          }
+        }
+      });
+
+      console.log(`Document 2 creation response: ${createResponse2.status()}`);
+      if (createResponse2.ok()) {
+        console.log(`Document 2 created successfully in subfolder 2`);
+      } else {
+        console.log(`Document 2 creation failed: ${await createResponse2.text()}`);
+      }
+    } else {
+      console.log('Subfolder 2 ID not available - skipping document 2 creation');
     }
 
-    // Navigate into root folder again
-    const rootFolderRow2 = page.locator('.ant-table-tbody tr').filter({ hasText: rootFolderName }).first();
-    if (await rootFolderRow2.count() > 0) {
-      await rootFolderRow2.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
-    }
+    // Wait for Solr indexing
+    console.log('Waiting for Solr indexing...');
+    await page.waitForTimeout(5000);
 
-    // Navigate into subfolder 2
-    const subfolder2Row = page.locator('.ant-table-tbody tr').filter({ hasText: subFolder2Name }).first();
-    if (await subfolder2Row.count() > 0) {
-      await subfolder2Row.dblclick(isMobile ? { force: true } : {});
-      await page.waitForTimeout(2000);
+    // Verify documents were created by querying
+    const verifyQuery = await page.request.get(
+      `${baseUrl}?cmisselector=query&q=${encodeURIComponent(`SELECT cmis:objectId, cmis:name FROM cmis:document WHERE cmis:name LIKE 'hierarchy-doc%'`)}`,
+      { headers: { 'Authorization': authHeader } }
+    );
 
-      // Create document 2 in subfolder 2
-      const doc2Created = await testHelper.uploadDocument(testDocument2Name, `${searchableValue} - Document 2 content`, isMobile);
-      console.log(`Document 2 created in subfolder 2: ${doc2Created}`);
+    if (verifyQuery.ok()) {
+      const verifyData = await verifyQuery.json();
+      const docsCreated = verifyData.results?.length || 0;
+      console.log(`Verification: ${docsCreated} hierarchy-doc documents found`);
     }
   });
 

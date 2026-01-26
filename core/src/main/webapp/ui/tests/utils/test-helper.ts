@@ -1,4 +1,8 @@
 import { Page, expect } from '@playwright/test';
+import { ApiHelper, generateTestId, generateTestFolderName, generateTestDocumentName } from './api-helper';
+
+// Re-export API helper utilities for convenience
+export { ApiHelper, generateTestId, generateTestFolderName, generateTestDocumentName };
 
 /**
  * General Test Helper Utilities for NemakiWare Playwright E2E Tests

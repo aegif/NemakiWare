@@ -45,6 +45,83 @@ test.describe('Archive and Restore Consistency', () => {
   let testFolderId: string;
   let testDocumentId: string;
 
+  // Clean up any leftover test data from previous runs BEFORE starting tests
+  test.beforeAll(async ({ browser }) => {
+    console.log('=== PRE-TEST CLEANUP: Removing any leftover archive-test data ===');
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    try {
+      const baseUrl = 'http://localhost:8080/core/browser/bedroom';
+      const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+
+      // Search for any leftover archive-test folders from previous runs
+      const searchResponse = await page.request.get(
+        `${baseUrl}?cmisselector=query&q=${encodeURIComponent("SELECT cmis:objectId, cmis:name FROM cmis:folder WHERE cmis:name LIKE 'archive-test-folder-%'")}`,
+        { headers: { 'Authorization': authHeader } }
+      );
+
+      if (searchResponse.ok()) {
+        const searchData = await searchResponse.json();
+        if (searchData.results && searchData.results.length > 0) {
+          console.log(`[Pre-cleanup] Found ${searchData.results.length} leftover archive-test folder(s)`);
+          for (const result of searchData.results) {
+            const folderId = result.succinctProperties?.['cmis:objectId'] || result.properties?.['cmis:objectId']?.value;
+            const folderName = result.succinctProperties?.['cmis:name'] || result.properties?.['cmis:name']?.value;
+            if (folderId) {
+              console.log(`[Pre-cleanup] Deleting leftover folder: ${folderName} (${folderId})`);
+              try {
+                await page.request.post(`${baseUrl}/${folderId}`, {
+                  headers: { 'Authorization': authHeader },
+                  form: { cmisaction: 'deleteTree', allVersions: 'true', continueOnFailure: 'true' }
+                });
+                console.log(`[Pre-cleanup] Successfully deleted: ${folderName}`);
+              } catch (e) {
+                console.log(`[Pre-cleanup] Failed to delete ${folderName}: ${e}`);
+              }
+            }
+          }
+        } else {
+          console.log('[Pre-cleanup] No leftover archive-test folders found');
+        }
+      }
+
+      // Also clean up any archived items in trash
+      const archiveSearchResponse = await page.request.get(
+        `${baseUrl}?cmisselector=query&q=${encodeURIComponent("SELECT cmis:objectId, cmis:name FROM cmis:document WHERE cmis:name LIKE 'archive-test-doc-%'")}`,
+        { headers: { 'Authorization': authHeader } }
+      );
+
+      if (archiveSearchResponse.ok()) {
+        const archiveData = await archiveSearchResponse.json();
+        if (archiveData.results && archiveData.results.length > 0) {
+          console.log(`[Pre-cleanup] Found ${archiveData.results.length} leftover archive-test document(s)`);
+          for (const result of archiveData.results) {
+            const docId = result.succinctProperties?.['cmis:objectId'] || result.properties?.['cmis:objectId']?.value;
+            const docName = result.succinctProperties?.['cmis:name'] || result.properties?.['cmis:name']?.value;
+            if (docId) {
+              console.log(`[Pre-cleanup] Deleting leftover document: ${docName} (${docId})`);
+              try {
+                await page.request.post(`${baseUrl}/${docId}`, {
+                  headers: { 'Authorization': authHeader },
+                  form: { cmisaction: 'delete', allVersions: 'true' }
+                });
+                console.log(`[Pre-cleanup] Successfully deleted: ${docName}`);
+              } catch (e) {
+                console.log(`[Pre-cleanup] Failed to delete ${docName}: ${e}`);
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.log('[Pre-cleanup] Error during pre-test cleanup (non-fatal):', error);
+    } finally {
+      await context.close();
+    }
+    console.log('=== PRE-TEST CLEANUP COMPLETE ===');
+  });
+
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
@@ -132,38 +209,54 @@ test.describe('Archive and Restore Consistency', () => {
     // Navigate into test folder using helper (single click on folder name)
     await testHelper.navigateIntoFolder(testFolderName, isMobile);
 
-    // Find the document
+    // Find the document row
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
       test.skip('Test document not found');
       return;
     }
 
-    // Select the document
-    await documentRow.click(isMobile ? { force: true } : {});
-    await page.waitForTimeout(500);
+    // Find the delete button (icon-only button with DeleteOutlined icon) within the document row
+    // The delete button has .anticon-delete class from Ant Design's DeleteOutlined component
+    const deleteButton = documentRow.locator('button').filter({ has: page.locator('.anticon-delete') }).first();
+    if (await deleteButton.count() > 0) {
+      console.log('Found delete button in document row');
+      await deleteButton.click(isMobile ? { force: true } : {});
+      await page.waitForTimeout(1000);
 
-    // Look for archive/delete button
-    const archiveButton = page.locator('button').filter({ hasText: /アーカイブ|Archive|削除|Delete|ゴミ箱/ }).first();
-    if (await archiveButton.count() > 0) {
-      await archiveButton.click(isMobile ? { force: true } : {});
-      await page.waitForTimeout(500);
-
-      // Confirm if dialog appears
-      const confirmButton = page.locator('.ant-modal button, .ant-popconfirm button').filter({ hasText: /OK|確認|削除|はい/ }).first();
+      // Wait for and click confirmation in modal or popconfirm
+      // NemakiWare uses Modal with OK/Cancel buttons for delete confirmation
+      const confirmButton = page.locator('.ant-modal-footer button.ant-btn-primary, .ant-popconfirm button.ant-btn-primary').first();
       if (await confirmButton.count() > 0) {
-        await confirmButton.click();
+        await confirmButton.click(isMobile ? { force: true } : {});
         await page.waitForTimeout(2000);
-        console.log('Document archived');
+        console.log('Document deleted (archived)');
+      } else {
+        console.log('Confirmation button not found - checking for popconfirm OK button');
+        const okButton = page.locator('.ant-popover button').filter({ hasText: /OK|はい|確認/ }).first();
+        if (await okButton.count() > 0) {
+          await okButton.click(isMobile ? { force: true } : {});
+          await page.waitForTimeout(2000);
+          console.log('Document deleted via popconfirm');
+        }
       }
     } else {
-      console.log('Archive button not found');
+      console.log('Delete button not found in document row - trying alternative selectors');
+      // Fallback: Try to find any delete button on the page
+      const anyDeleteButton = page.locator('button .anticon-delete').first();
+      if (await anyDeleteButton.count() > 0) {
+        console.log('Found delete icon, clicking parent button');
+        await anyDeleteButton.locator('..').click(isMobile ? { force: true } : {});
+        await page.waitForTimeout(2000);
+      } else {
+        console.log('No delete button found anywhere on page');
+      }
     }
 
     // Verify document is no longer visible in folder
     await page.waitForTimeout(1000);
     const documentStillVisible = await page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).count() > 0;
-    console.log(`Document still visible after archive: ${documentStillVisible}`);
+    console.log(`Document still visible after delete: ${documentStillVisible}`);
     expect(documentStillVisible).toBe(false);
   });
 

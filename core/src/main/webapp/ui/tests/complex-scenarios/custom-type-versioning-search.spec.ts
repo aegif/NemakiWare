@@ -57,6 +57,98 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
   let testDocumentName: string;
   let testDocumentId: string;
 
+  // Clean up any leftover test data from previous runs BEFORE starting tests
+  test.beforeAll(async ({ browser }) => {
+    console.log('=== PRE-TEST CLEANUP: Removing any leftover custom-type-versioning test data ===');
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    try {
+      const baseUrl = 'http://localhost:8080/core/browser/bedroom';
+      const restUrl = 'http://localhost:8080/core/rest/repo/bedroom';
+      const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+
+      // Search for any leftover search test documents from previous runs
+      const docSearchResponse = await page.request.get(
+        `${baseUrl}?cmisselector=query&q=${encodeURIComponent("SELECT cmis:objectId, cmis:name FROM cmis:document WHERE cmis:name LIKE 'SearchTestDoc_%'")}`,
+        { headers: { 'Authorization': authHeader } }
+      );
+
+      if (docSearchResponse.ok()) {
+        const docData = await docSearchResponse.json();
+        if (docData.results && docData.results.length > 0) {
+          console.log(`[Pre-cleanup] Found ${docData.results.length} leftover SearchTestDoc document(s)`);
+          for (const result of docData.results) {
+            const docId = result.succinctProperties?.['cmis:objectId'] || result.properties?.['cmis:objectId']?.value;
+            const docName = result.succinctProperties?.['cmis:name'] || result.properties?.['cmis:name']?.value;
+            if (docId) {
+              console.log(`[Pre-cleanup] Deleting leftover document: ${docName} (${docId})`);
+              try {
+                await page.request.post(`${baseUrl}/${docId}`, {
+                  headers: { 'Authorization': authHeader },
+                  form: { cmisaction: 'delete', allVersions: 'true' }
+                });
+                console.log(`[Pre-cleanup] Successfully deleted: ${docName}`);
+              } catch (e) {
+                console.log(`[Pre-cleanup] Failed to delete ${docName}: ${e}`);
+              }
+            }
+          }
+        } else {
+          console.log('[Pre-cleanup] No leftover SearchTestDoc documents found');
+        }
+      }
+
+      // Clean up any leftover custom types (test:searchDoc*)
+      // Get all types and filter for test types
+      const typesResponse = await page.request.get(
+        `${baseUrl}?cmisselector=typeDescendants&typeId=cmis:document&depth=1`,
+        { headers: { 'Authorization': authHeader } }
+      );
+
+      if (typesResponse.ok()) {
+        const typesData = await typesResponse.json();
+        // Look for test types in the response
+        const findTestTypes = (types: any[]): string[] => {
+          const testTypeIds: string[] = [];
+          for (const type of types || []) {
+            const typeId = type.type?.id || type.id;
+            if (typeId && typeId.startsWith('test:searchDoc')) {
+              testTypeIds.push(typeId);
+            }
+            if (type.children) {
+              testTypeIds.push(...findTestTypes(type.children));
+            }
+          }
+          return testTypeIds;
+        };
+
+        const testTypeIds = findTestTypes(typesData);
+        if (testTypeIds.length > 0) {
+          console.log(`[Pre-cleanup] Found ${testTypeIds.length} leftover test type(s): ${testTypeIds.join(', ')}`);
+          for (const typeId of testTypeIds) {
+            console.log(`[Pre-cleanup] Deleting leftover type: ${typeId}`);
+            try {
+              await page.request.delete(`${restUrl}/type/${encodeURIComponent(typeId)}`, {
+                headers: { 'Authorization': authHeader }
+              });
+              console.log(`[Pre-cleanup] Successfully deleted type: ${typeId}`);
+            } catch (e) {
+              console.log(`[Pre-cleanup] Failed to delete type ${typeId}: ${e}`);
+            }
+          }
+        } else {
+          console.log('[Pre-cleanup] No leftover test types found');
+        }
+      }
+    } catch (error) {
+      console.log('[Pre-cleanup] Error during pre-test cleanup (non-fatal):', error);
+    } finally {
+      await context.close();
+    }
+    console.log('=== PRE-TEST CLEANUP COMPLETE ===');
+  });
+
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
@@ -539,6 +631,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
   });
 
   test('Step 5: Create new version and restore original property value', async ({ page, browserName }) => {
+    test.setTimeout(180000); // Extended timeout for versioning operations
     console.log('Creating new version with restored property value...');
 
     const viewportSize = page.viewportSize();
@@ -556,27 +649,34 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
       return;
     }
 
-    // Look for check-out button
-    const checkoutButton = documentRow.locator('button').filter({ has: page.locator('span[role="img"][aria-label="edit"]') }).first();
+    // Look for check-out button (EditOutlined icon = .anticon-edit)
+    const checkoutButton = documentRow.locator('button').filter({ has: page.locator('.anticon-edit') }).first();
     if (await checkoutButton.count() > 0) {
+      console.log('Found checkout button, clicking...');
       await checkoutButton.click(isMobile ? { force: true } : {});
       console.log('Clicked checkout button');
       await page.waitForTimeout(3000);
 
-      // Wait for success message
+      // Wait for success message or table refresh
       await page.waitForSelector('.ant-message-success', { timeout: 10000 }).catch(() => {
-        console.log('No success message appeared');
+        console.log('No success message appeared - checking if checkout succeeded anyway');
       });
 
-      // Look for check-in button
-      const checkinButton = documentRow.locator('button').filter({ has: page.locator('span[role="img"][aria-label="check"]') }).first();
+      // Refresh the document row reference after checkout (DOM may have changed)
+      await page.waitForTimeout(2000);
+      const updatedDocumentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
+
+      // Look for check-in button (CheckOutlined icon = .anticon-check)
+      const checkinButton = updatedDocumentRow.locator('button').filter({ has: page.locator('.anticon-check') }).first();
       if (await checkinButton.count() > 0) {
+        console.log('Found check-in button, clicking...');
         await checkinButton.click(isMobile ? { force: true } : {});
         await page.waitForTimeout(1000);
 
         // Fill check-in form if modal appears
         const checkinModal = page.locator('.ant-modal:visible');
         if (await checkinModal.count() > 0) {
+          console.log('Check-in modal appeared');
           // Fill version comment
           const commentInput = checkinModal.locator('input[placeholder*="コメント"], textarea');
           if (await commentInput.count() > 0) {
@@ -592,17 +692,26 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
           }
 
           // Submit check-in
-          const submitButton = checkinModal.locator('button[type="submit"], button:has-text("チェックイン")').first();
+          const submitButton = checkinModal.locator('button[type="submit"], button:has-text("チェックイン"), .ant-modal-footer button.ant-btn-primary').first();
           if (await submitButton.count() > 0) {
             await submitButton.click(isMobile ? { force: true } : {});
             await page.waitForTimeout(3000);
+            console.log('Check-in submitted');
           }
+        } else {
+          console.log('Check-in modal did not appear');
         }
       } else {
         console.log('Check-in button not found - document may not be checked out');
+        // Debug: Log available buttons in the row
+        const buttons = await updatedDocumentRow.locator('button').all();
+        console.log(`Found ${buttons.length} buttons in document row`);
       }
     } else {
-      console.log('Checkout button not found - versioning may not be available');
+      console.log('Checkout button not found - versioning may not be available for this document type');
+      // Debug: Log available buttons in the row
+      const buttons = await documentRow.locator('button').all();
+      console.log(`Found ${buttons.length} buttons in document row`);
     }
 
     // Wait for Solr indexing

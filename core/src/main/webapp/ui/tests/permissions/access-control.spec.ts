@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
 import { randomUUID } from 'crypto';
 
 /**
@@ -127,8 +127,9 @@ test.describe('Access Control and Permissions', () => {
   const testUserPassword = 'TestPass123!';
 
   // Pre-cleanup: Delete old test folders from previous runs BEFORE tests start
+  // REFACTORING (2026-01-26): Changed from UI-based to API-based cleanup for reliability
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(180000); // Set 180-second timeout for this hook (extended for cleanup)
+    test.setTimeout(60000); // Reduced from 180s to 60s with API-based cleanup
 
     // Allow skipping pre-cleanup via environment variable for faster test execution
     if (process.env.SKIP_CLEANUP === 'true') {
@@ -136,136 +137,30 @@ test.describe('Access Control and Permissions', () => {
       return;
     }
 
-    console.log('Pre-cleanup: Starting cleanup of old test folders before test execution');
+    console.log('Pre-cleanup: Starting API-based cleanup of old test folders');
     const context = await browser.newContext();
     const page = await context.newPage();
-    const cleanupAuthHelper = new AuthHelper(page);
-
-    const cleanupStartTime = Date.now();
-    const maxCleanupTime = 60000; // 60 seconds max for cleanup
 
     try {
-      await cleanupAuthHelper.login();
-      await page.waitForTimeout(2000);
-
-      // Navigate to documents
-      const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
-      if (await documentsMenu.count() > 0) {
-        await documentsMenu.click();
-        await page.waitForTimeout(2000);
-      }
-
-      // Delete up to 3 old test folders to reduce UI clutter (reduced from 10 for speed)
-      let deletedCount = 0;
-      const maxDeletions = 3;
-      const failedFolders = new Set<string>(); // Track folders that failed to delete
-
-      while (deletedCount < maxDeletions && (Date.now() - cleanupStartTime) < maxCleanupTime) {
-        // Re-query folder rows on each iteration to avoid stale elements
-        const folderRows = page.locator('.ant-table-tbody tr');
-        const folderCount = await folderRows.count();
-
-        if (folderCount === 0) {
-          console.log('Pre-cleanup: No folders found on current page');
-          break;
-        }
-
-        // Find first test folder on current page (skip previously failed ones)
-        let foundTestFolder = false;
-        for (let i = 0; i < folderCount; i++) {
-          const row = folderRows.nth(i);
-          const folderNameButton = row.locator('td').nth(1).locator('button');
-          const folderName = await folderNameButton.textContent();
-
-          if (folderName && (folderName.startsWith('restricted-folder-') || folderName.startsWith('test-folder-'))) {
-            // Skip folders that already failed to delete
-            if (failedFolders.has(folderName)) {
-              console.log(`Pre-cleanup: Skipping previously failed folder: ${folderName}`);
-              continue;
-            }
-            console.log(`Pre-cleanup: Deleting folder: ${folderName}`);
-
-            const deleteButton = row.locator('button').filter({
-              has: page.locator('[data-icon="delete"]')
-            });
-
-            if (await deleteButton.count() > 0) {
-              await deleteButton.first().click({ timeout: 3000 });
-
-              // Wait for popconfirm to appear
-              await page.waitForTimeout(1500);
-
-              // Try to find and click visible confirm button with multiple strategies
-              try {
-                // Strategy 1: Wait for visible popconfirm container first
-                const popconfirm = page.locator('.ant-popconfirm:visible, .ant-popover:visible');
-                await popconfirm.waitFor({ state: 'visible', timeout: 3000 });
-
-                // Strategy 2: Find confirm button within visible popconfirm
-                const confirmButton = popconfirm.locator('button.ant-btn-primary, button:has-text("OK"), button:has-text("確認")');
-
-                // Try clicking with force if button exists but not perfectly visible
-                if (await confirmButton.count() > 0) {
-                  await confirmButton.first().click({ force: true, timeout: 3000 });
-
-                  // Wait for folder to disappear from table (verify deletion completed)
-                  // Extended to 10 attempts (10 seconds) for folders with contents
-                  let deletionConfirmed = false;
-                  for (let attempt = 0; attempt < 10; attempt++) {
-                    await page.waitForTimeout(1000);
-                    const stillExists = page.locator('tr').filter({ hasText: folderName });
-                    if (await stillExists.count() === 0) {
-                      deletionConfirmed = true;
-                      break;
-                    }
-                  }
-
-                  if (deletionConfirmed) {
-                    console.log(`Pre-cleanup: Folder ${folderName} deletion confirmed`);
-                    deletedCount++;
-                    foundTestFolder = true;
-                    break; // Exit inner loop after successful deletion
-                  } else {
-                    console.log(`Pre-cleanup: Warning - Folder ${folderName} still exists after deletion attempt`);
-                    failedFolders.add(folderName); // Mark as failed to skip in future iterations
-                    // Don't increment deletedCount, try next folder (continue in loop)
-                  }
-                } else {
-                  console.log(`Pre-cleanup: Confirm button not found in visible popconfirm for ${folderName}`);
-                  failedFolders.add(folderName); // Mark as failed
-                }
-              } catch (confirmError) {
-                console.log(`Pre-cleanup: Confirm button error for ${folderName}:`, confirmError.message);
-                failedFolders.add(folderName); // Mark as failed to skip in future iterations
-                // Skip this folder and try next one
-              }
-            }
-          }
-        }
-
-        // No more test folders found on current page
-        if (!foundTestFolder) {
-          console.log('Pre-cleanup: No more test folders found on current page');
-          break;
-        }
-      }
-
-      const cleanupElapsed = Date.now() - cleanupStartTime;
-      if (cleanupElapsed >= maxCleanupTime) {
-        console.log(`Pre-cleanup: Timeout reached (${cleanupElapsed}ms) - stopping cleanup to allow tests to proceed`);
-      }
-
-      console.log(`Pre-cleanup: Successfully deleted ${deletedCount} old test folders in ${cleanupElapsed}ms`);
+      const apiHelper = new ApiHelper(page);
+      
+      // Clean up test folders using API (much faster and more reliable than UI)
+      const deletedFolders = await apiHelper.cleanupTestFolders('restricted-folder-%', 5);
+      const deletedTestFolders = await apiHelper.cleanupTestFolders('test-folder-%', 5);
+      
+      console.log(`Pre-cleanup: Deleted ${deletedFolders + deletedTestFolders} old test folders via API`);
     } catch (error) {
-      console.log('Pre-cleanup: Error during cleanup:', error);
+      console.log('Pre-cleanup: Error during API cleanup:', error);
+      // Don't fail - cleanup errors should not block tests
     } finally {
       await context.close();
     }
   });
 
   // Setup: Create test user
+  // REFACTORING (2026-01-26): Reduced timeout from 180s to 90s
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(180000); // Set 180-second timeout for user creation (extended)
+    test.setTimeout(90000); // Reduced from 180s - user creation should be faster
     const context = await browser.newContext();
     const page = await context.newPage();
     const setupAuthHelper = new AuthHelper(page);
