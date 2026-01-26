@@ -228,10 +228,10 @@ test.describe('Solr Index Maintenance', () => {
     await page.goto('/core/ui/#/solr');
     await page.waitForTimeout(2000);
 
-    // Click on reindexing tab
+    // Click on reindexing tab (use exact match to avoid matching "RAG再インデクシング")
     const reindexTab = page.locator('.ant-tabs-tab').filter({
-      hasText: /再インデクシング|Reindex/i
-    });
+      hasText: /^再インデクシング$|^Reindex$/i
+    }).first();
 
     if (await reindexTab.count() > 0) {
       await reindexTab.click(isMobile ? { force: true } : {});
@@ -362,10 +362,10 @@ test.describe('Solr Index Maintenance', () => {
     await page.goto('/core/ui/#/solr');
     await page.waitForTimeout(2000);
 
-    // Click on reindexing tab
+    // Click on reindexing tab (use exact match to avoid matching "RAG再インデクシング")
     const reindexTab = page.locator('.ant-tabs-tab').filter({
-      hasText: /再インデクシング|Reindex/i
-    });
+      hasText: /^再インデクシング$|^Reindex$/i
+    }).first();
 
     if (await reindexTab.count() === 0) {
       test.skip('Reindexing tab not found');
@@ -419,10 +419,10 @@ test.describe('Solr Index Maintenance', () => {
     await page.goto('/core/ui/#/solr');
     await page.waitForTimeout(2000);
 
-    // Click on reindexing tab
+    // Click on reindexing tab (use exact match to avoid matching "RAG再インデクシング")
     const reindexTab = page.locator('.ant-tabs-tab').filter({
-      hasText: /再インデクシング|Reindex/i
-    });
+      hasText: /^再インデクシング$|^Reindex$/i
+    }).first();
 
     if (await reindexTab.count() === 0) {
       test.skip('Reindexing tab not found');
@@ -542,10 +542,10 @@ test.describe('Solr Index Maintenance', () => {
     await page.goto('/core/ui/#/solr');
     await page.waitForTimeout(2000);
 
-    // Click on reindexing tab
+    // Click on reindexing tab (use exact match to avoid matching "RAG再インデクシング")
     const reindexTab = page.locator('.ant-tabs-tab').filter({
-      hasText: /再インデクシング|Reindex/i
-    });
+      hasText: /^再インデクシング$|^Reindex$/i
+    }).first();
 
     if (await reindexTab.count() === 0) {
       test.skip('Reindexing tab not found');
