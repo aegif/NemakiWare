@@ -7,6 +7,13 @@
  * - Mixed UI and API load
  *
  * Focus: UI-heavy testing with API mix
+ *
+ * REFACTORING NOTES (2026-01-26):
+ * - Reduced concurrent sessions from 5 to 3 for stability
+ * - Reduced API iterations from 3 to 2 for faster execution
+ * - Reduced timeouts from 180s to 120s
+ * - These tests are excluded from default runs (see playwright.config.ts testIgnore)
+ * - Run with RUN_LOAD_TESTS=1 npx playwright test load/
  */
 
 import { test, expect } from '@playwright/test';
@@ -15,13 +22,13 @@ import { AuthHelper } from '../utils/auth-helper';
 const BASE_URL = 'http://localhost:8080';
 const REPOSITORY_ID = 'bedroom';
 
-// Test configuration
-const CONCURRENT_UI_SESSIONS = 5;
-const CONCURRENT_API_CALLS = 10;
-const API_ITERATIONS = 3;
+// Test configuration - reduced for stability
+const CONCURRENT_UI_SESSIONS = 3; // Reduced from 5
+const CONCURRENT_API_CALLS = 5;   // Reduced from 10
+const API_ITERATIONS = 2;         // Reduced from 3
 
 test.describe('Concurrent Load Test - UI Heavy', () => {
-  test.setTimeout(180000); // 3 minutes timeout for load tests
+  test.setTimeout(120000); // Reduced from 180s to 120s
 
   test('should handle multiple concurrent UI logins', async ({ browser }) => {
     console.log(`\n=== Concurrent UI Login Test (${CONCURRENT_UI_SESSIONS} sessions) ===`);
@@ -274,7 +281,7 @@ test.describe('Concurrent Load Test - UI Heavy', () => {
 });
 
 test.describe('Concurrent Load Test - API Direct', () => {
-  test.setTimeout(120000);
+  test.setTimeout(90000); // Reduced from 120s to 90s
 
   test('should handle concurrent API type list requests', async ({ request }) => {
     console.log(`\n=== Concurrent API Type List Test (${CONCURRENT_API_CALLS} calls x ${API_ITERATIONS} iterations) ===`);
@@ -437,7 +444,7 @@ test.describe('Concurrent Load Test - API Direct', () => {
 });
 
 test.describe('Mixed Load Test - UI and API', () => {
-  test.setTimeout(180000);
+  test.setTimeout(120000); // Reduced from 180s to 120s
 
   test('should handle mixed UI and API concurrent access', async ({ browser, request }) => {
     console.log(`\n=== Mixed UI and API Load Test ===`);

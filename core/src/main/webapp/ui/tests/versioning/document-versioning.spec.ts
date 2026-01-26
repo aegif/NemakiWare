@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
 
 /**
  * Document Versioning E2E Tests
@@ -140,9 +140,9 @@ import { TestHelper } from '../utils/test-helper';
  * - DocumentList DEBUG message capture (Lines 83-86)
  */
 test.describe('Document Versioning', () => {
-  // CRITICAL: Run tests sequentially to avoid concurrent upload conflicts
-  // Multiple uploads at the same time cause modal timeout issues
-  test.describe.configure({ mode: 'serial' });
+  // REFACTORING (2026-01-26): Removed serial mode - tests now use unique IDs
+  // Each test creates its own document with unique name, no conflicts
+  // test.describe.configure({ mode: 'serial' }); // REMOVED for better parallelization
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
