@@ -205,6 +205,27 @@ public class RAGConfig {
     private int rateLimitBurstSize;
 
     // ========================================
+    // Search Algorithm Settings
+    // ========================================
+
+    /**
+     * Multiplier for chunk search topK.
+     * When searching for topK documents, search topK * this multiplier chunks.
+     * Higher values improve recall but increase processing time.
+     * Default: 3 (search 3x more chunks than requested documents)
+     */
+    @Value("${rag.search.chunk.topk.multiplier:3}")
+    private int chunkSearchTopKMultiplier;
+
+    /**
+     * Multiplier for property search topK.
+     * When doing weighted property search, search topK * this multiplier property vectors.
+     * Default: 2
+     */
+    @Value("${rag.search.property.topk.multiplier:2}")
+    private int propertySearchTopKMultiplier;
+
+    // ========================================
     // Getters
     // ========================================
 
@@ -322,5 +343,13 @@ public class RAGConfig {
 
     public int getRateLimitBurstSize() {
         return rateLimitBurstSize;
+    }
+
+    public int getChunkSearchTopKMultiplier() {
+        return chunkSearchTopKMultiplier;
+    }
+
+    public int getPropertySearchTopKMultiplier() {
+        return propertySearchTopKMultiplier;
     }
 }

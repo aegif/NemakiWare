@@ -40,24 +40,8 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
     private static final Log log = LogFactory.getLog(VectorSearchServiceImpl.class);
 
-    /**
-     * Multiplier for chunk vector search topK.
-     * We fetch more chunks than final topK because:
-     * - Multiple chunks may belong to the same document (only best one is kept)
-     * - We need candidates for score combination with property search
-     * - Higher multiplier = better recall but more processing
-     * Value of 3 provides good balance between recall and performance.
-     */
-    private static final int CHUNK_SEARCH_TOPK_MULTIPLIER = 3;
-
-    /**
-     * Multiplier for property vector search topK.
-     * Lower than chunk multiplier because:
-     * - Property search returns document-level results (no deduplication needed)
-     * - Used primarily for boosting relevance, not primary recall
-     * Value of 2 provides enough candidates for score combination.
-     */
-    private static final int PROPERTY_SEARCH_TOPK_MULTIPLIER = 2;
+    // CHUNK_SEARCH_TOPK_MULTIPLIER and PROPERTY_SEARCH_TOPK_MULTIPLIER
+    // are now configurable via RAGConfig (rag.search.chunk.topk.multiplier, rag.search.property.topk.multiplier)
 
     private final RAGConfig ragConfig;
     private final EmbeddingService embeddingService;
@@ -395,7 +379,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                 chunkSearchFuture = CompletableFuture.runAsync(() -> {
                     try {
                         searchChunkVectors(solrClient, repositoryId, vectorStr, aclFilter, additionalFilter,
-                                topK * CHUNK_SEARCH_TOPK_MULTIPLIER, documentScores, contentBoost);
+                                topK * ragConfig.getChunkSearchTopKMultiplier(), documentScores, contentBoost);
                     } catch (Exception e) {
                         log.error("Chunk vector search failed", e);
                         chunkSearchException.set(e);
@@ -408,7 +392,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                 propertySearchFuture = CompletableFuture.runAsync(() -> {
                     try {
                         searchPropertyVectors(solrClient, repositoryId, vectorStr, aclFilter, additionalFilter,
-                                topK * PROPERTY_SEARCH_TOPK_MULTIPLIER, documentScores, propertyBoost);
+                                topK * ragConfig.getPropertySearchTopKMultiplier(), documentScores, propertyBoost);
                     } catch (Exception e) {
                         log.error("Property vector search failed", e);
                         propertySearchException.set(e);

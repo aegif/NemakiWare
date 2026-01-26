@@ -37,10 +37,6 @@ public class TokenBasedChunkingService implements ChunkingService {
     private static final Pattern SENTENCE_PATTERN = Pattern.compile(
             "(?<=[。！？.!?])\\s*|(?<=\\n)\\s*");
 
-    // CJK character detection pattern
-    private static final Pattern CJK_PATTERN = Pattern.compile(
-            "[\\u4E00-\\u9FFF\\u3040-\\u309F\\u30A0-\\u30FF\\uAC00-\\uD7AF]");
-
     // Token estimation constants
     private static final double ENGLISH_CHARS_PER_TOKEN = 4.0;
     private static final double CJK_CHARS_PER_TOKEN = 2.0;
