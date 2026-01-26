@@ -25,6 +25,33 @@ import java.util.GregorianCalendar;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+/**
+ * Configuration for LDAP/Active Directory synchronization.
+ *
+ * <h2>Authentication Architecture</h2>
+ * <p>
+ * This feature synchronizes user and group information from LDAP/AD directories.
+ * <strong>Authentication (login) is NOT handled by this feature.</strong>
+ * </p>
+ *
+ * <h3>Recommended Authentication Flow</h3>
+ * <p>
+ * LDAP-synced users should authenticate via SAML/OIDC through Keycloak or other IdPs:
+ * </p>
+ * <pre>
+ * LDAP/AD → Keycloak (LDAP User Federation) → OIDC/SAML → NemakiWare
+ * </pre>
+ *
+ * <h3>Initial Password (Fallback Only)</h3>
+ * <p>
+ * The {@code initialPassword} field is provided as a fallback for environments
+ * where SAML/OIDC is not available. When set, newly created users receive this
+ * password. However, the recommended approach is to leave this unset and use
+ * Keycloak for authentication.
+ * </p>
+ *
+ * @see <a href="docs/ldap-sync-keycloak-authentication.md">LDAP Sync + Keycloak Authentication Guide</a>
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class DirectorySyncConfig {
 
@@ -68,6 +95,20 @@ public class DirectorySyncConfig {
     private boolean deleteOrphanUsers;
     private String groupPrefix;
     private String userPrefix;
+
+    /**
+     * Initial password for newly created LDAP-synced users.
+     * <p>
+     * <strong>NOT RECOMMENDED:</strong> This is a fallback option for environments
+     * without SAML/OIDC. The preferred approach is to authenticate LDAP users via
+     * Keycloak OIDC/SAML, where they use their LDAP credentials directly.
+     * </p>
+     * <p>
+     * If left null/empty, users created via LDAP sync will have a random password
+     * and can ONLY authenticate via SAML/OIDC.
+     * </p>
+     */
+    private String initialPassword;
 
     private String cronExpression;
     private boolean scheduleEnabled;
@@ -276,6 +317,14 @@ public class DirectorySyncConfig {
 
     public void setUserPrefix(String userPrefix) {
         this.userPrefix = userPrefix;
+    }
+
+    public String getInitialPassword() {
+        return initialPassword;
+    }
+
+    public void setInitialPassword(String initialPassword) {
+        this.initialPassword = initialPassword;
     }
 
     public String getCronExpression() {

@@ -30,10 +30,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 import javax.naming.NamingException;
 
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.mindrot.jbcrypt.BCrypt;
@@ -63,19 +68,31 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
     private PropertyManager propertyManager;
     
     private final Map<String, DirectorySyncResult> lastSyncResults = new ConcurrentHashMap<>();
-    private final Map<String, Object> repositoryLocks = new ConcurrentHashMap<>();
-    
+    private final Map<String, ReentrantLock> repositoryLocks = new ConcurrentHashMap<>();
+
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final long SYNC_LOCK_TIMEOUT_SECONDS = 300; // 5 minutes
     private static final String PASSWORD_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
     private static final int GENERATED_PASSWORD_LENGTH = 32;
 
-    private Object getRepositoryLock(String repositoryId) {
-        return repositoryLocks.computeIfAbsent(repositoryId, k -> new Object());
+    private ReentrantLock getRepositoryLock(String repositoryId) {
+        return repositoryLocks.computeIfAbsent(repositoryId, k -> new ReentrantLock());
     }
 
     @Override
     public DirectorySyncResult syncGroups(String repositoryId, boolean dryRun) {
-        synchronized (getRepositoryLock(repositoryId)) {
+        ReentrantLock lock = getRepositoryLock(repositoryId);
+        boolean lockAcquired = false;
+        try {
+            lockAcquired = lock.tryLock(SYNC_LOCK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!lockAcquired) {
+                DirectorySyncResult result = new DirectorySyncResult(repositoryId, dryRun);
+                result.addError(null, "Another sync operation is already in progress for this repository. " +
+                        "Please wait for it to complete or try again later. Timeout: " + SYNC_LOCK_TIMEOUT_SECONDS + " seconds.");
+                result.complete(SyncStatus.FAILED);
+                return result;
+            }
+
             DirectorySyncResult result = new DirectorySyncResult(repositoryId, dryRun);
             
             try {
@@ -140,6 +157,16 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
 
             lastSyncResults.put(repositoryId, result);
             return result;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            DirectorySyncResult result = new DirectorySyncResult(repositoryId, dryRun);
+            result.addError(null, "Sync operation was interrupted while waiting for lock");
+            result.complete(SyncStatus.FAILED);
+            return result;
+        } finally {
+            if (lockAcquired) {
+                lock.unlock();
+            }
         }
     }
 
@@ -188,7 +215,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 if (existingUser == null) {
                     if (config.isCreateMissingUsers()) {
                         if (!dryRun) {
-                            createUser(repositoryId, ldapUser, userPrefix);
+                            createUser(repositoryId, ldapUser, userPrefix, config);
                             log.info("AUDIT: User created via directory sync: " + nemakiUserId);
                         }
                         result.incrementUsersAdded();
@@ -290,21 +317,36 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         contentService.update(new SystemCallContext(repositoryId), repositoryId, existingUser);
     }
 
-    private void createUser(String repositoryId, LdapUser ldapUser, String userPrefix) {
+    private void createUser(String repositoryId, LdapUser ldapUser, String userPrefix, DirectorySyncConfig config) {
         Folder usersFolder = getOrCreateUsersFolder(repositoryId);
         if (usersFolder == null) {
             throw new RuntimeException("Failed to get or create users folder");
         }
 
-        String randomPassword = generateSecurePassword();
-        String passwordHash = BCrypt.hashpw(randomPassword, BCrypt.gensalt());
+        // Check for configured initial password
+        String initialPassword = config.getInitialPassword();
+        String passwordHash;
+        String nemakiUserId = userPrefix + ldapUser.getUserId();
+        
+        if (initialPassword != null && !initialPassword.isEmpty()) {
+            // Use configured initial password
+            passwordHash = BCrypt.hashpw(initialPassword, BCrypt.gensalt());
+            log.info("Created user '" + nemakiUserId + "' with configured initial password. " +
+                    "User should change password on first login.");
+        } else {
+            // Generate random password - user will not be able to log in without password reset
+            String randomPassword = generateSecurePassword();
+            passwordHash = BCrypt.hashpw(randomPassword, BCrypt.gensalt());
+            log.warn("Created user '" + nemakiUserId + "' with random password. " +
+                    "User will NOT be able to log in until password is reset by admin. " +
+                    "Consider setting 'directory.sync.user.initial.password' property or " +
+                    "configuring LDAP authentication pass-through.");
+        }
 
         String displayName = ldapUser.getDisplayName();
         if (displayName == null || displayName.isEmpty()) {
             displayName = ldapUser.getUserId();
         }
-
-        String nemakiUserId = userPrefix + ldapUser.getUserId();
 
         UserItem newUser = new UserItem(
             null,
@@ -328,13 +370,59 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         );
     }
 
-    private Folder getOrCreateUsersFolder(String repositoryId) {
+
+    /**
+     * Get the system folder for a repository, with fallback for PropertyManager issues.
+     * This method consolidates the system folder lookup logic used by both
+     * getOrCreateUsersFolder and getOrCreateGroupsFolder.
+     * 
+     * @param repositoryId The repository ID
+     * @return The system folder
+     * @throws RuntimeException if the system folder cannot be found
+     */
+    private Folder getSystemFolderWithFallback(String repositoryId) {
         Folder systemFolder = contentService.getSystemFolder(repositoryId);
+
+        // Fallback: if PropertyManager fails to read system.folder config, try direct lookup
         if (systemFolder == null) {
-            log.error("System folder not found");
-            return null;
+            log.warn("System folder not found via PropertyManager for repository: " + repositoryId + 
+                    ", attempting fallback lookup");
+            try {
+                // Try to find .system folder by name from root
+                Content rootContent = contentService.getContentByPath(repositoryId, "/");
+                if (rootContent != null && rootContent instanceof Folder) {
+                    Folder rootFolder = (Folder) rootContent;
+                    List<Content> rootChildren = contentService.getChildren(repositoryId, rootFolder.getId());
+                    if (rootChildren != null) {
+                        for (Content child : rootChildren) {
+                            if (".system".equals(child.getName()) && child instanceof Folder) {
+                                systemFolder = (Folder) child;
+                                log.info("Found .system folder via root folder lookup: ID=" + systemFolder.getId());
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Failed to find .system folder via fallback lookup", e);
+            }
         }
 
+        if (systemFolder == null) {
+            String errorMsg = "System folder (.system) not found for repository: " + repositoryId + 
+                    ". Directory sync requires the system folder to exist. " +
+                    "Please ensure the repository is properly initialized.";
+            log.error(errorMsg);
+            throw new RuntimeException(errorMsg);
+        }
+
+        return systemFolder;
+    }
+
+    private Folder getOrCreateUsersFolder(String repositoryId) {
+        Folder systemFolder = getSystemFolderWithFallback(repositoryId);
+
+        // Check for existing users folder
         List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
         if (children != null) {
             for (Content child : children) {
@@ -344,7 +432,22 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
             }
         }
 
-        return null;
+        // Create users folder if it doesn't exist
+        log.info("Creating 'users' folder under .system folder for repository: " + repositoryId);
+        PropertiesImpl properties = new PropertiesImpl();
+        properties.addProperty(new PropertyStringImpl("cmis:name", "users"));
+        properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
+        properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
+        
+        Folder usersFolder = contentService.createFolder(
+            new SystemCallContext(repositoryId),
+            repositoryId,
+            properties,
+            systemFolder,
+            null, null, null, null
+        );
+        log.info("Created 'users' folder with ID: " + usersFolder.getId());
+        return usersFolder;
     }
 
     private void performGroupSync(String repositoryId, List<LdapGroup> ldapGroups, 
@@ -532,12 +635,9 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
     }
 
     private Folder getOrCreateGroupsFolder(String repositoryId) {
-        Folder systemFolder = contentService.getSystemFolder(repositoryId);
-        if (systemFolder == null) {
-            log.error("System folder not found");
-            return null;
-        }
+        Folder systemFolder = getSystemFolderWithFallback(repositoryId);
 
+        // Check for existing groups folder
         List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
         if (children != null) {
             for (Content child : children) {
@@ -547,7 +647,22 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
             }
         }
 
-        return null;
+        // Create groups folder if it doesn't exist
+        log.info("Creating 'groups' folder under .system folder for repository: " + repositoryId);
+        PropertiesImpl properties = new PropertiesImpl();
+        properties.addProperty(new PropertyStringImpl("cmis:name", "groups"));
+        properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
+        properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
+        
+        Folder groupsFolder = contentService.createFolder(
+            new SystemCallContext(repositoryId),
+            repositoryId,
+            properties,
+            systemFolder,
+            null, null, null, null
+        );
+        log.info("Created 'groups' folder with ID: " + groupsFolder.getId());
+        return groupsFolder;
     }
 
     @Override
@@ -609,7 +724,10 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         
         String userPrefix = propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_USER_PREFIX);
         config.setUserPrefix(userPrefix != null ? userPrefix : DirectorySyncConfig.DEFAULT_USER_PREFIX);
-        
+
+        // Initial password for newly created users (optional)
+        config.setInitialPassword(propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_USER_INITIAL_PASSWORD));
+
         config.setScheduleEnabled(propertyManager.readBoolean(PropertyKey.DIRECTORY_SYNC_SCHEDULE_ENABLED));
         config.setCronExpression(propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_SCHEDULE_CRON));
         

@@ -309,13 +309,13 @@ public class DirectorySyncResource extends ResourceBase {
         return json;
     }
 
+    /**
+     * Check if the current user has admin authorization.
+     * Uses the parent class's checkAdmin method which correctly retrieves
+     * the admin status from the CallContext set by AuthenticationFilter.
+     */
     private boolean checkAdminAuthorization(HttpServletRequest request, JSONArray errMsg) {
-        String isAdmin = (String) request.getAttribute("isAdmin");
-        if (!"true".equals(isAdmin)) {
-            addErrMsg(errMsg, "authorization", "ERR_ADMIN_REQUIRED");
-            return false;
-        }
-        return true;
+        return checkAdmin(errMsg, request);
     }
 
     public void setDirectorySyncService(DirectorySyncService directorySyncService) {
@@ -328,11 +328,35 @@ public class DirectorySyncResource extends ResourceBase {
         }
         
         String sanitized = message;
-        sanitized = sanitized.replaceAll("(?i)(password|credential|secret|key)\\s*[=:]\\s*\\S+", "$1=[REDACTED]");
-        sanitized = sanitized.replaceAll("\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b", "[IP_REDACTED]");
-        sanitized = sanitized.replaceAll("(?i)(ldap://|ldaps://)([^/\\s]+)", "$1[HOST_REDACTED]");
-        sanitized = sanitized.replaceAll("(?i)(cn|ou|dc|uid)=[^,\\s]+", "$1=[REDACTED]");
         
+        // Redact passwords and credentials
+        sanitized = sanitized.replaceAll("(?i)(password|credential|secret|key|token|auth)\\s*[=:]\\s*\\S+", "$1=[REDACTED]");
+        
+        // Redact IP addresses
+        sanitized = sanitized.replaceAll("\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b", "[IP_REDACTED]");
+        
+        // Redact LDAP/LDAPS URLs (keep protocol, redact host)
+        sanitized = sanitized.replaceAll("(?i)(ldap://|ldaps://)([^/\\s:]+)(:\\d+)?", "$1[HOST_REDACTED]$3");
+        
+        // Redact LDAP DN components
+        sanitized = sanitized.replaceAll("(?i)(cn|ou|dc|uid|dn|o|c)=[^,\\s]+", "$1=[REDACTED]");
+        
+        // Remove stack trace indicators
+        sanitized = sanitized.replaceAll("\\s*at\\s+[a-zA-Z0-9.$_]+\\.[a-zA-Z0-9$_]+\\([^)]*\\)", "");
+        sanitized = sanitized.replaceAll("(?i)\\s*caused by:\\s*[^\\n]+", "");
+        sanitized = sanitized.replaceAll("(?i)\\s*nested exception is\\s*[^\\n]+", "");
+        
+        // Remove Java package names that might reveal internal structure
+        sanitized = sanitized.replaceAll("\\b(java|javax|org|com|jp)\\.[a-zA-Z0-9.$_]+\\b", "[CLASS]");
+        
+        // Redact file paths
+        sanitized = sanitized.replaceAll("(?i)(/[a-zA-Z0-9._-]+)+", "[PATH]");
+        sanitized = sanitized.replaceAll("(?i)([a-zA-Z]:\\\\[^\\s]+)", "[PATH]");
+        
+        // Remove multiple spaces and newlines
+        sanitized = sanitized.replaceAll("\\s+", " ").trim();
+        
+        // Truncate to reasonable length
         if (sanitized.length() > 200) {
             sanitized = sanitized.substring(0, 200) + "...";
         }

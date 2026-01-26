@@ -70,10 +70,7 @@ public class PasswordEncryptionUtil {
     private static final int ITERATION_COUNT = 65536;
 
     private static final String DEFAULT_ENCRYPTION_KEY_ENV = "NEMAKI_ENCRYPTION_KEY";
-    private static final String DEFAULT_ENCRYPTION_KEY = "NemakiWare-Default-Key-Change-Me!";
     private static final int MINIMUM_KEY_LENGTH = 16;
-    
-    private static volatile boolean defaultKeyWarningLogged = false;
 
     private PasswordEncryptionUtil() {
     }
@@ -256,22 +253,19 @@ public class PasswordEncryptionUtil {
 
     private static String getEncryptionKey() {
         String key = System.getenv(DEFAULT_ENCRYPTION_KEY_ENV);
-        if (key != null && !key.isEmpty()) {
-            if (key.length() < MINIMUM_KEY_LENGTH) {
-                log.warn("SECURITY WARNING: Encryption key is shorter than recommended minimum of " + 
-                        MINIMUM_KEY_LENGTH + " characters. Consider using a longer key for better security.");
-            }
-            return key;
+        if (key == null || key.isEmpty()) {
+            String errorMsg = "SECURITY ERROR: " + DEFAULT_ENCRYPTION_KEY_ENV + " environment variable is required. " +
+                    "Set this variable to a secure, unique key (minimum " + MINIMUM_KEY_LENGTH + " characters) " +
+                    "before starting the application. " +
+                    "Do not use a default or publicly known key in any environment.";
+            log.error(errorMsg);
+            throw new IllegalStateException(errorMsg);
         }
-        
-        if (!defaultKeyWarningLogged) {
-            defaultKeyWarningLogged = true;
-            log.error("SECURITY WARNING: Using default encryption key! " +
-                    "This is a critical security risk in production environments. " +
-                    "The default key is publicly known and passwords encrypted with it can be decrypted by anyone. " +
-                    "Set the " + DEFAULT_ENCRYPTION_KEY_ENV + " environment variable to a secure, unique key.");
+        if (key.length() < MINIMUM_KEY_LENGTH) {
+            log.warn("SECURITY WARNING: Encryption key is shorter than recommended minimum of " + 
+                    MINIMUM_KEY_LENGTH + " characters. Consider using a longer key for better security.");
         }
-        return DEFAULT_ENCRYPTION_KEY;
+        return key;
     }
 
     /**

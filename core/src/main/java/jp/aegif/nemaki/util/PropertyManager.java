@@ -39,6 +39,14 @@ public class PropertyManager{
 			return systemPropertyValue;
 		}
 		
+		// Check environment variables (Docker support)
+		// Convert property key format (lowercase.with.dots) to env var format (UPPERCASE_WITH_UNDERSCORES)
+		String envKey = key.toUpperCase().replace('.', '_');
+		String envValue = System.getenv(envKey);
+		if(envValue != null){
+			return envValue;
+		}
+		
 		Object configVal = getDynamicValue(key);
 		if(configVal == null){
 			return propertyConfigurer.getValue(key);
@@ -73,6 +81,25 @@ public class PropertyManager{
 	public String readValue(String repositoryId, String key){
 		if (log.isDebugEnabled()) {
 			log.debug("readValue called with repositoryId='" + repositoryId + "', key='" + key + "'");
+		}
+		
+		// Check system properties first
+		String systemPropertyValue = System.getProperty(key);
+		if(systemPropertyValue != null){
+			if (log.isDebugEnabled()) {
+				log.debug("Using system property value for key='" + key + "'");
+			}
+			return systemPropertyValue;
+		}
+		
+		// Check environment variables (Docker support)
+		String envKey = key.toUpperCase().replace('.', '_');
+		String envValue = System.getenv(envKey);
+		if(envValue != null){
+			if (log.isDebugEnabled()) {
+				log.debug("Using environment variable " + envKey + " for key='" + key + "'");
+			}
+			return envValue;
 		}
 		
 		Object configVal = getDynamicValue(repositoryId, key);

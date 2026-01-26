@@ -5,122 +5,171 @@ This directory contains configuration files for setting up an OpenLDAP test envi
 ## Quick Start
 
 ```bash
-# Start the LDAP environment with NemakiWare
+# Start the LDAP+Keycloak environment (recommended)
 cd docker
-docker-compose -f docker-compose-ldap.yml up -d
+docker compose -f docker-compose-ldap-keycloak-test.yml up -d
 
-# Wait for services to be healthy
-docker-compose -f docker-compose-ldap.yml ps
+# Or use the comprehensive test script
+./run-ldap-keycloak-tests.sh --only-setup
 
-# Access phpLDAPadmin (web-based LDAP management)
-# URL: https://localhost:8443
-# Login DN: cn=admin,dc=example,dc=org
-# Password: admin
+# Access services
+# - NemakiWare: http://localhost:8080/core/ui/
+# - Keycloak:   http://localhost:8088 (admin/admin)
 ```
+
+## Domain Configuration
+
+| Setting | Value |
+|---------|-------|
+| Domain | nemakiware.example.com |
+| Base DN | dc=nemakiware,dc=example,dc=com |
+| Admin DN | cn=admin,dc=nemakiware,dc=example,dc=com |
+| Admin Password | adminpassword |
 
 ## Test Data
 
-The bootstrap directory contains LDIF files that are automatically loaded when the OpenLDAP container starts:
+The bootstrap directory contains LDIF files that are automatically loaded when the OpenLDAP container starts.
 
-### Users (ou=users,dc=example,dc=org)
+### Users (ou=users,dc=nemakiware,dc=example,dc=com)
 
-| User ID   | Name           | Email                  |
-|-----------|----------------|------------------------|
-| yamada    | Taro Yamada    | yamada@example.org     |
-| suzuki    | Hanako Suzuki  | suzuki@example.org     |
-| tanaka    | Ichiro Tanaka  | tanaka@example.org     |
-| sato      | Yuki Sato      | sato@example.org       |
-| watanabe  | Kenji Watanabe | watanabe@example.org   |
+#### OIDC Integration Test Users
+| User ID | Name | Email | Password |
+|---------|------|-------|----------|
+| ldapuser1 | LDAP User One | ldapuser1@nemakiware.example.com | ldappass1 |
+| ldapuser2 | LDAP User Two | ldapuser2@nemakiware.example.com | ldappass2 |
+| ldapadmin | LDAP Administrator | ldapadmin@nemakiware.example.com | ldapadminpass |
 
-All users have password: `password`
+#### Directory Sync Test Users
+| User ID | Name | Email | Password |
+|---------|------|-------|----------|
+| yamada | Taro Yamada | yamada@nemakiware.example.com | yamadapass |
+| suzuki | Hanako Suzuki | suzuki@nemakiware.example.com | suzukipass |
+| tanaka | Ichiro Tanaka | tanaka@nemakiware.example.com | tanakapass |
+| sato | Yuki Sato | sato@nemakiware.example.com | satopass |
+| watanabe | Kenji Watanabe | watanabe@nemakiware.example.com | watanabepass |
 
-### Groups (ou=groups,dc=example,dc=org)
+### Groups (ou=groups,dc=nemakiware,dc=example,dc=com)
 
-| Group Name    | Members                              |
-|---------------|--------------------------------------|
-| engineering   | yamada, tanaka, watanabe             |
-| sales         | suzuki, sato                         |
-| managers      | yamada, suzuki                       |
-| all-staff     | yamada, suzuki, tanaka, sato, watanabe |
-| project-alpha | yamada, tanaka, sato                 |
+#### OIDC Integration Test Groups
+| Group Name | Members |
+|------------|---------|
+| nemaki-users | ldapuser1, ldapuser2, ldapadmin |
+| nemaki-admins | ldapadmin |
+
+#### Directory Sync Test Groups
+| Group Name | Members |
+|------------|---------|
+| engineering | yamada, tanaka, watanabe |
+| sales | suzuki, sato |
+| managers | yamada, suzuki |
+| all-staff | yamada, suzuki, tanaka, sato, watanabe |
+| project-alpha | yamada, tanaka, sato |
 
 ## LDAP Connection Settings
 
-For NemakiWare configuration:
+For NemakiWare configuration (nemakiware.properties or environment variables):
 
 ```properties
 directory.sync.enabled=true
 directory.sync.ldap.url=ldap://openldap:389
-directory.sync.ldap.baseDn=dc=example,dc=org
-directory.sync.ldap.bindDn=cn=admin,dc=example,dc=org
-directory.sync.ldap.bindPassword=admin
-directory.sync.group.searchBase=ou=groups
-directory.sync.group.searchFilter=(objectClass=groupOfNames)
-directory.sync.user.searchBase=ou=users
-directory.sync.user.searchFilter=(objectClass=inetOrgPerson)
-directory.sync.group.idAttribute=cn
-directory.sync.group.nameAttribute=cn
-directory.sync.group.memberAttribute=member
-directory.sync.user.idAttribute=uid
+directory.sync.ldap.base.dn=dc=nemakiware,dc=example,dc=com
+directory.sync.ldap.bind.dn=cn=admin,dc=nemakiware,dc=example,dc=com
+directory.sync.ldap.bind.password=adminpassword
+directory.sync.group.search.base=ou=groups
+directory.sync.group.search.filter=(objectClass=groupOfNames)
+directory.sync.user.search.base=ou=users
+directory.sync.user.search.filter=(objectClass=inetOrgPerson)
+directory.sync.group.id.attribute=cn
+directory.sync.group.name.attribute=cn
+directory.sync.group.member.attribute=member
+directory.sync.user.id.attribute=uid
+directory.sync.group.prefix=ldap_
+directory.sync.user.prefix=
 ```
 
-## Testing Directory Sync
+## Testing
 
-### 1. Trigger Manual Sync
+### Run Comprehensive Tests
 
 ```bash
-# Test connection
-curl -X GET "http://localhost:8080/core/rest/repo/bedroom/directory-sync/test-connection" \
-  -u admin:admin
+# Full test (builds, starts containers, runs tests, cleans up)
+./run-ldap-keycloak-tests.sh
 
-# Preview sync (dry run)
-curl -X GET "http://localhost:8080/core/rest/repo/bedroom/directory-sync/preview" \
-  -u admin:admin
+# Skip build (faster)
+./run-ldap-keycloak-tests.sh --skip-build
 
-# Execute sync
-curl -X POST "http://localhost:8080/core/rest/repo/bedroom/directory-sync/trigger" \
+# Keep containers running after tests
+./run-ldap-keycloak-tests.sh --keep-running
+```
+
+### Manual Testing
+
+#### Test Connection
+```bash
+curl -X GET "http://localhost:8080/core/rest/repo/bedroom/sync/test-connection" \
   -u admin:admin
 ```
 
-### 2. Verify Results
+#### Preview Sync (Dry Run)
+```bash
+curl -X GET "http://localhost:8080/core/rest/repo/bedroom/sync/preview" \
+  -u admin:admin
+```
+
+#### Execute Sync
+```bash
+curl -X POST "http://localhost:8080/core/rest/repo/bedroom/sync/trigger" \
+  -u admin:admin
+```
+
+#### Check Sync Status
+```bash
+curl -X GET "http://localhost:8080/core/rest/repo/bedroom/sync/status" \
+  -u admin:admin
+```
+
+### Verify Results
 
 After sync, you should see:
-- 5 new users created in NemakiWare (with ldap_ prefix or as configured)
-- 5 new groups created in NemakiWare (ldap_engineering, ldap_sales, etc.)
+- 8 new users created in NemakiWare (ldapuser1, ldapuser2, ldapadmin, yamada, suzuki, tanaka, sato, watanabe)
+- 7 new groups created in NemakiWare (with ldap_ prefix: ldap_nemaki-users, ldap_engineering, etc.)
 - Group memberships properly mapped
-
-### 3. Add/Modify LDAP Data
-
-Use phpLDAPadmin at https://localhost:8443 to:
-- Add new users or groups
-- Modify group memberships
-- Delete entries
-
-Then trigger another sync to verify diff detection works correctly.
 
 ## Troubleshooting
 
 ### Check LDAP Container Logs
 ```bash
-docker-compose -f docker-compose-ldap.yml logs openldap
+docker logs openldap
 ```
 
 ### Manual LDAP Query
 ```bash
 # List all users
-docker exec -it $(docker ps -qf "name=openldap") \
-  ldapsearch -x -H ldap://localhost:389 -b "ou=users,dc=example,dc=org" -D "cn=admin,dc=example,dc=org" -w admin
+docker exec openldap ldapsearch -x -H ldap://localhost:389 \
+  -b "ou=users,dc=nemakiware,dc=example,dc=com" \
+  -D "cn=admin,dc=nemakiware,dc=example,dc=com" -w adminpassword
 
 # List all groups
-docker exec -it $(docker ps -qf "name=openldap") \
-  ldapsearch -x -H ldap://localhost:389 -b "ou=groups,dc=example,dc=org" -D "cn=admin,dc=example,dc=org" -w admin
+docker exec openldap ldapsearch -x -H ldap://localhost:389 \
+  -b "ou=groups,dc=nemakiware,dc=example,dc=com" \
+  -D "cn=admin,dc=nemakiware,dc=example,dc=com" -w adminpassword
 ```
 
-### Reset LDAP Data
+### Reset Environment
 ```bash
 # Stop and remove volumes
-docker-compose -f docker-compose-ldap.yml down -v
+docker compose -f docker-compose-ldap-keycloak-test.yml down -v
 
 # Start fresh
-docker-compose -f docker-compose-ldap.yml up -d
+docker compose -f docker-compose-ldap-keycloak-test.yml up -d --build
 ```
+
+## Related Files
+
+| File | Description |
+|------|-------------|
+| `bootstrap/01-users-groups.ldif` | LDAP initial data |
+| `test-directory-sync.sh` | Comprehensive sync test script |
+| `../docker-compose-ldap-keycloak-test.yml` | Docker Compose configuration |
+| `../run-ldap-keycloak-tests.sh` | One-command test runner |
+| `../README-LDAP-KEYCLOAK-TEST.md` | Integration test documentation |

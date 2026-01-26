@@ -39,6 +39,8 @@ import javax.naming.ldap.LdapContext;
 import javax.naming.ldap.PagedResultsControl;
 import javax.naming.ldap.PagedResultsResponseControl;
 import javax.naming.ldap.StartTlsRequest;
+import javax.naming.ldap.LdapName;
+import javax.naming.ldap.Rdn;
 import javax.naming.ldap.StartTlsResponse;
 
 import org.apache.commons.logging.Log;
@@ -140,22 +142,31 @@ public class LdapDirectoryConnector {
         connectWithRetry(maxRetries);
     }
 
-    private void connectWithRetry(int retriesLeft) throws NamingException {
-        try {
-            doConnect();
-        } catch (NamingException e) {
-            if (retriesLeft > 0 && isRetryableException(e)) {
-                log.warn("LDAP connection failed, retrying... (" + retriesLeft + " retries left): " + e.getMessage());
-                try {
-                    Thread.sleep(retryDelayMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
+    private void connectWithRetry(int maxRetryAttempts) throws NamingException {
+        NamingException lastException = null;
+        for (int attempt = 0; attempt <= maxRetryAttempts; attempt++) {
+            try {
+                doConnect();
+                return; // Success
+            } catch (NamingException e) {
+                lastException = e;
+                int retriesLeft = maxRetryAttempts - attempt;
+                if (retriesLeft > 0 && isRetryableException(e)) {
+                    log.warn("LDAP connection failed, retrying... (" + retriesLeft + " retries left): " + e.getMessage());
+                    try {
+                        Thread.sleep(retryDelayMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    }
+                } else {
                     throw e;
                 }
-                connectWithRetry(retriesLeft - 1);
-            } else {
-                throw e;
             }
+        }
+        // Should not reach here, but handle just in case
+        if (lastException != null) {
+            throw lastException;
         }
     }
 
@@ -263,23 +274,29 @@ public class LdapDirectoryConnector {
         return searchGroupsWithRetry(maxRetries);
     }
 
-    private List<LdapGroup> searchGroupsWithRetry(int retriesLeft) throws NamingException {
-        try {
-            return doSearchGroups();
-        } catch (NamingException e) {
-            if (retriesLeft > 0 && isRetryableException(e)) {
-                log.warn("LDAP group search failed, retrying... (" + retriesLeft + " retries left): " + e.getMessage());
-                try {
-                    Thread.sleep(retryDelayMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
+    private List<LdapGroup> searchGroupsWithRetry(int maxRetryAttempts) throws NamingException {
+        NamingException lastException = null;
+        for (int attempt = 0; attempt <= maxRetryAttempts; attempt++) {
+            try {
+                return doSearchGroups();
+            } catch (NamingException e) {
+                lastException = e;
+                int retriesLeft = maxRetryAttempts - attempt;
+                if (retriesLeft > 0 && isRetryableException(e)) {
+                    log.warn("LDAP group search failed, retrying... (" + retriesLeft + " retries left): " + e.getMessage());
+                    try {
+                        Thread.sleep(retryDelayMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    }
+                } else {
                     throw e;
                 }
-                return searchGroupsWithRetry(retriesLeft - 1);
-            } else {
-                throw e;
             }
         }
+        // Should not reach here, but handle just in case
+        throw lastException != null ? lastException : new NamingException("Search failed after all retries");
     }
 
     private List<LdapGroup> doSearchGroups() throws NamingException {
@@ -409,13 +426,64 @@ public class LdapDirectoryConnector {
             return null;
         }
         
-        String[] parts = dn.split(",");
-        if (parts.length > 0) {
-            String firstPart = parts[0];
-            int eqIndex = firstPart.indexOf('=');
-            if (eqIndex > 0 && eqIndex < firstPart.length() - 1) {
-                return firstPart.substring(eqIndex + 1).trim();
+        try {
+            // Use LdapName for proper DN parsing (handles escaped characters correctly)
+            LdapName ldapName = new LdapName(dn);
+            List<Rdn> rdns = ldapName.getRdns();
+            if (!rdns.isEmpty()) {
+                // Get the first (most specific) RDN
+                Rdn firstRdn = rdns.get(rdns.size() - 1);
+                Object value = firstRdn.getValue();
+                return value != null ? value.toString() : null;
             }
+        } catch (Exception e) {
+            // Fall back to simple parsing if LdapName fails
+            log.debug("Failed to parse DN with LdapName, falling back to simple parsing: " + dn);
+            return extractIdFromDnSimple(dn);
+        }
+        return null;
+    }
+
+
+    /**
+     * Simple fallback DN parsing for cases where LdapName fails.
+     * Handles basic DN format: attr=value,attr2=value2,...
+     */
+    private String extractIdFromDnSimple(String dn) {
+        if (dn == null || dn.isEmpty()) {
+            return null;
+        }
+        
+        // Handle escaped commas by looking for unescaped comma
+        StringBuilder firstPart = new StringBuilder();
+        boolean escaped = false;
+        for (int i = 0; i < dn.length(); i++) {
+            char c = dn.charAt(i);
+            if (escaped) {
+                firstPart.append(c);
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+                firstPart.append(c);
+            } else if (c == ',') {
+                break;
+            } else {
+                firstPart.append(c);
+            }
+        }
+        
+        String rdnPart = firstPart.toString();
+        int eqIndex = rdnPart.indexOf('=');
+        if (eqIndex > 0 && eqIndex < rdnPart.length() - 1) {
+            String value = rdnPart.substring(eqIndex + 1).trim();
+            // Unescape the value
+            return value.replace("\\,", ",")
+                       .replace("\\+", "+")
+                       .replace("\\\"", "\"")
+                       .replace("\\\\", "\\")
+                       .replace("\\<", "<")
+                       .replace("\\>", ">")
+                       .replace("\\;", ";");
         }
         return null;
     }
@@ -486,23 +554,29 @@ public class LdapDirectoryConnector {
         return searchUsersWithRetry(maxRetries);
     }
 
-    private List<LdapUser> searchUsersWithRetry(int retriesLeft) throws NamingException {
-        try {
-            return doSearchUsers();
-        } catch (NamingException e) {
-            if (retriesLeft > 0 && isRetryableException(e)) {
-                log.warn("LDAP user search failed, retrying... (" + retriesLeft + " retries left): " + e.getMessage());
-                try {
-                    Thread.sleep(retryDelayMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
+    private List<LdapUser> searchUsersWithRetry(int maxRetryAttempts) throws NamingException {
+        NamingException lastException = null;
+        for (int attempt = 0; attempt <= maxRetryAttempts; attempt++) {
+            try {
+                return doSearchUsers();
+            } catch (NamingException e) {
+                lastException = e;
+                int retriesLeft = maxRetryAttempts - attempt;
+                if (retriesLeft > 0 && isRetryableException(e)) {
+                    log.warn("LDAP user search failed, retrying... (" + retriesLeft + " retries left): " + e.getMessage());
+                    try {
+                        Thread.sleep(retryDelayMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    }
+                } else {
                     throw e;
                 }
-                return searchUsersWithRetry(retriesLeft - 1);
-            } else {
-                throw e;
             }
         }
+        // Should not reach here, but handle just in case
+        throw lastException != null ? lastException : new NamingException("Search failed after all retries");
     }
 
     private List<LdapUser> doSearchUsers() throws NamingException {
