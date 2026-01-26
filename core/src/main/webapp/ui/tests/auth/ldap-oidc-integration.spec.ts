@@ -18,9 +18,20 @@
  * - ldapuser1 / ldappass1 - Regular user
  * - ldapuser2 / ldappass2 - Regular user
  * - ldapadmin / ldapadminpass - Administrator
+ *
+ * NOTE: These tests are automatically skipped when Keycloak is not running.
+ * Use the standard test environment (docker-compose-simple.yml) for basic tests.
  */
 
 import { test, expect, Page } from '@playwright/test';
+import { isKeycloakAvailable, KEYCLOAK_SKIP_MESSAGE } from '../utils/test-state';
+
+// Skip entire file if Keycloak is not available
+test.beforeEach(async ({}, testInfo) => {
+  if (!isKeycloakAvailable()) {
+    testInfo.skip(true, KEYCLOAK_SKIP_MESSAGE);
+  }
+});
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
 const NEMAKIWARE_URL = process.env.NEMAKIWARE_URL || 'http://localhost:8080';
