@@ -17,6 +17,7 @@ import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.rag.util.SolrQuerySanitizer;
 
 /**
  * ACL Expander for RAG indexing.
@@ -184,11 +185,40 @@ public class ACLExpander {
     /**
      * Recursively expand group members.
      * Includes all users in the group and nested subgroups.
+     *
+     * Uses a visited set to prevent infinite recursion from circular group membership.
      */
     private void expandGroupMembers(String repositoryId, Group group, Set<String> readers) {
+        expandGroupMembersInternal(repositoryId, group, readers, new HashSet<>());
+    }
+
+    /**
+     * Internal recursive method with visited tracking to prevent infinite loops.
+     *
+     * @param repositoryId Repository ID
+     * @param group Group to expand
+     * @param readers Set of readers being built
+     * @param visitedGroups Set of group IDs already visited (prevents cycles)
+     */
+    private void expandGroupMembersInternal(String repositoryId, Group group,
+                                             Set<String> readers, Set<String> visitedGroups) {
         if (group == null) {
             return;
         }
+
+        String groupId = group.getGroupId();
+        if (groupId == null) {
+            return;
+        }
+
+        // Check for circular reference
+        if (visitedGroups.contains(groupId)) {
+            if (log.isDebugEnabled()) {
+                log.debug("Circular group membership detected, skipping: " + groupId);
+            }
+            return;
+        }
+        visitedGroups.add(groupId);
 
         List<String> memberIds = group.getUsers();
         if (memberIds != null) {
@@ -202,8 +232,8 @@ public class ACLExpander {
                     Group subgroup = principalService.getGroupById(repositoryId, memberId);
                     if (subgroup != null && !readers.contains(PREFIX_GROUP + memberId)) {
                         readers.add(PREFIX_GROUP + memberId);
-                        // Recursively expand subgroup
-                        expandGroupMembers(repositoryId, subgroup, readers);
+                        // Recursively expand subgroup with visited tracking
+                        expandGroupMembersInternal(repositoryId, subgroup, readers, visitedGroups);
                     }
                 }
             }
@@ -228,8 +258,9 @@ public class ACLExpander {
      * Build a Solr filter query for the given user.
      * Includes the user, their groups, and "anyone".
      *
-     * Values containing colons are quoted to prevent Solr from interpreting
-     * them as field:value queries.
+     * SECURITY: All user-provided values (userId, groupId) are sanitized to prevent
+     * Solr query injection attacks. Values are escaped and quoted to handle special
+     * characters safely.
      *
      * @param repositoryId Repository ID
      * @param userId User ID
@@ -242,14 +273,17 @@ public class ACLExpander {
         // Always include "anyone" (no colon, doesn't need quoting)
         query.append(READER_ANYONE);
 
-        // Include user (quoted because it contains colon)
-        query.append(" OR \"").append(PREFIX_USER).append(userId).append("\"");
+        // Include user - sanitize to prevent Solr injection
+        // Escape special chars and quote the entire value
+        String sanitizedUserId = SolrQuerySanitizer.escape(userId);
+        query.append(" OR \"").append(PREFIX_USER).append(sanitizedUserId).append("\"");
 
-        // Include user's groups (quoted because they contain colons)
+        // Include user's groups - sanitize each group ID
         Set<String> groupIds = principalService.getGroupIdsContainingUser(repositoryId, userId);
         if (groupIds != null) {
             for (String groupId : groupIds) {
-                query.append(" OR \"").append(PREFIX_GROUP).append(groupId).append("\"");
+                String sanitizedGroupId = SolrQuerySanitizer.escape(groupId);
+                query.append(" OR \"").append(PREFIX_GROUP).append(sanitizedGroupId).append("\"");
             }
         }
 

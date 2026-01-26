@@ -351,26 +351,6 @@ public class AclServiceImpl implements AclService {
 		}
 	}
 
-	private class ClearCachesRecursivelyTask implements Runnable{
-		private ExecutorService executorService;
-		private CallContext callContext;
-		private String repositoryId;
-		private Content content;
-
-		public ClearCachesRecursivelyTask(ExecutorService executorService, CallContext callContext, String repositoryId, Content content) {
-			super();
-			this.executorService = executorService;
-			this.callContext = callContext;
-			this.repositoryId = repositoryId;
-			this.content = content;
-		}
-
-		@Override
-		public void run() {
-			clearCachesRecursively(executorService, callContext, repositoryId, content, true);
-		}
-	}
-
 	private void writeChangeEventsRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent){
 
 		//Call threads for recursive applyAcl

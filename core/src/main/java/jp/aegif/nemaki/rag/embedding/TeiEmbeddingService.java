@@ -5,8 +5,7 @@ import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -65,9 +64,25 @@ public class TeiEmbeddingService implements EmbeddingService {
     private final ObjectMapper objectMapper;
     private final CloseableHttpClient httpClient;
 
+    /**
+     * Immutable holder for health check cache state.
+     * Using AtomicReference with immutable holder ensures atomic reads/writes
+     * and prevents race conditions in the check-then-act pattern.
+     */
+    private static final class HealthCacheState {
+        final boolean healthy;
+        final long timestamp;
+
+        HealthCacheState(boolean healthy, long timestamp) {
+            this.healthy = healthy;
+            this.timestamp = timestamp;
+        }
+    }
+
     // Health check caching to avoid excessive HTTP calls
-    private final AtomicBoolean cachedHealthStatus = new AtomicBoolean(false);
-    private final AtomicLong lastHealthCheckTime = new AtomicLong(0);
+    // Using AtomicReference with immutable holder for thread-safe atomic updates
+    private final AtomicReference<HealthCacheState> healthCache =
+            new AtomicReference<>(new HealthCacheState(false, 0));
 
     @Autowired
     public TeiEmbeddingService(RAGConfig ragConfig) {
@@ -245,21 +260,26 @@ public class TeiEmbeddingService implements EmbeddingService {
             return false;
         }
 
-        // Check cache first with variable TTL
-        // Use shorter TTL when unhealthy to detect recovery faster
+        // Read current cache state atomically
+        HealthCacheState currentState = healthCache.get();
         long now = System.currentTimeMillis();
-        long lastCheck = lastHealthCheckTime.get();
-        boolean lastStatus = cachedHealthStatus.get();
-        long ttl = lastStatus ? HEALTH_CACHE_TTL_SUCCESS_MS : HEALTH_CACHE_TTL_FAILURE_MS;
+        
+        // Calculate TTL based on last health status
+        // Use shorter TTL when unhealthy to detect recovery faster
+        long ttl = currentState.healthy ? HEALTH_CACHE_TTL_SUCCESS_MS : HEALTH_CACHE_TTL_FAILURE_MS;
 
-        if (now - lastCheck < ttl) {
-            return lastStatus;
+        if (now - currentState.timestamp < ttl) {
+            return currentState.healthy;
         }
 
         // Perform actual health check
         boolean healthy = doHealthCheck();
-        cachedHealthStatus.set(healthy);
-        lastHealthCheckTime.set(now);
+        
+        // Update cache atomically with new state
+        // Note: We don't use compareAndSet here because it's acceptable for concurrent
+        // health checks to both update the cache - they'll both have valid recent results
+        healthCache.set(new HealthCacheState(healthy, now));
+        
         return healthy;
     }
 

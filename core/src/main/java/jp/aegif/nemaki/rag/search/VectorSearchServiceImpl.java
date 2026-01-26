@@ -23,6 +23,7 @@ import jp.aegif.nemaki.rag.config.RAGConfig;
 import jp.aegif.nemaki.rag.config.SolrClientProvider;
 import jp.aegif.nemaki.rag.embedding.EmbeddingException;
 import jp.aegif.nemaki.rag.embedding.EmbeddingService;
+import jp.aegif.nemaki.rag.util.SolrQuerySanitizer;
 
 /**
  * Implementation of VectorSearchService using Solr KNN search.
@@ -228,7 +229,9 @@ public class VectorSearchServiceImpl implements VectorSearchService {
      */
     private float[] getDocumentVector(SolrClient solrClient, String documentId) throws Exception {
         SolrQuery query = new SolrQuery();
-        query.setQuery("id:" + documentId);
+        // SECURITY: Sanitize documentId to prevent Solr query injection
+        String sanitizedId = SolrQuerySanitizer.escape(documentId);
+        query.setQuery("id:" + sanitizedId);
         query.addFilterQuery("doc_type:document");
         query.setFields("id", "document_vector");
         query.setRows(1);
@@ -336,7 +339,9 @@ public class VectorSearchServiceImpl implements VectorSearchService {
     private void enrichWithFirstChunk(SolrClient solrClient, VectorSearchResult result) {
         try {
             SolrQuery query = new SolrQuery();
-            query.setQuery("parent_document_id:" + result.getDocumentId());
+            // SECURITY: Sanitize documentId to prevent Solr query injection
+            String sanitizedId = SolrQuerySanitizer.escape(result.getDocumentId());
+            query.setQuery("parent_document_id:" + sanitizedId);
             query.addFilterQuery("doc_type:chunk");
             query.setFields("chunk_id", "chunk_index", "chunk_text");
             query.setSort("chunk_index", SolrQuery.ORDER.asc);
@@ -635,12 +640,14 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             }
 
             // Build a single query for all documents
+            // SECURITY: Sanitize each document ID to prevent Solr query injection
             StringBuilder queryBuilder = new StringBuilder("id:(");
             for (int i = 0; i < documentIds.size(); i++) {
                 if (i > 0) {
                     queryBuilder.append(" OR ");
                 }
-                queryBuilder.append(documentIds.get(i));
+                // Escape special characters in document IDs
+                queryBuilder.append(SolrQuerySanitizer.escape(documentIds.get(i)));
             }
             queryBuilder.append(")");
 
