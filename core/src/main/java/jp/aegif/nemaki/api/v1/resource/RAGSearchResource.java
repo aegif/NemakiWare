@@ -45,6 +45,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import com.google.common.util.concurrent.RateLimiter;
@@ -95,9 +97,76 @@ public class RAGSearchResource {
 
     /**
      * Per-user rate limiters to prevent API abuse.
-     * Uses Guava's RateLimiter for smooth rate limiting with token bucket algorithm.
+     * Uses Guava's RateLimiter for sustained rate control with a custom burst counter.
      */
-    private final ConcurrentHashMap<String, RateLimiter> userRateLimiters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, UserRateLimitState> userRateLimiters = new ConcurrentHashMap<>();
+
+    /**
+     * Holds rate limiting state for a user, combining Guava's RateLimiter
+     * with burst counting for more precise control.
+     */
+    private static class UserRateLimitState {
+        final RateLimiter rateLimiter;
+        final AtomicInteger burstCounter;
+        final AtomicLong windowStart;
+        final AtomicLong lastAccessTime;
+        final int maxBurst;
+
+        UserRateLimitState(double permitsPerSecond, int maxBurst) {
+            this.rateLimiter = RateLimiter.create(permitsPerSecond);
+            this.burstCounter = new AtomicInteger(0);
+            this.windowStart = new AtomicLong(System.currentTimeMillis());
+            this.lastAccessTime = new AtomicLong(System.currentTimeMillis());
+            this.maxBurst = maxBurst;
+        }
+
+        /**
+         * Check if a request is allowed based on both rate limit and burst limit.
+         * @return true if the request is allowed, false if rate or burst limit exceeded
+         */
+        boolean tryAcquire() {
+            // Check burst limit first (requests per second window)
+            long now = System.currentTimeMillis();
+            long windowStartMs = windowStart.get();
+
+            // Update last access time for cleanup tracking
+            lastAccessTime.set(now);
+
+            // Reset burst counter if we're in a new second
+            if (now - windowStartMs >= 1000) {
+                // Try to reset the window atomically
+                if (windowStart.compareAndSet(windowStartMs, now)) {
+                    burstCounter.set(1);
+                    // Also let the RateLimiter process (non-blocking check)
+                    rateLimiter.tryAcquire(0, TimeUnit.MILLISECONDS);
+                    return true;
+                }
+            }
+
+            // Check burst limit
+            int currentBurst = burstCounter.incrementAndGet();
+            if (currentBurst > maxBurst) {
+                burstCounter.decrementAndGet(); // Rollback
+                return false;
+            }
+
+            // Check sustained rate limit
+            if (!rateLimiter.tryAcquire(0, TimeUnit.MILLISECONDS)) {
+                burstCounter.decrementAndGet(); // Rollback
+                return false;
+            }
+
+            return true;
+        }
+
+        /**
+         * Get the last access time for this rate limiter state.
+         * Used for stale entry eviction.
+         */
+        long getLastAccessTime() {
+            return lastAccessTime.get();
+        }
+    }
 
     @Context
     private UriInfo uriInfo;
@@ -580,7 +649,8 @@ public class RAGSearchResource {
 
     /**
      * Check rate limit for the given user.
-     * Uses Guava's RateLimiter with token bucket algorithm for smooth rate limiting.
+     * Uses Guava's RateLimiter with token bucket algorithm for sustained rate control,
+     * combined with a burst counter to limit requests within a 1-second window.
      *
      * @param userId User ID to check
      * @throws ApiException if rate limit is exceeded
@@ -590,17 +660,21 @@ public class RAGSearchResource {
             return;
         }
 
-        // Get or create rate limiter for this user
-        RateLimiter limiter = userRateLimiters.computeIfAbsent(userId, k -> {
+        // Get or create rate limit state for this user
+        UserRateLimitState state = userRateLimiters.computeIfAbsent(userId, k -> {
             double permitsPerSecond = ragConfig.getRateLimitRequestsPerSecond();
             if (permitsPerSecond <= 0) {
                 permitsPerSecond = 2.0; // Default fallback
             }
-            return RateLimiter.create(permitsPerSecond);
+            int burstSize = ragConfig.getRateLimitBurstSize();
+            if (burstSize <= 0) {
+                burstSize = 5; // Default fallback
+            }
+            return new UserRateLimitState(permitsPerSecond, burstSize);
         });
 
-        // Try to acquire permit without blocking (immediate check)
-        if (!limiter.tryAcquire(0, TimeUnit.MILLISECONDS)) {
+        // Try to acquire permit (checks both rate and burst limits)
+        if (!state.tryAcquire()) {
             log.warn(String.format("Rate limit exceeded for user: %s", userId));
             throw ApiException.tooManyRequests(
                     "Rate limit exceeded. Please wait before making another search request.");
@@ -610,15 +684,58 @@ public class RAGSearchResource {
     /**
      * Cleanup stale rate limiters periodically.
      * Called lazily to avoid memory leaks from abandoned user sessions.
-     * In a production environment, consider using a scheduled task or cache eviction.
+     *
+     * Uses time-based eviction: entries not accessed within the configured TTL are removed.
+     * If the cache still exceeds maxLimiters after TTL-based cleanup, oldest entries are
+     * removed until the cache is under the limit.
      */
     private void cleanupStaleRateLimiters() {
-        // Simple size-based cleanup: if we have too many limiters, clear them all
-        // This is a simplistic approach - in production, consider using Caffeine cache with TTL
-        int maxLimiters = 10000;
-        if (userRateLimiters.size() > maxLimiters) {
-            log.info("Clearing rate limiter cache (size exceeded " + maxLimiters + ")");
-            userRateLimiters.clear();
+        int maxLimiters = ragConfig.getRateLimitMaxLimiters();
+        int currentSize = userRateLimiters.size();
+
+        // Skip cleanup if we're well under the limit
+        if (currentSize < maxLimiters / 2) {
+            return;
+        }
+
+        long ttlMs = ragConfig.getRateLimitCleanupTtlSeconds() * 1000L;
+        long now = System.currentTimeMillis();
+        long cutoffTime = now - ttlMs;
+
+        // First pass: Remove entries older than TTL
+        int removedByTtl = 0;
+        var iterator = userRateLimiters.entrySet().iterator();
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
+            if (entry.getValue().getLastAccessTime() < cutoffTime) {
+                iterator.remove();
+                removedByTtl++;
+            }
+        }
+
+        if (removedByTtl > 0 && log.isDebugEnabled()) {
+            log.debug("Rate limiter cleanup: removed " + removedByTtl + " stale entries (TTL=" + ttlMs + "ms)");
+        }
+
+        // Second pass: If still over limit, remove oldest entries
+        currentSize = userRateLimiters.size();
+        if (currentSize > maxLimiters) {
+            // Find and remove oldest entries until we're under the limit
+            int toRemove = currentSize - maxLimiters;
+            List<String> oldestUsers = userRateLimiters.entrySet().stream()
+                    .sorted((e1, e2) -> Long.compare(e1.getValue().getLastAccessTime(), e2.getValue().getLastAccessTime()))
+                    .limit(toRemove)
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toList());
+
+            for (String userId : oldestUsers) {
+                userRateLimiters.remove(userId);
+            }
+
+            if (!oldestUsers.isEmpty()) {
+                log.info("Rate limiter cleanup: evicted " + oldestUsers.size() +
+                        " oldest entries (cache size exceeded " + maxLimiters + ")");
+            }
         }
     }
 

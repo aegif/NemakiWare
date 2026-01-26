@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +46,14 @@ public class McpAuthenticationHandler {
     private static final String HEADER_MCP_SESSION_TOKEN = "X-MCP-Session-Token";
     private static final String AUTH_BASIC = "Basic ";
     private static final String AUTH_BEARER = "Bearer ";
+
+    // Session token format: UUID-UUID (e.g., xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+    // Validates token format before lookup to prevent processing of malformed tokens
+    private static final Pattern SESSION_TOKEN_PATTERN = Pattern.compile(
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final int MAX_SESSION_TOKEN_LENGTH = 73; // UUID-UUID = 36 + 1 + 36 = 73
 
     private final PrincipalService principalService;
     private final Map<String, McpSession> sessionTokens = new ConcurrentHashMap<>();
@@ -208,6 +217,24 @@ public class McpAuthenticationHandler {
      * @return Authentication result
      */
     public McpAuthResult authenticateSessionToken(String repositoryId, String token) {
+        // Input validation: check token is not null/empty and has valid format
+        if (token == null || token.isEmpty()) {
+            return McpAuthResult.failure("Invalid or expired token");
+        }
+
+        // Length check to prevent processing very long strings
+        if (token.length() > MAX_SESSION_TOKEN_LENGTH) {
+            log.debug("Session token rejected: exceeds maximum length");
+            return McpAuthResult.failure("Invalid or expired token");
+        }
+
+        // Format validation: ensure token matches expected UUID-UUID pattern
+        // This prevents processing of malformed or potentially malicious tokens
+        if (!SESSION_TOKEN_PATTERN.matcher(token).matches()) {
+            log.debug("Session token rejected: invalid format");
+            return McpAuthResult.failure("Invalid or expired token");
+        }
+
         McpSession session = sessionTokens.get(token);
 
         if (session == null) {

@@ -461,18 +461,27 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         // Add children to parent for Block Join
         parentDoc.addChildDocuments(childDocs);
 
-        // ATOMIC OPERATION: Combine delete and add into a single UpdateRequest
-        // This ensures that if the add fails, the old data is not deleted (rollback semantics)
+        // COMBINED OPERATION: Combine delete and add into a single UpdateRequest
+        // NOTE: Solr does NOT provide full ACID transaction guarantees.
+        // The UpdateRequest batches operations to reduce round trips, but:
+        // 1. If a network error occurs after delete but before add completes, data may be lost
+        // 2. There is no rollback mechanism in Solr
+        // 3. Partial failures are possible in edge cases
+        //
+        // In case of failure, the document may need to be re-indexed manually.
+        // For critical data, consider implementing a recovery mechanism or
+        // tracking failed indexing operations for retry.
+        //
         // Sanitize documentId to prevent Solr query injection
         String sanitizedDocId = SolrQuerySanitizer.escape(document.getId());
         UpdateRequest updateRequest = new UpdateRequest();
         updateRequest.deleteByQuery("_root_:" + sanitizedDocId);
         updateRequest.add(parentDoc);
-        
+
         if (commitWithinMs > 0) {
             updateRequest.setCommitWithin(commitWithinMs);
         }
-        
+
         try {
             updateRequest.process(solrClient, "nemaki");
             if (commitWithinMs <= 0) {
@@ -480,8 +489,11 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 solrClient.commit("nemaki");
             }
         } catch (Exception e) {
-            // Log and rethrow - the atomic request ensures no partial state
-            log.error("Atomic index operation failed for document: " + document.getId(), e);
+            // NOTE: Solr does not provide rollback. If the delete succeeded but add failed,
+            // the document will be missing from the index until re-indexed.
+            // Consider tracking failed operations for manual recovery.
+            log.error("Index operation failed for document: " + document.getId() +
+                      ". The document may need to be re-indexed.", e);
             throw e;
         }
     }

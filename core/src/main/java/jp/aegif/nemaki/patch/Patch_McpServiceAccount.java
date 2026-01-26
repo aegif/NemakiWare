@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.patch;
 
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -28,6 +29,11 @@ import jp.aegif.nemaki.util.spring.SpringContext;
  * - If config is leaked, attacker only gets MCP endpoint access, not admin access
  * - User permissions are still enforced via sessionToken authentication
  *
+ * Password configuration (in order of priority):
+ * 1. Environment variable: MCP_SERVICE_PASSWORD
+ * 2. System property: mcp.service.password
+ * 3. Auto-generated secure random password (logged on first startup)
+ *
  * This patch is idempotent - it will not create duplicate accounts on restart.
  */
 public class Patch_McpServiceAccount extends AbstractNemakiPatch {
@@ -37,8 +43,14 @@ public class Patch_McpServiceAccount extends AbstractNemakiPatch {
     private static final String PATCH_NAME = "mcp-service-account-20260124";
     private static final String MCP_SERVICE_USER_ID = "mcp-service";
     private static final String MCP_SERVICE_USER_NAME = "MCP Service Account";
-    // Default password - should be changed in production via setup script
-    private static final String MCP_SERVICE_DEFAULT_PASSWORD = "mcp-secure-token-2026";
+
+    // Environment variable and system property names for password configuration
+    private static final String ENV_MCP_SERVICE_PASSWORD = "MCP_SERVICE_PASSWORD";
+    private static final String PROP_MCP_SERVICE_PASSWORD = "mcp.service.password";
+
+    // Characters allowed in auto-generated passwords
+    private static final String PASSWORD_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*-_=+";
+    private static final int GENERATED_PASSWORD_LENGTH = 32;
 
     @Override
     public String getName() {
@@ -89,6 +101,11 @@ public class Patch_McpServiceAccount extends AbstractNemakiPatch {
             }
             log.error("User does not exist, creating new mcp-service account...");
 
+            // Get or generate password
+            String password = getMcpServicePassword();
+            boolean wasGenerated = (System.getenv(ENV_MCP_SERVICE_PASSWORD) == null
+                    && System.getProperty(PROP_MCP_SERVICE_PASSWORD) == null);
+
             // Create new MCP service user using UserItem (same as Patch_TestUserInitialization)
             // Constructor: (id, type, userId, name, password, isAdmin, description)
             UserItem mcpServiceUser = new UserItem(
@@ -96,7 +113,7 @@ public class Patch_McpServiceAccount extends AbstractNemakiPatch {
                 NemakiObjectType.nemakiUser,   // type
                 MCP_SERVICE_USER_ID,           // userId
                 MCP_SERVICE_USER_NAME,         // name
-                MCP_SERVICE_DEFAULT_PASSWORD,  // password (plain text - will be hashed internally)
+                password,                      // password (plain text - will be hashed internally)
                 false,                         // isAdmin - NOT an admin
                 null                           // description
             );
@@ -131,9 +148,72 @@ public class Patch_McpServiceAccount extends AbstractNemakiPatch {
             log.error("   Internal ID: " + createdUser.getId());
             log.error("   Admin: false (non-privileged)");
 
+            // Only log the password if it was auto-generated (so admin can capture it)
+            if (wasGenerated) {
+                log.error("   ===============================================");
+                log.error("   IMPORTANT: MCP Service Password (auto-generated)");
+                log.error("   Password: " + password);
+                log.error("   ===============================================");
+                log.error("   Please save this password - it will not be shown again!");
+                log.error("   To avoid auto-generation, set environment variable:");
+                log.error("      MCP_SERVICE_PASSWORD=<your-password>");
+                log.error("   Or system property:");
+                log.error("      -Dmcp.service.password=<your-password>");
+                log.error("   ===============================================");
+            } else {
+                log.error("   Password: (configured via environment variable or system property)");
+            }
+
         } catch (Exception e) {
             log.error("Failed to create MCP service account for repository: " + repositoryId, e);
             // Don't throw - patch failures should not prevent application startup
         }
+    }
+
+    /**
+     * Get the MCP service account password from configuration or generate a secure random one.
+     *
+     * Priority order:
+     * 1. Environment variable: MCP_SERVICE_PASSWORD
+     * 2. System property: mcp.service.password
+     * 3. Auto-generated secure random password
+     *
+     * @return The password to use for the MCP service account
+     */
+    private String getMcpServicePassword() {
+        // 1. Check environment variable
+        String envPassword = System.getenv(ENV_MCP_SERVICE_PASSWORD);
+        if (envPassword != null && !envPassword.trim().isEmpty()) {
+            log.error("MCP service password: using environment variable " + ENV_MCP_SERVICE_PASSWORD);
+            return envPassword.trim();
+        }
+
+        // 2. Check system property
+        String propPassword = System.getProperty(PROP_MCP_SERVICE_PASSWORD);
+        if (propPassword != null && !propPassword.trim().isEmpty()) {
+            log.error("MCP service password: using system property " + PROP_MCP_SERVICE_PASSWORD);
+            return propPassword.trim();
+        }
+
+        // 3. Generate secure random password
+        log.error("MCP service password: generating secure random password");
+        return generateSecurePassword();
+    }
+
+    /**
+     * Generate a secure random password.
+     *
+     * @return A random password of GENERATED_PASSWORD_LENGTH characters
+     */
+    private String generateSecurePassword() {
+        SecureRandom random = new SecureRandom();
+        StringBuilder sb = new StringBuilder(GENERATED_PASSWORD_LENGTH);
+
+        for (int i = 0; i < GENERATED_PASSWORD_LENGTH; i++) {
+            int index = random.nextInt(PASSWORD_CHARS.length());
+            sb.append(PASSWORD_CHARS.charAt(index));
+        }
+
+        return sb.toString();
     }
 }

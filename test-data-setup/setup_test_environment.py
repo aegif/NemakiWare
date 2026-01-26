@@ -776,7 +776,7 @@ class TestEnvironmentSetup:
         return buffer.getvalue()
 
     def _generate_contract(self, index: int, pages: int) -> dict:
-        """Generate a contract document (always PDF format)."""
+        """Generate a contract document (always PDF format) with rich content for RAG testing."""
         templates = self.config["content_templates"]["contracts"]
         titles = templates["titles"]
         companies = templates["company_names"]
@@ -791,7 +791,25 @@ class TestEnvironmentSetup:
         start_date = datetime.now() - timedelta(days=random.randint(0, 90))
         end_date = start_date + timedelta(days=random.randint(365, 730))
 
-        content = self._create_contract_pdf(title, company, contract_no, pages, start_date, end_date)
+        # Generate contract amount
+        amount_ranges = templates.get("amount_ranges", [{"min": 1000000, "max": 10000000}])
+        amount_range = random.choice(amount_ranges)
+        contract_amount = random.randint(amount_range["min"], amount_range["max"])
+
+        # Select payment term, confidentiality period, and penalty clause
+        payment_terms = templates.get("payment_terms", ["契約締結後30日以内に一括払い"])
+        confidentiality_periods = templates.get("confidentiality_periods", ["契約終了後3年間"])
+        penalty_clauses = templates.get("penalty_clauses", ["契約金額の10%相当額を違約金として支払う"])
+
+        payment_term = random.choice(payment_terms)
+        confidentiality_period = random.choice(confidentiality_periods)
+        penalty_clause = random.choice(penalty_clauses)
+
+        # Create contract with rich content
+        content = self._create_contract_pdf(
+            title, company, contract_no, pages, start_date, end_date,
+            contract_amount, payment_term, confidentiality_period, penalty_clause
+        )
 
         return {
             "name": f"{title}_{contract_no}.pdf",
@@ -806,8 +824,26 @@ class TestEnvironmentSetup:
         }
 
     def _create_contract_pdf(self, title: str, company: str, contract_no: str, pages: int,
-                              start_date: datetime = None, end_date: datetime = None) -> bytes:
-        """Create a PDF contract document."""
+                              start_date: datetime = None, end_date: datetime = None,
+                              contract_amount: int = None, payment_term: str = None,
+                              confidentiality_period: str = None, penalty_clause: str = None) -> bytes:
+        """Create a PDF contract document with rich content for RAG analysis.
+
+        Args:
+            title: Contract title
+            company: Counterparty company name
+            contract_no: Contract number
+            pages: Number of pages
+            start_date: Contract start date
+            end_date: Contract end date
+            contract_amount: Contract amount in yen
+            payment_term: Payment terms description
+            confidentiality_period: Confidentiality period description
+            penalty_clause: Penalty clause description
+
+        Returns:
+            PDF content as bytes
+        """
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2 * cm, bottomMargin=2 * cm)
 
@@ -831,25 +867,42 @@ class TestEnvironmentSetup:
             spaceAfter=12,
         )
 
-        # Use provided dates or generate random ones
+        # Use provided values or generate defaults
         if start_date is None:
             start_date = datetime.now() - timedelta(days=random.randint(1, 365))
         if end_date is None:
             end_date = start_date + timedelta(days=random.randint(365, 730))
+        if contract_amount is None:
+            contract_amount = random.randint(1000000, 50000000)
+        if payment_term is None:
+            payment_term = "契約締結後30日以内に一括払い"
+        if confidentiality_period is None:
+            confidentiality_period = "契約終了後3年間"
+        if penalty_clause is None:
+            penalty_clause = "契約金額の10%相当額を違約金として支払う"
 
         story = []
 
+        # Title
         story.append(Paragraph(title, title_style))
         story.append(Spacer(1, 20))
 
+        # Contract metadata
         story.append(
             Paragraph(
                 f"契約番号: {contract_no}",
                 body_style,
             )
         )
+        story.append(
+            Paragraph(
+                f"契約金額: ¥{contract_amount:,}（税別）",
+                body_style,
+            )
+        )
         story.append(Spacer(1, 20))
 
+        # Preamble
         story.append(
             Paragraph(
                 f"株式会社テスト商事（以下「甲」という）と{company}（以下「乙」という）は、"
@@ -859,12 +912,67 @@ class TestEnvironmentSetup:
         )
         story.append(Spacer(1, 20))
 
+        # Main articles with detailed content for RAG analysis
         articles = [
-            ("第1条（目的）", f"本契約は、甲乙間における{title.replace('契約書', '')}に関する基本的事項を定めることを目的とする。"),
-            ("第2条（契約期間）", "本契約の有効期間は、契約締結日から1年間とする。ただし、期間満了の1ヶ月前までに甲乙いずれからも書面による解約の申し出がない場合は、同一条件で更に1年間延長されるものとし、以後も同様とする。"),
-            ("第3条（秘密保持）", "甲および乙は、本契約に関連して知り得た相手方の技術上または営業上の秘密情報を、相手方の書面による事前の承諾なく第三者に開示または漏洩してはならない。"),
-            ("第4条（権利義務の譲渡禁止）", "甲および乙は、相手方の書面による事前の承諾なく、本契約上の地位または本契約に基づく権利義務の全部もしくは一部を第三者に譲渡し、または担保に供してはならない。"),
-            ("第5条（反社会的勢力の排除）", "甲および乙は、自己または自己の役員が反社会的勢力に該当しないことを表明し、将来にわたっても該当しないことを確約する。"),
+            ("第1条（目的）",
+             f"本契約は、甲乙間における{title.replace('契約書', '')}に関する基本的事項を定めることを目的とする。"
+             f"本契約に基づく業務の範囲、対価、履行方法等については、本契約および別途締結する個別契約に定めるところによる。"),
+
+            ("第2条（契約期間）",
+             f"本契約の有効期間は、{start_date.strftime('%Y年%m月%d日')}から{end_date.strftime('%Y年%m月%d日')}までとする。"
+             "ただし、期間満了の1ヶ月前までに甲乙いずれからも書面による解約の申し出がない場合は、"
+             "同一条件で更に1年間延長されるものとし、以後も同様とする。"),
+
+            ("第3条（契約金額および支払条件）",
+             f"本契約に基づく契約金額は、金{contract_amount:,}円（消費税別）とする。"
+             f"支払条件は、{payment_term}とし、甲が乙に指定する銀行口座への振込みにより支払うものとする。"
+             "振込手数料は甲の負担とする。"),
+
+            ("第4条（秘密保持）",
+             "甲および乙は、本契約に関連して知り得た相手方の技術上または営業上の秘密情報"
+             "（以下「秘密情報」という）を、相手方の書面による事前の承諾なく第三者に開示または漏洩してはならない。"
+             f"この秘密保持義務は、本契約終了後も{confidentiality_period}存続するものとする。"
+             "なお、以下の情報は秘密情報に含まれないものとする。"
+             "（1）開示を受けた時点で既に公知であった情報、"
+             "（2）開示を受けた後、受領者の責によらずに公知となった情報、"
+             "（3）開示を受けた時点で既に受領者が保有していた情報、"
+             "（4）正当な権限を有する第三者から秘密保持義務を負うことなく適法に取得した情報。"),
+
+            ("第5条（知的財産権）",
+             "本契約に基づき甲が乙に提供する成果物に関する著作権（著作権法第27条および第28条の権利を含む）"
+             "その他一切の知的財産権は、対価の完済をもって甲に帰属するものとする。"
+             "乙は、甲に対し、当該成果物に関して著作者人格権を行使しないものとする。"),
+
+            ("第6条（損害賠償）",
+             "甲または乙が本契約に違反し、相手方に損害を与えた場合は、{penalty_clause}ものとする。"
+             .replace("{penalty_clause}", penalty_clause) +
+             "ただし、当該違反が天災地変その他不可抗力による場合はこの限りでない。"),
+
+            ("第7条（契約解除）",
+             "甲または乙は、相手方が以下の各号のいずれかに該当した場合、何らの催告なく直ちに本契約を解除することができる。"
+             "（1）本契約に違反し、相当の期間を定めて催告したにもかかわらず是正されない場合、"
+             "（2）支払停止または支払不能となった場合、"
+             "（3）手形または小切手が不渡りとなった場合、"
+             "（4）差押え、仮差押え、仮処分または競売の申立てがあった場合、"
+             "（5）破産手続開始、民事再生手続開始、会社更生手続開始または特別清算開始の申立てがあった場合、"
+             "（6）解散または事業の全部もしくは重要な一部を第三者に譲渡した場合。"),
+
+            ("第8条（反社会的勢力の排除）",
+             "甲および乙は、自己または自己の役員が暴力団、暴力団員、暴力団準構成員、暴力団関係企業、"
+             "総会屋、社会運動等標榜ゴロ、特殊知能暴力集団その他これらに準ずる反社会的勢力"
+             "（以下「反社会的勢力」という）に該当しないことを表明し、将来にわたっても該当しないことを確約する。"
+             "甲または乙が本条に違反した場合、相手方は何らの催告なく直ちに本契約を解除できるものとする。"),
+
+            ("第9条（権利義務の譲渡禁止）",
+             "甲および乙は、相手方の書面による事前の承諾なく、本契約上の地位または本契約に基づく権利義務の"
+             "全部もしくは一部を第三者に譲渡し、または担保に供してはならない。"),
+
+            ("第10条（協議事項）",
+             "本契約に定めのない事項または本契約の条項の解釈に疑義が生じた場合は、"
+             "甲乙誠意をもって協議し、解決するものとする。"),
+
+            ("第11条（管轄裁判所）",
+             "本契約に関する一切の紛争については、東京地方裁判所を第一審の専属的合意管轄裁判所とする。"),
         ]
 
         for article_title, article_content in articles:
@@ -872,26 +980,27 @@ class TestEnvironmentSetup:
             story.append(Paragraph(article_content, body_style))
             story.append(Spacer(1, 10))
 
+        # Additional pages with supplementary articles
         for page in range(1, pages - 1):
             story.append(Spacer(1, 50))
 
-            for i in range(3):
-                article_num = 6 + (page - 1) * 3 + i
-                story.append(
-                    Paragraph(
-                        f"<b>第{article_num}条（追加条項{article_num - 5}）</b>",
-                        body_style,
-                    )
-                )
-                story.append(
-                    Paragraph(
-                        f"本条は、{title}に関する追加的な規定事項を定める。甲および乙は、本条の規定に従い、"
-                        f"誠実に義務を履行するものとする。具体的な実施方法については、別途協議の上決定する。",
-                        body_style,
-                    )
-                )
+            supplementary_articles = [
+                (f"第{12 + (page - 1) * 2}条（報告義務）",
+                 f"乙は、本契約に基づく業務の進捗状況について、甲の求めに応じて速やかに報告するものとする。"
+                 f"また、乙は、業務遂行上重大な問題が発生した場合は、直ちに甲に報告し、その指示を仰ぐものとする。"),
+
+                (f"第{13 + (page - 1) * 2}条（再委託）",
+                 f"乙は、甲の書面による事前の承諾を得た場合に限り、本契約に基づく業務の全部または一部を第三者に再委託することができる。"
+                 f"この場合、乙は当該第三者に対し、本契約に基づき乙が負う義務と同等の義務を負わせるものとし、"
+                 f"当該第三者の行為について甲に対し一切の責任を負うものとする。"),
+            ]
+
+            for article_title, article_content in supplementary_articles:
+                story.append(Paragraph(f"<b>{article_title}</b>", body_style))
+                story.append(Paragraph(article_content, body_style))
                 story.append(Spacer(1, 10))
 
+        # Closing statement
         story.append(Spacer(1, 30))
         story.append(
             Paragraph(
@@ -901,6 +1010,7 @@ class TestEnvironmentSetup:
         )
         story.append(Spacer(1, 20))
 
+        # Contract summary
         story.append(
             Paragraph(
                 f"契約締結日: {start_date.strftime('%Y年%m月%d日')}",
@@ -913,13 +1023,25 @@ class TestEnvironmentSetup:
                 body_style,
             )
         )
+        story.append(
+            Paragraph(
+                f"契約金額: ¥{contract_amount:,}（税別）",
+                body_style,
+            )
+        )
         story.append(Spacer(1, 30))
 
-        story.append(Paragraph("甲: 株式会社テスト商事", body_style))
-        story.append(Paragraph("   代表取締役 山田 太郎", body_style))
+        # Signature blocks
+        story.append(Paragraph("<b>甲（発注者）:</b>", body_style))
+        story.append(Paragraph("  株式会社テスト商事", body_style))
+        story.append(Paragraph("  〒100-0001 東京都千代田区丸の内1-1-1", body_style))
+        story.append(Paragraph("  代表取締役 山田 太郎", body_style))
         story.append(Spacer(1, 20))
-        story.append(Paragraph(f"乙: {company}", body_style))
-        story.append(Paragraph("   代表取締役 鈴木 一郎", body_style))
+
+        story.append(Paragraph("<b>乙（受注者）:</b>", body_style))
+        story.append(Paragraph(f"  {company}", body_style))
+        story.append(Paragraph("  〒150-0001 東京都渋谷区神宮前1-2-3", body_style))
+        story.append(Paragraph("  代表取締役 鈴木 一郎", body_style))
 
         doc.build(story)
         return buffer.getvalue()

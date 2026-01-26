@@ -749,18 +749,23 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 return result;
             }
 
-            // Build query with repository filter
-            // Escape repositoryId to prevent query injection with special characters
-            // Always force repository_id filter to prevent cross-repository queries
+            // Build query with repository filter using filter query (fq)
+            // SECURITY: Use fq parameter for repository filter to prevent query injection bypass
+            // Unlike wrapping the query string, fq is always applied independently and cannot
+            // be bypassed with tricks like ") OR 1=1 OR ("
             String escapedRepoId = ClientUtils.escapeQueryChars(repositoryId);
             SolrQuery solrQuery = new SolrQuery();
+            
+            // Set the main query (q parameter)
             if (query != null && !query.trim().isEmpty()) {
-                // Always wrap user query with repository filter for security
-                // This prevents accidental or intentional cross-repository queries
-                solrQuery.setQuery("repository_id:" + escapedRepoId + " AND (" + query + ")");
+                solrQuery.setQuery(query);
             } else {
-                solrQuery.setQuery("repository_id:" + escapedRepoId);
+                solrQuery.setQuery("*:*");
             }
+            
+            // Always add repository filter as fq (filter query) for security
+            // This cannot be bypassed by the main query parameter
+            solrQuery.addFilterQuery("repository_id:" + escapedRepoId);
 
             solrQuery.setStart(start >= 0 ? start : 0);
             // Enforce maximum rows limit to prevent high-load queries

@@ -121,8 +121,10 @@ public class NemakiwareMcpServer {
             case "nemakiware_logout":
                 return toolsProvider.executeLogoutTool(arguments);
 
+            case "nemakiware_search":
             case "nemakiware_rag_search":
             case "nemakiware_similar_documents":
+            case "nemakiware_get_document_content":
                 return executeAuthenticatedTool(toolName, arguments, headers);
 
             default:
@@ -167,11 +169,17 @@ public class NemakiwareMcpServer {
 
         // Execute the tool
         switch (toolName) {
+            case "nemakiware_search":
+                return toolsProvider.executeSearchTool(arguments, repositoryId, userId);
+
             case "nemakiware_rag_search":
                 return toolsProvider.executeRagSearchTool(arguments, repositoryId, userId);
 
             case "nemakiware_similar_documents":
                 return toolsProvider.executeSimilarDocumentsTool(arguments, repositoryId, userId);
+
+            case "nemakiware_get_document_content":
+                return toolsProvider.executeGetDocumentContentTool(arguments, repositoryId, userId);
 
             default:
                 return resultFactory.error("Unknown tool: " + toolName);

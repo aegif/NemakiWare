@@ -15,7 +15,12 @@ import org.mockito.MockitoAnnotations;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.businesslogic.TextExtractionService;
+import jp.aegif.nemaki.cmis.aspect.PermissionService;
+import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.rag.search.VectorSearchResult;
 import jp.aegif.nemaki.rag.search.VectorSearchService;
@@ -37,6 +42,21 @@ public class McpToolsProviderTest {
     @Mock
     private VectorSearchService vectorSearchService;
 
+    @Mock
+    private ContentService contentService;
+
+    @Mock
+    private TextExtractionService textExtractionService;
+
+    @Mock
+    private PermissionService permissionService;
+
+    @Mock
+    private TypeManager typeManager;
+
+    @Mock
+    private DiscoveryService discoveryService;
+
     private McpToolsProvider toolsProvider;
     private McpAuthenticationHandler authHandler;
     private McpToolResultFactory resultFactory;
@@ -51,8 +71,9 @@ public class McpToolsProviderTest {
         ObjectMapper objectMapper = new ObjectMapper();
         authHandler = new McpAuthenticationHandler(principalService, TEST_SESSION_TTL_SECONDS);
         resultFactory = new McpToolResultFactory(objectMapper);
-        toolsProvider = new McpToolsProvider(authHandler, vectorSearchService, resultFactory,
-                objectMapper, "http://localhost:8080/core", DEFAULT_REPOSITORY);
+        toolsProvider = new McpToolsProvider(authHandler, vectorSearchService, contentService,
+                textExtractionService, permissionService, typeManager, discoveryService,
+                resultFactory, objectMapper, "http://localhost:8080/core", DEFAULT_REPOSITORY);
     }
 
     // ========== Login Tool Tests ==========
@@ -375,13 +396,15 @@ public class McpToolsProviderTest {
         List<McpToolDefinition> tools = toolsProvider.getToolDefinitions();
 
         // Then
-        assertEquals(4, tools.size());
+        assertEquals(6, tools.size());
 
         // Verify tool names
         assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_login")));
         assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_logout")));
+        assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_search")));
         assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_rag_search")));
         assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_similar_documents")));
+        assertTrue(tools.stream().anyMatch(t -> t.getName().equals("nemakiware_get_document_content")));
     }
 
     @Test
@@ -399,6 +422,187 @@ public class McpToolsProviderTest {
         assertTrue(loginTool.getInputSchema().contains("username"));
         assertTrue(loginTool.getInputSchema().contains("password"));
         assertTrue(loginTool.getDescription().contains("ログイン") || loginTool.getDescription().contains("login"));
+    }
+
+    // ========== Input Validation Tests ==========
+
+    @Test
+    public void testRagSearchToolRejectsQueryTooLong() throws Exception {
+        // Given: Query exceeding MAX_QUERY_LENGTH (10000)
+        String repositoryId = "bedroom";
+        String userId = "admin";
+        String tooLongQuery = "x".repeat(10001);
+
+        authHandler.registerSessionToken("test-token", userId, repositoryId);
+
+        Map<String, Object> arguments = Map.of("query", tooLongQuery);
+
+        // When
+        McpToolResult result = toolsProvider.executeRagSearchTool(arguments, repositoryId, userId);
+
+        // Then
+        assertFalse(result.isSuccess());
+        assertTrue(result.getContent().contains("query exceeds maximum length"));
+    }
+
+    @Test
+    public void testRagSearchToolRejectsEmptyQuery() throws Exception {
+        // Given
+        String repositoryId = "bedroom";
+        String userId = "admin";
+
+        authHandler.registerSessionToken("test-token", userId, repositoryId);
+
+        Map<String, Object> arguments = Map.of("query", "");
+
+        // When
+        McpToolResult result = toolsProvider.executeRagSearchTool(arguments, repositoryId, userId);
+
+        // Then
+        assertFalse(result.isSuccess());
+        assertTrue(result.getContent().contains("query is required"));
+    }
+
+    @Test
+    public void testRagSearchToolRejectsTopKTooSmall() throws Exception {
+        // Given
+        String repositoryId = "bedroom";
+        String userId = "admin";
+
+        authHandler.registerSessionToken("test-token", userId, repositoryId);
+
+        Map<String, Object> arguments = Map.of(
+            "query", "test",
+            "topK", 0  // MIN_TOP_K is 1
+        );
+
+        // When
+        McpToolResult result = toolsProvider.executeRagSearchTool(arguments, repositoryId, userId);
+
+        // Then
+        assertFalse(result.isSuccess());
+        assertTrue(result.getContent().contains("topK must be between"));
+    }
+
+    @Test
+    public void testRagSearchToolRejectsTopKTooLarge() throws Exception {
+        // Given
+        String repositoryId = "bedroom";
+        String userId = "admin";
+
+        authHandler.registerSessionToken("test-token", userId, repositoryId);
+
+        Map<String, Object> arguments = Map.of(
+            "query", "test",
+            "topK", 101  // MAX_TOP_K is 100
+        );
+
+        // When
+        McpToolResult result = toolsProvider.executeRagSearchTool(arguments, repositoryId, userId);
+
+        // Then
+        assertFalse(result.isSuccess());
+        assertTrue(result.getContent().contains("topK must be between"));
+    }
+
+    @Test
+    public void testRagSearchToolRejectsMinScoreOutOfRange() throws Exception {
+        // Given
+        String repositoryId = "bedroom";
+        String userId = "admin";
+
+        authHandler.registerSessionToken("test-token", userId, repositoryId);
+
+        Map<String, Object> arguments = Map.of(
+            "query", "test",
+            "minScore", 1.5f  // minScore must be 0.0-1.0
+        );
+
+        // When
+        McpToolResult result = toolsProvider.executeRagSearchTool(arguments, repositoryId, userId);
+
+        // Then
+        assertFalse(result.isSuccess());
+        assertTrue(result.getContent().contains("minScore must be between"));
+    }
+
+    @Test
+    public void testSimilarDocumentsToolRejectsDocumentIdTooLong() throws Exception {
+        // Given
+        String repositoryId = "bedroom";
+        String userId = "admin";
+        String tooLongDocumentId = "x".repeat(201);  // MAX_DOCUMENT_ID_LENGTH is 200
+
+        authHandler.registerSessionToken("test-token", userId, repositoryId);
+
+        Map<String, Object> arguments = Map.of("documentId", tooLongDocumentId);
+
+        // When
+        McpToolResult result = toolsProvider.executeSimilarDocumentsTool(arguments, repositoryId, userId);
+
+        // Then
+        assertFalse(result.isSuccess());
+        assertTrue(result.getContent().contains("documentId exceeds maximum length"));
+    }
+
+    @Test
+    public void testSimilarDocumentsToolRejectsEmptyDocumentId() throws Exception {
+        // Given
+        String repositoryId = "bedroom";
+        String userId = "admin";
+
+        authHandler.registerSessionToken("test-token", userId, repositoryId);
+
+        Map<String, Object> arguments = Map.of("documentId", "");
+
+        // When
+        McpToolResult result = toolsProvider.executeSimilarDocumentsTool(arguments, repositoryId, userId);
+
+        // Then
+        assertFalse(result.isSuccess());
+        assertTrue(result.getContent().contains("documentId is required"));
+    }
+
+    @Test
+    public void testGetDocumentContentToolRejectsZeroMaxLength() throws Exception {
+        // Given
+        String repositoryId = "bedroom";
+        String userId = "admin";
+
+        authHandler.registerSessionToken("test-token", userId, repositoryId);
+
+        Map<String, Object> arguments = Map.of(
+            "documentId", "doc123",
+            "maxLength", 0  // maxLength must be at least 1
+        );
+
+        // When
+        McpToolResult result = toolsProvider.executeGetDocumentContentTool(arguments, repositoryId, userId);
+
+        // Then
+        assertFalse(result.isSuccess());
+        assertTrue(result.getContent().contains("maxLength must be at least 1"));
+    }
+
+    @Test
+    public void testGetDocumentContentToolRejectsNegativeMaxLength() throws Exception {
+        // Given
+        String repositoryId = "bedroom";
+        String userId = "admin";
+
+        authHandler.registerSessionToken("test-token", userId, repositoryId);
+
+        Map<String, Object> arguments = Map.of(
+            "documentId", "doc123",
+            "maxLength", -1
+        );
+
+        // When
+        McpToolResult result = toolsProvider.executeGetDocumentContentTool(arguments, repositoryId, userId);
+
+        // Then
+        assertFalse(result.isSuccess());
+        assertTrue(result.getContent().contains("maxLength must be at least 1"));
     }
 
     // ========== Helper Methods ==========

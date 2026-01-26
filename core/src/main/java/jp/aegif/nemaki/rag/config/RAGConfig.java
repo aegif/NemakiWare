@@ -204,6 +204,22 @@ public class RAGConfig {
     @Value("${rag.ratelimit.burst.size:5}")
     private int rateLimitBurstSize;
 
+    /**
+     * Maximum number of user rate limiters to keep in memory.
+     * When exceeded, stale entries are evicted based on last access time.
+     * Default: 10000 (enough for most deployments)
+     */
+    @Value("${rag.ratelimit.max.limiters:10000}")
+    private int rateLimitMaxLimiters;
+
+    /**
+     * Time-to-live in seconds for idle rate limiter entries.
+     * Entries not accessed within this time will be evicted during cleanup.
+     * Default: 300 seconds (5 minutes)
+     */
+    @Value("${rag.ratelimit.cleanup.ttl.seconds:300}")
+    private int rateLimitCleanupTtlSeconds;
+
     // ========================================
     // Search Algorithm Settings
     // ========================================
@@ -343,6 +359,14 @@ public class RAGConfig {
 
     public int getRateLimitBurstSize() {
         return rateLimitBurstSize;
+    }
+
+    public int getRateLimitMaxLimiters() {
+        return rateLimitMaxLimiters;
+    }
+
+    public int getRateLimitCleanupTtlSeconds() {
+        return rateLimitCleanupTtlSeconds;
     }
 
     public int getChunkSearchTopKMultiplier() {
