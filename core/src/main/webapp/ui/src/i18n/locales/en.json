@@ -87,6 +87,7 @@
       "search": "Search",
       "archive": "Archive",
       "solr": "Solr Index",
+      "auditDashboard": "Audit Log",
       "apiDocs": "API Docs"
     },
   "typeManagement": {
@@ -1473,5 +1474,31 @@
       "searchError": "Search failed",
       "healthCheckError": "Health check failed"
     }
+  },
+  "auditDashboard": {
+    "title": "Audit Log Dashboard",
+    "error": "Error",
+    "retry": "Retry",
+    "fetchError": "Failed to fetch metrics",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "level": "Level",
+    "refresh": "Refresh",
+    "reset": "Reset",
+    "resetConfirmTitle": "Reset Metrics",
+    "resetConfirmDesc": "Are you sure you want to reset all metrics counters?",
+    "resetSuccess": "Metrics reset successfully",
+    "resetError": "Failed to reset metrics",
+    "totalEvents": "Total Events",
+    "logged": "Logged",
+    "skipped": "Skipped",
+    "failed": "Failed",
+    "successRate": "Success Rate",
+    "skipRate": "Skip Rate",
+    "failureRate": "Failure Rate",
+    "config": "Audit Log Configuration",
+    "status": "Status",
+    "readAuditLevel": "Read Audit Level",
+    "lastUpdated": "Last Updated"
   }
 }

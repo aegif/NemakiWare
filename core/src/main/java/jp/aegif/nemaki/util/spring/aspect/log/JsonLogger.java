@@ -181,8 +181,7 @@ public class JsonLogger {
 				log.setTime(new Duration(timeStart.getMillis(), timeEnd.getMillis()).getMillis());
 			}
 			
-			// output
-			// TODO
+			// Output configuration
 			final ValueConfig outputConfig = methodConfig.getOutput();
 			if (outputConfig != null) {
 				switch (outputConfig.getType()) {

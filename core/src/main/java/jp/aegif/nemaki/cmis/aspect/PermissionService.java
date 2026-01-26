@@ -38,10 +38,14 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 public interface PermissionService {
 
 	/**
-	 * permissionDenied Exception check 
-	 * @param repositoryId TODO
-	 * @param content TODO
-	 * @return
+	 * Check permission and throw CmisPermissionDeniedException if denied.
+	 * @param context the call context
+	 * @param repositoryId the repository identifier
+	 * @param key the permission key to check
+	 * @param acl the ACL to check against
+	 * @param baseObjectType the base object type
+	 * @param content the content object
+	 * @return true if permission is granted
 	 */
 	public Boolean checkPermission(CallContext context, String repositoryId, String key, Acl acl, String baseObjectType, Content content);
 	
@@ -50,11 +54,11 @@ public interface PermissionService {
 	public boolean checkPermissionAtTopLevel(CallContext context, String repositoryId, String key, Content content);
 	
 	/**
-	 * 
-	 * @param callContext
-	 * @param repositoryId TODO
-	 * @param contents
-	 * @return
+	 * Filter a list of contents based on user permissions.
+	 * @param callContext the call context
+	 * @param repositoryId the repository identifier
+	 * @param contents the list of contents to filter
+	 * @return filtered list containing only accessible contents
 	 */
 	public <T> List<T> getFiltered(CallContext callContext,String repositoryId, List<T>contents);
 

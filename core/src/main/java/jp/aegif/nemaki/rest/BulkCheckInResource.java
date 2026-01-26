@@ -143,7 +143,7 @@ public class BulkCheckInResource extends ResourceBase {
 	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
 	public String execute(MultivaluedMap<String,String> form, @Context HttpServletRequest httpRequest) {
 		JSONObject result = new JSONObject();
-		//		JSONArray errMsg = new JSONArray();
+		JSONArray errMsg = new JSONArray();
 		String repositoryId = form.get("repositoryId").get(0);
 		String comment = form.get("comment").get(0);
 		Boolean force = form.get("force").get(0).equals("true");
@@ -151,8 +151,29 @@ public class BulkCheckInResource extends ResourceBase {
 		List<String> propertyIds = form.get("propertyId");
 		List<String> propertyValues = form.get("propertyValue");
 		List<String> objectIds = form.get("objectId");
-		//List<String> changeTokens = form.get("changeToken");
-		//declare properties variable
+
+		// Validate required input parameters
+		if (propertyIds == null || propertyValues == null) {
+			errMsg.add("Property IDs and values are required");
+			log.warn("BulkCheckIn: Property IDs or values are null");
+			return makeResult(false, result, errMsg).toJSONString();
+		}
+		if (propertyIds.size() != propertyValues.size()) {
+			errMsg.add("Property IDs and values count mismatch: " +
+					propertyIds.size() + " property IDs but " +
+					propertyValues.size() + " property values provided. " +
+					"Each property ID must have a corresponding value.");
+			log.warn("BulkCheckIn: Property IDs and values count mismatch: " +
+					propertyIds.size() + " vs " + propertyValues.size());
+			return makeResult(false, result, errMsg).toJSONString();
+		}
+		if (objectIds == null || objectIds.isEmpty()) {
+			errMsg.add("At least one object ID is required");
+			log.warn("BulkCheckIn: No object IDs provided");
+			return makeResult(false, result, errMsg).toJSONString();
+		}
+
+		// Declare properties variable
 		PropertiesImpl properties = new PropertiesImpl();
 
 		Document firstdoc = contentService.getDocument(repositoryId, objectIds.get(0));
@@ -160,14 +181,6 @@ public class BulkCheckInResource extends ResourceBase {
 		TypeDefinition typeDef = typeManager.getTypeByQueryName(repositoryId, typeId);
 
 		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
-		// TODO: error checks
-		if (propertyIds.size() != propertyValues.size()){
-			//
-		}
-		//if (objectIds.size() != changeTokens.size()){
-			//
-		//}
-		//Properties newProperties = new Properties();
 
 		for(int i = 0; i < propertyIds.size(); ++i){
 			String propertyName = propertyIds.get(i);

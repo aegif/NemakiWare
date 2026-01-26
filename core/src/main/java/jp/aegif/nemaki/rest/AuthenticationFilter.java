@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rest;
 
+import jp.aegif.nemaki.audit.AuditLogger;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -56,7 +57,7 @@ public class AuthenticationFilter implements Filter {
 	private RepositoryInfoMap repositoryInfoMap;
 	private PrincipalService principalService;
 	private final String TOKEN_FALSE = "false";
-	
+
 	// ObjectMapper for RFC 7807 ProblemDetail serialization (thread-safe, reusable)
 	private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -72,114 +73,122 @@ public class AuthenticationFilter implements Filter {
 		HttpServletRequest hreq = (HttpServletRequest) req;
 		HttpServletResponse hres = (HttpServletResponse) res;
 
-		// CORS is handled by SimpleCorsFilter in web.xml - do not add CORS headers here
-		// to avoid duplicate header application
-		
-		// Handle CORS preflight requests (OPTIONS) - bypass authentication
-		// SimpleCorsFilter handles the actual CORS headers, we just need to bypass auth
-		if ("OPTIONS".equalsIgnoreCase(hreq.getMethod())) {
-			log.debug("=== CORS: Bypassing authentication for OPTIONS preflight request ===");
-			chain.doFilter(req, res);
-			return;
-		}
+		// Set audit request context for capturing client IP
+		AuditLogger.setRequestContext(hreq);
 
-		// Check if this is a path that should bypass authentication
-		String requestURI = hreq.getRequestURI();
-		String servletPath = hreq.getServletPath();
-		String pathInfo = hreq.getPathInfo();
+		try {
+			// CORS is handled by SimpleCorsFilter in web.xml - do not add CORS headers here
+			// to avoid duplicate header application
 
-		log.debug("=== AUTH DEBUG: requestURI=" + requestURI + ", servletPath=" + servletPath + ", pathInfo=" + pathInfo + " ===");
-
-		// UI paths should bypass REST authentication (handled by SPA)
-		if (requestURI != null && requestURI.contains("/ui/")) {
-			log.debug("Bypassing REST authentication for UI path: " + requestURI);
-			chain.doFilter(req, res);
-			return;
-		}
-
-		// Check various URI patterns for /all/ paths
-		if (requestURI != null && requestURI.contains("/rest/all/")) {
-			log.debug("Bypassing authentication for /rest/all/ URI: " + requestURI);
-			chain.doFilter(req, res);
-			return;
-		}
-
-		// For servlet mappings, pathInfo might be null, so check servletPath
-		if (servletPath != null && servletPath.contains("/all/")) {
-			log.debug("Bypassing authentication for /all/ servletPath: " + servletPath);
-			chain.doFilter(req, res);
-			return;
-		}
-
-		if (pathInfo != null && pathInfo.startsWith("/all/")) {
-			log.debug("Bypassing authentication for /all/ pathInfo: " + pathInfo);
-			chain.doFilter(req, res);
-			return;
-		}
-
-		// Bypass authentication for SSO token conversion endpoints (SAML and OIDC)
-		if (requestURI != null && (requestURI.contains("/authtoken/saml/convert") || requestURI.contains("/authtoken/oidc/convert"))) {
-			log.debug("Bypassing authentication for SSO token conversion endpoint: " + requestURI);
-			chain.doFilter(req, res);
-			return;
-		}
-
-		// Bypass authentication for OpenAPI specification endpoints (allow public access to API docs)
-		// Note: API v1 CMIS endpoints are at /api/v1/cmis/* to avoid conflict with legacy /api/v1/repo/* endpoints
-		if (requestURI != null && (requestURI.contains("/api/v1/cmis/openapi.json") || requestURI.contains("/api/v1/cmis/openapi.yaml"))) {
-			log.debug("Bypassing authentication for OpenAPI spec endpoint: " + requestURI);
-			chain.doFilter(req, res);
-			return;
-		}
-
-		// Bypass authentication for auth config endpoint (SSO button visibility settings)
-		// This must be public because it's accessed before user login
-		// Only match specific patterns to prevent unintended bypasses
-		if (requestURI != null && (
-				requestURI.equals("/core/rest/auth/config") ||
-				requestURI.endsWith("/rest/auth/config"))) {
-			log.debug("Bypassing authentication for auth config endpoint: " + requestURI);
-			chain.doFilter(req, res);
-			return;
-		}
-
-		// Bypass authentication for API v1 auth endpoints (login, saml, oidc)
-		// These endpoints handle their own authentication through request body or SSO
-		if (requestURI != null && requestURI.contains("/api/v1/cmis/auth/") &&
-			(requestURI.endsWith("/login") || requestURI.contains("/saml") || requestURI.contains("/oidc"))) {
-			log.debug("Bypassing authentication for API v1 auth endpoint: " + requestURI);
-			chain.doFilter(req, res);
-			return;
-		}
-
-		boolean auth = login(hreq, hres);
-		if(auth){
-			chain.doFilter(req, res);
-		}else{
-			log.warn("REST API Unauthorized! : " + hreq.getRequestURI());
-
-			// Check if this is an API v1 endpoint - return RFC 7807 Problem Details response
-			// Use requestURI instead of pathInfo because pathInfo may be null for filter URL patterns
-			if (requestURI != null && requestURI.contains("/api/v1/")) {
-				// Return RFC 7807 compliant 401 response for API v1 endpoints
-				hres.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-				hres.setContentType("application/problem+json");
-				hres.setCharacterEncoding("UTF-8");
-				// Support both Basic and Bearer authentication for future JWT/OAuth2 compatibility
-				hres.setHeader("WWW-Authenticate", "Basic realm=\"NemakiWare API\", Bearer realm=\"NemakiWare API\"");
-				
-				// Use ProblemDetail class for consistent RFC 7807 format and proper JSON escaping
-				ProblemDetail problem = ProblemDetail.unauthorized(
-					"Valid credentials are required to access this resource. Please provide Basic or Bearer authentication credentials.",
-					requestURI
-				);
-				String problemJson = objectMapper.writeValueAsString(problem);
-				hres.getWriter().write(problemJson);
-				hres.getWriter().flush();
-			} else {
-				// For legacy endpoints, use standard error response
-				hres.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+			// Handle CORS preflight requests (OPTIONS) - bypass authentication
+			// SimpleCorsFilter handles the actual CORS headers, we just need to bypass auth
+			if ("OPTIONS".equalsIgnoreCase(hreq.getMethod())) {
+				log.debug("=== CORS: Bypassing authentication for OPTIONS preflight request ===");
+				chain.doFilter(req, res);
+				return;
 			}
+
+			// Check if this is a path that should bypass authentication
+			String requestURI = hreq.getRequestURI();
+			String servletPath = hreq.getServletPath();
+			String pathInfo = hreq.getPathInfo();
+
+			log.debug("=== AUTH DEBUG: requestURI=" + requestURI + ", servletPath=" + servletPath + ", pathInfo=" + pathInfo + " ===");
+
+			// UI paths should bypass REST authentication (handled by SPA)
+			if (requestURI != null && requestURI.contains("/ui/")) {
+				log.debug("Bypassing REST authentication for UI path: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
+			// Check various URI patterns for /all/ paths
+			if (requestURI != null && requestURI.contains("/rest/all/")) {
+				log.debug("Bypassing authentication for /rest/all/ URI: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
+			// For servlet mappings, pathInfo might be null, so check servletPath
+			if (servletPath != null && servletPath.contains("/all/")) {
+				log.debug("Bypassing authentication for /all/ servletPath: " + servletPath);
+				chain.doFilter(req, res);
+				return;
+			}
+
+			if (pathInfo != null && pathInfo.startsWith("/all/")) {
+				log.debug("Bypassing authentication for /all/ pathInfo: " + pathInfo);
+				chain.doFilter(req, res);
+				return;
+			}
+
+			// Bypass authentication for SSO token conversion endpoints (SAML and OIDC)
+			if (requestURI != null && (requestURI.contains("/authtoken/saml/convert") || requestURI.contains("/authtoken/oidc/convert"))) {
+				log.debug("Bypassing authentication for SSO token conversion endpoint: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
+			// Bypass authentication for OpenAPI specification endpoints (allow public access to API docs)
+			// Note: API v1 CMIS endpoints are at /api/v1/cmis/* to avoid conflict with legacy /api/v1/repo/* endpoints
+			if (requestURI != null && (requestURI.contains("/api/v1/cmis/openapi.json") || requestURI.contains("/api/v1/cmis/openapi.yaml"))) {
+				log.debug("Bypassing authentication for OpenAPI spec endpoint: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
+			// Bypass authentication for auth config endpoint (SSO button visibility settings)
+			// This must be public because it's accessed before user login
+			// Only match specific patterns to prevent unintended bypasses
+			if (requestURI != null && (
+					requestURI.equals("/core/rest/auth/config") ||
+					requestURI.endsWith("/rest/auth/config"))) {
+				log.debug("Bypassing authentication for auth config endpoint: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
+			// Bypass authentication for API v1 auth endpoints (login, saml, oidc)
+			// These endpoints handle their own authentication through request body or SSO
+			if (requestURI != null && requestURI.contains("/api/v1/cmis/auth/") &&
+				(requestURI.endsWith("/login") || requestURI.contains("/saml") || requestURI.contains("/oidc"))) {
+				log.debug("Bypassing authentication for API v1 auth endpoint: " + requestURI);
+				chain.doFilter(req, res);
+				return;
+			}
+
+			boolean auth = login(hreq, hres);
+			if(auth){
+				chain.doFilter(req, res);
+			}else{
+				log.warn("REST API Unauthorized! : " + hreq.getRequestURI());
+
+				// Check if this is an API v1 endpoint - return RFC 7807 Problem Details response
+				// Use requestURI instead of pathInfo because pathInfo may be null for filter URL patterns
+				if (requestURI != null && requestURI.contains("/api/v1/")) {
+					// Return RFC 7807 compliant 401 response for API v1 endpoints
+					hres.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+					hres.setContentType("application/problem+json");
+					hres.setCharacterEncoding("UTF-8");
+					// Support both Basic and Bearer authentication for future JWT/OAuth2 compatibility
+					hres.setHeader("WWW-Authenticate", "Basic realm=\"NemakiWare API\", Bearer realm=\"NemakiWare API\"");
+
+					// Use ProblemDetail class for consistent RFC 7807 format and proper JSON escaping
+					ProblemDetail problem = ProblemDetail.unauthorized(
+						"Valid credentials are required to access this resource. Please provide Basic or Bearer authentication credentials.",
+						requestURI
+					);
+					String problemJson = objectMapper.writeValueAsString(problem);
+					hres.getWriter().write(problemJson);
+					hres.getWriter().flush();
+				} else {
+					// For legacy endpoints, use standard error response
+					hres.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+				}
+			}
+		} finally {
+			// Clear audit request context
+			AuditLogger.clearRequestContext();
 		}
 	}
 
@@ -351,6 +360,12 @@ public class AuthenticationFilter implements Filter {
         		}else{
         			log.warn("Could not extract repositoryId from auth path: " + java.util.Arrays.toString(pathFragments));
         		}
+        	}else if("audit".equals(pathFragments[0])){
+        		// Handle /audit/... paths (global endpoints that use default repository)
+        		// pathFragments = ["audit", "metrics", ...]
+        		String defaultRepo = repositoryInfoMap.getDefaultRepositoryId();
+        		log.debug("=== AUTH: Using default repository for /audit/ path=" + defaultRepo + " ===");
+        		return defaultRepo;
         	}else{
         		// For paths like /user/bedroom, /group/bedroom, etc.
         		// The repository ID is typically the second fragment
@@ -369,8 +384,7 @@ public class AuthenticationFilter implements Filter {
 
 	@Override
 	public void destroy() {
-		// TODO Auto-generated method stub
-
+		// No cleanup required
 	}
 
 	private boolean checkResourceEnabled(HttpServletRequest request){

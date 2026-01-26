@@ -1,53 +1,37 @@
 import { FullConfig } from '@playwright/test';
-import { exec } from 'child_process';
 import { promisify } from 'util';
-import * as path from 'path';
-
-const execAsync = promisify(exec);
+import * as fs from 'fs';
 
 /**
  * Global setup for NemakiWare UI tests
  *
  * This setup:
- * - Ensures Keycloak is running for OIDC/SAML tests
+ * - Checks if Keycloak is available (optional, for OIDC/SAML tests)
  * - Verifies backend availability via HTTP check
+ * - Creates test user for non-admin tests
  *
- * CRITICAL (2025-12-14): Keycloak is REQUIRED for external authentication tests.
- * This setup will start Keycloak if not running.
+ * Environment Variables:
+ * - KEYCLOAK_URL: Keycloak server URL (default: http://localhost:8088)
+ * - SKIP_KEYCLOAK: Set to 'true' to skip Keycloak checks entirely
  *
- * Note: Login verification is handled by individual tests with their own
- * authentication helpers (AuthHelper) for better isolation and reliability.
+ * Test Categories:
+ * - Standard tests: Run without Keycloak (basic auth, file operations, admin features)
+ * - External auth tests: Require Keycloak (OIDC, SAML, LDAP integration)
  */
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
+const SKIP_KEYCLOAK = process.env.SKIP_KEYCLOAK === 'true';
 
-/**
- * Get the docker directory path
- * Directory structure:
- *   <project-root>/
- *     core/src/main/webapp/ui/tests/  <- tests directory (__dirname)
- *     docker/                         <- docker directory
- *
- * From tests/, we need to go up 6 levels to project root:
- * tests/ -> ui/ -> webapp/ -> main/ -> src/ -> core/ -> project-root/
- */
-function getDockerDir(): string {
-  // Use environment variable if set, otherwise calculate relative path
-  if (process.env.DOCKER_DIR) {
-    return process.env.DOCKER_DIR;
-  }
-
-  // Navigate from tests directory to project root
-  // __dirname is: <project-root>/core/src/main/webapp/ui/tests
-  // We need: <project-root>/docker
-  const projectRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', '..'); // 6 levels up
-  return path.join(projectRoot, 'docker');
-}
+// Global state file to share Keycloak availability with tests
+const STATE_FILE = '/tmp/nemakiware-test-state.json';
 
 /**
  * Check if Keycloak is running and healthy
  */
 async function isKeycloakRunning(): Promise<boolean> {
+  if (SKIP_KEYCLOAK) {
+    return false;
+  }
   try {
     const response = await fetch(`${KEYCLOAK_URL}/realms/nemakiware/.well-known/openid-configuration`, {
       signal: AbortSignal.timeout(5000)
@@ -181,32 +165,13 @@ async function ensureTestUserExists(): Promise<void> {
 }
 
 /**
- * Start Keycloak using docker-compose
+ * Save test state to file for tests to read
  */
-async function startKeycloak(): Promise<void> {
-  console.log('🔐 Starting Keycloak...');
-
-  const dockerDir = getDockerDir();
-  console.log(`📁 Docker directory: ${dockerDir}`);
-
+function saveTestState(state: { keycloakAvailable: boolean; keycloakUrl: string }) {
   try {
-    await execAsync(`cd "${dockerDir}" && docker compose -f docker-compose.keycloak.yml up -d`);
-    console.log('⏳ Waiting for Keycloak to become healthy (up to 90 seconds)...');
-
-    // Wait for Keycloak to be ready
-    const maxWait = 90;
-    for (let i = 0; i < maxWait; i++) {
-      if (await isKeycloakRunning()) {
-        console.log(`✅ Keycloak is ready after ${i + 1} seconds`);
-        return;
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-
-    throw new Error(`Keycloak did not become healthy within ${maxWait} seconds`);
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
   } catch (error) {
-    console.error('❌ Failed to start Keycloak:', error);
-    throw error;
+    console.log('⚠️ Could not save test state:', error);
   }
 }
 
@@ -214,17 +179,30 @@ async function globalSetup(config: FullConfig) {
   console.log('🚀 Starting NemakiWare UI Test Global Setup');
   console.log('');
 
-  // Step 1: Check and start Keycloak for external authentication tests
+  // Step 1: Check Keycloak availability (optional)
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('Step 1: Keycloak (External Authentication)');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-  if (await isKeycloakRunning()) {
-    console.log('✅ Keycloak is already running at ' + KEYCLOAK_URL);
+  let keycloakAvailable = false;
+
+  if (SKIP_KEYCLOAK) {
+    console.log('⏭️ Keycloak check skipped (SKIP_KEYCLOAK=true)');
+    console.log('   OIDC/SAML/LDAP tests will be skipped');
   } else {
-    console.log('⚠️ Keycloak is not running, starting...');
-    await startKeycloak();
+    keycloakAvailable = await isKeycloakRunning();
+    if (keycloakAvailable) {
+      console.log('✅ Keycloak is available at ' + KEYCLOAK_URL);
+    } else {
+      console.log('ℹ️ Keycloak is not running');
+      console.log('   OIDC/SAML/LDAP tests will be skipped');
+      console.log('   To run external auth tests, start Keycloak:');
+      console.log('   cd docker && docker compose -f docker-compose-ldap-keycloak-test.yml up -d');
+    }
   }
+
+  // Save state for tests to read
+  saveTestState({ keycloakAvailable, keycloakUrl: KEYCLOAK_URL });
 
   // Step 2: Check NemakiWare backend availability
   console.log('');
@@ -255,7 +233,11 @@ async function globalSetup(config: FullConfig) {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('🎉 Global Setup Complete');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log(`   Keycloak: ${KEYCLOAK_URL}`);
+  if (keycloakAvailable) {
+    console.log(`   Keycloak: ${KEYCLOAK_URL} ✅`);
+  } else {
+    console.log('   Keycloak: Not available (external auth tests skipped)');
+  }
   console.log(`   Backend:  ${baseURL}`);
   console.log('');
 }

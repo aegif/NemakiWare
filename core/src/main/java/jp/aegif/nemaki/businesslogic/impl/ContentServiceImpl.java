@@ -2170,8 +2170,7 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 
-		// TODO
-		// Subtype specific
+		// Handle subtype-specific properties
 		List<Property> subTypeProperties = buildSubTypeProperties(repositoryId, properties, content);
 		if (!CollectionUtils.isEmpty(subTypeProperties)) {
 			List<Property> allSubTypeProperties = content.getSubTypeProperties();

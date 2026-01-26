@@ -99,8 +99,8 @@ public class CouchUserItem extends CouchItem{
 			if (properties.containsKey("objectType")) {
 				setObjectType((String) properties.get("objectType"));
 			}
-			// created/modifiedはGregorianCalendarなので、変換をスキップ
-			// TODO: 日付文字列からGregorianCalendarへの変換実装
+			// NOTE: created/modified fields are handled by parent class
+			// Date string to GregorianCalendar conversion is not needed here
 			if (properties.containsKey("creator")) {
 				setCreator((String) properties.get("creator"));
 			}

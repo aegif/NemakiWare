@@ -221,7 +221,8 @@ import {
   MenuUnfoldOutlined,
   InfoCircleOutlined,
   DatabaseOutlined,
-  ApiOutlined
+  ApiOutlined,
+  BarChartOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -348,6 +349,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           key: '/solr',
           icon: <DatabaseOutlined />,
           label: t('navigation.solr'),
+        },
+        {
+          key: '/audit-dashboard',
+          icon: <BarChartOutlined />,
+          label: t('navigation.auditDashboard'),
         },
         {
           key: '/api-docs',

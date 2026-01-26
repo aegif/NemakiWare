@@ -200,9 +200,8 @@ public class VersioningServiceImpl implements VersioningService {
 			// Specific Exception
 			// //////////////////
 			exceptionService.constraintVersionable(repositoryId, pwc.getObjectType());
-			// TODO implement
-			// exceptionService.streamNotSupported(documentTypeDefinition,
-			// contentStream);
+			// NOTE: streamNotSupported check is not implemented as content stream is typically required
+			// exceptionService.streamNotSupported(documentTypeDefinition, contentStream);
 
 			// //////////////////
 			// Body of the method
@@ -365,7 +364,7 @@ public class VersioningServiceImpl implements VersioningService {
 	private class VersionComparator implements Comparator<Content> {
 		@Override
 		public int compare(Content content0, Content content1) {
-			// TODO when created time is not set
+			// NOTE: Assumes created time is always set; null handling may be needed for edge cases
 			GregorianCalendar created0 = content0.getCreated();
 			GregorianCalendar created1 = content1.getCreated();
 

@@ -308,4 +308,47 @@ public interface PropertyKey {
 
 	//Deletion
 	final String DELETION_VERIFY_ENABLED = "deletion.verify.enabled";
+
+	//Directory Sync
+	final String DIRECTORY_SYNC_ENABLED = "directory.sync.enabled";
+	final String DIRECTORY_SYNC_LDAP_URL = "directory.sync.ldap.url";
+	final String DIRECTORY_SYNC_LDAP_BASE_DN = "directory.sync.ldap.base.dn";
+	final String DIRECTORY_SYNC_LDAP_BIND_DN = "directory.sync.ldap.bind.dn";
+	final String DIRECTORY_SYNC_LDAP_BIND_PASSWORD = "directory.sync.ldap.bind.password";
+	final String DIRECTORY_SYNC_LDAP_USE_TLS = "directory.sync.ldap.use.tls";
+	final String DIRECTORY_SYNC_LDAP_USE_STARTTLS = "directory.sync.ldap.use.starttls";
+	final String DIRECTORY_SYNC_LDAP_CONNECTION_TIMEOUT = "directory.sync.ldap.connection.timeout";
+	final String DIRECTORY_SYNC_LDAP_READ_TIMEOUT = "directory.sync.ldap.read.timeout";
+	final String DIRECTORY_SYNC_GROUP_SEARCH_BASE = "directory.sync.group.search.base";
+	final String DIRECTORY_SYNC_GROUP_SEARCH_FILTER = "directory.sync.group.search.filter";
+	final String DIRECTORY_SYNC_USER_SEARCH_BASE = "directory.sync.user.search.base";
+	final String DIRECTORY_SYNC_USER_SEARCH_FILTER = "directory.sync.user.search.filter";
+	final String DIRECTORY_SYNC_GROUP_ID_ATTRIBUTE = "directory.sync.group.id.attribute";
+	final String DIRECTORY_SYNC_GROUP_NAME_ATTRIBUTE = "directory.sync.group.name.attribute";
+	final String DIRECTORY_SYNC_GROUP_MEMBER_ATTRIBUTE = "directory.sync.group.member.attribute";
+	final String DIRECTORY_SYNC_USER_ID_ATTRIBUTE = "directory.sync.user.id.attribute";
+	final String DIRECTORY_SYNC_NESTED_GROUPS = "directory.sync.nested.groups";
+	final String DIRECTORY_SYNC_CREATE_MISSING_USERS = "directory.sync.create.missing.users";
+	final String DIRECTORY_SYNC_UPDATE_EXISTING_USERS = "directory.sync.update.existing.users";
+	final String DIRECTORY_SYNC_DELETE_ORPHAN_GROUPS = "directory.sync.delete.orphan.groups";
+	final String DIRECTORY_SYNC_DELETE_ORPHAN_USERS = "directory.sync.delete.orphan.users";
+	final String DIRECTORY_SYNC_GROUP_PREFIX = "directory.sync.group.prefix";
+	final String DIRECTORY_SYNC_USER_PREFIX = "directory.sync.user.prefix";
+	final String DIRECTORY_SYNC_SCHEDULE_ENABLED = "directory.sync.schedule.enabled";
+	final String DIRECTORY_SYNC_SCHEDULE_CRON = "directory.sync.schedule.cron";
+	final String DIRECTORY_SYNC_SCHEDULE_NODE_IP = "directory.sync.schedule.node.ip";
+	final String DIRECTORY_SYNC_USER_INITIAL_PASSWORD = "directory.sync.user.initial.password";
+
+	//Audit logging
+	final String AUDIT_ENABLED = "audit.enabled";
+	final String AUDIT_LOG_READ_OPERATIONS = "audit.log.read.operations";  // Deprecated: use AUDIT_READ_LEVEL
+	final String AUDIT_READ_LEVEL = "audit.read.level";  // NONE, DOWNLOAD, METADATA, ALL
+	final String AUDIT_DETAIL_LEVEL = "audit.detail.level";
+	final String AUDIT_EXCLUDE_USERS = "audit.exclude.users";
+	final String AUDIT_EXCLUDE_OPERATIONS = "audit.exclude.operations";
+	final String AUDIT_LOG_FAILURES_AS_WARN = "audit.log.failures.as.warn";
+
+	// Audit logging - configurable limits
+	final String AUDIT_REQUEST_PATH_MAX_LENGTH = "audit.request.path.max.length";  // Default: 2000
+	final String AUDIT_ASYNC_QUEUE_SIZE = "audit.async.queue.size";  // Default: 512 (logback config)
 }

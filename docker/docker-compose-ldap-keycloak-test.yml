@@ -1,0 +1,154 @@
+# LDAP + Keycloak Integration Test Environment
+# Usage: docker compose -f docker-compose-ldap-keycloak-test.yml up -d
+#
+# This configuration provides:
+# - OpenLDAP server with test users/groups
+# - Keycloak with LDAP User Federation
+# - NemakiWare configured for OIDC/SAML authentication
+
+services:
+  # OpenLDAP Server
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: openldap
+    environment:
+      LDAP_ORGANISATION: "NemakiWare Test"
+      LDAP_DOMAIN: "nemakiware.example.com"
+      LDAP_BASE_DN: "dc=nemakiware,dc=example,dc=com"
+      LDAP_ADMIN_PASSWORD: "adminpassword"
+      LDAP_CONFIG_PASSWORD: "configpassword"
+      LDAP_READONLY_USER: "false"
+      LDAP_TLS: "false"
+      LDAP_SEED_INTERNAL_LDIF_PATH: "/ldif-seed"
+    ports:
+      - "389:389"
+      - "636:636"
+    volumes:
+      - ./ldap/bootstrap:/ldif-seed:ro
+      - ldap_data:/var/lib/ldap
+      - ldap_config:/etc/ldap/slapd.d
+    networks:
+      - nemaki-network
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost", "-b", "dc=nemakiware,dc=example,dc=com", "-D", "cn=admin,dc=nemakiware,dc=example,dc=com", "-w", "adminpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Keycloak Identity Provider with LDAP User Federation
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: keycloak
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8088:8080"
+    volumes:
+      - ./keycloak/realm-ldap-integration.json:/opt/keycloak/data/import/realm.json
+    depends_on:
+      openldap:
+        condition: service_healthy
+    networks:
+      - nemaki-network
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # CouchDB Database
+  couchdb:
+    image: couchdb:3
+    container_name: docker-couchdb-1
+    environment:
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: password
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+    networks:
+      - nemaki-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5984/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # NemakiWare Core
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    container_name: docker-core-1
+    environment:
+      COUCHDB_HOST: couchdb
+      COUCHDB_PORT: 5984
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: password
+      SOLR_HOST: solr
+      SOLR_PORT: 8983
+      # LDAP Sync Configuration
+      DIRECTORY_SYNC_ENABLED: "true"
+      DIRECTORY_SYNC_LDAP_URL: "ldap://openldap:389"
+      DIRECTORY_SYNC_LDAP_BASE_DN: "dc=nemakiware,dc=example,dc=com"
+      DIRECTORY_SYNC_LDAP_BIND_DN: "cn=admin,dc=nemakiware,dc=example,dc=com"
+      DIRECTORY_SYNC_LDAP_BIND_PASSWORD: "adminpassword"
+      DIRECTORY_SYNC_GROUP_SEARCH_BASE: "ou=groups"
+      DIRECTORY_SYNC_GROUP_SEARCH_FILTER: "(objectClass=groupOfNames)"
+      DIRECTORY_SYNC_USER_SEARCH_BASE: "ou=users"
+      DIRECTORY_SYNC_USER_SEARCH_FILTER: "(objectClass=inetOrgPerson)"
+      DIRECTORY_SYNC_GROUP_ID_ATTRIBUTE: "cn"
+      DIRECTORY_SYNC_GROUP_NAME_ATTRIBUTE: "cn"
+      DIRECTORY_SYNC_GROUP_MEMBER_ATTRIBUTE: "member"
+      DIRECTORY_SYNC_USER_ID_ATTRIBUTE: "uid"
+      DIRECTORY_SYNC_GROUP_PREFIX: "ldap_"
+      DIRECTORY_SYNC_USER_PREFIX: ""
+      DIRECTORY_SYNC_CREATE_MISSING_USERS: "true"
+      DIRECTORY_SYNC_UPDATE_EXISTING_USERS: "true"
+      # OIDC/SAML Configuration
+      OIDC_ENABLED: "true"
+      OIDC_ISSUER_URL: "http://keycloak:8080/realms/nemakiware"
+      SAML_ENABLED: "true"
+      # Password encryption key (for LDAP bind password encryption)
+      # WARNING: Change this in production!
+      NEMAKI_ENCRYPTION_KEY: "NemakiTestKey-Change-In-Production-32chars!"
+    ports:
+      - "8080:8080"
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    networks:
+      - nemaki-network
+
+  # Apache Solr Search Engine
+  solr:
+    image: solr:9
+    container_name: docker-solr-1
+    ports:
+      - "8983:8983"
+    volumes:
+      - solr_data:/var/solr
+    networks:
+      - nemaki-network
+
+volumes:
+  ldap_data:
+  ldap_config:
+  couchdb_data:
+  solr_data:
+
+networks:
+  nemaki-network:
+    name: nemaki-network
+    driver: bridge

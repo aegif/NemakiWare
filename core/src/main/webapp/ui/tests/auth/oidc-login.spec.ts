@@ -15,9 +15,12 @@
  * Environment Variables:
  * - KEYCLOAK_URL: Keycloak server URL (default: http://localhost:8088)
  * - OIDC_CLIENT_ID: OIDC client ID (default: nemakiware-oidc-client)
+ *
+ * NOTE: These tests are automatically skipped when Keycloak is not running.
  */
 
 import { test, expect } from '@playwright/test';
+import { isKeycloakAvailable, KEYCLOAK_SKIP_MESSAGE } from '../utils/test-state';
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';
 const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID || 'nemakiware-oidc-client';
@@ -26,7 +29,10 @@ test.describe('NemakiWare OIDC Authentication', () => {
   // Serial mode: OIDC tests interact with shared Keycloak session state
   test.describe.configure({ mode: 'serial' });
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    if (!isKeycloakAvailable()) {
+      testInfo.skip(true, KEYCLOAK_SKIP_MESSAGE);
+    }
     await page.context().clearCookies();
     await page.context().clearPermissions();
   });

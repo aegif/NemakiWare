@@ -4,7 +4,10 @@
 
 <beans xmlns="http://www.springframework.org/schema/beans"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
-    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
+    xmlns:context="http://www.springframework.org/schema/context"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
+    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
 
 
     <!-- Phase 1: Database Pre-Initialization -->
@@ -790,5 +793,39 @@
     <bean id="authConfigResource" class="jp.aegif.nemaki.rest.AuthConfigResource">
         <property name="propertyManager" ref="propertyManager" />
     </bean>
+
+    <!-- Directory Sync Service -->
+    <bean id="DirectorySyncService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.sync.service.DirectorySyncService</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="directorySyncService" />
+        </property>
+    </bean>
+    <bean id="directorySyncService" class="jp.aegif.nemaki.sync.service.DirectorySyncServiceImpl">
+        <property name="contentService" ref="ContentService" />
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
+    <bean id="directorySyncResource" class="jp.aegif.nemaki.rest.DirectorySyncResource">
+        <property name="directorySyncService" ref="DirectorySyncService" />
+    </bean>
+
+    <!-- Directory Sync Scheduler -->
+    <bean id="directorySyncScheduler" class="jp.aegif.nemaki.sync.scheduler.DirectorySyncScheduler"
+          init-method="init" destroy-method="destroy" depends-on="DirectorySyncService,repositoryInfoMap">
+        <property name="directorySyncService" ref="DirectorySyncService" />
+        <property name="propertyManager" ref="propertyManager" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+    </bean>
+
+    <!-- API v1 Component Scanning -->
+    <!-- Enable component scanning for OpenAPI v1 resources and filters -->
+    <!-- This allows @Autowired dependencies to be injected via Jersey-Spring bridge -->
+    <context:component-scan base-package="jp.aegif.nemaki.api.v1.filter" />
+    <context:component-scan base-package="jp.aegif.nemaki.api.v1.resource" />
 
 </beans>

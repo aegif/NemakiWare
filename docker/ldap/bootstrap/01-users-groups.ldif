@@ -1,0 +1,224 @@
+# =============================================================================
+# LDAP Bootstrap Data for NemakiWare Integration Testing
+# =============================================================================
+#
+# This file is automatically loaded when the OpenLDAP container starts
+#
+# Domain: dc=nemakiware,dc=example,dc=com
+# Admin DN: cn=admin,dc=nemakiware,dc=example,dc=com
+# Admin Password: adminpassword
+#
+# Test Users:
+#   - ldapuser1, ldapuser2, ldapadmin (OIDC integration tests)
+#   - yamada, suzuki, tanaka, sato, watanabe (Directory Sync tests)
+#
+# Test Groups:
+#   - nemaki-users, nemaki-admins (OIDC integration)
+#   - engineering, sales, managers, all-staff, project-alpha (Directory Sync)
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Organizational Units
+# -----------------------------------------------------------------------------
+dn: ou=users,dc=nemakiware,dc=example,dc=com
+objectClass: organizationalUnit
+ou: users
+
+dn: ou=groups,dc=nemakiware,dc=example,dc=com
+objectClass: organizationalUnit
+ou: groups
+
+# -----------------------------------------------------------------------------
+# OIDC Integration Test Users
+# -----------------------------------------------------------------------------
+dn: uid=ldapuser1,ou=users,dc=nemakiware,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: ldapuser1
+sn: One
+givenName: LDAP User
+cn: LDAP User One
+displayName: LDAP User One
+uidNumber: 10001
+gidNumber: 10000
+userPassword: ldappass1
+loginShell: /bin/bash
+homeDirectory: /home/ldapuser1
+mail: ldapuser1@nemakiware.example.com
+
+dn: uid=ldapuser2,ou=users,dc=nemakiware,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: ldapuser2
+sn: Two
+givenName: LDAP User
+cn: LDAP User Two
+displayName: LDAP User Two
+uidNumber: 10002
+gidNumber: 10000
+userPassword: ldappass2
+loginShell: /bin/bash
+homeDirectory: /home/ldapuser2
+mail: ldapuser2@nemakiware.example.com
+
+dn: uid=ldapadmin,ou=users,dc=nemakiware,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: ldapadmin
+sn: Administrator
+givenName: LDAP
+cn: LDAP Administrator
+displayName: LDAP Administrator
+uidNumber: 10003
+gidNumber: 10000
+userPassword: ldapadminpass
+loginShell: /bin/bash
+homeDirectory: /home/ldapadmin
+mail: ldapadmin@nemakiware.example.com
+
+# -----------------------------------------------------------------------------
+# Directory Sync Test Users (Japanese names for comprehensive testing)
+# -----------------------------------------------------------------------------
+dn: uid=yamada,ou=users,dc=nemakiware,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: yamada
+sn: Yamada
+givenName: Taro
+cn: Taro Yamada
+displayName: Taro Yamada
+uidNumber: 10011
+gidNumber: 10000
+userPassword: yamadapass
+loginShell: /bin/bash
+homeDirectory: /home/yamada
+mail: yamada@nemakiware.example.com
+
+dn: uid=suzuki,ou=users,dc=nemakiware,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: suzuki
+sn: Suzuki
+givenName: Hanako
+cn: Hanako Suzuki
+displayName: Hanako Suzuki
+uidNumber: 10012
+gidNumber: 10000
+userPassword: suzukipass
+loginShell: /bin/bash
+homeDirectory: /home/suzuki
+mail: suzuki@nemakiware.example.com
+
+dn: uid=tanaka,ou=users,dc=nemakiware,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: tanaka
+sn: Tanaka
+givenName: Ichiro
+cn: Ichiro Tanaka
+displayName: Ichiro Tanaka
+uidNumber: 10013
+gidNumber: 10000
+userPassword: tanakapass
+loginShell: /bin/bash
+homeDirectory: /home/tanaka
+mail: tanaka@nemakiware.example.com
+
+dn: uid=sato,ou=users,dc=nemakiware,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: sato
+sn: Sato
+givenName: Yuki
+cn: Yuki Sato
+displayName: Yuki Sato
+uidNumber: 10014
+gidNumber: 10000
+userPassword: satopass
+loginShell: /bin/bash
+homeDirectory: /home/sato
+mail: sato@nemakiware.example.com
+
+dn: uid=watanabe,ou=users,dc=nemakiware,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: watanabe
+sn: Watanabe
+givenName: Kenji
+cn: Kenji Watanabe
+displayName: Kenji Watanabe
+uidNumber: 10015
+gidNumber: 10000
+userPassword: watanabepass
+loginShell: /bin/bash
+homeDirectory: /home/watanabe
+mail: watanabe@nemakiware.example.com
+
+# -----------------------------------------------------------------------------
+# OIDC Integration Test Groups
+# -----------------------------------------------------------------------------
+dn: cn=nemaki-users,ou=groups,dc=nemakiware,dc=example,dc=com
+objectClass: groupOfNames
+cn: nemaki-users
+description: NemakiWare Regular Users
+member: uid=ldapuser1,ou=users,dc=nemakiware,dc=example,dc=com
+member: uid=ldapuser2,ou=users,dc=nemakiware,dc=example,dc=com
+member: uid=ldapadmin,ou=users,dc=nemakiware,dc=example,dc=com
+
+dn: cn=nemaki-admins,ou=groups,dc=nemakiware,dc=example,dc=com
+objectClass: groupOfNames
+cn: nemaki-admins
+description: NemakiWare Administrators
+member: uid=ldapadmin,ou=users,dc=nemakiware,dc=example,dc=com
+
+# -----------------------------------------------------------------------------
+# Directory Sync Test Groups
+# -----------------------------------------------------------------------------
+dn: cn=engineering,ou=groups,dc=nemakiware,dc=example,dc=com
+objectClass: groupOfNames
+cn: engineering
+description: Engineering Team
+member: uid=yamada,ou=users,dc=nemakiware,dc=example,dc=com
+member: uid=tanaka,ou=users,dc=nemakiware,dc=example,dc=com
+member: uid=watanabe,ou=users,dc=nemakiware,dc=example,dc=com
+
+dn: cn=sales,ou=groups,dc=nemakiware,dc=example,dc=com
+objectClass: groupOfNames
+cn: sales
+description: Sales Team
+member: uid=suzuki,ou=users,dc=nemakiware,dc=example,dc=com
+member: uid=sato,ou=users,dc=nemakiware,dc=example,dc=com
+
+dn: cn=managers,ou=groups,dc=nemakiware,dc=example,dc=com
+objectClass: groupOfNames
+cn: managers
+description: Management Team
+member: uid=yamada,ou=users,dc=nemakiware,dc=example,dc=com
+member: uid=suzuki,ou=users,dc=nemakiware,dc=example,dc=com
+
+dn: cn=all-staff,ou=groups,dc=nemakiware,dc=example,dc=com
+objectClass: groupOfNames
+cn: all-staff
+description: All Staff Members
+member: uid=yamada,ou=users,dc=nemakiware,dc=example,dc=com
+member: uid=suzuki,ou=users,dc=nemakiware,dc=example,dc=com
+member: uid=tanaka,ou=users,dc=nemakiware,dc=example,dc=com
+member: uid=sato,ou=users,dc=nemakiware,dc=example,dc=com
+member: uid=watanabe,ou=users,dc=nemakiware,dc=example,dc=com
+
+dn: cn=project-alpha,ou=groups,dc=nemakiware,dc=example,dc=com
+objectClass: groupOfNames
+cn: project-alpha
+description: Project Alpha Team
+member: uid=yamada,ou=users,dc=nemakiware,dc=example,dc=com
+member: uid=tanaka,ou=users,dc=nemakiware,dc=example,dc=com
+member: uid=sato,ou=users,dc=nemakiware,dc=example,dc=com
