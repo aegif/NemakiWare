@@ -43,7 +43,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import com.google.common.util.concurrent.RateLimiter;
+
+import jp.aegif.nemaki.rag.config.RAGConfig;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -83,6 +89,15 @@ public class RAGSearchResource {
 
     @Autowired
     private TypeManager typeManager;
+
+    @Autowired
+    private RAGConfig ragConfig;
+
+    /**
+     * Per-user rate limiters to prevent API abuse.
+     * Uses Guava's RateLimiter for smooth rate limiting with token bucket algorithm.
+     */
+    private final ConcurrentHashMap<String, RateLimiter> userRateLimiters = new ConcurrentHashMap<>();
 
     @Context
     private UriInfo uriInfo;
@@ -161,6 +176,10 @@ public class RAGSearchResource {
                 throw ApiException.unauthorized("Authentication required for RAG search");
             }
             String userId = context.getUsername();
+
+            // Check rate limit for authenticated user
+            checkRateLimit(userId);
+            cleanupStaleRateLimiters();
 
             // Admin simulation: allow admins to search as another user
             if (request.getSimulateAsUserId() != null && !request.getSimulateAsUserId().trim().isEmpty()) {
@@ -557,6 +576,50 @@ public class RAGSearchResource {
         }
 
         return filtered;
+    }
+
+    /**
+     * Check rate limit for the given user.
+     * Uses Guava's RateLimiter with token bucket algorithm for smooth rate limiting.
+     *
+     * @param userId User ID to check
+     * @throws ApiException if rate limit is exceeded
+     */
+    private void checkRateLimit(String userId) {
+        if (!ragConfig.isRateLimitEnabled()) {
+            return;
+        }
+
+        // Get or create rate limiter for this user
+        RateLimiter limiter = userRateLimiters.computeIfAbsent(userId, k -> {
+            double permitsPerSecond = ragConfig.getRateLimitRequestsPerSecond();
+            if (permitsPerSecond <= 0) {
+                permitsPerSecond = 2.0; // Default fallback
+            }
+            return RateLimiter.create(permitsPerSecond);
+        });
+
+        // Try to acquire permit without blocking (immediate check)
+        if (!limiter.tryAcquire(0, TimeUnit.MILLISECONDS)) {
+            log.warn(String.format("Rate limit exceeded for user: %s", userId));
+            throw ApiException.tooManyRequests(
+                    "Rate limit exceeded. Please wait before making another search request.");
+        }
+    }
+
+    /**
+     * Cleanup stale rate limiters periodically.
+     * Called lazily to avoid memory leaks from abandoned user sessions.
+     * In a production environment, consider using a scheduled task or cache eviction.
+     */
+    private void cleanupStaleRateLimiters() {
+        // Simple size-based cleanup: if we have too many limiters, clear them all
+        // This is a simplistic approach - in production, consider using Caffeine cache with TTL
+        int maxLimiters = 10000;
+        if (userRateLimiters.size() > maxLimiters) {
+            log.info("Clearing rate limiter cache (size exceeded " + maxLimiters + ")");
+            userRateLimiters.clear();
+        }
     }
 
     // Request/Response DTOs

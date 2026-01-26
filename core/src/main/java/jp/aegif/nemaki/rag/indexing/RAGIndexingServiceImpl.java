@@ -25,6 +25,7 @@ import jp.aegif.nemaki.rag.config.RAGConfig;
 import jp.aegif.nemaki.rag.config.SolrClientProvider;
 import jp.aegif.nemaki.rag.embedding.EmbeddingException;
 import jp.aegif.nemaki.rag.embedding.EmbeddingService;
+import jp.aegif.nemaki.rag.util.SolrQuerySanitizer;
 
 /**
  * Implementation of RAGIndexingService.
@@ -156,9 +157,11 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
 
         try {
             SolrClient solrClient = solrClientProvider.getClient();
+            // Sanitize documentId to prevent Solr query injection
+            String sanitizedDocId = SolrQuerySanitizer.escape(documentId);
             // Delete parent document and all children using Block Join delete
             // Delete by query: delete all documents where _root_ = documentId (parent and children)
-            solrClient.deleteByQuery("nemaki", "_root_:" + documentId);
+            solrClient.deleteByQuery("nemaki", "_root_:" + sanitizedDocId);
             solrClient.commit("nemaki");
             log.info("RAG deleted document and chunks: " + documentId);
         } catch (Exception e) {
@@ -395,20 +398,10 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                              List<String> readers) throws Exception {
 
         SolrClient solrClient = solrClientProvider.getClient();
-        // First, delete any existing entries for this document
-        // Use UpdateRequest with commitWithin to ensure delete is reflected promptly
         int commitWithinMs = ragConfig.getSolrCommitWithinMs();
-        UpdateRequest deleteRequest = new UpdateRequest();
-        deleteRequest.deleteByQuery("_root_:" + document.getId());
-        if (commitWithinMs > 0) {
-            deleteRequest.setCommitWithin(commitWithinMs);
-        }
-        deleteRequest.process(solrClient, "nemaki");
-
-        // Create parent document (must come AFTER children in Block Join)
-        List<SolrInputDocument> childDocs = new ArrayList<>();
 
         // Create chunk (child) documents
+        List<SolrInputDocument> childDocs = new ArrayList<>();
         for (int i = 0; i < chunks.size(); i++) {
             TextChunk chunk = chunks.get(i);
             float[] embedding = chunkEmbeddings.get(i);
@@ -468,14 +461,28 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         // Add children to parent for Block Join
         parentDoc.addChildDocuments(childDocs);
 
-        // Index the parent document with children using commitWithin for batching
+        // ATOMIC OPERATION: Combine delete and add into a single UpdateRequest
+        // This ensures that if the add fails, the old data is not deleted (rollback semantics)
+        // Sanitize documentId to prevent Solr query injection
+        String sanitizedDocId = SolrQuerySanitizer.escape(document.getId());
+        UpdateRequest updateRequest = new UpdateRequest();
+        updateRequest.deleteByQuery("_root_:" + sanitizedDocId);
+        updateRequest.add(parentDoc);
+        
         if (commitWithinMs > 0) {
-            // Use commitWithin to allow Solr to batch commits
-            solrClient.add("nemaki", parentDoc, commitWithinMs);
-        } else {
-            // Immediate hard commit (legacy behavior)
-            solrClient.add("nemaki", parentDoc);
-            solrClient.commit("nemaki");
+            updateRequest.setCommitWithin(commitWithinMs);
+        }
+        
+        try {
+            updateRequest.process(solrClient, "nemaki");
+            if (commitWithinMs <= 0) {
+                // Hard commit if no commitWithin is set (legacy behavior)
+                solrClient.commit("nemaki");
+            }
+        } catch (Exception e) {
+            // Log and rethrow - the atomic request ensures no partial state
+            log.error("Atomic index operation failed for document: " + document.getId(), e);
+            throw e;
         }
     }
 

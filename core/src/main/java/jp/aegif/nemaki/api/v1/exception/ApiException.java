@@ -105,4 +105,8 @@ public class ApiException extends RuntimeException {
     public static ApiException serviceUnavailable(String detail) {
         return new ApiException(ProblemDetail.serviceUnavailable(detail));
     }
+
+    public static ApiException tooManyRequests(String detail) {
+        return new ApiException(ProblemDetail.tooManyRequests(detail));
+    }
 }

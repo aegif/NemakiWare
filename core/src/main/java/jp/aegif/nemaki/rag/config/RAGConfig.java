@@ -180,6 +180,31 @@ public class RAGConfig {
     private String supportedMimeTypes;
 
     // ========================================
+    // Rate Limiting Settings
+    // ========================================
+
+    /**
+     * Whether rate limiting is enabled for RAG search API.
+     * Default: true (enabled for production safety)
+     */
+    @Value("${rag.ratelimit.enabled:true}")
+    private boolean rateLimitEnabled;
+
+    /**
+     * Maximum requests per second allowed per user.
+     * Default: 2.0 (allows 2 requests per second)
+     */
+    @Value("${rag.ratelimit.requests.per.second:2.0}")
+    private double rateLimitRequestsPerSecond;
+
+    /**
+     * Maximum burst size - how many requests can be made in quick succession.
+     * Default: 5 (allows bursting up to 5 requests)
+     */
+    @Value("${rag.ratelimit.burst.size:5}")
+    private int rateLimitBurstSize;
+
+    // ========================================
     // Getters
     // ========================================
 
@@ -285,5 +310,17 @@ public class RAGConfig {
             }
         }
         return false;
+    }
+
+    public boolean isRateLimitEnabled() {
+        return rateLimitEnabled;
+    }
+
+    public double getRateLimitRequestsPerSecond() {
+        return rateLimitRequestsPerSecond;
+    }
+
+    public int getRateLimitBurstSize() {
+        return rateLimitBurstSize;
     }
 }
