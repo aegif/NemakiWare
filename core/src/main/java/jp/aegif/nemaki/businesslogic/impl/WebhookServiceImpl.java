@@ -27,6 +27,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import jakarta.annotation.PreDestroy;
 
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -286,9 +289,9 @@ public class WebhookServiceImpl implements WebhookService {
             // Filter to only configs with includeChildren=true
             for (WebhookConfig config : parentConfigs) {
                 if (config.isIncludeChildren()) {
-                    // Check maxDepth
+                    // Check maxDepth (null = unlimited, 0 = direct children only, N = N levels deep)
                     Integer configMaxDepth = config.getMaxDepth();
-                    if (configMaxDepth == null || depth < configMaxDepth) {
+                    if (configMaxDepth == null || depth <= configMaxDepth) {
                         result.add(config);
                     }
                 }
@@ -361,13 +364,27 @@ public class WebhookServiceImpl implements WebhookService {
     }
     
     /**
-     * Build properties map from content for payload
+     * Build properties map from content for payload.
+     * 
+     * Basic CMIS properties are protected from being overwritten by additionalProperties
+     * to prevent accidental or malicious modification of core metadata.
      */
     private Map<String, Object> buildPropertiesMap(Content content, 
                                                     Map<String, Object> additionalProperties) {
         Map<String, Object> properties = new HashMap<>();
         
-        // Add basic properties
+        // Add additional properties first (if provided)
+        // These can be overwritten by basic CMIS properties below
+        if (additionalProperties != null) {
+            for (Map.Entry<String, Object> entry : additionalProperties.entrySet()) {
+                // Only add if not a protected CMIS property
+                if (!isProtectedProperty(entry.getKey())) {
+                    properties.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+        
+        // Add basic CMIS properties (these take precedence and cannot be overwritten)
         if (content.getName() != null) {
             properties.put("cmis:name", content.getName());
         }
@@ -387,12 +404,24 @@ public class WebhookServiceImpl implements WebhookService {
             properties.put("cmis:lastModificationDate", content.getModified().getTimeInMillis());
         }
         
-        // Add additional properties if provided
-        if (additionalProperties != null) {
-            properties.putAll(additionalProperties);
-        }
-        
         return properties;
+    }
+    
+    /**
+     * Check if a property key is a protected CMIS property that should not be overwritten.
+     */
+    private boolean isProtectedProperty(String key) {
+        if (key == null) {
+            return false;
+        }
+        return key.equals("cmis:name") ||
+               key.equals("cmis:objectTypeId") ||
+               key.equals("cmis:createdBy") ||
+               key.equals("cmis:lastModifiedBy") ||
+               key.equals("cmis:creationDate") ||
+               key.equals("cmis:lastModificationDate") ||
+               key.equals("cmis:objectId") ||
+               key.equals("cmis:baseTypeId");
     }
     
     /**
@@ -422,12 +451,27 @@ public class WebhookServiceImpl implements WebhookService {
     }
     
     /**
-     * Shutdown the executor service
+     * Shutdown the executor service.
+     * Called automatically by Spring container on application shutdown.
      */
+    @PreDestroy
     public void shutdown() {
         if (executorService != null) {
+            log.info("WebhookServiceImpl executor service shutting down...");
             executorService.shutdown();
-            log.info("WebhookServiceImpl executor service shutdown");
+            try {
+                // Wait for existing tasks to complete
+                if (!executorService.awaitTermination(30, TimeUnit.SECONDS)) {
+                    executorService.shutdownNow();
+                    log.warn("WebhookServiceImpl executor service forced shutdown after timeout");
+                } else {
+                    log.info("WebhookServiceImpl executor service shutdown complete");
+                }
+            } catch (InterruptedException e) {
+                executorService.shutdownNow();
+                Thread.currentThread().interrupt();
+                log.warn("WebhookServiceImpl executor service shutdown interrupted");
+            }
         }
     }
     
