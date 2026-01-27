@@ -22,9 +22,13 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -65,6 +69,25 @@ public class WebhookServiceImpl implements WebhookService {
     
     private static final String WEBHOOKABLE_SECONDARY_TYPE = "nemaki:webhookable";
     private static final String WEBHOOK_CONFIGS_PROPERTY = "nemaki:webhookConfigs";
+    
+    /**
+     * Set of CMIS property keys that are protected from being overwritten by additionalProperties.
+     * These core metadata properties should always reflect the actual content state.
+     */
+    private static final Set<String> PROTECTED_CMIS_PROPERTIES = Collections.unmodifiableSet(
+        new HashSet<>(Arrays.asList(
+            "cmis:name",
+            "cmis:objectId",
+            "cmis:objectTypeId",
+            "cmis:baseTypeId",
+            "cmis:createdBy",
+            "cmis:creationDate",
+            "cmis:lastModifiedBy",
+            "cmis:lastModificationDate",
+            "cmis:changeToken",
+            "cmis:parentId"
+        ))
+    );
     
     private ContentService contentService;
     private WebhookConfigParser configParser;
@@ -409,19 +432,10 @@ public class WebhookServiceImpl implements WebhookService {
     
     /**
      * Check if a property key is a protected CMIS property that should not be overwritten.
+     * Uses PROTECTED_CMIS_PROPERTIES set for O(1) lookup and easy maintenance.
      */
     private boolean isProtectedProperty(String key) {
-        if (key == null) {
-            return false;
-        }
-        return key.equals("cmis:name") ||
-               key.equals("cmis:objectTypeId") ||
-               key.equals("cmis:createdBy") ||
-               key.equals("cmis:lastModifiedBy") ||
-               key.equals("cmis:creationDate") ||
-               key.equals("cmis:lastModificationDate") ||
-               key.equals("cmis:objectId") ||
-               key.equals("cmis:baseTypeId");
+        return key != null && PROTECTED_CMIS_PROPERTIES.contains(key);
     }
     
     /**
