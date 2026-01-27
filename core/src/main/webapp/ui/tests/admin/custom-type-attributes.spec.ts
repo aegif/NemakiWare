@@ -201,26 +201,11 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
     await authHelper.login();
     await testHelper.waitForAntdLoad();
 
-    // Mobile browser fix
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
-        } catch (error) {
-          // Continue even if sidebar close fails
-        }
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
   });
 
   test('should create custom document type with custom attributes', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Type Management
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
@@ -386,8 +371,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
   });
 
   test('should create document with custom type and display custom attributes', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -507,8 +491,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
   });
 
   test('should edit custom attribute value and verify persistence', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (!testDocumentId) {
       test.skip('Test document not created in previous test');

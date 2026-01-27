@@ -200,38 +200,14 @@ test.describe('User Management CRUD Operations', () => {
     await page.locator('.ant-menu-item:has-text("ユーザー管理")').click();
     await page.waitForTimeout(2000);
 
-    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
-        } catch (error) {
-          // Continue even if sidebar close fails
-        }
-      } else {
-        const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
-        if (await alternativeToggle.count() > 0) {
-          try {
-            await alternativeToggle.click({ timeout: 3000 });
-            await page.waitForTimeout(500);
-          } catch (error) {
-            // Continue even if alternative selector fails
-          }
-        }
+    await testHelper.closeMobileSidebar(browserName);
       }
     }
   });
 
   test('should create new user with full details', async ({ page, browserName }) => {
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for "新規作成" or "ユーザー追加" button
     const createButton = page.locator('button').filter({
@@ -316,8 +292,7 @@ test.describe('User Management CRUD Operations', () => {
 
   test('should edit user information', async ({ page, browserName }) => {
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find testuser (created in previous test) using exact username
     await page.waitForTimeout(2000);
@@ -380,8 +355,7 @@ test.describe('User Management CRUD Operations', () => {
 
   test('should verify edited user information persists after reload', async ({ page, browserName }) => {
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Refresh via UI navigation instead of page.reload() to avoid breaking React Router
     // Navigate away to Documents
@@ -436,8 +410,7 @@ test.describe('User Management CRUD Operations', () => {
 
   test('should delete test user', async ({ page, browserName }) => {
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find testuser using exact username (FIXED: was using hardcoded 'testuser')
     console.log(`Delete test: Looking for user: ${testUsername}`);

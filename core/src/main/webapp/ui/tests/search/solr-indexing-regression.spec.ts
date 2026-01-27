@@ -66,8 +66,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     await page.waitForTimeout(2000);
 
     // Mobile sidebar close logic
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
@@ -103,8 +102,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     test.setTimeout(120000); // 2 minutes
     console.log('Test: Property update Solr indexing verification');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Step 1: Upload a unique test document
     const testFileName = `property-test-${uniqueId}.txt`;
@@ -557,8 +555,7 @@ test.describe('Solr Indexing Regression Tests', () => {
   test('should find newly uploaded document in search results', async ({ page, browserName }) => {
     console.log('Test: New document upload Solr indexing verification');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     await page.goto('http://localhost:8080/core/ui/#/documents');
@@ -692,8 +689,7 @@ test.describe('Solr Indexing Regression Tests', () => {
   test('should not find deleted document in search results', async ({ page, browserName }) => {
     console.log('Test: Document deletion Solr index removal verification');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     await page.goto('http://localhost:8080/core/ui/#/documents');
@@ -827,8 +823,7 @@ test.describe('Solr Indexing Regression Tests', () => {
   test('should find moved document in search results', async ({ page, browserName }) => {
     console.log('Test: Move operation Solr indexing verification');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     await page.goto('http://localhost:8080/core/ui/#/documents');

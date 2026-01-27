@@ -121,28 +121,13 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     await authHelper.login();
     await testHelper.waitForAntdLoad();
 
-    // MOBILE FIX: Close sidebar
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
-        } catch {
-          // Continue
-        }
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
   });
 
   test('1. Upload test document for verification', async ({ page, browserName }) => {
     console.log(`[TEST 1] Creating test document: ${testDocName}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -190,8 +175,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
   test('2. Add secondary type and set description via PropertyEditor', async ({ page, browserName }) => {
     console.log(`[TEST 2] Adding secondary type and description to: ${testDocName}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -317,8 +301,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
   test('3. VERIFY: Description persists after reload', async ({ page, browserName }) => {
     console.log(`[TEST 3] Verifying description persistence for: ${testDocName}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate away and back to force refresh
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
@@ -393,8 +376,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
   test('4. VERIFY: Back button uses correct folder context', async ({ page, browserName }) => {
     console.log(`[TEST 4] Testing back navigation with folder context`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -471,8 +453,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
   test('5. Cleanup: Delete test document', async ({ page, browserName }) => {
     console.log(`[TEST 5] Cleaning up: ${testDocName}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -557,22 +538,14 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
     await authHelper.login();
     await testHelper.waitForAntdLoad();
 
-    // Mobile sidebar handling
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        try { await menuToggle.first().click({ timeout: 3000 }); } catch {}
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
   });
 
   test('S1. Upload document with EXACT phrase', async ({ page, browserName }) => {
     console.log(`[SEARCH S1] Uploading exact match doc: ${docExact}`);
     console.log(`[SEARCH S1] Search phrase: ${EXACT_PHRASE}`);
 
-    const isMobile = browserName === 'chromium' && page.viewportSize()?.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     await page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' }).click();
@@ -604,7 +577,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
   test('S2. Upload document with PARTIAL tokens', async ({ page, browserName }) => {
     console.log(`[SEARCH S2] Uploading partial match doc: ${docPartial}`);
 
-    const isMobile = browserName === 'chromium' && page.viewportSize()?.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' }).click();
     await page.waitForTimeout(2000);
@@ -641,7 +614,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
   test('S4. CRITICAL: Search returns only exact phrase match', async ({ page, browserName }) => {
     console.log(`[SEARCH S4] Searching for: ${EXACT_PHRASE}`);
 
-    const isMobile = browserName === 'chromium' && page.viewportSize()?.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Go to search page
     await page.locator('.ant-menu-item').filter({ hasText: '検索' }).click();
@@ -691,7 +664,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
   test('S5. Cleanup search test documents', async ({ page, browserName }) => {
     console.log(`[SEARCH S5] Cleaning up search test documents`);
 
-    const isMobile = browserName === 'chromium' && page.viewportSize()?.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' }).click();
     await page.waitForTimeout(2000);

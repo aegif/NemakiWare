@@ -231,8 +231,7 @@ test.describe('Bulk Operations', () => {
 
   test('should select multiple items with checkboxes', async ({ page, browserName }) => {
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const uuid = generateTestId();
 
@@ -312,8 +311,7 @@ test.describe('Bulk Operations', () => {
 
   test('should select all items in current folder', async ({ page, browserName }) => {
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const uuid = generateTestId();
 
@@ -364,8 +362,7 @@ test.describe('Bulk Operations', () => {
     test.setTimeout(120000); // Extended timeout for bulk deletion
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const uuid = generateTestId();
 
@@ -452,8 +449,7 @@ test.describe('Bulk Operations', () => {
    */
   test.skip('should clear selection after navigation', async ({ page, browserName }) => {
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const uuid = generateTestId();
 
@@ -497,9 +493,7 @@ test.describe('Bulk Operations', () => {
   test('should show bulk operation progress indicators', async ({ page, browserName }) => {
     test.setTimeout(120000); // Extended timeout
 
-    // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const uuid = generateTestId();
 

@@ -177,16 +177,7 @@ test.describe('PDF Preview Functionality (Partial WIP)', () => {
     await page.waitForTimeout(2000);
 
     // MOBILE FIX: Close sidebar
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
   });
@@ -194,8 +185,7 @@ test.describe('PDF Preview Functionality (Partial WIP)', () => {
   test('should verify CMIS specification PDF exists in Technical Documents folder', async ({ page, browserName }) => {
     console.log('Test: Verifying CMIS specification PDF registration');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -242,8 +232,7 @@ test.describe('PDF Preview Functionality (Partial WIP)', () => {
   test('should open PDF preview when clicking on PDF file', async ({ page, browserName }) => {
     console.log('Test: Verifying PDF preview functionality');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Technical Documents folder
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -429,8 +418,7 @@ test.describe('PDF Preview Functionality (Partial WIP)', () => {
   test('should download PDF file when download button is clicked', async ({ page, browserName }) => {
     console.log('Test: Verifying PDF download functionality');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Technical Documents folder
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -518,8 +506,7 @@ test.describe('PDF Preview Functionality (Partial WIP)', () => {
     console.log('Test 5: PDF content quality verification with visual rendering');
 
     // Detect mobile browsers for force click if needed
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Mobile: Close sidebar to prevent overlay blocking
     if (isMobile) {

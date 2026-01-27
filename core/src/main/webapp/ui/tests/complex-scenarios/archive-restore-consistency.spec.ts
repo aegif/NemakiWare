@@ -129,16 +129,7 @@ test.describe('Archive and Restore Consistency', () => {
     await authHelper.login();
     await page.waitForTimeout(2000);
 
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
   });
@@ -148,8 +139,7 @@ test.describe('Archive and Restore Consistency', () => {
     console.log(`Creating test folder: ${testFolderName}`);
     console.log(`Creating test document: ${testDocumentName}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -198,8 +188,7 @@ test.describe('Archive and Restore Consistency', () => {
   test('Step 2: Archive the document', async ({ page, browserName }) => {
     console.log('Archiving document...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -263,8 +252,7 @@ test.describe('Archive and Restore Consistency', () => {
   test('Step 3: View archived document in archive/trash view', async ({ page, browserName }) => {
     console.log('Viewing archived document...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for archive/trash menu item
     const archiveMenu = page.locator('.ant-menu-item').filter({ hasText: /アーカイブ|Archive|ゴミ箱|Trash/ });
@@ -298,8 +286,7 @@ test.describe('Archive and Restore Consistency', () => {
   test('Step 4: Restore document from archive', async ({ page, browserName }) => {
     console.log('Restoring document from archive...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to archive
     const archiveMenu = page.locator('.ant-menu-item').filter({ hasText: /アーカイブ|Archive|ゴミ箱|Trash/ });
@@ -336,8 +323,7 @@ test.describe('Archive and Restore Consistency', () => {
   test('Step 5: Verify restored document is back in original location', async ({ page, browserName }) => {
     console.log('Verifying restored document...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -372,8 +358,7 @@ test.describe('Archive and Restore Consistency', () => {
   test('Step 6: Archive and permanently delete document', async ({ page, browserName }) => {
     console.log('Testing permanent deletion...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });

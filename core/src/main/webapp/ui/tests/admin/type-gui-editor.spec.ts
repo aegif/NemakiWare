@@ -52,16 +52,7 @@ test.describe('Type GUI Editor', () => {
     await page.waitForTimeout(2000);
 
     // MOBILE FIX: Close sidebar
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
 
@@ -95,8 +86,7 @@ test.describe('Type GUI Editor', () => {
   test('should open GUI editor modal when clicking GUI create button', async ({ page, browserName }) => {
     console.log('Test: Opening GUI editor modal');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     await page.waitForTimeout(1000);
@@ -121,8 +111,7 @@ test.describe('Type GUI Editor', () => {
   test('should display GUI editor tabs (GUI and JSON)', async ({ page, browserName }) => {
     console.log('Test: Verifying GUI editor tabs');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     await page.waitForTimeout(1000);
@@ -147,8 +136,7 @@ test.describe('Type GUI Editor', () => {
   test('should display basic info panel in GUI editor', async ({ page, browserName }) => {
     console.log('Test: Verifying basic info panel');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     await page.waitForTimeout(1000);
@@ -180,8 +168,7 @@ test.describe('Type GUI Editor', () => {
   test('should switch between GUI and JSON tabs', async ({ page, browserName }) => {
     console.log('Test: Switching between tabs');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     await page.waitForTimeout(1000);
@@ -218,8 +205,7 @@ test.describe('Type GUI Editor', () => {
   test('should show validation error for empty type ID', async ({ page, browserName }) => {
     console.log('Test: Validation error for empty type ID');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     await page.waitForTimeout(1000);
@@ -287,8 +273,7 @@ test.describe('Type GUI Editor', () => {
   test('should show add property button in GUI editor', async ({ page, browserName }) => {
     console.log('Test: Verifying add property button');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     await page.waitForTimeout(1000);
@@ -310,8 +295,7 @@ test.describe('Type GUI Editor', () => {
   test('should cancel and close GUI editor modal', async ({ page, browserName }) => {
     console.log('Test: Cancel and close GUI editor');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     await page.waitForTimeout(1000);

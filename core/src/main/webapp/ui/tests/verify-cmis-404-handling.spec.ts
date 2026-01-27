@@ -201,8 +201,7 @@ test.describe('CMIS API 404 Error Handling', () => {
     console.log('✅ Route interception set up');
 
     // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // Look for hamburger menu toggle button
@@ -293,8 +292,7 @@ test.describe('CMIS API 404 Error Handling', () => {
     console.log('✅ Login successful');
 
     // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // Look for hamburger menu toggle button

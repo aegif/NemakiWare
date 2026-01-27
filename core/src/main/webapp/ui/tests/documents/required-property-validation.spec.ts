@@ -286,21 +286,7 @@ test.describe('Required Property Validation Tests', () => {
     await page.waitForTimeout(2000);
     console.log(`Type list fetched after reload: ${typeListFetched}`);
 
-    // Mobile fix: Close sidebar
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
-        } catch (error) {
-          // Continue
-        }
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
   });
 
   test.describe('Document Upload with Required Properties', () => {
@@ -308,8 +294,7 @@ test.describe('Required Property Validation Tests', () => {
       // Skip if document type wasn't created
       test.skip(!typesCreated.document, 'Test document type not available');
 
-      const viewportSize = page.viewportSize();
-      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+      const isMobile = testHelper.isMobile(browserName);
       const testFileName = `test-required-doc-${generateTestId()}.txt`;
 
       // STEP 1: Open upload modal
@@ -501,8 +486,7 @@ test.describe('Required Property Validation Tests', () => {
       // Skip if folder type wasn't created
       test.skip(!typesCreated.folder, 'Test folder type not available');
 
-      const viewportSize = page.viewportSize();
-      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+      const isMobile = testHelper.isMobile(browserName);
       const testFolderName = `test-required-folder-${generateTestId()}`;
 
       // STEP 1: Open folder creation modal
@@ -620,8 +604,7 @@ test.describe('Required Property Validation Tests', () => {
     test('should only show required indicators for properties with required=true', async ({ page, browserName }) => {
       test.skip(!typesCreated.document, 'Test document type not available');
 
-      const viewportSize = page.viewportSize();
-      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+      const isMobile = testHelper.isMobile(browserName);
 
       // Open upload modal
       const uploadButton = page.locator('button').filter({ hasText: /ファイルアップロード|Upload/ });

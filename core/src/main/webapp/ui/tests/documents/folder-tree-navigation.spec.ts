@@ -95,8 +95,7 @@ test.describe('FolderTree Navigation', () => {
 
   test('should display folder tree with visual hierarchy', async ({ page, browserName }) => {
     // Skip on mobile - folder tree is hidden
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -123,8 +122,7 @@ test.describe('FolderTree Navigation', () => {
 
   test('should show instruction text for click interactions', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -156,8 +154,7 @@ test.describe('FolderTree Navigation', () => {
 
   test('should select folder on single click', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -213,8 +210,7 @@ test.describe('FolderTree Navigation', () => {
 
   test('should expand folder tree node on toggle click', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -264,8 +260,7 @@ test.describe('FolderTree Navigation', () => {
 
   test('should update main content pane when folder selected', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -331,8 +326,7 @@ test.describe('FolderTree Navigation', () => {
 
   test('should show current and selected folder distinction', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -411,8 +405,7 @@ test.describe('FolderTree Navigation', () => {
    */
   test.skip('should handle double-click to make folder current', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
@@ -524,8 +517,7 @@ test.describe('FolderTree Navigation', () => {
    */
   test.skip('should load children on tree node expansion', async ({ page, browserName }) => {
     // Skip on mobile
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports

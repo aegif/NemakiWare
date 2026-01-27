@@ -56,16 +56,7 @@ test.describe('Internationalization Tests', () => {
     await page.waitForLoadState('networkidle');
 
     // Mobile browser handling: close sidebar to prevent overlay blocking
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
   });
 
   test.afterEach(async ({ page }) => {
@@ -170,8 +161,7 @@ test.describe('Internationalization Tests', () => {
     }
 
     // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Click upload button
     await uploadButton.click(isMobile ? { force: true } : {});
@@ -238,8 +228,7 @@ test.describe('Internationalization Tests', () => {
     ];
 
     // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
     // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
@@ -325,8 +314,7 @@ test.describe('Internationalization Tests', () => {
     const chineseFolderName = `test-i18n-folder-${uuid}-中文`;
 
     // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
 
@@ -381,8 +369,7 @@ test.describe('Internationalization Tests', () => {
     const unicodeFilename = `test-i18n-${uuid}-特殊文字テスト.txt`;
 
     // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
     // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
@@ -481,8 +468,7 @@ test.describe('Internationalization Tests', () => {
     ];
 
     // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
     // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
@@ -575,8 +561,7 @@ test.describe('Internationalization Tests', () => {
     const veryLongName = `test-i18n-${uuid}-${'日'.repeat(80)}.txt`;     // 80 Japanese chars (240 bytes)
 
     // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
     // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version

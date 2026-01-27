@@ -31,8 +31,7 @@ test.describe('Custom Property Search Functionality', () => {
     await page.waitForTimeout(2000);
 
     // Mobile sidebar close logic (if needed)
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // Close sidebar to prevent overlay blocking
@@ -64,8 +63,7 @@ test.describe('Custom Property Search Functionality', () => {
   });
 
   test('should load available CMIS types in dropdown', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click the type selector to open dropdown
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();
@@ -87,8 +85,7 @@ test.describe('Custom Property Search Functionality', () => {
   });
 
   test('should show custom property card when type is selected', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click the type selector
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();
@@ -117,8 +114,7 @@ test.describe('Custom Property Search Functionality', () => {
   });
 
   test('should display property form fields for selected type', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click the type selector
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();
@@ -156,8 +152,7 @@ test.describe('Custom Property Search Functionality', () => {
   });
 
   test('should construct CMIS query with selected type', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Monitor CMIS requests
     let cmisQuery = '';
@@ -211,8 +206,7 @@ test.describe('Custom Property Search Functionality', () => {
   });
 
   test('should execute search with custom property values', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click the type selector
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();
@@ -256,8 +250,7 @@ test.describe('Custom Property Search Functionality', () => {
   });
 
   test('should render string property input correctly', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click the type selector
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();
@@ -285,8 +278,7 @@ test.describe('Custom Property Search Functionality', () => {
   });
 
   test('should clear custom property form when type changes', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click the type selector
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();
@@ -329,8 +321,7 @@ test.describe('Custom Property Search Functionality', () => {
   });
 
   test('should handle loading state while fetching type properties', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click the type selector
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();
@@ -358,8 +349,7 @@ test.describe('Custom Property Search Functionality', () => {
   });
 
   test('should persist type selection after search execution', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click the type selector
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();
@@ -400,8 +390,7 @@ test.describe('Custom Property Search Functionality', () => {
   });
 
   test('should filter search results by selected object type', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click the type selector
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();
@@ -470,8 +459,7 @@ test.describe('Custom Property Range Search', () => {
     await page.waitForTimeout(2000);
 
     // Mobile sidebar handling
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
@@ -494,8 +482,7 @@ test.describe('Custom Property Range Search', () => {
 
   test('should verify creationDate property exists in search results', async ({ page, browserName }) => {
     // Test searching and verify creationDate is returned
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform a search
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -525,8 +512,7 @@ test.describe('Custom Property Range Search', () => {
 
   test('should verify lastModificationDate in search context', async ({ page, browserName }) => {
     // Test searching and verify no errors occur
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform a search
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -695,8 +681,7 @@ test.describe('Custom Property Range Search', () => {
 
   test('should verify file size column exists in search results', async ({ page, browserName }) => {
     // Test searching and verify file size information is available
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform a search for documents
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -739,8 +724,7 @@ test.describe('Custom Property Input Types', () => {
     await page.waitForTimeout(2000);
 
     // Mobile sidebar handling
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
@@ -771,8 +755,7 @@ test.describe('Custom Property Input Types', () => {
   });
 
   test('should identify InputNumber component for numeric properties', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click the type selector
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();
@@ -802,8 +785,7 @@ test.describe('Custom Property Input Types', () => {
   });
 
   test('should identify DatePicker component for datetime properties', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click the type selector
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();
@@ -830,8 +812,7 @@ test.describe('Custom Property Input Types', () => {
   });
 
   test('should identify Select component for boolean properties', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find and click the type selector
     const typeSelector = page.locator('.ant-select').filter({ hasText: /オブジェクトタイプ|タイプ/ }).first();

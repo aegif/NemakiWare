@@ -52,16 +52,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     await authHelper.login();
     await page.waitForTimeout(2000);
 
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
   });
@@ -69,8 +60,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
   test('Step 1: Create custom document type', async ({ page, browserName }) => {
     console.log(`Creating custom type: ${customTypeId}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Type Management
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
@@ -196,8 +186,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
   test('Step 2: Create document with custom type', async ({ page, browserName }) => {
     console.log(`Creating document with custom type: ${testDocumentName}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -275,8 +264,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
   test('Step 3: Attempt to delete custom type (should fail due to existing documents)', async ({ page, browserName }) => {
     console.log('Attempting to delete custom type with existing documents...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Type Management
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
@@ -330,8 +318,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
   test('Step 4: Preview document with custom type', async ({ page, browserName }) => {
     console.log('Testing preview functionality with custom type document...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -387,8 +374,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     test.setTimeout(120000); // Extended timeout for document + type deletion
     console.log('Deleting document to allow type deletion...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });

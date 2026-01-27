@@ -74,29 +74,7 @@ test.describe('Solr Index Maintenance', () => {
     await authHelper.login();
     await page.waitForTimeout(2000);
 
-    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
-        } catch (error) {
-          // Continue even if sidebar close fails
-        }
-      } else {
-        const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
-        if (await alternativeToggle.count() > 0) {
-          try {
-            await alternativeToggle.click({ timeout: 3000 });
-            await page.waitForTimeout(500);
-          } catch (error) {
-            // Continue even if alternative selector fails
-          }
-        }
+    await testHelper.closeMobileSidebar(browserName);
       }
     }
 
@@ -104,8 +82,7 @@ test.describe('Solr Index Maintenance', () => {
   });
 
   test('should navigate to Solr maintenance page from admin menu', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for admin submenu
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
@@ -151,8 +128,7 @@ test.describe('Solr Index Maintenance', () => {
   });
 
   test('should display index health check statistics', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
@@ -188,8 +164,7 @@ test.describe('Solr Index Maintenance', () => {
   });
 
   test('should display reindex status', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
@@ -221,8 +196,7 @@ test.describe('Solr Index Maintenance', () => {
   });
 
   test('should show reindexing tab with operations', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
@@ -271,8 +245,7 @@ test.describe('Solr Index Maintenance', () => {
   });
 
   test('should show Solr query tab with query interface', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
@@ -310,8 +283,7 @@ test.describe('Solr Index Maintenance', () => {
   });
 
   test('should execute simple Solr query', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
@@ -355,8 +327,7 @@ test.describe('Solr Index Maintenance', () => {
   });
 
   test('should show full reindex confirmation dialog', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
@@ -412,8 +383,7 @@ test.describe('Solr Index Maintenance', () => {
   });
 
   test('should show index clear confirmation dialog', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
@@ -469,8 +439,7 @@ test.describe('Solr Index Maintenance', () => {
   });
 
   test('should refresh health check on button click', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
@@ -535,8 +504,7 @@ test.describe('Solr Index Maintenance', () => {
   });
 
   test('should handle folder reindex input', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
@@ -584,8 +552,7 @@ test.describe('Solr Index Maintenance', () => {
   });
 
   test('should have proper tab navigation', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');

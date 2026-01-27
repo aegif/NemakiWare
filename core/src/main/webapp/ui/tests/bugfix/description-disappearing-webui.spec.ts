@@ -122,27 +122,12 @@ test.describe.skip('Bug Fix: Description Disappearing with Secondary Types (WebU
       await page.waitForTimeout(2000);
     }
 
-    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
-        } catch {
-          // Continue even if sidebar close fails
-        }
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
   });
 
   test('Step 1: Upload test document with initial description', async ({ page, browserName }) => {
     console.log(`[TEST] Creating document: ${testDocName}`);
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Click upload button
     let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
@@ -182,8 +167,7 @@ test.describe.skip('Bug Fix: Description Disappearing with Secondary Types (WebU
 
   test('Step 2: Open document and add secondary type', async ({ page, browserName }) => {
     console.log(`[TEST] Adding secondary type to document: ${testDocName}`);
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForTimeout(2000);
 
@@ -249,8 +233,7 @@ test.describe.skip('Bug Fix: Description Disappearing with Secondary Types (WebU
 
   test('Step 3: Set description AND secondary type property simultaneously', async ({ page, browserName }) => {
     console.log(`[TEST] Setting description and comment on document: ${testDocName}`);
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForTimeout(2000);
 
@@ -311,8 +294,7 @@ test.describe.skip('Bug Fix: Description Disappearing with Secondary Types (WebU
 
   test('Step 4: VERIFY - Description should persist after reopening', async ({ page, browserName }) => {
     console.log(`[TEST] Verifying description persistence for: ${testDocName}`);
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Refresh the page by navigating away and back
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
@@ -381,8 +363,7 @@ test.describe.skip('Bug Fix: Description Disappearing with Secondary Types (WebU
 
   test('Step 5: Cleanup - Delete test document', async ({ page, browserName }) => {
     console.log(`[TEST] Cleaning up: ${testDocName}`);
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForTimeout(2000);
 

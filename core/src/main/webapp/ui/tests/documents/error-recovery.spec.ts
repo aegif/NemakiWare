@@ -160,8 +160,7 @@ test.describe('Error Recovery Tests', () => {
     const filename = `test-error-${uuid}-timeout.txt`;
 
     // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Simulate timeout by delaying the response
     let routeHandled = false;
@@ -283,8 +282,7 @@ test.describe('Error Recovery Tests', () => {
     const filename = `test-error-${uuid}-500.txt`;
 
     // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     let requestCount = 0;
 
@@ -525,8 +523,7 @@ test.describe('Error Recovery Tests', () => {
     const filename = `test-error-${uuid}-malformed.txt`;
 
     // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Simulate malformed JSON response
     await page.route('**/core/browser/bedroom?cmisaction=createDocument', async route => {

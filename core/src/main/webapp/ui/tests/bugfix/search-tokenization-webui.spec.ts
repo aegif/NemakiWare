@@ -123,29 +123,14 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
     await authHelper.login();
     await testHelper.waitForAntdLoad();
 
-    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
-        } catch {
-          // Continue even if sidebar close fails
-        }
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
   });
 
   test('Step 1: Upload document with EXACT search term', async ({ page, browserName }) => {
     console.log(`[TEST] Creating document with exact search term: ${docWithExactMatch}`);
     console.log(`[TEST] Search term: ${UNIQUE_SEARCH_TERM}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -193,8 +178,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
   test('Step 2: Upload document with PARTIAL match (individual tokens)', async ({ page, browserName }) => {
     console.log(`[TEST] Creating document with partial match: ${docWithPartialMatch}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -243,8 +227,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
   test('Step 3: Upload document with NO match', async ({ page, browserName }) => {
     console.log(`[TEST] Creating document with no match: ${docWithNoMatch}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -299,8 +282,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
   test('Step 5: CRITICAL TEST - Search should ONLY return exact phrase match', async ({ page, browserName }) => {
     console.log(`[TEST] Executing search for: ${UNIQUE_SEARCH_TERM}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to search page
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
@@ -386,8 +368,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
   test('Step 6: Cleanup - Delete test documents', async ({ page, browserName }) => {
     console.log(`[TEST] Cleaning up test documents`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });

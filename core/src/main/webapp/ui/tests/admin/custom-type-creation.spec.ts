@@ -174,16 +174,7 @@ test.describe('Custom Type Creation and Property Management', () => {
     await page.waitForTimeout(2000);
 
     // MOBILE FIX: Close sidebar
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
 
@@ -204,8 +195,7 @@ test.describe('Custom Type Creation and Property Management', () => {
   test('should create a new custom document type with properties', async ({ page, browserName }) => {
     console.log('Test: Creating new custom document type');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for type table to load
     await page.waitForSelector('.ant-table', { timeout: 15000 });
@@ -414,8 +404,7 @@ test.describe('Custom Type Creation and Property Management', () => {
      */
     console.log('Test: Adding custom properties via JSON editor');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     await page.waitForTimeout(2000);
@@ -544,8 +533,7 @@ test.describe('Custom Type Creation and Property Management', () => {
   test('should create document with custom type and edit custom properties', async ({ page, browserName }) => {
     console.log('Test: Creating document with custom type and editing custom properties');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });

@@ -157,16 +157,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     await page.waitForTimeout(2000);
 
     // Mobile browser fix
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
   });
@@ -176,8 +167,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     console.log(`Test Run ID: ${testRunId}`);
     console.log(`Creating custom type: ${customTypeId}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Type Management
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
@@ -385,8 +375,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
   test('Step 2: Create document with custom type and fill required properties', async ({ page, browserName }) => {
     console.log('Creating document with custom type...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -496,8 +485,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
   test('Step 3: Search for document using custom property filter', async ({ page, browserName }) => {
     console.log(`Searching for document with searchable property: ${initialSearchValue}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to search page
     const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
@@ -561,8 +549,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
   test('Step 4: Update custom property value and verify search results change', async ({ page, browserName }) => {
     console.log('Updating custom property value...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -634,8 +621,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     test.setTimeout(120000); // Extended timeout for versioning operations
     console.log('Creating new version with restored property value...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -743,8 +729,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
   test('Step 6: Delete latest version and verify search behavior', async ({ page, browserName }) => {
     console.log('Deleting latest version...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });

@@ -176,16 +176,7 @@ test.describe('Permission Management UI - ACL Display', () => {
     await page.waitForTimeout(2000);
 
     // MOBILE FIX: Close sidebar
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
   });
@@ -193,8 +184,7 @@ test.describe('Permission Management UI - ACL Display', () => {
   test('should successfully load ACL data when clicking permissions button', async ({ page, browserName }) => {
     console.log('Test: Verifying ACL data loading (fix for "データの読み込みに失敗しました" error)');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });

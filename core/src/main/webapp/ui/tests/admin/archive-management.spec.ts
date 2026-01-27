@@ -79,29 +79,14 @@ test.describe('Archive Management', () => {
     await authHelper.login();
     await page.waitForTimeout(2000);
 
-    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
-      } else {
-        const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
-        if (await alternativeToggle.count() > 0) {
-          await alternativeToggle.click({ timeout: 3000 });
-        }
-      }
+    await testHelper.closeMobileSidebar(browserName);
     }
 
     await testHelper.waitForAntdLoad();
   });
 
   test('should navigate to archive management page', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for archive management in admin menu
     // First try to find the admin submenu
@@ -146,8 +131,7 @@ test.describe('Archive Management', () => {
   });
 
   test('should display archive list with proper columns', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to archive management
     await page.goto('/core/ui/#/archive');
@@ -183,8 +167,7 @@ test.describe('Archive Management', () => {
   });
 
   test('should display type icons for folders and documents', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to archive management
     await page.goto('/core/ui/#/archive');
@@ -233,8 +216,7 @@ test.describe('Archive Management', () => {
 
   test('should create archive entry by deleting document', async ({ page, browserName }) => {
     test.setTimeout(120000); // Extended timeout for upload + delete + archive navigation
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // First navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -314,8 +296,7 @@ test.describe('Archive Management', () => {
   });
 
   test('should restore archived object', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to archive management
     await page.goto('/core/ui/#/archive');
@@ -421,8 +402,7 @@ test.describe('Archive Management', () => {
   });
 
   test('should show download button only for documents', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to archive management
     await page.goto('/core/ui/#/archive');
@@ -463,8 +443,7 @@ test.describe('Archive Management', () => {
   });
 
   test('should navigate to detail view from archive', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to archive management
     await page.goto('/core/ui/#/archive');

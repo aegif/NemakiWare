@@ -483,37 +483,13 @@ test.describe('Access Control and Permissions', () => {
         await page.waitForTimeout(2000);
       }
 
-      // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-      const viewportSize = page.viewportSize();
-      const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-      if (isMobileChrome) {
-        const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-
-        if (await menuToggle.count() > 0) {
-          try {
-            await menuToggle.first().click({ timeout: 3000 });
-            await page.waitForTimeout(500);
-          } catch (error) {
-            // Continue even if sidebar close fails
-          }
-        } else {
-          const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
-          if (await alternativeToggle.count() > 0) {
-            try {
-              await alternativeToggle.click({ timeout: 3000 });
-              await page.waitForTimeout(500);
-            } catch (error) {
-              // Continue even if alternative selector fails
-            }
-          }
+      await testHelper.closeMobileSidebar(browserName);
         }
       }
     });
 
     test('should create restricted folder with limited permissions', async ({ page, browserName }) => {
-      const viewportSize = page.viewportSize();
-      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+      const isMobile = testHelper.isMobile(browserName);
 
       // Create test folder
       // CRITICAL FIX (2025-12-27): Use modal closure instead of success message
@@ -635,8 +611,7 @@ test.describe('Access Control and Permissions', () => {
     });
 
     test('should upload document to restricted folder', async ({ page, browserName }) => {
-      const viewportSize = page.viewportSize();
-      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+      const isMobile = testHelper.isMobile(browserName);
 
       await page.waitForTimeout(2000);
 
@@ -715,30 +690,7 @@ test.describe('Access Control and Permissions', () => {
         console.log(`BeforeEach: ${restrictedFolderName} already exists`);
       }
 
-      // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-      const viewportSize = page.viewportSize();
-      const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-      if (isMobileChrome) {
-        const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-
-        if (await menuToggle.count() > 0) {
-          try {
-            await menuToggle.first().click({ timeout: 3000 });
-            await page.waitForTimeout(500);
-          } catch (error) {
-            // Continue even if sidebar close fails
-          }
-        } else {
-          const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
-          if (await alternativeToggle.count() > 0) {
-            try {
-              await alternativeToggle.click({ timeout: 3000 });
-              await page.waitForTimeout(500);
-            } catch (error) {
-              // Continue even if alternative selector fails
-            }
-          }
+      await testHelper.closeMobileSidebar(browserName);
         }
       }
     });
@@ -1139,30 +1091,7 @@ test.describe('Access Control and Permissions', () => {
         await page.waitForTimeout(2000);
       }
 
-      // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-      const viewportSize = page.viewportSize();
-      const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-      if (isMobileChrome) {
-        const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-
-        if (await menuToggle.count() > 0) {
-          try {
-            await menuToggle.first().click({ timeout: 3000 });
-            await page.waitForTimeout(500);
-          } catch (error) {
-            // Continue even if sidebar close fails
-          }
-        } else {
-          const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
-          if (await alternativeToggle.count() > 0) {
-            try {
-              await alternativeToggle.click({ timeout: 3000 });
-              await page.waitForTimeout(500);
-            } catch (error) {
-              // Continue even if alternative selector fails
-            }
-          }
+      await testHelper.closeMobileSidebar(browserName);
         }
       }
     });
@@ -1296,8 +1225,7 @@ test.describe('Access Control and Permissions', () => {
     });
 
     test('should NOT be able to delete document (read-only)', async ({ page, browserName }) => {
-      const viewportSize = page.viewportSize();
-      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+      const isMobile = testHelper.isMobile(browserName);
 
       await page.waitForTimeout(2000);
 
@@ -1355,8 +1283,7 @@ test.describe('Access Control and Permissions', () => {
     });
 
     test('should NOT be able to upload to restricted folder', async ({ page, browserName }) => {
-      const viewportSize = page.viewportSize();
-      const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+      const isMobile = testHelper.isMobile(browserName);
 
       await page.waitForTimeout(2000);
 

@@ -108,8 +108,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     test.setTimeout(120000); // Extended timeout for navigation + upload
     console.log(`Creating document: ${testDocumentName}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -142,8 +141,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
   test('Step 3: Set ACL permissions on folder', async ({ page, browserName }) => {
     console.log('Setting ACL permissions on folder...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -219,8 +217,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
   test('Step 4: Break ACL inheritance on document', async ({ page, browserName }) => {
     console.log('Breaking ACL inheritance on document...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -273,8 +270,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
   test('Step 5: Verify document has independent ACL', async ({ page, browserName }) => {
     console.log('Verifying document has independent ACL...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });

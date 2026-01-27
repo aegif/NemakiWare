@@ -195,32 +195,7 @@ test.describe('Document Management', () => {
       await page.waitForTimeout(2000);
     }
 
-    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      // Look for hamburger menu toggle button
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500); // Wait for animation
-        } catch (error) {
-          // Continue even if sidebar close fails
-        }
-      } else {
-        // Fallback: Try alternative selector (header button)
-        const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
-        if (await alternativeToggle.count() > 0) {
-          try {
-            await alternativeToggle.click({ timeout: 3000 });
-            await page.waitForTimeout(500);
-          } catch (error) {
-            // Continue even if alternative selector fails
-          }
-        }
+    await testHelper.closeMobileSidebar(browserName);
       }
     }
   });
@@ -368,8 +343,7 @@ test.describe('Document Management', () => {
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Generate unique filename to avoid conflicts
     const filename = `test-upload-${generateTestId()}.txt`;
@@ -524,8 +498,7 @@ test.describe('Document Management', () => {
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for any document row in the table
     const documentRow = page.locator('.ant-table-row').first();
@@ -556,8 +529,7 @@ test.describe('Document Management', () => {
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for search input with simplified selector
     const searchInput = page.locator('.search-input, input[placeholder*="検索"]');
@@ -633,8 +605,7 @@ test.describe('Document Management', () => {
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for folder creation button (フォルダ作成)
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
@@ -682,8 +653,7 @@ test.describe('Document Management', () => {
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
     let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
@@ -787,8 +757,7 @@ test.describe('Document Management', () => {
     await page.waitForTimeout(2000);
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Look for download button (DownloadOutlined icon in document rows)
     // Download button is only shown for documents (not folders)

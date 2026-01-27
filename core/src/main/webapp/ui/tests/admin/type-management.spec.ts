@@ -144,16 +144,7 @@ test.describe('Type Management - Custom Types Display', () => {
     await page.waitForTimeout(2000);
 
     // MOBILE FIX: Close sidebar
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
 
@@ -268,8 +259,7 @@ test.describe('Type Management - Custom Types Display', () => {
   test('should allow viewing type details by clicking on type row', async ({ page, browserName }) => {
     console.log('Test: Verifying type details view');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     await page.waitForTimeout(2000);
@@ -375,8 +365,7 @@ test.describe('Type Management - Custom Types Display', () => {
     // Type editing is implemented via JSON editor modal
     console.log('Test: Verifying type editing functionality for nemaki:parentChildRelationship');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     await page.waitForSelector('.ant-table', { timeout: 15000 });
     await page.waitForTimeout(2000);

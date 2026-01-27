@@ -24,6 +24,73 @@
 
 ---
 
+## コードレビュー対応（2026-01-27）
+
+レビュー指摘に基づき、以下の品質改善を実施。
+
+| # | 指摘事項 | 修正内容 |
+|---|---------|---------|
+| 1 | route解除がテスト失敗時に実行されない | `try/finally`パターンで確実に`unroute()`実行 |
+| 2 | uploadDocument()のリロード後待機が不十分 | `waitForAntdLoad()`を使用してUI準備完了を検知 |
+| 3 | セレクターが日本語のみ | 英語パターンを追加（Upload, Search等） |
+| 4 | closeAllOverlays()がDOM削除を優先 | UI操作を先に実行し、JS削除は最終手段に変更 |
+
+### 修正詳細
+
+#### 1. route解除のtry/finally化（error-recovery.spec.ts）
+```typescript
+// Before (テスト失敗時にunrouteが実行されない)
+await page.route('**/core/browser/bedroom', handler);
+// ... assertions ...
+await page.unroute('**/core/browser/bedroom');
+
+// After (確実にunrouteが実行される)
+await page.route('**/core/browser/bedroom', handler);
+try {
+  // ... assertions ...
+} finally {
+  await page.unroute('**/core/browser/bedroom');
+}
+```
+
+#### 2. uploadDocument()のUI待機改善（test-helper.ts）
+```typescript
+// Before
+await this.page.reload({ waitUntil: 'networkidle' });
+await this.page.waitForTimeout(3000);
+
+// After
+await this.page.reload({ waitUntil: 'networkidle' });
+await this.waitForAntdLoad();
+await this.page.waitForTimeout(1000);
+```
+
+#### 3. i18nセレクター追加（test-helper.ts）
+```typescript
+const uploadButtonSelectors = [
+  'button:has-text("ファイルアップロード")',
+  'button:has-text("アップロード")',
+  'button:has-text("Upload")',           // 追加
+  'button:has-text("File Upload")',      // 追加
+  'button:has([data-icon="upload"])',
+];
+```
+
+#### 4. closeAllOverlays()の順序修正（test-helper.ts）
+```typescript
+// Before: JavaScript DOM削除を最初に実行
+// → Reactの状態とDOMが乖離するリスク
+
+// After: UI操作優先
+// Step 1: Escape キー押下
+// Step 2: モーダル閉じるボタンクリック
+// Step 3: キャンセルボタンクリック
+// Step 4: Drawer閉じる
+// Step 5: (最終手段) JavaScript DOM削除
+```
+
+---
+
 ## Phase 2: テストID生成の統一
 
 ### 目的

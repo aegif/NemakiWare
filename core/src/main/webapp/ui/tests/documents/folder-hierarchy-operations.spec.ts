@@ -510,8 +510,7 @@ test.describe('Folder Hierarchy Operations', () => {
     // CRITICAL FIX (2025-12-24): Simplified test to focus on reliable operations
     // Subfolder creation has timing issues (modal submit fails silently after navigation).
     // This test validates: 1) folder creation at root, 2) navigation into the folder.
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const uuid = generateTestId();
     const folderName = `test-folder-${uuid}`;
@@ -557,8 +556,7 @@ test.describe('Folder Hierarchy Operations', () => {
     // CRITICAL FIX (2025-12-24): Simplified from hierarchy navigation to single folder tree verification
     // Subfolder creation has timing issues. This test validates that folder creation
     // updates the folder tree component.
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented but hidden on mobile viewports
@@ -608,8 +606,7 @@ test.describe('Folder Hierarchy Operations', () => {
 
   test('should rename folder and verify updates', async ({ page, browserName }) => {
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const uuid = generateTestId();
     const originalName = `test-folder-${uuid}-original`;
@@ -683,8 +680,7 @@ test.describe('Folder Hierarchy Operations', () => {
     test.setTimeout(120000); // Extended timeout for deletion operations
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const uuid = generateTestId();
     const folderName = `test-folder-${uuid}-del`;

@@ -266,8 +266,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     testHelper = new TestHelper(page);
 
     // Mobile browser support
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
@@ -305,8 +304,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should upload a valid type definition file without conflicts', async ({ page, browserName }) => {
     console.log('Test: Upload valid type definition without conflicts');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Click "ファイルからインポート" button (implemented in TypeManagement.tsx line 657)
     const importButton = page.locator('button:has-text("ファイルからインポート")');
@@ -403,8 +401,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should detect conflict when uploading duplicate type ID', async ({ page, browserName }) => {
     console.log('Test: Upload type definition with ID conflict');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Upload the same type again to trigger conflict
     const importButton = page.locator('button:has-text("ファイルからインポート")');
@@ -480,8 +477,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should edit type definition via JSON modal', async ({ page, browserName }) => {
     console.log('Test: Edit type definition via JSON');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2025-12-14): First verify type exists via API
     const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
@@ -595,8 +591,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should detect conflict when changing type ID in JSON edit', async ({ page, browserName }) => {
     console.log('Test: Edit type with ID change (conflict detection)');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Create a new type to avoid conflict with existing
     const newTypeId = `test:editTest${generateTestId()}`;
@@ -744,8 +739,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should delete custom type', async ({ page, browserName }) => {
     console.log('Test: Delete custom type');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2025-12-14): First verify type exists via API
     const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
@@ -837,8 +831,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should cancel upload operation', async ({ page, browserName }) => {
     console.log('Test: Cancel upload operation');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const importButton = page.locator('button:has-text("ファイルからインポート")');
     if (await importButton.count() === 0) {
@@ -866,8 +859,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
   test('should cancel JSON edit operation', async ({ page, browserName }) => {
     console.log('Test: Cancel JSON edit operation');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Create a test type for this test
     const cancelTestTypeId = `test:cancelTest${generateTestId()}`;

@@ -38,8 +38,7 @@ test.describe('User Scenario Tests', () => {
 
     // CRITICAL FIX (2025-12-26): Ensure test document exists before each test
     // This eliminates data-dependent test skips
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
     await testHelper.ensureTestDocument(testDocName, 'Test content for user scenario testing', isMobile);
   });
 

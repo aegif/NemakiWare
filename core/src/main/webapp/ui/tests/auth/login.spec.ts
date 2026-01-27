@@ -198,8 +198,7 @@ test.describe('NemakiWare Authentication', () => {
     await expect(page.locator('.ant-layout-content')).toBeVisible({ timeout: 10000 });
 
     // MOBILE FIX: Close sidebar on mobile to access header elements
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
@@ -307,8 +306,7 @@ test.describe('NemakiWare Authentication', () => {
     expect(await authHelper.isLoggedIn()).toBe(true);
 
     // MOBILE FIX: Close sidebar before logout to access header menu
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');

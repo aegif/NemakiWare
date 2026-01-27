@@ -185,8 +185,7 @@ test.describe('Document Viewer Authentication', () => {
     console.log('✅ Login successful - documents page loaded');
 
     // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
@@ -299,8 +298,7 @@ test.describe('Document Viewer Authentication', () => {
     await expect(page.locator('.ant-table')).toBeVisible({ timeout: 15000 });
 
     // Mobile sidebar handling
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();

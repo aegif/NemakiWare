@@ -131,16 +131,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     await authHelper.login();
     await page.waitForTimeout(2000);
 
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
   });
@@ -148,8 +139,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
   test('Step 1: Create root folder', async ({ page, browserName }) => {
     console.log(`Creating root folder: ${rootFolderName}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -174,8 +164,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
     test.setTimeout(120000); // Extended timeout for creating multiple folders
     console.log('Creating subfolders...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -384,8 +373,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
   test('Step 4: Search with folder scope (IN_TREE)', async ({ page, browserName }) => {
     console.log('Searching with folder scope...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for Solr indexing
     await page.waitForTimeout(3000);
@@ -443,8 +431,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
   test('Step 5: Move document between folders', async ({ page, browserName }) => {
     console.log('Moving document between folders...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -506,8 +493,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
   test('Step 6: Verify search results after move', async ({ page, browserName }) => {
     console.log('Verifying search results after move...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for Solr indexing
     await page.waitForTimeout(3000);

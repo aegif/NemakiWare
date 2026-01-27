@@ -155,29 +155,14 @@ test.describe('Document Versioning', () => {
     await authHelper.login();
     await page.waitForTimeout(2000);
 
-    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
-      } else {
-        const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
-        if (await alternativeToggle.count() > 0) {
-          await alternativeToggle.click({ timeout: 3000 });
-        }
-      }
+    await testHelper.closeMobileSidebar(browserName);
     }
 
     await testHelper.waitForAntdLoad();
   });
 
   test('should check-out a document', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -286,8 +271,7 @@ test.describe('Document Versioning', () => {
   });
 
   test('should check-in a document with new version', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -380,8 +364,7 @@ test.describe('Document Versioning', () => {
   });
 
   test('should cancel check-out', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -457,8 +440,7 @@ test.describe('Document Versioning', () => {
   });
 
   test('should display version history', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -544,8 +526,7 @@ test.describe('Document Versioning', () => {
   });
 
   test('should download a specific version', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -658,8 +639,7 @@ test.describe('Document Versioning', () => {
    * UI Message: 「{{name}}」の新しいバージョンを作成しました
    */
   test('should create new version when uploading same-name file', async ({ page, browserName }) => {
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2026-01-21): Reload page to clear any Error Boundary state from previous tests
     // This test runs last and may inherit DOM corruption from previous tests

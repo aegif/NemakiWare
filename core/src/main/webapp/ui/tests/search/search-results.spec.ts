@@ -35,8 +35,7 @@ test.describe('Search Results Detailed Verification', () => {
     await page.waitForTimeout(2000);
 
     // Mobile sidebar close logic (if needed)
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     if (isMobile) {
       // Close sidebar to prevent overlay blocking
@@ -54,8 +53,7 @@ test.describe('Search Results Detailed Verification', () => {
 
   test('should display search-specific columns in search mode', async ({ page, browserName }) => {
     // Mobile detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Find search input
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -99,8 +97,7 @@ test.describe('Search Results Detailed Verification', () => {
     // which may not exist in a clean test database
 
     // Mobile detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform search
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -132,8 +129,7 @@ test.describe('Search Results Detailed Verification', () => {
     // Test may skip if no documents matching "test" exist in repository
 
     // Mobile detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform search
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -170,8 +166,7 @@ test.describe('Search Results Detailed Verification', () => {
     // Test may skip if no documents matching "test" exist in repository
 
     // Mobile detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform search
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -209,8 +204,7 @@ test.describe('Search Results Detailed Verification', () => {
 
   test('should switch to browse-mode columns when clearing search', async ({ page, browserName }) => {
     // Mobile detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform search first
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -260,8 +254,7 @@ test.describe('Search Results Detailed Verification', () => {
     // Test may skip if no documents matching "test" exist in repository
 
     // Mobile detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Perform search
     const searchInput = page.locator('input[placeholder*="検索"]').first();

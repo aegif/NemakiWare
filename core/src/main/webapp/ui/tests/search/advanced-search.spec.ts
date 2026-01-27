@@ -200,30 +200,7 @@ test.describe('Advanced Search', () => {
     await searchMenu.click();
     await page.waitForTimeout(2000);
 
-    // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-
-      if (await menuToggle.count() > 0) {
-        try {
-          await menuToggle.first().click({ timeout: 3000 });
-          await page.waitForTimeout(500);
-        } catch (error) {
-          // Continue even if sidebar close fails
-        }
-      } else {
-        const alternativeToggle = page.locator('.ant-layout-header button, banner button').first();
-        if (await alternativeToggle.count() > 0) {
-          try {
-            await alternativeToggle.click({ timeout: 3000 });
-            await page.waitForTimeout(500);
-          } catch (error) {
-            // Continue even if alternative selector fails
-          }
-        }
+    await testHelper.closeMobileSidebar(browserName);
       }
     }
   });
@@ -244,8 +221,7 @@ test.describe('Advanced Search', () => {
 
   test('should handle basic search', async ({ page, browserName }) => {
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to load
     await page.waitForTimeout(2000);
@@ -283,8 +259,7 @@ test.describe('Advanced Search', () => {
 
   test('should execute search without errors', async ({ page, browserName }) => {
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     const searchRequests: string[] = [];
     page.on('request', request => {
@@ -417,8 +392,7 @@ test.describe('Advanced Search', () => {
     console.log('Test: Search input clearing and CMIS query reference display');
 
     // Detect mobile browsers for force click if needed
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to load
     await page.waitForTimeout(2000);
@@ -514,8 +488,7 @@ test.describe('Advanced Search', () => {
     console.log('Test: PDF full-text indexing verification');
 
     // Detect mobile browsers for force click if needed
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to be fully loaded
     await page.waitForTimeout(2000);
@@ -593,8 +566,7 @@ test.describe('Advanced Search', () => {
     console.log('Test: Negative search verification');
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to load
     await page.waitForTimeout(2000);
@@ -635,8 +607,7 @@ test.describe('Advanced Search', () => {
     console.log('Test 8: Search result metadata and PDF preview navigation');
 
     // Detect mobile browsers for force click if needed
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to be fully loaded
     await page.waitForTimeout(2000);
@@ -763,8 +734,7 @@ test.describe('Advanced Search', () => {
     console.log('Test 9: PDF filename search verification');
 
     // Detect mobile browsers for force click if needed
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to be fully loaded
     await page.waitForTimeout(2000);
@@ -925,8 +895,7 @@ test.describe('Advanced Search', () => {
     console.log('Test: Metadata search with checkbox unchecked (default behavior)');
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to load
     await page.waitForTimeout(2000);
@@ -1027,8 +996,7 @@ test.describe('Advanced Search', () => {
     console.log('Test: Metadata exclusion with checkbox checked');
 
     // Detect mobile browsers
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to load
     await page.waitForTimeout(2000);
@@ -1118,8 +1086,7 @@ test.describe('Advanced Search', () => {
     console.log('Test 10: Japanese PDF full-text search verification (multilingual support)');
 
     // Detect mobile browsers for force click if needed
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for page to be fully loaded
     await page.waitForTimeout(1000);

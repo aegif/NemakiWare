@@ -50,16 +50,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     await authHelper.login();
     await page.waitForTimeout(2000);
 
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
   });
@@ -68,8 +59,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     test.setTimeout(120000); // Extended timeout for type creation with properties
     console.log(`Creating secondary type: ${secondaryTypeId}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to Type Management
     const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
@@ -210,8 +200,7 @@ test.describe('Secondary Type with Custom Properties', () => {
   test('Step 2: Create test document', async ({ page, browserName }) => {
     console.log(`Creating test document: ${testDocumentName}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -237,8 +226,7 @@ test.describe('Secondary Type with Custom Properties', () => {
   test('Step 3: Apply secondary type to document', async ({ page, browserName }) => {
     console.log('Applying secondary type to document...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
@@ -297,8 +285,7 @@ test.describe('Secondary Type with Custom Properties', () => {
   test('Step 4: Search by secondary type property', async ({ page, browserName }) => {
     console.log(`Searching by aspect property: ${aspectPropValue}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Wait for Solr indexing
     await page.waitForTimeout(3000);
@@ -335,8 +322,7 @@ test.describe('Secondary Type with Custom Properties', () => {
   test('Step 5: Remove secondary type and verify search', async ({ page, browserName }) => {
     console.log('Removing secondary type from document...');
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
