@@ -479,4 +479,48 @@ public class WebhookDeliveryServiceTest {
         assertNull("nemaki:authCredential should be filtered", 
             payload.getProperties().get("nemaki:authCredential"));
     }
+    
+    @Test
+    public void testSerializePayloadFiltersSensitiveProperties() {
+        // Create payload directly (simulating alternate creation path)
+        WebhookPayload payload = new WebhookPayload();
+        payload.setEventType("CREATED");
+        payload.setObjectId("doc-123");
+        payload.setRepositoryId("bedroom");
+        payload.setDeliveryId("delivery-abc");
+        payload.setTimestamp(System.currentTimeMillis());
+        
+        // Set properties directly with sensitive data
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("cmis:name", "test-document.txt");
+        properties.put("nemaki:webhookConfigs", "[{\"secret\":\"my-secret\"}]");
+        payload.setProperties(properties);
+        
+        String json = deliveryService.serializePayload(payload);
+        
+        // Non-sensitive properties should be included
+        assertTrue("Should contain cmis:name", json.contains("test-document.txt"));
+        
+        // Sensitive properties should be filtered out even in serializePayload
+        assertFalse("nemaki:webhookConfigs should be filtered in serialization", 
+            json.contains("nemaki:webhookConfigs"));
+        assertFalse("Secret value should not appear in JSON", 
+            json.contains("my-secret"));
+    }
+    
+    @Test
+    public void testShouldRetryWithNegativeRetryCount() {
+        // Config with negative retryCount should be treated as 0
+        WebhookConfig config = new WebhookConfig.Builder()
+            .id("webhook-1")
+            .enabled(true)
+            .url("https://example.com/webhook")
+            .events(List.of("CREATED"))
+            .retryCount(-5)
+            .build();
+        
+        // With negative retryCount (treated as 0), attempt 1 should not retry
+        assertFalse("Should not retry when retryCount is negative (treated as 0)", 
+            deliveryService.shouldRetry(config, 1, 500));
+    }
 }

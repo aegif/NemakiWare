@@ -246,9 +246,9 @@ public class WebhookDeliveryService {
             return false;
         }
         
-        // Check if we've exceeded max retries (default to 0 if not set)
+        // Check if we've exceeded max retries (default to 0 if not set or negative)
         Integer retryCountValue = config.getRetryCount();
-        int maxRetries = retryCountValue != null ? retryCountValue : 0;
+        int maxRetries = (retryCountValue != null && retryCountValue > 0) ? retryCountValue : 0;
         if (attemptNumber > maxRetries) {
             return false;
         }
@@ -300,9 +300,13 @@ public class WebhookDeliveryService {
         }
         
         if (payload.getProperties() != null && !payload.getProperties().isEmpty()) {
-            JSONObject propsJson = new JSONObject();
-            propsJson.putAll(payload.getProperties());
-            json.put("properties", propsJson);
+            // Apply defensive filtering in case payload was created via alternate path
+            Map<String, Object> filteredProps = filterSensitiveProperties(payload.getProperties());
+            if (!filteredProps.isEmpty()) {
+                JSONObject propsJson = new JSONObject();
+                propsJson.putAll(filteredProps);
+                json.put("properties", propsJson);
+            }
         }
         
         return json.toJSONString();
