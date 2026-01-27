@@ -17,12 +17,15 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
+import { TestHelper } from '../utils/test-helper';
 
 test.describe('Custom Property Search Functionality', () => {
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
 
     // Login as admin
     await authHelper.login();
@@ -452,9 +455,11 @@ test.describe('Custom Property Search Functionality', () => {
  */
 test.describe('Custom Property Range Search', () => {
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
     await authHelper.login();
     await page.waitForTimeout(2000);
 
@@ -717,9 +722,11 @@ test.describe('Custom Property Range Search', () => {
 
 test.describe('Custom Property Input Types', () => {
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
     await authHelper.login();
     await page.waitForTimeout(2000);
 

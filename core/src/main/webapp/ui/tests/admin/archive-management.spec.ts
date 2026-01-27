@@ -80,7 +80,6 @@ test.describe('Archive Management', () => {
     await page.waitForTimeout(2000);
 
     await testHelper.closeMobileSidebar(browserName);
-    }
 
     await testHelper.waitForAntdLoad();
   });

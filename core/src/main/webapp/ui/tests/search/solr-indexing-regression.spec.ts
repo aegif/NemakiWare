@@ -31,6 +31,7 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
+import { TestHelper } from '../utils/test-helper';
 
 /**
  * SKIPPED (2025-12-23) - Solr Indexing Timing and UI Stability Issues
@@ -58,10 +59,12 @@ import { AuthHelper } from '../utils/auth-helper';
  */
 test.describe('Solr Indexing Regression Tests', () => {
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
   const uniqueId = generateTestId();
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
     await authHelper.login();
     await page.waitForTimeout(2000);
 

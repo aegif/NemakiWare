@@ -484,8 +484,6 @@ test.describe('Access Control and Permissions', () => {
       }
 
       await testHelper.closeMobileSidebar(browserName);
-        }
-      }
     });
 
     test('should create restricted folder with limited permissions', async ({ page, browserName }) => {
@@ -691,8 +689,6 @@ test.describe('Access Control and Permissions', () => {
       }
 
       await testHelper.closeMobileSidebar(browserName);
-        }
-      }
     });
 
     // CONVERTED (2025-12-27): Changed from UI-based to API-based test for reliability
@@ -1092,8 +1088,6 @@ test.describe('Access Control and Permissions', () => {
       }
 
       await testHelper.closeMobileSidebar(browserName);
-        }
-      }
     });
 
     // CONVERTED (2025-12-27): Changed from UI-based to API-based test for reliability

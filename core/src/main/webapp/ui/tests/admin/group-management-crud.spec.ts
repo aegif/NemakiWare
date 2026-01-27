@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { generateTestId } from '../utils/test-helper';
+import { generateTestId, TestHelper } from '../utils/test-helper';
 
 // CRITICAL FIX (2025-11-10): Generate TEST_GROUP_NAME OUTSIDE describe block to ensure it's shared across all tests
 // Playwright re-executes the describe block for each test, which would regenerate UUID inside describe scope
@@ -216,9 +216,11 @@ test.describe.skip('Group Management CRUD Operations', () => {
   // Run tests serially to avoid conflicts
   test.describe.configure({ mode: 'serial' });
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
     await authHelper.login();
 
     // Navigate to group management
@@ -232,8 +234,6 @@ test.describe.skip('Group Management CRUD Operations', () => {
     await page.waitForTimeout(2000);
 
     await testHelper.closeMobileSidebar(browserName);
-      }
-    }
   });
 
   test('should create new group', async ({ page, browserName }) => {

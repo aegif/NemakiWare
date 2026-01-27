@@ -75,8 +75,6 @@ test.describe('Solr Index Maintenance', () => {
     await page.waitForTimeout(2000);
 
     await testHelper.closeMobileSidebar(browserName);
-      }
-    }
 
     await testHelper.waitForAntdLoad();
   });

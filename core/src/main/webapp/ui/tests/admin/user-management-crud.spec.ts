@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { generateTestId } from '../utils/test-helper';
+import { generateTestId, TestHelper } from '../utils/test-helper';
 
 /**
  * User Management CRUD Operations E2E Tests
@@ -183,11 +183,13 @@ test.describe('User Management CRUD Operations', () => {
   // Run tests serially to avoid conflicts
   test.describe.configure({ mode: 'serial' });
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
   const testUsername = `testuser_${generateTestId()}`;
   const testUserEmail = `${testUsername}@test.local`;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
     await authHelper.login();
 
     // Navigate to user management
@@ -201,8 +203,6 @@ test.describe('User Management CRUD Operations', () => {
     await page.waitForTimeout(2000);
 
     await testHelper.closeMobileSidebar(browserName);
-      }
-    }
   });
 
   test('should create new user with full details', async ({ page, browserName }) => {

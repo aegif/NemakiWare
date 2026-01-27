@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
+import { TestHelper } from '../utils/test-helper';
 
 /**
  * User Management Basic Functionality E2E Tests
@@ -140,9 +141,11 @@ import { AuthHelper } from '../utils/auth-helper';
  */
 test.describe('User Management', () => {
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
     await authHelper.login();
 
     // Navigate to user management
@@ -156,8 +159,6 @@ test.describe('User Management', () => {
     await page.waitForTimeout(2000);
 
     await testHelper.closeMobileSidebar(browserName);
-      }
-    }
   });
 
   test('should display user management page', async ({ page }) => {

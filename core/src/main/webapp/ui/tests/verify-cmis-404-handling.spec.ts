@@ -132,6 +132,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { TestHelper } from './utils/test-helper';
 
 /**
  * SELECTOR FIX (2025-12-24) - Document Row Detection Fixed
@@ -147,6 +148,8 @@ import { test, expect } from '@playwright/test';
  * - All rows with buttons: '.ant-table-tbody tr button.ant-btn-link' (more flexible)
  */
 test.describe('CMIS API 404 Error Handling', () => {
+  let testHelper: TestHelper;
+
   /**
    * FIX (2025-12-24): Route interception timing fixed
    *
@@ -155,6 +158,7 @@ test.describe('CMIS API 404 Error Handling', () => {
    * This ensures only document detail requests are intercepted, not folder list requests.
    */
   test('should handle document access 404 error gracefully', async ({ page, browserName }) => {
+    testHelper = new TestHelper(page);
     // Enable console logging to trace execution flow
     page.on('console', msg => {
       console.log('BROWSER:', msg.type(), msg.text());
@@ -266,6 +270,7 @@ test.describe('CMIS API 404 Error Handling', () => {
   });
 
   test('should not break UI when accessing deleted content', async ({ page, browserName }) => {
+    testHelper = new TestHelper(page);
     // This test verifies that even if 404 handling doesn't redirect,
     // the UI remains functional and user isn't "stuck"
 

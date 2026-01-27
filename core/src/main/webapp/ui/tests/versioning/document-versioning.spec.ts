@@ -156,7 +156,6 @@ test.describe('Document Versioning', () => {
     await page.waitForTimeout(2000);
 
     await testHelper.closeMobileSidebar(browserName);
-    }
 
     await testHelper.waitForAntdLoad();
   });

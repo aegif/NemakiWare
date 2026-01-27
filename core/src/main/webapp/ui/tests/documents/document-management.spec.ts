@@ -196,8 +196,6 @@ test.describe('Document Management', () => {
     }
 
     await testHelper.closeMobileSidebar(browserName);
-      }
-    }
   });
 
   test.afterEach(async ({ page }) => {

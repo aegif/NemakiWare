@@ -21,12 +21,15 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
+import { TestHelper } from '../utils/test-helper';
 
 test.describe('Search Results Detailed Verification', () => {
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
 
     // Login as admin
     await authHelper.login();

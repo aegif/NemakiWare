@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
+import { TestHelper } from '../utils/test-helper';
 
 /**
  * Back to Current Folder Navigation Test
@@ -19,9 +20,11 @@ import { AuthHelper } from '../utils/auth-helper';
  */
 test.describe('Back to Current Folder Navigation', () => {
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
 
   test.beforeEach(async ({ page }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
     await authHelper.login();
     await page.waitForTimeout(2000);
   });

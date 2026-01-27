@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
+import { TestHelper } from '../utils/test-helper';
 
 /**
  * SKIPPED (2025-12-23) - Environment Pollution Blocking API Access
@@ -36,9 +37,11 @@ import { AuthHelper } from '../utils/auth-helper';
  */
 test.describe('System Folders (/.system)', () => {
   let authHelper: AuthHelper;
+  let testHelper: TestHelper;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);
+    testHelper = new TestHelper(page);
 
     // Login as admin
     await authHelper.login();
