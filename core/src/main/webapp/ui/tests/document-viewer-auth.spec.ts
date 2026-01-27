@@ -155,8 +155,11 @@ import { TestHelper } from './utils/test-helper';
 test.describe('Document Viewer Authentication', () => {
   let testHelper: TestHelper;
 
-  test('should access document details without authentication errors', async ({ page, browserName }) => {
+  test.beforeEach(async ({ page }) => {
     testHelper = new TestHelper(page);
+  });
+
+  test('should access document details without authentication errors', async ({ page, browserName }) => {
     // Enable console logging
     page.on('console', msg => {
       console.log('BROWSER:', msg.type(), msg.text());
@@ -284,7 +287,6 @@ test.describe('Document Viewer Authentication', () => {
    * Session stability verified via manual testing with real documents.
    */
   test.skip('should handle multiple document detail accesses without session issues', async ({ page, browserName }) => {
-    testHelper = new TestHelper(page);
     // Login
     await page.goto('http://localhost:8080/core/ui/index.html');
     await page.waitForTimeout(1000);

@@ -34,16 +34,7 @@ test.describe('Custom Property Search Functionality', () => {
     await page.waitForTimeout(2000);
 
     // Mobile sidebar close logic (if needed)
-    const isMobile = testHelper.isMobile(browserName);
-
-    if (isMobile) {
-      // Close sidebar to prevent overlay blocking
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
-      if (await menuToggle.count() > 0) {
-        await menuToggle.click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     // Navigate to search page
     const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
@@ -464,15 +455,7 @@ test.describe('Custom Property Range Search', () => {
     await page.waitForTimeout(2000);
 
     // Mobile sidebar handling
-    const isMobile = testHelper.isMobile(browserName);
-
-    if (isMobile) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
-      if (await menuToggle.count() > 0) {
-        await menuToggle.click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     // Navigate to search page
     const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
@@ -731,15 +714,7 @@ test.describe('Custom Property Input Types', () => {
     await page.waitForTimeout(2000);
 
     // Mobile sidebar handling
-    const isMobile = testHelper.isMobile(browserName);
-
-    if (isMobile) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]').first();
-      if (await menuToggle.count() > 0) {
-        await menuToggle.click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
-    }
+    await testHelper.closeMobileSidebar(browserName);
 
     // Navigate to search page
     const searchMenu = page.locator('.ant-menu-item:has-text("検索")');

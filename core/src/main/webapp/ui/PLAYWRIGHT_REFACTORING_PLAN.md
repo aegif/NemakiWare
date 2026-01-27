@@ -182,14 +182,42 @@ export class TestHelper {
 
 ### 使用例
 ```typescript
-test.beforeEach(async ({ page, browserName }) => {
-  const testHelper = new TestHelper(page);
-  await testHelper.closeMobileSidebar(browserName);
-});
+test.describe('Example Test', () => {
+  let testHelper: TestHelper;
 
-// テスト内でのモバイル判定
-const isMobile = testHelper.isMobile(browserName);
-await button.click(isMobile ? { force: true } : {});
+  test.beforeEach(async ({ page, browserName }) => {
+    testHelper = new TestHelper(page);
+    await testHelper.closeMobileSidebar(browserName);
+  });
+
+  test('example test', async ({ page, browserName }) => {
+    // テスト内でのモバイル判定
+    const isMobile = testHelper.isMobile(browserName);
+    await button.click(isMobile ? { force: true } : {});
+  });
+});
+```
+
+### コーディングルール
+
+#### 初期化位置の統一
+- **必須**: `describe`ブロック内で`let testHelper: TestHelper;`を宣言
+- **必須**: `beforeEach`内で`testHelper = new TestHelper(page);`を初期化
+- **禁止**: 各テスト内での`const testHelper = new TestHelper(page);`
+
+#### importパスの統一
+| ファイル位置 | importパス |
+|-------------|-----------|
+| `tests/` 直下 | `./utils/test-helper` |
+| `tests/<subdir>/` | `../utils/test-helper` |
+
+例:
+```typescript
+// tests/example.spec.ts
+import { TestHelper } from './utils/test-helper';
+
+// tests/admin/example.spec.ts
+import { TestHelper } from '../utils/test-helper';
 ```
 
 ### 作業手順

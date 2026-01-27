@@ -112,7 +112,10 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
 test.describe('NemakiWare Authentication', () => {
+  let testHelper: TestHelper;
+
   test.beforeEach(async ({ page, context }) => {
+    testHelper = new TestHelper(page);
     // Start with a clean session
     await context.clearCookies();
     await context.clearPermissions();
@@ -149,8 +152,6 @@ test.describe('NemakiWare Authentication', () => {
   });
 
   test('should display login page correctly', async ({ page }) => {
-    const testHelper = new TestHelper(page);
-
     await page.goto('/core/ui/index.html');
 
     // Check page title
@@ -180,7 +181,6 @@ test.describe('NemakiWare Authentication', () => {
 
   test('should successfully login with valid credentials', async ({ page, browserName }) => {
     const authHelper = new AuthHelper(page);
-    const testHelper = new TestHelper(page);
 
     await authHelper.login();
 
