@@ -43,16 +43,7 @@ CMIS 1.1仕様にはWebhook/イベント通知の直接的な定義は存在し�
 
 | プロパティID | 表示名 | 型 | カーディナリティ | 必須 | 説明 |
 |-------------|--------|-----|-----------------|------|------|
-| nemaki:webhookEnabled | Webhook有効 | Boolean | single | No | Webhook通知の有効/無効 |
-| nemaki:webhookUrl | Webhook URL | String | single | No | デフォルト通知先URL |
-| nemaki:webhookEvents | 監視イベント | String | multi | No | 監視するイベントタイプのリスト |
-| nemaki:webhookEventConfigs | イベント別設定 | String | single | No | イベントタイプ毎の個別設定（JSON形式、詳細は2.4参照） |
-| nemaki:webhookSecret | Webhook Secret | String | single | No | HMAC-SHA256署名検証用シークレット |
-| nemaki:webhookAuthType | 認証タイプ | String | single | No | 認証方式（none/basic/bearer/apikey） |
-| nemaki:webhookAuthCredential | 認証情報 | String | single | No | 認証用クレデンシャル（暗号化保存） |
-| nemaki:webhookHeaders | カスタムヘッダー | String | multi | No | カスタムHTTPヘッダー（JSON形式） |
-| nemaki:webhookRetryCount | リトライ回数 | Integer | single | No | 失敗時のリトライ回数（デフォルト: 3） |
-| nemaki:webhookIncludeChildren | 子要素含む | Boolean | single | No | 子フォルダ/ドキュメントのイベントも通知 |
+| nemaki:webhookConfigs | Webhook設定 | String | single | No | 複数Webhook設定を格納するJSON配列（詳細は2.4参照） |
 | nemaki:webhookMaxDepth | 最大監視深度 | Integer | single | No | 子孫を監視する最大階層数（デフォルト: アプリ設定値） |
 
 ### 2.2 nemaki:document
@@ -70,19 +61,11 @@ CMIS 1.1仕様にはWebhook/イベント通知の直接的な定義は存在し�
 
 | プロパティID | 表示名 | 型 | カーディナリティ | 必須 | 説明 |
 |-------------|--------|-----|-----------------|------|------|
-| nemaki:webhookEnabled | Webhook有効 | Boolean | single | No | Webhook通知の有効/無効 |
-| nemaki:webhookUrl | Webhook URL | String | single | No | デフォルト通知先URL |
-| nemaki:webhookEvents | 監視イベント | String | multi | No | 監視するイベントタイプのリスト |
-| nemaki:webhookEventConfigs | イベント別設定 | String | single | No | イベントタイプ毎の個別設定（JSON形式、詳細は2.4参照） |
-| nemaki:webhookSecret | Webhook Secret | String | single | No | HMAC-SHA256署名検証用シークレット |
-| nemaki:webhookAuthType | 認証タイプ | String | single | No | 認証方式（none/basic/bearer/apikey） |
-| nemaki:webhookAuthCredential | 認証情報 | String | single | No | 認証用クレデンシャル（暗号化保存） |
-| nemaki:webhookHeaders | カスタムヘッダー | String | multi | No | カスタムHTTPヘッダー（JSON形式） |
-| nemaki:webhookRetryCount | リトライ回数 | Integer | single | No | 失敗時のリトライ回数（デフォルト: 3） |
+| nemaki:webhookConfigs | Webhook設定 | String | single | No | 複数Webhook設定を格納するJSON配列（詳細は2.4参照） |
 
 ### 2.3 監視イベントタイプ
 
-`nemaki:webhookEvents`プロパティで指定可能なイベントタイプ：
+`nemaki:webhookConfigs`内の各Webhook設定で指定可能なイベントタイプ：
 
 | イベントタイプ | 説明 | 対応CMISイベント |
 |---------------|------|-----------------|
@@ -99,51 +82,65 @@ CMIS 1.1仕様にはWebhook/イベント通知の直接的な定義は存在し�
 | `CHILD_DELETED` | 子要素削除（フォルダのみ） | - |
 | `CHILD_UPDATED` | 子要素更新（フォルダのみ） | - |
 
-### 2.4 イベント別Webhook設定
+### 2.4 nemaki:webhookConfigs プロパティ仕様
 
-`nemaki:webhookEventConfigs`プロパティを使用して、イベントタイプ毎に異なるURL・認証情報・ヘッダーを設定できます。
+`nemaki:webhookConfigs`プロパティは、1つのオブジェクトに複数のWebhook設定を格納するJSON配列です。各設定は独立したURL・イベント・認証情報を持ちます。
 
 **JSON形式**:
 
 ```json
 [
   {
-    "events": ["CREATED", "CHILD_CREATED"],
-    "url": "https://example.com/webhooks/new-content",
+    "id": "webhook-1",
+    "enabled": true,
+    "url": "https://example.com/webhooks/content",
+    "events": ["CREATED", "UPDATED", "CONTENT_UPDATED"],
     "authType": "bearer",
-    "authCredential": "token-for-new-content",
-    "headers": {"X-Custom-Header": "value1"}
+    "authCredential": "encrypted-token",
+    "secret": "encrypted-hmac-secret",
+    "headers": {"X-Custom-Header": "value1"},
+    "includeChildren": true,
+    "maxDepth": 5,
+    "retryCount": 3
   },
   {
-    "events": ["UPDATED", "CONTENT_UPDATED", "CHILD_UPDATED"],
-    "url": "https://example.com/webhooks/updates",
-    "authType": "basic",
-    "authCredential": "user:password",
-    "headers": {}
-  },
-  {
-    "events": ["SECURITY"],
+    "id": "webhook-2",
+    "enabled": true,
     "url": "https://security-audit.example.com/acl-changes",
+    "events": ["SECURITY"],
     "authType": "apikey",
-    "authCredential": "X-API-Key:secret-key",
-    "headers": {}
-  },
-  {
-    "events": ["DELETED", "CHILD_DELETED"],
-    "url": "https://example.com/webhooks/deletions",
-    "authType": "none",
-    "authCredential": null,
-    "headers": {}
+    "authCredential": "X-API-Key:encrypted-key",
+    "secret": null,
+    "headers": {},
+    "includeChildren": false,
+    "maxDepth": null,
+    "retryCount": 5
   }
 ]
 ```
 
+**各フィールドの説明**:
+
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `id` | String | Yes | Webhook設定の一意識別子（UUID推奨） |
+| `enabled` | Boolean | Yes | この設定の有効/無効 |
+| `url` | String | Yes | 通知先URL（httpsのみ、開発環境除く） |
+| `events` | String[] | Yes | 監視するイベントタイプのリスト |
+| `authType` | String | No | 認証方式（none/basic/bearer/apikey） |
+| `authCredential` | String | No | 認証用クレデンシャル（暗号化保存） |
+| `secret` | String | No | HMAC-SHA256署名用シークレット（暗号化保存） |
+| `headers` | Object | No | カスタムHTTPヘッダー |
+| `includeChildren` | Boolean | No | 子孫のイベントも通知（フォルダのみ） |
+| `maxDepth` | Integer | No | 子孫監視の最大深度（null=アプリ設定値） |
+| `retryCount` | Integer | No | リトライ回数（null=アプリ設定値） |
+
 **動作仕様**:
 
-1. イベント発生時、`nemaki:webhookEventConfigs`を検索し、該当イベントの設定を取得
-2. 該当する設定がない場合、デフォルト設定（`nemaki:webhookUrl`等）を使用
-3. 同一イベントが複数の設定にマッチする場合、最初にマッチした設定を使用
-4. 各設定は独立した認証情報・ヘッダーを持てる
+1. イベント発生時、`nemaki:webhookConfigs`配列を走査
+2. `enabled=true`かつ`events`に該当イベントを含む設定を全て抽出
+3. 抽出された各設定に対して独立してWebhook配信を実行
+4. 同一イベントが複数の設定にマッチする場合、**全ての設定に配信**（最初のみではない）
 
 ### 2.5 HTTPリクエストのセキュリティオプション
 
@@ -438,6 +435,51 @@ delay = min(base * 2^attempt, max_delay)
 | 冪等キー | `deliveryId`と組み合わせて冪等処理に使用可能 |
 
 **注意**: `changeToken`はオブジェクトの変更毎に更新されるため、同一オブジェクトの複数イベントを区別できます。ただし、`deliveryId`が冪等処理の主キーであり、`changeToken`は補助的な役割です。
+
+#### 2.6.4.1 changeToken比較ルール（受信側ガイダンス）
+
+Webhook受信側で順序判定を行う際の`changeToken`比較ルールを以下に定めます：
+
+**changeTokenの形式保証**:
+
+| 項目 | 保証内容 |
+|------|----------|
+| 形式 | 数値文字列（例: `"1706367004123"`） |
+| 単調増加 | 同一オブジェクトに対して、後の変更は必ず大きい値を持つ |
+| 比較方法 | **数値として比較可能**（文字列比較ではなく数値比較を推奨） |
+
+**受信側の推奨実装**:
+
+```java
+// 受信側での順序判定例
+public boolean shouldProcess(WebhookPayload payload) {
+    String objectId = payload.getObject().getId();
+    long newToken = Long.parseLong(payload.getObject().getChangeToken());
+    
+    // 保存済みの最新changeTokenと比較
+    Long lastToken = lastProcessedTokens.get(objectId);
+    if (lastToken != null && newToken <= lastToken) {
+        // 古いイベント（または重複）→スキップ
+        log.info("Skipping stale event: objectId={}, token={}, lastToken={}", 
+                 objectId, newToken, lastToken);
+        return false;
+    }
+    
+    // 処理後にトークンを更新
+    lastProcessedTokens.put(objectId, newToken);
+    return true;
+}
+```
+
+**優先順位**:
+
+| 判定基準 | 優先度 | 説明 |
+|----------|--------|------|
+| `deliveryId` | 1（最優先） | 同一deliveryIdは重複配信→スキップ |
+| `changeToken` | 2 | 同一オブジェクトの古いイベント判定 |
+| `timestamp` | 3（参考） | changeTokenが使えない場合の代替 |
+
+**重要**: `timestamp`よりも`changeToken`を優先してください。`timestamp`はサーバー時刻に依存し、クロックスキューの影響を受ける可能性がありますが、`changeToken`はCouchDBのシーケンス番号に基づくため、厳密な順序を保証します。
 
 ### 2.6.5 永続キューと再起動時の動作
 
@@ -982,13 +1024,29 @@ Response:
       "objectName": "Documents",
       "objectPath": "/Sites/Documents",
       "objectType": "nemaki:folder",
-      "webhookEnabled": true,
-      "webhookUrl": "https://example.com/webhook",
-      "webhookEvents": ["CREATED", "UPDATED", "DELETED", "CHILD_CREATED"],
-      "includeChildren": true,
-      "maxDepth": 5,
+      "webhookConfigs": [
+        {
+          "id": "webhook-1",
+          "enabled": true,
+          "url": "https://example.com/webhook",
+          "events": ["CREATED", "UPDATED", "DELETED"],
+          "authType": "bearer",
+          "includeChildren": true,
+          "maxDepth": 5
+        },
+        {
+          "id": "webhook-2",
+          "enabled": true,
+          "url": "https://audit.example.com/security",
+          "events": ["SECURITY"],
+          "authType": "apikey",
+          "includeChildren": false,
+          "maxDepth": null
+        }
+      ],
       "lastDelivery": {
         "deliveryId": "uuid",
+        "webhookId": "webhook-1",
         "timestamp": "2026-01-27T14:30:00.000Z",
         "success": true,
         "statusCode": 200
@@ -1005,11 +1063,17 @@ Response:
       "objectName": "important-contract.pdf",
       "objectPath": "/Sites/Documents/Contracts/important-contract.pdf",
       "objectType": "nemaki:document",
-      "webhookEnabled": true,
-      "webhookUrl": "https://contracts.example.com/notify",
-      "webhookEvents": ["UPDATED", "CONTENT_UPDATED", "SECURITY"],
-      "includeChildren": false,
-      "maxDepth": null,
+      "webhookConfigs": [
+        {
+          "id": "webhook-3",
+          "enabled": true,
+          "url": "https://contracts.example.com/notify",
+          "events": ["UPDATED", "CONTENT_UPDATED", "SECURITY"],
+          "authType": "basic",
+          "includeChildren": false,
+          "maxDepth": null
+        }
+      ],
       "lastDelivery": null,
       "stats": {
         "totalDeliveries": 0,
@@ -1953,9 +2017,11 @@ webhook.max.payload.size=1048576
 
 ### 10.2 CHILD_*イベントの負荷制御
 
-CHILD_*イベントは大量発生のリスクがあるため、以下の負荷制御を実装します：
+CHILD_*イベントは大量発生のリスクがあるため、以下の多層的な負荷制御を実装します。
 
-**バッチ処理**:
+#### 10.2.1 サーバー側バッチ集約
+
+**バッチ処理の仕組み**:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1964,7 +2030,28 @@ CHILD_*イベントは大量発生のリスクがあるため、以下の負荷�
 │  1. 短時間（5秒）内の同一フォルダへのCHILD_*イベントを集約       │
 │  2. バッチとして1つのWebhookリクエストにまとめて配信             │
 │  3. ペイロードに変更オブジェクトのリストを含める                  │
+│  4. バッチサイズ上限超過時は複数バッチに分割                     │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+**バッチ集約のオプション**（Webhook設定で選択可能）:
+
+| オプション | 説明 | ユースケース |
+|-----------|------|-------------|
+| `immediate` | 即座に個別配信（デフォルト） | リアルタイム性重視 |
+| `batched` | 5秒ウィンドウで集約 | 大量イベント対応 |
+| `summary` | 1分間のサマリーのみ配信 | 統計・監視用途 |
+
+**Webhook設定でのバッチモード指定**:
+
+```json
+{
+  "id": "webhook-1",
+  "url": "https://example.com/webhook",
+  "events": ["CHILD_CREATED", "CHILD_UPDATED", "CHILD_DELETED"],
+  "childEventMode": "batched",
+  "batchWindowSeconds": 5
+}
 ```
 
 **バッチペイロード例**:
@@ -1994,6 +2081,8 @@ CHILD_*イベントは大量発生のリスクがあるため、以下の負荷�
 }
 ```
 
+#### 10.2.2 レート制限と上限設定
+
 **レート制限設定**:
 
 ```properties
@@ -2008,7 +2097,35 @@ webhook.child.event.rate.limit.per.minute=60
 
 # CHILD_*イベントのサーキットブレーカー閾値
 webhook.child.event.circuit.breaker.threshold=500
+
+# 大規模階層での絶対上限（1秒あたり）
+webhook.child.event.absolute.max.per.second=50
 ```
+
+**大規模階層での保護**:
+
+大量のファイルを含むフォルダ（例: 10,000ファイル以上）での一括操作時の保護：
+
+| シナリオ | 発生イベント数 | 保護メカニズム |
+|----------|---------------|----------------|
+| 10,000ファイルの一括アップロード | 10,000 CHILD_CREATED | バッチ集約 + レート制限 |
+| フォルダ削除（1,000ファイル含む） | 1,000 CHILD_DELETED | サーキットブレーカー発動 |
+| 再帰的ACL変更 | 深度×ファイル数 | 深度制限 + レート制限 |
+
+**絶対上限の動作**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    絶対上限（50イベント/秒）                      │
+├─────────────────────────────────────────────────────────────────┤
+│  1. 1秒間に50イベントを超えた場合、超過分はキューに滞留         │
+│  2. キューサイズが1000を超えた場合、古いイベントを破棄          │
+│  3. 破棄されたイベントは監査ログに「DROPPED」として記録         │
+│  4. 管理画面で破棄イベント数を確認可能                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 10.2.3 サーキットブレーカー
 
 **サーキットブレーカー**:
 
@@ -2188,3 +2305,41 @@ webhook.child.event.circuit.breaker.threshold=500
 | RSS | Really Simple Syndication - コンテンツ配信のためのXMLフォーマット |
 | Atom | RSS代替のフィード配信フォーマット（RFC 4287） |
 | RSSトークン | RSSフィード購読用の認証トークン |
+
+## 付録C: レガシープロパティとマイグレーション
+
+### C.1 廃止されたプロパティ名
+
+設計初期段階で検討された以下のプロパティ名は、`nemaki:webhookConfigs`への統一により**廃止**されました：
+
+| 廃止プロパティ | 代替 | 備考 |
+|---------------|------|------|
+| `nemaki:webhookUrl` | `webhookConfigs[].url` | 単一URLから複数URL対応へ |
+| `nemaki:webhookEvents` | `webhookConfigs[].events` | 配列形式に統合 |
+| `nemaki:webhookEventConfigs` | `nemaki:webhookConfigs` | プロパティ名を簡略化 |
+| `nemaki:webhookSecret` | `webhookConfigs[].secret` | 各Webhook設定に内包 |
+| `nemaki:webhookAuthType` | `webhookConfigs[].authType` | 各Webhook設定に内包 |
+| `nemaki:webhookAuthCredential` | `webhookConfigs[].authCredential` | 各Webhook設定に内包 |
+| `nemaki:webhookHeaders` | `webhookConfigs[].headers` | 各Webhook設定に内包 |
+| `nemaki:webhookRetryCount` | `webhookConfigs[].retryCount` | 各Webhook設定に内包 |
+| `nemaki:webhookIncludeChildren` | `webhookConfigs[].includeChildren` | 各Webhook設定に内包 |
+
+### C.2 統一仕様の利点
+
+`nemaki:webhookConfigs`への統一により、以下の利点が得られます：
+
+1. **複数Webhook対応**: 1つのオブジェクトに複数のWebhook設定を登録可能
+2. **イベント別設定**: イベントタイプごとに異なるURL・認証を設定可能
+3. **プロパティ数削減**: 10個以上のプロパティを1つに集約
+4. **拡張性**: 新しいフィールドをJSON内に追加可能
+5. **一貫性**: API/UI/内部モデルで同一のデータ構造を使用
+
+### C.3 マイグレーション（該当なし）
+
+本機能は新規実装のため、既存データのマイグレーションは不要です。廃止プロパティは設計段階でのみ検討されたものであり、実装されていません。
+
+将来的に設計変更が発生した場合のマイグレーション方針：
+
+1. **後方互換性**: 旧フォーマットのデータも読み取り可能にする
+2. **自動変換**: 旧フォーマット検出時に新フォーマットへ自動変換
+3. **マイグレーションツール**: 一括変換用のCLIツールを提供
