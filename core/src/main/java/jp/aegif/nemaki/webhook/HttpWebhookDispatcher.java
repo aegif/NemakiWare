@@ -20,7 +20,10 @@
  ******************************************************************************/
 package jp.aegif.nemaki.webhook;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
@@ -43,6 +46,7 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
     
     private static final int DEFAULT_CONNECT_TIMEOUT = 10000; // 10 seconds
     private static final int DEFAULT_READ_TIMEOUT = 30000; // 30 seconds
+    private static final int MAX_RESPONSE_BODY_LENGTH = 1000; // Truncate response body for logging
     
     private int connectTimeout = DEFAULT_CONNECT_TIMEOUT;
     private int readTimeout = DEFAULT_READ_TIMEOUT;
@@ -100,11 +104,17 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             
             // Get response
             int responseCode = connection.getResponseCode();
+            String responseBody = readResponseBody(connection, responseCode);
             
             if (responseCode >= 200 && responseCode < 300) {
                 log.info("Webhook delivered successfully to " + url + " (HTTP " + responseCode + ")");
+                if (log.isDebugEnabled() && responseBody != null && !responseBody.isEmpty()) {
+                    log.debug("Response body: " + truncateForLogging(responseBody));
+                }
             } else {
-                log.warn("Webhook delivery failed to " + url + " (HTTP " + responseCode + ")");
+                String truncatedBody = truncateForLogging(responseBody);
+                log.warn("Webhook delivery failed to " + url + " (HTTP " + responseCode + ")" + 
+                        (truncatedBody != null && !truncatedBody.isEmpty() ? " - Response: " + truncatedBody : ""));
             }
             
         } catch (MalformedURLException e) {
@@ -116,6 +126,55 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
                 connection.disconnect();
             }
         }
+    }
+    
+    /**
+     * Read response body from connection.
+     * Uses error stream for non-2xx responses, input stream for success.
+     */
+    private String readResponseBody(HttpURLConnection connection, int responseCode) {
+        InputStream inputStream = null;
+        try {
+            if (responseCode >= 200 && responseCode < 300) {
+                inputStream = connection.getInputStream();
+            } else {
+                inputStream = connection.getErrorStream();
+            }
+            
+            if (inputStream == null) {
+                return null;
+            }
+            
+            StringBuilder response = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    response.append(line);
+                    // Stop reading if we've exceeded max length
+                    if (response.length() > MAX_RESPONSE_BODY_LENGTH) {
+                        break;
+                    }
+                }
+            }
+            return response.toString();
+        } catch (IOException e) {
+            log.debug("Failed to read response body: " + e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Truncate response body for logging to avoid excessive log output.
+     */
+    private String truncateForLogging(String body) {
+        if (body == null) {
+            return null;
+        }
+        if (body.length() <= MAX_RESPONSE_BODY_LENGTH) {
+            return body;
+        }
+        return body.substring(0, MAX_RESPONSE_BODY_LENGTH) + "...(truncated)";
     }
     
     public void setConnectTimeout(int connectTimeout) {

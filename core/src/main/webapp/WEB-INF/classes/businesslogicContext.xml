@@ -63,7 +63,7 @@
             <ref bean="nemakiCachePool" />
         </property>
         <property name="webhookService">
-            <ref bean="webhookService" />
+            <ref bean="WebhookService" />
         </property>
 	</bean>
 
