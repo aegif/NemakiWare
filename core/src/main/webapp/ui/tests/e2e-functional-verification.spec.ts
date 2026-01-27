@@ -12,7 +12,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { generateTestId } from '../utils/test-helper';
+import { generateTestId } from './utils/test-helper';
 
 const BASE_URL = 'http://localhost:8080';
 const REPOSITORY_ID = 'bedroom';

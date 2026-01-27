@@ -17,7 +17,6 @@
 
 import { test, expect, Page } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { generateTestId } from '../utils/test-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
 test.describe('Type Specification Features', () => {

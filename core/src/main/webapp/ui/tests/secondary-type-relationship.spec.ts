@@ -33,7 +33,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { generateTestId } from '../utils/test-helper';
+import { generateTestId } from './utils/test-helper';
 
 // Test data
 const TEST_USER = 'admin';

@@ -31,7 +31,7 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 
 /**
  * SKIPPED (2025-12-23) - Solr Indexing Timing and UI Stability Issues

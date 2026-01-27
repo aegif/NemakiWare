@@ -40,7 +40,6 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { generateTestId } from '../utils/test-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 import * as path from 'path';
 import * as fs from 'fs';

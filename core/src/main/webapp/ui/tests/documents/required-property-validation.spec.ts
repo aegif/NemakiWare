@@ -17,7 +17,6 @@
 
 import { test, expect, request } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { generateTestId } from '../utils/test-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
 // Test type IDs - unique to avoid conflicts
