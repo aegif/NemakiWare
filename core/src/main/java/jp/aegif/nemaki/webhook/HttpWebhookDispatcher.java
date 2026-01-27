@@ -26,10 +26,13 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -47,6 +50,21 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
     private static final int DEFAULT_CONNECT_TIMEOUT = 10000; // 10 seconds
     private static final int DEFAULT_READ_TIMEOUT = 30000; // 30 seconds
     private static final int MAX_RESPONSE_BODY_LENGTH = 1000; // Truncate response body for logging
+    
+    /**
+     * Blocked hostnames for SSRF protection.
+     * Includes localhost variants and cloud metadata endpoints.
+     */
+    private static final Set<String> BLOCKED_HOSTNAMES = Set.of(
+        "localhost",
+        "127.0.0.1",
+        "0.0.0.0",
+        "::1",
+        "[::1]",
+        "169.254.169.254",  // AWS/GCP metadata endpoint
+        "metadata.google.internal",  // GCP metadata
+        "metadata.google.com"
+    );
     
     private int connectTimeout = DEFAULT_CONNECT_TIMEOUT;
     private int readTimeout = DEFAULT_READ_TIMEOUT;
@@ -71,6 +89,12 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             String protocol = targetUrl.getProtocol().toLowerCase();
             if (!protocol.equals("http") && !protocol.equals("https")) {
                 log.warn("Webhook dispatch skipped: unsupported protocol " + protocol);
+                return;
+            }
+            
+            // SSRF protection: validate hostname is not blocked
+            if (!isUrlSafe(targetUrl)) {
+                log.warn("Webhook dispatch skipped: URL blocked for security reasons - " + url);
                 return;
             }
             
@@ -109,12 +133,11 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             if (responseCode >= 200 && responseCode < 300) {
                 log.info("Webhook delivered successfully to " + url + " (HTTP " + responseCode + ")");
                 if (log.isDebugEnabled() && responseBody != null && !responseBody.isEmpty()) {
-                    log.debug("Response body: " + truncateForLogging(responseBody));
+                    log.debug("Response body: " + responseBody);
                 }
             } else {
-                String truncatedBody = truncateForLogging(responseBody);
                 log.warn("Webhook delivery failed to " + url + " (HTTP " + responseCode + ")" + 
-                        (truncatedBody != null && !truncatedBody.isEmpty() ? " - Response: " + truncatedBody : ""));
+                        (responseBody != null && !responseBody.isEmpty() ? " - Response: " + responseBody : ""));
             }
             
         } catch (MalformedURLException e) {
@@ -129,8 +152,9 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
     }
     
     /**
-     * Read response body from connection.
+     * Read response body from connection with truncation.
      * Uses error stream for non-2xx responses, input stream for success.
+     * Truncates to MAX_RESPONSE_BODY_LENGTH and appends marker if truncated.
      */
     private String readResponseBody(HttpURLConnection connection, int responseCode) {
         InputStream inputStream = null;
@@ -146,6 +170,7 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             }
             
             StringBuilder response = new StringBuilder();
+            boolean truncated = false;
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
                 String line;
@@ -153,9 +178,16 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
                     response.append(line);
                     // Stop reading if we've exceeded max length
                     if (response.length() > MAX_RESPONSE_BODY_LENGTH) {
+                        truncated = true;
                         break;
                     }
                 }
+            }
+            
+            // Truncate and add marker if needed
+            if (truncated || response.length() > MAX_RESPONSE_BODY_LENGTH) {
+                return response.substring(0, Math.min(response.length(), MAX_RESPONSE_BODY_LENGTH)) 
+                       + "...(truncated)";
             }
             return response.toString();
         } catch (IOException e) {
@@ -165,16 +197,79 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
     }
     
     /**
-     * Truncate response body for logging to avoid excessive log output.
+     * Check if URL is safe to access (SSRF protection).
+     * Blocks requests to localhost, private networks, and cloud metadata endpoints.
      */
-    private String truncateForLogging(String body) {
-        if (body == null) {
-            return null;
+    private boolean isUrlSafe(URL url) {
+        String host = url.getHost();
+        if (host == null || host.isEmpty()) {
+            return false;
         }
-        if (body.length() <= MAX_RESPONSE_BODY_LENGTH) {
-            return body;
+        
+        String hostLower = host.toLowerCase();
+        
+        // Check against blocked hostnames
+        if (BLOCKED_HOSTNAMES.contains(hostLower)) {
+            log.debug("SSRF protection: blocked hostname " + host);
+            return false;
         }
-        return body.substring(0, MAX_RESPONSE_BODY_LENGTH) + "...(truncated)";
+        
+        // Resolve hostname and check if it's a private/loopback address
+        try {
+            InetAddress address = InetAddress.getByName(host);
+            
+            if (address.isLoopbackAddress()) {
+                log.debug("SSRF protection: blocked loopback address " + host);
+                return false;
+            }
+            
+            if (address.isLinkLocalAddress()) {
+                log.debug("SSRF protection: blocked link-local address " + host);
+                return false;
+            }
+            
+            if (address.isSiteLocalAddress()) {
+                log.debug("SSRF protection: blocked site-local (private) address " + host);
+                return false;
+            }
+            
+            // Check for IPv4 private ranges that might not be caught by isSiteLocalAddress
+            byte[] addrBytes = address.getAddress();
+            if (addrBytes.length == 4) {
+                int firstOctet = addrBytes[0] & 0xFF;
+                int secondOctet = addrBytes[1] & 0xFF;
+                
+                // 10.0.0.0/8
+                if (firstOctet == 10) {
+                    log.debug("SSRF protection: blocked 10.x.x.x private address " + host);
+                    return false;
+                }
+                
+                // 172.16.0.0/12
+                if (firstOctet == 172 && secondOctet >= 16 && secondOctet <= 31) {
+                    log.debug("SSRF protection: blocked 172.16-31.x.x private address " + host);
+                    return false;
+                }
+                
+                // 192.168.0.0/16
+                if (firstOctet == 192 && secondOctet == 168) {
+                    log.debug("SSRF protection: blocked 192.168.x.x private address " + host);
+                    return false;
+                }
+                
+                // 169.254.0.0/16 (link-local, includes AWS metadata)
+                if (firstOctet == 169 && secondOctet == 254) {
+                    log.debug("SSRF protection: blocked 169.254.x.x link-local address " + host);
+                    return false;
+                }
+            }
+            
+        } catch (UnknownHostException e) {
+            // If we can't resolve the hostname, allow it (will fail at connection time)
+            log.debug("SSRF protection: could not resolve hostname " + host + ", allowing");
+        }
+        
+        return true;
     }
     
     public void setConnectTimeout(int connectTimeout) {

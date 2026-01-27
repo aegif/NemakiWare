@@ -124,6 +124,11 @@ public class WebhookServiceImpl implements WebhookService {
             return;
         }
         
+        if (repositoryId == null || repositoryId.isEmpty()) {
+            log.debug("triggerWebhook: repositoryId is null or empty, skipping");
+            return;
+        }
+        
         String eventType = convertChangeTypeToEventType(changeType);
         if (eventType == null) {
             log.debug("triggerWebhook: unsupported change type: " + changeType);
@@ -293,6 +298,11 @@ public class WebhookServiceImpl implements WebhookService {
         List<WebhookConfig> result = new ArrayList<>();
         
         if (content == null || contentService == null) {
+            return result;
+        }
+        
+        // Guard against null/empty repositoryId to prevent errors in contentService.getContent()
+        if (repositoryId == null || repositoryId.isEmpty()) {
             return result;
         }
         
