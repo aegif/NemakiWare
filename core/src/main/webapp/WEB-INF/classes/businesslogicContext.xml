@@ -62,7 +62,41 @@
         <property name="nemakiCachePool">
             <ref bean="nemakiCachePool" />
         </property>
+        <property name="webhookService">
+            <ref bean="webhookService" />
+        </property>
 	</bean>
+
+	<!-- Webhook Service for webhook notifications -->
+	<bean id="WebhookService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.businesslogic.WebhookService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="webhookService" />
+		</property>
+	</bean>
+	<bean id="webhookService" class="jp.aegif.nemaki.businesslogic.impl.WebhookServiceImpl">
+		<property name="contentService">
+			<ref bean="ContentService" />
+		</property>
+		<property name="dispatcher">
+			<ref bean="webhookDispatcher" />
+		</property>
+	</bean>
+
+	<!-- Webhook Dispatcher - HTTP implementation for production -->
+	<!-- Switch to noopWebhookDispatcher for testing/development -->
+	<bean id="webhookDispatcher" class="jp.aegif.nemaki.webhook.HttpWebhookDispatcher">
+		<!-- Optional: customize timeouts -->
+		<!-- <property name="connectTimeout" value="10000" /> -->
+		<!-- <property name="readTimeout" value="30000" /> -->
+	</bean>
+
+	<!-- No-op Webhook Dispatcher for testing/development -->
+	<bean id="noopWebhookDispatcher" class="jp.aegif.nemaki.webhook.NoopWebhookDispatcher" />
 
 	<bean id="PrincipalService" class="org.springframework.aop.framework.ProxyFactoryBean">
 		<property name="proxyInterfaces">
