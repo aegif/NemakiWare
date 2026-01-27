@@ -970,7 +970,7 @@ export class TestHelper {
    * STABILIZATION FIX (2025-01-17): Added closeAllOverlays at the beginning
    * to ensure any leftover modals from failed tests are cleaned up before deletion.
    *
-   * @param fileName Name of the file to delete
+   * @param fileName Name of the file to delete. Must not contain single quotes (used in CMIS query).
    * @param isMobile Whether the browser is in mobile mode
    * @returns true if deleted (or didn't exist), false if deletion failed
    */
@@ -1339,7 +1339,7 @@ export class TestHelper {
    * STABILIZATION FIX (2025-01-17): Added closeAllOverlays at the beginning
    * to ensure any leftover modals from failed tests are cleaned up before deletion.
    *
-   * @param folderName Name of the folder to delete
+   * @param folderName Name of the folder to delete. Must not contain single quotes (used in CMIS query).
    * @param isMobile Whether the browser is in mobile mode
    * @returns true if deleted (or didn't exist), false if deletion failed
    */

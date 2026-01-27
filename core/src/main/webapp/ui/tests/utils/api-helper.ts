@@ -360,7 +360,7 @@ export class ApiHelper {
         { headers: { 'Authorization': this.authHeader } }
       );
       if (!response.ok()) {
-        const errorBody = await response.text().catch(() => '');
+        const errorBody = (await response.text().catch(() => '')).slice(0, 200);
         console.log(`ApiHelper: Failed to delete user ${userId}: ${response.status()} ${errorBody}`);
         return false;
       }
@@ -381,7 +381,7 @@ export class ApiHelper {
         { headers: { 'Authorization': this.authHeader } }
       );
       if (!response.ok()) {
-        const errorBody = await response.text().catch(() => '');
+        const errorBody = (await response.text().catch(() => '')).slice(0, 200);
         console.log(`ApiHelper: Failed to delete group ${groupId}: ${response.status()} ${errorBody}`);
         return false;
       }
@@ -402,7 +402,7 @@ export class ApiHelper {
         { headers: { 'Authorization': this.authHeader } }
       );
       if (!response.ok()) {
-        const errorBody = await response.text().catch(() => '');
+        const errorBody = (await response.text().catch(() => '')).slice(0, 200);
         console.log(`ApiHelper: Failed to delete type ${typeId}: ${response.status()} ${errorBody}`);
         return false;
       }
@@ -414,7 +414,9 @@ export class ApiHelper {
   }
 
   /**
-   * Clean up test groups matching a prefix pattern
+   * Clean up test groups matching a prefix pattern.
+   * Deletes all matching groups by default (maxDeletions=0) to ensure
+   * no leftover test groups cause flakiness in subsequent test runs.
    * @param idPrefix - Prefix to match (uses startsWith for safety)
    * @param maxDeletions - Maximum number of groups to delete (0 = unlimited)
    */
