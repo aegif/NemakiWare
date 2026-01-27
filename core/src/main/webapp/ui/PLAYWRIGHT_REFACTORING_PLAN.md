@@ -10,7 +10,7 @@
 |-------|------|--------|
 | Phase 2: テストID統一 | ✅ 完了 | 2026-01-27 |
 | Phase 3: モバイル処理共通化 | ✅ 完了 | 2026-01-27 |
-| Phase 4: ApiHelper採用拡大 | ⏳ 未着手 | - |
+| Phase 4: ApiHelper採用拡大 | ✅ 完了 | 2026-01-27 |
 
 ## 実施結果（2026-01-27）
 
@@ -24,6 +24,8 @@
 | closeMobileSidebar()採用 | 0件 | 32件 |
 | testHelper.isMobile()採用 | 0件 | 53件 |
 | 重複コード削減 | - | -784行 |
+| ApiHelper新メソッド | - | deleteGroup(), deleteType(), cleanupTestGroups() 追加 |
+| UI経由→API経由変換 | - | 2ファイル (group-hierarchy-members, custom-type-attributes) |
 
 ---
 
