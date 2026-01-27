@@ -399,9 +399,11 @@ export class ApiHelper {
   }
 
   /**
-   * Clean up test groups matching a pattern
+   * Clean up test groups matching a prefix pattern
+   * @param idPrefix - Prefix to match (uses startsWith for safety)
+   * @param maxDeletions - Maximum number of groups to delete
    */
-  async cleanupTestGroups(idPattern: string, maxDeletions: number = 10): Promise<number> {
+  async cleanupTestGroups(idPrefix: string, maxDeletions: number = 10): Promise<number> {
     try {
       // Get all groups
       const response = await this.page.request.get(
@@ -416,13 +418,16 @@ export class ApiHelper {
       const data = await response.json();
       const groups = data.groups || data.result || [];
 
+      // Filter matching groups and sort by ID for deterministic deletion order
+      const matchingGroups = groups
+        .map((g: any) => g.groupId || g.id)
+        .filter((id: string) => id && id.startsWith(idPrefix))
+        .sort();
+
       let deletedCount = 0;
-      for (const group of groups) {
-        const groupId = group.groupId || group.id;
-        if (groupId && groupId.includes(idPattern) && deletedCount < maxDeletions) {
-          if (await this.deleteGroup(groupId)) {
-            deletedCount++;
-          }
+      for (const groupId of matchingGroups.slice(0, maxDeletions)) {
+        if (await this.deleteGroup(groupId)) {
+          deletedCount++;
         }
       }
 
