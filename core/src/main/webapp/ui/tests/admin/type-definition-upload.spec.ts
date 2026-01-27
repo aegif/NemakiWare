@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { generateTestId } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -102,7 +103,7 @@ let testHelper: TestHelper;
 let testTypeDefPath: string;
 let conflictTypeDefPath: string;
 
-const testTypeId = `test:uploadTest${Date.now()}`;
+const testTypeId = `test:uploadTest${generateTestId()}`;
 const conflictTypeId = 'test:existingType'; // Assumed to exist in repository
 
 /**
@@ -222,7 +223,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     // Valid type definition
     const validTypeDef = {
       id: testTypeId,
-      displayName: `Upload Test Type ${Date.now()}`,
+      displayName: `Upload Test Type ${generateTestId()}`,
       baseTypeId: 'cmis:document',
       description: 'Test type created via file upload',
       creatable: true,
@@ -235,12 +236,12 @@ test.describe('Type Definition Upload and JSON Editing', () => {
       propertyDefinitions: []
     };
 
-    testTypeDefPath = path.join(tmpDir, `test-type-def-${Date.now()}.json`);
+    testTypeDefPath = path.join(tmpDir, `test-type-def-${generateTestId()}.json`);
     fs.writeFileSync(testTypeDefPath, JSON.stringify(validTypeDef, null, 2));
 
     // Conflict type definition (same ID as test type)
     const conflictTypeDef = { ...validTypeDef };
-    conflictTypeDefPath = path.join(tmpDir, `conflict-type-def-${Date.now()}.json`);
+    conflictTypeDefPath = path.join(tmpDir, `conflict-type-def-${generateTestId()}.json`);
     fs.writeFileSync(conflictTypeDefPath, JSON.stringify(conflictTypeDef, null, 2));
 
     console.log(`Created test type definition files:`);
@@ -598,7 +599,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Create a new type to avoid conflict with existing
-    const newTypeId = `test:editTest${Date.now()}`;
+    const newTypeId = `test:editTest${generateTestId()}`;
     const newTypeDef = {
       id: newTypeId,
       displayName: `Edit Test Type`,
@@ -626,7 +627,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     // Create temporary file for new type
     const tmpDir = require('os').tmpdir();
-    const newTypePath = path.join(tmpDir, `new-type-${Date.now()}.json`);
+    const newTypePath = path.join(tmpDir, `new-type-${generateTestId()}.json`);
     fs.writeFileSync(newTypePath, JSON.stringify(newTypeDef, null, 2));
 
     await fileInput.setInputFiles(newTypePath);
@@ -869,7 +870,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Create a test type for this test
-    const cancelTestTypeId = `test:cancelTest${Date.now()}`;
+    const cancelTestTypeId = `test:cancelTest${generateTestId()}`;
     const cancelTestDef = {
       id: cancelTestTypeId,
       displayName: `Cancel Test Type`,
@@ -892,7 +893,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     const fileInput = uploadModal.locator('input[type="file"]');
 
     const tmpDir = require('os').tmpdir();
-    const cancelTestPath = path.join(tmpDir, `cancel-test-${Date.now()}.json`);
+    const cancelTestPath = path.join(tmpDir, `cancel-test-${generateTestId()}.json`);
     fs.writeFileSync(cancelTestPath, JSON.stringify(cancelTestDef, null, 2));
 
     await fileInput.setInputFiles(cancelTestPath);

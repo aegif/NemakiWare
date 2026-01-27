@@ -25,8 +25,8 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 import {
   TIMEOUTS,
   I18N_PATTERNS,
@@ -42,7 +42,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
   let testHelper: TestHelper;
 
   // Unique identifiers for this test run
-  const testRunId = randomUUID().substring(0, 8);
+  const testRunId = generateTestId();
   const customTypeId = `test:searchDoc${testRunId}`;
   const customTypeName = `Search Test Document ${testRunId}`;
   const requiredPropId = `test:requiredProp${testRunId}`;

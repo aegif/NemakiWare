@@ -38,7 +38,7 @@
  *    - Property ID: test:customProp{uuid8}
  *    - Filename: test-custom-{uuid8}.txt
  *    - Rationale: Prevents conflicts in parallel test execution across browsers
- *    - Implementation: randomUUID().substring(0, 8) for concise uniqueness
+ *    - Implementation: generateTestId() for concise uniqueness
  *
  * 4. Smart Conditional Skipping with Informative Messages (Lines 158-160, 185-187, 252-261, 353-361):
  *    - Skip if create button not found: test.skip('Create type button not found - UI may not be implemented')
@@ -128,8 +128,8 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * SELECTOR FIX (2025-10-25)
@@ -212,7 +212,7 @@ test.describe('Custom Type Creation and Property Management', () => {
     await page.waitForTimeout(2000);
 
     // Generate unique custom type ID
-    const typeIdSuffix = randomUUID().substring(0, 8);
+    const typeIdSuffix = generateTestId();
     customTypeId = `test:customDoc${typeIdSuffix}`;
     const typeName = `Test Custom Document ${typeIdSuffix}`;
 
@@ -458,7 +458,7 @@ test.describe('Custom Type Creation and Property Management', () => {
           try {
             // Parse and add a custom property
             const typeDef = JSON.parse(currentJson);
-            const propertyId = `test:customProp${randomUUID().substring(0, 8)}`;
+            const propertyId = `test:customProp${generateTestId()}`;
 
             // Ensure propertyDefinitions object exists
             if (!typeDef.propertyDefinitions) {
@@ -564,7 +564,7 @@ test.describe('Custom Type Creation and Property Management', () => {
       await uploadButton.click(isMobile ? { force: true } : {});
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
 
-      const filename = `test-custom-${randomUUID().substring(0, 8)}.txt`;
+      const filename = `test-custom-${generateTestId()}.txt`;
 
       // Check if type selector is available in upload modal
       // The type selector is inside a Form.Item with label "タイプ"

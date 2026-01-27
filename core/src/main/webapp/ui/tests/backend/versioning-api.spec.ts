@@ -62,7 +62,7 @@
  *    - Rationale: Server bug documented, test validates actual behavior vs. HTTP contract
  *
  * 7. Unique Document Naming Strategy (Lines 89, 143, 217, 319, 404, 503):
- *    - All test documents use timestamp-based unique names: `test-${Date.now()}.txt`
+ *    - All test documents use timestamp-based unique names: `test-${generateTestId()}.txt`
  *    - Prevents conflicts when tests run across multiple browser profiles
  *    - Each test creates new documents, never reuses existing ones
  *    - Rationale: Parallel browser execution (6 profiles) could create name collisions
@@ -131,6 +131,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { generateTestId } from '../utils/test-helper';
 import { AuthHelper } from '../utils/auth-helper';
 
 test.describe.configure({ mode: 'serial' });
@@ -214,7 +215,7 @@ test.describe('CMIS Versioning API', () => {
     // Create a versionable document using Browser Binding
     // CRITICAL: Browser Binding createDocument REQUIRES multipart/form-data
     // Playwright automatically sets Content-Type with correct boundary
-    const uniqueName = `versioning-test-${Date.now()}.txt`;
+    const uniqueName = `versioning-test-${generateTestId()}.txt`;
     const createResponse = await request.post(baseUrl, {
       headers: {
         'Authorization': authHeader,
@@ -268,7 +269,7 @@ test.describe('CMIS Versioning API', () => {
     // CRITICAL: Browser Binding createDocument REQUIRES multipart/form-data
     // CRITICAL: Document MUST have content for checkout to work (NemakiWare limitation)
     // Playwright automatically sets Content-Type with correct boundary
-    const uniqueName = `checkout-test-${Date.now()}.txt`;
+    const uniqueName = `checkout-test-${generateTestId()}.txt`;
     const createResponse = await request.post(baseUrl, {
       headers: {
         'Authorization': authHeader,
@@ -343,7 +344,7 @@ test.describe('CMIS Versioning API', () => {
   // Versioning functionality is verified via TCK VersioningTestGroup (4/4 PASS)
   test.skip('should check-in a document with new version', async ({ request }) => {
     // 1. Create document with content
-    const uniqueName = `checkin-test-${Date.now()}.txt`;
+    const uniqueName = `checkin-test-${generateTestId()}.txt`;
     const createResponse = await request.post(baseUrl, {
       headers: {
         'Authorization': authHeader,
@@ -443,7 +444,7 @@ test.describe('CMIS Versioning API', () => {
   test('should cancel check-out', async ({ request }) => {
     // 1. Create a document with content
     // CRITICAL: Document MUST have content for checkout to work (NemakiWare limitation)
-    const uniqueName = `cancel-checkout-test-${Date.now()}.txt`;
+    const uniqueName = `cancel-checkout-test-${generateTestId()}.txt`;
     const createResponse = await request.post(baseUrl, {
       headers: {
         'Authorization': authHeader,
@@ -529,7 +530,7 @@ test.describe('CMIS Versioning API', () => {
   // CMIS 1.1 Browser Binding: cmisselector=versions (implemented 2025-12-14)
   test.skip('should retrieve all versions of a document', async ({ request }) => {
     // 1. Create document with initial version (using Browser Binding)
-    const uniqueName = `version-history-test-${Date.now()}.txt`;
+    const uniqueName = `version-history-test-${generateTestId()}.txt`;
     const createResponse = await request.post(baseUrl, {
       headers: {
         'Authorization': authHeader,
@@ -631,7 +632,7 @@ test.describe('CMIS Versioning API', () => {
   test.skip('should get latest version of a document', async ({ request }) => {
     // 1. Create document with initial version
     // Use unique name to avoid conflicts when running across multiple browsers
-    const uniqueName = `latest-version-${Date.now()}.txt`;
+    const uniqueName = `latest-version-${generateTestId()}.txt`;
     const createResponse = await request.post(baseUrl, {
       headers: {
         'Authorization': authHeader,

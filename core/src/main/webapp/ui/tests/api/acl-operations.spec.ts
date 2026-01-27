@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { randomUUID } from 'crypto';
+import { generateTestId } from '../utils/test-helper';
 
 /**
  * Helper Functions for ACL API Testing
@@ -208,7 +208,7 @@ test.describe('ACL Operations - API Direct Tests', () => {
     test.setTimeout(120000); // 2 minutes for setup
 
     // Generate unique test data with 8-character UUID prefix
-    const uuid = randomUUID().split('-')[0];
+    const uuid = generateTestId();
     testFolderName = `api-test-folder-${uuid}`;
     testUsername = `apitest${uuid}`;
 
@@ -437,7 +437,7 @@ test.describe('ACL Operations - Error Cases', () => {
 
     try {
       // Create a test folder
-      const uuid = randomUUID().split('-')[0];
+      const uuid = generateTestId();
       const testFolderName = `error-test-folder-${uuid}`;
       console.log(`Test: Creating test folder "${testFolderName}"`);
 
@@ -493,7 +493,7 @@ test.describe('ACL Operations - Error Cases', () => {
 
     try {
       // Create a test folder
-      const uuid = randomUUID().split('-')[0];
+      const uuid = generateTestId();
       const testFolderName = `error-test-folder-${uuid}`;
       const nonExistentUser = `nonexistent${uuid}`;
 
@@ -549,7 +549,7 @@ test.describe('ACL Operations - Error Cases', () => {
 
     try {
       // Create a test folder
-      const uuid = randomUUID().split('-')[0];
+      const uuid = generateTestId();
       const testFolderName = `error-test-folder-${uuid}`;
       const testUsername = `duptest${uuid}`;
 
@@ -635,7 +635,7 @@ test.describe('ACL Operations - Multiple Users', () => {
 
     try {
       // Create a test folder
-      const uuid = randomUUID().split('-')[0];
+      const uuid = generateTestId();
       const testFolderName = `multi-user-test-folder-${uuid}`;
       console.log(`Test: Creating test folder "${testFolderName}"`);
 
@@ -758,7 +758,7 @@ test.describe('ACL Operations - Permission Combinations', () => {
 
     try {
       // Create a test folder
-      const uuid = randomUUID().split('-')[0];
+      const uuid = generateTestId();
       const testFolderName = `perm-combo-test-folder-${uuid}`;
       console.log(`Test: Creating test folder "${testFolderName}"`);
 

@@ -22,8 +22,8 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * SKIPPED (2025-12-23) - Serial Test Execution Issues
@@ -56,7 +56,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
-  const UNIQUE_ID = randomUUID().substring(0, 8);
+  const UNIQUE_ID = generateTestId();
   const testDocName = `bugfix-verify-${UNIQUE_ID}.txt`;
   const testDescription = `Test description ${UNIQUE_ID} that must persist`;
   const testFolderName = `test-folder-${UNIQUE_ID}`;
@@ -544,7 +544,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
-  const SEARCH_ID = randomUUID().substring(0, 8).toUpperCase();
+  const SEARCH_ID = generateTestId().toUpperCase();
   const EXACT_PHRASE = `EXACT_MATCH_PHRASE_${SEARCH_ID}`;
   const docExact = `search-exact-${SEARCH_ID}.txt`;
   const docPartial = `search-partial-${SEARCH_ID}.txt`;

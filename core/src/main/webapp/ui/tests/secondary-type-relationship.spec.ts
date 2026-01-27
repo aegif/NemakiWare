@@ -33,6 +33,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { generateTestId } from '../utils/test-helper';
 
 // Test data
 const TEST_USER = 'admin';
@@ -200,7 +201,7 @@ test.describe('Secondary Type Management', () => {
 
   test('should add secondary type to document via API', async ({ request }) => {
     // Create a test document
-    const docName = `test-secondary-type-${Date.now()}.txt`;
+    const docName = `test-secondary-type-${generateTestId()}.txt`;
     const objectId = await createTestDocument(request, docName);
 
     try {
@@ -242,7 +243,7 @@ test.describe('Secondary Type Management', () => {
 
   test('should remove secondary type from document via API', async ({ request }) => {
     // Create a test document
-    const docName = `test-secondary-type-remove-${Date.now()}.txt`;
+    const docName = `test-secondary-type-remove-${generateTestId()}.txt`;
     const objectId = await createTestDocument(request, docName);
 
     try {
@@ -350,8 +351,8 @@ test.describe('Relationship Management', () => {
 
   test('should create relationship between documents via API', async ({ request }) => {
     // Create two test documents
-    const sourceDocName = `test-rel-source-${Date.now()}.txt`;
-    const targetDocName = `test-rel-target-${Date.now()}.txt`;
+    const sourceDocName = `test-rel-source-${generateTestId()}.txt`;
+    const targetDocName = `test-rel-target-${generateTestId()}.txt`;
 
     const sourceId = await createTestDocument(request, sourceDocName);
     const targetId = await createTestDocument(request, targetDocName);
@@ -365,7 +366,7 @@ test.describe('Relationship Management', () => {
       formData.append('propertyId[0]', 'cmis:objectTypeId');
       formData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
       formData.append('propertyId[1]', 'cmis:name');
-      formData.append('propertyValue[1]', `rel-${Date.now()}`);
+      formData.append('propertyValue[1]', `rel-${generateTestId()}`);
       formData.append('propertyId[2]', 'cmis:sourceId');
       formData.append('propertyValue[2]', sourceId);
       formData.append('propertyId[3]', 'cmis:targetId');
@@ -402,8 +403,8 @@ test.describe('Relationship Management', () => {
 
   test('should delete relationship via API', async ({ request }) => {
     // Create two test documents and a relationship
-    const sourceDocName = `test-rel-delete-source-${Date.now()}.txt`;
-    const targetDocName = `test-rel-delete-target-${Date.now()}.txt`;
+    const sourceDocName = `test-rel-delete-source-${generateTestId()}.txt`;
+    const targetDocName = `test-rel-delete-target-${generateTestId()}.txt`;
 
     const sourceId = await createTestDocument(request, sourceDocName);
     const targetId = await createTestDocument(request, targetDocName);
@@ -415,7 +416,7 @@ test.describe('Relationship Management', () => {
       createFormData.append('propertyId[0]', 'cmis:objectTypeId');
       createFormData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
       createFormData.append('propertyId[1]', 'cmis:name');
-      createFormData.append('propertyValue[1]', `rel-delete-${Date.now()}`);
+      createFormData.append('propertyValue[1]', `rel-delete-${generateTestId()}`);
       createFormData.append('propertyId[2]', 'cmis:sourceId');
       createFormData.append('propertyValue[2]', sourceId);
       createFormData.append('propertyId[3]', 'cmis:targetId');

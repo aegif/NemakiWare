@@ -17,7 +17,8 @@
 
 import { test, expect, request } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { generateTestId } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 
 // Test type IDs - unique to avoid conflicts
 const TEST_DOCUMENT_TYPE_ID = 'test:requiredPropDocument';
@@ -309,7 +310,7 @@ test.describe('Required Property Validation Tests', () => {
 
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-      const testFileName = `test-required-doc-${Date.now()}.txt`;
+      const testFileName = `test-required-doc-${generateTestId()}.txt`;
 
       // STEP 1: Open upload modal
       console.log('STEP 1: Opening upload modal');
@@ -502,7 +503,7 @@ test.describe('Required Property Validation Tests', () => {
 
       const viewportSize = page.viewportSize();
       const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-      const testFolderName = `test-required-folder-${Date.now()}`;
+      const testFolderName = `test-required-folder-${generateTestId()}`;
 
       // STEP 1: Open folder creation modal
       console.log('STEP 1: Opening folder creation modal');

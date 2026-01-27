@@ -17,7 +17,8 @@
 
 import { test, expect, Page } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { generateTestId } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 
 test.describe('Type Specification Features', () => {
   let authHelper: AuthHelper;
@@ -67,7 +68,7 @@ test.describe('Type Specification Features', () => {
     });
 
     test('should upload document with default type when no type selected', async ({ page }) => {
-      const fileName = `test-default-type-${Date.now()}.txt`;
+      const fileName = `test-default-type-${generateTestId()}.txt`;
       const content = 'Test content for default type upload';
 
       // Click upload button

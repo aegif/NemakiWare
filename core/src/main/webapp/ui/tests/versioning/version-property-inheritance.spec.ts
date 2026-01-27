@@ -22,7 +22,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { randomUUID } from 'crypto';
+import { generateTestId } from '../utils/test-helper';
 
 const BASE_URL = 'http://localhost:8080/core/browser/bedroom';
 const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
@@ -30,13 +30,13 @@ const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 // Custom type with custom property for testing
 const TEST_TYPE_ID = 'test:versionableDocWithProps';
 const CUSTOM_PROPERTY_ID = 'test:customProp';
-const CUSTOM_PROPERTY_VALUE = 'inherited-value-' + randomUUID().substring(0, 8);
-const UPDATED_PROPERTY_VALUE = 'updated-value-' + randomUUID().substring(0, 8);
+const CUSTOM_PROPERTY_VALUE = 'inherited-value-' + generateTestId();
+const UPDATED_PROPERTY_VALUE = 'updated-value-' + generateTestId();
 
 test.describe('Version Property Inheritance', () => {
   test.describe.configure({ mode: 'serial' });
 
-  const testRunId = randomUUID().substring(0, 8);
+  const testRunId = generateTestId();
   const testDocumentName = `prop-inherit-test-${testRunId}.txt`;
   let testDocumentId: string;
   let rootFolderId: string;
@@ -204,7 +204,7 @@ test.describe('Version Property Inheritance', () => {
     formData.append('propertyValue[2]', customPropertyValue);
 
     // Create multipart form for file upload
-    const boundary = '----WebKitFormBoundary' + randomUUID().substring(0, 8);
+    const boundary = '----WebKitFormBoundary' + generateTestId();
     const body = [
       `--${boundary}`,
       'Content-Disposition: form-data; name="cmisaction"',
@@ -273,7 +273,7 @@ test.describe('Version Property Inheritance', () => {
     content: string,
     changeToken?: string
   ): Promise<string> {
-    const boundary = '----WebKitFormBoundary' + randomUUID().substring(0, 8);
+    const boundary = '----WebKitFormBoundary' + generateTestId();
     const bodyParts = [
       `--${boundary}`,
       'Content-Disposition: form-data; name="cmisaction"',
@@ -363,7 +363,7 @@ test.describe('Version Property Inheritance', () => {
     comment: string,
     major: boolean = true
   ): Promise<string> {
-    const boundary = '----WebKitFormBoundary' + randomUUID().substring(0, 8);
+    const boundary = '----WebKitFormBoundary' + generateTestId();
     const body = [
       `--${boundary}`,
       'Content-Disposition: form-data; name="cmisaction"',
@@ -497,7 +497,7 @@ test.describe('Version Property Inheritance', () => {
     } catch (e) {
       // If custom type creation failed, create with cmis:document
       console.log('Custom type not available, creating with cmis:document...');
-      const boundary = '----WebKitFormBoundary' + randomUUID().substring(0, 8);
+      const boundary = '----WebKitFormBoundary' + generateTestId();
       const body = [
         `--${boundary}`,
         'Content-Disposition: form-data; name="cmisaction"',

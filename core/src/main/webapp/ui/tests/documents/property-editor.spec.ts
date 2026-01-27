@@ -127,13 +127,13 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 test.describe('PropertyEditor Component Tests', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
-  const testDocName = `test-prop-editor-${randomUUID().substring(0, 8)}.txt`;
+  const testDocName = `test-prop-editor-${generateTestId()}.txt`;
   let testDocId: string;
 
   test.beforeEach(async ({ page, browserName }) => {

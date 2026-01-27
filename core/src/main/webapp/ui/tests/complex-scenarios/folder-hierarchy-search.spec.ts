@@ -22,8 +22,8 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 import {
   TIMEOUTS,
   I18N_PATTERNS,
@@ -35,7 +35,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
-  const testRunId = randomUUID().substring(0, 8);
+  const testRunId = generateTestId();
   const rootFolderName = `hierarchy-root-${testRunId}`;
   const subFolder1Name = `subfolder1-${testRunId}`;
   const subFolder2Name = `subfolder2-${testRunId}`;

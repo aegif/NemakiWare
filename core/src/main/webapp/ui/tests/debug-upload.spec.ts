@@ -1,5 +1,7 @@
 import { test } from '@playwright/test';
+import { generateTestId } from '../utils/test-helper';
 import { AuthHelper } from './utils/auth-helper';
+import { generateTestId } from '../utils/test-helper';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -50,14 +52,14 @@ test('debug upload operation with console capture', async ({ page }) => {
 
   // Create test file
   const testTypeDef = {
-    id: `test:debugUpload${Date.now()}`,
+    id: `test:debugUpload${generateTestId()}`,
     displayName: 'Debug Upload Test',
     baseTypeId: 'cmis:document',
     propertyDefinitions: []
   };
 
   const tmpDir = require('os').tmpdir();
-  const testFile = path.join(tmpDir, `debug-upload-${Date.now()}.json`);
+  const testFile = path.join(tmpDir, `debug-upload-${generateTestId()}.json`);
   fs.writeFileSync(testFile, JSON.stringify(testTypeDef, null, 2));
   console.log('[TEST] Created test file:', testFile);
 

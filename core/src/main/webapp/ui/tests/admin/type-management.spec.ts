@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { generateTestId } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 
 /**
  * Type Management E2E Tests
@@ -435,7 +436,7 @@ test.describe('Type Management - Custom Types Display', () => {
     try {
       const typeDef = JSON.parse(currentJson);
       const originalDescription = typeDef.description || '';
-      const newDescription = `Updated description - Test ${Date.now()}`;
+      const newDescription = `Updated description - Test ${generateTestId()}`;
       typeDef.description = newDescription;
 
       // Clear and set new JSON

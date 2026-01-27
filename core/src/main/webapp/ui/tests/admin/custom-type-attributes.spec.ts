@@ -176,8 +176,8 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 // FIXED (2025-12-24): TypeManager cache issue resolved
 // Root cause: TypeManagement.tsx handleSubmit() was not awaiting loadTypes()
@@ -186,10 +186,10 @@ import { randomUUID } from 'crypto';
 test.describe.serial('Custom Type and Custom Attributes', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
-  const customTypeId = `test:customDoc${randomUUID().substring(0, 8)}`;
-  const customTypeName = `カスタムドキュメントタイプ ${randomUUID().substring(0, 4)}`;
-  const customPropId = `test:customProperty${randomUUID().substring(0, 8)}`;
-  const customPropName = `カスタム属性 ${randomUUID().substring(0, 4)}`;
+  const customTypeId = `test:customDoc${generateTestId()}`;
+  const customTypeName = `カスタムドキュメントタイプ ${generateTestId().substring(0, 4)}`;
+  const customPropId = `test:customProperty${generateTestId()}`;
+  const customPropName = `カスタム属性 ${generateTestId().substring(0, 4)}`;
   let testDocumentId: string;
 
   test.beforeEach(async ({ page, browserName }) => {
@@ -373,7 +373,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
 
       if (!typeFound) {
         // Take debug screenshot
-        await page.screenshot({ path: `test-results/screenshots/custom-type-not-found-${Date.now()}.png`, fullPage: true });
+        await page.screenshot({ path: `test-results/screenshots/custom-type-not-found-${generateTestId()}.png`, fullPage: true });
         // Skip if type creation UI is unreliable
         test.skip('Custom type not found in table after creation - UI may need investigation');
         return;
@@ -405,7 +405,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       await uploadButton.click(isMobile ? { force: true } : {});
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
 
-      const testDocName = `custom-type-doc-${randomUUID().substring(0, 8)}.txt`;
+      const testDocName = `custom-type-doc-${generateTestId()}.txt`;
 
       // Upload file
       await testHelper.uploadTestFile(
@@ -529,7 +529,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       const customPropInput = page.locator(`input[id*="${customPropId}"]`);
 
       if (await customPropInput.count() > 0 && await customPropInput.isEnabled()) {
-        const testValue = `Custom value ${Date.now()}`;
+        const testValue = `Custom value ${generateTestId()}`;
 
         // Fill custom property value
         await customPropInput.clear();

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { randomUUID } from 'crypto';
+import { generateTestId } from '../utils/test-helper';
 
 /**
  * Cascade Delete Tests for NemakiWare React UI
@@ -56,7 +56,7 @@ test.describe.skip('Cascade Delete Functionality', () => {
   let testParentId: string;
   let testChildIds: string[] = [];
   let testRelationshipIds: string[] = [];
-  const testUUID = randomUUID().substring(0, 8);
+  const testUUID = generateTestId();
 
   test.beforeEach(async ({ page }) => {
     authHelper = new AuthHelper(page);

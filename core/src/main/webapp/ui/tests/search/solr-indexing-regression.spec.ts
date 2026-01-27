@@ -58,7 +58,7 @@ import { AuthHelper } from '../utils/auth-helper';
  */
 test.describe('Solr Indexing Regression Tests', () => {
   let authHelper: AuthHelper;
-  const uniqueId = Date.now().toString();
+  const uniqueId = generateTestId();
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);

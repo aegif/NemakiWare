@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+
 
 /**
  * Error Recovery and Resilience Test Suite
@@ -97,7 +97,7 @@ test.describe('Error Recovery Tests', () => {
   });
 
   test('should display error message on network request failure', async ({ page, browserName }) => {
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const filename = `test-error-${uuid}-network.txt`;
     const testHelper = new TestHelper(page);
 
@@ -169,7 +169,7 @@ test.describe('Error Recovery Tests', () => {
 
   // Skip: Upload modal tests have timing issues with route interception
   test.skip('should handle server timeout gracefully', async ({ page, browserName }) => {
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const filename = `test-error-${uuid}-timeout.txt`;
 
     // Mobile browser detection
@@ -291,7 +291,7 @@ test.describe('Error Recovery Tests', () => {
 
   // Skip: Upload modal tests have timing issues with route interception
   test.skip('should handle 500 Internal Server Error with retry option', async ({ page, browserName }) => {
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const filename = `test-error-${uuid}-500.txt`;
 
     // Mobile browser detection
@@ -534,7 +534,7 @@ test.describe('Error Recovery Tests', () => {
 
   // Skip: Upload modal tests have timing issues with route interception
   test.skip('should handle malformed server responses gracefully', async ({ page, browserName }) => {
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const filename = `test-error-${uuid}-malformed.txt`;
 
     // Mobile browser detection

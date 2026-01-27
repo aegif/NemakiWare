@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * Wait for UI to be stable (no loading spinners or notifications blocking interaction)
@@ -513,7 +513,7 @@ test.describe('Folder Hierarchy Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const folderName = `test-folder-${uuid}`;
 
     // Check if folder creation is available
@@ -566,7 +566,7 @@ test.describe('Folder Hierarchy Operations', () => {
       return;
     }
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const folderName = `test-folder-${uuid}-tree`;
 
     // Check if folder tree exists
@@ -611,7 +611,7 @@ test.describe('Folder Hierarchy Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const originalName = `test-folder-${uuid}-original`;
     const newName = `test-folder-${uuid}-renamed`;
 
@@ -686,7 +686,7 @@ test.describe('Folder Hierarchy Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const folderName = `test-folder-${uuid}-del`;
 
     // Check if folder creation is available

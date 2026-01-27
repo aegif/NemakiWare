@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * Document Management E2E Tests
@@ -61,7 +61,7 @@ import { randomUUID } from 'crypto';
  *    - File upload: test-upload-{uuid8}.txt
  *    - Folder creation: test-folder-{uuid8}
  *    - Document deletion: test-delete-{uuid8}.txt
- *    - Pattern: test- prefix for cleanup query + randomUUID().substring(0, 8)
+ *    - Pattern: test- prefix for cleanup query + generateTestId()
  *    - Prevents naming conflicts in parallel test execution (6 browsers simultaneously)
  *    - Enables reliable afterEach cleanup with CMIS query
  *    - Example: test-upload-a1b2c3d4.txt
@@ -372,7 +372,7 @@ test.describe('Document Management', () => {
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
     // Generate unique filename to avoid conflicts
-    const filename = `test-upload-${randomUUID().substring(0, 8)}.txt`;
+    const filename = `test-upload-${generateTestId()}.txt`;
 
     // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
     // Button text may be 'アップロード' or 'ファイルアップロード' depending on UI version
@@ -648,7 +648,7 @@ test.describe('Document Management', () => {
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
 
       // Generate unique folder name
-      const folderName = `test-folder-${randomUUID().substring(0, 8)}`;
+      const folderName = `test-folder-${generateTestId()}`;
 
       // Fill in folder name
       const nameInput = page.locator('.ant-modal input[placeholder*="名前"], .ant-modal input[id*="name"]');
@@ -694,7 +694,7 @@ test.describe('Document Management', () => {
       await uploadButton.click(isMobile ? { force: true } : {});
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
 
-      const filename = `test-delete-${randomUUID().substring(0, 8)}.txt`;
+      const filename = `test-delete-${generateTestId()}.txt`;
 
       // CRITICAL FIX (2025-12-24): Use fileChooser API to properly trigger Ant Design's file selection
       const [fileChooser] = await Promise.all([

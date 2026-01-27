@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { randomUUID } from 'crypto';
+import { generateTestId } from '../utils/test-helper';
 
 /**
  * Custom Property Input Feature E2E Tests (2025-12-23)
@@ -293,7 +293,7 @@ test.describe('Custom Property Input Feature', () => {
         return;
       }
 
-      const uuid = randomUUID().substring(0, 8);
+      const uuid = generateTestId();
       const testFileName = `test-custom-prop-doc-${uuid}.txt`;
 
       // Open upload modal
@@ -479,7 +479,7 @@ test.describe('Custom Property Input Feature', () => {
     });
 
     test('should create folder with selected type', async ({ page }) => {
-      const uuid = randomUUID().substring(0, 8);
+      const uuid = generateTestId();
       const testFolderName = `test-custom-prop-folder-${uuid}`;
 
       // Open folder modal

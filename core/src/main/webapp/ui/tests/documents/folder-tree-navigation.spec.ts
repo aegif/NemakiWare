@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * FolderTree Component Navigation E2E Tests
@@ -274,7 +274,7 @@ test.describe('FolderTree Navigation', () => {
     }
 
     // Create a test folder to ensure we have something to navigate to
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const testFolderName = `test-tree-${uuid}-nav`;
 
     const createFolderButton = page.locator('button').filter({ hasText: 'フォルダ作成' });
@@ -421,7 +421,7 @@ test.describe('FolderTree Navigation', () => {
     }
 
     // Create nested folder structure for testing
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const parentName = `test-tree-${uuid}-parent`;
     const childName = `test-tree-${uuid}-child`;
 
@@ -534,7 +534,7 @@ test.describe('FolderTree Navigation', () => {
     }
 
     // Create a folder with child to test lazy loading
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const parentName = `test-tree-${uuid}-lazy-parent`;
     const childName = `test-tree-${uuid}-lazy-child`;
 

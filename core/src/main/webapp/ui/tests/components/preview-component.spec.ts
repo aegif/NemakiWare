@@ -40,7 +40,8 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { generateTestId } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -98,7 +99,7 @@ test.describe('PreviewComponent File Type Routing', () => {
 
     // First, upload a test file to ensure we have a document with content
     const tempDir = os.tmpdir();
-    const testFilePath = path.join(tempDir, `preview-test-${Date.now()}.txt`);
+    const testFilePath = path.join(tempDir, `preview-test-${generateTestId()}.txt`);
     fs.writeFileSync(testFilePath, 'Test content for preview verification', 'utf-8');
 
     try {
@@ -200,7 +201,7 @@ test.describe('PreviewComponent File Type Routing', () => {
         const folderModal = page.locator('.ant-modal').filter({ hasText: /フォルダ|Folder/ });
         if (await folderModal.count() > 0) {
           const nameInput = folderModal.locator('input').first();
-          await nameInput.fill(`test-folder-${Date.now()}`);
+          await nameInput.fill(`test-folder-${generateTestId()}`);
           const okButton = folderModal.locator('button.ant-btn-primary');
           await okButton.click(isMobile ? { force: true } : {});
           await page.waitForTimeout(1000);
@@ -538,7 +539,7 @@ test.describe('PreviewComponent Error Handling', () => {
 
     // Create a temporary file for testing
     const tempDir = os.tmpdir();
-    const testFilePath = path.join(tempDir, `error-test-${Date.now()}.txt`);
+    const testFilePath = path.join(tempDir, `error-test-${generateTestId()}.txt`);
     fs.writeFileSync(testFilePath, 'Test content for error handling test', 'utf-8');
 
     try {
@@ -635,7 +636,7 @@ test.describe('PreviewComponent PDF Preview', () => {
 
     // Create a minimal valid PDF file for testing
     const tempDir = os.tmpdir();
-    const testPdfPath = path.join(tempDir, `test-pdf-${Date.now()}.pdf`);
+    const testPdfPath = path.join(tempDir, `test-pdf-${generateTestId()}.pdf`);
 
     // Minimal valid PDF content
     const pdfContent = `%PDF-1.4
@@ -756,7 +757,7 @@ test.describe('PreviewComponent Video Preview', () => {
     // Create a minimal valid WebM video file for testing
     // This is a minimal WebM container with an empty video track
     const tempDir = os.tmpdir();
-    const testVideoPath = path.join(tempDir, `test-video-${Date.now()}.webm`);
+    const testVideoPath = path.join(tempDir, `test-video-${generateTestId()}.webm`);
 
     // Minimal WebM header (EBML + Segment + Info + Tracks)
     // This creates a valid but minimal WebM container

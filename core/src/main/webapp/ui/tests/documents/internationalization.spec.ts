@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * Internationalization Test Suite
@@ -151,7 +151,7 @@ test.describe('Internationalization Tests', () => {
   });
 
   test('should handle Japanese filename upload and display', async ({ page, browserName }) => {
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const japaneseFilename = `テストファイル-${uuid}.txt`;
 
     // Locate upload button
@@ -227,7 +227,7 @@ test.describe('Internationalization Tests', () => {
   });
 
   test('should handle special characters in filenames (emoji, accents, Chinese)', async ({ page, browserName }) => {
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
 
     // Test various special character combinations
     const specialFilenames = [
@@ -320,7 +320,7 @@ test.describe('Internationalization Tests', () => {
    * 3. Child folders don't auto-appear in tree after creation in subfolders
    */
   test.skip('should handle Unicode characters in folder hierarchy', async ({ page, browserName }) => {
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const japaneseFolderName = `test-i18n-folder-${uuid}-日本語`;
     const chineseFolderName = `test-i18n-folder-${uuid}-中文`;
 
@@ -377,7 +377,7 @@ test.describe('Internationalization Tests', () => {
   });
 
   test('should preserve Unicode encoding in CMIS properties', async ({ page, browserName }) => {
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const unicodeFilename = `test-i18n-${uuid}-特殊文字テスト.txt`;
 
     // Mobile browser detection
@@ -473,7 +473,7 @@ test.describe('Internationalization Tests', () => {
    * 3. After search clear, uploaded files may not be visible due to table pagination
    */
   test.skip('should support search functionality with international characters', async ({ page, browserName }) => {
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
     const searchableFilenames = [
       `test-i18n-${uuid}-検索テスト.txt`,     // Japanese
       `test-i18n-${uuid}-搜索测试.txt`,       // Chinese
@@ -567,7 +567,7 @@ test.describe('Internationalization Tests', () => {
   });
 
   test('should handle filename length limits with multibyte characters', async ({ page, browserName }) => {
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
 
     // Test long filenames with multibyte characters (Japanese uses 3 bytes per character in UTF-8)
     // CMIS typically limits filenames to 255 bytes, which is ~85 Japanese characters

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { randomUUID } from 'crypto';
+import { generateTestId } from '../utils/test-helper';
 
 /**
  * User Management CRUD Operations E2E Tests
@@ -183,7 +183,7 @@ test.describe('User Management CRUD Operations', () => {
   // Run tests serially to avoid conflicts
   test.describe.configure({ mode: 'serial' });
   let authHelper: AuthHelper;
-  const testUsername = `testuser_${randomUUID().substring(0, 8)}`;
+  const testUsername = `testuser_${generateTestId()}`;
   const testUserEmail = `${testUsername}@test.local`;
 
   test.beforeEach(async ({ page, browserName }) => {

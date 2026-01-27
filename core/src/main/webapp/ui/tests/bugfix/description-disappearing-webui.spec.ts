@@ -24,8 +24,8 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * SKIPPED (2025-12-23) - Serial Test Dependency Issues
@@ -53,7 +53,7 @@ test.describe.skip('Bug Fix: Description Disappearing with Secondary Types (WebU
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
-  const testDocName = `desc-bug-test-${randomUUID().substring(0, 8)}.txt`;
+  const testDocName = `desc-bug-test-${generateTestId()}.txt`;
   const testDescription = 'Test description that should persist';
   const testComment = 'Test comment for secondary type';
 

@@ -24,7 +24,7 @@
  *    - Trade-off: Faster execution but failures cascade to later tests
  *
  * 2. UUID-Based Unique Document Naming (Line 9):
- *    - Uses randomUUID().substring(0, 8) for uniqueness
+ *    - Uses generateTestId() for uniqueness
  *    - Format: "test-props-doc-a1b2c3d4.txt"
  *    - Prevents conflicts when tests run across multiple browsers
  *    - Rationale: Parallel browser execution (6 profiles) requires unique names
@@ -128,8 +128,8 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 test.describe('Document Properties Edit and Persistence', () => {
   // CRITICAL: Tests must run in order - upload creates document for subsequent tests
@@ -137,7 +137,7 @@ test.describe('Document Properties Edit and Persistence', () => {
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
-  const testDocName = `test-props-doc-${randomUUID().substring(0, 8)}.txt`;
+  const testDocName = `test-props-doc-${generateTestId()}.txt`;
   let testDocId: string;
 
   test.beforeEach(async ({ page, browserName }) => {

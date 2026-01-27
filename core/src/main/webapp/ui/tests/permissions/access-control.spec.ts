@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+
 
 /**
  * Access Control and Permissions E2E Tests
@@ -119,11 +119,11 @@ import { randomUUID } from 'crypto';
 test.describe('Access Control and Permissions', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
-  const restrictedFolderName = `restricted-folder-${randomUUID().substring(0, 8)}`;
-  const testDocName = `permission-test-doc-${randomUUID().substring(0, 8)}.txt`;
+  const restrictedFolderName = `restricted-folder-${generateTestId()}`;
+  const testDocName = `permission-test-doc-${generateTestId()}.txt`;
 
   // Generate unique test user name to avoid conflicts with existing users
-  const testUsername = `testuser${randomUUID().substring(0, 8)}`;
+  const testUsername = `testuser${generateTestId()}`;
   const testUserPassword = 'TestPass123!';
 
   // Pre-cleanup: Delete old test folders from previous runs BEFORE tests start
@@ -557,7 +557,7 @@ test.describe('Access Control and Permissions', () => {
     test('should set ACL permissions on folder via API (admin only)', async ({ page }) => {
       const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
       const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
-      const testFolderName = `acl-set-test-${Date.now()}`;
+      const testFolderName = `acl-set-test-${generateTestId()}`;
 
       // Step 1: Create a test folder via CMIS API
       console.log('Test: Creating folder via CMIS API');
@@ -749,7 +749,7 @@ test.describe('Access Control and Permissions', () => {
     test('should modify permissions from read-only to read-write via API', async ({ page }) => {
       const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
       const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
-      const testFolderName = `permission-modify-test-${Date.now()}`;
+      const testFolderName = `permission-modify-test-${generateTestId()}`;
       const testPrincipal = 'testuser';
 
       // Step 1: Create a test folder via CMIS API
@@ -860,7 +860,7 @@ test.describe('Access Control and Permissions', () => {
     test('should remove and restore ACL entry via API', async ({ page }) => {
       const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
       const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
-      const testFolderName = `acl-test-folder-${Date.now()}`;
+      const testFolderName = `acl-test-folder-${generateTestId()}`;
       const testPrincipal = 'testuser';
 
       // Step 1: Create a test folder via CMIS API
@@ -1176,8 +1176,8 @@ test.describe('Access Control and Permissions', () => {
       // Use the dynamically created test user credentials from the test suite
       const testUserAuth = `Basic ${Buffer.from(`${testUsername}:${testUserPassword}`).toString('base64')}`;
       const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
-      const testFolderName = `view-test-folder-${Date.now()}`;
-      const testDocumentName = `test-doc-${Date.now()}.txt`;
+      const testFolderName = `view-test-folder-${generateTestId()}`;
+      const testDocumentName = `test-doc-${generateTestId()}.txt`;
 
       console.log(`Test: Using test user: ${testUsername}`);
 

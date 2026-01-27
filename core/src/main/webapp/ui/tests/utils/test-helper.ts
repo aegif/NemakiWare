@@ -222,6 +222,49 @@ export class TestHelper {
   constructor(private page: Page) {}
 
   /**
+   * Check if the current browser is mobile viewport
+   * Mobile detection: Chromium browser with viewport width ≤ 414px
+   *
+   * @param browserName The browser name from Playwright (chromium, firefox, webkit)
+   * @returns true if mobile viewport, false otherwise
+   */
+  isMobile(browserName: string): boolean {
+    const viewportSize = this.page.viewportSize();
+    return browserName === 'chromium' && viewportSize !== null && viewportSize.width <= 414;
+  }
+
+  /**
+   * Close mobile sidebar if on mobile viewport
+   * In mobile mode, the sidebar may overlay content and block interactions.
+   * This method detects mobile viewport and closes the sidebar menu.
+   *
+   * Usage in test.beforeEach:
+   * ```typescript
+   * test.beforeEach(async ({ page, browserName }) => {
+   *   const testHelper = new TestHelper(page);
+   *   await testHelper.closeMobileSidebar(browserName);
+   * });
+   * ```
+   *
+   * @param browserName The browser name from Playwright (chromium, firefox, webkit)
+   */
+  async closeMobileSidebar(browserName: string): Promise<void> {
+    if (!this.isMobile(browserName)) {
+      return;
+    }
+
+    const menuToggle = this.page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
+    if (await menuToggle.count() > 0) {
+      try {
+        await menuToggle.first().click({ timeout: 3000 });
+        await this.page.waitForTimeout(500);
+      } catch (e) {
+        // Menu toggle may not be available or already closed
+      }
+    }
+  }
+
+  /**
    * Wait for page to fully load including all AJAX requests
    */
   async waitForPageLoad(timeout: number = 10000): Promise<void> {

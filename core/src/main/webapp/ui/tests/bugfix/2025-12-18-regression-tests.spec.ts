@@ -11,6 +11,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
+import { generateTestId } from '../utils/test-helper';
 import { AuthHelper } from '../utils/auth-helper';
 
 // Test configuration
@@ -138,7 +139,7 @@ async function createRelationship(
   formData.append('propertyId[0]', 'cmis:objectTypeId');
   formData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
   formData.append('propertyId[1]', 'cmis:name');
-  formData.append('propertyValue[1]', `rel-${Date.now()}`);
+  formData.append('propertyValue[1]', `rel-${generateTestId()}`);
   formData.append('propertyId[2]', 'cmis:sourceId');
   formData.append('propertyValue[2]', sourceId);
   formData.append('propertyId[3]', 'cmis:targetId');

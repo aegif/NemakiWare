@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { generateTestId } from '../utils/test-helper';
 import { AuthHelper } from '../utils/auth-helper';
+import { generateTestId } from '../utils/test-helper';
 
 /**
  * Group Hierarchy and Large Member Display E2E Tests
@@ -88,7 +90,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
   });
 
   test.describe('Group Creation with Members', () => {
-    const testGroupId = `test-hierarchy-${Date.now()}`;
+    const testGroupId = `test-hierarchy-${generateTestId()}`;
 
     test.afterEach(async ({ page }) => {
       // Cleanup: Delete test group if it exists

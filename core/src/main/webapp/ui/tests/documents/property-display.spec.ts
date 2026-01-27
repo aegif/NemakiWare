@@ -9,7 +9,8 @@
 
 import { test, expect, Page, APIRequestContext } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { generateTestId } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 
 const BASE_URL = 'http://localhost:8080';
 const REPOSITORY_ID = 'bedroom';
@@ -21,7 +22,7 @@ function getAuthHeader(): string {
 }
 
 async function createTestDocument(request: APIRequestContext): Promise<{ id: string; name: string }> {
-  const uniqueName = `property-display-${Date.now()}.txt`;
+  const uniqueName = `property-display-${generateTestId()}.txt`;
   const formData = new URLSearchParams();
   formData.append('cmisaction', 'createDocument');
   formData.append('propertyId[0]', 'cmis:objectTypeId');

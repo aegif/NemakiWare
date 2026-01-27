@@ -18,6 +18,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { generateTestId } from '../utils/test-helper';
 
 // Test configuration
 const TEST_USER = 'admin';
@@ -27,7 +28,7 @@ const BASE_URL = 'http://localhost:8080';
 const ROOT_FOLDER_ID = 'e02f784f8360a02cc14d1314c10038ff';
 
 // Unique search term that won't exist in other documents
-const UNIQUE_SEARCH_TERM = `UNIQUE_SEARCH_VERIFY_${Date.now()}`;
+const UNIQUE_SEARCH_TERM = `UNIQUE_SEARCH_VERIFY_${generateTestId()}`;
 
 function basicAuth(): string {
   return `Basic ${Buffer.from(`${TEST_USER}:${TEST_PASSWORD}`).toString('base64')}`;
@@ -149,9 +150,9 @@ test.describe('Search Tokenization Bug Verification', () => {
    */
   test.skip('CONTAINS search should only match exact phrase, not tokenized words', async ({ request }) => {
     // Create test documents
-    const docWithKeyword = `search-with-keyword-${Date.now()}.txt`;
-    const docWithoutKeyword = `search-without-keyword-${Date.now()}.txt`;
-    const docWithPartialMatch = `search-partial-${Date.now()}.txt`;
+    const docWithKeyword = `search-with-keyword-${generateTestId()}.txt`;
+    const docWithoutKeyword = `search-without-keyword-${generateTestId()}.txt`;
+    const docWithPartialMatch = `search-partial-${generateTestId()}.txt`;
 
     let docId1: string | null = null;
     let docId2: string | null = null;
@@ -241,8 +242,8 @@ test.describe('Search Tokenization Bug Verification', () => {
    * Re-enable after implementing better Solr index wait mechanism.
    */
   test.skip('Search should work correctly for documents with Commentable secondary type', async ({ request }) => {
-    const docWithCommentable = `search-commentable-${Date.now()}.txt`;
-    const docWithCommentableNoMatch = `search-commentable-nomatch-${Date.now()}.txt`;
+    const docWithCommentable = `search-commentable-${generateTestId()}.txt`;
+    const docWithCommentableNoMatch = `search-commentable-nomatch-${generateTestId()}.txt`;
 
     let docId1: string | null = null;
     let docId2: string | null = null;
@@ -291,8 +292,8 @@ test.describe('Search Tokenization Bug Verification', () => {
   test('Underscore-separated search terms should match exactly', async ({ request }) => {
     // Test specifically for underscore tokenization issue
     const searchTerm = 'TEST_UNDERSCORE_TERM';
-    const docWithExact = `exact-underscore-${Date.now()}.txt`;
-    const docWithPartial = `partial-underscore-${Date.now()}.txt`;
+    const docWithExact = `exact-underscore-${generateTestId()}.txt`;
+    const docWithPartial = `partial-underscore-${generateTestId()}.txt`;
 
     let docId1: string | null = null;
     let docId2: string | null = null;

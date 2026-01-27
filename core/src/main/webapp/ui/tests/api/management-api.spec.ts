@@ -1,5 +1,5 @@
 import { test, expect, APIRequestContext } from '@playwright/test';
-import { randomUUID } from 'crypto';
+import { generateTestId } from '../utils/test-helper';
 
 /**
  * Management API E2E Tests
@@ -191,7 +191,7 @@ async function apiRequestWithAuth(
  * User Management API Tests
  */
 test.describe('User Management API', () => {
-  const uuid = randomUUID().substring(0, 8);
+  const uuid = generateTestId();
   const testUserId = `apitest_user_${uuid}`;
   const testUserEmail = `${testUserId}@test.local`;
 
@@ -310,7 +310,7 @@ test.describe('User Management API', () => {
  * Group Management API Tests
  */
 test.describe('Group Management API', () => {
-  const uuid = randomUUID().substring(0, 8);
+  const uuid = generateTestId();
   const testGroupId = `apitest_group_${uuid}`;
 
   test('should list groups', async ({ request }) => {

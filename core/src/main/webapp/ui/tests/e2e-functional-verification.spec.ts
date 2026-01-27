@@ -12,6 +12,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { generateTestId } from '../utils/test-helper';
 
 const BASE_URL = 'http://localhost:8080';
 const REPOSITORY_ID = 'bedroom';
@@ -244,7 +245,7 @@ test.describe('Relationship Feature Verification', () => {
       relFormData.append('propertyId[0]', 'cmis:objectTypeId');
       relFormData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
       relFormData.append('propertyId[1]', 'cmis:name');
-      relFormData.append('propertyValue[1]', `rel-${Date.now()}`);
+      relFormData.append('propertyValue[1]', `rel-${generateTestId()}`);
       relFormData.append('propertyId[2]', 'cmis:sourceId');
       relFormData.append('propertyValue[2]', source.id);
       relFormData.append('propertyId[3]', 'cmis:targetId');
@@ -318,7 +319,7 @@ test.describe('Relationship Feature Verification', () => {
       relFormData.append('propertyId[0]', 'cmis:objectTypeId');
       relFormData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
       relFormData.append('propertyId[1]', 'cmis:name');
-      relFormData.append('propertyValue[1]', `rel-ui-${Date.now()}`);
+      relFormData.append('propertyValue[1]', `rel-ui-${generateTestId()}`);
       relFormData.append('propertyId[2]', 'cmis:sourceId');
       relFormData.append('propertyValue[2]', source.id);
       relFormData.append('propertyId[3]', 'cmis:targetId');
@@ -768,7 +769,7 @@ test.describe('Combined Feature Workflow', () => {
       relFormData.append('propertyId[0]', 'cmis:objectTypeId');
       relFormData.append('propertyValue[0]', 'nemaki:bidirectionalRelationship');
       relFormData.append('propertyId[1]', 'cmis:name');
-      relFormData.append('propertyValue[1]', `rel-workflow-${Date.now()}`);
+      relFormData.append('propertyValue[1]', `rel-workflow-${generateTestId()}`);
       relFormData.append('propertyId[2]', 'cmis:sourceId');
       relFormData.append('propertyValue[2]', doc1.id);
       relFormData.append('propertyId[3]', 'cmis:targetId');

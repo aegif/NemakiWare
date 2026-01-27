@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * Bulk Operations E2E Tests
@@ -234,7 +234,7 @@ test.describe('Bulk Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
 
     // Create 3 test documents
     const createdDocs = await createTestDocuments(page, 3, uuid);
@@ -315,7 +315,7 @@ test.describe('Bulk Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
 
     // Create 5 test documents
     const createdDocs = await createTestDocuments(page, 5, uuid);
@@ -367,7 +367,7 @@ test.describe('Bulk Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
 
     // Create 5 test documents
     const createdDocs = await createTestDocuments(page, 5, uuid);
@@ -455,7 +455,7 @@ test.describe('Bulk Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
 
     // Create 3 test documents
     const createdDocs = await createTestDocuments(page, 3, uuid);
@@ -501,7 +501,7 @@ test.describe('Bulk Operations', () => {
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize.width <= 414;
 
-    const uuid = randomUUID().substring(0, 8);
+    const uuid = generateTestId();
 
     // Create 4 test documents
     const createdDocs = await createTestDocuments(page, 4, uuid);

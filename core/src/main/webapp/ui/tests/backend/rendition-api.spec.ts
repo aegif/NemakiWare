@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { generateTestId } from '../utils/test-helper';
 
 /**
  * Rendition API Tests
@@ -153,7 +154,7 @@ test.describe('Rendition API - Get Renditions', () => {
     // Create a test document for rendition tests
     testDocumentId = await createTestDocument(
       request,
-      `rendition-test-${Date.now()}.txt`,
+      `rendition-test-${generateTestId()}.txt`,
       'Test content for rendition'
     );
   });
@@ -227,7 +228,7 @@ test.describe('Rendition API - Generate Rendition', () => {
     // Create a test document for rendition generation
     testDocumentId = await createTestDocument(
       request,
-      `generate-rendition-test-${Date.now()}.txt`,
+      `generate-rendition-test-${generateTestId()}.txt`,
       'Test content for rendition generation'
     );
   });
@@ -327,7 +328,7 @@ test.describe('Rendition API - Batch Generation', () => {
     for (let i = 0; i < 3; i++) {
       const docId = await createTestDocument(
         request,
-        `batch-test-${Date.now()}-${i}.txt`,
+        `batch-test-${generateTestId()}-${i}.txt`,
         `Batch test content ${i}`
       );
       if (docId) {
@@ -484,7 +485,7 @@ test.describe('Rendition API - Permission Checks', () => {
     // Create a document and verify that permission checks work
     const testDocId = await createTestDocument(
       request,
-      `permission-test-${Date.now()}.txt`,
+      `permission-test-${generateTestId()}.txt`,
       'Permission test content'
     );
 

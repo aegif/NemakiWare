@@ -16,7 +16,7 @@
  * IMPORTANT DESIGN DECISIONS:
  *
  * 1. Timestamp-Based Unique Test Folder Naming (Line 163):
- *    - Uses Date.now() for unique test folder names: `permissions-test-${Date.now()}`
+ *    - Uses Date.now() for unique test folder names: `permissions-test-${generateTestId()}`
  *    - Prevents parallel test execution conflicts (different timestamps)
  *    - Avoids cleanup race conditions across multiple browser projects
  *    - Example: permissions-test-1620270113521 (unique to each test run)
@@ -159,13 +159,14 @@
  */
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
+import { generateTestId } from '../utils/test-helper';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 
 test.describe('Permission Management UI - ACL Display', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   // FIX: Enhanced uniqueness for parallel execution - timestamp + random value
-  const testFolderName = `permissions-test-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const testFolderName = `permissions-test-${generateTestId()}-${Math.random().toString(36).substring(2, 8)}`;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);

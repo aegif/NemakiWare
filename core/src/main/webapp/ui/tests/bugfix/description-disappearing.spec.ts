@@ -13,6 +13,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { generateTestId } from '../utils/test-helper';
 
 // Test data
 const TEST_USER = 'admin';
@@ -102,7 +103,7 @@ test.describe.skip('Description Disappearing Bug Verification', () => {
 
   test('REPRO: Description should persist when saving with secondary type properties', async ({ request }) => {
     // Step 1: Create test document with initial description
-    const docName = `test-desc-disappear-${Date.now()}.txt`;
+    const docName = `test-desc-disappear-${generateTestId()}.txt`;
     const objectId = await createTestDocument(request, docName);
 
     try {
@@ -178,7 +179,7 @@ test.describe.skip('Description Disappearing Bug Verification', () => {
 
   test('REPRO: Description should persist when updating secondary type property only', async ({ request }) => {
     // Create document with description
-    const docName = `test-desc-persist-${Date.now()}.txt`;
+    const docName = `test-desc-persist-${generateTestId()}.txt`;
     const objectId = await createTestDocument(request, docName);
 
     try {
@@ -236,7 +237,7 @@ test.describe.skip('Description Disappearing Bug Verification', () => {
 
   test('REPRO: Multiple secondary type property updates should preserve description', async ({ request }) => {
     // More complex scenario: multiple updates in sequence
-    const docName = `test-multi-update-${Date.now()}.txt`;
+    const docName = `test-multi-update-${generateTestId()}.txt`;
     const objectId = await createTestDocument(request, docName);
 
     try {
@@ -301,7 +302,7 @@ test.describe.skip('Description Disappearing Bug Verification', () => {
 
   test('DEBUG: Check CouchDB raw document after update', async ({ request }) => {
     // Debugging test: Check CouchDB directly to see if data is actually persisted
-    const docName = `test-couchdb-check-${Date.now()}.txt`;
+    const docName = `test-couchdb-check-${generateTestId()}.txt`;
     const objectId = await createTestDocument(request, docName);
 
     try {

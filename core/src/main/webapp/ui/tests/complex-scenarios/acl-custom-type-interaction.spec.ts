@@ -21,8 +21,7 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
 import {
   TIMEOUTS,
   I18N_PATTERNS,
@@ -34,7 +33,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
 
-  const testRunId = randomUUID().substring(0, 8);
+  const testRunId = generateTestId();
   const testFolderName = `acl-test-folder-${testRunId}`;
   const testDocumentName = `acl-test-doc-${testRunId}.txt`;
   let testFolderId: string;
@@ -47,16 +46,8 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     await authHelper.login();
     await page.waitForTimeout(2000);
 
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
-    }
+    // Use TestHelper's mobile sidebar handling
+    await testHelper.closeMobileSidebar(browserName);
 
     await testHelper.waitForAntdLoad();
   });
@@ -64,8 +55,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
   test('Step 1: Create test folder for ACL testing', async ({ page, browserName }) => {
     console.log(`Creating test folder: ${testFolderName}`);
 
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to documents page
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });

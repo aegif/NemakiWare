@@ -19,13 +19,13 @@
 
 import { test, expect, Page } from '@playwright/test';
 import { AuthHelper } from './utils/auth-helper';
-import { TestHelper } from './utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from './utils/test-helper';
+
 
 test.describe('User Scenario Tests', () => {
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
-  const testDocName = `test-scenario-${randomUUID().substring(0, 8)}.txt`;
+  const testDocName = `test-scenario-${generateTestId()}.txt`;
 
   test.beforeEach(async ({ page, browserName }) => {
     authHelper = new AuthHelper(page);

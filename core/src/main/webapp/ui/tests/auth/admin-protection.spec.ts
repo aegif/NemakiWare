@@ -13,6 +13,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { generateTestId } from '../utils/test-helper';
 
 // CRITICAL: Run tests serially to avoid parallel login conflicts
 test.describe.configure({ mode: 'serial' });
@@ -176,7 +177,7 @@ test.describe('Permission Management Access', () => {
     const browserBaseUrl = 'http://localhost:8080/core/browser/bedroom';
 
     // 1. Create a test document as admin (using /root path for root folder)
-    const testFileName = `permission-test-${Date.now()}.txt`;
+    const testFileName = `permission-test-${generateTestId()}.txt`;
     const formData = new URLSearchParams();
     formData.append('cmisaction', 'createDocument');
     formData.append('propertyId[0]', 'cmis:objectTypeId');

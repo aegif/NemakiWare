@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { randomUUID } from 'crypto';
+import { generateTestId } from '../utils/test-helper';
 
 // CRITICAL FIX (2025-11-10): Generate TEST_GROUP_NAME OUTSIDE describe block to ensure it's shared across all tests
 // Playwright re-executes the describe block for each test, which would regenerate UUID inside describe scope
 // File-scoped variable ensures all tests in the same run use the SAME group name
-const TEST_GROUP_NAME = `testgroup_${randomUUID().substring(0, 8)}`;
+const TEST_GROUP_NAME = `testgroup_${generateTestId()}`;
 const TEST_GROUP_DESCRIPTION = 'Test group for automated testing';
 
 /**

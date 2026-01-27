@@ -23,8 +23,8 @@
 
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper } from '../utils/test-helper';
-import { randomUUID } from 'crypto';
+import { TestHelper, generateTestId } from '../utils/test-helper';
+
 
 /**
  * SKIPPED (2025-12-23) - Search Tokenization WebUI Upload Timing Issues
@@ -53,7 +53,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
   let testHelper: TestHelper;
 
   // Unique search term that won't exist in other documents
-  const UNIQUE_ID = randomUUID().substring(0, 8).toUpperCase();
+  const UNIQUE_ID = generateTestId().toUpperCase();
   const UNIQUE_SEARCH_TERM = `UNIQUE_SEARCH_VERIFY_${UNIQUE_ID}`;
 
   // Test document names
