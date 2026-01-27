@@ -356,10 +356,15 @@ export class ApiHelper {
   async deleteUser(userId: string): Promise<boolean> {
     try {
       const response = await this.page.request.delete(
-        `${BASE_URL}/core/rest/repo/${this.repositoryId}/user/${userId}`,
+        `${BASE_URL}/core/rest/repo/${this.repositoryId}/user/${encodeURIComponent(userId)}`,
         { headers: { 'Authorization': this.authHeader } }
       );
-      return response.ok();
+      if (!response.ok()) {
+        const errorBody = await response.text().catch(() => '');
+        console.log(`ApiHelper: Failed to delete user ${userId}: ${response.status()} ${errorBody}`);
+        return false;
+      }
+      return true;
     } catch (error) {
       console.log(`ApiHelper: Failed to delete user ${userId}:`, error);
       return false;
@@ -372,10 +377,15 @@ export class ApiHelper {
   async deleteGroup(groupId: string): Promise<boolean> {
     try {
       const response = await this.page.request.delete(
-        `${BASE_URL}/core/rest/repo/${this.repositoryId}/group/${groupId}`,
+        `${BASE_URL}/core/rest/repo/${this.repositoryId}/group/${encodeURIComponent(groupId)}`,
         { headers: { 'Authorization': this.authHeader } }
       );
-      return response.ok();
+      if (!response.ok()) {
+        const errorBody = await response.text().catch(() => '');
+        console.log(`ApiHelper: Failed to delete group ${groupId}: ${response.status()} ${errorBody}`);
+        return false;
+      }
+      return true;
     } catch (error) {
       console.log(`ApiHelper: Failed to delete group ${groupId}:`, error);
       return false;
@@ -388,10 +398,15 @@ export class ApiHelper {
   async deleteType(typeId: string): Promise<boolean> {
     try {
       const response = await this.page.request.delete(
-        `${BASE_URL}/core/rest/repo/${this.repositoryId}/type/${typeId}`,
+        `${BASE_URL}/core/rest/repo/${this.repositoryId}/type/${encodeURIComponent(typeId)}`,
         { headers: { 'Authorization': this.authHeader } }
       );
-      return response.ok();
+      if (!response.ok()) {
+        const errorBody = await response.text().catch(() => '');
+        console.log(`ApiHelper: Failed to delete type ${typeId}: ${response.status()} ${errorBody}`);
+        return false;
+      }
+      return true;
     } catch (error) {
       console.log(`ApiHelper: Failed to delete type ${typeId}:`, error);
       return false;
@@ -401,9 +416,9 @@ export class ApiHelper {
   /**
    * Clean up test groups matching a prefix pattern
    * @param idPrefix - Prefix to match (uses startsWith for safety)
-   * @param maxDeletions - Maximum number of groups to delete
+   * @param maxDeletions - Maximum number of groups to delete (0 = unlimited)
    */
-  async cleanupTestGroups(idPrefix: string, maxDeletions: number = 10): Promise<number> {
+  async cleanupTestGroups(idPrefix: string, maxDeletions: number = 0): Promise<number> {
     try {
       // Get all groups
       const response = await this.page.request.get(
@@ -424,8 +439,11 @@ export class ApiHelper {
         .filter((id: string) => id && id.startsWith(idPrefix))
         .sort();
 
+      // Apply limit if specified (0 = delete all)
+      const groupsToDelete = maxDeletions > 0 ? matchingGroups.slice(0, maxDeletions) : matchingGroups;
+
       let deletedCount = 0;
-      for (const groupId of matchingGroups.slice(0, maxDeletions)) {
+      for (const groupId of groupsToDelete) {
         if (await this.deleteGroup(groupId)) {
           deletedCount++;
         }
