@@ -25,7 +25,8 @@
 | testHelper.isMobile()採用 | 0件 | 53件 |
 | 重複コード削減 | - | -784行 |
 | ApiHelper新メソッド | - | deleteGroup(), deleteType(), cleanupTestGroups() 追加 |
-| UI経由→API経由変換 | - | 2ファイル (group-hierarchy-members, custom-type-attributes) |
+| TestHelper API化 | UI経由 | deleteTestDocument(), deleteTestFolder() をAPI経由に変更 |
+| UI経由→API経由変換 | - | 全クリーンアップ処理がAPI経由に統一 |
 
 ---
 

@@ -974,45 +974,38 @@ export class TestHelper {
    * @param isMobile Whether the browser is in mobile mode
    * @returns true if deleted (or didn't exist), false if deletion failed
    */
-  async deleteTestDocument(fileName: string, isMobile: boolean = false): Promise<boolean> {
-    console.log(`TestHelper: Deleting test document ${fileName}...`);
+  async deleteTestDocument(fileName: string, _isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Deleting test document ${fileName} via API...`);
 
-    // STABILIZATION FIX: Close any open overlays before attempting deletion
-    await this.closeAllOverlays();
+    try {
+      const apiHelper = new ApiHelper(this.page);
 
-    // Find document row
-    const docRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).first();
-    if (await docRow.count() === 0) {
-      console.log(`TestHelper: Document ${fileName} not found - already deleted or never existed`);
-      return true;
-    }
+      // Query for document by name
+      const query = `SELECT cmis:objectId FROM cmis:document WHERE cmis:name = '${fileName}'`;
+      const docIds = await apiHelper.queryObjects(query);
 
-    // Find delete button
-    const deleteButton = docRow.locator('button').filter({ has: this.page.locator('[data-icon="delete"]') }).first();
-    if (await deleteButton.count() === 0) {
-      console.log(`TestHelper: Delete button not found for ${fileName}`);
+      if (docIds.length === 0) {
+        console.log(`TestHelper: Document ${fileName} not found - already deleted or never existed`);
+        return true;
+      }
+
+      // Delete each matching document
+      let allDeleted = true;
+      for (const docId of docIds) {
+        const deleted = await apiHelper.deleteObject(docId);
+        if (deleted) {
+          console.log(`TestHelper: Document ${fileName} (${docId}) deleted successfully via API`);
+        } else {
+          console.log(`TestHelper: Failed to delete document ${fileName} (${docId})`);
+          allDeleted = false;
+        }
+      }
+
+      return allDeleted;
+    } catch (error) {
+      console.log(`TestHelper: Error deleting document ${fileName}:`, error);
       return false;
     }
-
-    await deleteButton.click(isMobile ? { force: true } : {});
-    await this.page.waitForTimeout(500);
-
-    // Confirm deletion
-    const confirmButton = this.page.locator('.ant-popconfirm button, .ant-popover button').filter({ hasText: /OK|はい|確認/ }).first();
-    if (await confirmButton.count() > 0) {
-      await confirmButton.click();
-      await this.page.waitForTimeout(3000);
-    }
-
-    // Verify deleted
-    const stillExists = await this.page.locator('.ant-table-tbody tr').filter({ hasText: fileName }).count() > 0;
-    if (!stillExists) {
-      console.log(`TestHelper: Document ${fileName} deleted successfully`);
-      return true;
-    }
-
-    console.log(`TestHelper: Document ${fileName} still exists after deletion attempt`);
-    return false;
   }
 
   /**
@@ -1350,44 +1343,37 @@ export class TestHelper {
    * @param isMobile Whether the browser is in mobile mode
    * @returns true if deleted (or didn't exist), false if deletion failed
    */
-  async deleteTestFolder(folderName: string, isMobile: boolean = false): Promise<boolean> {
-    console.log(`TestHelper: Deleting test folder ${folderName}...`);
+  async deleteTestFolder(folderName: string, _isMobile: boolean = false): Promise<boolean> {
+    console.log(`TestHelper: Deleting test folder ${folderName} via API...`);
 
-    // STABILIZATION FIX: Close any open overlays before attempting deletion
-    await this.closeAllOverlays();
+    try {
+      const apiHelper = new ApiHelper(this.page);
 
-    // Find folder row
-    const folderRow = this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).first();
-    if (await folderRow.count() === 0) {
-      console.log(`TestHelper: Folder ${folderName} not found - already deleted or never existed`);
-      return true;
-    }
+      // Query for folder by name
+      const query = `SELECT cmis:objectId FROM cmis:folder WHERE cmis:name = '${folderName}'`;
+      const folderIds = await apiHelper.queryObjects(query);
 
-    // Find delete button
-    const deleteButton = folderRow.locator('button').filter({ has: this.page.locator('[data-icon="delete"]') }).first();
-    if (await deleteButton.count() === 0) {
-      console.log(`TestHelper: Delete button not found for ${folderName}`);
+      if (folderIds.length === 0) {
+        console.log(`TestHelper: Folder ${folderName} not found - already deleted or never existed`);
+        return true;
+      }
+
+      // Delete each matching folder (including contents)
+      let allDeleted = true;
+      for (const folderId of folderIds) {
+        const deleted = await apiHelper.deleteFolderTree(folderId);
+        if (deleted) {
+          console.log(`TestHelper: Folder ${folderName} (${folderId}) deleted successfully via API`);
+        } else {
+          console.log(`TestHelper: Failed to delete folder ${folderName} (${folderId})`);
+          allDeleted = false;
+        }
+      }
+
+      return allDeleted;
+    } catch (error) {
+      console.log(`TestHelper: Error deleting folder ${folderName}:`, error);
       return false;
     }
-
-    await deleteButton.click(isMobile ? { force: true } : {});
-    await this.page.waitForTimeout(500);
-
-    // Confirm deletion
-    const confirmButton = this.page.locator('.ant-popconfirm button, .ant-popover button').filter({ hasText: /OK|はい|確認/ }).first();
-    if (await confirmButton.count() > 0) {
-      await confirmButton.click();
-      await this.page.waitForTimeout(3000);
-    }
-
-    // Verify deleted
-    const stillExists = await this.page.locator('.ant-table-tbody tr').filter({ hasText: folderName }).count() > 0;
-    if (!stillExists) {
-      console.log(`TestHelper: Folder ${folderName} deleted successfully`);
-      return true;
-    }
-
-    console.log(`TestHelper: Folder ${folderName} still exists after deletion attempt`);
-    return false;
   }
 }
