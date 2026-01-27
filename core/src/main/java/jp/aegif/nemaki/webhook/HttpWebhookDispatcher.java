@@ -42,6 +42,12 @@ import jp.aegif.nemaki.businesslogic.impl.WebhookServiceImpl.WebhookDispatcher;
 /**
  * HTTP implementation of WebhookDispatcher.
  * Sends webhook payloads to configured URLs via HTTP POST.
+ * 
+ * Security notes:
+ * - SSRF protection blocks localhost, private networks, and cloud metadata endpoints
+ * - DNS resolution is performed once at validation time; DNS rebinding attacks may bypass
+ *   this protection if the DNS response changes between validation and connection.
+ *   For higher security requirements, consider using an allowlist of permitted domains.
  */
 public class HttpWebhookDispatcher implements WebhookDispatcher {
     
@@ -265,8 +271,10 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             }
             
         } catch (UnknownHostException e) {
-            // If we can't resolve the hostname, allow it (will fail at connection time)
-            log.debug("SSRF protection: could not resolve hostname " + host + ", allowing");
+            // If we can't resolve the hostname, reject it for security
+            // This is a conservative approach - unresolvable hosts are blocked
+            log.warn("SSRF protection: could not resolve hostname " + host + ", blocking for security");
+            return false;
         }
         
         return true;
