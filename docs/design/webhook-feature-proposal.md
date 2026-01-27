@@ -20,48 +20,75 @@ CMIS 1.1仕様にはChange Log（変更ログ）機能が存在するが、こ�
 
 CMIS 1.1仕様にはWebhook/イベント通知の直接的な定義は存在しない。本機能はNemakiWare独自の拡張として実装する。ただし、以下の点でCMIS仕様との整合性を維持する：
 
-- **タイプシステム**: CMIS標準のタイプ継承機構を使用（`nemaki:folder` extends `cmis:folder`）
+- **セカンダリタイプ**: Webhook機能は`nemaki:webhookable`セカンダリタイプとして実装（CMIS標準機構を活用）
 - **プロパティ定義**: CMIS標準のプロパティ定義形式を使用
 - **イベントタイプ**: CMISのChangeType（CREATED, UPDATED, DELETED, SECURITY）に準拠
 
+### 1.4 設計方針
+
+**Webhook機能**: セカンダリタイプ（`nemaki:webhookable`）として実装。多数のオブジェクトにはWebhookは不要であり、必要なオブジェクトにのみ選択的に適用できる方式を採用。
+
+**RSS機能**: プライマリタイプ（`nemaki:folder`/`nemaki:document`）に関連付け。RSSフィードは全オブジェクトが対象となりうるため、APIベースで任意のオブジェクトに対してフィードを生成可能。
+
 ---
 
-## 2. 新規タイプ定義
+## 2. タイプ定義
 
-### 2.1 nemaki:folder
+### 2.1 nemaki:webhookable（セカンダリタイプ）
 
-`cmis:folder`を継承したNemakiWare拡張フォルダタイプ。
+Webhook機能を提供するセカンダリタイプ。任意の`cmis:folder`または`cmis:document`に追加することで、そのオブジェクトにWebhook機能を付与できます。
+
+```
+タイプID: nemaki:webhookable
+ベースタイプ: cmis:secondary
+表示名: Webhookable
+説明: Webhook通知機能を有効にするセカンダリタイプ
+```
+
+**プロパティ**:
+
+| プロパティID | 表示名 | 型 | カーディナリティ | 必須 | 説明 |
+|-------------|--------|-----|-----------------|------|------|
+| nemaki:webhookConfigs | Webhook設定 | String | single | No | 複数Webhook設定を格納するJSON配列（詳細は2.4参照） |
+| nemaki:webhookMaxDepth | 最大監視深度 | Integer | single | No | 子孫を監視する最大階層数（デフォルト: アプリ設定値、フォルダのみ有効） |
+
+**セカンダリタイプ採用の理由**:
+
+1. **選択的適用**: 多数のオブジェクトにはWebhookは不要。必要なオブジェクトにのみセカンダリタイプを追加することで、効率的な運用が可能
+2. **既存オブジェクトへの適用**: 既存の`cmis:folder`/`cmis:document`にもWebhook機能を追加可能
+3. **柔軟性**: カスタムタイプ（例: `myapp:contract`）にもWebhook機能を追加可能
+4. **CMIS準拠**: CMISのセカンダリタイプ機構を活用した標準的な拡張方法
+
+**使用例**:
+
+```
+// 既存フォルダにWebhook機能を追加
+POST /browser/{repositoryId}/root?objectId={folderId}&cmisaction=update
+Content-Type: application/x-www-form-urlencoded
+
+cmis:secondaryObjectTypeIds=nemaki:webhookable
+nemaki:webhookConfigs=[{"id":"webhook-1","url":"https://example.com/webhook",...}]
+```
+
+### 2.2 nemaki:folder / nemaki:document（RSS機能用）
+
+RSS機能は全オブジェクトが対象となりうるため、プライマリタイプとして実装します。
 
 ```
 タイプID: nemaki:folder
 親タイプ: cmis:folder
 表示名: NemakiWare Folder
-説明: Webhook機能を持つ拡張フォルダタイプ
+説明: RSS機能を持つ拡張フォルダタイプ
 ```
-
-**追加プロパティ**:
-
-| プロパティID | 表示名 | 型 | カーディナリティ | 必須 | 説明 |
-|-------------|--------|-----|-----------------|------|------|
-| nemaki:webhookConfigs | Webhook設定 | String | single | No | 複数Webhook設定を格納するJSON配列（詳細は2.4参照） |
-| nemaki:webhookMaxDepth | 最大監視深度 | Integer | single | No | 子孫を監視する最大階層数（デフォルト: アプリ設定値） |
-
-### 2.2 nemaki:document
-
-`cmis:document`を継承したNemakiWare拡張ドキュメントタイプ。
 
 ```
 タイプID: nemaki:document
 親タイプ: cmis:document
 表示名: NemakiWare Document
-説明: Webhook機能を持つ拡張ドキュメントタイプ
+説明: RSS機能を持つ拡張ドキュメントタイプ
 ```
 
-**追加プロパティ**:
-
-| プロパティID | 表示名 | 型 | カーディナリティ | 必須 | 説明 |
-|-------------|--------|-----|-----------------|------|------|
-| nemaki:webhookConfigs | Webhook設定 | String | single | No | 複数Webhook設定を格納するJSON配列（詳細は2.4参照） |
+**注意**: RSS機能はAPIベースで提供されるため、これらのタイプに追加プロパティは不要です。RSSフィードはリポジトリ内の任意のフォルダ/ドキュメントに対して生成可能です（セクション7参照）。
 
 ### 2.3 監視イベントタイプ
 
@@ -1152,35 +1179,46 @@ Response:
 
 ## 6. UI設計
 
-### 6.1 デフォルトタイプ選択
+### 6.1 Webhook有効化フロー（セカンダリタイプ追加）
 
-UIでフォルダやドキュメントを作成する際、デフォルトで`nemaki:folder`/`nemaki:document`が選択されるように変更：
+Webhook機能はセカンダリタイプ（`nemaki:webhookable`）として実装されるため、UIでは以下のフローでWebhookを有効化します：
+
+**フォルダ/ドキュメント詳細画面からの有効化**:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Documents フォルダ                                           │
+├─────────────────────────────────────────────────────────────┤
+│ [プロパティ] [バージョン] [権限] [Webhook]                   │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│ このフォルダにはWebhook機能が有効になっていません。          │
+│                                                              │
+│ [Webhookを有効にする]                                        │
+│                                                              │
+│ ※ Webhookを有効にすると、このフォルダ（および子孫）の        │
+│   変更イベントを外部システムに通知できます。                 │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**「Webhookを有効にする」ボタン押下時の処理**:
 
 ```typescript
-// cmis.ts - createDocument/createFolder のデフォルト値変更
-
-async createDocument(repositoryId: string, folderId: string, file: File, 
-                     properties?: Record<string, unknown>): Promise<CMISObject> {
-  const defaults = {
-    'cmis:name': file.name,
-    'cmis:objectTypeId': 'nemaki:document',  // 変更: cmis:document → nemaki:document
-  };
-  // ...
-}
-
-async createFolder(repositoryId: string, parentId: string, name: string,
-                   properties?: Record<string, unknown>): Promise<CMISObject> {
-  const defaults = {
-    'cmis:name': name,
-    'cmis:objectTypeId': 'nemaki:folder',  // 変更: cmis:folder → nemaki:folder
-  };
-  // ...
+// セカンダリタイプを追加してWebhook機能を有効化
+async enableWebhook(repositoryId: string, objectId: string): Promise<void> {
+  const currentSecondaryTypes = await this.getSecondaryTypes(repositoryId, objectId);
+  const updatedSecondaryTypes = [...currentSecondaryTypes, 'nemaki:webhookable'];
+  
+  await this.updateProperties(repositoryId, objectId, {
+    'cmis:secondaryObjectTypeIds': updatedSecondaryTypes
+  });
 }
 ```
 
 ### 6.2 Webhook設定UI
 
-プロパティエディタにWebhook設定セクションを追加：
+セカンダリタイプ追加後、Webhook設定セクションが表示されます：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -2224,23 +2262,39 @@ webhook.child.event.absolute.max.per.second=50
 
 ---
 
-## 11. 代替案の検討
+## 11. 設計判断と代替案
 
-### 11.1 Secondary Typeとしての実装
+### 11.1 採用: Secondary Typeとしての実装
 
-**案**: Webhook設定をSecondary Type（`nemaki:webhookable`）として実装
+**採用案**: Webhook設定をSecondary Type（`nemaki:webhookable`）として実装
 
 **メリット**:
-- 既存の`cmis:folder`/`cmis:document`にも適用可能
-- より柔軟な適用範囲
+- **選択的適用**: 多数のオブジェクトにはWebhookは不要。必要なオブジェクトにのみ追加可能
+- **既存オブジェクト対応**: 既存の`cmis:folder`/`cmis:document`にもWebhook機能を追加可能
+- **柔軟性**: カスタムタイプにもWebhook機能を追加可能
+- **CMIS準拠**: 標準的なセカンダリタイプ機構を活用
+
+**考慮事項**:
+- UIでセカンダリタイプの追加操作が必要（専用UIで対応）
+- Webhook設定を持つオブジェクトの検索にはセカンダリタイプでのフィルタリングが必要
+
+**結論**: **採用**。多数のオブジェクトにはWebhookが不要であり、必要なオブジェクトにのみ選択的に適用できるセカンダリタイプ方式が最適。
+
+### 11.2 不採用: プライマリタイプとしての実装
+
+**案**: `nemaki:folder`/`nemaki:document`プライマリタイプにWebhookプロパティを含める
+
+**メリット**:
+- UIでのデフォルト選択が簡単
+- セカンダリタイプ追加操作が不要
 
 **デメリット**:
-- UIでのデフォルト選択が複雑になる
-- Secondary Typeの追加操作が必要
+- 多数のオブジェクトに不要なプロパティが付与される
+- 既存オブジェクトへの適用が困難（タイプ変更が必要）
 
-**結論**: 今回は新規タイプとして実装し、将来的にSecondary Type版も検討
+**結論**: **不採用**。Webhookは限られたオブジェクトにのみ必要であり、全オブジェクトにプロパティを持たせるのは非効率。
 
-### 11.2 グローバルWebhook設定
+### 11.3 グローバルWebhook設定
 
 **案**: リポジトリレベルでグローバルなWebhook設定を持つ
 
