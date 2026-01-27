@@ -1,4 +1,4 @@
-import { Page, APIRequestContext } from '@playwright/test';
+import { Page } from '@playwright/test';
 
 /**
  * API Helper Utilities for NemakiWare Playwright E2E Tests
@@ -207,7 +207,7 @@ export class ApiHelper {
 
       if (!response.ok()) {
         const errorBody = (await response.text().catch(() => '')).slice(0, 200);
-        console.log(`ApiHelper: Query failed: ${response.status()} ${errorBody}`);
+        console.log(`ApiHelper: Query failed: ${response.status()} query="${cmisQuery}" ${errorBody}`);
         return [];
       }
 
