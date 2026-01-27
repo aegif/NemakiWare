@@ -22,10 +22,7 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -73,20 +70,24 @@ public class WebhookServiceImpl implements WebhookService {
     /**
      * Set of CMIS property keys that are protected from being overwritten by additionalProperties.
      * These core metadata properties should always reflect the actual content state.
+     * Includes versioning properties to prevent confusion in version-aware webhook payloads.
      */
-    private static final Set<String> PROTECTED_CMIS_PROPERTIES = Collections.unmodifiableSet(
-        new HashSet<>(Arrays.asList(
-            "cmis:name",
-            "cmis:objectId",
-            "cmis:objectTypeId",
-            "cmis:baseTypeId",
-            "cmis:createdBy",
-            "cmis:creationDate",
-            "cmis:lastModifiedBy",
-            "cmis:lastModificationDate",
-            "cmis:changeToken",
-            "cmis:parentId"
-        ))
+    private static final Set<String> PROTECTED_CMIS_PROPERTIES = Set.of(
+        "cmis:name",
+        "cmis:objectId",
+        "cmis:objectTypeId",
+        "cmis:baseTypeId",
+        "cmis:createdBy",
+        "cmis:creationDate",
+        "cmis:lastModifiedBy",
+        "cmis:lastModificationDate",
+        "cmis:changeToken",
+        "cmis:parentId",
+        // Versioning properties
+        "cmis:versionSeriesId",
+        "cmis:versionLabel",
+        "cmis:isLatestVersion",
+        "cmis:checkinComment"
     );
     
     private ContentService contentService;
