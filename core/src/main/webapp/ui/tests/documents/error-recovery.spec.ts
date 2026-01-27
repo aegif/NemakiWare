@@ -40,15 +40,10 @@ test.describe('Error Recovery Tests', () => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
 
-    // Login and navigate to documents
+    // Login - AuthHelper.login() already navigates to documents page
     await authHelper.login();
-    await page.goto('http://localhost:8080/core/ui/');
+    await page.waitForTimeout(2000);  // Wait for page stabilization
     await testHelper.waitForAntdLoad();
-
-    // Navigate to Documents section
-    const documentsLink = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
-    await documentsLink.click();
-    await page.waitForLoadState('networkidle');
 
     // Mobile browser handling
     const viewportSize = page.viewportSize();
@@ -101,53 +96,42 @@ test.describe('Error Recovery Tests', () => {
     }
   });
 
-  // Skip: Upload modal tests have timing issues with route interception
-  // The modal may not open reliably when network routes are intercepted
-  // Core error handling is verified via other tests (404, session persistence)
-  test.skip('should display error message on network request failure', async ({ page, browserName }) => {
+  test('should display error message on network request failure', async ({ page, browserName }) => {
     const uuid = randomUUID().substring(0, 8);
     const filename = `test-error-${uuid}-network.txt`;
+    const testHelper = new TestHelper(page);
 
     // Mobile browser detection
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 
-    // Simulate network failure by intercepting and failing the request
-    await page.route('**/core/browser/bedroom?cmisaction=createDocument', async route => {
-      await route.abort('failed');
-    });
-
-    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
-    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
+    // Use testHelper.uploadDocument which is known to work
+    // First, let's prepare the file upload
+    const uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
     if (await uploadButton.count() === 0) {
-      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+      const uploadButton2 = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
+      if (await uploadButton2.count() === 0) {
+        test.skip('Upload button not visible');
+        return;
+      }
     }
 
-    if (await uploadButton.count() === 0) {
-      // UPDATED (2025-12-26): Upload IS implemented in DocumentList.tsx
-      test.skip('Upload button not visible - IS implemented in DocumentList.tsx');
-      return;
-    }
+    // Click upload button and wait for modal
+    await page.locator('button').filter({ hasText: /アップロード|ファイルアップロード/i }).first().click(isMobile ? { force: true } : {});
+    await page.waitForSelector('.ant-modal:has-text("ファイルアップロード")', { timeout: 10000 });
+    await page.waitForTimeout(500);
 
-    // Attempt upload (should fail)
-    await uploadButton.click(isMobile ? { force: true } : {});
-    await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000); // Wait for modal to fully stabilize
-
-    // Set file using Ant Design Upload.Dragger file input
-    // The input is inside .ant-upload-drag element
-    const fileInput = page.locator('.ant-modal .ant-upload-drag input[type="file"], .ant-modal .ant-upload input[type="file"]').first();
+    // Find file input in the modal
+    const fileInput = page.locator('.ant-modal input[type="file"]').first();
     await fileInput.waitFor({ state: 'attached', timeout: 10000 });
     await fileInput.setInputFiles({
       name: filename,
       mimeType: 'text/plain',
       buffer: Buffer.from('Test content for network error')
     });
-    await page.waitForTimeout(2000); // Wait for Ant Design Upload to process the file
+    await page.waitForTimeout(1000);
 
-    // The filename is auto-filled from the Upload onChange handler
-    // Verify the name field has been set
+    // Fill name if needed
     const nameInput = page.locator('.ant-modal #name, .ant-modal input[id="name"]').first();
     if (await nameInput.count() > 0) {
       const currentValue = await nameInput.inputValue();
@@ -156,22 +140,31 @@ test.describe('Error Recovery Tests', () => {
       }
     }
 
-    await page.waitForTimeout(500); // Allow form to stabilize
+    // NOW set up route interception to fail the createDocument request
+    await page.route('**/core/browser/bedroom', async route => {
+      const postData = route.request().postData() || '';
+      if (postData.includes('cmisaction=createDocument')) {
+        await route.abort('failed');
+      } else {
+        await route.continue();
+      }
+    });
 
+    // Submit the form
     const submitButton = page.locator('.ant-modal button[type="submit"]').first();
     await submitButton.waitFor({ state: 'visible', timeout: 5000 });
-    await submitButton.click({ force: true }); // Use force to avoid stability issues
+    await submitButton.click({ force: true });
 
-    // Verify error message appears (AntD v5 compatible selectors)
+    // Verify error message appears
     const errorMessage = page.locator('.ant-message-notice, .ant-notification-notice, .ant-alert-error, [role="alert"]');
-    await expect(errorMessage.first()).toBeVisible({ timeout: 10000 });
+    await expect(errorMessage.first()).toBeVisible({ timeout: 15000 });
 
     // Verify error message contains relevant information
     const errorText = await errorMessage.first().textContent();
     expect(errorText).toBeTruthy();
 
-    // Unroute to restore normal behavior
-    await page.unroute('**/core/browser/bedroom?cmisaction=createDocument');
+    // Cleanup
+    await page.unroute('**/core/browser/bedroom');
   });
 
   // Skip: Upload modal tests have timing issues with route interception
