@@ -414,7 +414,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(false);
 
     // Call IdP-side logout based on authentication method
-    if (authMethod === 'oidc' && isOIDCEnabled()) {
+    if (authMethod === 'oidc' && await isOIDCEnabled()) {
       try {
         const oidcService = new OIDCService(getOIDCConfig());
         await oidcService.signoutRedirect();
@@ -424,7 +424,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('OIDC signoutRedirect failed:', error);
         // Fall through to local redirect
       }
-    } else if (authMethod === 'saml' && isSAMLEnabled()) {
+    } else if (authMethod === 'saml' && await isSAMLEnabled()) {
       try {
         const samlService = new SAMLService(getSAMLConfig());
         samlService.initiateLogout();
