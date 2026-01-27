@@ -163,9 +163,353 @@ Webhook配信時に使用可能な認証・セキュリティ方式：
 2. **配信ID**: `X-NemakiWare-Delivery`ヘッダーで重複配信を検知
 3. **TLS必須**: 本番環境では`https://`のみ許可（開発環境は`http://localhost`も可）
 
+### 2.5.1 URL検証とDNSリバインディング対策
+
+**URL検証フロー**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    URL検証フロー                                  │
+├─────────────────────────────────────────────────────────────────┤
+│  1. スキーム検証: https:// のみ許可（開発環境除く）              │
+│  2. ホスト名検証: allowlist/denylist チェック                    │
+│  3. DNS解決: ホスト名 → IPアドレス                               │
+│  4. IP検証: プライベートIP/ループバック/リンクローカル拒否       │
+│  5. 接続: 検証済みIPに直接接続（Host ヘッダーは元のホスト名）    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**拒否するIPアドレス範囲**:
+
+| 範囲 | 説明 |
+|------|------|
+| `127.0.0.0/8` | ループバック |
+| `10.0.0.0/8` | プライベート（クラスA） |
+| `172.16.0.0/12` | プライベート（クラスB） |
+| `192.168.0.0/16` | プライベート（クラスC） |
+| `169.254.0.0/16` | リンクローカル |
+| `::1/128` | IPv6ループバック |
+| `fc00::/7` | IPv6ユニークローカル |
+| `fe80::/10` | IPv6リンクローカル |
+
+**DNSリバインディング対策**:
+
+```java
+public class WebhookUrlValidator {
+    
+    /**
+     * DNS解決後のIPアドレスを検証し、プライベートIPなら拒否
+     */
+    public void validateUrl(String webhookUrl) throws WebhookSecurityException {
+        URL url = new URL(webhookUrl);
+        
+        // 1. スキーム検証
+        if (!isProductionMode() && url.getProtocol().equals("http") 
+            && url.getHost().equals("localhost")) {
+            // 開発環境のみ許可
+        } else if (!url.getProtocol().equals("https")) {
+            throw new WebhookSecurityException("HTTPS required");
+        }
+        
+        // 2. Allowlist/Denylist検証
+        if (!isHostAllowed(url.getHost())) {
+            throw new WebhookSecurityException("Host not allowed");
+        }
+        
+        // 3. DNS解決とIP検証
+        InetAddress[] addresses = InetAddress.getAllByName(url.getHost());
+        for (InetAddress addr : addresses) {
+            if (isPrivateOrReserved(addr)) {
+                throw new WebhookSecurityException(
+                    "Private/reserved IP not allowed: " + addr.getHostAddress());
+            }
+        }
+    }
+    
+    private boolean isPrivateOrReserved(InetAddress addr) {
+        return addr.isLoopbackAddress() 
+            || addr.isLinkLocalAddress()
+            || addr.isSiteLocalAddress()
+            || addr.isAnyLocalAddress();
+    }
+}
+```
+
+**設定オプション**:
+
+```properties
+# URL検証設定
+webhook.url.validation.enabled=true
+
+# Allowlist（空の場合は全て許可、設定時は指定ドメインのみ許可）
+webhook.url.allowlist=example.com,*.trusted-domain.com
+
+# Denylist（常に拒否するドメイン）
+webhook.url.denylist=internal.company.com,*.local
+
+# プライベートIP拒否（本番環境ではtrue推奨）
+webhook.url.deny.private.ip=true
+
+# DNS解決タイムアウト（ミリ秒）
+webhook.url.dns.timeout.ms=5000
+```
+
+### 2.5.2 認証情報の暗号化と鍵管理
+
+**暗号化対象**:
+
+| プロパティ | 暗号化 | 説明 |
+|-----------|--------|------|
+| `authCredential` | **必須** | Basic認証パスワード、Bearer Token、API Key |
+| `secret` | **必須** | HMAC署名用シークレット |
+
+**暗号化方式**:
+
+```
+アルゴリズム: AES-256-GCM
+鍵導出: PBKDF2-HMAC-SHA256 (100,000 iterations)
+IV: 12バイト（ランダム生成、暗号文に付加）
+認証タグ: 16バイト
+```
+
+**鍵管理オプション**:
+
+| 方式 | 設定 | 用途 |
+|------|------|------|
+| 環境変数 | `NEMAKI_WEBHOOK_ENCRYPTION_KEY` | シンプルな運用 |
+| 設定ファイル | `webhook.encryption.key.file=/path/to/keyfile` | ファイルベース |
+| KMS連携 | `webhook.encryption.kms.provider=aws` | エンタープライズ |
+
+**設定例**:
+
+```properties
+# 暗号化設定
+webhook.encryption.enabled=true
+
+# 鍵ソース（env/file/kms）
+webhook.encryption.key.source=env
+
+# 環境変数名（key.source=envの場合）
+webhook.encryption.key.env.name=NEMAKI_WEBHOOK_ENCRYPTION_KEY
+
+# ファイルパス（key.source=fileの場合）
+webhook.encryption.key.file=/etc/nemakiware/webhook-key
+
+# KMS設定（key.source=kmsの場合）
+webhook.encryption.kms.provider=aws
+webhook.encryption.kms.key.id=alias/nemakiware-webhook
+```
+
+**鍵ローテーション**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    鍵ローテーションフロー                         │
+├─────────────────────────────────────────────────────────────────┤
+│  1. 新しい鍵を生成/取得                                          │
+│  2. 新鍵を「アクティブ」、旧鍵を「復号のみ」に設定               │
+│  3. 新規暗号化は新鍵を使用                                       │
+│  4. 復号時は鍵IDを確認し、適切な鍵を選択                         │
+│  5. バックグラウンドで旧鍵で暗号化されたデータを新鍵で再暗号化   │
+│  6. 全データ移行完了後、旧鍵を無効化                             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**暗号化データ形式**:
+
+```json
+{
+  "v": 1,                          // 暗号化フォーマットバージョン
+  "kid": "key-2026-01",            // 鍵ID（ローテーション用）
+  "iv": "base64-encoded-iv",       // 初期化ベクトル
+  "ct": "base64-encoded-ciphertext", // 暗号文
+  "tag": "base64-encoded-auth-tag"  // 認証タグ
+}
+```
+
 ---
 
-## 2.6 フォルダ配下イベントの効率的な取得
+## 2.6 冪等性・順序保証・再送ポリシー
+
+### 2.6.1 配信IDの仕様
+
+**deliveryId**は配信の一意識別子であり、以下の仕様に従います：
+
+| 項目 | 仕様 |
+|------|------|
+| 形式 | UUID v4 |
+| 生成タイミング | 初回配信試行時に生成 |
+| 再送時の扱い | **同一deliveryIdを維持**（受信側の冪等処理を容易にするため） |
+| ヘッダー | `X-NemakiWare-Delivery: {deliveryId}` |
+
+**受信側での冪等処理例**:
+
+```python
+# 受信側での重複排除
+def handle_webhook(request):
+    delivery_id = request.headers.get('X-NemakiWare-Delivery')
+    
+    # 既に処理済みなら早期リターン
+    if is_already_processed(delivery_id):
+        return Response(status=200)  # 成功として応答
+    
+    # 処理実行
+    process_event(request.json)
+    mark_as_processed(delivery_id)
+    return Response(status=200)
+```
+
+### 2.6.2 順序保証
+
+**仕様**: **順序保証なし（best-effort）**
+
+| 項目 | 説明 |
+|------|------|
+| 同一オブジェクトのイベント | 順序保証なし（並列配信のため） |
+| 異なるオブジェクトのイベント | 順序保証なし |
+| 理由 | 非同期スレッドプールによる並列配信を優先 |
+
+**受信側での順序処理**:
+
+順序が重要な場合、受信側で`changeToken`を使用して処理順序を制御できます：
+
+```json
+{
+  "object": {
+    "changeToken": "1706365800000"  // タイムスタンプベースのトークン
+  }
+}
+```
+
+**将来の拡張オプション**（Phase 2以降で検討）:
+- 同一オブジェクトの順序保証オプション（`webhook.ordering.per.object=true`）
+- 順序付きキューの導入
+
+### 2.6.3 再送ポリシー
+
+**再送条件**:
+
+| 条件 | 再送 |
+|------|------|
+| HTTP 2xx | 成功、再送なし |
+| HTTP 4xx（400, 401, 403, 404） | 失敗、**再送なし**（クライアントエラー） |
+| HTTP 429（Rate Limit） | 失敗、**再送あり**（Retry-Afterヘッダー考慮） |
+| HTTP 5xx | 失敗、**再送あり** |
+| タイムアウト | 失敗、**再送あり** |
+| 接続エラー | 失敗、**再送あり** |
+
+**再送パラメータ**:
+
+```properties
+# デフォルトリトライ回数
+webhook.retry.default.count=3
+
+# 最大リトライ回数（オブジェクト設定でもこれを超えられない）
+webhook.retry.max.count=10
+
+# 指数バックオフの基底時間（ミリ秒）
+webhook.retry.backoff.base.ms=1000
+
+# 最大バックオフ時間（ミリ秒）
+webhook.retry.backoff.max.ms=300000
+```
+
+**バックオフ計算**:
+
+```
+delay = min(base * 2^attempt, max_delay)
+
+例（base=1000ms, max=300000ms）:
+- 1回目リトライ: 2秒後
+- 2回目リトライ: 4秒後
+- 3回目リトライ: 8秒後
+- ...
+- 9回目リトライ: 300秒後（上限）
+```
+
+### 2.6.4 changeTokenとの関係
+
+`changeToken`はCMIS Change Logのトークンであり、Webhook配信でも以下の用途で使用します：
+
+| 用途 | 説明 |
+|------|------|
+| イベント識別 | ペイロードの`object.changeToken`で変更を一意に識別 |
+| 順序判定 | 受信側で古いイベントを無視する判定に使用可能 |
+| 冪等キー | `deliveryId`と組み合わせて冪等処理に使用可能 |
+
+**注意**: `changeToken`はオブジェクトの変更毎に更新されるため、同一オブジェクトの複数イベントを区別できます。ただし、`deliveryId`が冪等処理の主キーであり、`changeToken`は補助的な役割です。
+
+### 2.6.5 永続キューと再起動時の動作
+
+**Phase 1の制約（スレッドプール方式）**:
+
+| 項目 | 動作 |
+|------|------|
+| 配信中の再起動 | **未完了の配信は失われる** |
+| リトライ中の再起動 | **リトライは再開されない** |
+| 配信ログ | CouchDBに永続化（再起動後も参照可能） |
+
+**制約の明示**:
+
+```
+⚠️ 重要な制約事項（Phase 1）
+
+NemakiWareの再起動時、以下の状態のWebhook配信は失われます：
+- スレッドプールで実行中の配信
+- リトライ待機中の配信
+
+この制約は、スレッドプール方式の簡易実装によるものです。
+ミッションクリティカルな用途では、Phase 2の永続キュー方式を検討してください。
+```
+
+**Phase 2での改善案（将来実装）**:
+
+永続キュー方式への移行により、再起動時の配信ロスを防止：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    WebhookDeliveryQueue (CouchDB)               │
+├─────────────────────────────────────────────────────────────────┤
+│  状態遷移:                                                       │
+│  PENDING → PROCESSING → SUCCESS                                 │
+│              ↓                                                   │
+│           FAILED → RETRY_PENDING → PROCESSING → ...             │
+│              ↓                                                   │
+│           DEAD_LETTER (最大リトライ超過)                         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**永続キューのデータモデル**:
+
+```json
+{
+  "_id": "webhook_queue_uuid",
+  "type": "webhookDeliveryQueue",
+  "status": "PENDING",
+  "deliveryId": "uuid",
+  "repositoryId": "bedroom",
+  "objectId": "doc-uuid",
+  "webhookUrl": "https://example.com/webhook",
+  "eventType": "UPDATED",
+  "payload": { ... },
+  "attemptCount": 0,
+  "maxRetries": 3,
+  "nextRetryAt": null,
+  "createdAt": "2026-01-27T14:30:00.000Z",
+  "lastAttemptAt": null,
+  "lastError": null
+}
+```
+
+**再起動時の動作（Phase 2）**:
+
+1. 起動時に`status=PROCESSING`のエントリを`RETRY_PENDING`に戻す
+2. `status=PENDING`または`RETRY_PENDING`のエントリをワーカーが処理
+3. `nextRetryAt`を過ぎたエントリを優先的に処理
+
+---
+
+## 2.7 フォルダ配下イベントの効率的な取得
 
 ### 2.6.1 課題
 
@@ -934,7 +1278,25 @@ async createFolder(repositoryId: string, parentId: string, name: string,
 
 **データモデルの変更**:
 
-複数Webhook対応のため、`nemaki:webhookConfigs`プロパティを使用：
+複数Webhook対応のため、プロパティ構造を以下のように統一します：
+
+**プロパティ名の統一（重要）**:
+
+| 旧プロパティ名 | 新プロパティ名 | 説明 |
+|---------------|---------------|------|
+| `nemaki:webhookEventConfigs` | **廃止** | イベント別設定（セクション2.4）は`nemaki:webhookConfigs`に統合 |
+| `nemaki:webhookUrl`, `nemaki:webhookEvents`, etc. | **廃止** | 個別プロパティは`nemaki:webhookConfigs`配列に統合 |
+| - | `nemaki:webhookConfigs` | **確定仕様**: 複数Webhook設定を格納するJSON配列 |
+
+**マイグレーション方針**:
+
+既存の個別プロパティ（`nemaki:webhookUrl`等）から`nemaki:webhookConfigs`への移行：
+
+1. 初回起動時に自動マイグレーションを実行
+2. 旧プロパティの値を`nemaki:webhookConfigs`配列の1要素として変換
+3. マイグレーション完了後、旧プロパティは読み取り専用（後方互換性のため保持）
+
+**`nemaki:webhookConfigs`プロパティ仕様**:
 
 ```json
 [
@@ -1560,55 +1922,188 @@ webhook.max.payload.size=1048576
 
 ## 10. 実装フェーズ
 
-### Phase 1: 基盤実装（2.5週間）
+### 10.1 イベントタイプの段階的実装
+
+**Phase 1で実装するイベント（必須イベント）**:
+
+| イベント | 優先度 | 理由 |
+|---------|--------|------|
+| `CREATED` | **必須** | 基本CRUD |
+| `UPDATED` | **必須** | 基本CRUD |
+| `DELETED` | **必須** | 基本CRUD |
+| `SECURITY` | **必須** | ACL変更の監査要件 |
+
+**Phase 2で実装するイベント（拡張イベント）**:
+
+| イベント | 優先度 | 理由 |
+|---------|--------|------|
+| `CONTENT_UPDATED` | 高 | ファイル内容変更の検知 |
+| `CHECKED_OUT` | 中 | バージョン管理ワークフロー |
+| `CHECKED_IN` | 中 | バージョン管理ワークフロー |
+| `VERSION_CREATED` | 中 | バージョン履歴追跡 |
+| `MOVED` | 中 | フォルダ構造変更の追跡 |
+
+**Phase 3で実装するイベント（CHILD_*イベント）**:
+
+| イベント | 優先度 | 理由 |
+|---------|--------|------|
+| `CHILD_CREATED` | 低 | 大量イベント発生リスク |
+| `CHILD_UPDATED` | 低 | 大量イベント発生リスク |
+| `CHILD_DELETED` | 低 | 大量イベント発生リスク |
+
+### 10.2 CHILD_*イベントの負荷制御
+
+CHILD_*イベントは大量発生のリスクがあるため、以下の負荷制御を実装します：
+
+**バッチ処理**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CHILD_*イベントバッチ処理                      │
+├─────────────────────────────────────────────────────────────────┤
+│  1. 短時間（5秒）内の同一フォルダへのCHILD_*イベントを集約       │
+│  2. バッチとして1つのWebhookリクエストにまとめて配信             │
+│  3. ペイロードに変更オブジェクトのリストを含める                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**バッチペイロード例**:
+
+```json
+{
+  "event": {
+    "type": "CHILD_BATCH",
+    "timestamp": "2026-01-27T14:30:00.000Z",
+    "deliveryId": "uuid"
+  },
+  "repository": { ... },
+  "parentFolder": {
+    "id": "folder-uuid",
+    "path": "/Sites/Documents"
+  },
+  "changes": [
+    {"type": "CHILD_CREATED", "objectId": "doc-1", "name": "file1.pdf"},
+    {"type": "CHILD_CREATED", "objectId": "doc-2", "name": "file2.pdf"},
+    {"type": "CHILD_UPDATED", "objectId": "doc-3", "name": "file3.pdf"}
+  ],
+  "batchInfo": {
+    "windowStart": "2026-01-27T14:29:55.000Z",
+    "windowEnd": "2026-01-27T14:30:00.000Z",
+    "eventCount": 3
+  }
+}
+```
+
+**レート制限設定**:
+
+```properties
+# CHILD_*イベントのバッチウィンドウ（秒）
+webhook.child.event.batch.window.seconds=5
+
+# CHILD_*イベントの最大バッチサイズ
+webhook.child.event.batch.max.size=100
+
+# CHILD_*イベントの1分あたり最大配信数（フォルダ毎）
+webhook.child.event.rate.limit.per.minute=60
+
+# CHILD_*イベントのサーキットブレーカー閾値
+webhook.child.event.circuit.breaker.threshold=500
+```
+
+**サーキットブレーカー**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    サーキットブレーカー動作                       │
+├─────────────────────────────────────────────────────────────────┤
+│  状態: CLOSED → OPEN → HALF_OPEN → CLOSED                       │
+│                                                                  │
+│  CLOSED: 通常動作                                                │
+│  OPEN: 閾値超過で配信停止（5分間）、イベントはログのみ記録       │
+│  HALF_OPEN: 1リクエストのみ試行、成功でCLOSED、失敗でOPEN        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 10.3 実装スケジュール
+
+### Phase 1: Webhook基盤（MVP）（3週間）
+
+**目標**: 必須イベント（CREATED/UPDATED/DELETED/SECURITY）のWebhook配信
 
 1. `nemaki:folder`と`nemaki:document`タイプ定義の追加
-2. `WebhookService`インターフェースと基本実装
-3. `WebhookDispatcher`の非同期配信実装
-4. `WebhookDeliveryLog`モデルとDAO
-5. `WebhookConfigCache`（PathTrie）の実装
-6. 監査ログモデルとDAO
-7. **RSSトークンモデルとDAO**
+2. `nemaki:webhookConfigs`プロパティ（統一仕様）
+3. `WebhookService`インターフェースと基本実装
+4. `WebhookDispatcher`の非同期配信実装（スレッドプール方式）
+5. `WebhookDeliveryLog`モデルとDAO
+6. `WebhookConfigCache`（PathTrie）の実装
+7. URL検証・DNSリバインディング対策
+8. 認証情報暗号化
 
-### Phase 2: ContentService統合（1週間）
+### Phase 2: 拡張イベント・監査ログ（2週間）
+
+**目標**: 拡張イベントと監査ログ機能
 
 1. `writeChangeEvent()`へのWebhookトリガー追加
-2. 追加イベントポイント（checkOut, checkIn, move等）の実装
+2. 拡張イベント実装（CONTENT_UPDATED, CHECKED_OUT, CHECKED_IN, VERSION_CREATED, MOVED）
 3. `WebhookConfigCache`を使用した効率的なWebhook設定検索
-4. 監査ログ記録の統合
-5. **フォルダ/ドキュメント変更取得メソッド追加（RSS用）**
+4. 監査ログモデルとDAO
+5. CMIS Change Log統合
 
-### Phase 3: REST API（2週間）
+### Phase 3: REST API・管理機能（2週間）
+
+**目標**: 管理APIと基本UI
 
 1. 登録済みWebhook一覧取得API
 2. 配信ログ取得API
 3. 手動再送API
 4. Webhookテスト送信API
 5. 監査ログ取得API
-6. **RSSフィードAPI（フォルダ/ドキュメント/リポジトリ）**
-7. **RSSトークン管理API**
+6. 管理画面: 登録済みWebhook一覧
+7. 管理画面: 監査ログビューア
 
-### Phase 4: UI実装（3.5週間）
+### Phase 4: CHILD_*イベント・負荷制御（2週間）
+
+**目標**: CHILD_*イベントの安全な実装
+
+1. CHILD_CREATED/CHILD_UPDATED/CHILD_DELETEDイベント実装
+2. バッチ処理機構
+3. レート制限
+4. サーキットブレーカー
+5. 負荷テスト・チューニング
+
+### Phase 5: RSSフィード機能（2週間）
+
+**目標**: RSSフィード機能（Webhookとは独立してリリース可能）
+
+1. RSSトークンモデルとDAO
+2. RSSフィードAPI（フォルダ/ドキュメント/リポジトリ）
+3. RSSトークン管理API
+4. RSSフィード購読UI（フォルダ/ドキュメント詳細画面）
+5. RSSトークン管理UI
+
+### Phase 6: UI・テスト・ドキュメント（2週間）
+
+**目標**: 完成度向上
 
 1. デフォルトタイプ選択の変更
 2. Webhook設定UIコンポーネント（複数Webhook対応）
 3. 配信ログビューア
 4. テスト送信機能
-5. **管理画面: 登録済みWebhook一覧**
-6. **管理画面: 監査ログビューア**
-7. **RSSフィード購読UI（フォルダ/ドキュメント詳細画面）**
-8. **RSSトークン管理UI**
+5. ユニットテスト・統合テスト・E2Eテスト
+6. ユーザードキュメント・管理者ドキュメント
+7. RSSフィード利用ガイド
 
-### Phase 5: テスト・ドキュメント（2週間）
+**合計: 約13週間**
 
-1. ユニットテスト
-2. 統合テスト
-3. E2Eテスト（管理画面・RSSフィード含む）
-4. ユーザードキュメント
-5. 管理者ドキュメント
-6. **RSSフィード利用ガイド**
+### 10.4 リリース戦略
 
-**合計: 約11週間**
+| リリース | 含まれる機能 | 目安時期 |
+|---------|-------------|---------|
+| **v1.0-alpha** | Phase 1完了（必須イベントのみ） | 3週間後 |
+| **v1.0-beta** | Phase 1-3完了（CHILD_*以外） | 7週間後 |
+| **v1.0** | Phase 1-4完了（全Webhook機能） | 9週間後 |
+| **v1.1** | Phase 5完了（RSSフィード追加） | 11週間後 |
+| **v1.2** | Phase 6完了（UI改善・ドキュメント） | 13週間後 |
 
 ---
 
@@ -1656,11 +2151,23 @@ webhook.max.payload.size=1048576
 
 ## 13. 質問・確認事項
 
+### 13.1 レビュー指摘への回答
+
+| 質問 | 回答 |
+|------|------|
+| **再送時のdeliveryIdは維持？新規？** | **維持**。受信側の冪等処理を容易にするため、再送時も同一deliveryIdを使用します（セクション2.6.1参照）。 |
+| **順序保証の必要性は？** | **順序保証なし（best-effort）**。並列配信を優先し、順序が必要な場合は受信側で`changeToken`を使用して制御します（セクション2.6.2参照）。将来的に同一オブジェクトの順序保証オプションを検討。 |
+| **Webhook設定プロパティはどちらが確定仕様か？** | **`nemaki:webhookConfigs`が確定仕様**。`nemaki:webhookEventConfigs`は廃止し、複数Webhook設定を格納するJSON配列として統一します（セクション6.5参照）。 |
+
+### 13.2 追加の確認事項
+
 1. **タイプ名の確認**: `nemaki:folder`/`nemaki:document`で問題ないか？
 2. **イベントタイプの追加**: 他に必要なイベントタイプはあるか？
 3. **ペイロード形式**: 追加で含めるべき情報はあるか？
 4. **セキュリティ要件**: 追加のセキュリティ要件はあるか？
 5. **優先度**: Phase分けの優先度調整は必要か？
+6. **永続キュー**: Phase 1ではスレッドプール方式（再起動時に未送信イベント消失）で問題ないか？永続キューはPhase 2以降で検討。
+7. **RSSフィード**: Webhook機能とは独立してPhase 5でリリースする方針で問題ないか？
 
 ---
 
