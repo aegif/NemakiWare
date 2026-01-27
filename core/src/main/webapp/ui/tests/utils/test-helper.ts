@@ -451,7 +451,9 @@ export class TestHelper {
     if (await errorBoundaryCheck.count() > 0) {
       console.log('TestHelper: Error boundary still visible after closeAllOverlays - forcing page reload');
       await this.page.reload({ waitUntil: 'networkidle' });
-      await this.page.waitForTimeout(3000);
+      // Wait for UI to be ready after reload (not just a timeout)
+      await this.waitForAntdLoad();
+      await this.page.waitForTimeout(1000); // Additional stabilization time
     }
 
     // Click upload button to open modal
@@ -849,10 +851,12 @@ export class TestHelper {
     // Additional wait for dynamic content to render
     await this.page.waitForTimeout(1000);
 
-    // Check upload button - multiple selector patterns
+    // Check upload button - multiple selector patterns (Japanese + English)
     const uploadButtonSelectors = [
       'button:has-text("ファイルアップロード")',
       'button:has-text("アップロード")',
+      'button:has-text("Upload")',
+      'button:has-text("File Upload")',
       'button:has([data-icon="upload"])',
     ];
 
@@ -869,10 +873,12 @@ export class TestHelper {
       }
     }
 
-    // Check folder creation button - multiple selector patterns
+    // Check folder creation button - multiple selector patterns (Japanese + English)
     const folderButtonSelectors = [
       'button:has-text("フォルダ作成")',
       'button:has-text("新規フォルダ")',
+      'button:has-text("Create Folder")',
+      'button:has-text("New Folder")',
       'button:has([data-icon="folder-add"])',
       'button:has([data-icon="plus"])',
     ];
@@ -890,10 +896,11 @@ export class TestHelper {
       }
     }
 
-    // Check search input
+    // Check search input (Japanese + English)
     const searchSelectors = [
       'input.search-input',
       'input[placeholder*="検索"]',
+      'input[placeholder*="Search"]',
       '.ant-input-search input',
     ];
 
@@ -915,13 +922,15 @@ export class TestHelper {
   }
 
   /**
-   * Get upload button locator with fallback selectors
+   * Get upload button locator with fallback selectors (Japanese + English)
    * Use this instead of hardcoded selectors in tests
    */
   async getUploadButton(): Promise<any | null> {
     const selectors = [
       'button:has-text("ファイルアップロード")',
       'button:has-text("アップロード")',
+      'button:has-text("Upload")',
+      'button:has-text("File Upload")',
       'button:has([data-icon="upload"])',
     ];
 
@@ -935,12 +944,14 @@ export class TestHelper {
   }
 
   /**
-   * Get folder creation button locator with fallback selectors
+   * Get folder creation button locator with fallback selectors (Japanese + English)
    */
   async getFolderButton(): Promise<any | null> {
     const selectors = [
       'button:has-text("フォルダ作成")',
       'button:has-text("新規フォルダ")',
+      'button:has-text("Create Folder")',
+      'button:has-text("New Folder")',
       'button:has([data-icon="folder-add"])',
     ];
 
@@ -1186,38 +1197,24 @@ export class TestHelper {
       } catch (e) {
         console.log('TestHelper: Error boundary reload failed, attempting page reload');
         await this.page.reload({ waitUntil: 'networkidle' });
-        await this.page.waitForTimeout(2000);
+        // Wait for UI to be ready after reload (not just a timeout)
+        await this.waitForAntdLoad();
         closedCount++;
       }
     }
 
-    // Step 1: FIRST remove blocking overlay elements via JavaScript (critical for unblocking)
-    const initialRemoved = await this.page.evaluate(() => {
-      let removed = 0;
+    // ===== UI Operations First (React-safe approach) =====
+    // Try UI interactions before resorting to JavaScript DOM manipulation
+    // This preserves React's internal state consistency
 
-      // Remove all modal masks first (they block pointer events)
-      document.querySelectorAll('.ant-modal-mask').forEach((el) => {
-        if (el.parentNode) {
-          el.parentNode.removeChild(el);
-          removed++;
-        }
-      });
-
-      // Reset body overflow style
-      document.body.style.overflow = '';
-      document.body.style.paddingRight = '';
-
-      return removed;
-    });
-    closedCount += initialRemoved;
-
-    // Step 2: Press Escape multiple times to close any modal/drawer/popover
+    // Step 1: Press Escape multiple times to close any modal/drawer/popover
+    // This is the safest way to close overlays as it triggers proper React event handlers
     for (let i = 0; i < 3; i++) {
       await this.page.keyboard.press('Escape');
       await this.page.waitForTimeout(200);
     }
 
-    // Step 3: Try clicking modal close buttons with force option
+    // Step 2: Try clicking modal close buttons
     const modalCloseButtons = this.page.locator('.ant-modal:not(.ant-modal-hidden) .ant-modal-close');
     const modalCloseCount = await modalCloseButtons.count();
     for (let i = 0; i < modalCloseCount; i++) {
@@ -1230,7 +1227,7 @@ export class TestHelper {
       }
     }
 
-    // Step 4: Try clicking cancel buttons in modals with force option
+    // Step 3: Try clicking cancel buttons in modals
     const cancelButtons = this.page.locator('.ant-modal:not(.ant-modal-hidden) button').filter({ hasText: /キャンセル|Cancel|閉じる|Close/i });
     const cancelCount = await cancelButtons.count();
     for (let i = 0; i < cancelCount; i++) {
@@ -1243,7 +1240,7 @@ export class TestHelper {
       }
     }
 
-    // Step 5: Close drawers
+    // Step 4: Close drawers via UI
     const drawerCloseButtons = this.page.locator('.ant-drawer:not(.ant-drawer-hidden) .ant-drawer-close');
     const drawerCloseCount = await drawerCloseButtons.count();
     for (let i = 0; i < drawerCloseCount; i++) {
@@ -1256,55 +1253,83 @@ export class TestHelper {
       }
     }
 
-    // Step 6: Final aggressive JavaScript cleanup
-    const finalRemoved = await this.page.evaluate(() => {
-      let removed = 0;
-
-      // Remove ALL modal-related elements
-      document.querySelectorAll('.ant-modal-wrap, .ant-modal-mask, .ant-modal-root').forEach((el) => {
-        if (el.parentNode) {
-          el.parentNode.removeChild(el);
-          removed++;
-        }
-      });
-
-      // Remove drawer elements
-      document.querySelectorAll('.ant-drawer, .ant-drawer-mask').forEach((el) => {
-        if (el.parentNode) {
-          el.parentNode.removeChild(el);
-          removed++;
-        }
-      });
-
-      // Remove popconfirms and popovers
-      document.querySelectorAll('.ant-popconfirm, .ant-popover').forEach((el) => {
-        if (el.parentNode) {
-          el.parentNode.removeChild(el);
-          removed++;
-        }
-      });
-
-      // Reset body styles completely
-      document.body.style.overflow = '';
-      document.body.style.paddingRight = '';
-      document.body.classList.remove('ant-scrolling-effect');
-
-      return removed;
-    });
-    closedCount += finalRemoved;
-
-    // Step 7: Wait for DOM to stabilize
+    // Step 5: Wait for any animations to complete after UI operations
     await this.page.waitForTimeout(500);
 
-    // Step 8: Verify no blocking overlays remain
-    const remainingOverlays = await this.page.locator('.ant-modal-wrap, .ant-modal-mask, .ant-drawer-mask').count();
-    if (remainingOverlays > 0) {
-      console.log(`TestHelper: WARNING - ${remainingOverlays} overlay elements still present after cleanup`);
-      // Final attempt - force remove via JavaScript
-      await this.page.evaluate(() => {
-        document.querySelectorAll('.ant-modal-wrap, .ant-modal-mask, .ant-drawer-mask').forEach((el) => {
-          el.remove();
+    // ===== JavaScript Cleanup (Last Resort) =====
+    // Only use DOM manipulation if UI operations failed to close overlays
+    // This risks React state inconsistency but is necessary for stuck overlays
+
+    // Step 6: Check if overlays still remain
+    const remainingModalMasks = await this.page.locator('.ant-modal-mask').count();
+    const remainingModalWraps = await this.page.locator('.ant-modal-wrap').count();
+    const remainingDrawerMasks = await this.page.locator('.ant-drawer-mask').count();
+
+    if (remainingModalMasks > 0 || remainingModalWraps > 0 || remainingDrawerMasks > 0) {
+      console.log(`TestHelper: UI operations did not fully close overlays (masks: ${remainingModalMasks}, wraps: ${remainingModalWraps}, drawers: ${remainingDrawerMasks}). Using JavaScript cleanup as fallback.`);
+
+      // Step 7: JavaScript cleanup for stuck overlays
+      const jsRemoved = await this.page.evaluate(() => {
+        let removed = 0;
+
+        // Remove modal masks (they block pointer events)
+        document.querySelectorAll('.ant-modal-mask').forEach((el) => {
+          if (el.parentNode) {
+            el.parentNode.removeChild(el);
+            removed++;
+          }
         });
+
+        // Remove modal wraps and roots
+        document.querySelectorAll('.ant-modal-wrap, .ant-modal-root').forEach((el) => {
+          if (el.parentNode) {
+            el.parentNode.removeChild(el);
+            removed++;
+          }
+        });
+
+        // Remove drawer elements
+        document.querySelectorAll('.ant-drawer, .ant-drawer-mask').forEach((el) => {
+          if (el.parentNode) {
+            el.parentNode.removeChild(el);
+            removed++;
+          }
+        });
+
+        // Remove popconfirms and popovers
+        document.querySelectorAll('.ant-popconfirm, .ant-popover').forEach((el) => {
+          if (el.parentNode) {
+            el.parentNode.removeChild(el);
+            removed++;
+          }
+        });
+
+        // Reset body styles
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+        document.body.classList.remove('ant-scrolling-effect');
+
+        return removed;
+      });
+      closedCount += jsRemoved;
+
+      // Step 8: Final verification
+      const stillRemaining = await this.page.locator('.ant-modal-wrap, .ant-modal-mask, .ant-drawer-mask').count();
+      if (stillRemaining > 0) {
+        console.log(`TestHelper: WARNING - ${stillRemaining} overlay elements still present after JavaScript cleanup`);
+        // Absolute last resort - force remove
+        await this.page.evaluate(() => {
+          document.querySelectorAll('.ant-modal-wrap, .ant-modal-mask, .ant-drawer-mask').forEach((el) => {
+            el.remove();
+          });
+        });
+      }
+    } else {
+      // UI operations were sufficient - just reset body styles as a precaution
+      await this.page.evaluate(() => {
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+        document.body.classList.remove('ant-scrolling-effect');
       });
     }
 

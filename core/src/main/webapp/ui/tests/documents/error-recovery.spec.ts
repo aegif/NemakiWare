@@ -45,17 +45,8 @@ test.describe('Error Recovery Tests', () => {
     await page.waitForTimeout(2000);  // Wait for page stabilization
     await testHelper.waitForAntdLoad();
 
-    // Mobile browser handling
-    const viewportSize = page.viewportSize();
-    const isMobileChrome = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
-
-    if (isMobileChrome) {
-      const menuToggle = page.locator('button[aria-label="menu-fold"], button[aria-label="menu-unfold"]');
-      if (await menuToggle.count() > 0) {
-        await menuToggle.first().click({ timeout: 3000 });
-        await page.waitForTimeout(500);
-      }
-    }
+    // Use TestHelper's mobile sidebar handling
+    await testHelper.closeMobileSidebar(browserName);
   });
 
   test.afterEach(async ({ page }) => {
@@ -99,25 +90,19 @@ test.describe('Error Recovery Tests', () => {
   test('should display error message on network request failure', async ({ page, browserName }) => {
     const uuid = generateTestId();
     const filename = `test-error-${uuid}-network.txt`;
-    const testHelper = new TestHelper(page);
 
-    // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    // Use TestHelper's mobile detection
+    const isMobile = testHelper.isMobile(browserName);
 
-    // Use testHelper.uploadDocument which is known to work
-    // First, let's prepare the file upload
-    const uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
-    if (await uploadButton.count() === 0) {
-      const uploadButton2 = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
-      if (await uploadButton2.count() === 0) {
-        test.skip('Upload button not visible');
-        return;
-      }
+    // Use TestHelper's getUploadButton for consistent button detection
+    const uploadButton = await testHelper.getUploadButton();
+    if (!uploadButton) {
+      test.skip('Upload button not visible');
+      return;
     }
 
     // Click upload button and wait for modal
-    await page.locator('button').filter({ hasText: /アップロード|ファイルアップロード/i }).first().click(isMobile ? { force: true } : {});
+    await uploadButton.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:has-text("ファイルアップロード")', { timeout: 10000 });
     await page.waitForTimeout(500);
 
@@ -140,7 +125,7 @@ test.describe('Error Recovery Tests', () => {
       }
     }
 
-    // NOW set up route interception to fail the createDocument request
+    // Set up route interception with try/finally to ensure cleanup
     await page.route('**/core/browser/bedroom', async route => {
       const postData = route.request().postData() || '';
       if (postData.includes('cmisaction=createDocument')) {
@@ -150,21 +135,23 @@ test.describe('Error Recovery Tests', () => {
       }
     });
 
-    // Submit the form
-    const submitButton = page.locator('.ant-modal button[type="submit"]').first();
-    await submitButton.waitFor({ state: 'visible', timeout: 5000 });
-    await submitButton.click({ force: true });
+    try {
+      // Submit the form
+      const submitButton = page.locator('.ant-modal button[type="submit"]').first();
+      await submitButton.waitFor({ state: 'visible', timeout: 5000 });
+      await submitButton.click({ force: true });
 
-    // Verify error message appears
-    const errorMessage = page.locator('.ant-message-notice, .ant-notification-notice, .ant-alert-error, [role="alert"]');
-    await expect(errorMessage.first()).toBeVisible({ timeout: 15000 });
+      // Verify error message appears
+      const errorMessage = page.locator('.ant-message-notice, .ant-notification-notice, .ant-alert-error, [role="alert"]');
+      await expect(errorMessage.first()).toBeVisible({ timeout: 15000 });
 
-    // Verify error message contains relevant information
-    const errorText = await errorMessage.first().textContent();
-    expect(errorText).toBeTruthy();
-
-    // Cleanup
-    await page.unroute('**/core/browser/bedroom');
+      // Verify error message contains relevant information
+      const errorText = await errorMessage.first().textContent();
+      expect(errorText).toBeTruthy();
+    } finally {
+      // Always cleanup route
+      await page.unroute('**/core/browser/bedroom');
+    }
   });
 
   // Skip: Upload modal tests have timing issues with route interception
@@ -251,9 +238,8 @@ test.describe('Error Recovery Tests', () => {
   });
 
   test('should handle 404 Not Found errors with clear messaging', async ({ page, browserName }) => {
-    // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    // Use TestHelper's mobile detection
+    const isMobile = testHelper.isMobile(browserName);
 
     // Intercept requests to simulate 404 error
     await page.route('**/core/browser/bedroom/**', async route => {
@@ -268,25 +254,27 @@ test.describe('Error Recovery Tests', () => {
       }
     });
 
-    // Try to navigate to a folder (should fail with 404)
-    const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'Sites' });
-    if (await folderRow.count() > 0) {
-      const folderLink = folderRow.locator('a, td').first();
-      await folderLink.click(isMobile ? { force: true } : {});
+    try {
+      // Try to navigate to a folder (should fail with 404)
+      const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: 'Sites' });
+      if (await folderRow.count() > 0) {
+        const folderLink = folderRow.locator('a, td').first();
+        await folderLink.click(isMobile ? { force: true } : {});
 
-      // Verify error notification appears (AntD v5 compatible selectors)
-      const errorNotification = page.locator('.ant-message-notice, .ant-notification-notice, .ant-alert-error, [role="alert"]');
-      await expect(errorNotification.first()).toBeVisible({ timeout: 10000 });
+        // Verify error notification appears (AntD v5 compatible selectors)
+        const errorNotification = page.locator('.ant-message-notice, .ant-notification-notice, .ant-alert-error, [role="alert"]');
+        await expect(errorNotification.first()).toBeVisible({ timeout: 10000 });
 
-      // Verify error message is user-friendly
-      const errorText = await errorNotification.first().textContent();
-      expect(errorText?.toLowerCase()).toMatch(/not found|見つかりません|存在しません/);
-    } else {
-      test.skip('No folders available for testing');
+        // Verify error message is user-friendly
+        const errorText = await errorNotification.first().textContent();
+        expect(errorText?.toLowerCase()).toMatch(/not found|見つかりません|存在しません/);
+      } else {
+        test.skip('No folders available for testing');
+      }
+    } finally {
+      // Always cleanup route
+      await page.unroute('**/core/browser/bedroom/**');
     }
-
-    // Unroute
-    await page.unroute('**/core/browser/bedroom/**');
   });
 
   // Skip: Upload modal tests have timing issues with route interception
@@ -422,9 +410,8 @@ test.describe('Error Recovery Tests', () => {
   });
 
   test('should maintain session state after temporary network loss', async ({ page, browserName }) => {
-    // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    // Use TestHelper's mobile detection
+    const isMobile = testHelper.isMobile(browserName);
 
     // Verify initial authenticated state
     const documentsMenu = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
@@ -440,49 +427,47 @@ test.describe('Error Recovery Tests', () => {
       }
     });
 
-    // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
-    let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
-    if (await uploadButton.count() === 0) {
-      uploadButton = page.locator('button').filter({ hasText: 'ファイルアップロード' }).first();
-    }
+    try {
+      // Use TestHelper's getUploadButton for consistent button detection
+      const uploadButton = await testHelper.getUploadButton();
 
-    if (await uploadButton.count() > 0) {
-      await uploadButton.click(isMobile ? { force: true } : {});
+      if (uploadButton) {
+        await uploadButton.click(isMobile ? { force: true } : {});
 
-      // Error message may or may not appear depending on when network check happens
-      // (This test is primarily about session persistence, not error display)
-      const errorMessage = page.locator('.ant-message-notice, .ant-notification-notice, [role="alert"]');
-      try {
-        await expect(errorMessage.first()).toBeVisible({ timeout: 5000 });
-      } catch {
-        // No error message shown is acceptable when network is completely blocked
-        console.log('No error message shown during network loss (acceptable behavior)');
+        // Error message may or may not appear depending on when network check happens
+        // (This test is primarily about session persistence, not error display)
+        const errorMessage = page.locator('.ant-message-notice, .ant-notification-notice, [role="alert"]');
+        try {
+          await expect(errorMessage.first()).toBeVisible({ timeout: 5000 });
+        } catch {
+          // No error message shown is acceptable when network is completely blocked
+          console.log('No error message shown during network loss (acceptable behavior)');
+        }
       }
+
+      // Restore network after 5 seconds
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      blockingActive = false;
+
+      // Reload page to simulate network restoration
+      await page.reload({ waitUntil: 'networkidle' });
+      await testHelper.waitForAntdLoad();
+
+      // Verify session is still valid (not redirected to login)
+      const loginForm = page.locator('form').filter({ has: page.locator('input[type="password"]') });
+      expect(await loginForm.count()).toBe(0);
+
+      // Verify can still access documents
+      await expect(documentsMenu).toBeVisible({ timeout: 10000 });
+    } finally {
+      // Always cleanup route
+      await page.unroute('**/core/**');
     }
-
-    // Restore network after 5 seconds
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    blockingActive = false;
-
-    // Reload page to simulate network restoration
-    await page.reload({ waitUntil: 'networkidle' });
-    await testHelper.waitForAntdLoad();
-
-    // Verify session is still valid (not redirected to login)
-    const loginForm = page.locator('form').filter({ has: page.locator('input[type="password"]') });
-    expect(await loginForm.count()).toBe(0);
-
-    // Verify can still access documents
-    await expect(documentsMenu).toBeVisible({ timeout: 10000 });
-
-    // Unroute
-    await page.unroute('**/core/**');
   });
 
   test('should show meaningful error for permission denied (403)', async ({ page, browserName }) => {
-    // Mobile browser detection
-    const viewportSize = page.viewportSize();
-    const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
+    // Use TestHelper's mobile detection
+    const isMobile = testHelper.isMobile(browserName);
 
     // Simulate 403 Forbidden error
     await page.route('**/core/browser/bedroom?cmisaction=delete**', async route => {
@@ -493,43 +478,45 @@ test.describe('Error Recovery Tests', () => {
       });
     });
 
-    // Try to delete a document (should fail with 403)
-    const documentRow = page.locator('.ant-table-tbody tr').first();
+    try {
+      // Try to delete a document (should fail with 403)
+      const documentRow = page.locator('.ant-table-tbody tr').first();
 
-    if (await documentRow.count() > 0) {
-      // Look for delete button
-      const deleteButton = documentRow.locator('button, a').filter({
-        or: [
-          { hasText: '削除' },
-          { hasText: 'Delete' }
-        ]
-      });
+      if (await documentRow.count() > 0) {
+        // Look for delete button
+        const deleteButton = documentRow.locator('button, a').filter({
+          or: [
+            { hasText: '削除' },
+            { hasText: 'Delete' }
+          ]
+        });
 
-      if (await deleteButton.count() > 0) {
-        await deleteButton.first().click(isMobile ? { force: true } : {});
+        if (await deleteButton.count() > 0) {
+          await deleteButton.first().click(isMobile ? { force: true } : {});
 
-        // Confirm deletion
-        const confirmButton = page.locator('.ant-modal button.ant-btn-primary, .ant-popconfirm button.ant-btn-primary');
-        if (await confirmButton.count() > 0) {
-          await confirmButton.first().click();
+          // Confirm deletion
+          const confirmButton = page.locator('.ant-modal button.ant-btn-primary, .ant-popconfirm button.ant-btn-primary');
+          if (await confirmButton.count() > 0) {
+            await confirmButton.first().click();
 
-          // Verify permission denied error message (AntD v5 compatible selectors)
-          const errorMessage = page.locator('.ant-message-notice, .ant-notification-notice, [role="alert"]');
-          await expect(errorMessage.first()).toBeVisible({ timeout: 10000 });
+            // Verify permission denied error message (AntD v5 compatible selectors)
+            const errorMessage = page.locator('.ant-message-notice, .ant-notification-notice, [role="alert"]');
+            await expect(errorMessage.first()).toBeVisible({ timeout: 10000 });
 
-          const errorText = await errorMessage.first().textContent();
-          expect(errorText?.toLowerCase()).toMatch(/permission|権限|forbidden|許可されていません/);
+            const errorText = await errorMessage.first().textContent();
+            expect(errorText?.toLowerCase()).toMatch(/permission|権限|forbidden|許可されていません/);
+          }
+        } else {
+          // UPDATED (2025-12-26): Delete IS implemented in DocumentList.tsx lines 550-595
+          test.skip('Delete button not visible - IS implemented in DocumentList.tsx lines 550-595');
         }
       } else {
-        // UPDATED (2025-12-26): Delete IS implemented in DocumentList.tsx lines 550-595
-        test.skip('Delete button not visible - IS implemented in DocumentList.tsx lines 550-595');
+        test.skip('No documents available for testing');
       }
-    } else {
-      test.skip('No documents available for testing');
+    } finally {
+      // Always cleanup route
+      await page.unroute('**/core/browser/bedroom?cmisaction=delete**');
     }
-
-    // Unroute
-    await page.unroute('**/core/browser/bedroom?cmisaction=delete**');
   });
 
   // Skip: Upload modal tests have timing issues with route interception
