@@ -981,7 +981,8 @@ export class TestHelper {
       const apiHelper = new ApiHelper(this.page);
 
       // Query for document by name
-      const query = `SELECT cmis:objectId FROM cmis:document WHERE cmis:name = '${fileName}'`;
+      const safeName = fileName.replace(/'/g, "''");
+      const query = `SELECT cmis:objectId FROM cmis:document WHERE cmis:name = '${safeName}'`;
       const docIds = await apiHelper.queryObjects(query);
 
       if (docIds.length === 0) {
@@ -1350,7 +1351,8 @@ export class TestHelper {
       const apiHelper = new ApiHelper(this.page);
 
       // Query for folder by name
-      const query = `SELECT cmis:objectId FROM cmis:folder WHERE cmis:name = '${folderName}'`;
+      const safeName = folderName.replace(/'/g, "''");
+      const query = `SELECT cmis:objectId FROM cmis:folder WHERE cmis:name = '${safeName}'`;
       const folderIds = await apiHelper.queryObjects(query);
 
       if (folderIds.length === 0) {

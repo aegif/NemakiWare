@@ -206,6 +206,8 @@ export class ApiHelper {
       );
 
       if (!response.ok()) {
+        const errorBody = (await response.text().catch(() => '')).slice(0, 200);
+        console.log(`ApiHelper: Query failed: ${response.status()} ${errorBody}`);
         return [];
       }
 
@@ -224,12 +226,14 @@ export class ApiHelper {
    * Clean up test folders matching a pattern
    * Useful for afterEach/afterAll cleanup
    */
-  async cleanupTestFolders(namePattern: string, maxDeletions: number = 10): Promise<number> {
-    const query = `SELECT cmis:objectId FROM cmis:folder WHERE cmis:name LIKE '${namePattern}'`;
+  async cleanupTestFolders(namePattern: string, maxDeletions: number = 0): Promise<number> {
+    const safeName = namePattern.replace(/'/g, "''");
+    const query = `SELECT cmis:objectId FROM cmis:folder WHERE cmis:name LIKE '${safeName}'`;
     const folderIds = await this.queryObjects(query);
-    
+    const targets = maxDeletions > 0 ? folderIds.slice(0, maxDeletions) : folderIds;
+
     let deletedCount = 0;
-    for (const folderId of folderIds.slice(0, maxDeletions)) {
+    for (const folderId of targets) {
       if (await this.deleteFolderTree(folderId)) {
         deletedCount++;
       }
@@ -241,12 +245,14 @@ export class ApiHelper {
   /**
    * Clean up test documents matching a pattern
    */
-  async cleanupTestDocuments(namePattern: string, maxDeletions: number = 10): Promise<number> {
-    const query = `SELECT cmis:objectId FROM cmis:document WHERE cmis:name LIKE '${namePattern}'`;
+  async cleanupTestDocuments(namePattern: string, maxDeletions: number = 0): Promise<number> {
+    const safeName = namePattern.replace(/'/g, "''");
+    const query = `SELECT cmis:objectId FROM cmis:document WHERE cmis:name LIKE '${safeName}'`;
     const docIds = await this.queryObjects(query);
-    
+    const targets = maxDeletions > 0 ? docIds.slice(0, maxDeletions) : docIds;
+
     let deletedCount = 0;
-    for (const docId of docIds.slice(0, maxDeletions)) {
+    for (const docId of targets) {
       if (await this.deleteObject(docId)) {
         deletedCount++;
       }
