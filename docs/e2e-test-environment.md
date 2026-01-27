@@ -60,23 +60,10 @@ docker compose -f docker-compose-simple.yml build core
 # Step 4: Stop containers and wipe all volumes (IMPORTANT!)
 docker compose -f docker-compose-simple.yml down -v
 
-# Step 5: Start containers in correct order
-# Start CouchDB first
-docker compose -f docker-compose-simple.yml up -d couchdb
+# Step 5: Start all containers (healthcheck により起動順序は自動制御)
+docker compose -f docker-compose-simple.yml up -d
 
-# Wait for CouchDB to be ready
-timeout 60 bash -c 'until docker exec docker-couchdb-1 curl -s http://localhost:5984/_up | grep -q "ok"; do echo "Waiting for CouchDB..."; sleep 2; done && echo "CouchDB is ready!"'
-
-# Start Solr
-docker compose -f docker-compose-simple.yml up -d solr
-
-# Wait for Solr to be ready
-timeout 60 bash -c 'until docker exec docker-solr-1 curl -s http://localhost:8983/solr/admin/cores?action=STATUS | grep -q "status"; do echo "Waiting for Solr..."; sleep 2; done && echo "Solr is ready!"'
-
-# Start Core
-docker compose -f docker-compose-simple.yml up -d core
-
-# Wait for Core to be ready
+# Wait for Core to be ready (healthcheck 完了後にAPIが応答する)
 timeout 120 bash -c 'until curl -s http://localhost:8080/core/browser/bedroom/root | grep -q "cmis:objectId"; do echo "Waiting for Core..."; sleep 3; done && echo "Core is ready!"'
 ```
 
@@ -131,7 +118,9 @@ This bypasses Playwright's host requirements validation which incorrectly report
 ## Docker Compose Healthchecks (導入済み)
 
 `docker-compose-simple.yml` には既に healthcheck と `depends_on` + `condition: service_healthy` が定義済みです。
-これにより、コンテナは CouchDB → Solr → Core の順に起動し、各サービスの準備完了を待機します。
+各サービスが HTTP エンドポイントで応答するまで起動完了とみなさないため、
+「CouchDB が起動する前に Core が接続を試みて失敗する」といった起動順序の問題を防止します。
+起動順序は CouchDB → Solr → Core で自動制御されます。
 
 ```bash
 docker compose -f docker-compose-simple.yml up -d
