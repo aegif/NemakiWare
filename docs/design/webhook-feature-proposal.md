@@ -50,7 +50,8 @@ Webhook機能を提供するセカンダリタイプ。任意の`cmis:folder`ま
 | プロパティID | 表示名 | 型 | カーディナリティ | 必須 | 説明 |
 |-------------|--------|-----|-----------------|------|------|
 | nemaki:webhookConfigs | Webhook設定 | String | single | No | 複数Webhook設定を格納するJSON配列（詳細は2.4参照） |
-| nemaki:webhookMaxDepth | 最大監視深度 | Integer | single | No | 子孫を監視する最大階層数（デフォルト: アプリ設定値、フォルダのみ有効） |
+
+**注意**: `maxDepth`（子孫監視の最大深度）は各Webhook設定内（`webhookConfigs[].maxDepth`）で個別に指定します。未指定の場合はアプリケーション設定値（`webhook.default.max.depth`）が適用されます。オブジェクトレベルの`nemaki:webhookMaxDepth`プロパティは廃止し、設定の重複と優先順位の混乱を防ぎます。
 
 **セカンダリタイプ採用の理由**:
 
@@ -580,11 +581,11 @@ NemakiWareの再起動時、以下の状態のWebhook配信は失われます：
 
 ## 2.7 フォルダ配下イベントの効率的な取得
 
-### 2.6.1 課題
+### 2.7.1 課題
 
-フォルダに`nemaki:webhookIncludeChildren=true`を設定した場合、子孫要素のイベントも通知する必要があります。単純に「親を遡る」方式では、深い階層でWebhook設定が見つかるまでのコストが発生します。
+フォルダに`webhookConfigs[].includeChildren=true`を設定した場合、子孫要素のイベントも通知する必要があります。単純に「親を遡る」方式では、深い階層でWebhook設定が見つかるまでのコストが発生します。
 
-### 2.6.2 推奨アプローチ: Webhook設定フォルダのキャッシュ
+### 2.7.2 推奨アプローチ: Webhook設定フォルダのキャッシュ
 
 **アーキテクチャ**:
 
@@ -621,7 +622,7 @@ NemakiWareの再起動時、以下の状態のWebhook配信は失われます：
 | Webhook設定変更時 | O(1) | O(1) キャッシュ更新 |
 | メモリ使用量 | なし | O(Webhook設定数) |
 
-### 2.6.3 深度制限の設計
+### 2.7.3 深度制限の設計
 
 **アプリケーション全体設定** (`nemakiware.properties`):
 
@@ -633,11 +634,11 @@ webhook.default.max.depth=10
 webhook.absolute.max.depth=50
 ```
 
-**フォルダ個別設定** (`nemaki:webhookMaxDepth`):
+**Webhook設定内の深度指定** (`webhookConfigs[].maxDepth`):
 
-- 未設定: アプリケーションのデフォルト値を使用
-- 0: 直接の子要素のみ（孫以下は対象外）
-- N: N階層下まで監視
+- `null`または未設定: アプリケーションのデフォルト値を使用
+- `0`: 直接の子要素のみ（孫以下は対象外）
+- `N`: N階層下まで監視
 
 **深度計算例**:
 
@@ -653,7 +654,7 @@ webhook.absolute.max.depth=50
 └── temp/                        → 深度1 ✓ 通知対象
 ```
 
-### 2.6.4 キャッシュ実装
+### 2.7.4 キャッシュ実装
 
 ```java
 @Service
@@ -1050,7 +1051,8 @@ Response:
       "objectId": "folder-uuid-1",
       "objectName": "Documents",
       "objectPath": "/Sites/Documents",
-      "objectType": "nemaki:folder",
+      "primaryObjectType": "cmis:folder",
+      "secondaryTypes": ["nemaki:webhookable"],
       "webhookConfigs": [
         {
           "id": "webhook-1",
@@ -1089,7 +1091,8 @@ Response:
       "objectId": "doc-uuid-1",
       "objectName": "important-contract.pdf",
       "objectPath": "/Sites/Documents/Contracts/important-contract.pdf",
-      "objectType": "nemaki:document",
+      "primaryObjectType": "cmis:document",
+      "secondaryTypes": ["nemaki:webhookable"],
       "webhookConfigs": [
         {
           "id": "webhook-3",
@@ -1117,6 +1120,8 @@ Response:
     "totalPages": 3
   }
 }
+
+**注意**: `primaryObjectType`はCMISプライマリタイプ（`cmis:folder`/`cmis:document`等）、`secondaryTypes`はセカンダリタイプの配列（Webhook有効オブジェクトは必ず`nemaki:webhookable`を含む）。
 ```
 
 ### 5.2 Webhook配信API
@@ -1150,10 +1155,14 @@ POST /rest/repo/{repositoryId}/webhook/deliveries/{deliveryId}/retry
 
 Response:
 {
-  "deliveryId": "new-uuid",
+  "deliveryId": "original-delivery-uuid",
+  "attemptId": "attempt-uuid-3",
+  "attemptNumber": 3,
   "status": "queued"
 }
 ```
+
+**注意**: 冪等性仕様に基づき、`deliveryId`は元の配信IDを維持します。再送試行ごとに新しい`attemptId`が発行され、`attemptNumber`で試行回数を追跡します。受信側は`deliveryId`で重複を検知できます。
 
 #### 5.1.3 Webhookテスト
 
@@ -2240,13 +2249,14 @@ webhook.child.event.absolute.max.per.second=50
 
 **目標**: 完成度向上
 
-1. デフォルトタイプ選択の変更
-2. Webhook設定UIコンポーネント（複数Webhook対応）
-3. 配信ログビューア
-4. テスト送信機能
-5. ユニットテスト・統合テスト・E2Eテスト
-6. ユーザードキュメント・管理者ドキュメント
-7. RSSフィード利用ガイド
+1. Webhook設定UIコンポーネント（複数Webhook対応）
+2. 配信ログビューア
+3. テスト送信機能
+4. ユニットテスト・統合テスト・E2Eテスト
+5. ユーザードキュメント・管理者ドキュメント
+6. RSSフィード利用ガイド
+
+**注意**: 「デフォルトタイプ選択の変更」は削除しました。Webhookはセカンダリタイプ（`nemaki:webhookable`）として実装されるため、プライマリタイプの変更は不要です。RSSはAPIベースで提供されるため、タイプ変更なしで利用可能です。
 
 **合計: 約13週間**
 
