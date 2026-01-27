@@ -196,6 +196,8 @@ cd core/src/main/webapp/ui
 npx playwright test --project=chromium
 ```
 
+環境リセット・検証については [docs/e2e-test-environment.md](docs/e2e-test-environment.md) を参照してください。
+
 ---
 
 ## Project Structure

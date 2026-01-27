@@ -55,26 +55,26 @@ mvn clean package -DskipTests
 cd docker
 
 # Step 3: Rebuild Docker image with new WAR
-docker-compose -f docker-compose-simple.yml build core
+docker compose -f docker-compose-simple.yml build core
 
 # Step 4: Stop containers and wipe all volumes (IMPORTANT!)
-docker-compose -f docker-compose-simple.yml down -v
+docker compose -f docker-compose-simple.yml down -v
 
 # Step 5: Start containers in correct order
 # Start CouchDB first
-docker-compose -f docker-compose-simple.yml up -d couchdb
+docker compose -f docker-compose-simple.yml up -d couchdb
 
 # Wait for CouchDB to be ready
 timeout 60 bash -c 'until docker exec docker-couchdb-1 curl -s http://localhost:5984/_up | grep -q "ok"; do echo "Waiting for CouchDB..."; sleep 2; done && echo "CouchDB is ready!"'
 
 # Start Solr
-docker-compose -f docker-compose-simple.yml up -d solr
+docker compose -f docker-compose-simple.yml up -d solr
 
 # Wait for Solr to be ready
 timeout 60 bash -c 'until docker exec docker-solr-1 curl -s http://localhost:8983/solr/admin/cores?action=STATUS | grep -q "status"; do echo "Waiting for Solr..."; sleep 2; done && echo "Solr is ready!"'
 
 # Start Core
-docker-compose -f docker-compose-simple.yml up -d core
+docker compose -f docker-compose-simple.yml up -d core
 
 # Wait for Core to be ready
 timeout 120 bash -c 'until curl -s http://localhost:8080/core/browser/bedroom/root | grep -q "cmis:objectId"; do echo "Waiting for Core..."; sleep 3; done && echo "Core is ready!"'
@@ -128,87 +128,31 @@ export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1
 
 This bypasses Playwright's host requirements validation which incorrectly reports missing dependencies on some Linux environments.
 
-## Docker Compose Healthchecks (Recommended)
+## Docker Compose Healthchecks (導入済み)
 
-To automatically enforce correct container startup order, add healthchecks to `docker-compose-simple.yml`:
+`docker-compose-simple.yml` には既に healthcheck と `depends_on` + `condition: service_healthy` が定義済みです。
+これにより、コンテナは CouchDB → Solr → Core の順に起動し、各サービスの準備完了を待機します。
 
-```yaml
-services:
-  couchdb:
-    # ... existing config ...
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5984/_up"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  solr:
-    # ... existing config ...
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8983/solr/admin/cores?action=STATUS"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    depends_on:
-      couchdb:
-        condition: service_healthy
-
-  core:
-    # ... existing config ...
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/core/browser/bedroom/root"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 60s
-    depends_on:
-      couchdb:
-        condition: service_healthy
-      solr:
-        condition: service_healthy
-```
-
-With these healthchecks, you can simply run:
 ```bash
-docker-compose -f docker-compose-simple.yml up -d
+docker compose -f docker-compose-simple.yml up -d
 ```
 
-And Docker Compose will automatically start containers in the correct order and wait for each to be healthy.
+手動での起動順序制御は不要です。
 
-## Makefile Target (Optional)
+## 環境リセット・検証スクリプト
 
-Add a Makefile target for easy environment reset:
+環境検証には `scripts/validate-test-env.sh` を使用します:
 
-```makefile
-.PHONY: reset-test-env
-reset-test-env:
-	@echo "Resetting test environment..."
-	mvn clean package -DskipTests
-	cd docker && docker-compose -f docker-compose-simple.yml build core
-	cd docker && docker-compose -f docker-compose-simple.yml down -v
-	cd docker && docker-compose -f docker-compose-simple.yml up -d couchdb
-	@echo "Waiting for CouchDB..."
-	@timeout 60 bash -c 'until docker exec docker-couchdb-1 curl -s http://localhost:5984/_up | grep -q "ok"; do sleep 2; done'
-	cd docker && docker-compose -f docker-compose-simple.yml up -d solr
-	@echo "Waiting for Solr..."
-	@timeout 60 bash -c 'until docker exec docker-solr-1 curl -s http://localhost:8983/solr/admin/cores?action=STATUS | grep -q "status"; do sleep 2; done'
-	cd docker && docker-compose -f docker-compose-simple.yml up -d core
-	@echo "Waiting for Core..."
-	@timeout 120 bash -c 'until curl -s http://localhost:8080/core/browser/bedroom/root | grep -q "cmis:objectId"; do sleep 3; done'
-	@echo "Test environment ready!"
-
-.PHONY: test-e2e
-test-e2e: reset-test-env
-	@echo "Running E2E tests..."
-	cd core/src/main/webapp/ui && PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 npx playwright test
-```
-
-Usage:
 ```bash
-make reset-test-env  # Reset environment only
-make test-e2e        # Reset environment and run tests
+./scripts/validate-test-env.sh
+```
+
+完全リセットは以下の手順で行います:
+
+```bash
+cd docker
+docker compose -f docker-compose-simple.yml down -v
+docker compose -f docker-compose-simple.yml up -d --build --force-recreate
 ```
 
 ## Troubleshooting
@@ -221,10 +165,10 @@ make test-e2e        # Reset environment and run tests
 
 **Solution**: Check that CouchDB and Solr are running and healthy before starting Core:
 ```bash
-docker ps  # Check container status
-docker logs docker-couchdb-1  # Check CouchDB logs
-docker logs docker-solr-1     # Check Solr logs
-docker logs docker-core-1     # Check Core logs
+docker compose -f docker-compose-simple.yml ps     # Check container status
+docker compose -f docker-compose-simple.yml logs couchdb  # Check CouchDB logs
+docker compose -f docker-compose-simple.yml logs solr     # Check Solr logs
+docker compose -f docker-compose-simple.yml logs core     # Check Core logs
 ```
 
 ### Issue: WebKit/Mobile Safari tests fail with "Browser not found"
@@ -243,19 +187,19 @@ export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1
 For CI/CD pipelines, always include these steps:
 
 1. Build WAR file: `mvn clean package -DskipTests`
-2. Build Docker image: `docker-compose build core`
-3. Reset volumes: `docker-compose down -v`
-4. Start containers with healthchecks: `docker-compose up -d`
+2. Build Docker image: `docker compose -f docker-compose-simple.yml build core`
+3. Reset volumes: `docker compose -f docker-compose-simple.yml down -v`
+4. Start containers with healthchecks: `docker compose -f docker-compose-simple.yml up -d`
 5. Validate initial content: Run `tests/admin/initial-content-setup.spec.ts` first
-6. Run full test suite: `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 npx playwright test`
+6. Run full test suite: `npx playwright test --project=chromium`
 
 ## Summary
 
 The key to reliable E2E testing is:
 
-1. **Always start with a clean environment** (`docker-compose down -v`)
-2. **Rebuild Docker images** after code changes (`docker-compose build core`)
-3. **Start containers in correct order** (CouchDB → Solr → Core)
+1. **Always start with a clean environment** (`docker compose down -v`)
+2. **Rebuild Docker images** after code changes (`docker compose build core`)
+3. **Start containers in correct order** (CouchDB → Solr → Core, healthcheck で自動化済み)
 4. **Wait for each service to be healthy** before starting the next
 5. **Validate initial content** before running full test suite
 6. **Use WebKit environment variable** for Linux environments

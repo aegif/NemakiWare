@@ -24,24 +24,27 @@ warning() {
     echo -e "${YELLOW}⚠${NC} $1"
 }
 
+COMPOSE_DIR="${COMPOSE_DIR:-$(cd "$(dirname "$0")/../docker" && pwd)}"
+COMPOSE_FILE="${COMPOSE_DIR}/docker-compose-simple.yml"
+
 echo "1. Checking Docker containers..."
-if ! docker ps | grep -q docker-couchdb-1; then
+if ! docker compose -f "$COMPOSE_FILE" ps --status running 2>/dev/null | grep -q couchdb; then
     error "CouchDB container is not running"
-    echo "   Run: cd docker && docker-compose -f docker-compose-simple.yml up -d couchdb"
+    echo "   Run: cd docker && docker compose -f docker-compose-simple.yml up -d couchdb"
     exit 1
 fi
 success "CouchDB container is running"
 
-if ! docker ps | grep -q docker-solr-1; then
+if ! docker compose -f "$COMPOSE_FILE" ps --status running 2>/dev/null | grep -q solr; then
     error "Solr container is not running"
-    echo "   Run: cd docker && docker-compose -f docker-compose-simple.yml up -d solr"
+    echo "   Run: cd docker && docker compose -f docker-compose-simple.yml up -d solr"
     exit 1
 fi
 success "Solr container is running"
 
-if ! docker ps | grep -q docker-core-1; then
+if ! docker compose -f "$COMPOSE_FILE" ps --status running 2>/dev/null | grep -q core; then
     error "Core container is not running"
-    echo "   Run: cd docker && docker-compose -f docker-compose-simple.yml up -d core"
+    echo "   Run: cd docker && docker compose -f docker-compose-simple.yml up -d core"
     exit 1
 fi
 success "Core container is running"
@@ -53,7 +56,7 @@ if curl -s http://localhost:5984/_up | grep -q "ok"; then
     success "CouchDB is healthy"
 else
     error "CouchDB is not healthy"
-    echo "   Check logs: docker logs docker-couchdb-1"
+    echo "   Check logs: docker compose -f $COMPOSE_FILE logs couchdb"
     exit 1
 fi
 
@@ -64,7 +67,7 @@ if curl -s http://localhost:8983/solr/admin/cores?action=STATUS | grep -q "statu
     success "Solr is healthy"
 else
     error "Solr is not healthy"
-    echo "   Check logs: docker logs docker-solr-1"
+    echo "   Check logs: docker compose -f $COMPOSE_FILE logs solr"
     exit 1
 fi
 
@@ -75,7 +78,7 @@ if curl -s http://localhost:8080/core/browser/bedroom/root | grep -q "cmis:objec
     success "Core CMIS API is responding"
 else
     error "Core CMIS API is not responding"
-    echo "   Check logs: docker logs docker-core-1"
+    echo "   Check logs: docker compose -f $COMPOSE_FILE logs core"
     exit 1
 fi
 
@@ -89,7 +92,7 @@ if [ -n "$SITES_CHECK" ]; then
 else
     error "Sites folder not found in root folder"
     echo "   This indicates incomplete initial content setup"
-    echo "   Solution: Run 'make reset-test-env' to perform a complete environment reset"
+    echo "   Solution: Perform a complete environment reset (see docs/e2e-test-environment.md)"
     exit 1
 fi
 
@@ -103,7 +106,7 @@ if [ -n "$TECH_DOCS_CHECK" ]; then
 else
     error "Technical Documents folder not found in root folder"
     echo "   This indicates incomplete initial content setup"
-    echo "   Solution: Run 'make reset-test-env' to perform a complete environment reset"
+    echo "   Solution: Perform a complete environment reset (see docs/e2e-test-environment.md)"
     exit 1
 fi
 
@@ -125,9 +128,5 @@ echo "=========================================="
 echo ""
 echo "You can now run Playwright tests:"
 echo "  cd core/src/main/webapp/ui"
-echo "  PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 npx playwright test"
-echo ""
-echo "Or use the Makefile:"
-echo "  make test-e2e-quick    # Run tests without environment reset"
-echo "  make test-e2e          # Reset environment and run tests"
+echo "  npx playwright test --project=chromium"
 echo ""
