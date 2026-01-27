@@ -34,6 +34,13 @@ public class WebhookConfig {
     private Integer retryCount;
     
     /**
+     * The object ID where this webhook config was defined.
+     * Used for tracking inherited configurations from parent folders.
+     * This is a runtime field, not persisted in JSON.
+     */
+    private transient String sourceObjectId;
+    
+    /**
      * Default constructor.
      * Creates a disabled webhook config with empty events list.
      */
@@ -151,6 +158,14 @@ public class WebhookConfig {
     
     public void setRetryCount(Integer retryCount) {
         this.retryCount = retryCount;
+    }
+    
+    public String getSourceObjectId() {
+        return sourceObjectId;
+    }
+    
+    public void setSourceObjectId(String sourceObjectId) {
+        this.sourceObjectId = sourceObjectId;
     }
     
     // ========================================
