@@ -181,6 +181,7 @@ public class WebhookConfig {
      * - id: must not be null or empty
      * - url: must not be null or empty
      * - events: must not be null or empty
+     * - authCredential: required if authType requires it (basic, bearer, apikey)
      * 
      * @return true if the config is valid
      */
@@ -192,6 +193,10 @@ public class WebhookConfig {
             return false;
         }
         if (events == null || events.isEmpty()) {
+            return false;
+        }
+        // Check auth credential requirement
+        if (requiresAuthCredential() && (authCredential == null || authCredential.trim().isEmpty())) {
             return false;
         }
         return true;

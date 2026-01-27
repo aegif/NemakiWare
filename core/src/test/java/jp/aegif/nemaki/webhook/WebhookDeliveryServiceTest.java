@@ -400,4 +400,83 @@ public class WebhookDeliveryServiceTest {
         assertTrue("Should contain repositoryId", json.contains("bedroom"));
         assertTrue("Should contain deliveryId", json.contains("delivery-abc"));
     }
+    
+    // ========================================
+    // Null Safety Tests (Review Feedback)
+    // ========================================
+    
+    @Test
+    public void testShouldRetryWithNullConfig() {
+        // Should return false when config is null (not throw NPE)
+        assertFalse("Should return false for null config", 
+            deliveryService.shouldRetry(null, 1, 500));
+    }
+    
+    @Test
+    public void testShouldRetryWithNullRetryCount() {
+        // Config with null retryCount should default to 0 retries
+        WebhookConfig config = new WebhookConfig.Builder()
+            .id("webhook-1")
+            .enabled(true)
+            .url("https://example.com/webhook")
+            .events(List.of("CREATED"))
+            // retryCount not set (null)
+            .build();
+        
+        // With null retryCount (defaults to 0), attempt 1 should not retry
+        assertFalse("Should not retry when retryCount is null (defaults to 0)", 
+            deliveryService.shouldRetry(config, 1, 500));
+    }
+    
+    @Test
+    public void testGenerateAuthHeadersWithNullConfig() {
+        // Should return empty map when config is null (not throw NPE)
+        Map<String, String> headers = deliveryService.generateAuthHeaders(null);
+        
+        assertNotNull("Should return empty map, not null", headers);
+        assertTrue("Should return empty map for null config", headers.isEmpty());
+    }
+    
+    @Test
+    public void testCalculateBackoffDelayWithNonPositiveAttempt() {
+        // Should handle non-positive attempt numbers gracefully
+        long delay0 = deliveryService.calculateBackoffDelay(0);
+        long delay1 = deliveryService.calculateBackoffDelay(1);
+        long delayNegative = deliveryService.calculateBackoffDelay(-1);
+        
+        // All should return the base delay (normalized to attempt 1)
+        assertTrue("Attempt 0 should return valid delay", delay0 >= 1000);
+        assertTrue("Attempt 1 should return valid delay", delay1 >= 1000);
+        assertTrue("Negative attempt should return valid delay", delayNegative >= 1000);
+    }
+    
+    // ========================================
+    // Sensitive Property Filtering Tests
+    // ========================================
+    
+    @Test
+    public void testBuildPayloadFiltersSensitiveProperties() {
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("cmis:name", "test-document.txt");
+        properties.put("cmis:objectTypeId", "cmis:document");
+        properties.put("nemaki:webhookConfigs", "[{\"secret\":\"my-secret\"}]");
+        properties.put("nemaki:webhookSecret", "secret-value");
+        properties.put("nemaki:authCredential", "auth-credential");
+        
+        WebhookPayload payload = deliveryService.buildPayload(
+            "CREATED", "doc-123", "bedroom", properties, null
+        );
+        
+        // Non-sensitive properties should be included
+        assertEquals("test-document.txt", payload.getProperties().get("cmis:name"));
+        assertEquals("cmis:document", payload.getProperties().get("cmis:objectTypeId"));
+        
+        // Sensitive properties should be filtered out
+        assertNull("nemaki:webhookConfigs should be filtered", 
+            payload.getProperties().get("nemaki:webhookConfigs"));
+        assertNull("nemaki:webhookSecret should be filtered", 
+            payload.getProperties().get("nemaki:webhookSecret"));
+        assertNull("nemaki:authCredential should be filtered", 
+            payload.getProperties().get("nemaki:authCredential"));
+    }
 }

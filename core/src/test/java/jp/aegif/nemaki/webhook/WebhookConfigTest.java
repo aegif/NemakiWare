@@ -356,4 +356,78 @@ public class WebhookConfigTest {
         assertTrue("toString should contain ID", str.contains("webhook-1"));
         assertTrue("toString should contain URL", str.contains("https://example.com/webhook"));
     }
+    
+    // ========================================
+    // Auth Credential Validation Tests (Review Feedback)
+    // ========================================
+    
+    @Test
+    public void testIsValidWithAuthTypeRequiringCredential() {
+        // Config with authType=bearer but no credential should be invalid
+        WebhookConfig config = new WebhookConfig.Builder()
+            .id("webhook-1")
+            .enabled(true)
+            .url("https://example.com/webhook")
+            .events(Arrays.asList("CREATED"))
+            .authType("bearer")
+            // authCredential not set
+            .build();
+        
+        assertFalse("Config with bearer auth but no credential should be invalid", config.isValid());
+    }
+    
+    @Test
+    public void testIsValidWithAuthTypeAndCredential() {
+        // Config with authType=bearer and credential should be valid
+        WebhookConfig config = new WebhookConfig.Builder()
+            .id("webhook-1")
+            .enabled(true)
+            .url("https://example.com/webhook")
+            .events(Arrays.asList("CREATED"))
+            .authType("bearer")
+            .authCredential("my-token")
+            .build();
+        
+        assertTrue("Config with bearer auth and credential should be valid", config.isValid());
+    }
+    
+    @Test
+    public void testIsValidWithAuthTypeNone() {
+        // Config with authType=none should be valid without credential
+        WebhookConfig config = new WebhookConfig.Builder()
+            .id("webhook-1")
+            .enabled(true)
+            .url("https://example.com/webhook")
+            .events(Arrays.asList("CREATED"))
+            .authType("none")
+            .build();
+        
+        assertTrue("Config with none auth should be valid without credential", config.isValid());
+    }
+    
+    @Test
+    public void testIsValidWithBasicAuthMissingCredential() {
+        WebhookConfig config = new WebhookConfig.Builder()
+            .id("webhook-1")
+            .enabled(true)
+            .url("https://example.com/webhook")
+            .events(Arrays.asList("CREATED"))
+            .authType("basic")
+            .build();
+        
+        assertFalse("Config with basic auth but no credential should be invalid", config.isValid());
+    }
+    
+    @Test
+    public void testIsValidWithApiKeyMissingCredential() {
+        WebhookConfig config = new WebhookConfig.Builder()
+            .id("webhook-1")
+            .enabled(true)
+            .url("https://example.com/webhook")
+            .events(Arrays.asList("CREATED"))
+            .authType("apikey")
+            .build();
+        
+        assertFalse("Config with apikey auth but no credential should be invalid", config.isValid());
+    }
 }

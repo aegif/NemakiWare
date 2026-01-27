@@ -277,6 +277,40 @@ public class WebhookEventMatcherTest {
     // Helper Methods
     // ========================================
     
+    // ========================================
+    // Unsupported Event Type Tests (Review Feedback)
+    // ========================================
+    
+    @Test
+    public void testFindMatchingConfigsWithUnsupportedEventType() {
+        // Configs that have unsupported event types in their list
+        List<WebhookConfig> configs = Arrays.asList(
+            createConfig("webhook-1", true, Arrays.asList("CREATED", "INVALID_EVENT")),
+            createConfig("webhook-2", true, Arrays.asList("CREATED"))
+        );
+        
+        // Searching for an unsupported event type should return empty list
+        List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "INVALID_EVENT");
+        
+        assertTrue("Should return empty list for unsupported event type", matches.isEmpty());
+    }
+    
+    @Test
+    public void testFindMatchingConfigsWithFutureEventType() {
+        // CHILD_CREATED is a future event type (Phase 3+), not supported in Phase 1
+        List<WebhookConfig> configs = Arrays.asList(
+            createConfig("webhook-1", true, Arrays.asList("CHILD_CREATED"))
+        );
+        
+        List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "CHILD_CREATED");
+        
+        assertTrue("Should return empty list for future event types not yet supported", matches.isEmpty());
+    }
+    
+    // ========================================
+    // Helper Methods
+    // ========================================
+    
     private WebhookConfig createConfig(String id, boolean enabled, List<String> events) {
         WebhookConfig config = new WebhookConfig();
         config.setId(id);

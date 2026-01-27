@@ -41,12 +41,13 @@ public class WebhookEventMatcher {
      * Find all webhook configurations that match the given event type.
      * 
      * A configuration matches if:
-     * 1. It is enabled (enabled=true)
-     * 2. Its events list contains the given event type (case-insensitive)
+     * 1. The event type is a supported/valid event type
+     * 2. It is enabled (enabled=true)
+     * 3. Its events list contains the given event type (case-insensitive)
      * 
      * @param configs List of webhook configurations to search
      * @param eventType The event type to match (e.g., "CREATED", "UPDATED")
-     * @return List of matching configurations, empty list if none match
+     * @return List of matching configurations, empty list if none match or event type is unsupported
      */
     public List<WebhookConfig> findMatchingConfigs(List<WebhookConfig> configs, String eventType) {
         if (configs == null || configs.isEmpty()) {
@@ -54,6 +55,12 @@ public class WebhookEventMatcher {
         }
         
         if (eventType == null || eventType.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        // Early return for unsupported event types
+        if (!isValidEventType(eventType)) {
+            log.warn("Unsupported event type: " + eventType + ". Supported types: " + SUPPORTED_EVENT_TYPES);
             return new ArrayList<>();
         }
         

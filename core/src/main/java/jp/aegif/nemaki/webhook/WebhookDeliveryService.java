@@ -3,9 +3,12 @@ package jp.aegif.nemaki.webhook;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import javax.crypto.Mac;
@@ -34,6 +37,16 @@ public class WebhookDeliveryService {
     private static final long BASE_RETRY_DELAY_MS = 1000;
     private static final long MAX_RETRY_DELAY_MS = 300000; // 5 minutes
     
+    /**
+     * Property keys that should be filtered from payloads to prevent secret exposure.
+     * These keys may contain sensitive information like webhook configurations with secrets.
+     */
+    private static final Set<String> SENSITIVE_PROPERTY_KEYS = new HashSet<>(Arrays.asList(
+        "nemaki:webhookConfigs",
+        "nemaki:webhookSecret",
+        "nemaki:authCredential"
+    ));
+    
     public WebhookDeliveryService() {
         log.debug("WebhookDeliveryService initialized");
     }
@@ -44,7 +57,7 @@ public class WebhookDeliveryService {
      * @param eventType The type of event (CREATED, UPDATED, DELETED, SECURITY)
      * @param objectId The ID of the affected object
      * @param repositoryId The repository ID
-     * @param properties Optional object properties to include
+     * @param properties Optional object properties to include (sensitive keys will be filtered)
      * @param changeToken Optional change token for ordering
      * @return WebhookPayload ready for delivery
      */
@@ -59,7 +72,9 @@ public class WebhookDeliveryService {
         payload.setTimestamp(System.currentTimeMillis());
         
         if (properties != null) {
-            payload.setProperties(new HashMap<>(properties));
+            // Filter sensitive properties to prevent secret exposure
+            Map<String, Object> filteredProperties = filterSensitiveProperties(properties);
+            payload.setProperties(filteredProperties);
         }
         
         if (changeToken != null) {
@@ -71,6 +86,25 @@ public class WebhookDeliveryService {
     }
     
     /**
+     * Filter sensitive properties from the map to prevent secret exposure.
+     * 
+     * @param properties The original properties map
+     * @return A new map with sensitive keys removed
+     */
+    private Map<String, Object> filterSensitiveProperties(Map<String, Object> properties) {
+        Map<String, Object> filtered = new HashMap<>();
+        for (Map.Entry<String, Object> entry : properties.entrySet()) {
+            String key = entry.getKey();
+            if (!SENSITIVE_PROPERTY_KEYS.contains(key)) {
+                filtered.put(key, entry.getValue());
+            } else {
+                log.debug("Filtered sensitive property from payload: " + key);
+            }
+        }
+        return filtered;
+    }
+    
+    /**
      * Generate authentication headers based on webhook configuration.
      * 
      * @param config The webhook configuration
@@ -78,6 +112,11 @@ public class WebhookDeliveryService {
      */
     public Map<String, String> generateAuthHeaders(WebhookConfig config) {
         Map<String, String> headers = new HashMap<>();
+        
+        // Guard against null config
+        if (config == null) {
+            return headers;
+        }
         
         // Add custom headers first
         if (config.getHeaders() != null) {
@@ -174,6 +213,11 @@ public class WebhookDeliveryService {
      * @return Delay in milliseconds before next retry
      */
     public long calculateBackoffDelay(int attemptNumber) {
+        // Guard against non-positive attempt numbers
+        if (attemptNumber < 1) {
+            attemptNumber = 1;
+        }
+        
         // Exponential backoff: base * 2^(attempt-1)
         // With jitter to avoid thundering herd
         long delay = BASE_RETRY_DELAY_MS * (long) Math.pow(2, attemptNumber - 1);
@@ -197,8 +241,14 @@ public class WebhookDeliveryService {
      * @return true if should retry, false otherwise
      */
     public boolean shouldRetry(WebhookConfig config, int attemptNumber, int statusCode) {
-        // Check if we've exceeded max retries
-        int maxRetries = config.getRetryCount();
+        // Guard against null config
+        if (config == null) {
+            return false;
+        }
+        
+        // Check if we've exceeded max retries (default to 0 if not set)
+        Integer retryCountValue = config.getRetryCount();
+        int maxRetries = retryCountValue != null ? retryCountValue : 0;
         if (attemptNumber > maxRetries) {
             return false;
         }
