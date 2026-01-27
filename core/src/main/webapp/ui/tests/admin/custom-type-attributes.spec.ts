@@ -177,6 +177,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
+import { ApiHelper } from '../utils/api-helper';
 
 
 // FIXED (2025-12-24): TypeManager cache issue resolved
@@ -550,65 +551,26 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
   });
 
   test.afterAll(async ({ browser }) => {
-    // Cleanup: Delete custom type and test document
+    // Cleanup: Delete custom type and test document via API (more reliable than UI)
     const context = await browser.newContext();
     const page = await context.newPage();
-    const cleanupAuthHelper = new AuthHelper(page);
 
     try {
-      await cleanupAuthHelper.login();
-      await page.waitForTimeout(2000);
+      const apiHelper = new ApiHelper(page);
 
       // Delete test document if created
       if (testDocumentId) {
-        await page.goto('http://localhost:8080/core/ui/#/documents');
-        await page.waitForTimeout(2000);
-
-        const documentRow = page.locator(`tr:has([href*="${testDocumentId}"])`);
-        if (await documentRow.count() > 0) {
-          const deleteButton = documentRow.locator('button').filter({ has: page.locator('[data-icon="delete"]') });
-          if (await deleteButton.count() > 0) {
-            await deleteButton.click();
-            await page.waitForTimeout(500);
-
-            const confirmButton = page.locator('.ant-popconfirm button.ant-btn-primary');
-            if (await confirmButton.count() > 0) {
-              await confirmButton.click();
-              // FIX (2025-12-26): Wait for deletion instead of transient success message
-              await page.waitForTimeout(3000);
-              console.log('✅ Test document deleted');
-            }
-          }
+        const deleted = await apiHelper.deleteObject(testDocumentId);
+        if (deleted) {
+          console.log('✅ Test document deleted via API');
         }
       }
 
       // Delete custom type
-      const adminMenu = page.locator('.ant-menu-submenu').filter({ hasText: /管理|Admin/i });
-      if (await adminMenu.count() > 0) {
-        await adminMenu.click();
-        await page.waitForTimeout(1000);
-      }
-
-      const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
-      if (await typeManagementItem.count() > 0) {
-        await typeManagementItem.click();
-        await page.waitForTimeout(2000);
-
-        const customTypeRow = page.locator(`tr:has-text("${customTypeId}")`);
-        if (await customTypeRow.count() > 0) {
-          const deleteButton = customTypeRow.locator('button').filter({ has: page.locator('[data-icon="delete"]') });
-          if (await deleteButton.count() > 0) {
-            await deleteButton.click();
-            await page.waitForTimeout(500);
-
-            const confirmButton = page.locator('.ant-popconfirm button:has-text("はい")');
-            if (await confirmButton.count() > 0) {
-              await confirmButton.click();
-              // FIX (2025-12-26): Wait for deletion instead of transient success message
-              await page.waitForTimeout(3000);
-              console.log('✅ Custom type deleted');
-            }
-          }
+      if (customTypeId) {
+        const deleted = await apiHelper.deleteType(customTypeId);
+        if (deleted) {
+          console.log('✅ Custom type deleted via API');
         }
       }
     } catch (error) {

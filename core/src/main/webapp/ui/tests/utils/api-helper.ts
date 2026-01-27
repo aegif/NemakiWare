@@ -365,6 +365,73 @@ export class ApiHelper {
       return false;
     }
   }
+
+  /**
+   * Delete a group via REST API
+   */
+  async deleteGroup(groupId: string): Promise<boolean> {
+    try {
+      const response = await this.page.request.delete(
+        `${BASE_URL}/core/rest/repo/${this.repositoryId}/group/${groupId}`,
+        { headers: { 'Authorization': this.authHeader } }
+      );
+      return response.ok();
+    } catch (error) {
+      console.log(`ApiHelper: Failed to delete group ${groupId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Delete a type definition via REST API
+   */
+  async deleteType(typeId: string): Promise<boolean> {
+    try {
+      const response = await this.page.request.delete(
+        `${BASE_URL}/core/rest/repo/${this.repositoryId}/type/${typeId}`,
+        { headers: { 'Authorization': this.authHeader } }
+      );
+      return response.ok();
+    } catch (error) {
+      console.log(`ApiHelper: Failed to delete type ${typeId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Clean up test groups matching a pattern
+   */
+  async cleanupTestGroups(idPattern: string, maxDeletions: number = 10): Promise<number> {
+    try {
+      // Get all groups
+      const response = await this.page.request.get(
+        `${BASE_URL}/core/rest/repo/${this.repositoryId}/group/list`,
+        { headers: { 'Authorization': this.authHeader } }
+      );
+
+      if (!response.ok()) {
+        return 0;
+      }
+
+      const data = await response.json();
+      const groups = data.groups || data.result || [];
+
+      let deletedCount = 0;
+      for (const group of groups) {
+        const groupId = group.groupId || group.id;
+        if (groupId && groupId.includes(idPattern) && deletedCount < maxDeletions) {
+          if (await this.deleteGroup(groupId)) {
+            deletedCount++;
+          }
+        }
+      }
+
+      return deletedCount;
+    } catch (error) {
+      console.log(`ApiHelper: Failed to cleanup test groups:`, error);
+      return 0;
+    }
+  }
 }
 
 /**
