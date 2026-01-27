@@ -57,7 +57,7 @@ import { randomUUID } from 'crypto';
  * 6. Performance Considerations:
  *    - 5-item selection: ~100ms per checkbox click
  *    - Bulk delete 5 items: 10-15 seconds (2-3s per item)
- *    - Extended timeouts: test.setTimeout(180000) for bulk operations
+ *    - Extended timeouts: test.setTimeout(120000) for bulk operations
  *    - Progress verification: Wait for each item to complete
  *
  * 7. Mobile Browser Support:
@@ -107,7 +107,7 @@ import { randomUUID } from 'crypto';
  */
 // FIXED (2025-12-25): Enabled with extended timeout and improved error handling
 test.describe('Bulk Operations', () => {
-  test.setTimeout(180000); // 3 minutes for bulk operations
+  test.setTimeout(120000); // 2 minutes for bulk operations
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   const testDocumentNames: string[] = [];
@@ -361,7 +361,7 @@ test.describe('Bulk Operations', () => {
   });
 
   test('should perform bulk deletion of multiple items', async ({ page, browserName }) => {
-    test.setTimeout(180000); // Extended timeout for bulk deletion
+    test.setTimeout(120000); // Extended timeout for bulk deletion
 
     // Detect mobile browsers
     const viewportSize = page.viewportSize();
@@ -495,7 +495,7 @@ test.describe('Bulk Operations', () => {
   });
 
   test('should show bulk operation progress indicators', async ({ page, browserName }) => {
-    test.setTimeout(180000); // Extended timeout
+    test.setTimeout(120000); // Extended timeout
 
     // Detect mobile browsers
     const viewportSize = page.viewportSize();

@@ -750,7 +750,7 @@ test.describe('ACL Operations - Permission Combinations', () => {
   const rootFolderId = 'e02f784f8360a02cc14d1314c10038ff';
 
   test('should correctly apply different permission combinations', async ({ browser }) => {
-    test.setTimeout(180000); // 3 minutes for multiple ACL operations
+    test.setTimeout(120000); // 2 minutes for multiple ACL operations
 
     const context = await browser.newContext();
     const page = await context.newPage();

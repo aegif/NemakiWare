@@ -144,7 +144,7 @@ test.describe('Archive and Restore Consistency', () => {
   });
 
   test('Step 1: Create test folder and document', async ({ page, browserName }) => {
-    test.setTimeout(180000); // Extended timeout for folder + document creation
+    test.setTimeout(120000); // Extended timeout for folder + document creation
     console.log(`Creating test folder: ${testFolderName}`);
     console.log(`Creating test document: ${testDocumentName}`);
 

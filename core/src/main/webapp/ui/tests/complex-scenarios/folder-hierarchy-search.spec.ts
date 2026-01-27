@@ -171,7 +171,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
   });
 
   test('Step 2: Create subfolders inside root folder', async ({ page, browserName }) => {
-    test.setTimeout(180000); // Extended timeout for creating multiple folders
+    test.setTimeout(120000); // Extended timeout for creating multiple folders
     console.log('Creating subfolders...');
 
     const viewportSize = page.viewportSize();
@@ -239,7 +239,7 @@ test.describe('Folder Hierarchy with Custom Type Documents and Scoped Search', (
   });
 
   test('Step 3: Create documents in different subfolders', async ({ page, browserName }) => {
-    test.setTimeout(180000); // Extended timeout for navigation + 2 document uploads
+    test.setTimeout(120000); // Extended timeout for navigation + 2 document uploads
     console.log('Creating documents in subfolders via CMIS API (more reliable than UI upload)...');
 
     // Use CMIS API to create documents directly (more reliable than UI upload)

@@ -232,7 +232,7 @@ test.describe('Archive Management', () => {
   });
 
   test('should create archive entry by deleting document', async ({ page, browserName }) => {
-    test.setTimeout(180000); // Extended timeout for upload + delete + archive navigation
+    test.setTimeout(120000); // Extended timeout for upload + delete + archive navigation
     const viewportSize = page.viewportSize();
     const isMobile = browserName === 'chromium' && viewportSize && viewportSize.width <= 414;
 

@@ -67,7 +67,7 @@ import { randomUUID } from 'crypto';
  *    - Error message detection and logging
  *    - Graceful test skip if user creation failed or lacks repository access
  *    - Prevents cascading failures in permission verification tests
- *    - CRITICAL FIX (2025-10-26): Extended timeout to 180s (3 minutes) for test user login
+ *    - CRITICAL FIX (2025-10-26): Extended timeout to 180s (2 minutes) for test user login
  *    - Test users require additional time for ACL permission propagation after creation
  *    - AuthHelper uses 60s timeout per attempt with 5 retry attempts for test users
  *    - Total maximum wait: 300s (5 minutes) for authentication success
@@ -430,7 +430,7 @@ test.describe('Access Control and Permissions', () => {
 
   // Setup: Grant test user read access to root folder
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(180000); // Set 180-second timeout for ACL setup (extended)
+    test.setTimeout(120000); // Set 120-second timeout for ACL setup (extended)
     const context = await browser.newContext();
     const page = await context.newPage();
 
@@ -1095,7 +1095,7 @@ test.describe('Access Control and Permissions', () => {
     test.beforeEach(async ({ page, browserName }) => {
       // CRITICAL FIX (2025-10-26): Extended timeout for test user login with permission delays
       // Test users require additional time for ACL permission propagation after creation
-      test.setTimeout(180000); // 3 minutes for test user login and UI initialization
+      test.setTimeout(120000); // 2 minutes for test user login and UI initialization
 
       authHelper = new AuthHelper(page);
       testHelper = new TestHelper(page);

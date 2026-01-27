@@ -384,7 +384,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
   });
 
   test('Step 5: Delete document and then delete custom type', async ({ page, browserName }) => {
-    test.setTimeout(180000); // Extended timeout for document + type deletion
+    test.setTimeout(120000); // Extended timeout for document + type deletion
     console.log('Deleting document to allow type deletion...');
 
     const viewportSize = page.viewportSize();

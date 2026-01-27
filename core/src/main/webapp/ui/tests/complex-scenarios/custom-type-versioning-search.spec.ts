@@ -172,7 +172,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
   });
 
   test('Step 1: Create custom document type with required and searchable properties', async ({ page, browserName }) => {
-    test.setTimeout(180000); // Extended timeout for type creation with properties
+    test.setTimeout(120000); // Extended timeout for type creation with properties
     console.log(`Test Run ID: ${testRunId}`);
     console.log(`Creating custom type: ${customTypeId}`);
 
@@ -631,7 +631,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
   });
 
   test('Step 5: Create new version and restore original property value', async ({ page, browserName }) => {
-    test.setTimeout(180000); // Extended timeout for versioning operations
+    test.setTimeout(120000); // Extended timeout for versioning operations
     console.log('Creating new version with restored property value...');
 
     const viewportSize = page.viewportSize();

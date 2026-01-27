@@ -100,7 +100,7 @@ test.describe('Solr Indexing Regression Tests', () => {
    */
   test('should find document by updated description after property update', async ({ page, browserName }) => {
     // Increase timeout for this test as it involves Solr indexing delays
-    test.setTimeout(180000); // 3 minutes
+    test.setTimeout(120000); // 2 minutes
     console.log('Test: Property update Solr indexing verification');
 
     const viewportSize = page.viewportSize();

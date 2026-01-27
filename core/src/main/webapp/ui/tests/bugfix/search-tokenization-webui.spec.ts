@@ -47,7 +47,7 @@ import { randomUUID } from 'crypto';
 test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
   // Tests must run in order - document lifecycle
   test.describe.configure({ mode: 'serial' });
-  test.setTimeout(180000); // 3 minutes for serial execution
+  test.setTimeout(120000); // 2 minutes for serial execution
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;

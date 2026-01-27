@@ -65,7 +65,7 @@ test.describe('Secondary Type with Custom Properties', () => {
   });
 
   test('Step 1: Create secondary type with custom property', async ({ page, browserName }) => {
-    test.setTimeout(180000); // Extended timeout for type creation with properties
+    test.setTimeout(120000); // Extended timeout for type creation with properties
     console.log(`Creating secondary type: ${secondaryTypeId}`);
 
     const viewportSize = page.viewportSize();
