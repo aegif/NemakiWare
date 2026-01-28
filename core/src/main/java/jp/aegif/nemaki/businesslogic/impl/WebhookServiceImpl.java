@@ -46,6 +46,9 @@ import jp.aegif.nemaki.dao.WebhookDaoService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Property;
+import jp.aegif.nemaki.webhook.ChildEvent;
+import jp.aegif.nemaki.webhook.ChildEventBatch;
+import jp.aegif.nemaki.webhook.ChildEventBatchProcessor;
 import jp.aegif.nemaki.webhook.WebhookConfig;
 import jp.aegif.nemaki.webhook.WebhookConfigParser;
 import jp.aegif.nemaki.webhook.WebhookDeliveryLog;
@@ -107,6 +110,7 @@ public class WebhookServiceImpl implements WebhookService {
     private WebhookDaoService webhookDaoService;
     
     private ExecutorService executorService;
+    private ChildEventBatchProcessor childEventBatchProcessor;
     
     public WebhookServiceImpl() {
         this.configParser = new WebhookConfigParser();
@@ -123,6 +127,10 @@ public class WebhookServiceImpl implements WebhookService {
             new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE),
             new WebhookRejectedExecutionHandler()
         );
+        
+        // Initialize CHILD_* event batch processor
+        this.childEventBatchProcessor = new ChildEventBatchProcessor(this::deliverChildEventBatch);
+        
         log.info("WebhookServiceImpl initialized with bounded thread pool: " +
                  "core=" + THREAD_POOL_CORE_SIZE + ", max=" + THREAD_POOL_MAX_SIZE + 
                  ", queue=" + THREAD_POOL_QUEUE_SIZE);
@@ -214,6 +222,74 @@ public class WebhookServiceImpl implements WebhookService {
         for (WebhookConfig config : matchingConfigs) {
             dispatchWebhookAsync(callContext, repositoryId, content, eventType, 
                                  config, properties, changeToken);
+        }
+        
+        // Trigger CHILD_* events on parent folder if applicable
+        triggerChildEventOnParent(callContext, repositoryId, content, eventType, additionalProperties);
+    }
+    
+    /**
+     * Trigger CHILD_* event on parent folder when content is created, updated, or deleted.
+     * The event is queued for batch processing to reduce webhook traffic.
+     */
+    private void triggerChildEventOnParent(CallContext callContext, String repositoryId,
+                                            Content content, String eventType,
+                                            Map<String, Object> additionalProperties) {
+        
+        String parentId = content.getParentId();
+        if (parentId == null || parentId.isEmpty()) {
+            log.debug("triggerChildEventOnParent: no parent folder, skipping");
+            return;
+        }
+        
+        // Convert standard event type to CHILD_* event type
+        String childEventType = eventMatcher.toChildEventType(eventType);
+        if (childEventType == null) {
+            log.debug("triggerChildEventOnParent: no CHILD_* mapping for event: " + eventType);
+            return;
+        }
+        
+        // Get parent folder to check for CHILD_* webhook configs
+        Content parentFolder = contentService != null ? contentService.getContent(repositoryId, parentId) : null;
+        if (parentFolder == null) {
+            log.debug("triggerChildEventOnParent: parent folder not found: " + parentId);
+            return;
+        }
+        
+        // Get webhook configs from parent folder that listen for CHILD_* events
+        List<WebhookConfig> parentConfigs = getWebhookConfigs(repositoryId, parentFolder);
+        List<WebhookConfig> matchingChildConfigs = eventMatcher.findMatchingConfigs(parentConfigs, childEventType);
+        
+        if (matchingChildConfigs.isEmpty()) {
+            log.debug("triggerChildEventOnParent: no CHILD_* configs on parent folder: " + parentId);
+            return;
+        }
+        
+        // Create child event and queue for batch processing
+        ChildEvent childEvent = new ChildEvent();
+        childEvent.setParentFolderId(parentId);
+        childEvent.setParentFolderPath(parentFolder.getName());
+        childEvent.setObjectId(content.getId());
+        childEvent.setObjectName(content.getName());
+        childEvent.setObjectType(content.getObjectType());
+        childEvent.setEventType(childEventType);
+        childEvent.setChangeToken(content.getChangeToken());
+        if (callContext != null && callContext.getUsername() != null) {
+            childEvent.setUserId(callContext.getUsername());
+        }
+        
+        // Add properties
+        Map<String, Object> properties = buildPropertiesMap(content, additionalProperties);
+        childEvent.setProperties(properties);
+        
+        // Queue event for batch processing
+        boolean queued = childEventBatchProcessor.queueEvent(repositoryId, childEvent);
+        if (queued) {
+            log.debug("triggerChildEventOnParent: queued " + childEventType + 
+                      " event for object " + content.getId() + " in folder " + parentId);
+        } else {
+            log.warn("triggerChildEventOnParent: failed to queue " + childEventType + 
+                     " event (circuit breaker may be open)");
         }
     }
     
@@ -651,11 +727,171 @@ public class WebhookServiceImpl implements WebhookService {
     }
     
     /**
-     * Shutdown the executor service.
+     * Deliver a batch of CHILD_* events as a single webhook payload.
+     * Called by ChildEventBatchProcessor when a batch is ready.
+     */
+    private void deliverChildEventBatch(ChildEventBatch batch) {
+        if (batch == null || batch.isEmpty()) {
+            log.debug("deliverChildEventBatch: batch is null or empty, skipping");
+            return;
+        }
+        
+        String repositoryId = batch.getRepositoryId();
+        String parentFolderId = batch.getParentFolderId();
+        
+        log.info("deliverChildEventBatch: delivering batch with " + batch.getEventCount() + 
+                 " events for folder: " + parentFolderId);
+        
+        // Get parent folder to retrieve webhook configs
+        Content parentFolder = contentService != null ? contentService.getContent(repositoryId, parentFolderId) : null;
+        if (parentFolder == null) {
+            log.warn("deliverChildEventBatch: parent folder not found: " + parentFolderId);
+            return;
+        }
+        
+        // Get webhook configs that listen for CHILD_* events
+        List<WebhookConfig> parentConfigs = getWebhookConfigs(repositoryId, parentFolder);
+        
+        // Find configs that match any of the CHILD_* event types in the batch
+        List<WebhookConfig> matchingConfigs = new ArrayList<>();
+        for (ChildEvent event : batch.getEvents()) {
+            List<WebhookConfig> configs = eventMatcher.findMatchingConfigs(parentConfigs, event.getEventType());
+            for (WebhookConfig config : configs) {
+                if (!matchingConfigs.contains(config)) {
+                    matchingConfigs.add(config);
+                }
+            }
+        }
+        
+        // Also check for CHILD_BATCH event type
+        List<WebhookConfig> batchConfigs = eventMatcher.findMatchingConfigs(parentConfigs, "CHILD_BATCH");
+        for (WebhookConfig config : batchConfigs) {
+            if (!matchingConfigs.contains(config)) {
+                matchingConfigs.add(config);
+            }
+        }
+        
+        if (matchingConfigs.isEmpty()) {
+            log.debug("deliverChildEventBatch: no matching configs for batch");
+            return;
+        }
+        
+        // Build batch payload
+        Map<String, Object> batchPayload = buildChildBatchPayload(batch);
+        
+        // Dispatch to each matching config
+        for (WebhookConfig config : matchingConfigs) {
+            dispatchChildBatchAsync(repositoryId, batch, config, batchPayload);
+        }
+    }
+    
+    /**
+     * Build the payload for a CHILD_BATCH webhook delivery.
+     */
+    private Map<String, Object> buildChildBatchPayload(ChildEventBatch batch) {
+        Map<String, Object> payload = new HashMap<>();
+        
+        // Event metadata
+        Map<String, Object> eventInfo = new HashMap<>();
+        eventInfo.put("type", "CHILD_BATCH");
+        eventInfo.put("timestamp", java.time.Instant.now().toString());
+        eventInfo.put("deliveryId", batch.getBatchId());
+        payload.put("event", eventInfo);
+        
+        // Repository info
+        Map<String, Object> repoInfo = new HashMap<>();
+        repoInfo.put("id", batch.getRepositoryId());
+        payload.put("repository", repoInfo);
+        
+        // Parent folder info
+        Map<String, Object> parentInfo = new HashMap<>();
+        parentInfo.put("id", batch.getParentFolderId());
+        parentInfo.put("path", batch.getParentFolderPath());
+        payload.put("parentFolder", parentInfo);
+        
+        // Changes list
+        List<Map<String, Object>> changes = new ArrayList<>();
+        for (ChildEvent event : batch.getEvents()) {
+            Map<String, Object> change = new HashMap<>();
+            change.put("type", event.getEventType());
+            change.put("objectId", event.getObjectId());
+            change.put("name", event.getObjectName());
+            change.put("objectType", event.getObjectType());
+            change.put("timestamp", event.getTimestamp());
+            if (event.getUserId() != null) {
+                change.put("userId", event.getUserId());
+            }
+            changes.add(change);
+        }
+        payload.put("changes", changes);
+        
+        // Batch info
+        Map<String, Object> batchInfo = new HashMap<>();
+        batchInfo.put("windowStart", java.time.Instant.ofEpochMilli(batch.getWindowStart()).toString());
+        batchInfo.put("windowEnd", java.time.Instant.ofEpochMilli(batch.getWindowEnd()).toString());
+        batchInfo.put("eventCount", batch.getEventCount());
+        payload.put("batchInfo", batchInfo);
+        
+        return payload;
+    }
+    
+    /**
+     * Dispatch a CHILD_BATCH webhook asynchronously.
+     */
+    private void dispatchChildBatchAsync(String repositoryId, ChildEventBatch batch,
+                                          WebhookConfig config, Map<String, Object> batchPayload) {
+        
+        executorService.submit(() -> {
+            try {
+                // Serialize payload to JSON
+                String payloadJson = deliveryService.serializePayload(batchPayload);
+                
+                // Generate auth headers
+                Map<String, String> headers = deliveryService.generateAuthHeaders(config);
+                
+                // Compute HMAC signature if secret is configured
+                String signature = null;
+                if (config.getSecret() != null && !config.getSecret().isEmpty()) {
+                    signature = deliveryService.computeHmacSignature(payloadJson, config.getSecret());
+                }
+                
+                // Add standard webhook headers
+                headers.put("Content-Type", "application/json");
+                headers.put("X-NemakiWare-Event", "CHILD_BATCH");
+                headers.put("X-NemakiWare-Delivery", batch.getBatchId());
+                headers.put("X-NemakiWare-Timestamp", String.valueOf(System.currentTimeMillis()));
+                if (signature != null) {
+                    headers.put("X-NemakiWare-Signature", "sha256=" + signature);
+                }
+                
+                // Dispatch via dispatcher if available
+                if (dispatcher != null) {
+                    dispatcher.dispatch(config.getUrl(), payloadJson, headers, config);
+                    log.info("CHILD_BATCH webhook dispatched: url=" + config.getUrl() + 
+                             ", batchId=" + batch.getBatchId() + ", eventCount=" + batch.getEventCount());
+                } else {
+                    log.info("CHILD_BATCH webhook (no dispatcher): url=" + config.getUrl() + 
+                             ", batchId=" + batch.getBatchId());
+                }
+                
+            } catch (Exception e) {
+                log.error("Failed to dispatch CHILD_BATCH webhook for config: " + config.getId(), e);
+            }
+        });
+    }
+    
+    /**
+     * Shutdown the executor service and batch processor.
      * Called automatically by Spring container on application shutdown.
      */
     @PreDestroy
     public void shutdown() {
+        // Shutdown child event batch processor first to flush pending batches
+        if (childEventBatchProcessor != null) {
+            log.info("WebhookServiceImpl child event batch processor shutting down...");
+            childEventBatchProcessor.shutdown();
+        }
+        
         if (executorService != null) {
             log.info("WebhookServiceImpl executor service shutting down...");
             executorService.shutdown();

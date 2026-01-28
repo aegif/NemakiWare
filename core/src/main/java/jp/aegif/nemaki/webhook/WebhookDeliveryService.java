@@ -268,6 +268,23 @@ public class WebhookDeliveryService {
     }
     
     /**
+     * Serialize a Map payload to JSON string.
+     * Used for CHILD_BATCH and other custom payloads.
+     * 
+     * @param payload The Map payload to serialize
+     * @return JSON string representation
+     */
+    @SuppressWarnings("unchecked")
+    public String serializePayload(Map<String, Object> payload) {
+        if (payload == null) {
+            return "{}";
+        }
+        JSONObject json = new JSONObject();
+        json.putAll(payload);
+        return json.toJSONString();
+    }
+    
+    /**
      * Serialize a webhook payload to JSON string.
      * 
      * @param payload The payload to serialize
