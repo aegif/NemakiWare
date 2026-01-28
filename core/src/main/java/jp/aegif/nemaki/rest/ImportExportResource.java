@@ -442,18 +442,22 @@ public class ImportExportResource extends ResourceBase {
         String packageName = packageXmlName.replace(".xml", "");
 
         // Process nodes from XML (reads files on-demand from ZipFile)
+        // Keep ZipFile open during entire import for performance (fix: ZipFile performance)
         Element root = xmlDoc.getRootElement();
         Map<String, String> uuidToObjectId = new HashMap<>();
         uuidToObjectId.put("", targetFolderId); // Root maps to target folder
 
-        processAcpNodes(repositoryId, root, targetFolderId, packageName, zipFile, 
-                uuidToObjectId, callContext, result);
+        try (ZipFile zf = new ZipFile(zipFile)) {
+            processAcpNodes(repositoryId, root, targetFolderId, packageName, zf, 
+                    uuidToObjectId, callContext, result);
+        }
 
         return result;
     }
 
     /**
      * Validate ZIP entry name to prevent path traversal attacks.
+     * Enhanced validation for Windows paths and normalized path checking.
      */
     private boolean isValidZipEntryName(String name) {
         if (name == null || name.isEmpty()) {
@@ -467,12 +471,26 @@ public class ImportExportResource extends ResourceBase {
         if (name.contains("\0")) {
             return false;
         }
+        // Reject Windows-style paths with backslash or drive letters (fix: enhanced path validation)
+        if (name.contains("\\") || name.contains(":")) {
+            return false;
+        }
+        // Additional check using path normalization
+        try {
+            java.nio.file.Path normalized = java.nio.file.Paths.get(name).normalize();
+            if (normalized.startsWith("..") || normalized.isAbsolute()) {
+                return false;
+            }
+        } catch (Exception e) {
+            // Invalid path format
+            return false;
+        }
         return true;
     }
 
     @SuppressWarnings("unchecked")
     private void processAcpNodes(String repositoryId, Element element, String parentFolderId,
-            String packageName, File zipFile, Map<String, String> uuidToObjectId,
+            String packageName, ZipFile zf, Map<String, String> uuidToObjectId,
             CallContext callContext, ImportResult result) {
 
         ContentService cs = getContentService();
@@ -507,9 +525,9 @@ public class ImportExportResource extends ResourceBase {
                     // Process ACL
                     processAcpAcl(repositoryId, child, newFolder.getId(), callContext, result);
 
-                    // Recursively process children
+                    // Recursively process children (pass open ZipFile for performance)
                     processAcpNodes(repositoryId, child, newFolder.getId(), packageName, 
-                            zipFile, uuidToObjectId, callContext, result);
+                            zf, uuidToObjectId, callContext, result);
 
                 } catch (Exception e) {
                     log.error("Failed to create folder: " + e.getMessage(), e);
@@ -532,11 +550,11 @@ public class ImportExportResource extends ResourceBase {
                     String mimeType = "application/octet-stream";
 
                     if (contentRef != null) {
-                        // Read file content on-demand from ZipFile (fix: OOM)
+                        // Read file content on-demand from open ZipFile (fix: OOM + performance)
                         String filePath = packageName + "/" + contentRef;
-                        content = readZipEntry(zipFile, filePath);
+                        content = readZipEntry(zf, filePath);
                         if (content == null) {
-                            content = readZipEntry(zipFile, contentRef);
+                            content = readZipEntry(zf, contentRef);
                         }
                         mimeType = guessMimeType(contentRef);
                     }
@@ -576,30 +594,53 @@ public class ImportExportResource extends ResourceBase {
     }
 
     /**
-     * Read a single entry from a ZipFile on-demand.
+     * Read a single entry from an already-open ZipFile.
+     * This avoids reopening the ZipFile for each entry (fix: performance).
+     * Also monitors stream size when entry.getSize() returns -1 (fix: size -1 handling).
      */
-    private byte[] readZipEntry(File zipFile, String entryName) {
-        try (ZipFile zf = new ZipFile(zipFile)) {
+    private byte[] readZipEntry(ZipFile zf, String entryName) {
+        try {
             ZipEntry entry = zf.getEntry(entryName);
             if (entry == null || entry.isDirectory()) {
                 return null;
             }
-            // Check file size limit
-            if (entry.getSize() > MAX_SINGLE_FILE_SIZE) {
-                log.warn("Skipping large file: " + entryName + " (size: " + entry.getSize() + ")");
+            // Check file size limit (if known)
+            long entrySize = entry.getSize();
+            if (entrySize > MAX_SINGLE_FILE_SIZE) {
+                log.warn("Skipping large file: " + entryName + " (size: " + entrySize + ")");
                 return null;
             }
             try (InputStream is = zf.getInputStream(entry)) {
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 byte[] buffer = new byte[8192];
                 int len;
+                long totalRead = 0;
                 while ((len = is.read(buffer)) != -1) {
+                    totalRead += len;
+                    // Monitor size during read if entry.getSize() was -1 (unknown)
+                    if (totalRead > MAX_SINGLE_FILE_SIZE) {
+                        log.warn("Skipping file exceeding size limit during read: " + entryName);
+                        return null;
+                    }
                     baos.write(buffer, 0, len);
                 }
                 return baos.toByteArray();
             }
         } catch (IOException e) {
             log.warn("Failed to read ZIP entry: " + entryName, e);
+            return null;
+        }
+    }
+
+    /**
+     * Read a single entry from a ZipFile (opens and closes the file).
+     * Use this only when you don't have an open ZipFile instance.
+     */
+    private byte[] readZipEntry(File zipFile, String entryName) {
+        try (ZipFile zf = new ZipFile(zipFile)) {
+            return readZipEntry(zf, entryName);
+        } catch (IOException e) {
+            log.warn("Failed to open ZIP file: " + zipFile, e);
             return null;
         }
     }
@@ -751,19 +792,34 @@ public class ImportExportResource extends ResourceBase {
                 if (!entry.isDirectory()) {
                     entryNames.add(name);
 
-                    // Parse metadata files (small JSON, safe to keep in memory)
+                    // Parse metadata files (fix: apply size limit to JSON files too)
                     if (name.endsWith(META_SUFFIX)) {
+                        // Check JSON file size limit
+                        long jsonSize = entry.getSize();
+                        if (jsonSize > MAX_SINGLE_FILE_SIZE) {
+                            result.warnings.add("Skipping large metadata file: " + name + " (size: " + jsonSize + ")");
+                            continue;
+                        }
                         try (InputStream is = zf.getInputStream(entry)) {
                             ByteArrayOutputStream baos = new ByteArrayOutputStream();
                             byte[] buffer = new byte[8192];
                             int len;
+                            long totalRead = 0;
                             while ((len = is.read(buffer)) != -1) {
+                                totalRead += len;
+                                // Monitor size during read if entry.getSize() was -1 (unknown)
+                                if (totalRead > MAX_SINGLE_FILE_SIZE) {
+                                    result.warnings.add("Skipping metadata file exceeding size limit: " + name);
+                                    break;
+                                }
                                 baos.write(buffer, 0, len);
                             }
-                            JSONParser parser = new JSONParser();
-                            JSONObject meta = (JSONObject) parser.parse(new String(baos.toByteArray(), "UTF-8"));
-                            String baseName = name.substring(0, name.length() - META_SUFFIX.length());
-                            metadataMap.put(baseName, meta);
+                            if (totalRead <= MAX_SINGLE_FILE_SIZE) {
+                                JSONParser parser = new JSONParser();
+                                JSONObject meta = (JSONObject) parser.parse(new String(baos.toByteArray(), "UTF-8"));
+                                String baseName = name.substring(0, name.length() - META_SUFFIX.length());
+                                metadataMap.put(baseName, meta);
+                            }
                         } catch (ParseException e) {
                             result.warnings.add("Failed to parse metadata: " + name);
                         }
@@ -783,62 +839,65 @@ public class ImportExportResource extends ResourceBase {
             return depthA - depthB;
         });
 
-        for (String path : entryNames) {
-            // Skip metadata and version files
-            if (path.endsWith(META_SUFFIX) || isVersionFile(path)) {
-                continue;
-            }
-
-            try {
-                // Ensure parent folders exist
-                String parentPath = getParentPath(path);
-                String parentFolderId = ensureFolderPath(repositoryId, parentPath, targetFolderId,
-                        pathToFolderId, callContext, result);
-
-                // Get filename
-                String fileName = getFileName(path);
-
-                // Get metadata if available
-                JSONObject metadata = metadataMap.get(path);
-
-                // Read file content on-demand from ZipFile (fix: OOM)
-                byte[] content = readZipEntry(zipFile, path);
-                if (content == null) {
-                    result.warnings.add("Could not read file content: " + path);
+        // Keep ZipFile open during entire import for performance (fix: ZipFile performance)
+        try (ZipFile zf = new ZipFile(zipFile)) {
+            for (String path : entryNames) {
+                // Skip metadata and version files
+                if (path.endsWith(META_SUFFIX) || isVersionFile(path)) {
                     continue;
                 }
-                String mimeType = guessMimeType(fileName);
 
-                PropertiesImpl props = new PropertiesImpl();
-                props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:document"));
-                props.addProperty(new PropertyStringImpl(PropertyIds.NAME, fileName));
+                try {
+                    // Ensure parent folders exist
+                    String parentPath = getParentPath(path);
+                    String parentFolderId = ensureFolderPath(repositoryId, parentPath, targetFolderId,
+                            pathToFolderId, callContext, result);
 
-                // Apply custom properties from metadata
-                if (metadata != null) {
-                    applyCustomProperties(metadata, props);
+                    // Get filename
+                    String fileName = getFileName(path);
+
+                    // Get metadata if available
+                    JSONObject metadata = metadataMap.get(path);
+
+                    // Read file content on-demand from open ZipFile (fix: OOM + performance)
+                    byte[] content = readZipEntry(zf, path);
+                    if (content == null) {
+                        result.warnings.add("Could not read file content: " + path);
+                        continue;
+                    }
+                    String mimeType = guessMimeType(fileName);
+
+                    PropertiesImpl props = new PropertiesImpl();
+                    props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:document"));
+                    props.addProperty(new PropertyStringImpl(PropertyIds.NAME, fileName));
+
+                    // Apply custom properties from metadata
+                    if (metadata != null) {
+                        applyCustomProperties(metadata, props);
+                    }
+
+                    ContentStream contentStream = new ContentStreamImpl(fileName, 
+                            BigInteger.valueOf(content.length), mimeType, new ByteArrayInputStream(content));
+
+                    Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
+                    Document newDoc = cs.createDocument(callContext, repositoryId, props, parentFolder,
+                            contentStream, VersioningState.MAJOR, null, null, null);
+
+                    result.documentsCreated++;
+
+                    // Apply ACL from metadata
+                    if (metadata != null) {
+                        applyCustomAcl(repositoryId, newDoc.getId(), metadata, callContext, result);
+                    }
+
+                    // Import version history (pass open ZipFile for performance)
+                    importVersionHistory(repositoryId, path, zf, metadataMap, 
+                            newDoc, callContext, result);
+
+                } catch (Exception e) {
+                    log.error("Failed to import file: " + path + " - " + e.getMessage(), e);
+                    result.errors.add("Failed to import: " + path + " - " + e.getMessage());
                 }
-
-                ContentStream contentStream = new ContentStreamImpl(fileName, 
-                        BigInteger.valueOf(content.length), mimeType, new ByteArrayInputStream(content));
-
-                Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
-                Document newDoc = cs.createDocument(callContext, repositoryId, props, parentFolder,
-                        contentStream, VersioningState.MAJOR, null, null, null);
-
-                result.documentsCreated++;
-
-                // Apply ACL from metadata
-                if (metadata != null) {
-                    applyCustomAcl(repositoryId, newDoc.getId(), metadata, callContext, result);
-                }
-
-                // Import version history
-                importVersionHistory(repositoryId, path, zipFile, metadataMap, 
-                        newDoc, callContext, result);
-
-            } catch (Exception e) {
-                log.error("Failed to import file: " + path + " - " + e.getMessage(), e);
-                result.errors.add("Failed to import: " + path + " - " + e.getMessage());
             }
         }
 
@@ -974,15 +1033,15 @@ public class ImportExportResource extends ResourceBase {
     }
 
     private void importVersionHistory(String repositoryId, String basePath, 
-            File zipFile, Map<String, JSONObject> metadataMap,
+            ZipFile zf, Map<String, JSONObject> metadataMap,
             Document document, CallContext callContext, ImportResult result) {
 
-        // Look for version files by scanning the ZipFile
+        // Look for version files by scanning the open ZipFile (fix: ZipFile performance)
         String baseFileName = getFileName(basePath);
         String parentPath = getParentPath(basePath);
 
         List<String> versionPaths = new ArrayList<>();
-        try (ZipFile zf = new ZipFile(zipFile)) {
+        try {
             Enumeration<? extends ZipEntry> entries = zf.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
@@ -991,7 +1050,7 @@ public class ImportExportResource extends ResourceBase {
                     versionPaths.add(path);
                 }
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.warn("Failed to scan ZIP for version files: " + e.getMessage());
             return;
         }
@@ -1174,16 +1233,27 @@ public class ImportExportResource extends ResourceBase {
                 return; // Only current version exists
             }
 
-            // Sort versions by versionLabel or creationDate for consistent ordering (fix: version sorting)
+            // Sort versions by creationDate for consistent ordering (fix: version sorting)
+            // Use creationDate as primary sort key to avoid string comparison issues with versionLabel
+            // (e.g., "10.0" vs "2.0" would sort incorrectly with string comparison)
             allVersions.sort((a, b) -> {
+                // Primary: sort by creation date
+                if (a.getCreated() != null && b.getCreated() != null) {
+                    return a.getCreated().compareTo(b.getCreated());
+                }
+                // Fallback: try to parse versionLabel as numeric
                 String labelA = a.getVersionLabel();
                 String labelB = b.getVersionLabel();
                 if (labelA != null && labelB != null) {
-                    return labelA.compareTo(labelB);
-                }
-                // Fallback to creation date if versionLabel is null
-                if (a.getCreated() != null && b.getCreated() != null) {
-                    return a.getCreated().compareTo(b.getCreated());
+                    try {
+                        // Try to parse as version numbers (e.g., "1.0", "2.0")
+                        double vA = Double.parseDouble(labelA);
+                        double vB = Double.parseDouble(labelB);
+                        return Double.compare(vA, vB);
+                    } catch (NumberFormatException e) {
+                        // Fall back to string comparison if not numeric
+                        return labelA.compareTo(labelB);
+                    }
                 }
                 return 0;
             });
