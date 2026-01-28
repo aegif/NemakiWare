@@ -2698,7 +2698,23 @@ export class CMISService {
       if (response.status === 200) {
         try {
           const data = JSON.parse(response.responseText);
-          return data.archives || [];
+          const archives = data.archives || [];
+          // Map REST API archive format to CMISObject format
+          // REST API returns: {id, originalId, name, type, parentId, creator, created, mimeType, ...}
+          // UI expects CMISObject with: {id, name, baseType, objectType, ...}
+          // id: archive ID (used for restore/download operations on the archive)
+          return archives.map((archive: Record<string, unknown>) => ({
+            id: String(archive.id || ''),
+            name: String(archive.name || 'Unknown'),
+            baseType: String(archive.type || 'cmis:document'),
+            objectType: String(archive.type || 'cmis:document'),
+            properties: {},
+            path: archive.path as string | undefined,
+            createdBy: archive.creator as string | undefined,
+            lastModificationDate: archive.created as string | undefined,
+            contentStreamLength: archive.contentLength as number | undefined,
+            contentStreamMimeType: archive.mimeType as string | undefined,
+          } as CMISObject));
         } catch (e) {
           throw new Error('Invalid response format');
         }
