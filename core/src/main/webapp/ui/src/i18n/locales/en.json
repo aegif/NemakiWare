@@ -1503,16 +1503,18 @@
   },
   "webhookManagement": {
     "title": "Webhook Management",
-    "columns": {
-      "deliveryId": "Delivery ID",
-      "objectId": "Object ID",
-      "eventType": "Event Type",
-      "status": "Status",
-      "statusCode": "Status Code",
-      "attemptCount": "Attempts",
-      "deliveredAt": "Delivered At",
-      "actions": "Actions"
-    },
+        "columns": {
+          "deliveryId": "Delivery ID",
+          "objectId": "Object ID",
+          "webhookUrl": "Webhook URL",
+          "eventType": "Event Type",
+          "status": "Status",
+          "statusCode": "Status Code",
+          "attemptCount": "Attempts",
+          "deliveredAt": "Delivered At",
+          "errorDetail": "Error Detail",
+          "actions": "Actions"
+        },
     "status": {
       "success": "Success",
       "failed": "Failed"

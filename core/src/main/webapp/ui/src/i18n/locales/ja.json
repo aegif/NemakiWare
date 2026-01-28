@@ -1503,16 +1503,18 @@
   },
   "webhookManagement": {
     "title": "Webhook管理",
-    "columns": {
-      "deliveryId": "配信ID",
-      "objectId": "オブジェクトID",
-      "eventType": "イベント種別",
-      "status": "ステータス",
-      "statusCode": "ステータスコード",
-      "attemptCount": "試行回数",
-      "deliveredAt": "配信日時",
-      "actions": "アクション"
-    },
+        "columns": {
+          "deliveryId": "配信ID",
+          "objectId": "オブジェクトID",
+          "webhookUrl": "Webhook URL",
+          "eventType": "イベント種別",
+          "status": "ステータス",
+          "statusCode": "ステータスコード",
+          "attemptCount": "試行回数",
+          "deliveredAt": "配信日時",
+          "errorDetail": "エラー詳細",
+          "actions": "アクション"
+        },
     "status": {
       "success": "成功",
       "failed": "失敗"

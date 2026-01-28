@@ -254,6 +254,20 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       )
     },
     {
+      title: t('webhookManagement.columns.webhookUrl'),
+      dataIndex: 'webhookUrl',
+      key: 'webhookUrl',
+      width: 200,
+      ellipsis: true,
+      render: (text: string) => (
+        <Tooltip title={text}>
+          <span style={{ fontSize: '12px' }}>
+            {text ? (text.length > 30 ? text.substring(0, 30) + '...' : text) : '-'}
+          </span>
+        </Tooltip>
+      )
+    },
+    {
       title: t('webhookManagement.columns.eventType'),
       dataIndex: 'eventType',
       key: 'eventType',
@@ -303,6 +317,28 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       key: 'deliveredAt',
       width: 180,
       render: (text: string | null) => text || '-'
+    },
+    {
+      title: t('webhookManagement.columns.errorDetail'),
+      dataIndex: 'responseBody',
+      key: 'responseBody',
+      width: 150,
+      render: (text: string | null, record: DeliveryLog) => (
+        !record.success && text ? (
+          <Tooltip 
+            title={
+              <pre style={{ maxWidth: 400, maxHeight: 200, overflow: 'auto', margin: 0, whiteSpace: 'pre-wrap' }}>
+                {text}
+              </pre>
+            }
+            overlayStyle={{ maxWidth: 450 }}
+          >
+            <span style={{ color: '#ff4d4f', fontSize: '12px', cursor: 'pointer' }}>
+              {text.length > 20 ? text.substring(0, 20) + '...' : text}
+            </span>
+          </Tooltip>
+        ) : '-'
+      )
     },
     {
       title: t('webhookManagement.columns.actions'),
@@ -374,7 +410,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
           showSizeChanger: true,
           showTotal: (total) => t('webhookManagement.pagination.total', { total })
         }}
-        scroll={{ x: 1100 }}
+        scroll={{ x: 1400 }}
       />
 
       <Modal
