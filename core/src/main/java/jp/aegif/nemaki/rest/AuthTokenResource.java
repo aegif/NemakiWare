@@ -28,7 +28,9 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.ws.rs.core.Context;
 
 import java.io.ByteArrayInputStream;
@@ -50,6 +52,12 @@ public class AuthTokenResource extends ResourceBase{
 	
 	@Context 
 	private HttpServletRequest request;
+	
+	@Context
+	private HttpServletResponse response;
+	
+	// Cookie name for HttpOnly auth token
+	public static final String AUTH_TOKEN_COOKIE_NAME = "nemaki_auth_token";
 	
 	@GET
 	@Path("/{userName}")
@@ -173,6 +181,10 @@ public class AuthTokenResource extends ResourceBase{
 			// Only generate token after successful authentication
 			String app = ""; // Default app for React UI
 			Token token = tokenService.setToken(app, repositoryId, userName);
+
+			// Set HttpOnly cookie for secure token storage
+			// This prevents XSS attacks from accessing the token via JavaScript
+			setAuthTokenCookie(token.getToken(), repositoryId);
 
 			JSONObject obj = new JSONObject();
 			obj.put("app", app);
@@ -574,6 +586,69 @@ public class AuthTokenResource extends ResourceBase{
 
 	public void setTokenService(TokenService tokenService) {
 		this.tokenService = tokenService;
+	}
+
+	/**
+	 * Set HttpOnly cookie with authentication token.
+	 * 
+	 * Security features:
+	 * - HttpOnly: Prevents JavaScript access (XSS protection)
+	 * - Secure: Only sent over HTTPS (when not localhost)
+	 * - SameSite=Strict: CSRF protection
+	 * - Path=/core: Scoped to application context
+	 * 
+	 * @param token The authentication token
+	 * @param repositoryId The repository ID (for logging)
+	 */
+	private void setAuthTokenCookie(String token, String repositoryId) {
+		if (response == null) {
+			logger.warn("HttpServletResponse not available, cannot set auth cookie");
+			return;
+		}
+
+		Cookie cookie = new Cookie(AUTH_TOKEN_COOKIE_NAME, token);
+		cookie.setHttpOnly(true);
+		cookie.setPath("/core");
+		cookie.setMaxAge(24 * 60 * 60); // 24 hours (matches typical token expiration)
+
+		// Set Secure flag for HTTPS connections (skip for localhost development)
+		String serverName = request != null ? request.getServerName() : "";
+		boolean isSecure = request != null && request.isSecure();
+		if (isSecure || (!serverName.equals("localhost") && !serverName.equals("127.0.0.1"))) {
+			cookie.setSecure(true);
+		}
+
+		// SameSite attribute (requires Servlet 6.0+ or manual header)
+		// For older servlet containers, we set it via response header
+		response.addCookie(cookie);
+		
+		// Add SameSite=Strict via Set-Cookie header modification
+		// This provides CSRF protection
+		String cookieHeader = response.getHeader("Set-Cookie");
+		if (cookieHeader != null && cookieHeader.contains(AUTH_TOKEN_COOKIE_NAME)) {
+			response.setHeader("Set-Cookie", cookieHeader + "; SameSite=Strict");
+		}
+
+		logger.debug("Auth token cookie set for repository: {}", repositoryId);
+	}
+
+	/**
+	 * Clear the authentication cookie on logout.
+	 * Sets the cookie with empty value and immediate expiration.
+	 */
+	private void clearAuthTokenCookie() {
+		if (response == null) {
+			logger.warn("HttpServletResponse not available, cannot clear auth cookie");
+			return;
+		}
+
+		Cookie cookie = new Cookie(AUTH_TOKEN_COOKIE_NAME, "");
+		cookie.setHttpOnly(true);
+		cookie.setPath("/core");
+		cookie.setMaxAge(0); // Immediate expiration
+		response.addCookie(cookie);
+
+		logger.debug("Auth token cookie cleared");
 	}
 	
 	/**

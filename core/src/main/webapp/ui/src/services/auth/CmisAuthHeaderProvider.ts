@@ -38,7 +38,11 @@ interface StoredAuthData {
  * Get authentication headers for CMIS API requests
  * 
  * Reads auth state from localStorage and constructs headers.
- * Returns empty object if not authenticated or on any error.
+ * Returns Bearer token format (standard OAuth2/JWT format).
+ * 
+ * Note: With HttpOnly cookies enabled, the browser will automatically
+ * send the auth cookie for same-origin requests. However, we still
+ * provide Bearer headers for backward compatibility and cross-origin requests.
  * 
  * @returns Record of header name to header value
  */
@@ -49,13 +53,10 @@ export function getCmisAuthHeaders(): Record<string, string> {
     if (authData) {
       const auth: StoredAuthData = JSON.parse(authData);
 
-      if (auth.username && auth.token) {
-        // Use Basic auth with username to provide username context
-        // Password is 'dummy' since actual authentication is via token
-        const credentials = btoa(`${auth.username}:dummy`);
+      if (auth.token) {
+        // Use Bearer token format (standard OAuth2/JWT format)
         return {
-          'Authorization': `Basic ${credentials}`,
-          'nemaki_auth_token': String(auth.token)
+          'Authorization': `Bearer ${auth.token}`
         };
       }
     }

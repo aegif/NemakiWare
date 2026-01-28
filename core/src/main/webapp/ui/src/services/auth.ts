@@ -295,11 +295,22 @@ export class AuthService {
     return this.currentAuth;
   }
 
+  /**
+   * Get authentication headers for API requests.
+   * 
+   * Returns Bearer token format (standard OAuth2/JWT format).
+   * Note: With HttpOnly cookies enabled, the browser will automatically
+   * send the auth cookie, so headers may not be strictly necessary for
+   * same-origin requests. However, we still provide Bearer headers for:
+   * - Backward compatibility
+   * - Cross-origin requests where cookies may not be sent
+   * - Non-browser clients
+   */
   getAuthHeaders(): Record<string, string> {
     const token = this.getAuthToken();
     if (token) {
       return { 
-        'AUTH_TOKEN': token
+        'Authorization': `Bearer ${token}`
       };
     }
     return {};

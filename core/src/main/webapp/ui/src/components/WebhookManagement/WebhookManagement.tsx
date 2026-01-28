@@ -56,6 +56,7 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
+import { getCmisAuthHeaders } from '../../services/auth/CmisAuthHeaderProvider';
 
 interface WebhookManagementProps {
   repositoryId: string;
@@ -95,27 +96,16 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
     loadDeliveryLogs();
   }, [repositoryId]);
 
+  /**
+   * Get authentication headers for API requests.
+   * Uses centralized auth header provider for Bearer token format.
+   * This eliminates direct localStorage access and ensures consistent auth handling.
+   */
   const getAuthHeaders = (): Record<string, string> => {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
+    return {
+      'Content-Type': 'application/json',
+      ...getCmisAuthHeaders()
     };
-    
-    const authDataStr = localStorage.getItem('nemakiware_auth');
-    if (authDataStr) {
-      try {
-        const authData = JSON.parse(authDataStr);
-        if (authData.token) {
-          headers['nemaki_auth_token'] = authData.token;
-        }
-        if (authData.username) {
-          headers['Authorization'] = `Basic ${btoa(authData.username + ':dummy')}`;
-        }
-      } catch (e) {
-        console.warn('Failed to parse auth data:', e);
-      }
-    }
-    
-    return headers;
   };
 
   const loadDeliveryLogs = async () => {
@@ -125,7 +115,8 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         `/core/rest/repo/${repositoryId}/webhook/deliveries`,
         {
           method: 'GET',
-          headers: getAuthHeaders()
+          headers: getAuthHeaders(),
+          credentials: 'include' // Send HttpOnly cookies automatically
         }
       );
 
@@ -154,7 +145,8 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         `/core/rest/repo/${repositoryId}/webhook/deliveries/${deliveryId}/retry`,
         {
           method: 'POST',
-          headers: getAuthHeaders()
+          headers: getAuthHeaders(),
+          credentials: 'include' // Send HttpOnly cookies automatically
         }
       );
 
@@ -186,6 +178,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         {
           method: 'POST',
           headers: getAuthHeaders(),
+          credentials: 'include', // Send HttpOnly cookies automatically
           body: JSON.stringify({
             url: values.url,
             secret: values.secret || null
