@@ -222,7 +222,8 @@ import {
   InfoCircleOutlined,
   DatabaseOutlined,
   ApiOutlined,
-  BarChartOutlined
+  BarChartOutlined,
+  SendOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -359,6 +360,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           key: '/api-docs',
           icon: <ApiOutlined />,
           label: t('navigation.apiDocs'),
+        },
+        {
+          key: '/webhooks',
+          icon: <SendOutlined />,
+          label: t('webhookManagement.title'),
         },
       ],
     }] : []),

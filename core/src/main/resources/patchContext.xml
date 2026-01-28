@@ -104,9 +104,16 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
-				<!-- NemakiWare standard types: nemaki:document, secondary types -->
+			<!-- NemakiWare standard types: nemaki:document, secondary types -->
 				<!-- MUST run after StandardCmisViews to ensure base types exist -->
 				<bean class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Webhook delivery log views for Phase 3 DAO layer -->
+				<!-- MUST run after StandardCmisViews to ensure design document exists -->
+				<bean class="jp.aegif.nemaki.patch.Patch_WebhookDeliveryLogViews">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />
 					</property>
@@ -173,6 +180,12 @@
 	</bean>
 
 	<bean id="patch_NemakiwareStandardTypes" class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_WebhookDeliveryLogViews" class="jp.aegif.nemaki.patch.Patch_WebhookDeliveryLogViews">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

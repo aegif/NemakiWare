@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.WebhookService;
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
@@ -132,6 +133,7 @@ public class ContentServiceImpl implements ContentService {
 	private SolrUtil solrUtil;
 	private NemakiCachePool nemakiCachePool;
 	private TypeManager typeManager;
+	private WebhookService webhookService;
 
 	private static final Logger log = LoggerFactory.getLogger(ContentServiceImpl.class);
 	private final static String PATH_SEPARATOR = "/";
@@ -758,6 +760,17 @@ public class ContentServiceImpl implements ContentService {
 		
 		log.debug("Change event created successfully - ID=" + created.getId() + 
 			", token=" + created.getToken() + ", objectId=" + content.getId());
+
+		// Trigger webhook notifications (async, non-blocking)
+		// WebhookService handles checking if content has webhook configs
+		if (webhookService != null) {
+			try {
+				webhookService.triggerWebhook(callContext, repositoryId, content, changeType, null);
+			} catch (Exception e) {
+				// Webhook failures should not affect the main operation
+				log.warn("Failed to trigger webhook for content " + content.getId() + ": " + e.getMessage());
+			}
+		}
 
 		return change.getToken();
 
@@ -3880,6 +3893,10 @@ public class ContentServiceImpl implements ContentService {
 
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
+	}
+
+	public void setWebhookService(WebhookService webhookService) {
+		this.webhookService = webhookService;
 	}
 
 	@Override
