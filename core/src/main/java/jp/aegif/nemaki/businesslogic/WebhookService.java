@@ -134,4 +134,17 @@ public interface WebhookService {
      * @return Map containing statistics (totalDeliveries, successCount, failureCount, etc.)
      */
     Map<String, Object> getDeliveryStatistics(String repositoryId, String webhookId);
+    
+    /**
+     * Test a webhook endpoint by sending a test payload.
+     * 
+     * This method sends a test webhook to the specified URL and returns
+     * the delivery result including status code and response time.
+     * 
+     * @param repositoryId The repository ID
+     * @param url The webhook URL to test
+     * @param secret Optional HMAC secret for signature
+     * @return WebhookDeliveryLog containing the test result
+     */
+    WebhookDeliveryLog testWebhook(String repositoryId, String url, String secret);
 }

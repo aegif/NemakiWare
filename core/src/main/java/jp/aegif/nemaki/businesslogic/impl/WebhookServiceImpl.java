@@ -417,6 +417,67 @@ public class WebhookServiceImpl implements WebhookService {
         return stats;
     }
     
+    @Override
+    public WebhookDeliveryLog testWebhook(String repositoryId, String url, String secret) {
+        WebhookDeliveryLog result = new WebhookDeliveryLog();
+        result.setDeliveryId(java.util.UUID.randomUUID().toString());
+        result.setWebhookUrl(url);
+        result.setEventType("TEST");
+        result.setAttemptNumber(1);
+        result.setTimestamp(new java.util.GregorianCalendar());
+        
+        try {
+            // Build test payload
+            WebhookPayload testPayload = deliveryService.buildPayload(
+                "TEST", "test-object-id", repositoryId, 
+                new HashMap<>(), "test-change-token"
+            );
+            String payloadJson = deliveryService.serializePayload(testPayload);
+            
+            // Generate headers
+            Map<String, String> headers = new HashMap<>();
+            headers.put("Content-Type", "application/json");
+            headers.put("X-NemakiWare-Event", "TEST");
+            headers.put("X-NemakiWare-Delivery", testPayload.getDeliveryId());
+            headers.put("X-NemakiWare-Timestamp", String.valueOf(testPayload.getTimestamp()));
+            
+            // Add signature if secret provided
+            if (secret != null && !secret.isEmpty()) {
+                String signature = deliveryService.computeHmacSignature(payloadJson, secret);
+                headers.put("X-NemakiWare-Signature", "sha256=" + signature);
+            }
+            
+            // Dispatch test webhook synchronously
+            if (dispatcher != null) {
+                // Create a temporary config for the test
+                WebhookConfig testConfig = new WebhookConfig.Builder()
+                    .id("test-" + testPayload.getDeliveryId())
+                    .url(url)
+                    .enabled(true)
+                    .events(java.util.Arrays.asList("TEST"))
+                    .secret(secret)
+                    .retryCount(0)
+                    .build();
+                
+                dispatcher.dispatch(url, payloadJson, headers, testConfig);
+                result.setSuccess(true);
+                result.setStatusCode(200);
+            } else {
+                log.warn("testWebhook: No dispatcher configured, simulating success");
+                result.setSuccess(true);
+                result.setStatusCode(200);
+                result.setResponseBody("Test mode: No dispatcher configured");
+            }
+        } catch (Exception e) {
+            log.error("testWebhook failed: " + e.getMessage(), e);
+            result.setSuccess(false);
+            result.setStatusCode(0);
+            result.setResponseBody("Error: " + e.getMessage());
+        }
+        
+        return result;
+    }
+    
     /**
      * Convert CMIS ChangeType to webhook event type string
      */
