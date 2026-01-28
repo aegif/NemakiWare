@@ -7,13 +7,16 @@
  * 
  * Design Principles:
  * - Single responsibility: Only provides auth headers, doesn't manage auth state
- * - Backward compatible: Returns exact same headers as original CMISService.getAuthHeaders()
+ * - Standard format: Uses Bearer token (OAuth2/JWT standard)
  * - Fail-safe: Returns empty headers on any error (localStorage access, JSON parse, etc.)
  * - Decoupled: CMISService doesn't need to know about localStorage or header format
  * 
  * Header Format:
- * - 'Authorization': Basic auth header with username (password is 'dummy' since token is used)
- * - 'nemaki_auth_token': The actual authentication token
+ * - 'Authorization': Bearer token header (standard OAuth2/JWT format)
+ * 
+ * Note: With HttpOnly cookies enabled on the server, the browser will also
+ * automatically send the auth cookie for same-origin requests. The Bearer
+ * header provides backward compatibility and support for cross-origin requests.
  * 
  * Usage:
  * ```typescript

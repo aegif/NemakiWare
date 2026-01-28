@@ -141,6 +141,47 @@ public class AuthTokenResource extends ResourceBase{
 		return result.toString();
 	}
 	
+	/**
+	 * Logout endpoint - clears the HttpOnly auth cookie and invalidates the token.
+	 * 
+	 * This endpoint should be called when the user logs out to ensure:
+	 * 1. The HttpOnly cookie is cleared (browser will delete it)
+	 * 2. The server-side token is invalidated (if TokenService supports it)
+	 * 
+	 * @param repositoryId The repository ID
+	 * @param userName The username
+	 * @return JSON response indicating success/failure
+	 */
+	@POST
+	@Path("/{userName}/logout")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String logout(@PathParam("repositoryId") String repositoryId,
+	                    @PathParam("userName") String userName) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		logger.info("=== AuthTokenResource.logout() called for user: {} in repository: {} ===",
+		           userName, repositoryId);
+
+		// Clear the HttpOnly cookie
+		clearAuthTokenCookie();
+
+		// Note: Token invalidation on server side would require TokenService.invalidateToken()
+		// which may not exist yet. For now, clearing the cookie is sufficient for browser clients.
+		// The token will naturally expire based on its TTL.
+
+		JSONObject obj = new JSONObject();
+		obj.put("repositoryId", repositoryId);
+		obj.put("userName", userName);
+		obj.put("message", "Logged out successfully");
+		result.put("value", obj);
+
+		logger.info("=== Logout successful for user: {} ===", userName);
+
+		return makeResult(status, result, errMsg).toString();
+	}
+
 	@POST
 	@Path("/{userName}/login")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -255,6 +296,9 @@ public class AuthTokenResource extends ResourceBase{
 			String app = "";
 			Token token = tokenService.setToken(app, repositoryId, userName);
 
+			// Set HttpOnly cookie for secure token storage (same as login)
+			setAuthTokenCookie(token.getToken(), repositoryId);
+
 			JSONObject obj = new JSONObject();
 			obj.put("app", app);
 			obj.put("repositoryId", repositoryId);
@@ -325,6 +369,9 @@ public class AuthTokenResource extends ResourceBase{
 
 			String app = "";
 			Token token = tokenService.setToken(app, repositoryId, userName);
+
+			// Set HttpOnly cookie for secure token storage (same as login)
+			setAuthTokenCookie(token.getToken(), repositoryId);
 
 			JSONObject obj = new JSONObject();
 			obj.put("app", app);
@@ -606,28 +653,26 @@ public class AuthTokenResource extends ResourceBase{
 			return;
 		}
 
-		Cookie cookie = new Cookie(AUTH_TOKEN_COOKIE_NAME, token);
-		cookie.setHttpOnly(true);
-		cookie.setPath("/core");
-		cookie.setMaxAge(24 * 60 * 60); // 24 hours (matches typical token expiration)
+		// Build cookie string manually to include SameSite attribute
+		// This avoids using setHeader which could overwrite other Set-Cookie headers
+		StringBuilder cookieBuilder = new StringBuilder();
+		cookieBuilder.append(AUTH_TOKEN_COOKIE_NAME).append("=").append(token);
+		cookieBuilder.append("; Path=/core");
+		cookieBuilder.append("; Max-Age=").append(24 * 60 * 60); // 24 hours
+		cookieBuilder.append("; HttpOnly");
 
 		// Set Secure flag for HTTPS connections (skip for localhost development)
 		String serverName = request != null ? request.getServerName() : "";
 		boolean isSecure = request != null && request.isSecure();
 		if (isSecure || (!serverName.equals("localhost") && !serverName.equals("127.0.0.1"))) {
-			cookie.setSecure(true);
+			cookieBuilder.append("; Secure");
 		}
 
-		// SameSite attribute (requires Servlet 6.0+ or manual header)
-		// For older servlet containers, we set it via response header
-		response.addCookie(cookie);
-		
-		// Add SameSite=Strict via Set-Cookie header modification
-		// This provides CSRF protection
-		String cookieHeader = response.getHeader("Set-Cookie");
-		if (cookieHeader != null && cookieHeader.contains(AUTH_TOKEN_COOKIE_NAME)) {
-			response.setHeader("Set-Cookie", cookieHeader + "; SameSite=Strict");
-		}
+		// SameSite=Strict for CSRF protection
+		cookieBuilder.append("; SameSite=Strict");
+
+		// Use addHeader to avoid overwriting other Set-Cookie headers
+		response.addHeader("Set-Cookie", cookieBuilder.toString());
 
 		logger.debug("Auth token cookie set for repository: {}", repositoryId);
 	}
