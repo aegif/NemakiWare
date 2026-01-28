@@ -87,11 +87,12 @@ public class WebhookDeliveryService {
     
     /**
      * Filter sensitive properties from the map to prevent secret exposure.
+     * This method is public to allow filtering in batch payload construction.
      * 
      * @param properties The original properties map
      * @return A new map with sensitive keys removed
      */
-    private Map<String, Object> filterSensitiveProperties(Map<String, Object> properties) {
+    public Map<String, Object> filterSensitiveProperties(Map<String, Object> properties) {
         Map<String, Object> filtered = new HashMap<>();
         for (Map.Entry<String, Object> entry : properties.entrySet()) {
             String key = entry.getKey();
@@ -270,6 +271,10 @@ public class WebhookDeliveryService {
     /**
      * Serialize a Map payload to JSON string.
      * Used for CHILD_BATCH and other custom payloads.
+     * 
+     * Note: This method does NOT automatically filter sensitive properties.
+     * Callers should ensure properties are filtered before adding to the payload
+     * using filterSensitiveProperties() if the payload contains user properties.
      * 
      * @param payload The Map payload to serialize
      * @return JSON string representation

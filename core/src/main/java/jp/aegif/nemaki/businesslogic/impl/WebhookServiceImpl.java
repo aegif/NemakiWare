@@ -804,12 +804,13 @@ public class WebhookServiceImpl implements WebhookService {
         payload.put("repository", repoInfo);
         
         // Parent folder info
+        // Note: parentFolderPath contains the folder name (not full path) as Content model doesn't have path field
         Map<String, Object> parentInfo = new HashMap<>();
         parentInfo.put("id", batch.getParentFolderId());
-        parentInfo.put("path", batch.getParentFolderPath());
+        parentInfo.put("name", batch.getParentFolderPath()); // Using 'name' instead of 'path' for clarity
         payload.put("parentFolder", parentInfo);
         
-        // Changes list
+        // Changes list - include properties and changeToken for consistency with single-event webhooks
         List<Map<String, Object>> changes = new ArrayList<>();
         for (ChildEvent event : batch.getEvents()) {
             Map<String, Object> change = new HashMap<>();
@@ -820,6 +821,13 @@ public class WebhookServiceImpl implements WebhookService {
             change.put("timestamp", event.getTimestamp());
             if (event.getUserId() != null) {
                 change.put("userId", event.getUserId());
+            }
+            if (event.getChangeToken() != null) {
+                change.put("changeToken", event.getChangeToken());
+            }
+            // Include filtered properties if available (sensitive keys already filtered in buildPropertiesMap)
+            if (event.getProperties() != null && !event.getProperties().isEmpty()) {
+                change.put("properties", event.getProperties());
             }
             changes.add(change);
         }

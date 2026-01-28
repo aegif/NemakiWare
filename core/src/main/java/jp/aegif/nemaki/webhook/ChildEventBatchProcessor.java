@@ -52,6 +52,9 @@ public class ChildEventBatchProcessor {
     private final Map<String, RateLimitState> rateLimitStates;
     private final Map<String, CircuitBreakerState> circuitBreakerStates;
     
+    // Track events delivered per second globally (across all processPendingBatches calls)
+    private final Map<String, SecondRateState> secondRateStates;
+    
     private ScheduledExecutorService scheduler;
     private volatile boolean shutdown = false;
     
@@ -60,6 +63,7 @@ public class ChildEventBatchProcessor {
         this.folderQueues = new ConcurrentHashMap<>();
         this.rateLimitStates = new ConcurrentHashMap<>();
         this.circuitBreakerStates = new ConcurrentHashMap<>();
+        this.secondRateStates = new ConcurrentHashMap<>();
         
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "ChildEventBatchProcessor-Scheduler");
@@ -134,22 +138,36 @@ public class ChildEventBatchProcessor {
                 
                 List<ChildEventBatch> batches = createBatches(queue, now);
                 
-                int deliveredCount = 0;
+                // Get global second-rate state for this folder
+                String queueKey = buildQueueKey(repositoryId, folderId);
+                SecondRateState secondRateState = secondRateStates.computeIfAbsent(queueKey, k -> new SecondRateState());
+                
                 for (ChildEventBatch batch : batches) {
+                    // Check circuit breaker before processing
+                    if (isCircuitBreakerOpen(repositoryId, folderId)) {
+                        log.debug("Circuit breaker open, stopping batch processing for folder: " + folderId);
+                        break;
+                    }
+                    
                     if (!canDeliverBatch(repositoryId, folderId)) {
                         log.debug("Rate limit reached during batch delivery for folder: " + folderId);
                         break;
                     }
                     
-                    if (deliveredCount >= absoluteMaxPerSecond) {
-                        log.debug("Absolute max per second reached for folder: " + folderId);
+                    // Check if delivering this batch would exceed absolute max per second
+                    // Use global second-rate state to track across multiple processPendingBatches calls
+                    int currentSecondCount = secondRateState.getCountForCurrentSecond();
+                    if (currentSecondCount + batch.getEventCount() > absoluteMaxPerSecond) {
+                        log.debug("Absolute max per second would be exceeded for folder: " + folderId + 
+                                  " (current=" + currentSecondCount + ", batchSize=" + batch.getEventCount() + 
+                                  ", limit=" + absoluteMaxPerSecond + ")");
                         break;
                     }
                     
                     try {
                         batchDeliveryHandler.accept(batch);
                         recordBatchDelivery(repositoryId, folderId);
-                        deliveredCount += batch.getEventCount();
+                        secondRateState.recordDelivery(batch.getEventCount());
                         
                         Iterator<ChildEvent> it = queue.getEvents().iterator();
                         int removed = 0;
@@ -380,6 +398,34 @@ public class ChildEventBatchProcessor {
         
         long getOpenedAt() {
             return openedAt;
+        }
+    }
+    
+    /**
+     * Tracks events delivered per second globally (across multiple processPendingBatches calls).
+     * This ensures absoluteMaxPerSecond is respected even when processPendingBatches is called
+     * multiple times within the same second (e.g., by scheduler and manual calls).
+     */
+    private static class SecondRateState {
+        private volatile long currentSecond = 0;
+        private volatile int countInCurrentSecond = 0;
+        
+        synchronized void recordDelivery(int eventCount) {
+            long nowSecond = System.currentTimeMillis() / 1000;
+            if (nowSecond != currentSecond) {
+                currentSecond = nowSecond;
+                countInCurrentSecond = 0;
+            }
+            countInCurrentSecond += eventCount;
+        }
+        
+        synchronized int getCountForCurrentSecond() {
+            long nowSecond = System.currentTimeMillis() / 1000;
+            if (nowSecond != currentSecond) {
+                // New second, reset count
+                return 0;
+            }
+            return countInCurrentSecond;
         }
     }
 }

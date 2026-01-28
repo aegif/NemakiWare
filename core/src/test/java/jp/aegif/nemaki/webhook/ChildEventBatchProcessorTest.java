@@ -247,6 +247,68 @@ public class ChildEventBatchProcessorTest {
     }
     
     @Test
+    public void testAbsoluteMaxPerSecondWithLargeBatch() throws InterruptedException {
+        // Test case: batch size (100) > absoluteMaxPerSecond (50)
+        // The batch should NOT be delivered because it would exceed the limit
+        processor.setBatchWindowSeconds(1);
+        processor.setMaxBatchSize(100); // Large batch size
+        processor.setAbsoluteMaxPerSecond(50); // Smaller limit
+        
+        // Queue 100 events - would create a single batch of 100 events
+        for (int i = 0; i < 100; i++) {
+            ChildEvent event = createEvent("folder-1", "doc-" + i, "CHILD_CREATED");
+            processor.queueEvent("bedroom", event);
+        }
+        
+        Thread.sleep(1500);
+        processor.processPendingBatches();
+        
+        // Count total events delivered
+        int totalDelivered = deliveredBatches.stream()
+            .mapToInt(b -> b.getEvents().size())
+            .sum();
+        
+        // Since batch size (100) > absoluteMaxPerSecond (50), no batch should be delivered
+        // because delivering it would exceed the limit
+        assertTrue("Should not exceed absolute max per second (batch of 100 > limit of 50)", 
+                   totalDelivered <= 50);
+        
+        // Events should remain pending since the batch couldn't be delivered
+        assertTrue("Events should remain pending when batch exceeds limit", 
+                   processor.getPendingEventCount("bedroom", "folder-1") > 0);
+    }
+    
+    @Test
+    public void testAbsoluteMaxPerSecondWithMultipleBatches() throws InterruptedException {
+        // Test case: multiple batches where cumulative count exceeds limit
+        processor.setBatchWindowSeconds(1);
+        processor.setMaxBatchSize(20); // 20 events per batch
+        processor.setAbsoluteMaxPerSecond(50); // 50 events per second limit
+        
+        // Queue 100 events - would create 5 batches of 20 events each
+        for (int i = 0; i < 100; i++) {
+            ChildEvent event = createEvent("folder-1", "doc-" + i, "CHILD_CREATED");
+            processor.queueEvent("bedroom", event);
+        }
+        
+        Thread.sleep(1500);
+        processor.processPendingBatches();
+        
+        // Count total events delivered
+        int totalDelivered = deliveredBatches.stream()
+            .mapToInt(b -> b.getEvents().size())
+            .sum();
+        
+        // Should deliver at most 2 batches (40 events) because 3rd batch (60 total) would exceed limit
+        assertTrue("Should not exceed absolute max per second", totalDelivered <= 50);
+        assertEquals("Should deliver exactly 2 batches (40 events)", 40, totalDelivered);
+        
+        // Remaining 60 events should still be pending
+        assertEquals("60 events should remain pending", 60, 
+                     processor.getPendingEventCount("bedroom", "folder-1"));
+    }
+    
+    @Test
     public void testShutdownProcessesRemainingBatches() throws InterruptedException {
         processor.setBatchWindowSeconds(60); // Long window
         
