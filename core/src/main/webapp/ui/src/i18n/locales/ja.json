@@ -1500,5 +1500,56 @@
     "status": "状態",
     "readAuditLevel": "READ監査レベル",
     "lastUpdated": "最終更新"
+  },
+  "webhookManagement": {
+    "title": "Webhook管理",
+    "columns": {
+      "deliveryId": "配信ID",
+      "objectId": "オブジェクトID",
+      "eventType": "イベント種別",
+      "status": "ステータス",
+      "statusCode": "ステータスコード",
+      "attemptCount": "試行回数",
+      "deliveredAt": "配信日時",
+      "actions": "アクション"
+    },
+    "status": {
+      "success": "成功",
+      "failed": "失敗"
+    },
+    "filter": {
+      "status": "ステータス",
+      "all": "すべて",
+      "success": "成功のみ",
+      "failed": "失敗のみ"
+    },
+    "actions": {
+      "retry": "再試行",
+      "testWebhook": "Webhookテスト"
+    },
+    "pagination": {
+      "total": "全 {{total}} 件"
+    },
+    "messages": {
+      "loadError": "配信ログの読み込みに失敗しました",
+      "retryQueued": "再試行をキューに追加しました",
+      "retryError": "再試行に失敗しました",
+      "testError": "Webhookテストに失敗しました"
+    },
+    "testModal": {
+      "title": "Webhookエンドポイントテスト",
+      "url": "Webhook URL",
+      "urlRequired": "URLを入力してください",
+      "urlInvalid": "有効なURLを入力してください",
+      "secret": "シークレット（任意）",
+      "secretPlaceholder": "HMAC署名用シークレット",
+      "send": "テスト送信",
+      "sending": "送信中...",
+      "resultSuccess": "Webhookテスト成功",
+      "resultFailed": "Webhookテスト失敗",
+      "statusCode": "ステータスコード",
+      "responseTime": "応答時間",
+      "responseBody": "レスポンス"
+    }
   }
 }
