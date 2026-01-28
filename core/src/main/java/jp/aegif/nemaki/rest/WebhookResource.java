@@ -118,6 +118,7 @@ public class WebhookResource extends ResourceBase {
 
     /**
      * Get delivery logs for a specific object or all objects.
+     * Requires admin authorization to prevent information disclosure.
      * 
      * GET /rest/repo/{repositoryId}/webhook/deliveries?objectId={objectId}&limit={limit}
      */
@@ -134,6 +135,12 @@ public class WebhookResource extends ResourceBase {
         boolean status = true;
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
+        
+        // Admin authorization required to view delivery logs
+        if (!checkAdmin(errMsg, request)) {
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
         
         try {
             WebhookService service = getWebhookService();
@@ -164,6 +171,9 @@ public class WebhookResource extends ResourceBase {
      * Retry a failed webhook delivery.
      * 
      * POST /rest/repo/{repositoryId}/webhook/deliveries/{deliveryId}/retry
+     * 
+     * Note: This endpoint requires DAO layer implementation (Phase 3 continued).
+     * Currently returns 501 Not Implemented.
      */
     @SuppressWarnings("unchecked")
     @POST
@@ -174,7 +184,6 @@ public class WebhookResource extends ResourceBase {
             @PathParam("deliveryId") String deliveryId,
             @Context HttpServletRequest request) {
         
-        boolean status = true;
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
         
@@ -183,23 +192,12 @@ public class WebhookResource extends ResourceBase {
             return result.toJSONString();
         }
         
-        try {
-            WebhookService service = getWebhookService();
-            if (service == null) {
-                status = false;
-                addErrMsg(errMsg, "webhookService", "WebhookService not available");
-            } else {
-                service.retryDelivery(repositoryId, deliveryId);
-                result.put("deliveryId", deliveryId);
-                result.put("retryStatus", "queued");
-            }
-        } catch (Exception e) {
-            log.error("Error retrying delivery: " + e.getMessage(), e);
-            status = false;
-            addErrMsg(errMsg, "retry", "Failed to retry delivery: " + e.getMessage());
-        }
-        
-        result = makeResult(status, result, errMsg);
+        // Return 501 Not Implemented until DAO layer is available
+        // This prevents clients from thinking retry succeeded when it didn't
+        addErrMsg(errMsg, "retry", "Not implemented: Retry functionality requires DAO layer (Phase 3 continued)");
+        result.put("deliveryId", deliveryId);
+        result.put("retryStatus", "not_implemented");
+        result = makeResult(false, result, errMsg);
         return result.toJSONString();
     }
 
@@ -207,7 +205,7 @@ public class WebhookResource extends ResourceBase {
      * Test a webhook endpoint by sending a test payload.
      * 
      * POST /rest/repo/{repositoryId}/webhook/test
-     * Body: {"url": "https://...", "secret": "...", "headers": {...}}
+     * Body: {"url": "https://...", "secret": "..."}
      */
     @SuppressWarnings("unchecked")
     @POST
@@ -268,6 +266,7 @@ public class WebhookResource extends ResourceBase {
 
     /**
      * Get webhook configuration for a specific object.
+     * Requires admin authorization to prevent information disclosure.
      * 
      * GET /rest/repo/{repositoryId}/webhook/config/{objectId}
      */
@@ -283,6 +282,12 @@ public class WebhookResource extends ResourceBase {
         boolean status = true;
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
+        
+        // Admin authorization required to view webhook configurations
+        if (!checkAdmin(errMsg, request)) {
+            result = makeResult(false, result, errMsg);
+            return result.toJSONString();
+        }
         
         try {
             ContentService cs = getContentService();

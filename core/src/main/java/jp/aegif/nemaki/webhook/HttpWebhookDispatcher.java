@@ -333,4 +333,112 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
     public void setReadTimeout(int readTimeout) {
         this.readTimeout = readTimeout;
     }
+    
+    /**
+     * Synchronous dispatch for testing webhooks.
+     * Returns the delivery result including actual status code and response body.
+     */
+    @Override
+    public WebhookDeliveryLog dispatchSync(String url, String payload, Map<String, String> headers, WebhookConfig config) {
+        WebhookDeliveryLog result = new WebhookDeliveryLog();
+        result.setDeliveryId(java.util.UUID.randomUUID().toString());
+        result.setWebhookUrl(url);
+        result.setEventType("TEST");
+        result.setAttemptNumber(1);
+        result.setTimestamp(new java.util.GregorianCalendar());
+        
+        if (url == null || url.isEmpty()) {
+            result.setSuccess(false);
+            result.setStatusCode(0);
+            result.setResponseBody("Error: URL is null or empty");
+            return result;
+        }
+        
+        if (payload == null) {
+            result.setSuccess(false);
+            result.setStatusCode(0);
+            result.setResponseBody("Error: payload is null");
+            return result;
+        }
+        
+        HttpURLConnection connection = null;
+        try {
+            URL targetUrl = new URL(url);
+            
+            // Validate URL protocol
+            String protocol = targetUrl.getProtocol().toLowerCase();
+            if (!protocol.equals("http") && !protocol.equals("https")) {
+                result.setSuccess(false);
+                result.setStatusCode(0);
+                result.setResponseBody("Error: unsupported protocol " + protocol);
+                return result;
+            }
+            
+            // SSRF protection
+            if (!isUrlSafe(targetUrl)) {
+                result.setSuccess(false);
+                result.setStatusCode(0);
+                result.setResponseBody("Error: URL blocked for security reasons (SSRF protection)");
+                return result;
+            }
+            
+            connection = (HttpURLConnection) targetUrl.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setConnectTimeout(connectTimeout);
+            connection.setReadTimeout(readTimeout);
+            connection.setInstanceFollowRedirects(false);
+            
+            // Set default headers
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            connection.setRequestProperty("User-Agent", "NemakiWare-Webhook/1.0");
+            
+            // Set custom headers
+            if (headers != null) {
+                for (Map.Entry<String, String> header : headers.entrySet()) {
+                    if (header.getKey() != null && header.getValue() != null) {
+                        connection.setRequestProperty(header.getKey(), header.getValue());
+                    }
+                }
+            }
+            
+            // Write payload
+            byte[] payloadBytes = payload.getBytes(StandardCharsets.UTF_8);
+            connection.setRequestProperty("Content-Length", String.valueOf(payloadBytes.length));
+            
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(payloadBytes);
+                os.flush();
+            }
+            
+            // Get response
+            int responseCode = connection.getResponseCode();
+            String responseBody = readResponseBody(connection, responseCode);
+            
+            result.setStatusCode(responseCode);
+            result.setResponseBody(responseBody);
+            result.setSuccess(responseCode >= 200 && responseCode < 300);
+            
+            if (result.isSuccess()) {
+                log.info("Test webhook delivered successfully to " + url + " (HTTP " + responseCode + ")");
+            } else {
+                log.warn("Test webhook delivery failed to " + url + " (HTTP " + responseCode + ")");
+            }
+            
+        } catch (MalformedURLException e) {
+            result.setSuccess(false);
+            result.setStatusCode(0);
+            result.setResponseBody("Error: malformed URL - " + e.getMessage());
+        } catch (IOException e) {
+            result.setSuccess(false);
+            result.setStatusCode(0);
+            result.setResponseBody("Error: I/O error - " + e.getMessage());
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+        
+        return result;
+    }
 }

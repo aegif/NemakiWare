@@ -447,7 +447,7 @@ public class WebhookServiceImpl implements WebhookService {
                 headers.put("X-NemakiWare-Signature", "sha256=" + signature);
             }
             
-            // Dispatch test webhook synchronously
+            // Dispatch test webhook synchronously using dispatchSync
             if (dispatcher != null) {
                 // Create a temporary config for the test
                 WebhookConfig testConfig = new WebhookConfig.Builder()
@@ -459,14 +459,16 @@ public class WebhookServiceImpl implements WebhookService {
                     .retryCount(0)
                     .build();
                 
-                dispatcher.dispatch(url, payloadJson, headers, testConfig);
-                result.setSuccess(true);
-                result.setStatusCode(200);
+                // Use synchronous dispatch to get actual HTTP result
+                WebhookDeliveryLog dispatchResult = dispatcher.dispatchSync(url, payloadJson, headers, testConfig);
+                result.setSuccess(dispatchResult.isSuccess());
+                result.setStatusCode(dispatchResult.getStatusCode());
+                result.setResponseBody(dispatchResult.getResponseBody());
             } else {
-                log.warn("testWebhook: No dispatcher configured, simulating success");
-                result.setSuccess(true);
-                result.setStatusCode(200);
-                result.setResponseBody("Test mode: No dispatcher configured");
+                log.warn("testWebhook: No dispatcher configured");
+                result.setSuccess(false);
+                result.setStatusCode(0);
+                result.setResponseBody("Error: No dispatcher configured");
             }
         } catch (Exception e) {
             log.error("testWebhook failed: " + e.getMessage(), e);
@@ -624,5 +626,37 @@ public class WebhookServiceImpl implements WebhookService {
      */
     public interface WebhookDispatcher {
         void dispatch(String url, String payload, Map<String, String> headers, WebhookConfig config);
+        
+        /**
+         * Synchronous dispatch for testing webhooks.
+         * Returns the delivery result including status code and response body.
+         * 
+         * @param url The webhook URL
+         * @param payload The JSON payload
+         * @param headers HTTP headers
+         * @param config Webhook configuration
+         * @return WebhookDeliveryLog with the result
+         */
+        default WebhookDeliveryLog dispatchSync(String url, String payload, Map<String, String> headers, WebhookConfig config) {
+            // Default implementation for backward compatibility
+            WebhookDeliveryLog result = new WebhookDeliveryLog();
+            result.setDeliveryId(java.util.UUID.randomUUID().toString());
+            result.setWebhookUrl(url);
+            result.setEventType("TEST");
+            result.setAttemptNumber(1);
+            result.setTimestamp(new java.util.GregorianCalendar());
+            
+            try {
+                dispatch(url, payload, headers, config);
+                result.setSuccess(true);
+                result.setStatusCode(200);
+                result.setResponseBody("Dispatch completed (async mode - actual result unknown)");
+            } catch (Exception e) {
+                result.setSuccess(false);
+                result.setStatusCode(0);
+                result.setResponseBody("Error: " + e.getMessage());
+            }
+            return result;
+        }
     }
 }
