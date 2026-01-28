@@ -81,9 +81,10 @@ public class Patch_WebhookDeliveryLogViews extends AbstractNemakiPatch {
                 "function(doc) { if (doc.type == 'webhookDeliveryLog' && doc.objectId) emit(doc.objectId, doc) }",
                 null, repositoryId);
 
-            // View: webhookDeliveryLogsByTimestamp - Query by timestamp for cleanup
+            // View: webhookDeliveryLogsByTimestamp - Query by deliveryTimestamp for cleanup
+            // Note: Field name is "deliveryTimestamp" in CouchWebhookDeliveryLog
             addViewIfMissing(views, "webhookDeliveryLogsByTimestamp",
-                "function(doc) { if (doc.type == 'webhookDeliveryLog' && doc.timestamp) emit(doc.timestamp, doc) }",
+                "function(doc) { if (doc.type == 'webhookDeliveryLog' && doc.deliveryTimestamp) emit(doc.deliveryTimestamp, doc) }",
                 null, repositoryId);
 
             // View: webhookDeliveryLogsByWebhookId - Query by webhookId
@@ -91,9 +92,10 @@ public class Patch_WebhookDeliveryLogViews extends AbstractNemakiPatch {
                 "function(doc) { if (doc.type == 'webhookDeliveryLog' && doc.webhookId) emit(doc.webhookId, doc) }",
                 null, repositoryId);
 
-            // View: webhookDeliveryLogsByStatus - Query by status for retry
+            // View: webhookDeliveryLogsByStatus - Query by deliveryStatus for retry
+            // Note: Field name is "deliveryStatus" in CouchWebhookDeliveryLog
             addViewIfMissing(views, "webhookDeliveryLogsByStatus",
-                "function(doc) { if (doc.type == 'webhookDeliveryLog' && doc.status) emit(doc.status, doc) }",
+                "function(doc) { if (doc.type == 'webhookDeliveryLog' && doc.deliveryStatus) emit(doc.deliveryStatus, doc) }",
                 null, repositoryId);
 
             // Update the design document
