@@ -97,14 +97,16 @@
  *    - Implementation: Nested validation with specific error messages
  *    - Advantage: Clear error messages for different failure types
  *
- * 8. Logout with Unregister Endpoint (Lines 90-102):
- *    - Calls REST endpoint to unregister token on server
- *    - GET /core/rest/repo/{repositoryId}/authtoken/{username}/unregister
+ * 8. Logout with Server-side Cookie Clear (Lines 261-291):
+ *    - Calls REST endpoint to logout and clear HttpOnly cookie on server
+ *    - POST /core/rest/repo/{repositoryId}/authtoken/{username}/logout
+ *    - Uses withCredentials=true to send cookies with the request
  *    - Includes auth headers from getAuthHeaders()
  *    - Clears local state regardless of server response (fire-and-forget)
  *    - Sets this.currentAuth = null and removes localStorage
- *    - Rationale: Server should invalidate token to prevent reuse
- *    - Implementation: XHR without waiting for response (no callback)
+ *    - Also clears OIDC and SAML session data from localStorage
+ *    - Rationale: Server clears HttpOnly cookie that JavaScript cannot access
+ *    - Implementation: XHR POST without waiting for response
  *    - Advantage: Local logout succeeds even if server request fails
  *
  * 9. Null-Safe Accessor Methods (Lines 104-124):
@@ -127,7 +129,7 @@
  *
  * Expected Results:
  * - login(): Returns AuthToken with token/repositoryId/username, stores in localStorage, dispatches event
- * - logout(): Calls server unregister, clears currentAuth, removes localStorage, no return value
+ * - logout(): Calls server /logout endpoint, clears HttpOnly cookie, clears currentAuth, removes localStorage
  * - getAuthToken(): Returns token string or null if not authenticated
  * - getCurrentAuth(): Returns full AuthToken object or null
  * - getAuthHeaders(): Returns {'AUTH_TOKEN': token} object or {} if not authenticated
@@ -135,7 +137,7 @@
  *
  * Performance Characteristics:
  * - login(): ~200-500ms network request to auth endpoint
- * - logout(): Instant local state clear, server unregister in background
+ * - logout(): Instant local state clear, server logout in background
  * - getAuthToken(): Instant property access
  * - getCurrentAuth(): Instant property access
  * - getAuthHeaders(): Instant object creation
@@ -153,7 +155,7 @@
  * - XMLHttpRequest instead of modern fetch() API
  * - No automatic token refresh mechanism
  * - No token expiration checking (relies on server 401 responses)
- * - Fire-and-forget logout doesn't verify server unregistered token
+ * - Fire-and-forget logout doesn't verify server cleared cookie
  * - Singleton pattern makes testing harder (global state)
  * - No CSRF protection (relies on same-origin policy)
  * - Token stored in localStorage (vulnerable to XSS, should use httpOnly cookie)

@@ -146,7 +146,7 @@ public class AuthTokenResource extends ResourceBase{
 	 * 
 	 * This endpoint should be called when the user logs out to ensure:
 	 * 1. The HttpOnly cookie is cleared (browser will delete it)
-	 * 2. The server-side token is invalidated (if TokenService supports it)
+	 * 2. The server-side token is invalidated via TokenService.invalidateToken()
 	 * 
 	 * @param repositoryId The repository ID
 	 * @param userName The username
@@ -167,9 +167,21 @@ public class AuthTokenResource extends ResourceBase{
 		// Clear the HttpOnly cookie
 		clearAuthTokenCookie();
 
-		// Note: Token invalidation on server side would require TokenService.invalidateToken()
-		// which may not exist yet. For now, clearing the cookie is sufficient for browser clients.
-		// The token will naturally expire based on its TTL.
+		// Invalidate the token on server side
+		// This ensures the token cannot be reused even if it hasn't expired yet
+		try {
+			TokenService tokenService = getTokenService();
+			if (tokenService != null) {
+				String app = ""; // Default app for React UI
+				tokenService.invalidateToken(app, repositoryId, userName);
+				logger.info("Token invalidated for user: {} in repository: {}", userName, repositoryId);
+			} else {
+				logger.warn("TokenService not available, token not invalidated for user: {}", userName);
+			}
+		} catch (Exception e) {
+			// Log but don't fail the logout - cookie is already cleared
+			logger.warn("Failed to invalidate token for user: {}, error: {}", userName, e.getMessage());
+		}
 
 		JSONObject obj = new JSONObject();
 		obj.put("repositoryId", repositoryId);
