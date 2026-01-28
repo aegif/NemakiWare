@@ -242,7 +242,9 @@ import {
   CheckOutlined,
   CloseOutlined,
   UpOutlined,
-  FormOutlined
+  FormOutlined,
+  ImportOutlined,
+  ExportOutlined
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -368,6 +370,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   // Custom property input states (2025-12-23)
   const [selectedDocumentTypeDefinition, setSelectedDocumentTypeDefinition] = useState<TypeDefinition | null>(null);
   const [selectedFolderTypeDefinition, setSelectedFolderTypeDefinition] = useState<TypeDefinition | null>(null);
+
+  // Import/Export states (2026-01-28)
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importForm] = Form.useForm();
 
   const [form] = Form.useForm();
   const navigate = useNavigate();
@@ -848,6 +857,98 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     loadObjects();
   };
 
+  // Import handler (2026-01-28)
+  const handleImport = async (values: { file: { originFileObj?: File; name?: string }[] }) => {
+    if (!values.file || values.file.length === 0) {
+      message.error(t('importExport.noFileSelected'));
+      return;
+    }
+
+    const fileItem = values.file[0];
+    const file = fileItem.originFileObj;
+    if (!file || !(file instanceof File)) {
+      message.error(t('importExport.noFileSelected'));
+      return;
+    }
+
+    // Validate file type
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith('.acp') && !fileName.endsWith('.zip')) {
+      message.error(t('importExport.invalidFileType'));
+      return;
+    }
+
+    setIsImporting(true);
+    setImportProgress(0);
+
+    try {
+      const result = await cmisService.importContent(
+        repositoryId,
+        selectedFolderId || ROOT_FOLDER_ID,
+        file as File,
+        (progress) => setImportProgress(progress)
+      );
+
+      if (result.status === 'success') {
+        message.success(
+          `${t('importExport.importSuccess')} - ${t('importExport.foldersCreated', { count: result.foldersCreated })}, ${t('importExport.documentsCreated', { count: result.documentsCreated })}`
+        );
+      } else if (result.status === 'partial') {
+        message.warning(t('importExport.partialSuccess'));
+        if (result.warnings && result.warnings.length > 0) {
+          console.warn('Import warnings:', result.warnings);
+        }
+        if (result.errors && result.errors.length > 0) {
+          console.error('Import errors:', result.errors);
+        }
+      }
+
+      setImportModalVisible(false);
+      importForm.resetFields();
+      await loadObjects();
+    } catch (error) {
+      console.error('Import error:', error);
+      message.error(`${t('importExport.importError')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsImporting(false);
+      setImportProgress(0);
+    }
+  };
+
+  // Export handler (2026-01-28)
+  const handleExport = async () => {
+    if (!selectedFolderId) {
+      message.warning(t('documentList.messages.selectFolder'));
+      return;
+    }
+
+    setIsExporting(true);
+
+    try {
+      const blob = await cmisService.exportContent(
+        repositoryId,
+        selectedFolderId
+      );
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `export_${selectedFolderId}_${Date.now()}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      message.success(t('importExport.exportSuccess'));
+    } catch (error) {
+      console.error('Export error:', error);
+      message.error(`${t('importExport.exportError')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const columns = [
     {
       title: t('documentList.columns.type'),
@@ -1293,6 +1394,19 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                     onClick={() => setFolderModalVisible(true)}
                   >
                     {t('documentList.createFolder')}
+                  </Button>
+                  <Button
+                    icon={<ImportOutlined />}
+                    onClick={() => setImportModalVisible(true)}
+                  >
+                    {t('importExport.import')}
+                  </Button>
+                  <Button
+                    icon={<ExportOutlined />}
+                    onClick={handleExport}
+                    loading={isExporting}
+                  >
+                    {t('importExport.export')}
                   </Button>
                 </Space>
               </div>
@@ -1761,6 +1875,97 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             ]}
           >
             <Input placeholder={t('documentList.placeholders.enterNewName')} autoFocus />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Import Modal (2026-01-28) */}
+      <Modal
+        title={isImporting ? t('importExport.importing') : t('importExport.importTitle')}
+        open={importModalVisible}
+        onCancel={() => {
+          if (isImporting) return;
+          setImportModalVisible(false);
+          importForm.resetFields();
+        }}
+        footer={null}
+        maskClosable={false}
+        closable={!isImporting}
+        width={600}
+      >
+        <Form form={importForm} onFinish={handleImport} layout="vertical">
+          <p style={{ marginBottom: 16, color: '#666' }}>
+            {t('importExport.importDescription')}
+          </p>
+          <Form.Item
+            name="file"
+            label={t('importExport.selectFile')}
+            rules={[{ required: true, message: t('importExport.noFileSelected') }]}
+            valuePropName="fileList"
+            getValueFromEvent={(e) => {
+              if (Array.isArray(e)) {
+                return e;
+              }
+              return e?.fileList;
+            }}
+          >
+            <Upload.Dragger
+              beforeUpload={() => false}
+              maxCount={1}
+              accept=".acp,.zip"
+              disabled={isImporting}
+            >
+              <p className="ant-upload-drag-icon">
+                <ImportOutlined />
+              </p>
+              <p className="ant-upload-text">{t('importExport.dragDropHint')}</p>
+              <p className="ant-upload-hint">{t('importExport.supportedFormats')}</p>
+            </Upload.Dragger>
+          </Form.Item>
+
+          {isImporting && (
+            <div style={{ marginBottom: 16 }}>
+              <p>{t('importExport.importInProgress')}</p>
+              <div style={{ 
+                width: '100%', 
+                height: 8, 
+                backgroundColor: '#f0f0f0', 
+                borderRadius: 4,
+                overflow: 'hidden'
+              }}>
+                <div style={{ 
+                  width: `${importProgress}%`, 
+                  height: '100%', 
+                  backgroundColor: '#1890ff',
+                  transition: 'width 0.3s ease'
+                }} />
+              </div>
+              <p style={{ textAlign: 'center', marginTop: 8 }}>
+                {t('importExport.progress', { progress: importProgress })}
+              </p>
+            </div>
+          )}
+
+          <Form.Item>
+            <Space>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={isImporting}
+                disabled={isImporting}
+              >
+                {isImporting ? t('importExport.importing') : t('importExport.import')}
+              </Button>
+              <Button
+                onClick={() => {
+                  setImportModalVisible(false);
+                  importForm.resetFields();
+                }}
+                disabled={isImporting}
+              >
+                {t('common.cancel')}
+              </Button>
+            </Space>
           </Form.Item>
         </Form>
       </Modal>
