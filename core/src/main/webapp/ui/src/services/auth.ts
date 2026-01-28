@@ -260,8 +260,11 @@ export class AuthService {
 
   logout(): void {
     if (this.currentAuth) {
+      // Call server-side logout endpoint to clear HttpOnly cookie
+      // Using POST method as required by the new /logout endpoint
       const xhr = new XMLHttpRequest();
-      xhr.open('GET', `/core/rest/repo/${this.currentAuth.repositoryId}/authtoken/${this.currentAuth.username}/unregister`, true);
+      xhr.open('POST', `/core/rest/repo/${this.currentAuth.repositoryId}/authtoken/${this.currentAuth.username}/logout`, true);
+      xhr.withCredentials = true; // Send cookies with the request
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);

@@ -680,6 +680,9 @@ public class AuthTokenResource extends ResourceBase{
 	/**
 	 * Clear the authentication cookie on logout.
 	 * Sets the cookie with empty value and immediate expiration.
+	 * 
+	 * Uses the same format as setAuthTokenCookie() to ensure the cookie
+	 * is properly deleted (must match Path, SameSite, etc. attributes).
 	 */
 	private void clearAuthTokenCookie() {
 		if (response == null) {
@@ -687,11 +690,26 @@ public class AuthTokenResource extends ResourceBase{
 			return;
 		}
 
-		Cookie cookie = new Cookie(AUTH_TOKEN_COOKIE_NAME, "");
-		cookie.setHttpOnly(true);
-		cookie.setPath("/core");
-		cookie.setMaxAge(0); // Immediate expiration
-		response.addCookie(cookie);
+		// Build cookie string manually to include SameSite attribute
+		// Must match the attributes used when setting the cookie for proper deletion
+		StringBuilder cookieBuilder = new StringBuilder();
+		cookieBuilder.append(AUTH_TOKEN_COOKIE_NAME).append("=");
+		cookieBuilder.append("; Path=/core");
+		cookieBuilder.append("; Max-Age=0"); // Immediate expiration
+		cookieBuilder.append("; HttpOnly");
+
+		// Set Secure flag for HTTPS connections (skip for localhost development)
+		String serverName = request != null ? request.getServerName() : "";
+		boolean isSecure = request != null && request.isSecure();
+		if (isSecure || (!serverName.equals("localhost") && !serverName.equals("127.0.0.1"))) {
+			cookieBuilder.append("; Secure");
+		}
+
+		// SameSite must match the original cookie for proper deletion
+		cookieBuilder.append("; SameSite=Strict");
+
+		// Use addHeader to avoid overwriting other Set-Cookie headers
+		response.addHeader("Set-Cookie", cookieBuilder.toString());
 
 		logger.debug("Auth token cookie cleared");
 	}
