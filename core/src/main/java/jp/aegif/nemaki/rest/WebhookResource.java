@@ -171,9 +171,6 @@ public class WebhookResource extends ResourceBase {
      * Retry a failed webhook delivery.
      * 
      * POST /rest/repo/{repositoryId}/webhook/deliveries/{deliveryId}/retry
-     * 
-     * Note: This endpoint requires DAO layer implementation (Phase 3 continued).
-     * Currently returns 501 Not Implemented.
      */
     @SuppressWarnings("unchecked")
     @POST
@@ -184,6 +181,7 @@ public class WebhookResource extends ResourceBase {
             @PathParam("deliveryId") String deliveryId,
             @Context HttpServletRequest request) {
         
+        boolean status = true;
         JSONObject result = new JSONObject();
         JSONArray errMsg = new JSONArray();
         
@@ -192,12 +190,32 @@ public class WebhookResource extends ResourceBase {
             return result.toJSONString();
         }
         
-        // Return 501 Not Implemented until DAO layer is available
-        // This prevents clients from thinking retry succeeded when it didn't
-        addErrMsg(errMsg, "retry", "Not implemented: Retry functionality requires DAO layer (Phase 3 continued)");
-        result.put("deliveryId", deliveryId);
-        result.put("retryStatus", "not_implemented");
-        result = makeResult(false, result, errMsg);
+        try {
+            WebhookService service = getWebhookService();
+            if (service == null) {
+                status = false;
+                addErrMsg(errMsg, "webhookService", "WebhookService not available");
+            } else {
+                WebhookDeliveryLog retryLog = service.retryDelivery(repositoryId, deliveryId);
+                if (retryLog != null) {
+                    result.put("deliveryId", deliveryId);
+                    result.put("retryStatus", "queued");
+                    result.put("attemptNumber", retryLog.getAttemptNumber());
+                    if (retryLog.getAttemptId() != null) {
+                        result.put("attemptId", retryLog.getAttemptId());
+                    }
+                } else {
+                    status = false;
+                    addErrMsg(errMsg, "retry", "Delivery log not found or retry not available");
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error retrying delivery: " + e.getMessage(), e);
+            status = false;
+            addErrMsg(errMsg, "retry", "Failed to retry delivery: " + e.getMessage());
+        }
+        
+        result = makeResult(status, result, errMsg);
         return result.toJSONString();
     }
 

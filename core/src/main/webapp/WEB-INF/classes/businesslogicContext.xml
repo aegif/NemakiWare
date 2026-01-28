@@ -85,6 +85,26 @@
 		<property name="dispatcher">
 			<ref bean="webhookDispatcher" />
 		</property>
+		<property name="webhookDaoService">
+			<ref bean="WebhookDaoService" />
+		</property>
+	</bean>
+
+	<!-- Webhook DAO Service for delivery log persistence -->
+	<bean id="WebhookDaoService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.dao.WebhookDaoService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="webhookDaoService" />
+		</property>
+	</bean>
+	<bean id="webhookDaoService" class="jp.aegif.nemaki.dao.impl.couch.WebhookDaoServiceImpl">
+		<property name="connectorPool">
+			<ref bean="connectorPool" />
+		</property>
 	</bean>
 
 	<!-- Webhook Dispatcher - HTTP implementation for production -->

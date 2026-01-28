@@ -42,6 +42,7 @@ import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.WebhookService;
+import jp.aegif.nemaki.dao.WebhookDaoService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Property;
@@ -103,6 +104,7 @@ public class WebhookServiceImpl implements WebhookService {
     private WebhookEventMatcher eventMatcher;
     private WebhookDeliveryService deliveryService;
     private WebhookDispatcher dispatcher;
+    private WebhookDaoService webhookDaoService;
     
     private ExecutorService executorService;
     
@@ -146,6 +148,10 @@ public class WebhookServiceImpl implements WebhookService {
     
     public void setDispatcher(WebhookDispatcher dispatcher) {
         this.dispatcher = dispatcher;
+    }
+    
+    public void setWebhookDaoService(WebhookDaoService webhookDaoService) {
+        this.webhookDaoService = webhookDaoService;
     }
     
     @Override
@@ -387,33 +393,81 @@ public class WebhookServiceImpl implements WebhookService {
     @Override
     public List<WebhookDeliveryLog> getDeliveryLogs(String repositoryId, 
                                                      String objectId, int limit) {
-        // TODO: Implement when WebhookDeliveryLogDao is available
-        log.debug("getDeliveryLogs: not yet implemented");
-        return new ArrayList<>();
+        if (webhookDaoService == null) {
+            log.debug("getDeliveryLogs: WebhookDaoService not available");
+            return new ArrayList<>();
+        }
+        return webhookDaoService.getDeliveryLogs(repositoryId, objectId, limit);
     }
     
     @Override
     public List<WebhookDeliveryLog> getDeliveryLogsByWebhookId(String repositoryId,
                                                                 String webhookId, int limit) {
-        // TODO: Implement when WebhookDeliveryLogDao is available
-        log.debug("getDeliveryLogsByWebhookId: not yet implemented");
-        return new ArrayList<>();
+        if (webhookDaoService == null) {
+            log.debug("getDeliveryLogsByWebhookId: WebhookDaoService not available");
+            return new ArrayList<>();
+        }
+        return webhookDaoService.getDeliveryLogsByWebhookId(repositoryId, webhookId, limit);
     }
     
     @Override
     public WebhookDeliveryLog retryDelivery(String repositoryId, String deliveryId) {
-        // TODO: Implement when WebhookDeliveryLogDao is available
-        log.debug("retryDelivery: not yet implemented");
-        return null;
+        if (webhookDaoService == null) {
+            log.warn("retryDelivery: WebhookDaoService not available");
+            return null;
+        }
+        
+        // Get the original delivery log
+        WebhookDeliveryLog originalLog = webhookDaoService.getDeliveryLogByDeliveryId(repositoryId, deliveryId);
+        if (originalLog == null) {
+            log.warn("retryDelivery: Delivery log not found for deliveryId: " + deliveryId);
+            return null;
+        }
+        
+        // Create a new attempt
+        WebhookDeliveryLog retryLog = new WebhookDeliveryLog();
+        retryLog.setDeliveryId(deliveryId);
+        retryLog.setWebhookId(originalLog.getWebhookId());
+        retryLog.setObjectId(originalLog.getObjectId());
+        retryLog.setRepositoryId(repositoryId);
+        retryLog.setWebhookUrl(originalLog.getWebhookUrl());
+        retryLog.setEventType(originalLog.getEventType());
+        retryLog.setAttemptNumber(originalLog.getAttemptNumber() + 1);
+        retryLog.setChangeToken(originalLog.getChangeToken());
+        retryLog.setStatus(WebhookDeliveryLog.DeliveryStatus.PENDING);
+        retryLog.generateAttemptId();
+        
+        // Save the new attempt log
+        WebhookDeliveryLog savedLog = webhookDaoService.createDeliveryLog(repositoryId, retryLog);
+        
+        // Queue for async delivery (actual dispatch would happen here)
+        log.info("Retry queued for deliveryId: " + deliveryId + ", attemptNumber: " + retryLog.getAttemptNumber());
+        
+        return savedLog;
     }
     
     @Override
     public Map<String, Object> getDeliveryStatistics(String repositoryId, String webhookId) {
-        // TODO: Implement when WebhookDeliveryLogDao is available
         Map<String, Object> stats = new HashMap<>();
-        stats.put("totalDeliveries", 0);
-        stats.put("successCount", 0);
-        stats.put("failureCount", 0);
+        
+        if (webhookDaoService == null) {
+            log.debug("getDeliveryStatistics: WebhookDaoService not available");
+            stats.put("totalDeliveries", 0);
+            stats.put("successCount", 0);
+            stats.put("failureCount", 0);
+            return stats;
+        }
+        
+        WebhookDaoService.WebhookDeliveryStats daoStats = webhookDaoService.getDeliveryStats(repositoryId, webhookId);
+        stats.put("totalDeliveries", daoStats.getTotalDeliveries());
+        stats.put("successCount", daoStats.getSuccessCount());
+        stats.put("failureCount", daoStats.getFailureCount());
+        if (daoStats.getAverageResponseTimeMs() != null) {
+            stats.put("averageResponseTimeMs", daoStats.getAverageResponseTimeMs());
+        }
+        if (daoStats.getLastDeliveryTimestamp() != null) {
+            stats.put("lastDeliveryTimestamp", daoStats.getLastDeliveryTimestamp());
+        }
         return stats;
     }
     
