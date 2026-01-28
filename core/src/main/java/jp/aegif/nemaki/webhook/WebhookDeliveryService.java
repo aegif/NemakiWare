@@ -89,11 +89,15 @@ public class WebhookDeliveryService {
      * Filter sensitive properties from the map to prevent secret exposure.
      * This method is public to allow filtering in batch payload construction.
      * 
-     * @param properties The original properties map
-     * @return A new map with sensitive keys removed
+     * @param properties The original properties map (may be null)
+     * @return A new map with sensitive keys removed, or empty map if input is null
      */
     public Map<String, Object> filterSensitiveProperties(Map<String, Object> properties) {
         Map<String, Object> filtered = new HashMap<>();
+        // Guard against null input for defensive programming
+        if (properties == null) {
+            return filtered;
+        }
         for (Map.Entry<String, Object> entry : properties.entrySet()) {
             String key = entry.getKey();
             if (!SENSITIVE_PROPERTY_KEYS.contains(key)) {
