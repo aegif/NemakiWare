@@ -22,7 +22,6 @@ package jp.aegif.nemaki.webhook;
 
 import static org.junit.Assert.*;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
