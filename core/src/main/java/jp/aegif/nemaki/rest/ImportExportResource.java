@@ -65,11 +65,16 @@ import jakarta.ws.rs.core.StreamingOutput;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
+import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -97,6 +102,10 @@ public class ImportExportResource extends ResourceBase {
     // Custom format naming conventions
     private static final String META_SUFFIX = ".meta.json";
     private static final String VERSION_PREFIX = ".v";
+
+    // Size limits for import (prevent OOM)
+    private static final long MAX_UPLOAD_SIZE = 500 * 1024 * 1024; // 500MB max upload
+    private static final long MAX_SINGLE_FILE_SIZE = 100 * 1024 * 1024; // 100MB max per file
 
     // Permission mapping from Alfresco to NemakiWare
     private static final Map<String, String> PERMISSION_MAPPING = new HashMap<>();
@@ -169,6 +178,7 @@ public class ImportExportResource extends ResourceBase {
         JSONArray warnings = new JSONArray();
         int importedFolders = 0;
         int importedDocuments = 0;
+        File tempFile = null;
 
         try {
             ContentService cs = getContentService();
@@ -188,29 +198,45 @@ public class ImportExportResource extends ResourceBase {
                         .entity(result.toJSONString()).build();
             }
 
-            // Read ZIP file into memory for processing
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = fileInputStream.read(buffer)) != -1) {
-                baos.write(buffer, 0, len);
+            // Create CallContext and verify authentication (fix: no admin fallback)
+            CallContext callContext = createCallContext(request, repositoryId);
+            if (callContext.getUsername() == null) {
+                result.put("status", "error");
+                result.put("message", "Authentication required");
+                return Response.status(Response.Status.UNAUTHORIZED)
+                        .entity(result.toJSONString()).build();
             }
-            byte[] zipData = baos.toByteArray();
 
-            // Detect format and process
-            ImportFormat format = detectFormat(zipData);
+            // Stream ZIP to temp file instead of memory (fix: OOM risk)
+            tempFile = Files.createTempFile("nemaki-import-", ".zip").toFile();
+            long totalSize = 0;
+            try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = fileInputStream.read(buffer)) != -1) {
+                    totalSize += len;
+                    if (totalSize > MAX_UPLOAD_SIZE) {
+                        result.put("status", "error");
+                        result.put("message", "File too large. Maximum size: " + (MAX_UPLOAD_SIZE / 1024 / 1024) + "MB");
+                        return Response.status(Response.Status.BAD_REQUEST)
+                                .entity(result.toJSONString()).build();
+                    }
+                    fos.write(buffer, 0, len);
+                }
+            }
+
+            // Detect format and process using temp file
+            ImportFormat format = detectFormat(tempFile);
             log.info("Detected import format: " + format);
 
-            CallContext callContext = createCallContext(request, repositoryId);
-
             if (format == ImportFormat.ACP) {
-                ImportResult acpResult = importAcpFormat(repositoryId, folderId, zipData, callContext);
+                ImportResult acpResult = importAcpFormat(repositoryId, folderId, tempFile, callContext);
                 importedFolders = acpResult.foldersCreated;
                 importedDocuments = acpResult.documentsCreated;
                 errors.addAll(acpResult.errors);
                 warnings.addAll(acpResult.warnings);
             } else if (format == ImportFormat.CUSTOM) {
-                ImportResult customResult = importCustomFormat(repositoryId, folderId, zipData, callContext);
+                ImportResult customResult = importCustomFormat(repositoryId, folderId, tempFile, callContext);
                 importedFolders = customResult.foldersCreated;
                 importedDocuments = customResult.documentsCreated;
                 errors.addAll(customResult.errors);
@@ -222,7 +248,14 @@ public class ImportExportResource extends ResourceBase {
                         .entity(result.toJSONString()).build();
             }
 
-            result.put("status", errors.isEmpty() ? "success" : "partial");
+            // Fix: return partial if warnings exist (even without errors)
+            String status = "success";
+            if (!errors.isEmpty()) {
+                status = "partial";
+            } else if (!warnings.isEmpty()) {
+                status = "partial";
+            }
+            result.put("status", status);
             result.put("message", "Import completed");
             result.put("foldersCreated", importedFolders);
             result.put("documentsCreated", importedDocuments);
@@ -246,6 +279,11 @@ public class ImportExportResource extends ResourceBase {
                     .entity(result.toJSONString())
                     .type(MediaType.APPLICATION_JSON)
                     .build();
+        } finally {
+            // Clean up temp file
+            if (tempFile != null && tempFile.exists()) {
+                tempFile.delete();
+            }
         }
     }
 
@@ -318,13 +356,14 @@ public class ImportExportResource extends ResourceBase {
         ACP, CUSTOM, UNKNOWN
     }
 
-    private ImportFormat detectFormat(byte[] zipData) throws IOException {
-        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipData))) {
-            ZipEntry entry;
+    private ImportFormat detectFormat(File zipFile) throws IOException {
+        try (ZipFile zf = new ZipFile(zipFile)) {
             boolean hasPackageXml = false;
             boolean hasMetaJson = false;
 
-            while ((entry = zis.getNextEntry()) != null) {
+            Enumeration<? extends ZipEntry> entries = zf.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
                 if (name.endsWith(".xml") && !name.contains("/")) {
                     // Root-level XML file suggests ACP format
@@ -333,7 +372,6 @@ public class ImportExportResource extends ResourceBase {
                 if (name.endsWith(META_SUFFIX)) {
                     hasMetaJson = true;
                 }
-                zis.closeEntry();
             }
 
             if (hasPackageXml && !hasMetaJson) {
@@ -348,43 +386,49 @@ public class ImportExportResource extends ResourceBase {
     // ========== ACP Import ==========
 
     private ImportResult importAcpFormat(String repositoryId, String targetFolderId, 
-            byte[] zipData, CallContext callContext) throws Exception {
+            File zipFile, CallContext callContext) throws Exception {
 
         ImportResult result = new ImportResult();
         ContentService cs = getContentService();
 
-        // Parse ZIP contents
-        Map<String, byte[]> fileContents = new HashMap<>();
         String packageXmlName = null;
+        byte[] xmlData = null;
 
-        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipData))) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
+        // First pass: find and read package XML (small file, safe to keep in memory)
+        try (ZipFile zf = new ZipFile(zipFile)) {
+            Enumeration<? extends ZipEntry> entries = zf.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
-                if (!entry.isDirectory()) {
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    byte[] buffer = new byte[8192];
-                    int len;
-                    while ((len = zis.read(buffer)) != -1) {
-                        baos.write(buffer, 0, len);
-                    }
-                    fileContents.put(name, baos.toByteArray());
-
-                    if (name.endsWith(".xml") && !name.contains("/")) {
-                        packageXmlName = name;
-                    }
+                
+                // Sanitize path (fix: ZIP path traversal)
+                if (!isValidZipEntryName(name)) {
+                    result.warnings.add("Skipping invalid path: " + name);
+                    continue;
                 }
-                zis.closeEntry();
+                
+                if (!entry.isDirectory() && name.endsWith(".xml") && !name.contains("/")) {
+                    packageXmlName = name;
+                    try (InputStream is = zf.getInputStream(entry)) {
+                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                        byte[] buffer = new byte[8192];
+                        int len;
+                        while ((len = is.read(buffer)) != -1) {
+                            baos.write(buffer, 0, len);
+                        }
+                        xmlData = baos.toByteArray();
+                    }
+                    break;
+                }
             }
         }
 
-        if (packageXmlName == null) {
+        if (packageXmlName == null || xmlData == null) {
             result.errors.add("No package XML file found in ACP archive");
             return result;
         }
 
         // Parse XML
-        byte[] xmlData = fileContents.get(packageXmlName);
         org.dom4j.Document xmlDoc;
         try {
             SAXReader reader = new SAXReader();
@@ -397,20 +441,38 @@ public class ImportExportResource extends ResourceBase {
         // Get package name (directory containing binaries)
         String packageName = packageXmlName.replace(".xml", "");
 
-        // Process nodes from XML
+        // Process nodes from XML (reads files on-demand from ZipFile)
         Element root = xmlDoc.getRootElement();
         Map<String, String> uuidToObjectId = new HashMap<>();
         uuidToObjectId.put("", targetFolderId); // Root maps to target folder
 
-        processAcpNodes(repositoryId, root, targetFolderId, packageName, fileContents, 
+        processAcpNodes(repositoryId, root, targetFolderId, packageName, zipFile, 
                 uuidToObjectId, callContext, result);
 
         return result;
     }
 
+    /**
+     * Validate ZIP entry name to prevent path traversal attacks.
+     */
+    private boolean isValidZipEntryName(String name) {
+        if (name == null || name.isEmpty()) {
+            return false;
+        }
+        // Reject paths with .. or absolute paths
+        if (name.contains("..") || name.startsWith("/") || name.startsWith("\\")) {
+            return false;
+        }
+        // Reject paths with null bytes
+        if (name.contains("\0")) {
+            return false;
+        }
+        return true;
+    }
+
     @SuppressWarnings("unchecked")
     private void processAcpNodes(String repositoryId, Element element, String parentFolderId,
-            String packageName, Map<String, byte[]> fileContents, Map<String, String> uuidToObjectId,
+            String packageName, File zipFile, Map<String, String> uuidToObjectId,
             CallContext callContext, ImportResult result) {
 
         ContentService cs = getContentService();
@@ -447,7 +509,7 @@ public class ImportExportResource extends ResourceBase {
 
                     // Recursively process children
                     processAcpNodes(repositoryId, child, newFolder.getId(), packageName, 
-                            fileContents, uuidToObjectId, callContext, result);
+                            zipFile, uuidToObjectId, callContext, result);
 
                 } catch (Exception e) {
                     log.error("Failed to create folder: " + e.getMessage(), e);
@@ -470,11 +532,11 @@ public class ImportExportResource extends ResourceBase {
                     String mimeType = "application/octet-stream";
 
                     if (contentRef != null) {
-                        // Try to find the file in the package directory
+                        // Read file content on-demand from ZipFile (fix: OOM)
                         String filePath = packageName + "/" + contentRef;
-                        content = fileContents.get(filePath);
+                        content = readZipEntry(zipFile, filePath);
                         if (content == null) {
-                            content = fileContents.get(contentRef);
+                            content = readZipEntry(zipFile, contentRef);
                         }
                         mimeType = guessMimeType(contentRef);
                     }
@@ -510,6 +572,35 @@ public class ImportExportResource extends ResourceBase {
                     result.errors.add("Failed to create document: " + e.getMessage());
                 }
             }
+        }
+    }
+
+    /**
+     * Read a single entry from a ZipFile on-demand.
+     */
+    private byte[] readZipEntry(File zipFile, String entryName) {
+        try (ZipFile zf = new ZipFile(zipFile)) {
+            ZipEntry entry = zf.getEntry(entryName);
+            if (entry == null || entry.isDirectory()) {
+                return null;
+            }
+            // Check file size limit
+            if (entry.getSize() > MAX_SINGLE_FILE_SIZE) {
+                log.warn("Skipping large file: " + entryName + " (size: " + entry.getSize() + ")");
+                return null;
+            }
+            try (InputStream is = zf.getInputStream(entry)) {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = is.read(buffer)) != -1) {
+                    baos.write(buffer, 0, len);
+                }
+                return baos.toByteArray();
+            }
+        } catch (IOException e) {
+            log.warn("Failed to read ZIP entry: " + entryName, e);
+            return null;
         }
     }
 
@@ -636,34 +727,41 @@ public class ImportExportResource extends ResourceBase {
     // ========== Custom Format Import ==========
 
     private ImportResult importCustomFormat(String repositoryId, String targetFolderId,
-            byte[] zipData, CallContext callContext) throws Exception {
+            File zipFile, CallContext callContext) throws Exception {
 
         ImportResult result = new ImportResult();
         ContentService cs = getContentService();
 
-        // Parse ZIP contents
-        Map<String, byte[]> fileContents = new HashMap<>();
+        // First pass: collect entry names and parse metadata files (small, safe to keep in memory)
+        List<String> entryNames = new ArrayList<>();
         Map<String, JSONObject> metadataMap = new HashMap<>();
 
-        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipData))) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
+        try (ZipFile zf = new ZipFile(zipFile)) {
+            Enumeration<? extends ZipEntry> entries = zf.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
+                
+                // Sanitize path (fix: ZIP path traversal)
+                if (!isValidZipEntryName(name)) {
+                    result.warnings.add("Skipping invalid path: " + name);
+                    continue;
+                }
+                
                 if (!entry.isDirectory()) {
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    byte[] buffer = new byte[8192];
-                    int len;
-                    while ((len = zis.read(buffer)) != -1) {
-                        baos.write(buffer, 0, len);
-                    }
-                    byte[] data = baos.toByteArray();
-                    fileContents.put(name, data);
+                    entryNames.add(name);
 
-                    // Parse metadata files
+                    // Parse metadata files (small JSON, safe to keep in memory)
                     if (name.endsWith(META_SUFFIX)) {
-                        try {
+                        try (InputStream is = zf.getInputStream(entry)) {
+                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                            byte[] buffer = new byte[8192];
+                            int len;
+                            while ((len = is.read(buffer)) != -1) {
+                                baos.write(buffer, 0, len);
+                            }
                             JSONParser parser = new JSONParser();
-                            JSONObject meta = (JSONObject) parser.parse(new String(data, "UTF-8"));
+                            JSONObject meta = (JSONObject) parser.parse(new String(baos.toByteArray(), "UTF-8"));
                             String baseName = name.substring(0, name.length() - META_SUFFIX.length());
                             metadataMap.put(baseName, meta);
                         } catch (ParseException e) {
@@ -671,7 +769,6 @@ public class ImportExportResource extends ResourceBase {
                         }
                     }
                 }
-                zis.closeEntry();
             }
         }
 
@@ -680,14 +777,13 @@ public class ImportExportResource extends ResourceBase {
         pathToFolderId.put("", targetFolderId);
 
         // Process files (sorted to ensure folders are created before their contents)
-        List<String> sortedPaths = new ArrayList<>(fileContents.keySet());
-        sortedPaths.sort((a, b) -> {
+        entryNames.sort((a, b) -> {
             int depthA = a.split("/").length;
             int depthB = b.split("/").length;
             return depthA - depthB;
         });
 
-        for (String path : sortedPaths) {
+        for (String path : entryNames) {
             // Skip metadata and version files
             if (path.endsWith(META_SUFFIX) || isVersionFile(path)) {
                 continue;
@@ -705,8 +801,12 @@ public class ImportExportResource extends ResourceBase {
                 // Get metadata if available
                 JSONObject metadata = metadataMap.get(path);
 
-                // Create document
-                byte[] content = fileContents.get(path);
+                // Read file content on-demand from ZipFile (fix: OOM)
+                byte[] content = readZipEntry(zipFile, path);
+                if (content == null) {
+                    result.warnings.add("Could not read file content: " + path);
+                    continue;
+                }
                 String mimeType = guessMimeType(fileName);
 
                 PropertiesImpl props = new PropertiesImpl();
@@ -733,7 +833,7 @@ public class ImportExportResource extends ResourceBase {
                 }
 
                 // Import version history
-                importVersionHistory(repositoryId, path, fileContents, metadataMap, 
+                importVersionHistory(repositoryId, path, zipFile, metadataMap, 
                         newDoc, callContext, result);
 
             } catch (Exception e) {
@@ -874,18 +974,26 @@ public class ImportExportResource extends ResourceBase {
     }
 
     private void importVersionHistory(String repositoryId, String basePath, 
-            Map<String, byte[]> fileContents, Map<String, JSONObject> metadataMap,
+            File zipFile, Map<String, JSONObject> metadataMap,
             Document document, CallContext callContext, ImportResult result) {
 
-        // Look for version files
+        // Look for version files by scanning the ZipFile
         String baseFileName = getFileName(basePath);
         String parentPath = getParentPath(basePath);
 
         List<String> versionPaths = new ArrayList<>();
-        for (String path : fileContents.keySet()) {
-            if (path.startsWith(parentPath) && isVersionFileFor(path, baseFileName)) {
-                versionPaths.add(path);
+        try (ZipFile zf = new ZipFile(zipFile)) {
+            Enumeration<? extends ZipEntry> entries = zf.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                String path = entry.getName();
+                if (!entry.isDirectory() && path.startsWith(parentPath) && isVersionFileFor(path, baseFileName)) {
+                    versionPaths.add(path);
+                }
             }
+        } catch (IOException e) {
+            log.warn("Failed to scan ZIP for version files: " + e.getMessage());
+            return;
         }
 
         if (versionPaths.isEmpty()) {
@@ -946,7 +1054,7 @@ public class ImportExportResource extends ResourceBase {
             } else if (child instanceof Document) {
                 Document doc = (Document) child;
 
-                // Export document content
+                // Export document content (fix: InputStream resource leak)
                 if (doc.getAttachmentNodeId() != null) {
                     try {
                         var attachment = cs.getAttachment(repositoryId, doc.getAttachmentNodeId());
@@ -954,9 +1062,10 @@ public class ImportExportResource extends ResourceBase {
                             zos.putNextEntry(new ZipEntry(childPath));
                             byte[] buffer = new byte[8192];
                             int len;
-                            InputStream is = attachment.getInputStream();
-                            while ((len = is.read(buffer)) != -1) {
-                                zos.write(buffer, 0, len);
+                            try (InputStream is = attachment.getInputStream()) {
+                                while ((len = is.read(buffer)) != -1) {
+                                    zos.write(buffer, 0, len);
+                                }
                             }
                             zos.closeEntry();
                         }
@@ -1065,6 +1174,20 @@ public class ImportExportResource extends ResourceBase {
                 return; // Only current version exists
             }
 
+            // Sort versions by versionLabel or creationDate for consistent ordering (fix: version sorting)
+            allVersions.sort((a, b) -> {
+                String labelA = a.getVersionLabel();
+                String labelB = b.getVersionLabel();
+                if (labelA != null && labelB != null) {
+                    return labelA.compareTo(labelB);
+                }
+                // Fallback to creation date if versionLabel is null
+                if (a.getCreated() != null && b.getCreated() != null) {
+                    return a.getCreated().compareTo(b.getCreated());
+                }
+                return 0;
+            });
+
             int versionNum = 1;
             for (Document version : allVersions) {
                 // Skip the latest version (already exported as main file)
@@ -1072,7 +1195,7 @@ public class ImportExportResource extends ResourceBase {
                     continue;
                 }
 
-                // Export version content
+                // Export version content (fix: InputStream resource leak)
                 String versionPath = basePath + VERSION_PREFIX + versionNum;
                 if (version.getAttachmentNodeId() != null) {
                     try {
@@ -1081,9 +1204,10 @@ public class ImportExportResource extends ResourceBase {
                             zos.putNextEntry(new ZipEntry(versionPath));
                             byte[] buffer = new byte[8192];
                             int len;
-                            InputStream is = attachment.getInputStream();
-                            while ((len = is.read(buffer)) != -1) {
-                                zos.write(buffer, 0, len);
+                            try (InputStream is = attachment.getInputStream()) {
+                                while ((len = is.read(buffer)) != -1) {
+                                    zos.write(buffer, 0, len);
+                                }
                             }
                             zos.closeEntry();
                         }
@@ -1139,7 +1263,8 @@ public class ImportExportResource extends ResourceBase {
     }
 
     private CallContext createCallContext(HttpServletRequest request, String repositoryId) {
-        // Create a simple CallContext from request
+        // Create a simple CallContext from request (fix: no admin fallback)
+        // If user is not authenticated, getUsername() returns null
         return new CallContext() {
             @Override
             public String getBinding() { return "browser"; }
@@ -1148,7 +1273,7 @@ public class ImportExportResource extends ResourceBase {
             @Override
             public Object get(String key) {
                 if ("username".equals(key)) {
-                    return request.getRemoteUser() != null ? request.getRemoteUser() : "admin";
+                    return request.getRemoteUser();
                 }
                 if ("repositoryId".equals(key)) {
                     return repositoryId;
@@ -1159,7 +1284,7 @@ public class ImportExportResource extends ResourceBase {
             public String getRepositoryId() { return repositoryId; }
             @Override
             public String getUsername() {
-                return request.getRemoteUser() != null ? request.getRemoteUser() : "admin";
+                return request.getRemoteUser();
             }
             @Override
             public String getPassword() { return null; }
