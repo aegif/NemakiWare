@@ -825,9 +825,13 @@ public class WebhookServiceImpl implements WebhookService {
             if (event.getChangeToken() != null) {
                 change.put("changeToken", event.getChangeToken());
             }
-            // Include filtered properties if available (sensitive keys already filtered in buildPropertiesMap)
+            // Include filtered properties if available
+            // Re-apply filterSensitiveProperties for defense in depth (even though buildPropertiesMap should filter)
             if (event.getProperties() != null && !event.getProperties().isEmpty()) {
-                change.put("properties", event.getProperties());
+                Map<String, Object> filteredProps = deliveryService.filterSensitiveProperties(event.getProperties());
+                if (!filteredProps.isEmpty()) {
+                    change.put("properties", filteredProps);
+                }
             }
             changes.add(change);
         }
