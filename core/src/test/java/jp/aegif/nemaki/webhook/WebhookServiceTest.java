@@ -177,15 +177,18 @@ public class WebhookServiceTest {
     
     @Test
     public void testGetInheritedWebhookConfigsRespectsMaxDepth() {
-        // Create grandparent folder with webhook config that has maxDepth=0 (direct children only)
-        String grandparentConfigJson = "[{\"id\":\"grandparent-webhook\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"],\"includeChildren\":true,\"maxDepth\":0}]";
+        // Create grandparent folder with webhook config that has maxDepth=1 (direct children only)
+        // Distance is measured from webhook config folder to event object:
+        // - maxDepth=1 means direct children only (distance=1)
+        // - maxDepth=2 means children and grandchildren (distance=1,2)
+        String grandparentConfigJson = "[{\"id\":\"grandparent-webhook\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"],\"includeChildren\":true,\"maxDepth\":1}]";
         Folder grandparentFolder = createMockFolder("folder-0", null, 
             Arrays.asList("nemaki:webhookable"), grandparentConfigJson);
         
-        // Create intermediate folder (depth 1 from grandparent's perspective)
+        // Create intermediate folder (distance=1 from grandparent's perspective)
         Folder parentFolder = createMockFolder("folder-1", "folder-0", null, null);
         
-        // Create child document (depth 2 from grandparent's perspective - beyond maxDepth=0)
+        // Create child document (distance=2 from grandparent's perspective - beyond maxDepth=1)
         Document childDoc = createMockDocument("doc-1", "folder-1", null, null);
         
         when(mockContentService.getContent("bedroom", "folder-1")).thenReturn(parentFolder);
@@ -194,21 +197,23 @@ public class WebhookServiceTest {
         List<WebhookConfig> configs = webhookService.getInheritedWebhookConfigs("bedroom", childDoc);
         
         // From doc-1's perspective:
-        // Depth 0 = folder-1 (parent of doc-1) - no webhook config
-        // Depth 1 = folder-0 (grandparent of doc-1) - has webhook config with maxDepth=0
-        // maxDepth=0 means only depth 0 (direct children) is included
-        // Since folder-0 is at depth 1 from doc-1, its config should NOT be inherited
+        // folder-1 (parent of doc-1) at distance=1 - no webhook config
+        // folder-0 (grandparent of doc-1) at distance=2 - has webhook config with maxDepth=1
+        // distance=2 > maxDepth=1, so config should NOT be inherited
         assertTrue("Should not inherit config beyond maxDepth", configs.isEmpty());
     }
     
     @Test
     public void testGetInheritedWebhookConfigsIncludesMaxDepthBoundary() {
-        // Create parent folder with webhook config that has maxDepth=0 (direct children only)
-        String parentConfigJson = "[{\"id\":\"parent-webhook\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"],\"includeChildren\":true,\"maxDepth\":0}]";
+        // Create parent folder with webhook config that has maxDepth=1 (direct children only)
+        // Distance is measured from webhook config folder to event object:
+        // - maxDepth=1 means direct children only (distance=1)
+        // - maxDepth=2 means children and grandchildren (distance=1,2)
+        String parentConfigJson = "[{\"id\":\"parent-webhook\",\"enabled\":true,\"url\":\"https://example.com/webhook\",\"events\":[\"CREATED\"],\"includeChildren\":true,\"maxDepth\":1}]";
         Folder parentFolder = createMockFolder("folder-1", null, 
             Arrays.asList("nemaki:webhookable"), parentConfigJson);
         
-        // Create child document (depth 0 from parent's perspective - within maxDepth=0)
+        // Create child document (distance=1 from parent folder - within maxDepth=1)
         Document childDoc = createMockDocument("doc-1", "folder-1", null, null);
         
         when(mockContentService.getContent("bedroom", "folder-1")).thenReturn(parentFolder);
@@ -216,8 +221,8 @@ public class WebhookServiceTest {
         List<WebhookConfig> configs = webhookService.getInheritedWebhookConfigs("bedroom", childDoc);
         
         // From doc-1's perspective:
-        // Depth 0 = folder-1 (parent of doc-1) - has webhook config with maxDepth=0
-        // maxDepth=0 with <= comparison means depth 0 is included
+        // folder-1 is at distance=1 (parent of doc-1) - has webhook config with maxDepth=1
+        // distance=1 <= maxDepth=1, so config is included
         assertEquals("Should inherit config at maxDepth boundary", 1, configs.size());
         assertEquals("Should have parent's webhook ID", "parent-webhook", configs.get(0).getId());
     }

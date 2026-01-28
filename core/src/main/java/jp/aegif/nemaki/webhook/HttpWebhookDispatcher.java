@@ -110,6 +110,11 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             connection.setConnectTimeout(connectTimeout);
             connection.setReadTimeout(readTimeout);
             
+            // SSRF protection: Disable automatic redirect following
+            // This prevents attackers from using 302/307 redirects to bypass URL validation
+            // and reach internal endpoints after the initial URL passes isUrlSafe() check
+            connection.setInstanceFollowRedirects(false);
+            
             // Set default headers
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
             connection.setRequestProperty("User-Agent", "NemakiWare-Webhook/1.0");
@@ -204,7 +209,11 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
     
     /**
      * Check if URL is safe to access (SSRF protection).
-     * Blocks requests to localhost, private networks, and cloud metadata endpoints.
+     * Blocks requests to localhost, private networks, cloud metadata endpoints,
+     * multicast addresses, and IPv6 ULA (fc00::/7).
+     * 
+     * Uses getAllByName() to check ALL resolved IP addresses, not just the first one.
+     * This prevents bypass via multiple A/AAAA records where some are safe and some are not.
      */
     private boolean isUrlSafe(URL url) {
         String host = url.getHost();
@@ -220,52 +229,12 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             return false;
         }
         
-        // Resolve hostname and check if it's a private/loopback address
+        // Resolve hostname and check ALL resolved IP addresses
         try {
-            InetAddress address = InetAddress.getByName(host);
+            InetAddress[] addresses = InetAddress.getAllByName(host);
             
-            if (address.isLoopbackAddress()) {
-                log.debug("SSRF protection: blocked loopback address " + host);
-                return false;
-            }
-            
-            if (address.isLinkLocalAddress()) {
-                log.debug("SSRF protection: blocked link-local address " + host);
-                return false;
-            }
-            
-            if (address.isSiteLocalAddress()) {
-                log.debug("SSRF protection: blocked site-local (private) address " + host);
-                return false;
-            }
-            
-            // Check for IPv4 private ranges that might not be caught by isSiteLocalAddress
-            byte[] addrBytes = address.getAddress();
-            if (addrBytes.length == 4) {
-                int firstOctet = addrBytes[0] & 0xFF;
-                int secondOctet = addrBytes[1] & 0xFF;
-                
-                // 10.0.0.0/8
-                if (firstOctet == 10) {
-                    log.debug("SSRF protection: blocked 10.x.x.x private address " + host);
-                    return false;
-                }
-                
-                // 172.16.0.0/12
-                if (firstOctet == 172 && secondOctet >= 16 && secondOctet <= 31) {
-                    log.debug("SSRF protection: blocked 172.16-31.x.x private address " + host);
-                    return false;
-                }
-                
-                // 192.168.0.0/16
-                if (firstOctet == 192 && secondOctet == 168) {
-                    log.debug("SSRF protection: blocked 192.168.x.x private address " + host);
-                    return false;
-                }
-                
-                // 169.254.0.0/16 (link-local, includes AWS metadata)
-                if (firstOctet == 169 && secondOctet == 254) {
-                    log.debug("SSRF protection: blocked 169.254.x.x link-local address " + host);
+            for (InetAddress address : addresses) {
+                if (!isAddressSafe(address, host)) {
                     return false;
                 }
             }
@@ -275,6 +244,83 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             // This is a conservative approach - unresolvable hosts are blocked
             log.warn("SSRF protection: could not resolve hostname " + host + ", blocking for security");
             return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Check if a single IP address is safe to access.
+     * Blocks loopback, link-local, site-local, any-local, multicast,
+     * and IPv6 ULA (fc00::/7) addresses.
+     */
+    private boolean isAddressSafe(InetAddress address, String host) {
+        if (address.isLoopbackAddress()) {
+            log.debug("SSRF protection: blocked loopback address " + host + " -> " + address.getHostAddress());
+            return false;
+        }
+        
+        if (address.isLinkLocalAddress()) {
+            log.debug("SSRF protection: blocked link-local address " + host + " -> " + address.getHostAddress());
+            return false;
+        }
+        
+        if (address.isSiteLocalAddress()) {
+            log.debug("SSRF protection: blocked site-local (private) address " + host + " -> " + address.getHostAddress());
+            return false;
+        }
+        
+        if (address.isAnyLocalAddress()) {
+            log.debug("SSRF protection: blocked any-local address " + host + " -> " + address.getHostAddress());
+            return false;
+        }
+        
+        if (address.isMulticastAddress()) {
+            log.debug("SSRF protection: blocked multicast address " + host + " -> " + address.getHostAddress());
+            return false;
+        }
+        
+        byte[] addrBytes = address.getAddress();
+        
+        // Check for IPv4 private ranges that might not be caught by isSiteLocalAddress
+        if (addrBytes.length == 4) {
+            int firstOctet = addrBytes[0] & 0xFF;
+            int secondOctet = addrBytes[1] & 0xFF;
+            
+            // 10.0.0.0/8
+            if (firstOctet == 10) {
+                log.debug("SSRF protection: blocked 10.x.x.x private address " + host);
+                return false;
+            }
+            
+            // 172.16.0.0/12
+            if (firstOctet == 172 && secondOctet >= 16 && secondOctet <= 31) {
+                log.debug("SSRF protection: blocked 172.16-31.x.x private address " + host);
+                return false;
+            }
+            
+            // 192.168.0.0/16
+            if (firstOctet == 192 && secondOctet == 168) {
+                log.debug("SSRF protection: blocked 192.168.x.x private address " + host);
+                return false;
+            }
+            
+            // 169.254.0.0/16 (link-local, includes AWS metadata)
+            if (firstOctet == 169 && secondOctet == 254) {
+                log.debug("SSRF protection: blocked 169.254.x.x link-local address " + host);
+                return false;
+            }
+        }
+        
+        // Check for IPv6 ULA (Unique Local Address) fc00::/7
+        // This covers fc00::/8 and fd00::/8
+        if (addrBytes.length == 16) {
+            int firstByte = addrBytes[0] & 0xFF;
+            // fc00::/7 means first 7 bits are 1111110, so first byte is 0xFC or 0xFD
+            if (firstByte == 0xFC || firstByte == 0xFD) {
+                log.debug("SSRF protection: blocked IPv6 ULA address " + host + " -> " + address.getHostAddress());
+                return false;
+            }
         }
         
         return true;

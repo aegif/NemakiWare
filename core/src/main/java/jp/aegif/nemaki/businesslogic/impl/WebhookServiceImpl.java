@@ -26,8 +26,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import jakarta.annotation.PreDestroy;
@@ -90,6 +93,11 @@ public class WebhookServiceImpl implements WebhookService {
         "cmis:checkinComment"
     );
     
+    private static final int THREAD_POOL_CORE_SIZE = 5;
+    private static final int THREAD_POOL_MAX_SIZE = 10;
+    private static final int THREAD_POOL_QUEUE_SIZE = 100;
+    private static final long THREAD_POOL_KEEP_ALIVE_SECONDS = 60;
+    
     private ContentService contentService;
     private WebhookConfigParser configParser;
     private WebhookEventMatcher eventMatcher;
@@ -102,8 +110,34 @@ public class WebhookServiceImpl implements WebhookService {
         this.configParser = new WebhookConfigParser();
         this.eventMatcher = new WebhookEventMatcher();
         this.deliveryService = new WebhookDeliveryService();
-        this.executorService = Executors.newFixedThreadPool(10);
-        log.info("WebhookServiceImpl initialized with thread pool size: 10");
+        
+        // Use bounded ThreadPoolExecutor to prevent memory exhaustion
+        // when external webhook endpoints are slow or unresponsive
+        this.executorService = new ThreadPoolExecutor(
+            THREAD_POOL_CORE_SIZE,
+            THREAD_POOL_MAX_SIZE,
+            THREAD_POOL_KEEP_ALIVE_SECONDS,
+            TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE),
+            new WebhookRejectedExecutionHandler()
+        );
+        log.info("WebhookServiceImpl initialized with bounded thread pool: " +
+                 "core=" + THREAD_POOL_CORE_SIZE + ", max=" + THREAD_POOL_MAX_SIZE + 
+                 ", queue=" + THREAD_POOL_QUEUE_SIZE);
+    }
+    
+    /**
+     * Handler for rejected webhook tasks when the queue is full.
+     * Logs a warning and discards the task to prevent blocking the main thread.
+     */
+    private static class WebhookRejectedExecutionHandler implements RejectedExecutionHandler {
+        @Override
+        public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
+            log.warn("Webhook task rejected due to queue overflow. " +
+                     "Queue size: " + executor.getQueue().size() + 
+                     ", Active threads: " + executor.getActiveCount() +
+                     ". Consider increasing queue size or reducing webhook load.");
+        }
     }
     
     public void setContentService(ContentService contentService) {
@@ -307,11 +341,16 @@ public class WebhookServiceImpl implements WebhookService {
         }
         
         // Traverse up the folder hierarchy
+        // Distance is measured from the webhook config folder to the event object:
+        // - Parent folder (1 level up) = distance 1 from parent to event object
+        // - Grandparent folder (2 levels up) = distance 2 from grandparent to event object
+        // maxDepth=1 means "direct children only" (distance 1)
+        // maxDepth=2 means "children and grandchildren" (distance 1-2)
         String parentId = content.getParentId();
-        int depth = 0;
-        int maxDepth = 50; // Absolute max depth to prevent infinite loops
+        int distance = 1; // Start at 1: parent folder is distance 1 from event object
+        int absoluteMaxDepth = 50; // Absolute max to prevent infinite loops
         
-        while (parentId != null && depth < maxDepth) {
+        while (parentId != null && distance <= absoluteMaxDepth) {
             Content parent = contentService.getContent(repositoryId, parentId);
             if (parent == null) {
                 break;
@@ -323,9 +362,11 @@ public class WebhookServiceImpl implements WebhookService {
             // Filter to only configs with includeChildren=true
             for (WebhookConfig config : parentConfigs) {
                 if (config.isIncludeChildren()) {
-                    // Check maxDepth (null = unlimited, 0 = direct children only, N = N levels deep)
+                    // Check maxDepth (null = unlimited, N = up to N levels deep)
+                    // maxDepth=1 means direct children only (distance=1)
+                    // maxDepth=2 means children and grandchildren (distance=1,2)
                     Integer configMaxDepth = config.getMaxDepth();
-                    if (configMaxDepth == null || depth <= configMaxDepth) {
+                    if (configMaxDepth == null || distance <= configMaxDepth) {
                         result.add(config);
                     }
                 }
@@ -337,7 +378,7 @@ public class WebhookServiceImpl implements WebhookService {
             } else {
                 parentId = parent.getParentId();
             }
-            depth++;
+            distance++;
         }
         
         return result;
@@ -419,12 +460,26 @@ public class WebhookServiceImpl implements WebhookService {
         }
         
         // Add basic CMIS properties (these take precedence and cannot be overwritten)
+        // Include all essential properties that webhook consumers typically need
+        
+        // Core identification properties
+        if (content.getId() != null) {
+            properties.put("cmis:objectId", content.getId());
+        }
         if (content.getName() != null) {
             properties.put("cmis:name", content.getName());
         }
         if (content.getObjectType() != null) {
             properties.put("cmis:objectTypeId", content.getObjectType());
         }
+        if (content.getType() != null) {
+            properties.put("cmis:baseTypeId", content.getType());
+        }
+        if (content.getParentId() != null) {
+            properties.put("cmis:parentId", content.getParentId());
+        }
+        
+        // Audit properties
         if (content.getCreator() != null) {
             properties.put("cmis:createdBy", content.getCreator());
         }
@@ -436,6 +491,9 @@ public class WebhookServiceImpl implements WebhookService {
         }
         if (content.getModified() != null) {
             properties.put("cmis:lastModificationDate", content.getModified().getTimeInMillis());
+        }
+        if (content.getChangeToken() != null) {
+            properties.put("cmis:changeToken", content.getChangeToken());
         }
         
         return properties;
