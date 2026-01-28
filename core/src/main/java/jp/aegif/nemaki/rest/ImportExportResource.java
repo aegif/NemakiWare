@@ -632,19 +632,6 @@ public class ImportExportResource extends ResourceBase {
         }
     }
 
-    /**
-     * Read a single entry from a ZipFile (opens and closes the file).
-     * Use this only when you don't have an open ZipFile instance.
-     */
-    private byte[] readZipEntry(File zipFile, String entryName) {
-        try (ZipFile zf = new ZipFile(zipFile)) {
-            return readZipEntry(zf, entryName);
-        } catch (IOException e) {
-            log.warn("Failed to open ZIP file: " + zipFile, e);
-            return null;
-        }
-    }
-
     private String getAcpAttribute(Element element, String attrName) {
         // Try with namespace prefix
         String value = element.attributeValue("alf:" + attrName);
@@ -891,7 +878,7 @@ public class ImportExportResource extends ResourceBase {
                     }
 
                     // Import version history (pass open ZipFile for performance)
-                    importVersionHistory(repositoryId, path, zf, metadataMap, 
+                    importVersionHistory(repositoryId, path, zf, 
                             newDoc, callContext, result);
 
                 } catch (Exception e) {
@@ -1033,8 +1020,7 @@ public class ImportExportResource extends ResourceBase {
     }
 
     private void importVersionHistory(String repositoryId, String basePath, 
-            ZipFile zf, Map<String, JSONObject> metadataMap,
-            Document document, CallContext callContext, ImportResult result) {
+            ZipFile zf, Document document, CallContext callContext, ImportResult result) {
 
         // Look for version files by scanning the open ZipFile (fix: ZipFile performance)
         String baseFileName = getFileName(basePath);
