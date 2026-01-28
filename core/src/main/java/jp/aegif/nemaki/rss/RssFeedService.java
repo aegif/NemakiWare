@@ -266,13 +266,29 @@ public class RssFeedService {
                 break;
             }
             
-            String objectId = change.getObjectId();
-            Content content = contentService != null ? contentService.getContent(repositoryId, objectId) : null;
+            if (!matchesEventFilter(change, events)) {
+                continue;
+            }
             
-            if (content != null) {
-                String parentId = content.getParentId();
-                if (folderIds.contains(objectId) || folderIds.contains(parentId)) {
-                    if (matchesEventFilter(change, events)) {
+            String objectId = change.getObjectId();
+            String eventType = convertChangeTypeToEventType(change.getChangeType());
+            
+            if ("DELETED".equals(eventType)) {
+                String changeParentId = change.getParentId();
+                if (folderIds.contains(objectId) || folderIds.contains(changeParentId)) {
+                    filteredChanges.add(change);
+                }
+            } else {
+                Content content = contentService != null ? contentService.getContent(repositoryId, objectId) : null;
+                
+                if (content != null) {
+                    String parentId = content.getParentId();
+                    if (folderIds.contains(objectId) || folderIds.contains(parentId)) {
+                        filteredChanges.add(change);
+                    }
+                } else {
+                    String changeParentId = change.getParentId();
+                    if (folderIds.contains(objectId) || folderIds.contains(changeParentId)) {
                         filteredChanges.add(change);
                     }
                 }
@@ -373,19 +389,38 @@ public class RssFeedService {
     
     /**
      * Convert a single Change to an RssFeedItem.
+     * Uses Change metadata for deleted objects since content may not exist.
      */
     private RssFeedItem convertChangeToFeedItem(String repositoryId, Change change) {
         String objectId = change.getObjectId();
         String eventType = convertChangeTypeToEventType(change.getChangeType());
         
-        Content content = null;
-        if (contentService != null) {
-            content = contentService.getContent(repositoryId, objectId);
-        }
+        String objectName;
+        String objectType;
+        String parentId;
         
-        String objectName = content != null ? content.getName() : objectId;
-        String objectType = content != null ? content.getObjectType() : "unknown";
-        String parentId = content != null ? content.getParentId() : null;
+        if ("DELETED".equals(eventType)) {
+            objectName = change.getName() != null ? change.getName() : objectId;
+            objectType = change.getObjectType() != null ? change.getObjectType() : 
+                        (change.getBaseType() != null ? change.getBaseType() : "unknown");
+            parentId = change.getParentId();
+        } else {
+            Content content = null;
+            if (contentService != null) {
+                content = contentService.getContent(repositoryId, objectId);
+            }
+            
+            if (content != null) {
+                objectName = content.getName();
+                objectType = content.getObjectType();
+                parentId = content.getParentId();
+            } else {
+                objectName = change.getName() != null ? change.getName() : objectId;
+                objectType = change.getObjectType() != null ? change.getObjectType() : 
+                            (change.getBaseType() != null ? change.getBaseType() : "unknown");
+                parentId = change.getParentId();
+            }
+        }
         
         String title = buildItemTitle(eventType, objectName);
         String description = buildItemDescription(eventType, objectName, objectType);

@@ -141,7 +141,8 @@ public class RssFeedResource extends ResourceBase {
             @QueryParam("maxDepth") Integer maxDepth,
             @QueryParam("limit") Integer limit,
             @QueryParam("events") String events,
-            @QueryParam("format") @DefaultValue("rss") String format) {
+            @QueryParam("format") @DefaultValue("rss") String format,
+            @Context HttpServletRequest request) {
         
         if (!enabled) {
             return buildErrorResponse(Response.Status.SERVICE_UNAVAILABLE, "RSS feed functionality is disabled");
@@ -152,7 +153,8 @@ public class RssFeedResource extends ResourceBase {
             return buildErrorResponse(Response.Status.SERVICE_UNAVAILABLE, "RSS feed service not available");
         }
         
-        RssToken rssToken = validateToken(token);
+        String tokenValue = extractToken(token, request);
+        RssToken rssToken = validateToken(tokenValue, repositoryId);
         if (rssToken == null) {
             return buildErrorResponse(Response.Status.UNAUTHORIZED, "Invalid or expired token");
         }
@@ -211,7 +213,8 @@ public class RssFeedResource extends ResourceBase {
             @QueryParam("token") String token,
             @QueryParam("limit") Integer limit,
             @QueryParam("events") String events,
-            @QueryParam("format") @DefaultValue("rss") String format) {
+            @QueryParam("format") @DefaultValue("rss") String format,
+            @Context HttpServletRequest request) {
         
         if (!enabled) {
             return buildErrorResponse(Response.Status.SERVICE_UNAVAILABLE, "RSS feed functionality is disabled");
@@ -222,7 +225,8 @@ public class RssFeedResource extends ResourceBase {
             return buildErrorResponse(Response.Status.SERVICE_UNAVAILABLE, "RSS feed service not available");
         }
         
-        RssToken rssToken = validateToken(token);
+        String tokenValue = extractToken(token, request);
+        RssToken rssToken = validateToken(tokenValue, repositoryId);
         if (rssToken == null) {
             return buildErrorResponse(Response.Status.UNAUTHORIZED, "Invalid or expired token");
         }
@@ -600,22 +604,57 @@ public class RssFeedResource extends ResourceBase {
         return result.toJSONString();
     }
     
-    private RssToken validateToken(String tokenValue) {
+    /**
+     * Extract token from query parameter or Authorization header.
+     * Supports both query parameter (?token=xxx) and Bearer token (Authorization: Bearer xxx).
+     */
+    private String extractToken(String queryToken, HttpServletRequest request) {
+        if (queryToken != null && !queryToken.isEmpty()) {
+            return queryToken;
+        }
+        
+        if (request != null) {
+            String authHeader = request.getHeader("Authorization");
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                return authHeader.substring(7).trim();
+            }
+        }
+        
+        return null;
+    }
+    
+    private RssToken validateToken(String tokenValue, String repositoryId) {
         RssTokenService tokenService = getRssTokenService();
         if (tokenService == null) {
             return null;
         }
-        return tokenService.validateToken(tokenValue);
+        RssToken token = tokenService.validateToken(tokenValue);
+        if (token == null) {
+            return null;
+        }
+        if (token.getRepositoryId() != null && !token.getRepositoryId().equals(repositoryId)) {
+            log.warn("Token repositoryId mismatch: expected " + repositoryId + ", got " + token.getRepositoryId());
+            return null;
+        }
+        return token;
     }
     
     /**
      * Parse comma-separated events string into a Set.
+     * Trims whitespace from each event type.
      */
     private Set<String> parseEvents(String events) {
         if (events == null || events.isEmpty()) {
             return null;
         }
-        return new HashSet<>(Arrays.asList(events.split(",")));
+        Set<String> eventSet = new HashSet<>();
+        for (String event : events.split(",")) {
+            String trimmed = event.trim();
+            if (!trimmed.isEmpty()) {
+                eventSet.add(trimmed);
+            }
+        }
+        return eventSet.isEmpty() ? null : eventSet;
     }
     
     /**
