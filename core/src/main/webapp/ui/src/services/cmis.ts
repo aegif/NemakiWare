@@ -3268,4 +3268,137 @@ export class CMISService {
 
     return data;
   }
+
+  /**
+   * Import content from ACP or custom format ZIP file.
+   * Supports Alfresco ACP format and NemakiWare custom format with distributed JSON metadata.
+   *
+   * @param repositoryId Repository ID
+   * @param folderId Target folder ID to import into
+   * @param file ZIP file to import
+   * @param onProgress Optional progress callback
+   * @returns Promise resolving to import result
+   */
+  async importContent(
+    repositoryId: string,
+    folderId: string,
+    file: File,
+    onProgress?: (progress: number) => void
+  ): Promise<{
+    status: string;
+    message: string;
+    foldersCreated: number;
+    documentsCreated: number;
+    errors?: string[];
+    warnings?: string[];
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const headers = this.getAuthHeaders();
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `/core/rest/repo/${repositoryId}/importexport/import/${folderId}`);
+
+      // Set auth headers
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      // Extended timeout for large imports (10 minutes)
+      xhr.timeout = 600000;
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          onProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data);
+          } catch (e) {
+            reject(new Error('Invalid response format'));
+          }
+        } else {
+          try {
+            const errorData = JSON.parse(xhr.responseText);
+            reject(new Error(errorData.message || `Import failed: ${xhr.status}`));
+          } catch (e) {
+            reject(new Error(`Import failed: ${xhr.status}`));
+          }
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error during import'));
+      };
+
+      xhr.ontimeout = () => {
+        reject(new Error('Import timed out'));
+      };
+
+      xhr.send(formData);
+    });
+  }
+
+  /**
+   * Export folder contents as custom NemakiWare format ZIP.
+   * The ZIP contains files with their version history and JSON metadata.
+   *
+   * @param repositoryId Repository ID
+   * @param folderId Folder ID to export
+   * @param onProgress Optional progress callback
+   * @returns Promise resolving to Blob containing the ZIP file
+   */
+  async exportContent(
+    repositoryId: string,
+    folderId: string,
+    onProgress?: (progress: number) => void
+  ): Promise<Blob> {
+    const headers = this.getAuthHeaders();
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `/core/rest/repo/${repositoryId}/importexport/export/${folderId}`);
+      xhr.responseType = 'blob';
+
+      // Set auth headers
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+
+      // Extended timeout for large exports (10 minutes)
+      xhr.timeout = 600000;
+
+      xhr.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          onProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(xhr.response as Blob);
+        } else {
+          reject(new Error(`Export failed: ${xhr.status}`));
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error during export'));
+      };
+
+      xhr.ontimeout = () => {
+        reject(new Error('Export timed out'));
+      };
+
+      xhr.send();
+    });
+  }
 }

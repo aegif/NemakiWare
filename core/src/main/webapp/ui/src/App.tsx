@@ -213,6 +213,7 @@ import { ArchiveManagement } from './components/ArchiveManagement/ArchiveManagem
 import { SolrMaintenance } from './components/SolrMaintenance/SolrMaintenance';
 import { AuditDashboard } from './components/AuditDashboard/AuditDashboard';
 import { ApiDocs } from './components/ApiDocs/ApiDocs';
+import { FilesystemImportExport } from './components/FilesystemImportExport/FilesystemImportExport';
 import { Login } from './components/Login/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute/ProtectedRoute';
@@ -310,6 +311,13 @@ function AppContent() {
             <ProtectedRoute>
               <AdminRoute>
                 <ApiDocs repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/filesystem-import-export" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <FilesystemImportExport repositoryId={authToken.repositoryId} />
               </AdminRoute>
             </ProtectedRoute>
           } />

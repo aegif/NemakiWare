@@ -88,7 +88,8 @@
       "archive": "アーカイブ",
       "solr": "Solrインデックス",
       "auditDashboard": "監査ログ",
-      "apiDocs": "API仕様"
+      "apiDocs": "API仕様",
+      "filesystemImportExport": "ファイルシステム インポート/エクスポート"
     },
   "typeManagement": {
     "title": "タイプ管理",
@@ -997,6 +998,7 @@
       "deletePartialFail": "{{count}}件のオブジェクトの削除に失敗しました",
       "deleteError": "削除に失敗しました",
       "bulkDeleteSuccess": "{{count}}件のアイテムを削除しました",
+      "bulkDeletePartial": "{{count}}件のアイテムを削除しましたが、一部の子孫オブジェクトの削除に失敗しました",
       "bulkDeleteFailed": "{{count}}件のアイテムの削除に失敗しました",
       "bulkDeleteError": "一括削除に失敗しました",
       "renameSuccess": "名前を変更しました",
@@ -1481,6 +1483,34 @@
       "healthCheckError": "ヘルスチェックに失敗しました"
     }
   },
+  "importExport": {
+    "import": "インポート",
+    "export": "エクスポート",
+    "importTitle": "コンテンツのインポート",
+    "exportTitle": "コンテンツのエクスポート",
+    "importDescription": "ACP形式またはNemakiWare独自形式のZIPファイルをインポートします",
+    "exportDescription": "フォルダの内容をNemakiWare独自形式のZIPファイルとしてエクスポートします",
+    "selectFile": "ファイルを選択",
+    "dragDropHint": "クリックまたはドラッグしてZIPファイルをアップロード",
+    "supportedFormats": "対応形式: .acp (Alfresco), .zip (NemakiWare独自形式)",
+    "importing": "インポート中...",
+    "exporting": "エクスポート中...",
+    "importSuccess": "インポートが完了しました",
+    "exportSuccess": "エクスポートが完了しました",
+    "importError": "インポートに失敗しました",
+    "exportError": "エクスポートに失敗しました",
+    "foldersCreated": "作成されたフォルダ: {{count}}",
+    "documentsCreated": "作成されたドキュメント: {{count}}",
+    "warnings": "警告",
+    "errors": "エラー",
+    "progress": "進捗: {{progress}}%",
+    "partialSuccess": "一部のアイテムでエラーが発生しました",
+    "confirmExport": "このフォルダをエクスポートしますか？",
+    "exportInProgress": "エクスポート処理中です。しばらくお待ちください。",
+    "importInProgress": "インポート処理中です。しばらくお待ちください。",
+    "noFileSelected": "ファイルが選択されていません",
+    "invalidFileType": "無効なファイル形式です。.acpまたは.zipファイルを選択してください"
+  },
   "auditDashboard": {
     "title": "監査ログ ダッシュボード",
     "error": "エラー",
@@ -1506,5 +1536,53 @@
     "status": "状態",
     "readAuditLevel": "READ監査レベル",
     "lastUpdated": "最終更新"
+  },
+  "filesystemImportExport": {
+    "title": "ファイルシステム インポート/エクスポート",
+    "adminOnly": "管理者専用機能",
+    "adminOnlyDescription": "この機能は、アプリケーションサーバーのローカルファイルシステムから直接コンテンツをインポート/エクスポートできます（ZIP圧縮なし）。管理者のみがこの機能にアクセスできます。",
+    "refreshFolders": "フォルダを更新",
+    "import": {
+      "title": "インポート",
+      "description": "アプリケーションサーバー上のローカルファイルシステムディレクトリからコンテンツをインポートします。ディレクトリにはNemakiWare独自形式のファイルとJSONメタデータファイルが含まれている必要があります。",
+      "sourcePath": "ソースパス",
+      "sourcePathRequired": "ソースパスを入力してください",
+      "sourcePathHelp": "サーバーファイルシステム上のディレクトリへの絶対パスを入力してください",
+      "targetFolder": "インポート先フォルダ",
+      "targetFolderRequired": "インポート先フォルダを選択してください",
+      "selectFolder": "フォルダを選択",
+      "button": "ファイルシステムからインポート",
+      "success": "インポートが正常に完了しました",
+      "partial": "インポートが警告付きで完了しました",
+      "error": "インポートに失敗しました"
+    },
+    "export": {
+      "title": "エクスポート",
+      "description": "アプリケーションサーバー上のローカルファイルシステムディレクトリにコンテンツをエクスポートします。ファイルはNemakiWare独自形式でJSONメタデータファイルと共にエクスポートされます。",
+      "sourceFolder": "エクスポート元フォルダ",
+      "sourceFolderRequired": "エクスポート元フォルダを選択してください",
+      "selectFolder": "フォルダを選択",
+      "targetPath": "出力先パス",
+      "targetPathRequired": "出力先パスを入力してください",
+      "targetPathHelp": "サーバーファイルシステム上の出力先ディレクトリへの絶対パスを入力してください",
+      "allowOverwrite": "既存ファイルを上書きする",
+      "button": "ファイルシステムにエクスポート",
+      "success": "エクスポートが正常に完了しました",
+      "partial": "エクスポートが警告付きで完了しました",
+      "error": "エクスポートに失敗しました"
+    },
+    "result": {
+      "status": "ステータス",
+      "success": "成功",
+      "partial": "一部成功",
+      "error": "エラー",
+      "foldersCreated": "作成されたフォルダ数",
+      "documentsCreated": "作成されたドキュメント数",
+      "foldersExported": "エクスポートされたフォルダ数",
+      "documentsExported": "エクスポートされたドキュメント数",
+      "targetPath": "出力先パス",
+      "warnings": "警告",
+      "errors": "エラー"
+    }
   }
 }
