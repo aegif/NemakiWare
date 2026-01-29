@@ -70,7 +70,11 @@ async function login(page: any): Promise<void> {
   await page.fill('input[placeholder*="ユーザー名"], input[placeholder*="Username"]', TEST_USER);
   await page.fill('input[type="password"]', TEST_PASSWORD);
   await page.click('button[type="submit"]');
-  await page.waitForURL('**/documents**', { timeout: 30000 });
+  // Hash-based routing: waitForURL glob doesn't match #/documents
+  await page.waitForFunction(
+    () => window.location.hash.includes('/documents'),
+    { timeout: 30000 }
+  );
 }
 
 // Helper: Navigate to document viewer
@@ -345,7 +349,7 @@ test.describe('Relationship Feature Verification', () => {
       }
 
       // Click on relationships tab - use getByRole for accessibility
-      const relationshipsTab = page.getByRole('tab', { name: '関係' });
+      const relationshipsTab = page.getByRole('tab', { name: /リレーションシップ|Relationships|関係/i });
       await expect(relationshipsTab).toBeVisible({ timeout: 10000 });
       await relationshipsTab.click();
       await page.waitForTimeout(2000);
@@ -359,7 +363,7 @@ test.describe('Relationship Feature Verification', () => {
       // Alternative: Check for any visible content in the tab area
       if (!isTabContentVisible) {
         // At minimum, verify we're on the correct tab (tab should be active)
-        const activeTab = page.locator('[class*="ant-tabs-tab-active"]').filter({ hasText: '関係' });
+        const activeTab = page.locator('[class*="ant-tabs-tab-active"]').filter({ hasText: /リレーションシップ|Relationships|関係/i });
         await expect(activeTab).toBeVisible({ timeout: 5000 });
       }
 

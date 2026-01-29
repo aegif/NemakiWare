@@ -626,7 +626,7 @@ test.describe('ACL Operations - Multiple Users', () => {
    * Multi-user ACL operations verified working via manual API testing.
    * Re-enable after implementing ACL batch operation synchronization.
    */
-  test.skip('should add and remove multiple users in single operations', async ({ browser }) => {
+  test('should add and remove multiple users in single operations', async ({ browser }) => {
     test.setTimeout(60000);
 
     const context = await browser.newContext();

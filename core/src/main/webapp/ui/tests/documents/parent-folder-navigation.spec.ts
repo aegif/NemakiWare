@@ -44,13 +44,13 @@ async function createTestFolder(parentId: string, folderName: string): Promise<s
         'propertyValue[0]': 'cmis:folder',
         'propertyId[1]': 'cmis:name',
         'propertyValue[1]': folderName,
-        folderId: parentId,
+        objectId: parentId,
       }).toString(),
     });
 
     if (response.ok) {
       const data = await response.json();
-      return data.properties?.['cmis:objectId']?.value || null;
+      return data.succinctProperties?.['cmis:objectId'] || data.properties?.['cmis:objectId']?.value || null;
     }
     console.log(`Failed to create folder ${folderName}:`, response.status);
     return null;
@@ -313,7 +313,7 @@ test.describe('Parent Folder Navigation', () => {
    * Parent folder navigation verified working via manual testing.
    * Re-enable after implementing stable test folder setup.
    */
-  test.skip('should show Up button when in subfolder', async () => {
+  test('should show Up button when in subfolder', async () => {
     // Find any existing folder to navigate into (not hardcoded to 'Sites')
     // Note: FolderOutlined renders as .anticon-folder
     const folderIcon = page.locator('.ant-table-tbody tr .anticon-folder').first();

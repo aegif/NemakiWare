@@ -279,7 +279,7 @@ test.describe('Office Document Preview', () => {
    * - Japanese font rendering is manually verified working
    * - Server response time can exceed test timeout
    */
-  test.skip('should render Japanese text correctly in Office preview', async ({ page, browserName }) => {
+  test('should render Japanese text correctly in Office preview', async ({ page, browserName }) => {
     console.log('Test 2: Japanese text rendering verification');
 
     const isMobile = testHelper.isMobile(browserName);

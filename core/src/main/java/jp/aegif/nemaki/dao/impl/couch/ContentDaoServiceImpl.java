@@ -3726,8 +3726,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
 		try {
-			// Query archives view with pagination parameters
-			// CRITICAL FIX: Use archive repository, not main repository
+			// Query allByCreated view with pagination parameters (same as v2.4)
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
 			Map<String, Object> queryParams = new HashMap<String, Object>();
@@ -3738,16 +3737,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			if (limit != null && limit > 0) {
 				queryParams.put("limit", limit.longValue());
 			}
-			if (desc != null && desc) {
+			if (desc == null) {
+				queryParams.put("descending", true);
+			} else if (desc) {
 				queryParams.put("descending", true);
 			}
-			
-			ViewResult result = client.queryView("_repo", "archives", queryParams);
+
+			ViewResult result = client.queryView("_repo", "allByCreated", queryParams);
 			List<Archive> archives = new ArrayList<Archive>();
 
 			if (result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
-					// The 'archives' view emits: emit(doc.created, doc)
+					// The 'allByCreated' view emits: emit(doc.created, doc)
 					// So the document data is in getValue(), not getDoc() (which requires include_docs=true)
 					Object docValue = row.getValue();
 					if (docValue != null) {

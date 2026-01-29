@@ -403,7 +403,7 @@ test.describe('FolderTree Navigation', () => {
    * Folder tree double-click navigation verified working via manual testing.
    * Re-enable after implementing more robust tree state synchronization.
    */
-  test.skip('should handle double-click to make folder current', async ({ page, browserName }) => {
+  test('should handle double-click to make folder current', async ({ page, browserName }) => {
     // Skip on mobile
     const isMobile = testHelper.isMobile(browserName);
 
@@ -515,7 +515,7 @@ test.describe('FolderTree Navigation', () => {
    * Folder tree lazy loading verified working via manual testing.
    * Re-enable after implementing isolated test folder environment.
    */
-  test.skip('should load children on tree node expansion', async ({ page, browserName }) => {
+  test('should load children on tree node expansion', async ({ page, browserName }) => {
     // Skip on mobile
     const isMobile = testHelper.isMobile(browserName);
 

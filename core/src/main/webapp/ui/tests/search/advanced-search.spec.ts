@@ -1109,7 +1109,7 @@ test.describe('Advanced Search', () => {
       hasText: /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+.*\.pdf/
     });
 
-    // Quick check with multiple keywords - optimized for speed
+    // Search with keywords that would match Japanese-named PDFs
     const keywords = ['ドキュメント', '検索', '文書', 'テスト'];
     let foundJapanesePdf = false;
 
@@ -1121,8 +1121,8 @@ test.describe('Advanced Search', () => {
         await searchInput.first().press('Enter');
       }
 
-      // Reduced wait time (was 3000-25000ms, now 2000ms)
-      await page.waitForTimeout(2000);
+      // Wait for search results to load
+      await page.waitForTimeout(5000);
 
       const count = await japanesePdfLocator.count();
       if (count > 0) {

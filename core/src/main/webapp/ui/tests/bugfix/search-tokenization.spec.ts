@@ -148,7 +148,7 @@ test.describe('Search Tokenization Bug Verification', () => {
    * Search tokenization verified working via API tests and manual testing.
    * Re-enable after implementing better Solr index wait mechanism.
    */
-  test.skip('CONTAINS search should only match exact phrase, not tokenized words', async ({ request }) => {
+  test('CONTAINS search should only match exact phrase, not tokenized words', async ({ request }) => {
     // Create test documents
     const docWithKeyword = `search-with-keyword-${generateTestId()}.txt`;
     const docWithoutKeyword = `search-without-keyword-${generateTestId()}.txt`;
@@ -241,7 +241,7 @@ test.describe('Search Tokenization Bug Verification', () => {
    * Search tokenization verified working via API tests and manual testing.
    * Re-enable after implementing better Solr index wait mechanism.
    */
-  test.skip('Search should work correctly for documents with Commentable secondary type', async ({ request }) => {
+  test('Search should work correctly for documents with Commentable secondary type', async ({ request }) => {
     const docWithCommentable = `search-commentable-${generateTestId()}.txt`;
     const docWithCommentableNoMatch = `search-commentable-nomatch-${generateTestId()}.txt`;
 

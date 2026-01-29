@@ -98,7 +98,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      timeout: 90000, // Reduced from 180s to 90s
+      timeout: 120000, // Increased from 90s to 120s for login + table load + test operations
       use: {
         ...devices['Desktop Chrome'],
         // NemakiWare UI viewport settings
@@ -108,7 +108,7 @@ export default defineConfig({
 
     {
       name: 'firefox',
-      timeout: 90000,
+      timeout: 120000,
       use: {
         ...devices['Desktop Firefox'],
         viewport: { width: 1280, height: 720 },
@@ -117,7 +117,7 @@ export default defineConfig({
 
     {
       name: 'webkit',
-      timeout: 90000,
+      timeout: 120000,
       use: {
         ...devices['Desktop Safari'],
         viewport: { width: 1280, height: 720 },
@@ -127,14 +127,14 @@ export default defineConfig({
     // Mobile testing
     {
       name: 'Mobile Chrome',
-      timeout: 90000,
+      timeout: 120000,
       use: {
         ...devices['Pixel 5'],
       },
     },
     {
       name: 'Mobile Safari',
-      timeout: 90000,
+      timeout: 120000,
       use: {
         ...devices['iPhone 12'],
       },
@@ -143,7 +143,7 @@ export default defineConfig({
     // Tablet testing for document management interface
     {
       name: 'Tablet',
-      timeout: 90000,
+      timeout: 120000,
       use: {
         ...devices['iPad Pro'],
         viewport: { width: 1024, height: 768 },

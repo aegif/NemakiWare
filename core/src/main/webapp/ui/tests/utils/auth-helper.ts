@@ -497,13 +497,26 @@ export class AuthHelper {
         // Check for key elements that indicate successful navigation to documents
         const hasLayout = document.querySelector('.ant-layout') !== null;
         const hasSider = document.querySelector('.ant-layout-sider') !== null;
-        return hasLayout && hasSider;
+        const hasContent = document.querySelector('.ant-layout-content') !== null;
+        return hasLayout && hasSider && hasContent;
       },
       { timeout: 60000 }  // Increased from 30000ms to 60000ms for Docker environment
     );
 
+    // Wait for table to appear and finish loading (documents page)
+    try {
+      await this.page.waitForSelector('.ant-table', { timeout: 15000 });
+      // Wait for table data to finish loading (spinner gone)
+      await this.page.waitForFunction(
+        () => document.querySelector('.ant-spin-spinning') === null,
+        { timeout: 10000 }
+      );
+    } catch {
+      // Page may not have a table (e.g. redirected elsewhere), continue
+    }
+
     // Additional wait for page stabilization
-    await this.page.waitForTimeout(1000);
+    await this.page.waitForTimeout(500);
   }
 
   /**
