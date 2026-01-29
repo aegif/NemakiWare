@@ -753,54 +753,77 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   };
 
   /**
-   * Handle bulk delete operation.
-   * Deletes all selected items with cascade deletion for related objects.
-   * Uses deleteObjectWithCascade return value to accurately count successes and failures.
-   * Reports partial failures when descendant deletions fail.
+   * Handle bulk delete operation with improved counting and parallel execution.
+   * 
+   * Improvements over previous implementation:
+   * 1. Separate counts for complete success vs partial success (descendant failures)
+   * 2. Collect all failed descendant IDs for detailed reporting
+   * 3. Parallel execution with concurrency limit for better UX with large selections
+   * 4. Clearer message wording distinguishing root vs descendant failures
    */
   const handleBulkDelete = async () => {
     setBulkDeleteLoading(true);
     try {
-      let successCount = 0;
-      let failedCount = 0;
-      let partialFailureCount = 0;
+      // Separate counters for clear reporting
+      let completeSuccessCount = 0;  // Root deleted AND all descendants deleted
+      let partialSuccessCount = 0;   // Root deleted BUT some descendants failed
+      let failedCount = 0;           // Root deletion failed
+      const allFailedDescendantIds: string[] = [];  // Collect for detailed reporting
 
-      for (const objectId of selectedRowKeys) {
-        try {
-          const objectIdStr = String(objectId);
-          const result = await cmisService.deleteObjectWithCascade(repositoryId, objectIdStr);
-          // Count the root object as success only if it was actually deleted (not in failedIds)
-          if (!result.failedIds.includes(objectIdStr)) {
-            successCount++;
-            // Check if there were descendant failures (partial success)
-            if (result.failedIds.length > 0) {
-              partialFailureCount++;
-              console.warn(`Cascade delete for ${objectIdStr} succeeded but ${result.failedIds.length} descendant(s) failed:`, result.failedIds);
+      // Parallel execution with concurrency limit (3 concurrent deletions)
+      const CONCURRENCY_LIMIT = 3;
+      const objectIds = selectedRowKeys.map(key => String(key));
+      
+      for (let i = 0; i < objectIds.length; i += CONCURRENCY_LIMIT) {
+        const batch = objectIds.slice(i, i + CONCURRENCY_LIMIT);
+        const results = await Promise.allSettled(
+          batch.map(objectId => cmisService.deleteObjectWithCascade(repositoryId, objectId))
+        );
+
+        results.forEach((result, index) => {
+          const objectId = batch[index];
+          if (result.status === 'fulfilled') {
+            const deleteResult = result.value;
+            if (deleteResult.rootDeleted) {
+              if (deleteResult.descendantFailedIds.length > 0) {
+                // Root deleted but some descendants failed - partial success
+                partialSuccessCount++;
+                allFailedDescendantIds.push(...deleteResult.descendantFailedIds);
+              } else {
+                // Complete success - root and all descendants deleted
+                completeSuccessCount++;
+              }
+            } else {
+              // Root deletion failed
+              failedCount++;
             }
           } else {
+            // Promise rejected - treat as failed
             failedCount++;
           }
-        } catch (error) {
-          console.error(`Failed to delete object ${objectId}:`, error);
-          failedCount++;
-        }
+        });
       }
 
-      if (successCount > 0) {
-        message.success(t('documentList.messages.bulkDeleteSuccess', { count: successCount }));
+      // Display results with clear, non-overlapping messages
+      if (completeSuccessCount > 0) {
+        message.success(t('documentList.messages.bulkDeleteSuccess', { count: completeSuccessCount }));
       }
-      if (partialFailureCount > 0) {
-        message.warning(t('documentList.messages.bulkDeletePartial', { count: partialFailureCount }));
+      if (partialSuccessCount > 0) {
+        message.warning(
+          t('documentList.messages.bulkDeletePartial', { 
+            count: partialSuccessCount,
+            descendantCount: allFailedDescendantIds.length 
+          })
+        );
       }
       if (failedCount > 0) {
-        message.warning(t('documentList.messages.bulkDeleteFailed', { count: failedCount }));
+        message.error(t('documentList.messages.bulkDeleteFailed', { count: failedCount }));
       }
 
       setSelectedRowKeys([]);
       setBulkDeleteModalVisible(false);
       await loadObjects();
     } catch (error) {
-      console.error('Bulk delete error:', error);
       message.error(t('documentList.messages.bulkDeleteError'));
     } finally {
       setBulkDeleteLoading(false);

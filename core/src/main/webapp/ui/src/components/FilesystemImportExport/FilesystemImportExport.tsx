@@ -33,7 +33,7 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
-import { CmisService, CmisObject } from '../../services/cmis';
+import { CMISService, CmisObject } from '../../services/cmis';
 
 const { Text } = Typography;
 

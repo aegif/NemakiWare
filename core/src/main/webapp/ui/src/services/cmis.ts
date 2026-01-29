@@ -2547,7 +2547,6 @@ export class CMISService {
   ): Promise<string[]> {
     // Circular reference detection
     if (visited.has(objectId)) {
-      console.log(`[CASCADE DELETE] Circular reference detected, skipping: ${objectId}`);
       return [];
     }
     visited.add(objectId);
@@ -2569,8 +2568,6 @@ export class CMISService {
         }
       }
 
-      console.log(`[CASCADE DELETE] Object ${objectId} has ${parentChildRels.length} parentChild relationships as source`);
-
       // Recursively collect descendants for each child
       for (const rel of parentChildRels) {
         const childId = rel.targetId;
@@ -2583,7 +2580,6 @@ export class CMISService {
         }
       }
     } catch (error) {
-      console.error(`[CASCADE DELETE] Error collecting descendants for ${objectId}:`, error);
       // Continue with what we have, don't fail the entire operation
     }
 
@@ -2604,30 +2600,34 @@ export class CMISService {
    * @param repositoryId Repository ID
    * @param objectId Object ID to delete
    * @param cascadeParentChild Whether to cascade delete parentChild descendants (default: true)
-   * @returns Object with deletion results: deletedCount, failedIds
+   * @returns Object with detailed deletion results
    */
   async deleteObjectWithCascade(
     repositoryId: string,
     objectId: string,
     cascadeParentChild: boolean = true
-  ): Promise<{ deletedCount: number; failedIds: string[] }> {
-    const failedIds: string[] = [];
-    let deletedCount = 0;
+  ): Promise<{
+    deletedCount: number;
+    failedIds: string[];
+    rootDeleted: boolean;
+    descendantDeletedCount: number;
+    descendantFailedIds: string[];
+  }> {
+    const descendantFailedIds: string[] = [];
+    let descendantDeletedCount = 0;
+    let rootDeleted = false;
 
     if (cascadeParentChild) {
       // Collect all descendants to delete
       const descendants = await this.collectParentChildDescendants(repositoryId, objectId);
-      console.log(`[CASCADE DELETE] Found ${descendants.length} descendants to delete for ${objectId}`);
 
       // Delete descendants from leaves to root
       for (const descendantId of descendants) {
         try {
           await this.deleteObject(repositoryId, descendantId);
-          deletedCount++;
-          console.log(`[CASCADE DELETE] Deleted descendant: ${descendantId}`);
+          descendantDeletedCount++;
         } catch (error) {
-          console.error(`[CASCADE DELETE] Failed to delete descendant ${descendantId}:`, error);
-          failedIds.push(descendantId);
+          descendantFailedIds.push(descendantId);
           // Continue with other deletions
         }
       }
@@ -2636,14 +2636,22 @@ export class CMISService {
     // Finally delete the root object
     try {
       await this.deleteObject(repositoryId, objectId);
-      deletedCount++;
-      console.log(`[CASCADE DELETE] Deleted root object: ${objectId}`);
+      rootDeleted = true;
     } catch (error) {
-      console.error(`[CASCADE DELETE] Failed to delete root object ${objectId}:`, error);
-      failedIds.push(objectId);
+      // Root deletion failed - this is a complete failure for this object
     }
 
-    return { deletedCount, failedIds };
+    // Combine for backward compatibility
+    const failedIds = rootDeleted ? [...descendantFailedIds] : [objectId, ...descendantFailedIds];
+    const deletedCount = (rootDeleted ? 1 : 0) + descendantDeletedCount;
+
+    return {
+      deletedCount,
+      failedIds,
+      rootDeleted,
+      descendantDeletedCount,
+      descendantFailedIds
+    };
   }
 
   /**
