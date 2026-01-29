@@ -217,17 +217,15 @@ test.describe('Bulk Delete Improvements', () => {
       console.log(`Created relationship: ${relId}`);
     }
 
-    // Verify i18n file contains correct message
-    // This is a static check - the actual UI test would require triggering a partial failure
-    const enLocale = await request.get('http://localhost:8080/core/ui/locales/en.json');
-    if (enLocale.ok()) {
-      const localeData = await enLocale.json();
-      const bulkDeletePartial = localeData?.documentList?.messages?.bulkDeletePartial;
-      if (bulkDeletePartial) {
-        expect(bulkDeletePartial).toContain('descendant object');
-        console.log('EN locale bulkDeletePartial:', bulkDeletePartial);
-      }
-    }
+    // Verify i18n file contains correct message (read from filesystem since locale files are bundled)
+    const fs = await import('fs');
+    const path = await import('path');
+    const enLocalePath = path.default.resolve(__dirname, '../../src/i18n/locales/en.json');
+    const enLocaleData = JSON.parse(fs.default.readFileSync(enLocalePath, 'utf-8'));
+    const enBulkDeletePartial = enLocaleData?.documentList?.messages?.bulkDeletePartial;
+    expect(enBulkDeletePartial).toBeTruthy();
+    expect(enBulkDeletePartial).toContain('descendant object');
+    console.log('EN locale bulkDeletePartial:', enBulkDeletePartial);
   });
 
   /**
@@ -246,16 +244,15 @@ test.describe('Bulk Delete Improvements', () => {
     await page.reload();
     await page.waitForTimeout(3000);
 
-    // Verify i18n file contains correct message
-    const jaLocale = await request.get('http://localhost:8080/core/ui/locales/ja.json');
-    if (jaLocale.ok()) {
-      const localeData = await jaLocale.json();
-      const bulkDeletePartial = localeData?.documentList?.messages?.bulkDeletePartial;
-      if (bulkDeletePartial) {
-        expect(bulkDeletePartial).toContain('子孫オブジェクト');
-        console.log('JA locale bulkDeletePartial:', bulkDeletePartial);
-      }
-    }
+    // Verify i18n file contains correct message (read from filesystem since locale files are bundled)
+    const fs = await import('fs');
+    const path = await import('path');
+    const jaLocalePath = path.default.resolve(__dirname, '../../src/i18n/locales/ja.json');
+    const jaLocaleData = JSON.parse(fs.default.readFileSync(jaLocalePath, 'utf-8'));
+    const jaBulkDeletePartial = jaLocaleData?.documentList?.messages?.bulkDeletePartial;
+    expect(jaBulkDeletePartial).toBeTruthy();
+    expect(jaBulkDeletePartial).toContain('子孫オブジェクト');
+    console.log('JA locale bulkDeletePartial:', jaBulkDeletePartial);
   });
 
   /**

@@ -62,7 +62,8 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
     // Global paths that don't require a repository in the URL (use default repository for auth)
     private static final String[] GLOBAL_PATHS = {
         "audit/metrics",
-        "audit/"
+        "audit/",
+        "health"
     };
 
     @Override

@@ -2041,10 +2041,6 @@ public class ImportExportResource extends ResourceBase {
             public int getMemoryThreshold() { return 4 * 1024 * 1024; }
             @Override
             public long getMaxContentSize() { return -1; }
-            @Override
-            public org.apache.chemistry.opencmis.commons.enums.CmisVersion getCmisVersion() {
-                return org.apache.chemistry.opencmis.commons.enums.CmisVersion.CMIS_1_1;
-            }
         };
     }
 
