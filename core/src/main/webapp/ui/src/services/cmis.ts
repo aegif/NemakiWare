@@ -2547,6 +2547,7 @@ export class CMISService {
   ): Promise<string[]> {
     // Circular reference detection
     if (visited.has(objectId)) {
+      console.debug(`[CASCADE DELETE] Circular reference detected, skipping: ${objectId}`);
       return [];
     }
     visited.add(objectId);
@@ -2568,6 +2569,8 @@ export class CMISService {
         }
       }
 
+      console.debug(`[CASCADE DELETE] Object ${objectId} has ${parentChildRels.length} parentChild relationship(s) as source`);
+
       // Recursively collect descendants for each child
       for (const rel of parentChildRels) {
         const childId = rel.targetId;
@@ -2580,6 +2583,7 @@ export class CMISService {
         }
       }
     } catch (error) {
+      console.debug(`[CASCADE DELETE] Error collecting descendants for ${objectId}:`, error);
       // Continue with what we have, don't fail the entire operation
     }
 

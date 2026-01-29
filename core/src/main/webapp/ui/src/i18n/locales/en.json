@@ -998,7 +998,7 @@
       "deletePartialFail": "Failed to delete {{count}} object(s)",
       "deleteError": "Failed to delete",
       "bulkDeleteSuccess": "{{count}} item(s) deleted successfully",
-      "bulkDeletePartial": "{{count}} item(s) deleted, but {{descendantCount}} related object(s) could not be deleted",
+      "bulkDeletePartial": "{{count}} item(s) deleted, but {{descendantCount}} descendant object(s) could not be deleted",
       "bulkDeleteFailed": "{{count}} item(s) could not be deleted",
       "bulkDeleteError": "Bulk delete failed",
       "renameSuccess": "Renamed successfully",

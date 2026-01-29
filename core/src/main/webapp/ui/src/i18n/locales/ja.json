@@ -998,7 +998,7 @@
       "deletePartialFail": "{{count}}件のオブジェクトの削除に失敗しました",
       "deleteError": "削除に失敗しました",
       "bulkDeleteSuccess": "{{count}}件のアイテムを削除しました",
-      "bulkDeletePartial": "{{count}}件のアイテムを削除しましたが、{{descendantCount}}件の関連オブジェクトの削除に失敗しました",
+      "bulkDeletePartial": "{{count}}件のアイテムを削除しましたが、{{descendantCount}}件の子孫オブジェクトの削除に失敗しました",
       "bulkDeleteFailed": "{{count}}件のアイテムを削除できませんでした",
       "bulkDeleteError": "一括削除に失敗しました",
       "renameSuccess": "名前を変更しました",
