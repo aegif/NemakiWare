@@ -33,6 +33,7 @@ import jp.aegif.nemaki.util.spring.SpringContext;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
@@ -2018,6 +2019,8 @@ public class ImportExportResource extends ResourceBase {
                 }
                 return null;
             }
+            @Override
+            public CmisVersion getCmisVersion() { return CmisVersion.CMIS_1_1; }
             @Override
             public String getRepositoryId() { return repositoryId; }
             @Override
