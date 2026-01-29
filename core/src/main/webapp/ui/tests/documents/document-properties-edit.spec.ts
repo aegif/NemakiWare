@@ -193,7 +193,7 @@ test.describe('Document Properties Edit and Persistence', () => {
    * Document upload and property editing verified working via manual testing.
    * Re-enable after implementing more robust upload completion detection.
    */
-  test.skip('should upload test document for property editing', async ({ page, browserName }) => {
+  test('should upload test document for property editing', async ({ page, browserName }) => {
     const isMobile = testHelper.isMobile(browserName);
 
     // CRITICAL FIX (2025-12-15): Use flexible selector for upload button

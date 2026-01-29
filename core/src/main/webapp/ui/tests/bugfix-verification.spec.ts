@@ -330,7 +330,7 @@ test.describe('Bug Fix Verification Tests', () => {
    * This appears to be a CouchDB view sync issue in the test environment.
    * The relationship feature itself works correctly when documents are visible.
    */
-  test.skip('relationships should be visible on both source and target documents', async ({ page }) => {
+  test('relationships should be visible on both source and target documents', async ({ page }) => {
     const uniqueId = generateTestId();
     const sourceDocName = `test-rel-source-${uniqueId}.txt`;
     const targetDocName = `test-rel-target-${uniqueId}.txt`;
@@ -382,20 +382,31 @@ test.describe('Bug Fix Verification Tests', () => {
     console.log('Table loaded, looking for target document...');
 
     // Debug: log what's visible in the table
-    const tableRows = await page.locator('.ant-table-row').count();
+    let tableRows = await page.locator('.ant-table-row').count();
     console.log(`Table rows visible: ${tableRows}`);
 
     // Step 4: Open target document viewer
     console.log(`Opening target document viewer for: ${targetDocName}`);
     // Wait for the specific target document we created via API
     const targetRow = page.locator('tr').filter({ hasText: targetDocName });
+
+    // If not visible, reload page to pick up newly created documents
+    if (await targetRow.count() === 0) {
+      console.log('Target document not visible, reloading...');
+      await page.reload();
+      await page.waitForSelector('.ant-table', { timeout: 15000 });
+      await page.waitForTimeout(2000);
+      tableRows = await page.locator('.ant-table-row').count();
+      console.log(`Table rows after reload: ${tableRows}`);
+    }
+
     await expect(targetRow).toBeVisible({ timeout: 30000 });
     await targetRow.click();
     await page.waitForTimeout(1000);
 
     // Step 5: Click on relationship tab
     console.log('Clicking on relationship tab...');
-    const relationshipTab = page.locator('.ant-tabs-tab').filter({ hasText: /関連|Relationship/i });
+    const relationshipTab = page.locator('.ant-tabs-tab').filter({ hasText: /リレーションシップ|Relationships|関連|Relationship/i });
 
     if (await relationshipTab.count() > 0) {
       await relationshipTab.click();

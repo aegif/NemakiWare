@@ -421,6 +421,32 @@ test.describe('Access Control and Permissions', () => {
       } else {
         console.log('Setup: ユーザー管理 menu item not found');
       }
+
+      // API Fallback: If UI creation may have failed, ensure user exists via REST API
+      console.log(`Setup: Ensuring test user exists via REST API fallback`);
+      try {
+        const createUserResponse = await page.request.post(
+          `http://localhost:8080/core/api/v1/cmis/repositories/bedroom/users`,
+          {
+            headers: {
+              'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`,
+              'Content-Type': 'application/json'
+            },
+            data: {
+              userId: testUsername,
+              userName: `${testUsername}_display`,
+              firstName: 'Test',
+              lastName: 'User',
+              email: `${testUsername}@example.com`,
+              password: testUserPassword
+            }
+          }
+        );
+        const responseText = await createUserResponse.text();
+        console.log(`Setup: REST API user create response: ${createUserResponse.status()} - ${responseText.substring(0, 200)}`);
+      } catch (apiError) {
+        console.log(`Setup: REST API user create fallback error (may already exist):`, apiError);
+      }
     } catch (error) {
       console.log(`Setup: ${testUsername} creation failed:`, error);
     } finally {

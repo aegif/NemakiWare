@@ -598,7 +598,7 @@ test.describe('Document Management', () => {
    * Folder creation verified working via manual testing.
    * Re-enable after implementing more robust input selectors.
    */
-  test.skip('should handle folder creation', async ({ page, browserName }) => {
+  test('should handle folder creation', async ({ page, browserName }) => {
     // Wait for page to load
     await page.waitForTimeout(2000);
 

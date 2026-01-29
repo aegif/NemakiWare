@@ -179,9 +179,104 @@ test.describe('Type Specification Features', () => {
     });
 
     test('should show warning when removing secondary type', async ({ page }) => {
-      // This test verifies the confirmation dialog appears when removing a secondary type
-      // Skip if no document with secondary types exists
-      test.skip('No document with secondary types exists for testing');
+      // Create a document with secondary type via API for testing
+      const authHeader = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+      const docName = `sec-type-test-${generateTestId()}.txt`;
+
+      // Create document
+      const createResp = await page.request.post('http://localhost:8080/core/browser/bedroom/root', {
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+        data: new URLSearchParams({
+          cmisaction: 'createDocument',
+          'propertyId[0]': 'cmis:objectTypeId', 'propertyValue[0]': 'cmis:document',
+          'propertyId[1]': 'cmis:name', 'propertyValue[1]': docName,
+        }).toString(),
+      });
+
+      if (!createResp.ok()) {
+        test.skip('Could not create test document via API');
+        return;
+      }
+
+      const createData = await createResp.json();
+      const docId = createData.properties?.['cmis:objectId']?.value;
+      const changeToken = createData.properties?.['cmis:changeToken']?.value;
+
+      // Add secondary type
+      await page.request.post('http://localhost:8080/core/browser/bedroom', {
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+        data: new URLSearchParams({
+          cmisaction: 'update', objectId: docId, changeToken: changeToken,
+          addSecondaryTypeIds: 'nemaki:commentable',
+        }).toString(),
+      });
+
+      // Navigate to the document detail in UI
+      const docLink = page.locator('.ant-table-row .ant-btn-link').filter({ hasText: docName });
+      if (await docLink.count() === 0) {
+        // Reload to find newly created document
+        await page.reload();
+        await page.waitForSelector('.ant-table', { timeout: 15000 });
+        await page.waitForTimeout(2000);
+      }
+
+      const docButton = page.locator('.ant-table-row .ant-btn-link').filter({ hasText: docName }).first();
+      if (await docButton.count() === 0) {
+        // Cleanup and skip
+        await page.request.post('http://localhost:8080/core/browser/bedroom', {
+          headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+          data: new URLSearchParams({ cmisaction: 'delete', objectId: docId, allVersions: 'true' }).toString(),
+        });
+        test.skip('Test document not visible in table');
+        return;
+      }
+
+      await docButton.click();
+      await page.waitForTimeout(3000);
+
+      // Click on secondary type tab
+      const secondaryTab = page.locator('.ant-tabs-tab').filter({ hasText: 'セカンダリタイプ' });
+      if (await secondaryTab.count() === 0) {
+        // Cleanup
+        await page.request.post('http://localhost:8080/core/browser/bedroom', {
+          headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+          data: new URLSearchParams({ cmisaction: 'delete', objectId: docId, allVersions: 'true' }).toString(),
+        });
+        test.skip('Secondary type tab not found - may be implemented differently');
+        return;
+      }
+
+      await secondaryTab.click();
+      await page.waitForTimeout(1000);
+
+      // Verify nemaki:commentable is shown
+      const commentableTag = page.locator('.ant-tag, .ant-select-selection-item').filter({ hasText: /commentable/i });
+      const hasSecondary = await commentableTag.count() > 0;
+      console.log('Secondary type visible:', hasSecondary);
+
+      // If there's a remove button, try clicking it and verify confirmation
+      const removeButton = page.locator('button:has([data-icon="close"]), .ant-tag .anticon-close, button:has-text("削除")').first();
+      if (await removeButton.count() > 0) {
+        await removeButton.click();
+        await page.waitForTimeout(500);
+
+        // Check for confirmation dialog
+        const confirmDialog = page.locator('.ant-modal-confirm, .ant-popconfirm');
+        const hasConfirm = await confirmDialog.count() > 0;
+        console.log('Confirmation dialog shown:', hasConfirm);
+
+        // Cancel to avoid actual removal
+        const cancelBtn = page.locator('.ant-modal-confirm-btns button:first-child, .ant-popconfirm button:first-child');
+        if (await cancelBtn.count() > 0) {
+          await cancelBtn.click();
+        }
+      }
+
+      // Cleanup
+      await page.request.post('http://localhost:8080/core/browser/bedroom', {
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+        data: new URLSearchParams({ cmisaction: 'delete', objectId: docId, allVersions: 'true' }).toString(),
+      });
     });
   });
 

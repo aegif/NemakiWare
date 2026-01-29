@@ -521,7 +521,7 @@ test.describe('Custom Property Input Feature', () => {
   test.describe('Relationship Creation Modal', () => {
     test('should navigate to document detail and show relationship tab', async ({ page }) => {
       // First, find a document to work with
-      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) button[type="link"]').first();
+      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) .ant-btn-link').first();
 
       if (await documentLink.count() === 0) {
         test.skip('No documents found in list');
@@ -530,24 +530,17 @@ test.describe('Custom Property Input Feature', () => {
 
       await documentLink.click();
 
-      // Wait for document viewer to load
-      await page.waitForURL('**/documents/**', { timeout: 10000 });
+      // Wait for document viewer to load (hash-based routing)
+      await page.waitForTimeout(3000);
 
       // Look for relationship tab
-      const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
-
-      if (await relationshipTab.count() === 0) {
-        // UPDATED (2025-12-26): Relationships tab IS implemented in DocumentViewer.tsx line 917
-        test.skip('Relationship tab not visible - IS implemented in DocumentViewer.tsx line 917');
-        return;
-      }
-
-      await expect(relationshipTab).toBeVisible();
+      const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
+      await expect(relationshipTab).toBeVisible({ timeout: 10000 });
     });
 
     test('should show type selection in relationship creation modal', async ({ page }) => {
       // Find a document
-      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) button[type="link"]').first();
+      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) .ant-btn-link').first();
 
       if (await documentLink.count() === 0) {
         test.skip('No documents found in list');
@@ -555,34 +548,32 @@ test.describe('Custom Property Input Feature', () => {
       }
 
       await documentLink.click();
-      await page.waitForURL('**/documents/**', { timeout: 10000 });
+      await page.waitForTimeout(3000);
 
       // Click relationship tab
-      const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
+      const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
       if (await relationshipTab.count() === 0) {
-        // UPDATED (2025-12-26): Relationships tab IS implemented in DocumentViewer.tsx line 917
-        test.skip('Relationship tab not visible - IS implemented in DocumentViewer.tsx line 917');
+        test.skip('Relationship tab not visible');
         return;
       }
       await relationshipTab.click();
       await page.waitForTimeout(1000);
 
       // Look for "Add Relationship" button
-      const addButton = page.locator('button:has-text("関連を追加")');
+      const addButton = page.locator('button:has-text("関係を追加")');
       if (await addButton.count() === 0) {
-        // UPDATED (2025-12-26): Add relationship button IS implemented in RelationshipEditor.tsx
-        test.skip('Add relationship button not visible - IS implemented in RelationshipEditor.tsx');
+        test.skip('Add relationship button not visible');
         return;
       }
 
       await addButton.click();
 
       // Verify modal opens with type selection
-      const modal = page.locator('.ant-modal').filter({ hasText: '関連' });
+      const modal = page.locator('.ant-modal').filter({ hasText: '関係を追加' });
       await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Check for type dropdown
-      const typeLabel = modal.locator('label:has-text("関連タイプ"), .ant-form-item-label:has-text("タイプ")');
+      const typeLabel = modal.locator('text=関係タイプ');
       await expect(typeLabel).toBeVisible();
 
       // Close modal
@@ -630,35 +621,33 @@ test.describe('Custom Property Input Feature', () => {
       }
 
       // Find a document
-      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) button[type="link"]').first();
+      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) .ant-btn-link').first();
       if (await documentLink.count() === 0) {
         test.skip('No documents found in list');
         return;
       }
 
       await documentLink.click();
-      await page.waitForURL('**/documents/**', { timeout: 10000 });
+      await page.waitForTimeout(3000);
 
       // Click relationship tab
-      const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
+      const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
       if (await relationshipTab.count() === 0) {
-        // UPDATED (2025-12-26): Relationships tab IS implemented in DocumentViewer.tsx line 917
-        test.skip('Relationship tab not visible - IS implemented in DocumentViewer.tsx line 917');
+        test.skip('Relationship tab not visible');
         return;
       }
       await relationshipTab.click();
       await page.waitForTimeout(1000);
 
       // Open add relationship modal
-      const addButton = page.locator('button:has-text("関連を追加")');
+      const addButton = page.locator('button:has-text("関係を追加")');
       if (await addButton.count() === 0) {
-        // UPDATED (2025-12-26): Add relationship button IS implemented in RelationshipEditor.tsx
-        test.skip('Add relationship button not visible - IS implemented in RelationshipEditor.tsx');
+        test.skip('Add relationship button not visible');
         return;
       }
       await addButton.click();
 
-      const modal = page.locator('.ant-modal').filter({ hasText: '関連' });
+      const modal = page.locator('.ant-modal').filter({ hasText: '関係' });
       await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Select the custom relationship type
@@ -687,35 +676,33 @@ test.describe('Custom Property Input Feature', () => {
 
     test('should not lose form data when clicking outside relationship modal', async ({ page }) => {
       // Find a document
-      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) button[type="link"]').first();
+      const documentLink = page.locator('.ant-table-row:has([data-icon="file"]) .ant-btn-link').first();
       if (await documentLink.count() === 0) {
         test.skip('No documents found in list');
         return;
       }
 
       await documentLink.click();
-      await page.waitForURL('**/documents/**', { timeout: 10000 });
+      await page.waitForTimeout(3000);
 
       // Click relationship tab
-      const relationshipTab = page.locator('.ant-tabs-tab:has-text("関連")');
+      const relationshipTab = page.locator('.ant-tabs-tab:has-text("リレーションシップ")');
       if (await relationshipTab.count() === 0) {
-        // UPDATED (2025-12-26): Relationships tab IS implemented in DocumentViewer.tsx line 917
-        test.skip('Relationship tab not visible - IS implemented in DocumentViewer.tsx line 917');
+        test.skip('Relationship tab not visible');
         return;
       }
       await relationshipTab.click();
       await page.waitForTimeout(1000);
 
       // Open add relationship modal
-      const addButton = page.locator('button:has-text("関連を追加")');
+      const addButton = page.locator('button:has-text("関係を追加")');
       if (await addButton.count() === 0) {
-        // UPDATED (2025-12-26): Add relationship button IS implemented in RelationshipEditor.tsx
-        test.skip('Add relationship button not visible - IS implemented in RelationshipEditor.tsx');
+        test.skip('Add relationship button not visible');
         return;
       }
       await addButton.click();
 
-      const modal = page.locator('.ant-modal').filter({ hasText: '関連' });
+      const modal = page.locator('.ant-modal').filter({ hasText: '関係' });
       await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Fill target object ID if field exists

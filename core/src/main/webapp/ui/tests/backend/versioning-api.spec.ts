@@ -342,7 +342,7 @@ test.describe('CMIS Versioning API', () => {
   // SKIPPED (2025-12-24): Check-in operation may timeout in CI environment
   // This test verifies complex versioning operations that can take >30s
   // Versioning functionality is verified via TCK VersioningTestGroup (4/4 PASS)
-  test.skip('should check-in a document with new version', async ({ request }) => {
+  test('should check-in a document with new version', async ({ request }) => {
     // 1. Create document with content
     const uniqueName = `checkin-test-${generateTestId()}.txt`;
     const createResponse = await request.post(baseUrl, {
@@ -528,7 +528,7 @@ test.describe('CMIS Versioning API', () => {
   // SKIPPED (2025-12-24): Test involves check-in operation that may timeout in CI
   // Versioning functionality is verified via TCK VersioningTestGroup (4/4 PASS)
   // CMIS 1.1 Browser Binding: cmisselector=versions (implemented 2025-12-14)
-  test.skip('should retrieve all versions of a document', async ({ request }) => {
+  test('should retrieve all versions of a document', async ({ request }) => {
     // 1. Create document with initial version (using Browser Binding)
     const uniqueName = `version-history-test-${generateTestId()}.txt`;
     const createResponse = await request.post(baseUrl, {
@@ -629,7 +629,7 @@ test.describe('CMIS Versioning API', () => {
 
   // SKIPPED (2025-12-24): Test involves check-in operation that may timeout in CI
   // Versioning functionality is verified via TCK VersioningTestGroup (4/4 PASS)
-  test.skip('should get latest version of a document', async ({ request }) => {
+  test('should get latest version of a document', async ({ request }) => {
     // 1. Create document with initial version
     // Use unique name to avoid conflicts when running across multiple browsers
     const uniqueName = `latest-version-${generateTestId()}.txt`;

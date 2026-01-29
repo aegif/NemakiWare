@@ -94,7 +94,7 @@ test.describe('Search Results Detailed Verification', () => {
     await expect(creationDateHeader).toBeVisible({ timeout: 5000 });
   });
 
-  test.skip('should display path information in search results', async ({ page, browserName }) => {
+  test('should display path information in search results', async ({ page, browserName }) => {
     // SKIPPED: Test requires documents to exist in repository
     // This test depends on having searchable documents in the test environment
     // which may not exist in a clean test database

@@ -153,7 +153,7 @@ test.describe('PropertyEditor Component Tests', () => {
 
     // CRITICAL FIX (2025-12-26): Ensure test document exists before each test
     // This eliminates data-dependent test skips
-    const isMobile = isMobileChrome;
+    const isMobile = testHelper.isMobile(browserName);
     const docExists = await testHelper.ensureTestDocument(
       testDocName,
       'Test content for PropertyEditor testing',

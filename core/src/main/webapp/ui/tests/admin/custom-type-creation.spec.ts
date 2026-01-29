@@ -411,16 +411,17 @@ test.describe('Custom Type Creation and Property Management', () => {
 
     // Find a custom type (non-cmis: types) that we can edit
     // The edit button is disabled for standard CMIS types (cmis:* prefix)
+    // UI has two edit buttons: "GUI編集" (GUI editor) and "JSON" (JSON editor)
     const customTypeRow = page.locator('tr[data-row-key]').filter({
-      has: page.locator('button:has-text("編集"):not([disabled])')
+      has: page.locator('button:has-text("JSON"):not([disabled])')
     }).first();
 
     if (await customTypeRow.count() > 0) {
       const typeId = await customTypeRow.getAttribute('data-row-key');
       console.log(`✅ Found editable type: ${typeId}`);
 
-      // Click edit button (opens JSON editor modal)
-      const editButton = customTypeRow.locator('button').filter({ hasText: '編集' });
+      // Click JSON button (opens JSON editor modal)
+      const editButton = customTypeRow.locator('button').filter({ hasText: 'JSON' });
       await editButton.click(isMobile ? { force: true } : {});
       await page.waitForTimeout(1000);
       console.log('✅ Clicked edit button');

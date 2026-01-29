@@ -286,7 +286,7 @@ test.describe('Document Viewer Authentication', () => {
    *
    * Session stability verified via manual testing with real documents.
    */
-  test.skip('should handle multiple document detail accesses without session issues', async ({ page, browserName }) => {
+  test('should handle multiple document detail accesses without session issues', async ({ page, browserName }) => {
     // Login
     await page.goto('http://localhost:8080/core/ui/index.html');
     await page.waitForTimeout(1000);
