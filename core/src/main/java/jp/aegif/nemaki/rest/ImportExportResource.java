@@ -599,6 +599,14 @@ public class ImportExportResource extends ResourceBase {
      * Also monitors stream size when entry.getSize() returns -1 (fix: size -1 handling).
      */
     private byte[] readZipEntry(ZipFile zf, String entryName) {
+        return readZipEntryWithLimit(zf, entryName, MAX_SINGLE_FILE_SIZE);
+    }
+
+    /**
+     * Read a single entry from an already-open ZipFile with a custom size limit.
+     * Package-private for testing purposes.
+     */
+    byte[] readZipEntryWithLimit(ZipFile zf, String entryName, long maxSize) {
         try {
             ZipEntry entry = zf.getEntry(entryName);
             if (entry == null || entry.isDirectory()) {
@@ -606,7 +614,7 @@ public class ImportExportResource extends ResourceBase {
             }
             // Check file size limit (if known)
             long entrySize = entry.getSize();
-            if (entrySize > MAX_SINGLE_FILE_SIZE) {
+            if (entrySize > maxSize) {
                 log.warn("Skipping large file: " + entryName + " (size: " + entrySize + ")");
                 return null;
             }
@@ -618,7 +626,7 @@ public class ImportExportResource extends ResourceBase {
                 while ((len = is.read(buffer)) != -1) {
                     totalRead += len;
                     // Monitor size during read if entry.getSize() was -1 (unknown)
-                    if (totalRead > MAX_SINGLE_FILE_SIZE) {
+                    if (totalRead > maxSize) {
                         log.warn("Skipping file exceeding size limit during read: " + entryName);
                         return null;
                     }

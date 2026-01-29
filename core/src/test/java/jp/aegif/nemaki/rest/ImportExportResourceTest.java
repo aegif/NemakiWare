@@ -351,6 +351,65 @@ public class ImportExportResourceTest {
         }
     }
 
+    /**
+     * Test size limit enforcement with a small custom limit (lightweight test for CI).
+     * Uses readZipEntryWithLimit directly with a small limit to verify size checking logic.
+     */
+    @Test
+    public void testReadZipEntryWithCustomSizeLimit() throws Exception {
+        File tempZip = File.createTempFile("test", ".zip");
+        tempZip.deleteOnExit();
+        
+        // Create a ZIP with a 100-byte file
+        byte[] content = new byte[100];
+        java.util.Arrays.fill(content, (byte) 'X');
+        
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempZip))) {
+            ZipEntry entry = new ZipEntry("medium.txt");
+            zos.putNextEntry(entry);
+            zos.write(content);
+            zos.closeEntry();
+        }
+        
+        try (ZipFile zf = new ZipFile(tempZip)) {
+            // Should succeed with limit of 200 bytes
+            byte[] result = resource.readZipEntryWithLimit(zf, "medium.txt", 200);
+            assertNotNull("Should read file within limit", result);
+            assertEquals("Content length should match", 100, result.length);
+            
+            // Should fail with limit of 50 bytes
+            byte[] resultSmall = resource.readZipEntryWithLimit(zf, "medium.txt", 50);
+            assertNull("Should return null for file exceeding custom limit", resultSmall);
+        }
+    }
+
+    /**
+     * Test size limit enforcement during stream read (when entry.getSize() is known).
+     * Verifies that the size check before reading works correctly.
+     */
+    @Test
+    public void testReadZipEntryWithKnownSizeExceedsLimit() throws Exception {
+        File tempZip = File.createTempFile("test", ".zip");
+        tempZip.deleteOnExit();
+        
+        // Create a ZIP with a 1KB file
+        byte[] content = new byte[1024];
+        java.util.Arrays.fill(content, (byte) 'Y');
+        
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempZip))) {
+            ZipEntry entry = new ZipEntry("kilobyte.txt");
+            zos.putNextEntry(entry);
+            zos.write(content);
+            zos.closeEntry();
+        }
+        
+        try (ZipFile zf = new ZipFile(tempZip)) {
+            // Should fail with limit of 512 bytes (entry size is known as 1024)
+            byte[] result = resource.readZipEntryWithLimit(zf, "kilobyte.txt", 512);
+            assertNull("Should return null when known size exceeds limit", result);
+        }
+    }
+
     // ========== Helper Methods ==========
 
     private boolean invokeIsValidZipEntryName(String name) throws Exception {
