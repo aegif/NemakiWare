@@ -88,7 +88,7 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
   const [importForm] = Form.useForm();
   const [exportForm] = Form.useForm();
 
-  const cmisService = new CmisService(() => handleAuthError(null));
+  const cmisService = new CMISService(() => handleAuthError(null));
 
   // Load root folders for selection
   const loadFolders = useCallback(async () => {

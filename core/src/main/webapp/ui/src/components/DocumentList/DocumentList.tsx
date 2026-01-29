@@ -679,19 +679,26 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       // This will delete all descendant objects linked via nemaki:parentChildRelationship
       const result = await cmisService.deleteObjectWithCascade(repositoryId, deleteTargetId);
 
-      // Reload objects from server after successful deletion
+      // Reload objects from server after deletion attempt
       await loadObjects();
 
-      // Show appropriate success message based on cascade deletion results
+      // Check if root object was actually deleted
+      if (!result.rootDeleted) {
+        // Root deletion failed - show error
+        message.error(t('documentList.messages.deleteError'));
+        return;
+      }
+
+      // Root was deleted - show appropriate success message
       if (result.deletedCount > 1) {
         message.success(t('documentList.messages.deleteSuccessWithCount', { count: result.deletedCount }));
       } else {
         message.success(t('documentList.messages.deleteSuccess'));
       }
 
-      // Warn about any failures during cascade deletion
-      if (result.failedIds.length > 0) {
-        message.warning(t('documentList.messages.deletePartialFail', { count: result.failedIds.length }));
+      // Warn about any descendant failures during cascade deletion
+      if (result.descendantFailedIds.length > 0) {
+        message.warning(t('documentList.messages.deletePartialFail', { count: result.descendantFailedIds.length }));
       }
     } catch (error) {
       message.error(t('documentList.messages.deleteError'));
@@ -757,9 +764,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
    * 
    * Improvements over previous implementation:
    * 1. Separate counts for complete success vs partial success (descendant failures)
-   * 2. Collect all failed descendant IDs for detailed reporting
+   * 2. Collect all failed descendant IDs for detailed reporting (deduplicated)
    * 3. Parallel execution with concurrency limit for better UX with large selections
    * 4. Clearer message wording distinguishing root vs descendant failures
+   * 5. Failure logging for troubleshooting
    */
   const handleBulkDelete = async () => {
     setBulkDeleteLoading(true);
@@ -768,7 +776,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       let completeSuccessCount = 0;  // Root deleted AND all descendants deleted
       let partialSuccessCount = 0;   // Root deleted BUT some descendants failed
       let failedCount = 0;           // Root deletion failed
-      const allFailedDescendantIds: string[] = [];  // Collect for detailed reporting
+      const failedDescendantIdSet = new Set<string>();  // Use Set to deduplicate
 
       // Parallel execution with concurrency limit (3 concurrent deletions)
       const CONCURRENCY_LIMIT = 3;
@@ -788,7 +796,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               if (deleteResult.descendantFailedIds.length > 0) {
                 // Root deleted but some descendants failed - partial success
                 partialSuccessCount++;
-                allFailedDescendantIds.push(...deleteResult.descendantFailedIds);
+                deleteResult.descendantFailedIds.forEach(id => failedDescendantIdSet.add(id));
+                // Log for troubleshooting
+                console.warn(`[Bulk Delete] Object ${objectId} deleted but ${deleteResult.descendantFailedIds.length} descendant(s) failed:`, deleteResult.descendantFailedIds);
               } else {
                 // Complete success - root and all descendants deleted
                 completeSuccessCount++;
@@ -796,10 +806,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             } else {
               // Root deletion failed
               failedCount++;
+              console.error(`[Bulk Delete] Failed to delete root object: ${objectId}`);
             }
           } else {
             // Promise rejected - treat as failed
             failedCount++;
+            console.error(`[Bulk Delete] Error deleting object ${objectId}:`, result.reason);
           }
         });
       }
@@ -812,7 +824,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         message.warning(
           t('documentList.messages.bulkDeletePartial', { 
             count: partialSuccessCount,
-            descendantCount: allFailedDescendantIds.length 
+            descendantCount: failedDescendantIdSet.size 
           })
         );
       }
@@ -824,6 +836,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setBulkDeleteModalVisible(false);
       await loadObjects();
     } catch (error) {
+      console.error('[Bulk Delete] Unexpected error:', error);
       message.error(t('documentList.messages.bulkDeleteError'));
     } finally {
       setBulkDeleteLoading(false);
