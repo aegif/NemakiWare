@@ -88,7 +88,8 @@
       "archive": "Archive",
       "solr": "Solr Index",
       "auditDashboard": "Audit Log",
-      "apiDocs": "API Docs"
+      "apiDocs": "API Docs",
+      "filesystemImportExport": "Filesystem Import/Export"
     },
   "typeManagement": {
     "title": "Type Management",
@@ -1528,5 +1529,52 @@
     "status": "Status",
     "readAuditLevel": "Read Audit Level",
     "lastUpdated": "Last Updated"
+  },
+  "filesystemImportExport": {
+    "title": "Filesystem Import/Export",
+    "adminOnly": "Admin Only Feature",
+    "adminOnlyDescription": "This feature allows importing and exporting content directly from/to the application server's local filesystem without ZIP compression. Only administrators can access this feature.",
+    "refreshFolders": "Refresh Folders",
+    "import": {
+      "title": "Import",
+      "description": "Import content from a local filesystem directory on the application server. The directory should contain files in the NemakiWare custom format with JSON metadata files.",
+      "sourcePath": "Source Path",
+      "sourcePathRequired": "Please enter the source path",
+      "sourcePathHelp": "Enter the absolute path to the directory on the server filesystem",
+      "targetFolder": "Target Folder",
+      "targetFolderRequired": "Please select a target folder",
+      "selectFolder": "Select a folder",
+      "button": "Import from Filesystem",
+      "success": "Import completed successfully",
+      "partial": "Import completed with warnings",
+      "error": "Import failed"
+    },
+    "export": {
+      "title": "Export",
+      "description": "Export content to a local filesystem directory on the application server. Files will be exported in the NemakiWare custom format with JSON metadata files.",
+      "sourceFolder": "Source Folder",
+      "sourceFolderRequired": "Please select a source folder",
+      "selectFolder": "Select a folder",
+      "targetPath": "Target Path",
+      "targetPathRequired": "Please enter the target path",
+      "targetPathHelp": "Enter the absolute path to the target directory on the server filesystem",
+      "button": "Export to Filesystem",
+      "success": "Export completed successfully",
+      "partial": "Export completed with warnings",
+      "error": "Export failed"
+    },
+    "result": {
+      "status": "Status",
+      "success": "Success",
+      "partial": "Partial Success",
+      "error": "Error",
+      "foldersCreated": "Folders Created",
+      "documentsCreated": "Documents Created",
+      "foldersExported": "Folders Exported",
+      "documentsExported": "Documents Exported",
+      "targetPath": "Target Path",
+      "warnings": "Warnings",
+      "errors": "Errors"
+    }
   }
 }

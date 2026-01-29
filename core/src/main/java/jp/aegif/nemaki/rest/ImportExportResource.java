@@ -68,11 +68,15 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Enumeration;
@@ -1299,6 +1303,528 @@ public class ImportExportResource extends ResourceBase {
         }
     }
 
+    // ========== Filesystem-based Import/Export (Admin Only) ==========
+
+    /**
+     * Import content from a local filesystem directory (admin only).
+     * Uses the custom NemakiWare format without ZIP compression.
+     * 
+     * @param repositoryId Repository ID
+     * @param folderId Target folder ID to import into
+     * @param sourcePath Local filesystem path to import from
+     * @param request HTTP request for CallContext
+     * @return JSON response with import results
+     */
+    @POST
+    @Path("/filesystem/import/{folderId}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @SuppressWarnings("unchecked")
+    public Response importFromFilesystem(
+            @PathParam("repositoryId") String repositoryId,
+            @PathParam("folderId") String folderId,
+            JSONObject requestBody,
+            @Context HttpServletRequest request) {
+
+        JSONObject response = new JSONObject();
+
+        try {
+            // Admin-only check
+            CallContext callContext = createCallContext(request, repositoryId);
+            String username = callContext.getUsername();
+            if (username == null || username.isEmpty()) {
+                response.put("status", "error");
+                response.put("message", "Authentication required");
+                return Response.status(Response.Status.UNAUTHORIZED)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+            if (!"admin".equals(username)) {
+                response.put("status", "error");
+                response.put("message", "Admin access required for filesystem operations");
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+
+            // Get source path from request body
+            String sourcePath = (String) requestBody.get("sourcePath");
+            if (sourcePath == null || sourcePath.isEmpty()) {
+                response.put("status", "error");
+                response.put("message", "sourcePath is required");
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+
+            // Validate path (security check)
+            Path sourceDir = Paths.get(sourcePath).toAbsolutePath().normalize();
+            if (!Files.exists(sourceDir)) {
+                response.put("status", "error");
+                response.put("message", "Source path does not exist: " + sourcePath);
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+            if (!Files.isDirectory(sourceDir)) {
+                response.put("status", "error");
+                response.put("message", "Source path is not a directory: " + sourcePath);
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+
+            log.info("Starting filesystem import from: " + sourceDir + " to folder: " + folderId);
+
+            // Import from filesystem
+            ImportResult result = importFromFilesystemDirectory(repositoryId, folderId, sourceDir, callContext);
+
+            // Build response
+            response.put("status", result.errors.isEmpty() ? (result.warnings.isEmpty() ? "success" : "partial") : "error");
+            response.put("foldersCreated", result.foldersCreated);
+            response.put("documentsCreated", result.documentsCreated);
+            if (!result.errors.isEmpty()) {
+                JSONArray errorsArray = new JSONArray();
+                errorsArray.addAll(result.errors);
+                response.put("errors", errorsArray);
+            }
+            if (!result.warnings.isEmpty()) {
+                JSONArray warningsArray = new JSONArray();
+                warningsArray.addAll(result.warnings);
+                response.put("warnings", warningsArray);
+            }
+
+            log.info("Filesystem import completed: " + result.documentsCreated + " documents, " + 
+                    result.foldersCreated + " folders created");
+
+            return Response.ok(response.toJSONString()).build();
+
+        } catch (Exception e) {
+            log.error("Filesystem import failed: " + e.getMessage(), e);
+            response.put("status", "error");
+            response.put("message", "Import failed: " + e.getMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(response.toJSONString())
+                    .build();
+        }
+    }
+
+    /**
+     * Export content to a local filesystem directory (admin only).
+     * Uses the custom NemakiWare format without ZIP compression.
+     * 
+     * @param repositoryId Repository ID
+     * @param folderId Source folder ID to export
+     * @param targetPath Local filesystem path to export to
+     * @param request HTTP request for CallContext
+     * @return JSON response with export results
+     */
+    @POST
+    @Path("/filesystem/export/{folderId}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @SuppressWarnings("unchecked")
+    public Response exportToFilesystem(
+            @PathParam("repositoryId") String repositoryId,
+            @PathParam("folderId") String folderId,
+            JSONObject requestBody,
+            @Context HttpServletRequest request) {
+
+        JSONObject response = new JSONObject();
+
+        try {
+            // Admin-only check
+            CallContext callContext = createCallContext(request, repositoryId);
+            String username = callContext.getUsername();
+            if (username == null || username.isEmpty()) {
+                response.put("status", "error");
+                response.put("message", "Authentication required");
+                return Response.status(Response.Status.UNAUTHORIZED)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+            if (!"admin".equals(username)) {
+                response.put("status", "error");
+                response.put("message", "Admin access required for filesystem operations");
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+
+            // Get target path from request body
+            String targetPath = (String) requestBody.get("targetPath");
+            if (targetPath == null || targetPath.isEmpty()) {
+                response.put("status", "error");
+                response.put("message", "targetPath is required");
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+
+            // Validate and create target directory
+            Path targetDir = Paths.get(targetPath).toAbsolutePath().normalize();
+            if (!Files.exists(targetDir)) {
+                Files.createDirectories(targetDir);
+            }
+            if (!Files.isDirectory(targetDir)) {
+                response.put("status", "error");
+                response.put("message", "Target path is not a directory: " + targetPath);
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+
+            log.info("Starting filesystem export from folder: " + folderId + " to: " + targetDir);
+
+            // Get source folder
+            ContentService cs = getContentService();
+            Folder folder = cs.getFolder(repositoryId, folderId);
+            if (folder == null) {
+                response.put("status", "error");
+                response.put("message", "Folder not found: " + folderId);
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+
+            // Export to filesystem
+            ExportResult result = exportToFilesystemDirectory(repositoryId, folder, targetDir, callContext);
+
+            // Build response
+            response.put("status", result.errors.isEmpty() ? "success" : "partial");
+            response.put("foldersExported", result.foldersExported);
+            response.put("documentsExported", result.documentsExported);
+            response.put("targetPath", targetDir.toString());
+            if (!result.errors.isEmpty()) {
+                JSONArray errorsArray = new JSONArray();
+                errorsArray.addAll(result.errors);
+                response.put("errors", errorsArray);
+            }
+
+            log.info("Filesystem export completed: " + result.documentsExported + " documents, " + 
+                    result.foldersExported + " folders exported");
+
+            return Response.ok(response.toJSONString()).build();
+
+        } catch (Exception e) {
+            log.error("Filesystem export failed: " + e.getMessage(), e);
+            response.put("status", "error");
+            response.put("message", "Export failed: " + e.getMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(response.toJSONString())
+                    .build();
+        }
+    }
+
+    /**
+     * Import from a filesystem directory recursively.
+     */
+    private ImportResult importFromFilesystemDirectory(String repositoryId, String targetFolderId,
+            Path sourceDir, CallContext callContext) throws Exception {
+
+        ImportResult result = new ImportResult();
+        ContentService cs = getContentService();
+
+        // Collect files and metadata
+        List<Path> files = new ArrayList<>();
+        Map<String, JSONObject> metadataMap = new HashMap<>();
+
+        Files.walk(sourceDir).forEach(path -> {
+            if (Files.isRegularFile(path)) {
+                String relativePath = sourceDir.relativize(path).toString().replace("\\", "/");
+                files.add(path);
+
+                // Parse metadata files
+                if (relativePath.endsWith(META_SUFFIX)) {
+                    try {
+                        String content = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+                        JSONParser parser = new JSONParser();
+                        JSONObject meta = (JSONObject) parser.parse(content);
+                        String baseName = relativePath.substring(0, relativePath.length() - META_SUFFIX.length());
+                        metadataMap.put(baseName, meta);
+                    } catch (Exception e) {
+                        result.warnings.add("Failed to parse metadata: " + relativePath);
+                    }
+                }
+            }
+        });
+
+        // Build folder structure map
+        Map<String, String> pathToFolderId = new HashMap<>();
+        pathToFolderId.put("", targetFolderId);
+
+        // Sort files by depth
+        files.sort((a, b) -> {
+            int depthA = sourceDir.relativize(a).getNameCount();
+            int depthB = sourceDir.relativize(b).getNameCount();
+            return depthA - depthB;
+        });
+
+        // Process files
+        for (Path filePath : files) {
+            String relativePath = sourceDir.relativize(filePath).toString().replace("\\", "/");
+
+            // Skip metadata and version files
+            if (relativePath.endsWith(META_SUFFIX) || isVersionFile(relativePath)) {
+                continue;
+            }
+
+            try {
+                // Ensure parent folders exist
+                String parentPath = getParentPath(relativePath);
+                String parentFolderId = ensureFolderPath(repositoryId, parentPath, targetFolderId,
+                        pathToFolderId, callContext, result);
+
+                // Get filename
+                String fileName = getFileName(relativePath);
+
+                // Get metadata if available
+                JSONObject metadata = metadataMap.get(relativePath);
+
+                // Read file content
+                if (Files.size(filePath) > MAX_SINGLE_FILE_SIZE) {
+                    result.warnings.add("Skipping large file: " + relativePath);
+                    continue;
+                }
+                byte[] content = Files.readAllBytes(filePath);
+                String mimeType = guessMimeType(fileName);
+
+                PropertiesImpl props = new PropertiesImpl();
+                props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:document"));
+                props.addProperty(new PropertyStringImpl(PropertyIds.NAME, fileName));
+
+                // Apply custom properties from metadata
+                if (metadata != null) {
+                    applyCustomProperties(metadata, props);
+                }
+
+                ContentStream contentStream = new ContentStreamImpl(fileName,
+                        BigInteger.valueOf(content.length), mimeType, new ByteArrayInputStream(content));
+
+                Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
+                Document newDoc = cs.createDocument(callContext, repositoryId, props, parentFolder,
+                        contentStream, VersioningState.MAJOR, null, null, null);
+
+                result.documentsCreated++;
+
+                // Apply ACL from metadata
+                if (metadata != null) {
+                    applyCustomAcl(repositoryId, newDoc.getId(), metadata, callContext, result);
+                }
+
+                // Import version history from filesystem
+                importVersionHistoryFromFilesystem(repositoryId, relativePath, sourceDir,
+                        newDoc, callContext, result);
+
+            } catch (Exception e) {
+                log.error("Failed to import file: " + relativePath + " - " + e.getMessage(), e);
+                result.errors.add("Failed to import: " + relativePath + " - " + e.getMessage());
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Import version history from filesystem.
+     */
+    private void importVersionHistoryFromFilesystem(String repositoryId, String basePath, Path sourceDir,
+            Document doc, CallContext callContext, ImportResult result) {
+
+        try {
+            // Find version files
+            List<Path> versionFiles = new ArrayList<>();
+            String baseFileName = getFileName(basePath);
+            String parentPath = getParentPath(basePath);
+            Path parentDir = parentPath.isEmpty() ? sourceDir : sourceDir.resolve(parentPath);
+
+            if (Files.exists(parentDir)) {
+                Files.list(parentDir).forEach(path -> {
+                    String fileName = path.getFileName().toString();
+                    if (isVersionFileFor(fileName, baseFileName)) {
+                        versionFiles.add(path);
+                    }
+                });
+            }
+
+            if (versionFiles.isEmpty()) {
+                return;
+            }
+
+            // Sort by version number
+            versionFiles.sort((a, b) -> {
+                int vA = extractVersionNumber(a.getFileName().toString());
+                int vB = extractVersionNumber(b.getFileName().toString());
+                return vA - vB;
+            });
+
+            // Log warning - version import not fully implemented
+            result.warnings.add("Version history found for " + basePath + " (" + versionFiles.size() + 
+                    " versions) - version import requires check-out/check-in cycles (not implemented)");
+
+        } catch (Exception e) {
+            log.warn("Failed to import version history for: " + basePath, e);
+            result.warnings.add("Failed to import version history for: " + basePath);
+        }
+    }
+
+    /**
+     * Export to a filesystem directory recursively.
+     */
+    @SuppressWarnings("unchecked")
+    private ExportResult exportToFilesystemDirectory(String repositoryId, Folder folder,
+            Path targetDir, CallContext callContext) throws Exception {
+
+        ExportResult result = new ExportResult();
+        exportFolderToFilesystem(repositoryId, folder, targetDir, callContext, result);
+        return result;
+    }
+
+    /**
+     * Export a folder and its contents to filesystem.
+     */
+    @SuppressWarnings("unchecked")
+    private void exportFolderToFilesystem(String repositoryId, Folder folder, Path targetDir,
+            CallContext callContext, ExportResult result) throws Exception {
+
+        ContentService cs = getContentService();
+        List<Content> children = cs.getChildren(repositoryId, folder.getId());
+
+        for (Content child : children) {
+            Path childPath = targetDir.resolve(child.getName());
+
+            if (child instanceof Folder) {
+                // Create folder
+                Files.createDirectories(childPath);
+                result.foldersExported++;
+
+                // Recurse into folder
+                exportFolderToFilesystem(repositoryId, (Folder) child, childPath, callContext, result);
+
+            } else if (child instanceof Document) {
+                Document doc = (Document) child;
+
+                // Export document content
+                if (doc.getAttachmentNodeId() != null) {
+                    try {
+                        var attachment = cs.getAttachment(repositoryId, doc.getAttachmentNodeId());
+                        if (attachment != null && attachment.getInputStream() != null) {
+                            try (InputStream is = attachment.getInputStream();
+                                 OutputStream os = Files.newOutputStream(childPath)) {
+                                byte[] buffer = new byte[8192];
+                                int len;
+                                while ((len = is.read(buffer)) != -1) {
+                                    os.write(buffer, 0, len);
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to export content for: " + childPath, e);
+                        result.errors.add("Failed to export content: " + child.getName());
+                    }
+                }
+
+                // Export metadata
+                JSONObject metadata = buildDocumentMetadata(repositoryId, doc, callContext);
+                Path metaPath = targetDir.resolve(child.getName() + META_SUFFIX);
+                try (FileWriter writer = new FileWriter(metaPath.toFile(), StandardCharsets.UTF_8)) {
+                    writer.write(metadata.toJSONString());
+                }
+
+                result.documentsExported++;
+
+                // Export version history
+                exportVersionHistoryToFilesystem(repositoryId, doc, targetDir, callContext, result);
+            }
+        }
+    }
+
+    /**
+     * Export version history to filesystem.
+     */
+    @SuppressWarnings("unchecked")
+    private void exportVersionHistoryToFilesystem(String repositoryId, Document doc, Path targetDir,
+            CallContext callContext, ExportResult result) {
+
+        try {
+            ContentService cs = getContentService();
+            VersionSeries vs = cs.getVersionSeries(repositoryId, doc);
+            if (vs == null) {
+                return;
+            }
+
+            List<Document> allVersions = cs.getAllVersions(callContext, repositoryId, vs.getId());
+            if (allVersions == null || allVersions.size() <= 1) {
+                return; // Only current version exists
+            }
+
+            // Sort versions by creationDate
+            allVersions.sort((a, b) -> {
+                if (a.getCreated() != null && b.getCreated() != null) {
+                    return a.getCreated().compareTo(b.getCreated());
+                }
+                String labelA = a.getVersionLabel();
+                String labelB = b.getVersionLabel();
+                if (labelA != null && labelB != null) {
+                    try {
+                        double vA = Double.parseDouble(labelA);
+                        double vB = Double.parseDouble(labelB);
+                        return Double.compare(vA, vB);
+                    } catch (NumberFormatException e) {
+                        return labelA.compareTo(labelB);
+                    }
+                }
+                return 0;
+            });
+
+            int versionNum = 1;
+            for (Document version : allVersions) {
+                // Skip the latest version (already exported as main file)
+                if (version.isLatestVersion()) {
+                    continue;
+                }
+
+                // Export version content
+                String versionFileName = doc.getName() + VERSION_PREFIX + versionNum;
+                Path versionPath = targetDir.resolve(versionFileName);
+
+                if (version.getAttachmentNodeId() != null) {
+                    try {
+                        var attachment = cs.getAttachment(repositoryId, version.getAttachmentNodeId());
+                        if (attachment != null && attachment.getInputStream() != null) {
+                            try (InputStream is = attachment.getInputStream();
+                                 OutputStream os = Files.newOutputStream(versionPath)) {
+                                byte[] buffer = new byte[8192];
+                                int len;
+                                while ((len = is.read(buffer)) != -1) {
+                                    os.write(buffer, 0, len);
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to export version content: " + versionFileName, e);
+                    }
+                }
+
+                // Export version metadata
+                JSONObject versionMeta = new JSONObject();
+                versionMeta.put("versionLabel", version.getVersionLabel());
+                versionMeta.put("checkinComment", version.getCheckinComment());
+                versionMeta.put("isMajorVersion", version.isMajorVersion());
+
+                Path versionMetaPath = targetDir.resolve(versionFileName + META_SUFFIX);
+                try (FileWriter writer = new FileWriter(versionMetaPath.toFile(), StandardCharsets.UTF_8)) {
+                    writer.write(versionMeta.toJSONString());
+                }
+
+                versionNum++;
+            }
+
+        } catch (Exception e) {
+            log.warn("Failed to export version history for: " + doc.getName(), e);
+        }
+    }
+
     // ========== Utility Methods ==========
 
     private String guessMimeType(String fileName) {
@@ -1376,5 +1902,11 @@ public class ImportExportResource extends ResourceBase {
         int documentsCreated = 0;
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
+    }
+
+    private static class ExportResult {
+        int foldersExported = 0;
+        int documentsExported = 0;
+        List<String> errors = new ArrayList<>();
     }
 }
