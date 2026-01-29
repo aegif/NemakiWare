@@ -77,6 +77,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.stream.Stream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Enumeration;
@@ -110,6 +112,28 @@ public class ImportExportResource extends ResourceBase {
     // Size limits for import (prevent OOM)
     private static final long MAX_UPLOAD_SIZE = 500 * 1024 * 1024; // 500MB max upload
     private static final long MAX_SINGLE_FILE_SIZE = 100 * 1024 * 1024; // 100MB max per file
+
+    // Allowed filesystem root paths for import/export (sandbox protection)
+    // Configure via system property: nemakiware.filesystem.allowed.roots
+    // Default: /tmp/nemakiware-import, /tmp/nemakiware-export
+    private static final List<String> ALLOWED_FILESYSTEM_ROOTS;
+    static {
+        String configuredRoots = System.getProperty("nemakiware.filesystem.allowed.roots");
+        if (configuredRoots != null && !configuredRoots.isEmpty()) {
+            ALLOWED_FILESYSTEM_ROOTS = new ArrayList<>();
+            for (String root : configuredRoots.split(",")) {
+                String trimmed = root.trim();
+                if (!trimmed.isEmpty()) {
+                    ALLOWED_FILESYSTEM_ROOTS.add(trimmed);
+                }
+            }
+        } else {
+            // Default allowed roots
+            ALLOWED_FILESYSTEM_ROOTS = new ArrayList<>();
+            ALLOWED_FILESYSTEM_ROOTS.add("/tmp/nemakiware-import");
+            ALLOWED_FILESYSTEM_ROOTS.add("/tmp/nemakiware-export");
+        }
+    }
 
     // Permission mapping from Alfresco to NemakiWare
     private static final Map<String, String> PERMISSION_MAPPING = new HashMap<>();
@@ -1347,6 +1371,15 @@ public class ImportExportResource extends ResourceBase {
                         .build();
             }
 
+            // Check for null request body (MEDIUM 4)
+            if (requestBody == null) {
+                response.put("status", "error");
+                response.put("message", "Request body is required");
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+
             // Get source path from request body
             String sourcePath = (String) requestBody.get("sourcePath");
             if (sourcePath == null || sourcePath.isEmpty()) {
@@ -1359,6 +1392,17 @@ public class ImportExportResource extends ResourceBase {
 
             // Validate path (security check)
             Path sourceDir = Paths.get(sourcePath).toAbsolutePath().normalize();
+
+            // Sandbox protection: check path is within allowed roots (HIGH 1)
+            if (!isPathWithinAllowedRoots(sourceDir)) {
+                response.put("status", "error");
+                response.put("message", "Source path is not within allowed filesystem roots. " +
+                        "Allowed roots: " + ALLOWED_FILESYSTEM_ROOTS);
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+
             if (!Files.exists(sourceDir)) {
                 response.put("status", "error");
                 response.put("message", "Source path does not exist: " + sourcePath);
@@ -1451,7 +1495,16 @@ public class ImportExportResource extends ResourceBase {
                         .build();
             }
 
-            // Get target path from request body
+            // Check for null request body (MEDIUM 4)
+            if (requestBody == null) {
+                response.put("status", "error");
+                response.put("message", "Request body is required");
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+
+            // Get target path and overwrite option from request body
             String targetPath = (String) requestBody.get("targetPath");
             if (targetPath == null || targetPath.isEmpty()) {
                 response.put("status", "error");
@@ -1461,8 +1514,25 @@ public class ImportExportResource extends ResourceBase {
                         .build();
             }
 
+            // Get overwrite option (MEDIUM 6) - default to false for safety
+            Boolean allowOverwrite = (Boolean) requestBody.get("allowOverwrite");
+            if (allowOverwrite == null) {
+                allowOverwrite = false;
+            }
+
             // Validate and create target directory
             Path targetDir = Paths.get(targetPath).toAbsolutePath().normalize();
+
+            // Sandbox protection: check path is within allowed roots (HIGH 1)
+            if (!isPathWithinAllowedRoots(targetDir)) {
+                response.put("status", "error");
+                response.put("message", "Target path is not within allowed filesystem roots. " +
+                        "Allowed roots: " + ALLOWED_FILESYSTEM_ROOTS);
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(response.toJSONString())
+                        .build();
+            }
+
             if (!Files.exists(targetDir)) {
                 Files.createDirectories(targetDir);
             }
@@ -1474,7 +1544,8 @@ public class ImportExportResource extends ResourceBase {
                         .build();
             }
 
-            log.info("Starting filesystem export from folder: " + folderId + " to: " + targetDir);
+            log.info("Starting filesystem export from folder: " + folderId + " to: " + targetDir + 
+                    " (allowOverwrite=" + allowOverwrite + ")");
 
             // Get source folder
             ContentService cs = getContentService();
@@ -1488,7 +1559,7 @@ public class ImportExportResource extends ResourceBase {
             }
 
             // Export to filesystem
-            ExportResult result = exportToFilesystemDirectory(repositoryId, folder, targetDir, callContext);
+            ExportResult result = exportToFilesystemDirectory(repositoryId, folder, targetDir, callContext, allowOverwrite);
 
             // Build response
             response.put("status", result.errors.isEmpty() ? "success" : "partial");
@@ -1529,25 +1600,34 @@ public class ImportExportResource extends ResourceBase {
         List<Path> files = new ArrayList<>();
         Map<String, JSONObject> metadataMap = new HashMap<>();
 
-        Files.walk(sourceDir).forEach(path -> {
-            if (Files.isRegularFile(path)) {
-                String relativePath = sourceDir.relativize(path).toString().replace("\\", "/");
-                files.add(path);
+        // Use try-with-resources to properly close the stream (HIGH 2)
+        try (Stream<Path> walkStream = Files.walk(sourceDir)) {
+            walkStream.forEach(path -> {
+                if (Files.isRegularFile(path)) {
+                    String relativePath = sourceDir.relativize(path).toString().replace("\\", "/");
+                    files.add(path);
 
-                // Parse metadata files
-                if (relativePath.endsWith(META_SUFFIX)) {
-                    try {
-                        String content = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
-                        JSONParser parser = new JSONParser();
-                        JSONObject meta = (JSONObject) parser.parse(content);
-                        String baseName = relativePath.substring(0, relativePath.length() - META_SUFFIX.length());
-                        metadataMap.put(baseName, meta);
-                    } catch (Exception e) {
-                        result.warnings.add("Failed to parse metadata: " + relativePath);
+                    // Parse metadata files with size limit check (HIGH 3)
+                    if (relativePath.endsWith(META_SUFFIX)) {
+                        try {
+                            // Check metadata file size before reading
+                            long metaSize = Files.size(path);
+                            if (metaSize > MAX_SINGLE_FILE_SIZE) {
+                                result.warnings.add("Skipping large metadata file: " + relativePath);
+                                return;
+                            }
+                            String content = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+                            JSONParser parser = new JSONParser();
+                            JSONObject meta = (JSONObject) parser.parse(content);
+                            String baseName = relativePath.substring(0, relativePath.length() - META_SUFFIX.length());
+                            metadataMap.put(baseName, meta);
+                        } catch (Exception e) {
+                            result.warnings.add("Failed to parse metadata: " + relativePath);
+                        }
                     }
                 }
-            }
-        });
+            });
+        }
 
         // Build folder structure map
         Map<String, String> pathToFolderId = new HashMap<>();
@@ -1638,13 +1718,16 @@ public class ImportExportResource extends ResourceBase {
             String parentPath = getParentPath(basePath);
             Path parentDir = parentPath.isEmpty() ? sourceDir : sourceDir.resolve(parentPath);
 
+            // Use try-with-resources to properly close the stream (HIGH 2)
             if (Files.exists(parentDir)) {
-                Files.list(parentDir).forEach(path -> {
-                    String fileName = path.getFileName().toString();
-                    if (isVersionFileFor(fileName, baseFileName)) {
-                        versionFiles.add(path);
-                    }
-                });
+                try (Stream<Path> listStream = Files.list(parentDir)) {
+                    listStream.forEach(path -> {
+                        String fileName = path.getFileName().toString();
+                        if (isVersionFileFor(fileName, baseFileName)) {
+                            versionFiles.add(path);
+                        }
+                    });
+                }
             }
 
             if (versionFiles.isEmpty()) {
@@ -1670,22 +1753,26 @@ public class ImportExportResource extends ResourceBase {
 
     /**
      * Export to a filesystem directory recursively.
+     * 
+     * @param allowOverwrite If false, existing files will not be overwritten (MEDIUM 6)
      */
     @SuppressWarnings("unchecked")
     private ExportResult exportToFilesystemDirectory(String repositoryId, Folder folder,
-            Path targetDir, CallContext callContext) throws Exception {
+            Path targetDir, CallContext callContext, boolean allowOverwrite) throws Exception {
 
         ExportResult result = new ExportResult();
-        exportFolderToFilesystem(repositoryId, folder, targetDir, callContext, result);
+        exportFolderToFilesystem(repositoryId, folder, targetDir, callContext, result, allowOverwrite);
         return result;
     }
 
     /**
      * Export a folder and its contents to filesystem.
+     * 
+     * @param allowOverwrite If false, existing files will not be overwritten (MEDIUM 6)
      */
     @SuppressWarnings("unchecked")
     private void exportFolderToFilesystem(String repositoryId, Folder folder, Path targetDir,
-            CallContext callContext, ExportResult result) throws Exception {
+            CallContext callContext, ExportResult result, boolean allowOverwrite) throws Exception {
 
         ContentService cs = getContentService();
         List<Content> children = cs.getChildren(repositoryId, folder.getId());
@@ -1699,18 +1786,28 @@ public class ImportExportResource extends ResourceBase {
                 result.foldersExported++;
 
                 // Recurse into folder
-                exportFolderToFilesystem(repositoryId, (Folder) child, childPath, callContext, result);
+                exportFolderToFilesystem(repositoryId, (Folder) child, childPath, callContext, result, allowOverwrite);
 
             } else if (child instanceof Document) {
                 Document doc = (Document) child;
+
+                // Check if file exists and overwrite is not allowed (MEDIUM 6)
+                if (Files.exists(childPath) && !allowOverwrite) {
+                    result.errors.add("File already exists (overwrite not allowed): " + child.getName());
+                    continue;
+                }
 
                 // Export document content
                 if (doc.getAttachmentNodeId() != null) {
                     try {
                         var attachment = cs.getAttachment(repositoryId, doc.getAttachmentNodeId());
                         if (attachment != null && attachment.getInputStream() != null) {
+                            // Use CREATE_NEW if overwrite not allowed, otherwise default behavior
+                            StandardOpenOption[] options = allowOverwrite 
+                                ? new StandardOpenOption[] { StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING }
+                                : new StandardOpenOption[] { StandardOpenOption.CREATE_NEW };
                             try (InputStream is = attachment.getInputStream();
-                                 OutputStream os = Files.newOutputStream(childPath)) {
+                                 OutputStream os = Files.newOutputStream(childPath, options)) {
                                 byte[] buffer = new byte[8192];
                                 int len;
                                 while ((len = is.read(buffer)) != -1) {
@@ -1721,30 +1818,38 @@ public class ImportExportResource extends ResourceBase {
                     } catch (Exception e) {
                         log.warn("Failed to export content for: " + childPath, e);
                         result.errors.add("Failed to export content: " + child.getName());
+                        continue;
                     }
                 }
 
                 // Export metadata
                 JSONObject metadata = buildDocumentMetadata(repositoryId, doc, callContext);
                 Path metaPath = targetDir.resolve(child.getName() + META_SUFFIX);
-                try (FileWriter writer = new FileWriter(metaPath.toFile(), StandardCharsets.UTF_8)) {
-                    writer.write(metadata.toJSONString());
+                // Check metadata file exists
+                if (Files.exists(metaPath) && !allowOverwrite) {
+                    result.errors.add("Metadata file already exists (overwrite not allowed): " + child.getName() + META_SUFFIX);
+                } else {
+                    try (FileWriter writer = new FileWriter(metaPath.toFile(), StandardCharsets.UTF_8)) {
+                        writer.write(metadata.toJSONString());
+                    }
                 }
 
                 result.documentsExported++;
 
                 // Export version history
-                exportVersionHistoryToFilesystem(repositoryId, doc, targetDir, callContext, result);
+                exportVersionHistoryToFilesystem(repositoryId, doc, targetDir, callContext, result, allowOverwrite);
             }
         }
     }
 
     /**
      * Export version history to filesystem.
+     * 
+     * @param allowOverwrite If false, existing files will not be overwritten (MEDIUM 6)
      */
     @SuppressWarnings("unchecked")
     private void exportVersionHistoryToFilesystem(String repositoryId, Document doc, Path targetDir,
-            CallContext callContext, ExportResult result) {
+            CallContext callContext, ExportResult result, boolean allowOverwrite) {
 
         try {
             ContentService cs = getContentService();
@@ -1788,12 +1893,22 @@ public class ImportExportResource extends ResourceBase {
                 String versionFileName = doc.getName() + VERSION_PREFIX + versionNum;
                 Path versionPath = targetDir.resolve(versionFileName);
 
+                // Check if file exists and overwrite is not allowed (MEDIUM 6)
+                if (Files.exists(versionPath) && !allowOverwrite) {
+                    result.errors.add("Version file already exists (overwrite not allowed): " + versionFileName);
+                    versionNum++;
+                    continue;
+                }
+
                 if (version.getAttachmentNodeId() != null) {
                     try {
                         var attachment = cs.getAttachment(repositoryId, version.getAttachmentNodeId());
                         if (attachment != null && attachment.getInputStream() != null) {
+                            StandardOpenOption[] options = allowOverwrite 
+                                ? new StandardOpenOption[] { StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING }
+                                : new StandardOpenOption[] { StandardOpenOption.CREATE_NEW };
                             try (InputStream is = attachment.getInputStream();
-                                 OutputStream os = Files.newOutputStream(versionPath)) {
+                                 OutputStream os = Files.newOutputStream(versionPath, options)) {
                                 byte[] buffer = new byte[8192];
                                 int len;
                                 while ((len = is.read(buffer)) != -1) {
@@ -1813,8 +1928,13 @@ public class ImportExportResource extends ResourceBase {
                 versionMeta.put("isMajorVersion", version.isMajorVersion());
 
                 Path versionMetaPath = targetDir.resolve(versionFileName + META_SUFFIX);
-                try (FileWriter writer = new FileWriter(versionMetaPath.toFile(), StandardCharsets.UTF_8)) {
-                    writer.write(versionMeta.toJSONString());
+                // Check metadata file exists
+                if (Files.exists(versionMetaPath) && !allowOverwrite) {
+                    result.errors.add("Version metadata file already exists (overwrite not allowed): " + versionFileName + META_SUFFIX);
+                } else {
+                    try (FileWriter writer = new FileWriter(versionMetaPath.toFile(), StandardCharsets.UTF_8)) {
+                        writer.write(versionMeta.toJSONString());
+                    }
                 }
 
                 versionNum++;
@@ -1826,6 +1946,31 @@ public class ImportExportResource extends ResourceBase {
     }
 
     // ========== Utility Methods ==========
+
+    /**
+     * Check if a path is within one of the allowed filesystem roots (HIGH 1 - sandbox protection).
+     * This prevents access to arbitrary filesystem locations.
+     * 
+     * @param path The path to check (should already be normalized)
+     * @return true if the path is within an allowed root, false otherwise
+     */
+    private boolean isPathWithinAllowedRoots(Path path) {
+        String pathStr = path.toAbsolutePath().normalize().toString();
+        for (String allowedRoot : ALLOWED_FILESYSTEM_ROOTS) {
+            Path rootPath = Paths.get(allowedRoot).toAbsolutePath().normalize();
+            String rootStr = rootPath.toString();
+            // Check if path starts with the allowed root
+            if (pathStr.startsWith(rootStr)) {
+                // Make sure it's actually within the directory, not just a prefix match
+                // e.g., /tmp/nemakiware-import should not match /tmp/nemakiware-import-other
+                if (pathStr.length() == rootStr.length() || 
+                    pathStr.charAt(rootStr.length()) == java.io.File.separatorChar) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 
     private String guessMimeType(String fileName) {
         if (fileName == null) {

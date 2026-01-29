@@ -1558,6 +1558,7 @@
       "targetPath": "Target Path",
       "targetPathRequired": "Please enter the target path",
       "targetPathHelp": "Enter the absolute path to the target directory on the server filesystem",
+      "allowOverwrite": "Allow overwriting existing files",
       "button": "Export to Filesystem",
       "success": "Export completed successfully",
       "partial": "Export completed with warnings",

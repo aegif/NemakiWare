@@ -20,7 +20,8 @@ import {
   Descriptions,
   Typography,
   Select,
-  Progress
+  Progress,
+  Checkbox
 } from 'antd';
 import {
   ImportOutlined,
@@ -35,6 +36,30 @@ import { useAuth } from '../../contexts/AuthContext';
 import { CmisService, CmisObject } from '../../services/cmis';
 
 const { Text } = Typography;
+
+/**
+ * Get authentication headers using the same pattern as CmisService (MEDIUM 5).
+ * Reads from localStorage to get the auth token.
+ */
+const getAuthHeaders = (): Record<string, string> => {
+  try {
+    const authData = localStorage.getItem('nemakiware_auth');
+    if (authData) {
+      const auth = JSON.parse(authData);
+      if (auth.username && auth.token) {
+        const credentials = btoa(`${auth.username}:dummy`);
+        return {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${credentials}`,
+          'nemaki_auth_token': String(auth.token)
+        };
+      }
+    }
+  } catch (e) {
+    console.error('Failed to get auth headers:', e);
+  }
+  return { 'Content-Type': 'application/json' };
+};
 
 interface FilesystemImportExportProps {
   repositoryId: string;
@@ -94,10 +119,7 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
         `/core/rest/repo/${repositoryId}/importexport/filesystem/import/${values.targetFolderId}`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Basic ${btoa(`${authToken?.username}:${authToken?.password}`)}`
-          },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ sourcePath: values.sourcePath })
         }
       );
@@ -121,7 +143,7 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
     }
   };
 
-  const handleExport = async (values: { targetPath: string; sourceFolderId: string }) => {
+  const handleExport = async (values: { targetPath: string; sourceFolderId: string; allowOverwrite?: boolean }) => {
     setLoading(true);
     setExportResult(null);
     try {
@@ -129,11 +151,11 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
         `/core/rest/repo/${repositoryId}/importexport/filesystem/export/${values.sourceFolderId}`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Basic ${btoa(`${authToken?.username}:${authToken?.password}`)}`
-          },
-          body: JSON.stringify({ targetPath: values.targetPath })
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ 
+            targetPath: values.targetPath,
+            allowOverwrite: values.allowOverwrite || false
+          })
         }
       );
 
@@ -385,6 +407,15 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
                 prefix={<FolderOutlined />}
                 placeholder="/path/to/export/directory"
               />
+            </Form.Item>
+            <Form.Item
+              name="allowOverwrite"
+              valuePropName="checked"
+              initialValue={false}
+            >
+              <Checkbox>
+                {t('filesystemImportExport.export.allowOverwrite')}
+              </Checkbox>
             </Form.Item>
             <Form.Item>
               <Space>
