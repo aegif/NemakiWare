@@ -8,9 +8,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.nio.file.Files;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
 /**
@@ -230,6 +231,121 @@ public class ImportExportResourceTest {
         assertEquals("application/pdf", invokeGuessMimeType("TEST.PDF"));
     }
 
+    // ========== Size Limit Tests ==========
+
+    @Test
+    public void testReadZipEntryWithSizeLimit() throws Exception {
+        // Create a temporary ZIP file with a small entry
+        File tempZip = File.createTempFile("test", ".zip");
+        tempZip.deleteOnExit();
+        
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempZip))) {
+            ZipEntry entry = new ZipEntry("small.txt");
+            zos.putNextEntry(entry);
+            byte[] content = "Hello World".getBytes();
+            zos.write(content);
+            zos.closeEntry();
+        }
+        
+        // Read the entry using readZipEntry
+        try (ZipFile zf = new ZipFile(tempZip)) {
+            byte[] result = invokeReadZipEntry(zf, "small.txt");
+            assertNotNull("Should read small file successfully", result);
+            assertEquals("Content should match", "Hello World", new String(result));
+        }
+    }
+
+    @Test
+    public void testReadZipEntryNonExistent() throws Exception {
+        // Create a temporary ZIP file
+        File tempZip = File.createTempFile("test", ".zip");
+        tempZip.deleteOnExit();
+        
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempZip))) {
+            ZipEntry entry = new ZipEntry("exists.txt");
+            zos.putNextEntry(entry);
+            zos.write("content".getBytes());
+            zos.closeEntry();
+        }
+        
+        // Try to read non-existent entry
+        try (ZipFile zf = new ZipFile(tempZip)) {
+            byte[] result = invokeReadZipEntry(zf, "nonexistent.txt");
+            assertNull("Should return null for non-existent entry", result);
+        }
+    }
+
+    @Test
+    public void testReadZipEntryDirectory() throws Exception {
+        // Create a temporary ZIP file with a directory entry
+        File tempZip = File.createTempFile("test", ".zip");
+        tempZip.deleteOnExit();
+        
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempZip))) {
+            ZipEntry dirEntry = new ZipEntry("folder/");
+            zos.putNextEntry(dirEntry);
+            zos.closeEntry();
+        }
+        
+        // Try to read directory entry
+        try (ZipFile zf = new ZipFile(tempZip)) {
+            byte[] result = invokeReadZipEntry(zf, "folder/");
+            assertNull("Should return null for directory entry", result);
+        }
+    }
+
+    @Test
+    public void testReadZipEntryExceedsSizeLimit() throws Exception {
+        // Create a temporary ZIP file with a large entry
+        File tempZip = File.createTempFile("test", ".zip");
+        tempZip.deleteOnExit();
+        
+        // Get MAX_SINGLE_FILE_SIZE from the resource class
+        long maxSize = getMaxSingleFileSize();
+        
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempZip))) {
+            ZipEntry entry = new ZipEntry("large.txt");
+            zos.putNextEntry(entry);
+            // Write content larger than MAX_SINGLE_FILE_SIZE
+            // We'll write in chunks to avoid memory issues
+            byte[] chunk = new byte[1024 * 1024]; // 1MB chunk
+            java.util.Arrays.fill(chunk, (byte) 'A');
+            long written = 0;
+            while (written < maxSize + 1024) {
+                zos.write(chunk);
+                written += chunk.length;
+            }
+            zos.closeEntry();
+        }
+        
+        // Try to read large entry - should return null due to size limit
+        try (ZipFile zf = new ZipFile(tempZip)) {
+            byte[] result = invokeReadZipEntry(zf, "large.txt");
+            assertNull("Should return null for file exceeding size limit", result);
+        }
+    }
+
+    @Test
+    public void testReadZipEntryWithUnknownSize() throws Exception {
+        // Create a temporary ZIP file
+        File tempZip = File.createTempFile("test", ".zip");
+        tempZip.deleteOnExit();
+        
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempZip))) {
+            ZipEntry entry = new ZipEntry("test.txt");
+            zos.putNextEntry(entry);
+            zos.write("Test content".getBytes());
+            zos.closeEntry();
+        }
+        
+        // Read the entry - the size monitoring should work even if getSize() returns -1
+        try (ZipFile zf = new ZipFile(tempZip)) {
+            byte[] result = invokeReadZipEntry(zf, "test.txt");
+            assertNotNull("Should read file with unknown size", result);
+            assertEquals("Content should match", "Test content", new String(result));
+        }
+    }
+
     // ========== Helper Methods ==========
 
     private boolean invokeIsValidZipEntryName(String name) throws Exception {
@@ -272,5 +388,17 @@ public class ImportExportResourceTest {
         Method method = ImportExportResource.class.getDeclaredMethod("guessMimeType", String.class);
         method.setAccessible(true);
         return (String) method.invoke(resource, fileName);
+    }
+
+    private byte[] invokeReadZipEntry(ZipFile zf, String entryName) throws Exception {
+        Method method = ImportExportResource.class.getDeclaredMethod("readZipEntry", ZipFile.class, String.class);
+        method.setAccessible(true);
+        return (byte[]) method.invoke(resource, zf, entryName);
+    }
+
+    private long getMaxSingleFileSize() throws Exception {
+        Field field = ImportExportResource.class.getDeclaredField("MAX_SINGLE_FILE_SIZE");
+        field.setAccessible(true);
+        return (Long) field.get(null);
     }
 }
