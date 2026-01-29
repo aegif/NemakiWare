@@ -65,7 +65,9 @@ async function isBackendRunning(baseURL: string): Promise<boolean> {
  */
 async function ensureTestUserExists(): Promise<void> {
   const couchdbUrl = process.env.COUCHDB_URL || 'http://localhost:5984';
-  const couchdbAuth = 'Basic ' + Buffer.from('admin:password').toString('base64');
+  const couchdbUser = process.env.COUCHDB_USER || 'admin';
+  const couchdbPass = process.env.COUCHDB_PASS || 'password';
+  const couchdbAuth = 'Basic ' + Buffer.from(`${couchdbUser}:${couchdbPass}`).toString('base64');
 
   // Use unique test user name to avoid conflict with Keycloak SSO users
   const testUserId = 'api-e2e-testuser';
