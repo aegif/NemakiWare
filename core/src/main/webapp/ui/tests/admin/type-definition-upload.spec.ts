@@ -305,13 +305,9 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     const isMobile = testHelper.isMobile(browserName);
 
-    // Click "ファイルからインポート" button (implemented in TypeManagement.tsx line 657)
+    // Click "ファイルからインポート" button (implemented in TypeManagement.tsx)
     const importButton = page.locator('button:has-text("ファイルからインポート")');
-    if (await importButton.count() === 0) {
-      // Import button IS implemented - if not found, likely a page load or navigation issue
-      test.skip('Import button not visible - possible page load issue (button IS implemented in TypeManagement.tsx)');
-      return;
-    }
+    await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -404,11 +400,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     // Upload the same type again to trigger conflict
     const importButton = page.locator('button:has-text("ファイルからインポート")');
-    if (await importButton.count() === 0) {
-      // UPDATED (2025-12-26): Import IS implemented in TypeManagement.tsx
-      test.skip('Import button not visible - IS implemented in TypeManagement.tsx');
-      return;
-    }
+    await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -607,11 +599,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     // Upload new type first
     const importButton = page.locator('button:has-text("ファイルからインポート")');
-    if (await importButton.count() === 0) {
-      // UPDATED (2025-12-26): Import IS implemented in TypeManagement.tsx
-      test.skip('Import button not visible - IS implemented in TypeManagement.tsx');
-      return;
-    }
+    await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -833,11 +821,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     const importButton = page.locator('button:has-text("ファイルからインポート")');
-    if (await importButton.count() === 0) {
-      // UPDATED (2025-12-26): Import IS implemented in TypeManagement.tsx
-      test.skip('Import button not visible - IS implemented in TypeManagement.tsx');
-      return;
-    }
+    await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);
@@ -871,11 +855,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     // Upload type
     const importButton = page.locator('button:has-text("ファイルからインポート")');
-    if (await importButton.count() === 0) {
-      // UPDATED (2025-12-26): Import IS implemented in TypeManagement.tsx
-      test.skip('Import button not visible - IS implemented in TypeManagement.tsx');
-      return;
-    }
+    await expect(importButton).toBeVisible({ timeout: 10000 });
 
     await importButton.click(isMobile ? { force: true } : {});
     await page.waitForTimeout(1000);

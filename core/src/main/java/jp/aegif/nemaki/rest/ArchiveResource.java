@@ -225,6 +225,16 @@ public class ArchiveResource extends ResourceBase {
 			log.warn(String.format("Archive(%s) 'created' property is broken.", archive.getId()));
 		}
 		archiveJson.put("creator", archive.getCreator());
+		// Additional fields for UI display
+		if (archive.getPath() != null) {
+			archiveJson.put("path", archive.getPath());
+		}
+		if (archive.getMimeType() != null) {
+			archiveJson.put("mimeType", archive.getMimeType());
+		}
+		if (archive.getContentStreamLength() != null) {
+			archiveJson.put("contentLength", archive.getContentStreamLength());
+		}
 		return archiveJson;
 	}
 }

@@ -2761,6 +2761,75 @@ public class ContentServiceImpl implements ContentService {
 		solrUtil.deleteDocument(repositoryId, objectId);
 		
 	}
+
+
+	/**
+	 * Overloaded delete method that accepts pre-fetched attachment info for archive creation.
+	 * This is needed because in deleteDocument(), the attachment is deleted BEFORE
+	 * the document is deleted, so we need to pass the attachment info explicitly.
+	 */
+	public void delete(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent,
+			String mimeType, Long contentStreamLength) {
+		
+		Content content = getContent(repositoryId, objectId);
+
+		// Handle case where content was already deleted (e.g., concurrent delete or cascade)
+		if (content == null) {
+			log.warn("delete: Content not found for objectId=" + objectId + " - may have been deleted already");
+			return;
+		}
+
+
+		// Record the change event(Before the content is deleted!)
+		writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);
+
+		// Archive - Check if archive creation is enabled (CRITICAL TCK FIX for timeout)
+		boolean archiveCreateEnabled = propertyManager.readBoolean(PropertyKey.ARCHIVE_CREATE_ENABLED);
+		if (archiveCreateEnabled) {
+			log.debug("Creating archive for object: {}", objectId);
+			// Use the overloaded createArchive with pre-fetched attachment info
+			createArchive(callContext, repositoryId, objectId, deletedWithParent, mimeType, contentStreamLength);
+		} else {
+			log.debug("Archive creation disabled - skipping archive for object: {}", objectId);
+		}
+		
+		// CRITICAL FIX: Delete attached relationships using optimized approach
+		// Collect all related documents for bulk deletion
+		List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
+		List<Relationship> targetRelationships = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
+		
+		List<String> relationshipIds = new ArrayList<>();
+		for (Relationship rel : sourceRelationships) {
+			relationshipIds.add(rel.getId());
+		}
+		for (Relationship rel : targetRelationships) {
+			relationshipIds.add(rel.getId());
+		}
+		
+		// Delete relationships in batch if any exist
+		if (!relationshipIds.isEmpty()) {
+			try {
+				log.debug("Deleting " + relationshipIds.size() + " relationships for object: " + objectId);
+				deleteRelationshipsBatch(repositoryId, relationshipIds);
+			} catch (Exception e) {
+				log.error("Error deleting relationships for object " + objectId + ": " + e.getMessage(), e);
+				// Continue with main object deletion even if relationship deletion fails
+			}
+		}
+
+		// Delete item
+		
+		try {
+			contentDaoService.delete(repositoryId, objectId);
+		} catch (Exception e) {
+			log.error("ERROR in contentDaoService.delete() for object {}: {}", objectId, e.getMessage(), e);
+			throw e; // Re-throw to maintain original error handling
+		}
+
+		// Call Solr indexing(optional) - delete from index
+		solrUtil.deleteDocument(repositoryId, objectId);
+		
+	}
 	
 	/**
 	 * CRITICAL: Batch deletion of relationships for better Cloudant SDK performance
@@ -2954,9 +3023,21 @@ public class ContentServiceImpl implements ContentService {
 
 		// Delete documents (with archive creation via delete() method)
 		for (Document version : versionList) {
-			// Archive attachment before deletion
+			// Get attachment info BEFORE deletion for archive creation
+			String mimeType = null;
+			Long contentStreamLength = null;
 			if (version.getAttachmentNodeId() != null) {
 				String attachmentId = version.getAttachmentNodeId();
+				// Get attachment info before deletion
+				try {
+					AttachmentNode attachment = contentDaoService.getAttachment(repositoryId, attachmentId);
+					if (attachment != null) {
+						mimeType = attachment.getMimeType();
+						contentStreamLength = attachment.getLength();
+					}
+				} catch (Exception e) {
+					log.warn("Failed to get attachment info before deletion: {}", e.getMessage());
+				}
 				// Delete an attachment (this also creates attachment archive if enabled)
 				deleteAttachment(callContext, repositoryId, attachmentId);
 			}
@@ -2968,7 +3049,8 @@ public class ContentServiceImpl implements ContentService {
 			}
 
 			// Delete a document (this creates document archive if enabled via delete() method)
-			delete(callContext, repositoryId, version.getId(), deleteWithParent);
+			// Pass pre-fetched attachment info for archive
+			delete(callContext, repositoryId, version.getId(), deleteWithParent, mimeType, contentStreamLength);
 		}
 
 		// Delete VersionSeries when all versions are deleted
@@ -3584,12 +3666,81 @@ public class ContentServiceImpl implements ContentService {
 		a.setParentId(content.getParentId());
 		setSignature(callContext, a);
 
+		// Set path (calculate from folder hierarchy)
+		try {
+			String path = calculatePath(repositoryId, content);
+			a.setPath(path);
+		} catch (Exception e) {
+			log.warn("Failed to calculate path for archive: {}", e.getMessage());
+		}
+
 		// Set Document archive specific info
 		if (content.isDocument()) {
 			Document document = (Document) content;
 			a.setAttachmentNodeId(document.getAttachmentNodeId());
 			a.setVersionSeriesId(document.getVersionSeriesId());
 			a.setIsLatestVersion(document.isLatestVersion());
+
+			// Set mimeType and contentStreamLength from AttachmentNode
+			if (document.getAttachmentNodeId() != null) {
+				try {
+					AttachmentNode attachment = contentDaoService.getAttachment(repositoryId, document.getAttachmentNodeId());
+					if (attachment != null) {
+						a.setMimeType(attachment.getMimeType());
+						a.setContentStreamLength(attachment.getLength());
+					}
+				} catch (Exception e) {
+					log.warn("Failed to get attachment info for archive: {}", e.getMessage());
+				}
+			}
+		}
+
+		return contentDaoService.createArchive(repositoryId, a, deletedWithParent);
+	}
+
+
+	/**
+	 * Overloaded createArchive that accepts pre-fetched attachment info.
+	 * This is needed because in deleteDocument(), the attachment is deleted BEFORE
+	 * the document archive is created, so we need to pass the attachment info explicitly.
+	 */
+	public Archive createArchive(CallContext callContext, String repositoryId, String objectId,
+			Boolean deletedWithParent, String mimeType, Long contentStreamLength) {
+		Content content = getContent(repositoryId, objectId);
+
+		// Set base info
+		Archive a = new Archive();
+
+		a.setOriginalId(content.getId());
+		// a.setLastRevision(content.getRevision());
+		a.setName(content.getName());
+		a.setType(content.getType());
+		a.setDeletedWithParent(deletedWithParent);
+		a.setParentId(content.getParentId());
+		setSignature(callContext, a);
+
+		// Set path (calculate from folder hierarchy)
+		try {
+			String path = calculatePath(repositoryId, content);
+			a.setPath(path);
+		} catch (Exception e) {
+			log.warn("Failed to calculate path for archive: {}", e.getMessage());
+		}
+
+		// Set Document archive specific info
+		if (content.isDocument()) {
+			Document document = (Document) content;
+			a.setAttachmentNodeId(document.getAttachmentNodeId());
+			a.setVersionSeriesId(document.getVersionSeriesId());
+			a.setIsLatestVersion(document.isLatestVersion());
+
+			// Use pre-fetched attachment info if provided
+			if (mimeType != null) {
+				a.setMimeType(mimeType);
+			}
+			if (contentStreamLength != null) {
+				a.setContentStreamLength(contentStreamLength);
+			}
 		}
 
 		return contentDaoService.createArchive(repositoryId, a, deletedWithParent);

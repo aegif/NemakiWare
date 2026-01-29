@@ -229,8 +229,7 @@ test.describe('User Scenario Tests', () => {
     });
 
     test('should display preview tab for documents with content', async ({ page }) => {
-      await authHelper.login();
-
+      // Login is done in beforeEach
       await page.waitForSelector('.ant-table', { timeout: 10000 });
       await page.waitForTimeout(2000);
 
@@ -285,8 +284,7 @@ test.describe('User Scenario Tests', () => {
 
   test.describe('Back Button and Navigation', () => {
     test('should return to document list when clicking back button', async ({ page }) => {
-      await authHelper.login();
-
+      // Login is done in beforeEach
       await page.waitForSelector('.ant-table', { timeout: 10000 });
       await page.waitForTimeout(2000);
 
@@ -337,8 +335,7 @@ test.describe('User Scenario Tests', () => {
 
   test.describe('Document Operations Stability', () => {
     test('should be able to view multiple documents sequentially', async ({ page }) => {
-      await authHelper.login();
-
+      // Login is done in beforeEach
       await page.waitForSelector('.ant-table', { timeout: 10000 });
       await page.waitForTimeout(2000);
 
@@ -410,8 +407,7 @@ test.describe('User Scenario Tests', () => {
 
   test.describe('CMIS Property Format Verification', () => {
     test('should handle CMIS Browser Binding property format correctly', async ({ page }) => {
-      await authHelper.login();
-
+      // login is handled by beforeEach
       await page.waitForSelector('.ant-table', { timeout: 10000 });
       await page.waitForTimeout(2000);
 
@@ -468,8 +464,7 @@ test.describe('User Scenario Tests', () => {
 
   test.describe('Secondary Type Operations (Critical Bug Fix 2025-12-13)', () => {
     test('should add secondary type without y.includes error', async ({ page }) => {
-      await authHelper.login();
-
+      // login is handled by beforeEach
       await page.waitForSelector('.ant-table', { timeout: 10000 });
       await page.waitForTimeout(2000);
 

@@ -53,6 +53,8 @@ public class Archive extends NodeBase {
 	private String versionSeriesId;
 	private Boolean latestVersion;
 	private String mimeType;
+	private String path;
+	private Long contentStreamLength;
 
 
 	public Archive() {
@@ -169,6 +171,22 @@ public class Archive extends NodeBase {
 
 	public void setMimeType(String mimeType) {
 		this.mimeType = mimeType;
+	}
+
+	public String getPath() {
+		return path;
+	}
+
+	public void setPath(String path) {
+		this.path = path;
+	}
+
+	public Long getContentStreamLength() {
+		return contentStreamLength;
+	}
+
+	public void setContentStreamLength(Long contentStreamLength) {
+		this.contentStreamLength = contentStreamLength;
 	}
 
 	@Override
