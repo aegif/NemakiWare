@@ -2583,7 +2583,7 @@ export class CMISService {
         }
       }
     } catch (error) {
-      console.debug(`[CASCADE DELETE] Error collecting descendants for ${objectId}:`, error);
+      console.warn(`[CASCADE DELETE] Error collecting descendants for ${objectId}:`, error);
       // Continue with what we have, don't fail the entire operation
     }
 
