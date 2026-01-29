@@ -334,6 +334,21 @@ function convertParsedEntryToCmisObject(entry: ParsedAtomEntry): CMISObject {
   };
 }
 
+/**
+ * Normalize archive type to a valid CMIS baseType for UI rendering.
+ * Backend filters out 'attachment' type, but as a safety net,
+ * map document-like types (e.g. 'attachment') to 'cmis:document'.
+ */
+function normalizeArchiveBaseType(type: string): string {
+  if (type === 'cmis:document' || type === 'cmis:folder') {
+    return type;
+  }
+  if (type === 'attachment' || type === 'cmis:item') {
+    return 'cmis:document';
+  }
+  return type.startsWith('cmis:') ? type : 'cmis:document';
+}
+
 const MIGRATION_PROPERTY_TYPES: MigrationPropertyType[] = [
   'string',
   'integer',
@@ -2706,7 +2721,7 @@ export class CMISService {
           return archives.map((archive: Record<string, unknown>) => ({
             id: String(archive.id || ''),
             name: String(archive.name || 'Unknown'),
-            baseType: String(archive.type || 'cmis:document'),
+            baseType: normalizeArchiveBaseType(String(archive.type || 'cmis:document')),
             objectType: String(archive.type || 'cmis:document'),
             properties: {},
             path: archive.path as string | undefined,

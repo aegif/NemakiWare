@@ -362,6 +362,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [renameTargetName, setRenameTargetName] = useState<string>('');
   const [renameForm] = Form.useForm();
 
+  // Bulk operation states (2026-01-28)
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [bulkDeleteModalVisible, setBulkDeleteModalVisible] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+
   // Type selection states (2025-12-11)
   const [documentTypes, setDocumentTypes] = useState<TypeDefinition[]>([]);
   const [folderTypes, setFolderTypes] = useState<TypeDefinition[]>([]);
@@ -745,6 +750,44 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     renameForm.resetFields();
     setRenameTargetId('');
     setRenameTargetName('');
+  };
+
+  /**
+   * Handle bulk delete operation.
+   * Deletes all selected items with cascade deletion for related objects.
+   */
+  const handleBulkDelete = async () => {
+    setBulkDeleteLoading(true);
+    try {
+      let successCount = 0;
+      let failedCount = 0;
+
+      for (const objectId of selectedRowKeys) {
+        try {
+          await cmisService.deleteObjectWithCascade(repositoryId, objectId as string);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to delete object ${objectId}:`, error);
+          failedCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        message.success(t('documentList.messages.bulkDeleteSuccess', { count: successCount }));
+      }
+      if (failedCount > 0) {
+        message.warning(t('documentList.messages.bulkDeleteFailed', { count: failedCount }));
+      }
+
+      setSelectedRowKeys([]);
+      setBulkDeleteModalVisible(false);
+      await loadObjects();
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      message.error(t('documentList.messages.bulkDeleteError'));
+    } finally {
+      setBulkDeleteLoading(false);
+    }
   };
 
   const handleDownload = (objectId: string) => {
@@ -1408,6 +1451,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   >
                     {t('importExport.export')}
                   </Button>
+                  {selectedRowKeys.length > 0 && (
+                    <Button
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => setBulkDeleteModalVisible(true)}
+                    >
+                      {t('documentList.bulkDelete', { count: selectedRowKeys.length })}
+                    </Button>
+                  )}
                 </Space>
               </div>
               
@@ -1418,6 +1470,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 loading={loading}
                 pagination={{ pageSize: 20 }}
                 size="small"
+                rowSelection={{
+                  selectedRowKeys,
+                  onChange: (newSelectedRowKeys: React.Key[]) => {
+                    setSelectedRowKeys(newSelectedRowKeys);
+                  },
+                }}
               />
             </Space>
           </Card>
@@ -1968,6 +2026,24 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Bulk Delete Confirmation Modal */}
+      <Modal
+        title={t('documentList.bulkDeleteConfirmation')}
+        open={bulkDeleteModalVisible}
+        onOk={handleBulkDelete}
+        onCancel={() => {
+          setBulkDeleteModalVisible(false);
+        }}
+        okText={t('documentList.deleteButton')}
+        cancelText={t('common.cancel')}
+        okButtonProps={{ danger: true, loading: bulkDeleteLoading }}
+        maskClosable={false}
+      >
+        <p>
+          {t('documentList.bulkDeleteConfirmMessage', { count: selectedRowKeys.length })}
+        </p>
       </Modal>
     </div>
   );

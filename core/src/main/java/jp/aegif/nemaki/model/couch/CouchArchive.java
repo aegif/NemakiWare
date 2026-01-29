@@ -50,6 +50,7 @@ public class CouchArchive extends CouchNodeBase{
 	private String versionSeriesId;
 	private Boolean latestVersion;
 	private String mimeType;
+	private Long contentStreamLength;
 
 	public CouchArchive(){
 		super();
@@ -62,11 +63,13 @@ public class CouchArchive extends CouchNodeBase{
 		setName(a.getName());
 		setParentId(a.getParentId());
 		setDeletedWithParent(a.isDeletedWithParent());
+		setPath(a.getPath());
 		setAttachmentNodeId(a.getAttachmentNodeId());
 		setRenditionIds(a.getRenditionIds());
 		setVersionSeriesId(a.getVersionSeriesId());
 		setLatestVersion(a.isLatestVersion());
 		setMimeType(a.getMimeType());
+		setContentStreamLength(a.getContentStreamLength());
 	}
 
 	/**
@@ -161,6 +164,14 @@ public class CouchArchive extends CouchNodeBase{
 		this.mimeType = mimeType;
 	}
 
+	public Long getContentStreamLength() {
+		return contentStreamLength;
+	}
+
+	public void setContentStreamLength(Long contentStreamLength) {
+		this.contentStreamLength = contentStreamLength;
+	}
+
 	@Override
 	public String toString() {
 		Map<String, Object> m = new HashMap<String, Object>();
@@ -225,11 +236,13 @@ public class CouchArchive extends CouchNodeBase{
 		a.setName(getName());
 		a.setParentId(getParentId());
 		a.setDeletedWithParent(isDeletedWithParent());
+		a.setPath(getPath());
 		a.setAttachmentNodeId(getAttachmentNodeId());
 		a.setRenditionIds(getRenditionIds());
 		a.setVersionSeriesId(getVersionSeriesId());
 		a.setIsLatestVersion(isLatestVersion());
 		a.setMimeType(getMimeType());
+		a.setContentStreamLength(getContentStreamLength());
 
 		return a;
 	}
