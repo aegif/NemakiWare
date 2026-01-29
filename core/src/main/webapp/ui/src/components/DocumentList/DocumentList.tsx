@@ -755,6 +755,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   /**
    * Handle bulk delete operation.
    * Deletes all selected items with cascade deletion for related objects.
+   * Uses deleteObjectWithCascade return value to accurately count successes and failures.
    */
   const handleBulkDelete = async () => {
     setBulkDeleteLoading(true);
@@ -764,8 +765,17 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
       for (const objectId of selectedRowKeys) {
         try {
-          await cmisService.deleteObjectWithCascade(repositoryId, objectId as string);
-          successCount++;
+          const result = await cmisService.deleteObjectWithCascade(repositoryId, objectId as string);
+          // Count the root object as success only if it was actually deleted (not in failedIds)
+          if (!result.failedIds.includes(objectId as string)) {
+            successCount++;
+          } else {
+            failedCount++;
+          }
+          // Log any descendant failures for debugging
+          if (result.failedIds.length > 0) {
+            console.warn(`Cascade delete for ${objectId} had ${result.failedIds.length} failed items:`, result.failedIds);
+          }
         } catch (error) {
           console.error(`Failed to delete object ${objectId}:`, error);
           failedCount++;
