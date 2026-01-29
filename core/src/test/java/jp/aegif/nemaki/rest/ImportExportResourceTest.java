@@ -2,10 +2,9 @@ package jp.aegif.nemaki.rest;
 
 import org.junit.Test;
 import org.junit.Before;
+import org.junit.Ignore;
 import static org.junit.Assert.*;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.lang.reflect.Field;
@@ -294,7 +293,13 @@ public class ImportExportResourceTest {
         }
     }
 
+    /**
+     * Test that files exceeding MAX_SINGLE_FILE_SIZE are rejected.
+     * This test is ignored by default because it creates a 100MB+ file which is slow.
+     * Run manually for integration testing: mvn test -Dtest=ImportExportResourceTest#testReadZipEntryExceedsSizeLimit
+     */
     @Test
+    @Ignore("Integration test - creates 100MB+ file, too slow for regular CI")
     public void testReadZipEntryExceedsSizeLimit() throws Exception {
         // Create a temporary ZIP file with a large entry
         File tempZip = File.createTempFile("test", ".zip");
