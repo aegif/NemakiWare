@@ -2631,6 +2631,7 @@ export class CMISService {
           await this.deleteObject(repositoryId, descendantId);
           descendantDeletedCount++;
         } catch (error) {
+          console.warn(`[CASCADE DELETE] Failed to delete descendant ${descendantId}:`, error);
           descendantFailedIds.push(descendantId);
           // Continue with other deletions
         }
@@ -2642,6 +2643,7 @@ export class CMISService {
       await this.deleteObject(repositoryId, objectId);
       rootDeleted = true;
     } catch (error) {
+      console.warn(`[CASCADE DELETE] Failed to delete root object ${objectId}:`, error);
       // Root deletion failed - this is a complete failure for this object
     }
 
