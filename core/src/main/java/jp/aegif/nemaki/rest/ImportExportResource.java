@@ -987,8 +987,11 @@ public class ImportExportResource extends ResourceBase {
             String propName = (String) key;
             Object propValue = properties.get(propName);
 
-            // Skip CMIS system properties that are auto-generated
+            // Skip CMIS system properties that are auto-generated or already set with correct type
             if (propName.equals(PropertyIds.OBJECT_ID) ||
+                propName.equals(PropertyIds.OBJECT_TYPE_ID) ||
+                propName.equals(PropertyIds.NAME) ||
+                propName.equals(PropertyIds.BASE_TYPE_ID) ||
                 propName.equals(PropertyIds.CREATION_DATE) ||
                 propName.equals(PropertyIds.LAST_MODIFICATION_DATE) ||
                 propName.equals(PropertyIds.CREATED_BY) ||
@@ -1997,8 +2000,12 @@ public class ImportExportResource extends ResourceBase {
     }
 
     private CallContext createCallContext(HttpServletRequest request, String repositoryId) {
-        // Create a simple CallContext from request (fix: no admin fallback)
-        // If user is not authenticated, getUsername() returns null
+        // Use CallContext set by AuthenticationFilter (which handles Basic auth and token auth)
+        CallContext filterContext = (CallContext) request.getAttribute("CallContext");
+        if (filterContext != null) {
+            return filterContext;
+        }
+        // Fallback: create minimal context (username will be null → triggers 401)
         return new CallContext() {
             @Override
             public String getBinding() { return "browser"; }
@@ -2006,9 +2013,6 @@ public class ImportExportResource extends ResourceBase {
             public boolean isObjectInfoRequired() { return false; }
             @Override
             public Object get(String key) {
-                if ("username".equals(key)) {
-                    return request.getRemoteUser();
-                }
                 if ("repositoryId".equals(key)) {
                     return repositoryId;
                 }
@@ -2017,9 +2021,7 @@ public class ImportExportResource extends ResourceBase {
             @Override
             public String getRepositoryId() { return repositoryId; }
             @Override
-            public String getUsername() {
-                return request.getRemoteUser();
-            }
+            public String getUsername() { return null; }
             @Override
             public String getPassword() { return null; }
             @Override

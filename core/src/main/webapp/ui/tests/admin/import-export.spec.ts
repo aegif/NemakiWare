@@ -57,6 +57,10 @@ test.describe.serial('Import/Export Feature', () => {
       expect(body.length).toBeGreaterThan(0);
       expect(body[0]).toBe(0x50); // 'P'
       expect(body[1]).toBe(0x4B); // 'K'
+
+      // Verify ZIP contains .meta.json files (NemakiWare custom format)
+      const bodyStr = body.toString('utf-8');
+      expect(bodyStr).toContain('.meta.json');
     });
 
     test('should return 404 for non-existent folder export', async ({ page }) => {
@@ -155,22 +159,15 @@ test.describe.serial('Import/Export Feature', () => {
         }
       );
 
-      // Import should return JSON result
+      // Minimal ZIP without .meta.json files is treated as unknown format → 400
       const status = importRes.status();
       console.log(`Import response status: ${status}`);
-
-      if (importRes.ok()) {
+      // The server rejects ZIPs without recognized format (ACP XML or NemakiWare .meta.json)
+      expect([200, 400]).toContain(status);
+      if (status === 400) {
         const result = await importRes.json();
-        console.log('Import result:', JSON.stringify(result));
-        expect(result.status).toBeDefined();
-        // Track imported docs for cleanup
-        if (result.documentsCreated > 0) {
-          console.log(`Successfully imported ${result.documentsCreated} documents`);
-        }
-      } else {
-        // Some server configurations may reject imports
-        console.log(`Import returned ${status} - server may restrict import operations`);
-        expect([200, 400, 401, 403, 500]).toContain(status);
+        expect(result.status).toBe('error');
+        console.log('Expected rejection of plain ZIP:', result.message);
       }
     });
 
@@ -362,28 +359,23 @@ test.describe.serial('Import/Export Feature', () => {
         }
       );
 
-      if (importRes.ok()) {
-        const result = await importRes.json();
-        console.log('Round-trip import result:', JSON.stringify(result));
-        expect(result.status).toBeDefined();
-        // If import succeeded, verify content in target folder
-        if (result.status === 'success' || result.documentsCreated > 0) {
-          const childrenRes = await page.request.get(
-            `${BASE_URL}/core/browser/bedroom/root?objectId=${importTargetFolderId}&cmisselector=children`,
-            { headers: { 'Authorization': AUTH_HEADER } }
-          );
-          if (childrenRes.ok()) {
-            const children = await childrenRes.json();
-            const objects = children.objects || [];
-            console.log(`Target folder has ${objects.length} children after import`);
-            expect(objects.length).toBeGreaterThanOrEqual(0);
-          }
-        }
-      } else {
-        console.log(`Round-trip import returned ${importRes.status()}`);
-        // Accept if server restricts imports
-        expect([200, 400, 401, 403, 500]).toContain(importRes.status());
-      }
+      // Import should succeed with status 200
+      expect(importRes.ok()).toBeTruthy();
+      const result = await importRes.json();
+      console.log('Round-trip import result:', JSON.stringify(result));
+      expect(result.status).toBe('success');
+      expect(result.documentsCreated).toBeGreaterThanOrEqual(1);
+
+      // Verify content in target folder
+      const childrenRes = await page.request.get(
+        `${BASE_URL}/core/browser/bedroom/root?objectId=${importTargetFolderId}&cmisselector=children`,
+        { headers: { 'Authorization': AUTH_HEADER } }
+      );
+      expect(childrenRes.ok()).toBeTruthy();
+      const children = await childrenRes.json();
+      const objects = children.objects || [];
+      console.log(`Target folder has ${objects.length} children after import`);
+      expect(objects.length).toBeGreaterThanOrEqual(1);
     });
 
     test.afterAll(async ({ browser }) => {
