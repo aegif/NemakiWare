@@ -33,7 +33,8 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
-import { CmisService, CmisObject } from '../../services/cmis';
+import { CMISService } from '../../services/cmis';
+import { CMISObject } from '../../types/cmis';
 
 const { Text } = Typography;
 
@@ -81,14 +82,14 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
   const { t } = useTranslation();
   const { authToken, handleAuthError } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [folders, setFolders] = useState<CmisObject[]>([]);
+  const [folders, setFolders] = useState<CMISObject[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(false);
   const [importResult, setImportResult] = useState<ImportExportResult | null>(null);
   const [exportResult, setExportResult] = useState<ImportExportResult | null>(null);
   const [importForm] = Form.useForm();
   const [exportForm] = Form.useForm();
 
-  const cmisService = new CmisService(() => handleAuthError(null));
+  const cmisService = new CMISService(() => handleAuthError(null));
 
   // Load root folders for selection
   const loadFolders = useCallback(async () => {

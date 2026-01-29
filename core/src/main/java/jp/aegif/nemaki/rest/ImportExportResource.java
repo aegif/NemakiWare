@@ -75,7 +75,6 @@ import java.io.OutputStream;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.stream.Stream;
@@ -1181,9 +1180,9 @@ public class ImportExportResource extends ResourceBase {
         }
         // Add custom properties
         if (doc.getSubTypeProperties() != null) {
-            for (Map.Entry<String, Object> entry : doc.getSubTypeProperties().entrySet()) {
-                if (entry.getValue() != null) {
-                    properties.put(entry.getKey(), entry.getValue().toString());
+            for (jp.aegif.nemaki.model.Property prop : doc.getSubTypeProperties()) {
+                if (prop.getValue() != null) {
+                    properties.put(prop.getKey(), prop.getValue().toString());
                 }
             }
         }
@@ -1391,7 +1390,7 @@ public class ImportExportResource extends ResourceBase {
             }
 
             // Validate path (security check)
-            Path sourceDir = Paths.get(sourcePath).toAbsolutePath().normalize();
+            java.nio.file.Path sourceDir = Paths.get(sourcePath).toAbsolutePath().normalize();
 
             // Sandbox protection: check path is within allowed roots (HIGH 1)
             if (!isPathWithinAllowedRoots(sourceDir)) {
@@ -1521,7 +1520,7 @@ public class ImportExportResource extends ResourceBase {
             }
 
             // Validate and create target directory
-            Path targetDir = Paths.get(targetPath).toAbsolutePath().normalize();
+            java.nio.file.Path targetDir = Paths.get(targetPath).toAbsolutePath().normalize();
 
             // Sandbox protection: check path is within allowed roots (HIGH 1)
             if (!isPathWithinAllowedRoots(targetDir)) {
@@ -1591,17 +1590,17 @@ public class ImportExportResource extends ResourceBase {
      * Import from a filesystem directory recursively.
      */
     private ImportResult importFromFilesystemDirectory(String repositoryId, String targetFolderId,
-            Path sourceDir, CallContext callContext) throws Exception {
+            java.nio.file.Path sourceDir, CallContext callContext) throws Exception {
 
         ImportResult result = new ImportResult();
         ContentService cs = getContentService();
 
         // Collect files and metadata
-        List<Path> files = new ArrayList<>();
+        List<java.nio.file.Path> files = new ArrayList<>();
         Map<String, JSONObject> metadataMap = new HashMap<>();
 
         // Use try-with-resources to properly close the stream (HIGH 2)
-        try (Stream<Path> walkStream = Files.walk(sourceDir)) {
+        try (Stream<java.nio.file.Path> walkStream = Files.walk(sourceDir)) {
             walkStream.forEach(path -> {
                 if (Files.isRegularFile(path)) {
                     String relativePath = sourceDir.relativize(path).toString().replace("\\", "/");
@@ -1641,7 +1640,7 @@ public class ImportExportResource extends ResourceBase {
         });
 
         // Process files
-        for (Path filePath : files) {
+        for (java.nio.file.Path filePath : files) {
             String relativePath = sourceDir.relativize(filePath).toString().replace("\\", "/");
 
             // Skip metadata and version files
@@ -1708,19 +1707,19 @@ public class ImportExportResource extends ResourceBase {
     /**
      * Import version history from filesystem.
      */
-    private void importVersionHistoryFromFilesystem(String repositoryId, String basePath, Path sourceDir,
+    private void importVersionHistoryFromFilesystem(String repositoryId, String basePath, java.nio.file.Path sourceDir,
             Document doc, CallContext callContext, ImportResult result) {
 
         try {
             // Find version files
-            List<Path> versionFiles = new ArrayList<>();
+            List<java.nio.file.Path> versionFiles = new ArrayList<>();
             String baseFileName = getFileName(basePath);
             String parentPath = getParentPath(basePath);
-            Path parentDir = parentPath.isEmpty() ? sourceDir : sourceDir.resolve(parentPath);
+            java.nio.file.Path parentDir = parentPath.isEmpty() ? sourceDir : sourceDir.resolve(parentPath);
 
             // Use try-with-resources to properly close the stream (HIGH 2)
             if (Files.exists(parentDir)) {
-                try (Stream<Path> listStream = Files.list(parentDir)) {
+                try (Stream<java.nio.file.Path> listStream = Files.list(parentDir)) {
                     listStream.forEach(path -> {
                         String fileName = path.getFileName().toString();
                         if (isVersionFileFor(fileName, baseFileName)) {
@@ -1758,7 +1757,7 @@ public class ImportExportResource extends ResourceBase {
      */
     @SuppressWarnings("unchecked")
     private ExportResult exportToFilesystemDirectory(String repositoryId, Folder folder,
-            Path targetDir, CallContext callContext, boolean allowOverwrite) throws Exception {
+            java.nio.file.Path targetDir, CallContext callContext, boolean allowOverwrite) throws Exception {
 
         ExportResult result = new ExportResult();
         exportFolderToFilesystem(repositoryId, folder, targetDir, callContext, result, allowOverwrite);
@@ -1771,14 +1770,14 @@ public class ImportExportResource extends ResourceBase {
      * @param allowOverwrite If false, existing files will not be overwritten (MEDIUM 6)
      */
     @SuppressWarnings("unchecked")
-    private void exportFolderToFilesystem(String repositoryId, Folder folder, Path targetDir,
+    private void exportFolderToFilesystem(String repositoryId, Folder folder, java.nio.file.Path targetDir,
             CallContext callContext, ExportResult result, boolean allowOverwrite) throws Exception {
 
         ContentService cs = getContentService();
         List<Content> children = cs.getChildren(repositoryId, folder.getId());
 
         for (Content child : children) {
-            Path childPath = targetDir.resolve(child.getName());
+            java.nio.file.Path childPath = targetDir.resolve(child.getName());
 
             if (child instanceof Folder) {
                 // Create folder
@@ -1824,7 +1823,7 @@ public class ImportExportResource extends ResourceBase {
 
                 // Export metadata
                 JSONObject metadata = buildDocumentMetadata(repositoryId, doc, callContext);
-                Path metaPath = targetDir.resolve(child.getName() + META_SUFFIX);
+                java.nio.file.Path metaPath = targetDir.resolve(child.getName() + META_SUFFIX);
                 // Check metadata file exists
                 if (Files.exists(metaPath) && !allowOverwrite) {
                     result.errors.add("Metadata file already exists (overwrite not allowed): " + child.getName() + META_SUFFIX);
@@ -1848,7 +1847,7 @@ public class ImportExportResource extends ResourceBase {
      * @param allowOverwrite If false, existing files will not be overwritten (MEDIUM 6)
      */
     @SuppressWarnings("unchecked")
-    private void exportVersionHistoryToFilesystem(String repositoryId, Document doc, Path targetDir,
+    private void exportVersionHistoryToFilesystem(String repositoryId, Document doc, java.nio.file.Path targetDir,
             CallContext callContext, ExportResult result, boolean allowOverwrite) {
 
         try {
@@ -1891,7 +1890,7 @@ public class ImportExportResource extends ResourceBase {
 
                 // Export version content
                 String versionFileName = doc.getName() + VERSION_PREFIX + versionNum;
-                Path versionPath = targetDir.resolve(versionFileName);
+                java.nio.file.Path versionPath = targetDir.resolve(versionFileName);
 
                 // Check if file exists and overwrite is not allowed (MEDIUM 6)
                 if (Files.exists(versionPath) && !allowOverwrite) {
@@ -1927,7 +1926,7 @@ public class ImportExportResource extends ResourceBase {
                 versionMeta.put("checkinComment", version.getCheckinComment());
                 versionMeta.put("isMajorVersion", version.isMajorVersion());
 
-                Path versionMetaPath = targetDir.resolve(versionFileName + META_SUFFIX);
+                java.nio.file.Path versionMetaPath = targetDir.resolve(versionFileName + META_SUFFIX);
                 // Check metadata file exists
                 if (Files.exists(versionMetaPath) && !allowOverwrite) {
                     result.errors.add("Version metadata file already exists (overwrite not allowed): " + versionFileName + META_SUFFIX);
@@ -1954,10 +1953,10 @@ public class ImportExportResource extends ResourceBase {
      * @param path The path to check (should already be normalized)
      * @return true if the path is within an allowed root, false otherwise
      */
-    private boolean isPathWithinAllowedRoots(Path path) {
+    private boolean isPathWithinAllowedRoots(java.nio.file.Path path) {
         String pathStr = path.toAbsolutePath().normalize().toString();
         for (String allowedRoot : ALLOWED_FILESYSTEM_ROOTS) {
-            Path rootPath = Paths.get(allowedRoot).toAbsolutePath().normalize();
+            java.nio.file.Path rootPath = Paths.get(allowedRoot).toAbsolutePath().normalize();
             String rootStr = rootPath.toString();
             // Check if path starts with the allowed root
             if (pathStr.startsWith(rootStr)) {
@@ -2037,6 +2036,10 @@ public class ImportExportResource extends ResourceBase {
             public int getMemoryThreshold() { return 4 * 1024 * 1024; }
             @Override
             public long getMaxContentSize() { return -1; }
+            @Override
+            public org.apache.chemistry.opencmis.commons.enums.CmisVersion getCmisVersion() {
+                return org.apache.chemistry.opencmis.commons.enums.CmisVersion.CMIS_1_1;
+            }
         };
     }
 
