@@ -44,7 +44,7 @@
 
     <!-- EHCache Shutdown Listener to prevent memory leaks and thread issues -->
     <listener>
-		<listener-class>jp.aegif.nemaki.util.EHCacheShutdownListener</listener-class>
+		<listener-class>jp.aegif.nemaki.util.EhcacheShutdownListener</listener-class>
     </listener>
 
 	<!-- OpenCMIS servlets - All three bindings for CMIS 1.1 compliance -->
