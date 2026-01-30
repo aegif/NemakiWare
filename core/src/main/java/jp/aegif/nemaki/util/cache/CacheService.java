@@ -21,8 +21,14 @@ import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
 import jp.aegif.nemaki.util.cache.model.Tree;
 import jp.aegif.nemaki.util.constant.PropertyKey;
-import net.sf.ehcache.Cache;
-import net.sf.ehcache.CacheManager;
+import org.ehcache.Cache;
+import org.ehcache.CacheManager;
+import org.ehcache.config.CacheConfiguration;
+import org.ehcache.config.builders.CacheConfigurationBuilder;
+import org.ehcache.config.builders.CacheManagerBuilder;
+import org.ehcache.config.builders.ResourcePoolsBuilder;
+import org.ehcache.expiry.Duration;
+import org.ehcache.expiry.Expirations;
 
 public class CacheService {
 	private final CacheManager cacheManager;
@@ -51,7 +57,7 @@ public class CacheService {
 	public CacheService(String repositoryId, SpringPropertyManager propertyManager) {
 		this.repositoryId = repositoryId;
 
-		cacheManager = CacheManager.newInstance();
+		cacheManager = CacheManagerBuilder.newCacheManagerBuilder().build(true);
 
 		loadConfig(propertyManager);
 	}
@@ -72,17 +78,26 @@ public class CacheService {
 				config.override(configMap.getValue());
 			}
 
-			Cache cache = new Cache(repositoryId + "_" + configMap.getKey(), config.maxElementsInMemory.intValue(),
-					config.overflowToDisc, config.eternal, config.timeToLiveSeconds, config.timeToIdleSeconds);
-			cacheManager.addCache(cache);
-			enabled.put(cache.getName(), config.cacheEnabled);
+			String cacheName = repositoryId + "_" + configMap.getKey();
+			Cache<String, Object> cache = cacheManager.getCache(cacheName, String.class, Object.class);
+			if (cache == null) {
+				CacheConfiguration<String, Object> configBuilder = CacheConfigurationBuilder
+						.newCacheConfigurationBuilder(String.class, Object.class,
+								ResourcePoolsBuilder.heap(
+										config.maxElementsInMemory != null
+											? config.maxElementsInMemory.longValue()
+											: 1000L))
+						.withExpiry(buildExpiry(config))
+						.build();
+				cache = cacheManager.createCache(cacheName, configBuilder);
+			}
+			enabled.put(cacheName, config.cacheEnabled);
 		}
 	}
 
 	private class NemakiCacheConfig {
 		private Boolean cacheEnabled;
 		private Long maxElementsInMemory;
-		private Boolean overflowToDisc;
 		private Boolean eternal;
 		private Long timeToLiveSeconds;
 		private Long timeToIdleSeconds;
@@ -92,8 +107,6 @@ public class CacheService {
 				cacheEnabled = (Boolean) map.get("cacheEnabled");
 			if (map.get("maxElementsInMemory") != null)
 				maxElementsInMemory = (Long) map.get("maxElementsInMemory");
-			if (map.get("overflowToDisc") != null)
-				overflowToDisc = (Boolean) map.get("overflowToDisc");
 			if (map.get("eternal") != null)
 				eternal = (Boolean) map.get("eternal");
 			if (map.get("timeToLiveSeconds") != null)
@@ -103,75 +116,97 @@ public class CacheService {
 		}
 	}
 
+	private org.ehcache.expiry.ExpiryPolicy<Object, Object> buildExpiry(NemakiCacheConfig config) {
+		if (config.eternal != null && config.eternal) {
+			return Expirations.noExpiration();
+		}
+		Duration ttl = config.timeToLiveSeconds != null
+				? Duration.ofSeconds(config.timeToLiveSeconds)
+				: null;
+		Duration tti = config.timeToIdleSeconds != null
+				? Duration.ofSeconds(config.timeToIdleSeconds)
+				: null;
+		if (ttl != null && tti != null) {
+			return Expirations.timeToIdleExpiration(tti);
+		}
+		if (ttl != null) {
+			return Expirations.timeToLiveExpiration(ttl);
+		}
+		if (tti != null) {
+			return Expirations.timeToIdleExpiration(tti);
+		}
+		return Expirations.noExpiration();
+	}
+
 	public NemakiCache<Configuration> getConfigCache() {
 		String name = repositoryId + "_" + CONFIG_CACHE;
-		return new NemakiCache<Configuration>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<Configuration>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 	public NemakiCache<ObjectData> getObjectDataCache() {
 		String name = repositoryId + "_" + OBJECT_DATA_CACHE;
-		return new NemakiCache<ObjectData>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<ObjectData>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 	public NemakiCache<?> getPropertiesCache() {
 		String name = repositoryId + "_" + PROPERTIES_CACHE;
-		return new NemakiCache<>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 	public NemakiCache<List<NemakiTypeDefinition>> getTypeCache() {
 		String name = repositoryId + "_" + TYPE_CACHE;
-		return new NemakiCache<>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 	public NemakiCache<Content> getContentCache() {
 		String name = repositoryId + "_" + CONTENT_CACHE;
-		return new NemakiCache<>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 	public NemakiCache<Tree> getTreeCache() {
 		String name = repositoryId + "_" + TREE_CACHE;
-		return new NemakiCache<Tree>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<Tree>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 	public NemakiCache<VersionSeries> getVersionSeriesCache() {
 		String name = repositoryId + "_" + VERSION_SERIES_CACHE;
-		return new NemakiCache<VersionSeries>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<VersionSeries>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 	public NemakiCache<AttachmentNode> getAttachmentCache() {
 		String name = repositoryId + "_" + ATTACHMENTS_CACHE;
-		return new NemakiCache<AttachmentNode>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<AttachmentNode>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 	public NemakiCache<ObjectData> getChangeEventCache() {
 		String name = repositoryId + "_" + CHANGE_EVENT_CACHE;
-		return new NemakiCache<ObjectData>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<ObjectData>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 	public NemakiCache<Change> getLatestChangeTokenCache() {
 		String name = repositoryId + "_" + LATEST_CHANGE_TOKEN_CACHE;
-		return new NemakiCache<Change>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<Change>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 
 	public NemakiCache<UserItem> getUserItemCache() {
 		String name = repositoryId + "_" + USER_CACHE;
-		return new NemakiCache<UserItem>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<UserItem>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 	public NemakiCache<List<UserItem>> getUserItemsCache() {
 		String name = repositoryId + "_" + USERS_CACHE;
-		return new NemakiCache<List<UserItem>>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<List<UserItem>>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 	public NemakiCache<GroupItem> getGroupItemCache() {
 		String name = repositoryId + "_" + GROUP_CACHE;
-		return new NemakiCache<GroupItem>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<GroupItem>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 	public NemakiCache<List<GroupItem>> getGroupsCache() {
 		String name = repositoryId + "_" + GROUPS_CACHE;
-		return new NemakiCache<List<GroupItem>>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<List<GroupItem>>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 	/***
 	 * Acl cache related tree cache.
@@ -180,12 +215,12 @@ public class CacheService {
 	 */
 	public NemakiCache<Acl> getAclCache() {
 		String name = repositoryId + "_" + ACL_CACHE;
-		return new NemakiCache<Acl>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<Acl>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 	
 	public NemakiCache<List<String>> getJoinedGroupCache(){
 		String name = repositoryId + "_" + JOINED_GROUP_CACHE;
-		return new NemakiCache<List<String>>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<List<String>>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 	
 	/**
@@ -193,7 +228,7 @@ public class CacheService {
 	 */
 	public NemakiCache getPropertyDefinitionCache() {
 		String name = repositoryId + "_" + PROPERTY_DEFINITION_CACHE;
-		return new NemakiCache(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
 
 
