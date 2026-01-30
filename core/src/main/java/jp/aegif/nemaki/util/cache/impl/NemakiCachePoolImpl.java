@@ -67,6 +67,16 @@ public class NemakiCachePoolImpl implements NemakiCachePool{
 		}
 	}
 
+	@Override
+	public void closeAll() {
+		for (CacheService cacheService : pool.values()) {
+			cacheService.close();
+		}
+		if (nullCache != null) {
+			nullCache.close();
+		}
+	}
+
 	public void setPropertyManager(SpringPropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}

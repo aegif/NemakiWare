@@ -27,8 +27,8 @@ import org.ehcache.config.CacheConfiguration;
 import org.ehcache.config.builders.CacheConfigurationBuilder;
 import org.ehcache.config.builders.CacheManagerBuilder;
 import org.ehcache.config.builders.ResourcePoolsBuilder;
-import org.ehcache.expiry.Duration;
-import org.ehcache.expiry.Expirations;
+import org.ehcache.config.builders.ExpiryPolicyBuilder;
+import java.time.Duration;
 
 public class CacheService {
 	private final CacheManager cacheManager;
@@ -84,7 +84,7 @@ public class CacheService {
 				CacheConfiguration<String, Object> configBuilder = CacheConfigurationBuilder
 						.newCacheConfigurationBuilder(String.class, Object.class,
 								ResourcePoolsBuilder.heap(
-										config.maxElementsInMemory != null
+										config.maxElementsInMemory != null && config.maxElementsInMemory > 0
 											? config.maxElementsInMemory.longValue()
 											: 1000L))
 						.withExpiry(buildExpiry(config))
@@ -118,24 +118,18 @@ public class CacheService {
 
 	private org.ehcache.expiry.ExpiryPolicy<Object, Object> buildExpiry(NemakiCacheConfig config) {
 		if (config.eternal != null && config.eternal) {
-			return Expirations.noExpiration();
+			return ExpiryPolicyBuilder.noExpiration();
 		}
-		Duration ttl = config.timeToLiveSeconds != null
-				? Duration.ofSeconds(config.timeToLiveSeconds)
-				: null;
-		Duration tti = config.timeToIdleSeconds != null
-				? Duration.ofSeconds(config.timeToIdleSeconds)
-				: null;
-		if (ttl != null && tti != null) {
-			return Expirations.timeToIdleExpiration(tti);
+		// When both TTL and TTI are specified, prefer TTI (idle-based eviction)
+		// as it matches ehcache 2.x behavior where idle entries are evicted first.
+		// Note: ehcache 3.x does not support both simultaneously on a single cache.
+		if (config.timeToIdleSeconds != null) {
+			return ExpiryPolicyBuilder.timeToIdleExpiration(Duration.ofSeconds(config.timeToIdleSeconds));
 		}
-		if (ttl != null) {
-			return Expirations.timeToLiveExpiration(ttl);
+		if (config.timeToLiveSeconds != null) {
+			return ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofSeconds(config.timeToLiveSeconds));
 		}
-		if (tti != null) {
-			return Expirations.timeToIdleExpiration(tti);
-		}
-		return Expirations.noExpiration();
+		return ExpiryPolicyBuilder.noExpiration();
 	}
 
 	public NemakiCache<Configuration> getConfigCache() {
@@ -246,5 +240,15 @@ public class CacheService {
 		getTreeCache().remove(objectId);
 		getAclCache().remove(objectId);
 		removeCmisCache(objectId);
+	}
+
+	/**
+	 * Close the CacheManager and release all resources.
+	 * Must be called during application shutdown.
+	 */
+	public void close() {
+		if (cacheManager != null) {
+			cacheManager.close();
+		}
 	}
 }

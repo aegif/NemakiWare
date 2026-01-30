@@ -7,4 +7,5 @@ public interface NemakiCachePool {
 	void removeAll();
 	void clear(String repositoryId);
 	void clearAll();
+	void closeAll();
 }

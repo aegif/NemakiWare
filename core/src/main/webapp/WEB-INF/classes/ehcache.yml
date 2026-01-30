@@ -1,68 +1,47 @@
 default:
   cacheEnabled: true
   maxElementsInMemory: 10000
-  overflowToDisc: false
-  overflowToDisk: false
-  diskPersistent: false
-  diskExpiryThreadIntervalSeconds: 0
   eternal: false
   timeToLiveSeconds: 3600
   timeToIdleSeconds: 3600
-  statisticsEnabled: false
 
 configCache:
   eternal: true
-  statisticsEnabled: false
 
 objectDataCache:
-  statisticsEnabled: false
 
 propertisCache:
     maxElementsInMemory: 100
-    statisticsEnabled: false
 
 typeCache:
   maxElementsInMemory: 1
-  statisticsEnabled: false
 
 contentCache:
-  statisticsEnabled: false
 
 treeCache:
-  statisticsEnabled: false
-  maxElementsInMemory: 0  # Disable TreeCache due to initialization timing issues with patches
+  cacheEnabled: false
+  maxElementsInMemory: 1  # Disabled due to initialization timing issues with patches
 
 versionSeriesCache:
-  statisticsEnabled: false
 
 attachmentCache:
-  statisticsEnabled: false
 
 changeEventCache:
-  statisticsEnabled: false
 
 latestChangeTokenCache:
   maxElementsInMemory: 1
-  statisticsEnabled: false
 
 userCache:
-  statisticsEnabled: false
 
 usersCache:
-  statisticsEnabled: false
 
 groupCache:
-  statisticsEnabled: false
 
 groupsCache:
-  statisticsEnabled: false
 
 aclCache:
-  statisticsEnabled: false
 
 joinedGroupCache:
-  statisticsEnabled: false
 
 propertyDefinitionCache:
   maxElementsInMemory: 1000
-  statisticsEnabled: false
