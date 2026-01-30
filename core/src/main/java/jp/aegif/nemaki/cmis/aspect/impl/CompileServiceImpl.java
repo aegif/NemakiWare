@@ -117,7 +117,6 @@ import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.CmisExtensionToken;
 import jp.aegif.nemaki.util.constant.PropertyKey;
-import net.sf.ehcache.Element;
 
 public class CompileServiceImpl implements CompileService {
 
@@ -198,7 +197,7 @@ public class CompileServiceImpl implements CompileService {
 			result.setRenditions(compileRenditions(callContext, repositoryId, content));
 		}
 
-		nemakiCachePool.get(repositoryId).getObjectDataCache().put(new Element(content.getId(), result));
+		nemakiCachePool.get(repositoryId).getObjectDataCache().put(content.getId(), result);
 
 		if (log.isDebugEnabled()) {
 			log.debug(MessageFormat.format("compileObjectDataWithFullAttributes END: Repo={0}, Id={1}", repositoryId, content.getId()));
