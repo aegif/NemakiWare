@@ -1,77 +1,72 @@
 package jp.aegif.nemaki.util.cache.model;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import net.sf.ehcache.Cache;
-import net.sf.ehcache.Element;
-import net.sf.ehcache.statistics.StatisticsGateway;
+import com.hazelcast.map.IMap;
+import com.hazelcast.map.LocalMapStats;
 
+/**
+ * NemakiCache wrapper for Hazelcast IMap.
+ * Migrated from ehcache 2.x to Hazelcast 5.x for clustering support.
+ */
 public class NemakiCache<T> {
-	private Cache cache;
+	private IMap<String, T> cache;
 	private final boolean cacheEnabled;
-	private static final Log log = LogFactory.getLog(NemakiCache.class);
+	private static final Logger log = LoggerFactory.getLogger(NemakiCache.class);
 
-	public NemakiCache(boolean cacheEnabled, Cache cache){
+	public NemakiCache(boolean cacheEnabled, IMap<String, T> cache) {
 		this.cacheEnabled = cacheEnabled;
 		this.cache = cache;
 	}
 
-	public String getStatisticString(){
-		StatisticsGateway s = this.cache.getStatistics();
-        String name = cache.getName();
-		long size = s.getLocalHeapSize();
-		long bytes = s.getLocalHeapSizeInBytes();
-		return String.format("CacheInfo name:%s items: %d, size: %d byte" ,name, size,bytes);
+	public String getStatisticString() {
+		if (cache == null) {
+			return "CacheInfo name:null items: 0, size: 0 byte";
+		}
+		LocalMapStats stats = cache.getLocalMapStats();
+		String name = cache.getName();
+		long size = stats.getOwnedEntryCount();
+		long bytes = stats.getOwnedEntryMemoryCost();
+		return String.format("CacheInfo name:%s items: %d, size: %d byte", name, size, bytes);
 	}
 
-	public T get(String key){
-		if(cacheEnabled){
-			Element element = cache.get(key);
-			if(element == null || element.getObjectValue() == null){
-				return null;
-			}else{
-				return (T)element.getObjectValue();
-			}
-		}else{
+	@SuppressWarnings("unchecked")
+	public T get(String key) {
+		if (cacheEnabled && cache != null) {
+			return cache.get(key);
+		} else {
 			return null;
 		}
 	}
 
-	public void put(String key, T data){
-		if(cacheEnabled){
-			Element element = new Element(key, data);
-			cache.put(element);
+	public void put(String key, T data) {
+		if (cacheEnabled && cache != null) {
+			cache.put(key, data);
 		}
 	}
 
-	public void put(Element element){
-		if(cacheEnabled){
-			cache.put(element);
-		}
-	}
-
-	public void remove(String key){
-		if(cacheEnabled){
+	public void remove(String key) {
+		if (cacheEnabled && cache != null) {
 			cache.remove(key);
 		}
 	}
 
-	public void removeAll(){
-		if(cacheEnabled){
-			cache.removeAll();
+	public void removeAll() {
+		if (cacheEnabled && cache != null) {
+			cache.clear();
 		}
 	}
 
-	public Cache getCache(){
+	public IMap<String, T> getCache() {
 		return this.cache;
 	}
 
-	public void setCache(Cache cache){
+	public void setCache(IMap<String, T> cache) {
 		this.cache = cache;
 	}
 
-	public boolean isCacheEnabled(){
+	public boolean isCacheEnabled() {
 		return cacheEnabled;
 	}
 }

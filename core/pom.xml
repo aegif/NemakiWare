@@ -610,10 +610,17 @@
 			</exclusions>
 		</dependency>
 
+		<!-- Hazelcast for distributed caching (replaces ehcache 2.x) -->
+		<!-- MIGRATION (2026-01-30): Migrated from ehcache 2.10.9.2 to Hazelcast 5.5.x for clustering support -->
 		<dependency>
-			<groupId>net.sf.ehcache</groupId>
-			<artifactId>ehcache</artifactId>
-			<version>2.10.9.2</version>
+			<groupId>com.hazelcast</groupId>
+			<artifactId>hazelcast</artifactId>
+			<version>5.5.0</version>
+		</dependency>
+		<dependency>
+			<groupId>com.hazelcast</groupId>
+			<artifactId>hazelcast-spring</artifactId>
+			<version>5.5.0</version>
 		</dependency>
 
 		<dependency>
