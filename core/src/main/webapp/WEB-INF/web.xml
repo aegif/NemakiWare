@@ -42,9 +42,10 @@
 		<listener-class>jp.aegif.nemaki.init.NemakiPatchInitializationListener</listener-class>
     </listener>
 
-    <!-- EHCache Shutdown Listener to prevent memory leaks and thread issues -->
+    <!-- Hazelcast Shutdown Listener to prevent memory leaks and thread issues -->
+    <!-- Migrated from EHCacheShutdownListener for Hazelcast 5.x support -->
     <listener>
-		<listener-class>jp.aegif.nemaki.util.EHCacheShutdownListener</listener-class>
+		<listener-class>jp.aegif.nemaki.util.HazelcastShutdownListener</listener-class>
     </listener>
 
 	<!-- OpenCMIS servlets - All three bindings for CMIS 1.1 compliance -->
