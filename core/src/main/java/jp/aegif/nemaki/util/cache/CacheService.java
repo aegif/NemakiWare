@@ -102,7 +102,7 @@ public class CacheService {
 	}
 
 	private class NemakiCacheConfig {
-		private Boolean cacheEnabled;
+		private Boolean cacheEnabled = Boolean.TRUE;
 		private Long maxElementsInMemory;
 		private Boolean eternal;
 		private Long timeToLiveSeconds;

@@ -66,7 +66,7 @@ public class NemakiCachePoolImpl implements NemakiCachePool{
 
 	@Override
 	public void clearAll() {
-		for(String key : pool.keySet()){
+		for(String key : new java.util.ArrayList<>(pool.keySet())){
 			CacheService old = pool.get(key);
 			if (old != null) {
 				old.close();
