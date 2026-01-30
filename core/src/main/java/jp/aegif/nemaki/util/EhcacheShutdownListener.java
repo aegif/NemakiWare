@@ -29,7 +29,7 @@ public class EhcacheShutdownListener implements ServletContextListener {
                 log.info("EhcacheShutdownListener: All CacheManagers closed successfully");
             }
         } catch (Exception e) {
-            log.warn("EhcacheShutdownListener: Failed to close CacheManagers: " + e.getMessage());
+            log.warn("EhcacheShutdownListener: Failed to close CacheManagers: " + e.getMessage(), e);
         }
     }
 }

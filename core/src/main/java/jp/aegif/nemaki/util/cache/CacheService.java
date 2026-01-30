@@ -79,19 +79,25 @@ public class CacheService {
 			}
 
 			String cacheName = repositoryId + "_" + configMap.getKey();
+			enabled.put(cacheName, config.cacheEnabled);
+
+			// Skip cache creation when disabled
+			if (!Boolean.TRUE.equals(config.cacheEnabled)) {
+				continue;
+			}
+
 			Cache<String, Object> cache = cacheManager.getCache(cacheName, String.class, Object.class);
 			if (cache == null) {
 				CacheConfiguration<String, Object> configBuilder = CacheConfigurationBuilder
 						.newCacheConfigurationBuilder(String.class, Object.class,
 								ResourcePoolsBuilder.heap(
 										config.maxElementsInMemory != null && config.maxElementsInMemory > 0
-											? config.maxElementsInMemory.longValue()
-											: 1000L))
+												? config.maxElementsInMemory.longValue()
+												: 1000L))
 						.withExpiry(buildExpiry(config))
 						.build();
 				cache = cacheManager.createCache(cacheName, configBuilder);
 			}
-			enabled.put(cacheName, config.cacheEnabled);
 		}
 	}
 

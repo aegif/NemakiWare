@@ -57,12 +57,20 @@ public class NemakiCachePoolImpl implements NemakiCachePool{
 
 	@Override
 	public void clear(String repositoryId) {
+		CacheService old = pool.get(repositoryId);
+		if (old != null) {
+			old.close();
+		}
 		pool.put(repositoryId, new CacheService(repositoryId, propertyManager));
 	}
 
 	@Override
 	public void clearAll() {
 		for(String key : pool.keySet()){
+			CacheService old = pool.get(key);
+			if (old != null) {
+				old.close();
+			}
 			pool.put(key, new CacheService(key, propertyManager));
 		}
 	}
