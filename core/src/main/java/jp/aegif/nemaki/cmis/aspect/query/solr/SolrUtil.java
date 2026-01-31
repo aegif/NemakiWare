@@ -798,7 +798,7 @@ public class SolrUtil implements ApplicationContextAware {
 	public String getSolrUrl(){
 		String protocol = propertyManager.readValue(PropertyKey.SOLR_PROTOCOL);
 		String host = propertyManager.readValue(PropertyKey.SOLR_HOST);
-		int port = Integer.valueOf(propertyManager
+		int port = Integer.parseInt(propertyManager
 				.readValue(PropertyKey.SOLR_PORT));
 		String context = propertyManager.readValue(PropertyKey.SOLR_CONTEXT);
 

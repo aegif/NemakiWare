@@ -150,7 +150,7 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
                 try {
                     String credentials = authHeader.substring(6);
                     byte[] decoded = Base64.getDecoder().decode(credentials);
-                    String decodedStr = new String(decoded);
+                    String decodedStr = new String(decoded, java.nio.charset.StandardCharsets.UTF_8);
                     int colonIndex = decodedStr.indexOf(':');
                     if (colonIndex < 0) {
                         abortWithUnauthorized(requestContext, "Invalid Basic authentication format");

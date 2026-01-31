@@ -268,7 +268,7 @@ public class AuthenticationFilter implements Filter {
 				// Basic authentication (username:password)
 				try {
 					String base64Credentials = authHeader.substring("Basic ".length()).trim();
-					String credentials = new String(java.util.Base64.getDecoder().decode(base64Credentials));
+					String credentials = new String(java.util.Base64.getDecoder().decode(base64Credentials), java.nio.charset.StandardCharsets.UTF_8);
 					String[] values = credentials.split(":", 2);
 					if (values.length == 2) {
 						ctxt.put(CallContext.USERNAME, values[0]);

@@ -170,7 +170,7 @@ public class CloudantClientPool {
 		// Check for Docker in cgroup
 		try {
 			String cgroup = new String(java.nio.file.Files.readAllBytes(
-				java.nio.file.Paths.get("/proc/1/cgroup")));
+				java.nio.file.Paths.get("/proc/1/cgroup")), java.nio.charset.StandardCharsets.UTF_8);
 			if (cgroup.contains("docker") || cgroup.contains("kubepods")) {
 				return true;
 			}
@@ -352,7 +352,7 @@ public class CloudantClientPool {
 			
 			if (authEnabled && authUserName != null && authPassword != null) {
 				String auth = authUserName + ":" + authPassword;
-				String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes());
+				String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 				connection.setRequestProperty("Authorization", "Basic " + encodedAuth);
 			}
 			

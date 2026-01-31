@@ -3474,7 +3474,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					}
 					byte[] allBytes = baos.toByteArray();
 					if (log.isDebugEnabled()) {
-					log.debug("UPDATE ATTACHMENT STAGE 2: Content preview: " + new String(allBytes, 0, Math.min(100, allBytes.length)));
+					log.debug("UPDATE ATTACHMENT STAGE 2: Content preview: " + new String(allBytes, 0, Math.min(100, allBytes.length), java.nio.charset.StandardCharsets.UTF_8));
 				}
 
 					// Create new InputStream from the bytes we read

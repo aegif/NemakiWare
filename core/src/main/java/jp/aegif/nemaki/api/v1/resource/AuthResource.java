@@ -474,7 +474,7 @@ public class AuthResource {
         if (authHeader != null) {
             if (authHeader.startsWith("Basic ")) {
                 try {
-                    String credentials = new String(Base64.getDecoder().decode(authHeader.substring(6)));
+                    String credentials = new String(Base64.getDecoder().decode(authHeader.substring(6)), java.nio.charset.StandardCharsets.UTF_8);
                     int colonIndex = credentials.indexOf(':');
                     if (colonIndex > 0) {
                         return credentials.substring(0, colonIndex);
@@ -557,7 +557,7 @@ public class AuthResource {
     private String extractUserNameFromSAMLResponse(String samlResponse) {
         try {
             byte[] decodedBytes = Base64.getDecoder().decode(samlResponse);
-            String xml = new String(decodedBytes);
+            String xml = new String(decodedBytes, java.nio.charset.StandardCharsets.UTF_8);
             
             int nameIdStart = xml.indexOf("<saml:NameID");
             if (nameIdStart == -1) {

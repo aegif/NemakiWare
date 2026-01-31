@@ -66,8 +66,12 @@ public class Ace implements Serializable {
 
 	@Override
 	public boolean equals(Object obj) {
-		return (obj instanceof Ace) 
+		return (obj instanceof Ace)
 				&& ObjectUtils.equals(this.principalId, ((Ace)obj).getPrincipalId());
 	}
-	
+
+	@Override
+	public int hashCode() {
+		return principalId != null ? principalId.hashCode() : 0;
+	}
 }

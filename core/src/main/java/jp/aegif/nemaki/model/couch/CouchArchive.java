@@ -196,13 +196,14 @@ public class CouchArchive extends CouchNodeBase{
 
 	@Override
 	public boolean equals(Object obj) {
-		return obj != null && obj instanceof Content
-				&& ((Content) obj).getId().equals(this.getId());
+		return obj instanceof CouchArchive
+				&& this.getId() != null
+				&& this.getId().equals(((CouchArchive) obj).getId());
 	}
 
 	@Override
 	public int hashCode() {
-		return this.getId().hashCode();
+		return this.getId() != null ? this.getId().hashCode() : 0;
 	}
 
 	public Boolean isFolder(){

@@ -209,13 +209,14 @@ public class Archive extends NodeBase {
 
 	@Override
 	public boolean equals(Object obj) {
-		return obj != null && obj instanceof Content
-				&& ((Content) obj).getId().equals(this.getId());
+		return obj instanceof Archive
+				&& this.getId() != null
+				&& this.getId().equals(((Archive) obj).getId());
 	}
 
 	@Override
 	public int hashCode() {
-		return this.getId().hashCode();
+		return this.getId() != null ? this.getId().hashCode() : 0;
 	}
 
 	@JsonIgnore

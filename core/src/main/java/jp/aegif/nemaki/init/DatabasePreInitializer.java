@@ -193,7 +193,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                 java.net.HttpURLConnection checkConn = (java.net.HttpURLConnection) checkUrl.openConnection();
                 
                 String auth = couchdbUsername + ":" + couchdbPassword;
-                String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes());
+                String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 checkConn.setRequestProperty("Authorization", "Basic " + encodedAuth);
                 checkConn.setRequestMethod("HEAD");
                 
@@ -237,7 +237,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                     // CRITICAL FIX: Verify design document has all required views (43 for bedroom/canopy)
                     // Patch_StandardCmisViews only creates 5 views, which is incomplete!
                     java.io.BufferedReader designReader = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(designConn.getInputStream()));
+                        new java.io.InputStreamReader(designConn.getInputStream(), java.nio.charset.StandardCharsets.UTF_8));
                     String designResponseStr = designReader.lines().reduce("", (a, b) -> a + b);
                     designReader.close();
                     designConn.disconnect();
@@ -312,7 +312,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
             
             // Add authentication
             String auth = couchdbUsername + ":" + couchdbPassword;
-            String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes());
+            String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             checkConn.setRequestProperty("Authorization", "Basic " + encodedAuth);
             checkConn.setRequestMethod("HEAD");
             
@@ -425,7 +425,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
         }
         
         // Read the dump file
-        java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(dumpStream));
+        java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(dumpStream, java.nio.charset.StandardCharsets.UTF_8));
         StringBuilder content = new StringBuilder();
         String line;
         while ((line = reader.readLine()) != null) {
@@ -477,7 +477,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                     
                     // Add authentication
                     String auth = couchdbUsername + ":" + couchdbPassword;
-                    String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes());
+                    String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                     conn.setRequestProperty("Authorization", "Basic " + encodedAuth);
                     conn.setRequestProperty("Content-Type", "application/json");
                     
@@ -547,7 +547,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
             String[] rootFolderIds = {"e02f784f8360a02cc14d1314c10038ff"};
             
             String auth = couchdbUsername + ":" + couchdbPassword;
-            String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes());
+            String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             
             for (int i = 0; i < repositories.length; i++) {
                 String repositoryId = repositories[i];
@@ -566,7 +566,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                 
                 int allDocsResponse = allDocsConn.getResponseCode();
                 if (allDocsResponse == 200) {
-                    java.io.BufferedReader allDocsReader = new java.io.BufferedReader(new java.io.InputStreamReader(allDocsConn.getInputStream()));
+                    java.io.BufferedReader allDocsReader = new java.io.BufferedReader(new java.io.InputStreamReader(allDocsConn.getInputStream(), java.nio.charset.StandardCharsets.UTF_8));
                     String allDocsResponseStr = allDocsReader.lines().reduce("", (a, b) -> a + b);
                     allDocsReader.close();
                     
