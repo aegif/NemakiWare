@@ -22,23 +22,37 @@
 package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.TypeService;
+import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.NemakiPropertyDefinition;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
+import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.spring.SpringContext;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
+import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
+import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -83,9 +97,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
@@ -108,6 +124,19 @@ public class ImportExportResource extends ResourceBase {
     // Custom format naming conventions
     private static final String META_SUFFIX = ".meta.json";
     private static final String VERSION_PREFIX = ".v";
+    private static final String TYPE_DEFINITIONS_DIR = ".nemaki-types/";
+    private static final String TYPE_DEFINITION_SUFFIX = ".type.json";
+
+    // Base type IDs that should not be exported
+    private static final Set<String> BASE_TYPE_IDS = new HashSet<>();
+    static {
+        BASE_TYPE_IDS.add("cmis:document");
+        BASE_TYPE_IDS.add("cmis:folder");
+        BASE_TYPE_IDS.add("cmis:relationship");
+        BASE_TYPE_IDS.add("cmis:policy");
+        BASE_TYPE_IDS.add("cmis:item");
+        BASE_TYPE_IDS.add("cmis:secondary");
+    }
 
     // Size limits for import (prevent OOM)
     private static final long MAX_UPLOAD_SIZE = 500 * 1024 * 1024; // 500MB max upload
@@ -174,6 +203,38 @@ public class ImportExportResource extends ResourceBase {
             log.debug("Could not find contentService with lowercase name: " + e.getMessage());
         }
         log.error("ContentService is null and SpringContext fallback failed");
+        return null;
+    }
+
+    private TypeService getTypeService() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean("TypeService", TypeService.class);
+        } catch (Exception e) {
+            log.debug("Failed to get TypeService: " + e.getMessage());
+        }
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean("typeService", TypeService.class);
+        } catch (Exception e) {
+            log.debug("Failed to get typeService: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private TypeManager getTypeManager() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean("TypeManager", TypeManager.class);
+        } catch (Exception e) {
+            log.debug("Failed to get TypeManager: " + e.getMessage());
+        }
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean("typeManager", TypeManager.class);
+        } catch (Exception e) {
+            log.debug("Failed to get typeManager: " + e.getMessage());
+        }
         return null;
     }
 
@@ -356,6 +417,16 @@ public class ImportExportResource extends ResourceBase {
                 @Override
                 public void write(OutputStream output) throws IOException {
                     try (ZipOutputStream zos = new ZipOutputStream(output)) {
+                        // Export type definitions first
+                        try {
+                            Set<String> customTypeIds = new HashSet<>();
+                            collectCustomTypeIds(repositoryId, folder, customTypeIds);
+                            if (!customTypeIds.isEmpty()) {
+                                exportTypeDefinitions(repositoryId, customTypeIds, zos);
+                            }
+                        } catch (Exception e) {
+                            log.warn("Failed to export type definitions: " + e.getMessage(), e);
+                        }
                         exportFolderRecursive(repositoryId, folder, "", zos, callContext);
                     } catch (Exception e) {
                         log.error("Export streaming failed: " + e.getMessage(), e);
@@ -812,6 +883,10 @@ public class ImportExportResource extends ResourceBase {
                 }
                 
                 if (!entry.isDirectory()) {
+                    // Skip .nemaki-types/ entries from regular file processing
+                    if (name.startsWith(TYPE_DEFINITIONS_DIR)) {
+                        continue;
+                    }
                     entryNames.add(name);
 
                     // Parse metadata files (fix: apply size limit to JSON files too)
@@ -863,6 +938,9 @@ public class ImportExportResource extends ResourceBase {
 
         // Keep ZipFile open during entire import for performance (fix: ZipFile performance)
         try (ZipFile zf = new ZipFile(zipFile)) {
+            // Import type definitions before importing files
+            importTypeDefinitions(repositoryId, zf, result);
+
             for (String path : entryNames) {
                 // Skip metadata and version files
                 if (path.endsWith(META_SUFFIX) || isVersionFile(path)) {
@@ -881,16 +959,42 @@ public class ImportExportResource extends ResourceBase {
                     // Get metadata if available
                     JSONObject metadata = metadataMap.get(path);
 
-                    // Read file content on-demand from open ZipFile (fix: OOM + performance)
-                    byte[] content = readZipEntry(zf, path);
-                    if (content == null) {
+                    // Check for version files
+                    List<String> versionPaths = findVersionFilesFor(path, zf);
+
+                    // Determine initial content: use .v1 if versions exist, otherwise main file
+                    byte[] initialContent;
+                    if (!versionPaths.isEmpty()) {
+                        String v1Path = versionPaths.get(0); // oldest version
+                        initialContent = readZipEntry(zf, v1Path);
+                        if (initialContent == null) {
+                            // Fallback to main file if .v1 can't be read
+                            initialContent = readZipEntry(zf, path);
+                        }
+                    } else {
+                        initialContent = readZipEntry(zf, path);
+                    }
+
+                    if (initialContent == null) {
                         result.warnings.add("Could not read file content: " + path);
                         continue;
                     }
                     String mimeType = guessMimeType(fileName);
 
+                    // Determine object type from metadata (use custom type if available)
+                    String objectTypeId = "cmis:document";
+                    if (metadata != null) {
+                        JSONObject metaProps = (JSONObject) metadata.get("properties");
+                        if (metaProps != null) {
+                            Object typeIdObj = metaProps.get(PropertyIds.OBJECT_TYPE_ID);
+                            if (typeIdObj != null && !typeIdObj.toString().isEmpty()) {
+                                objectTypeId = typeIdObj.toString();
+                            }
+                        }
+                    }
+
                     PropertiesImpl props = new PropertiesImpl();
-                    props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:document"));
+                    props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, objectTypeId));
                     props.addProperty(new PropertyStringImpl(PropertyIds.NAME, fileName));
 
                     // Apply custom properties from metadata
@@ -898,8 +1002,8 @@ public class ImportExportResource extends ResourceBase {
                         applyCustomProperties(metadata, props);
                     }
 
-                    ContentStream contentStream = new ContentStreamImpl(fileName, 
-                            BigInteger.valueOf(content.length), mimeType, new ByteArrayInputStream(content));
+                    ContentStream contentStream = new ContentStreamImpl(fileName,
+                            BigInteger.valueOf(initialContent.length), mimeType, new ByteArrayInputStream(initialContent));
 
                     Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
                     Document newDoc = cs.createDocument(callContext, repositoryId, props, parentFolder,
@@ -912,9 +1016,9 @@ public class ImportExportResource extends ResourceBase {
                         applyCustomAcl(repositoryId, newDoc.getId(), metadata, callContext, result);
                     }
 
-                    // Import version history (pass open ZipFile for performance)
-                    importVersionHistory(repositoryId, path, zf, 
-                            newDoc, callContext, result);
+                    // Import version history with checkOut/checkIn cycles
+                    importVersionHistory(repositoryId, path, zf,
+                            newDoc, callContext, result, metadataMap, versionPaths);
 
                 } catch (Exception e) {
                     log.error("Failed to import file: " + path + " - " + e.getMessage(), e);
@@ -928,7 +1032,8 @@ public class ImportExportResource extends ResourceBase {
 
     private boolean isVersionFile(String path) {
         String fileName = getFileName(path);
-        return fileName.matches(".*\\.v\\d+$") || fileName.matches(".*\\.v\\d+\\..*");
+        // Match version files like "file.txt.v1" but not "file.txt.v1.meta.json"
+        return fileName.matches(".*\\.v\\d+$");
     }
 
     private String getParentPath(String path) {
@@ -1057,12 +1162,224 @@ public class ImportExportResource extends ResourceBase {
         }
     }
 
-    private void importVersionHistory(String repositoryId, String basePath, 
-            ZipFile zf, Document document, CallContext callContext, ImportResult result) {
+    /**
+     * Import type definitions from .nemaki-types/ directory in the ZIP.
+     * Only creates types that don't already exist.
+     */
+    @SuppressWarnings("unchecked")
+    private void importTypeDefinitions(String repositoryId, ZipFile zf, ImportResult result) {
+        TypeService ts = getTypeService();
+        if (ts == null) {
+            log.debug("TypeService not available, skipping type definition import");
+            return;
+        }
 
-        // Look for version files by scanning the open ZipFile (fix: ZipFile performance)
+        // Collect type definition entries
+        List<String> typeEntries = new ArrayList<>();
+        Enumeration<? extends ZipEntry> entries = zf.entries();
+        while (entries.hasMoreElements()) {
+            ZipEntry entry = entries.nextElement();
+            String name = entry.getName();
+            if (!entry.isDirectory() && name.startsWith(TYPE_DEFINITIONS_DIR) && name.endsWith(TYPE_DEFINITION_SUFFIX)) {
+                typeEntries.add(name);
+            }
+        }
+
+        if (typeEntries.isEmpty()) {
+            return;
+        }
+
+        log.info("Found " + typeEntries.size() + " type definition(s) to import");
+        int typesCreated = 0;
+        int typesSkipped = 0;
+
+        // Sort to ensure parent types are created before child types
+        // (simple alphabetical sort; parents usually have shorter names)
+        typeEntries.sort(Comparator.naturalOrder());
+
+        for (String entryName : typeEntries) {
+            try {
+                byte[] jsonBytes = readZipEntry(zf, entryName);
+                if (jsonBytes == null) {
+                    result.warnings.add("Could not read type definition: " + entryName);
+                    continue;
+                }
+
+                JSONParser parser = new JSONParser();
+                JSONObject typeJson = (JSONObject) parser.parse(new String(jsonBytes, "UTF-8"));
+
+                String typeId = (String) typeJson.get("id");
+                if (typeId == null || typeId.trim().isEmpty()) {
+                    result.warnings.add("Type definition missing 'id' field: " + entryName);
+                    continue;
+                }
+
+                // Check if type already exists
+                NemakiTypeDefinition existing = ts.getTypeDefinition(repositoryId, typeId);
+                if (existing != null) {
+                    log.info("Type already exists, skipping: " + typeId);
+                    typesSkipped++;
+                    continue;
+                }
+
+                // Build NemakiTypeDefinition
+                NemakiTypeDefinition tdf = new NemakiTypeDefinition();
+                tdf.setTypeId(typeId);
+                tdf.setLocalName((String) typeJson.get("localName"));
+                tdf.setDisplayName((String) typeJson.get("displayName"));
+                tdf.setDescription((String) typeJson.get("description"));
+
+                String baseId = (String) typeJson.get("baseId");
+                if ("cmis:document".equals(baseId)) {
+                    tdf.setBaseId(BaseTypeId.CMIS_DOCUMENT);
+                } else if ("cmis:folder".equals(baseId)) {
+                    tdf.setBaseId(BaseTypeId.CMIS_FOLDER);
+                } else if ("cmis:relationship".equals(baseId)) {
+                    tdf.setBaseId(BaseTypeId.CMIS_RELATIONSHIP);
+                } else if ("cmis:policy".equals(baseId)) {
+                    tdf.setBaseId(BaseTypeId.CMIS_POLICY);
+                } else if ("cmis:item".equals(baseId)) {
+                    tdf.setBaseId(BaseTypeId.CMIS_ITEM);
+                } else if ("cmis:secondary".equals(baseId)) {
+                    tdf.setBaseId(BaseTypeId.CMIS_SECONDARY);
+                }
+
+                String parentId = (String) typeJson.get("parentId");
+                if (parentId != null) {
+                    tdf.setParentId(parentId);
+                }
+
+                // Boolean properties
+                if (typeJson.containsKey("creatable")) {
+                    tdf.setCreatable((Boolean) typeJson.get("creatable"));
+                }
+                if (typeJson.containsKey("queryable")) {
+                    tdf.setQueryable((Boolean) typeJson.get("queryable"));
+                }
+                if (typeJson.containsKey("fulltextIndexed")) {
+                    tdf.setFulltextIndexed((Boolean) typeJson.get("fulltextIndexed"));
+                }
+                if (typeJson.containsKey("includedInSupertypeQuery")) {
+                    tdf.setIncludedInSupertypeQuery((Boolean) typeJson.get("includedInSupertypeQuery"));
+                }
+                if (typeJson.containsKey("controllablePolicy")) {
+                    tdf.setControllablePolicy((Boolean) typeJson.get("controllablePolicy"));
+                }
+                if (typeJson.containsKey("controllableACL")) {
+                    tdf.setControllableACL((Boolean) typeJson.get("controllableACL"));
+                }
+
+                // Create property definitions first
+                List<String> propertyNodeIds = new ArrayList<>();
+                Object propDefsObj = typeJson.get("propertyDefinitions");
+                if (propDefsObj instanceof JSONArray) {
+                    JSONArray propDefs = (JSONArray) propDefsObj;
+                    for (Object propObj : propDefs) {
+                        JSONObject propJson = (JSONObject) propObj;
+                        String propId = (String) propJson.get("id");
+                        if (propId == null) continue;
+
+                        // Build NemakiPropertyDefinition
+                        NemakiPropertyDefinitionCore core = new NemakiPropertyDefinitionCore();
+                        core.setPropertyId(propId);
+
+                        String propTypeStr = (String) propJson.get("propertyType");
+                        if (propTypeStr != null) {
+                            try {
+                                core.setPropertyType(PropertyType.fromValue(propTypeStr));
+                            } catch (Exception e) {
+                                core.setPropertyType(PropertyType.STRING);
+                            }
+                        } else {
+                            core.setPropertyType(PropertyType.STRING);
+                        }
+
+                        String cardStr = (String) propJson.get("cardinality");
+                        if (cardStr != null) {
+                            try {
+                                core.setCardinality(Cardinality.fromValue(cardStr));
+                            } catch (Exception e) {
+                                core.setCardinality(Cardinality.SINGLE);
+                            }
+                        } else {
+                            core.setCardinality(Cardinality.SINGLE);
+                        }
+                        core.setQueryName(propId);
+
+                        NemakiPropertyDefinitionDetail detail = new NemakiPropertyDefinitionDetail();
+                        String updStr = (String) propJson.get("updatability");
+                        if (updStr != null) {
+                            try {
+                                detail.setUpdatability(Updatability.fromValue(updStr));
+                            } catch (Exception e) {
+                                detail.setUpdatability(Updatability.READWRITE);
+                            }
+                        } else {
+                            detail.setUpdatability(Updatability.READWRITE);
+                        }
+
+                        Object reqObj = propJson.get("required");
+                        detail.setRequired(reqObj instanceof Boolean ? (Boolean) reqObj : false);
+
+                        Object queryObj = propJson.get("queryable");
+                        detail.setQueryable(queryObj instanceof Boolean ? (Boolean) queryObj : true);
+
+                        NemakiPropertyDefinition npd = new NemakiPropertyDefinition(core, detail);
+                        NemakiPropertyDefinitionDetail createdDetail = ts.createPropertyDefinition(repositoryId, npd);
+
+                        if (createdDetail != null) {
+                            // Get the core to find the detail node IDs
+                            NemakiPropertyDefinitionCore createdCore = ts.getPropertyDefinitionCoreByPropertyId(repositoryId, propId);
+                            if (createdCore != null) {
+                                List<NemakiPropertyDefinitionDetail> details = ts.getPropertyDefinitionDetailByCoreNodeId(repositoryId, createdCore.getId());
+                                if (details != null && !details.isEmpty()) {
+                                    propertyNodeIds.add(details.get(0).getId());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                tdf.setProperties(propertyNodeIds);
+
+                // Create the type definition
+                ts.createTypeDefinition(repositoryId, tdf);
+                typesCreated++;
+                log.info("Created type definition: " + typeId);
+
+            } catch (Exception e) {
+                log.error("Failed to import type definition from: " + entryName, e);
+                result.warnings.add("Failed to import type definition: " + entryName + " - " + e.getMessage());
+            }
+        }
+
+        // Refresh type cache
+        try {
+            TypeManager tm = getTypeManager();
+            if (tm != null) {
+                tm.refreshTypes();
+                log.info("Type cache refreshed after importing " + typesCreated + " type(s)");
+            }
+        } catch (Exception e) {
+            log.warn("Failed to refresh type cache: " + e.getMessage());
+        }
+
+        if (typesCreated > 0) {
+            result.warnings.add("Imported " + typesCreated + " type definition(s)" +
+                    (typesSkipped > 0 ? ", skipped " + typesSkipped + " existing" : ""));
+        } else if (typesSkipped > 0) {
+            result.warnings.add("All " + typesSkipped + " type definition(s) already exist, skipped");
+        }
+    }
+
+    /**
+     * Find version files for a given base path in the ZIP, sorted by version number.
+     * Excludes metadata files (.meta.json) - only returns actual content version files (.v1, .v2, ...).
+     */
+    private List<String> findVersionFilesFor(String basePath, ZipFile zf) {
         String baseFileName = getFileName(basePath);
         String parentPath = getParentPath(basePath);
+        String prefix = parentPath.isEmpty() ? "" : parentPath + "/";
 
         List<String> versionPaths = new ArrayList<>();
         try {
@@ -1070,38 +1387,139 @@ public class ImportExportResource extends ResourceBase {
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 String path = entry.getName();
-                if (!entry.isDirectory() && path.startsWith(parentPath) && isVersionFileFor(path, baseFileName)) {
+                if (!entry.isDirectory() && path.startsWith(prefix)
+                        && !path.endsWith(META_SUFFIX)
+                        && isVersionFileFor(path, baseFileName)) {
                     versionPaths.add(path);
                 }
             }
         } catch (Exception e) {
             log.warn("Failed to scan ZIP for version files: " + e.getMessage());
-            return;
         }
+
+        // Sort by version number
+        versionPaths.sort((a, b) -> extractVersionNumber(a) - extractVersionNumber(b));
+        return versionPaths;
+    }
+
+    /**
+     * Import version history using checkOut/checkIn cycles.
+     * Version files (.v1, .v2, ...) represent older versions; main file is the latest.
+     * Document was already created with .v1 content (or main file if no versions).
+     */
+    private void importVersionHistory(String repositoryId, String basePath,
+            ZipFile zf, Document document, CallContext callContext, ImportResult result,
+            Map<String, JSONObject> metadataMap, List<String> versionPaths) {
 
         if (versionPaths.isEmpty()) {
             return;
         }
 
-        // Sort versions by version number
-        versionPaths.sort((a, b) -> {
-            int vA = extractVersionNumber(a);
-            int vB = extractVersionNumber(b);
-            return vA - vB;
-        });
+        ContentService cs = getContentService();
+        if (cs == null) {
+            result.warnings.add("ContentService not available for version import: " + basePath);
+            return;
+        }
 
-        // Note: Version history import is complex and may require check-out/check-in cycles
-        // For now, we log a warning that versions were found but not imported
-        if (!versionPaths.isEmpty()) {
-            result.warnings.add("Version history found for " + basePath + " but version import not yet implemented");
+        String fileName = getFileName(basePath);
+        String mimeType = guessMimeType(fileName);
+
+        try {
+            // Document was created with .v1 content (version 1.0).
+            // Now checkIn .v2, .v3, ... and finally the main file as the latest version.
+
+            // Start from .v2 (skip .v1 which was used for initial creation)
+            for (int i = 1; i < versionPaths.size(); i++) {
+                String versionPath = versionPaths.get(i);
+                byte[] versionContent = readZipEntry(zf, versionPath);
+                if (versionContent == null) {
+                    result.warnings.add("Could not read version file: " + versionPath);
+                    continue;
+                }
+
+                // Read version metadata
+                JSONObject versionMeta = null;
+                String versionMetaPath = versionPath + META_SUFFIX;
+                byte[] metaBytes = readZipEntry(zf, versionMetaPath);
+                if (metaBytes != null) {
+                    try {
+                        JSONParser parser = new JSONParser();
+                        versionMeta = (JSONObject) parser.parse(new String(metaBytes, "UTF-8"));
+                    } catch (Exception e) {
+                        log.debug("Failed to parse version metadata: " + versionMetaPath);
+                    }
+                }
+
+                boolean isMajor = true;
+                String checkinComment = null;
+                if (versionMeta != null) {
+                    Object majorObj = versionMeta.get("isMajorVersion");
+                    if (majorObj instanceof Boolean) {
+                        isMajor = (Boolean) majorObj;
+                    }
+                    checkinComment = (String) versionMeta.get("checkinComment");
+                }
+
+                // checkOut
+                Document pwc = cs.checkOut(callContext, repositoryId, document.getId(), null);
+                String pwcId = pwc.getId();
+
+                // checkIn with version content
+                ContentStream versionStream = new ContentStreamImpl(fileName,
+                        BigInteger.valueOf(versionContent.length), mimeType,
+                        new ByteArrayInputStream(versionContent));
+
+                Holder<String> objectIdHolder = new Holder<>(pwcId);
+                Document checkedIn = cs.checkIn(callContext, repositoryId, objectIdHolder, isMajor,
+                        null, versionStream, checkinComment, null, null, null, null);
+
+                // Update document reference for next iteration
+                document = checkedIn;
+            }
+
+            // Finally, checkIn the main file content as the latest version
+            byte[] mainContent = readZipEntry(zf, basePath);
+            if (mainContent != null) {
+                // Read main file metadata for version info
+                JSONObject mainMeta = metadataMap.get(basePath);
+                boolean isMajor = true;
+                String checkinComment = null;
+                if (mainMeta != null) {
+                    JSONObject versionInfo = (JSONObject) mainMeta.get("versionInfo");
+                    if (versionInfo != null) {
+                        Object majorObj = versionInfo.get("isMajorVersion");
+                        if (majorObj instanceof Boolean) {
+                            isMajor = (Boolean) majorObj;
+                        }
+                        checkinComment = (String) versionInfo.get("checkinComment");
+                    }
+                }
+
+                // checkOut
+                Document pwc = cs.checkOut(callContext, repositoryId, document.getId(), null);
+                String pwcId = pwc.getId();
+
+                ContentStream mainStream = new ContentStreamImpl(fileName,
+                        BigInteger.valueOf(mainContent.length), mimeType,
+                        new ByteArrayInputStream(mainContent));
+
+                Holder<String> objectIdHolder = new Holder<>(pwcId);
+                cs.checkIn(callContext, repositoryId, objectIdHolder, isMajor,
+                        null, mainStream, checkinComment, null, null, null, null);
+            }
+
+            log.info("Imported " + versionPaths.size() + " version(s) for: " + basePath);
+
+        } catch (Exception e) {
+            log.error("Failed to import version history for: " + basePath, e);
+            result.warnings.add("Failed to import version history for: " + basePath + " - " + e.getMessage());
         }
     }
 
     private boolean isVersionFileFor(String path, String baseFileName) {
         String fileName = getFileName(path);
-        // Match patterns like "file.txt.v1" or "file.v1.txt"
-        return fileName.startsWith(baseFileName + VERSION_PREFIX) ||
-               fileName.matches(baseFileName.replaceAll("\\.[^.]+$", "") + "\\.v\\d+\\..*");
+        // Only match actual version content files like "file.txt.v1", not "file.txt.v1.meta.json"
+        return fileName.matches(baseFileName + "\\.v\\d+$");
     }
 
     private int extractVersionNumber(String path) {
@@ -1115,6 +1533,124 @@ public class ImportExportResource extends ResourceBase {
     }
 
     // ========== Custom Format Export ==========
+
+    /**
+     * Recursively collect custom (non-base) type IDs from documents in a folder tree.
+     */
+    private void collectCustomTypeIds(String repositoryId, Folder folder, Set<String> customTypeIds) {
+        ContentService cs = getContentService();
+        if (cs == null) return;
+
+        List<Content> children = cs.getChildren(repositoryId, folder.getId());
+        for (Content child : children) {
+            if (child instanceof Folder) {
+                collectCustomTypeIds(repositoryId, (Folder) child, customTypeIds);
+            } else if (child instanceof Document) {
+                String objectType = ((Document) child).getObjectType();
+                if (objectType != null && !BASE_TYPE_IDS.contains(objectType)) {
+                    customTypeIds.add(objectType);
+                }
+            }
+        }
+    }
+
+    /**
+     * Export type definitions to .nemaki-types/ directory in the ZIP.
+     */
+    @SuppressWarnings("unchecked")
+    private void exportTypeDefinitions(String repositoryId, Set<String> customTypeIds,
+            ZipOutputStream zos) throws Exception {
+
+        TypeService ts = getTypeService();
+        if (ts == null) {
+            log.warn("TypeService not available, skipping type definition export");
+            return;
+        }
+
+        // Also collect parent types that are custom
+        Set<String> allTypeIds = new HashSet<>(customTypeIds);
+        for (String typeId : customTypeIds) {
+            NemakiTypeDefinition typeDef = ts.getTypeDefinition(repositoryId, typeId);
+            if (typeDef != null && typeDef.getParentId() != null
+                    && !BASE_TYPE_IDS.contains(typeDef.getParentId())) {
+                allTypeIds.add(typeDef.getParentId());
+            }
+        }
+
+        // Create .nemaki-types/ directory entry
+        zos.putNextEntry(new ZipEntry(TYPE_DEFINITIONS_DIR));
+        zos.closeEntry();
+
+        for (String typeId : allTypeIds) {
+            NemakiTypeDefinition typeDef = ts.getTypeDefinition(repositoryId, typeId);
+            if (typeDef == null) {
+                log.warn("Type definition not found for export: " + typeId);
+                continue;
+            }
+
+            JSONObject typeJson = buildTypeDefinitionJson(repositoryId, typeDef, ts);
+            String entryName = TYPE_DEFINITIONS_DIR + typeId + TYPE_DEFINITION_SUFFIX;
+            zos.putNextEntry(new ZipEntry(entryName));
+            zos.write(typeJson.toJSONString().getBytes("UTF-8"));
+            zos.closeEntry();
+
+            log.info("Exported type definition: " + typeId);
+        }
+    }
+
+    /**
+     * Build JSON representation of a type definition for export.
+     */
+    @SuppressWarnings("unchecked")
+    private JSONObject buildTypeDefinitionJson(String repositoryId, NemakiTypeDefinition typeDef,
+            TypeService ts) {
+
+        JSONObject typeJson = new JSONObject();
+        typeJson.put("id", typeDef.getTypeId());
+        typeJson.put("localName", typeDef.getLocalName());
+        typeJson.put("displayName", typeDef.getDisplayName());
+        typeJson.put("description", typeDef.getDescription());
+        typeJson.put("baseId", typeDef.getBaseId() != null ? typeDef.getBaseId().value() : null);
+        typeJson.put("parentId", typeDef.getParentId());
+
+        typeJson.put("creatable", typeDef.isCreatable());
+        typeJson.put("queryable", typeDef.isQueryable());
+        typeJson.put("controllableACL", typeDef.isControllableACL());
+        typeJson.put("controllablePolicy", typeDef.isControllablePolicy());
+        typeJson.put("fulltextIndexed", typeDef.isFulltextIndexed());
+        typeJson.put("includedInSupertypeQuery", typeDef.isIncludedInSupertypeQuery());
+
+        // Property definitions
+        JSONArray propertiesArray = new JSONArray();
+        List<String> propertyIds = typeDef.getProperties();
+        if (propertyIds != null) {
+            for (String propertyDetailId : propertyIds) {
+                try {
+                    NemakiPropertyDefinitionDetail detail = ts.getPropertyDefinitionDetail(repositoryId, propertyDetailId);
+                    if (detail != null) {
+                        NemakiPropertyDefinitionCore core = ts.getPropertyDefinitionCore(repositoryId, detail.getCoreNodeId());
+                        if (core != null) {
+                            JSONObject propJson = new JSONObject();
+                            propJson.put("id", core.getPropertyId());
+                            propJson.put("localName", core.getPropertyId());
+                            propJson.put("displayName", core.getPropertyId());
+                            propJson.put("propertyType", core.getPropertyType() != null ? core.getPropertyType().value() : "string");
+                            propJson.put("cardinality", core.getCardinality() != null ? core.getCardinality().value() : "single");
+                            propJson.put("updatability", detail.getUpdatability() != null ? detail.getUpdatability().value() : "readwrite");
+                            propJson.put("required", detail.isRequired());
+                            propJson.put("queryable", detail.isQueryable());
+                            propertiesArray.add(propJson);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to export property definition: " + propertyDetailId, e);
+                }
+            }
+        }
+        typeJson.put("propertyDefinitions", propertiesArray);
+
+        return typeJson;
+    }
 
     @SuppressWarnings("unchecked")
     private void exportFolderRecursive(String repositoryId, Folder folder, String basePath,
