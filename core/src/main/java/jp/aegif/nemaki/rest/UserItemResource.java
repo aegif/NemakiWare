@@ -463,6 +463,12 @@ private ContentService getContentServiceSafe() {
 					log.info("[" + userId + "] Getting users folder");
 					final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
 					log.info("[" + userId + "] Users folder: " + (usersFolder != null ? usersFolder.getId() : "NULL"));
+					if (usersFolder == null) {
+						status = false;
+						addErrMsg(errMsg, ITEM_USERID, "system users folder not found");
+						result = makeResult(status, result, errMsg);
+						return result.toJSONString();
+					}
 
 					UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
 

@@ -537,16 +537,20 @@ public class CompileServiceImpl implements CompileService {
 			return null;
 		case SOURCE:
 			propertyId = PropertyIds.SOURCE_ID;
+			break;
 		case TARGET:
 			propertyId = PropertyIds.TARGET_ID;
+			break;
 		default:
+			propertyId = PropertyIds.SOURCE_ID;
+			break;
 		}
 
 		List<ObjectData> filtered = new ArrayList<ObjectData>();
 		if (CollectionUtils.isNotEmpty(bothRelationships)) {
 			for (ObjectData rel : bothRelationships) {
-				PropertyData<?> filterId = rel.getProperties().getProperties().get(PropertyIds.SOURCE_ID);
-				if (objectId.equals(filterId)) {
+				PropertyData<?> filterProp = rel.getProperties().getProperties().get(propertyId);
+				if (filterProp != null && objectId.equals(filterProp.getFirstValue())) {
 					filtered.add(rel);
 				}
 			}

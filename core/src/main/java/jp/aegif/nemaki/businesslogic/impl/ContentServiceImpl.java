@@ -1158,7 +1158,7 @@ public class ContentServiceImpl implements ContentService {
 					// Create preview
 					for (String renditionId : renditionIds) {
 						Rendition rd = contentDaoService.getRendition(repositoryId, renditionId);
-						if (RenditionKind.CMIS_PREVIEW.equals(rd.getKind())) {
+						if (RenditionKind.CMIS_PREVIEW.value().equals(rd.getKind())) {
 							removedRenditionIds.add(renditionId);
 							createPreview(callContext, repositoryId, previewCS, originalPwc);
 						}
@@ -1226,7 +1226,7 @@ public class ContentServiceImpl implements ContentService {
 					// Create preview
 					for (String renditionId : renditionIds) {
 						Rendition rd = contentDaoService.getRendition(repositoryId, renditionId);
-						if (RenditionKind.CMIS_PREVIEW.equals(rd.getKind())) {
+						if (RenditionKind.CMIS_PREVIEW.value().equals(rd.getKind())) {
 							removedRenditionIds.add(renditionId);
 							createPreview(callContext, repositoryId, previewCS, original);
 						}

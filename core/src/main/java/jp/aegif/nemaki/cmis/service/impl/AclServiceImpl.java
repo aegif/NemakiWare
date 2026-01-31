@@ -132,6 +132,7 @@ public class AclServiceImpl implements AclService {
 				log.warn("ORPHANED DOCUMENT ACL: Cannot apply ACL to document '" + content.getName() +
 						"' (id=" + objectId + ") - type '" + content.getObjectType() + "' no longer exists.");
 				exceptionService.constraint(objectId, "applyAcl cannot be performed on orphaned document - type definition not found");
+				return null;
 			}
 			if(!td.isControllableAcl()) exceptionService.constraint(objectId, "applyAcl cannot be performed on the object whose controllableAcl = false");
 			exceptionService.constraintAclPropagationDoesNotMatch(aclPropagation);

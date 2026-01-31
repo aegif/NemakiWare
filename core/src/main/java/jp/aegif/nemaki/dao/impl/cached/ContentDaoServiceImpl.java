@@ -935,7 +935,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					if(versions != null){
 						Collections.sort(versions, new VersionComparator());
 						for(Document version : versions){
-							log.debug("DEBUG: Processing version with ID: " + (version != null ? version.getId() : "null"));
+							if (version == null) {
+								log.debug("DEBUG: Skipping null version entry");
+								continue;
+							}
+							log.debug("DEBUG: Processing version with ID: " + version.getId());
 							// CRITICAL FIX: Check if version ID is null before comparison
 							if(version.getId() != null && version.getId().equals(doc.getId())){
 								tree.add(doc.getId());

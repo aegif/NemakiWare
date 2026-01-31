@@ -527,8 +527,9 @@ public class ObjectServiceImpl implements ObjectService {
 			if (log.isDebugEnabled()) {
 				log.debug("NEMAKI CREATEFOLDER: PROPERTIES IS NULL");
 			}
+			throw new CmisInvalidArgumentException("Properties must not be null for createFolder");
 		}
-		
+
 		// CRITICAL FIX: Validate type definition before casting to prevent ClassCastException
 		String objectTypeId = DataUtil.getObjectTypeId(properties);
 		TypeDefinition rawTypeDefinition = typeManager.getTypeDefinition(repositoryId, objectTypeId);

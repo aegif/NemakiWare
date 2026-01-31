@@ -1359,7 +1359,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// CRITICAL FIX: Use existing documentsByVersionSeriesId view instead of missing allVersions view
 			List<CouchDocument> couchDocs = client.queryView("_repo", "documentsByVersionSeriesId", versionSeriesId, CouchDocument.class);
 			log.debug("DEBUGGING: Query returned " + (couchDocs != null ? couchDocs.size() : "null") + " documents");
-			
+
+			if (couchDocs == null) {
+				return new ArrayList<Document>();
+			}
 			List<Document> documents = new ArrayList<Document>();
 			for (CouchDocument couchDoc : couchDocs) {
 				documents.add(couchDoc.convert());

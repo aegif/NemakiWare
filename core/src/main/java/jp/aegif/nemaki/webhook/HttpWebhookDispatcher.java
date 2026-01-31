@@ -381,25 +381,35 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
                 return result;
             }
             
-            // SSRF protection
-            if (!isUrlSafe(targetUrl)) {
+            // SSRF protection: resolve and validate hostname
+            InetAddress resolvedAddress = resolveAndValidateUrl(targetUrl);
+            if (resolvedAddress == null) {
                 result.setSuccess(false);
                 result.setStatusCode(0);
                 result.setResponseBody("Error: URL blocked for security reasons (SSRF protection)");
                 return result;
             }
-            
-            connection = (HttpURLConnection) targetUrl.openConnection();
+
+            // Build URL using resolved IP to prevent DNS rebinding
+            int port = targetUrl.getPort() != -1 ? targetUrl.getPort() : targetUrl.getDefaultPort();
+            URL resolvedUrl = new URL(protocol, resolvedAddress.getHostAddress(), port,
+                    targetUrl.getFile());
+
+            connection = (HttpURLConnection) resolvedUrl.openConnection();
             connection.setRequestMethod("POST");
             connection.setDoOutput(true);
             connection.setConnectTimeout(connectTimeout);
             connection.setReadTimeout(readTimeout);
             connection.setInstanceFollowRedirects(false);
-            
+
+            // Set Host header to original hostname (required for virtual hosting)
+            connection.setRequestProperty("Host", targetUrl.getHost() +
+                    (targetUrl.getPort() != -1 ? ":" + targetUrl.getPort() : ""));
+
             // Set default headers
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
             connection.setRequestProperty("User-Agent", "NemakiWare-Webhook/1.0");
-            
+
             // Set custom headers
             if (headers != null) {
                 for (Map.Entry<String, String> header : headers.entrySet()) {

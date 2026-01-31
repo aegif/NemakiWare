@@ -519,7 +519,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 					break;
 				}
 				TypeDefinition targetType = typeManager.getTypeById(repositoryId, targetTypeId).getTypeDefinition();
-				if (targetType.getId().equals(targetType.getBaseTypeId())) break;
+				if (targetType.getBaseTypeId() != null && targetType.getId().equals(targetType.getBaseTypeId().value())) break;
 				targetTypeId =  targetType.getParentTypeId();
 			}while(true);
 		}

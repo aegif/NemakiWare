@@ -102,8 +102,9 @@ public class VersioningServiceImpl implements VersioningService {
 			nemakiCachePool.get(repositoryId).removeCmisCache(originalId);
 
 			objectId.setValue(pwc.getId());
-			Holder<Boolean> copied = new Holder<Boolean>(true);
-			contentCopied = copied;
+			if (contentCopied != null) {
+				contentCopied.setValue(true);
+			}
 			
 		}finally{
 			lock.unlock();
@@ -265,9 +266,9 @@ public class VersioningServiceImpl implements VersioningService {
 			log.error("Document not found for versionSeriesId: " + versionSeriesId +
 					" in repository: " + repositoryId + " (major: " + _major + ")");
 			exceptionService.objectNotFound(DomainType.OBJECT, null, versionSeriesId);
-			// Method execution ends here due to exception thrown above
+			return null;
 		}
-		
+
 		Lock lock = threadLockService.getReadLock(repositoryId, document.getId());
 		
 		try{
@@ -312,7 +313,7 @@ public class VersioningServiceImpl implements VersioningService {
 			if (d == null) {
 				log.error("Document not found for objectId: " + objectId + " in repository: " + repositoryId);
 				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
-				// Method execution ends here due to exception thrown above
+				return null;
 			}
 
 			versionSeriesId = d.getVersionSeriesId();
