@@ -1593,7 +1593,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     }
     
     /**
-     * Safe Boolean parameter parsing
+     * Safe Boolean parameter parsing.
+     * @param request the HTTP request
+     * @param name the parameter name
+     * @return the Boolean value, or null if parameter is missing or empty
      */
     private Boolean getBooleanParameterSafe(HttpServletRequest request, String name) {
         String value = request.getParameter(name);

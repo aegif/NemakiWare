@@ -917,7 +917,7 @@ public class CmisEntityProcessor implements EntityProcessor {
                 entity.getNavigationLinks().add(parentLink);
             }
         } catch (Exception e) {
-            // Parent not accessible
+            // Parent not accessible - intentionally ignored
         }
     }
     
@@ -1034,7 +1034,7 @@ public class CmisEntityProcessor implements EntityProcessor {
                 entity.getNavigationLinks().add(link);
             }
         } catch (Exception e) {
-            // Related object not accessible
+            // Related object not accessible - intentionally ignored
         }
     }
 }

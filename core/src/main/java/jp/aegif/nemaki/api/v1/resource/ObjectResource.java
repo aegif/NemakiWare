@@ -1047,6 +1047,12 @@ public class ObjectResource {
         return null;
     }
     
+    /**
+     * Gets a boolean property value from CMIS properties.
+     * @param properties the CMIS properties
+     * @param propertyId the property ID to retrieve
+     * @return the Boolean value, or null if property is not found or not a Boolean type
+     */
     private Boolean getBooleanProperty(Properties properties, String propertyId) {
         PropertyData<?> prop = properties.getProperties().get(propertyId);
         if (prop != null && prop.getFirstValue() instanceof Boolean) {

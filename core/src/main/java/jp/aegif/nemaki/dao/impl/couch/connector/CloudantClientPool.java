@@ -97,7 +97,12 @@ public class CloudantClientPool {
 						log.warn("Failed to connect to CouchDB at: " + resolvedUrl + " (attempt " + attempt + " of " + maxRetries + ")");
 						if (attempt < maxRetries) {
 							log.info("Retrying in " + (retryDelay/1000) + " seconds...");
-							Thread.sleep(retryDelay);
+							// SpotBugs SWL_SLEEP_WITH_LOCK_HELD: Use wait() instead of sleep() to release lock
+							try {
+								initLock.wait(retryDelay);
+							} catch (InterruptedException ie) {
+								Thread.currentThread().interrupt();
+							}
 						}
 					}
 
@@ -106,7 +111,8 @@ public class CloudantClientPool {
 					if (attempt < maxRetries) {
 						log.info("Retrying in " + (retryDelay/1000) + " seconds...");
 						try {
-							Thread.sleep(retryDelay);
+							// SpotBugs SWL_SLEEP_WITH_LOCK_HELD: Use wait() instead of sleep() to release lock
+							initLock.wait(retryDelay);
 						} catch (InterruptedException ie) {
 							Thread.currentThread().interrupt();
 						}

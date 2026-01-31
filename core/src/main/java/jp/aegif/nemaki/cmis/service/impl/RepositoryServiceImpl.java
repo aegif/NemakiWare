@@ -461,9 +461,15 @@ public class RepositoryServiceImpl implements RepositoryService,
 						throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("Current WebApplicationContext is null");
 					}
 
-					org.springframework.web.context.WebApplicationContext context =
-						org.springframework.web.context.support.WebApplicationContextUtils.getWebApplicationContext(
-							((org.springframework.web.context.WebApplicationContext) currentContext).getServletContext());
+
+				// SpotBugs NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE: Add null check for getServletContext()
+				jakarta.servlet.ServletContext servletContext =
+					((org.springframework.web.context.WebApplicationContext) currentContext).getServletContext();
+				if (servletContext == null) {
+					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("ServletContext is null");
+				}
+				org.springframework.web.context.WebApplicationContext context =
+					org.springframework.web.context.support.WebApplicationContextUtils.getWebApplicationContext(servletContext);
 					if (context == null) {
 						throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("WebApplicationContext is null");
 					}

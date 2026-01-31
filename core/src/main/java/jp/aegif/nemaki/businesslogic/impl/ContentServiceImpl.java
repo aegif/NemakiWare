@@ -1532,8 +1532,10 @@ public class ContentServiceImpl implements ContentService {
 			Folder parentFolder, org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
 		Document d = new Document();
-		setBaseProperties(callContext, repositoryId, properties, d, parentFolder.getId());
-		d.setParentId(parentFolder.getId());
+		// SpotBugs NP_NULL_PARAM_DEREF: Add null check for parentFolder before dereferencing
+		String parentId = (parentFolder != null) ? parentFolder.getId() : null;
+		setBaseProperties(callContext, repositoryId, properties, d, parentId);
+		d.setParentId(parentId);
 		d.setImmutable(DataUtil.getBooleanProperty(properties, PropertyIds.IS_IMMUTABLE));
 		setSignature(callContext, d);
 
@@ -2571,7 +2573,7 @@ public class ContentServiceImpl implements ContentService {
 	private void setUpdatePropertyValue(String repositoryId, Content content, PropertyData<?> propertyData,
 			Properties properties) {
 		if (propertyData.getId().equals(PropertyIds.NAME)) {
-			if (DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID) != content.getId()) {
+			if (!content.getId().equals(DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID))) {
 				String proposedName = DataUtil.getStringProperty(properties, PropertyIds.NAME);
 
 				// Check duplicate name

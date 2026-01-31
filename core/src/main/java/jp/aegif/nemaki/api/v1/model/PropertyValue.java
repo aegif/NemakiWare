@@ -220,6 +220,10 @@ public class PropertyValue {
         return null;
     }
     
+    /**
+     * Gets the value as a Boolean.
+     * @return the Boolean value, or null if value is null or cannot be converted to Boolean
+     */
     public Boolean getBooleanValue() {
         if (value == null) return null;
         if (value instanceof Boolean) return (Boolean) value;

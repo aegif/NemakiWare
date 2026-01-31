@@ -143,29 +143,33 @@ public class NemakiPropertyDefinition extends NodeBase {
 		
 		// CRITICAL CMIS 1.1 COMPLIANCE FIX: Apply DataUtil compliance to constructor
 		// The core.getQueryName() may not be CMIS 1.1 compliant, so we need to ensure consistency
-		String coreQueryName = core.getQueryName();
+		// SpotBugs NP_NULL_ON_SOME_PATH: Add null check for core before dereferencing
+		String coreQueryName = (core != null) ? core.getQueryName() : null;
 		String localName = detail.getLocalName();
 		String finalQueryName = jp.aegif.nemaki.util.DataUtil.ensureCmis11QueryNameCompliance(coreQueryName, localName);
 		setQueryName(finalQueryName);
-		
+
 		// CRITICAL CMIS 1.1 COMPLIANCE FIX: Apply DataUtil displayName logic
 		String detailDisplayName = detail.getDisplayName();
 		String finalDisplayName = jp.aegif.nemaki.util.DataUtil.ensureCmis11DisplayNameCompliance(detailDisplayName, intendedPropertyId);
 		setDisplayName(finalDisplayName);
-		
+
 		setDescription(detail.getDescription());
-		PropertyType coreType = core.getPropertyType();
+		PropertyType coreType = (core != null) ? core.getPropertyType() : null;
 		if (log.isDebugEnabled()) {
-			log.debug("TCK PROPERTY: Constructor - propertyId=" + core.getPropertyId() + ", coreType=" + coreType);
+			String corePropertyId = (core != null) ? core.getPropertyId() : "null";
+			log.debug("TCK PROPERTY: Constructor - propertyId=" + corePropertyId + ", coreType=" + coreType);
 		}
 		if (coreType == null) {
-			log.warn("TCK CRITICAL: PropertyType is NULL for propertyId=" + core.getPropertyId() +
-				", Core object class=" + core.getClass().getName() +
+			String corePropertyId = (core != null) ? core.getPropertyId() : "null";
+			String coreClassName = (core != null) ? core.getClass().getName() : "null";
+			log.warn("TCK CRITICAL: PropertyType is NULL for propertyId=" + corePropertyId +
+				", Core object class=" + coreClassName +
 				", Detail.localName=" + detail.getLocalName());
 		}
 		setPropertyType(coreType);
 		// TCK FIX: Ensure cardinality is never null - default to SINGLE if missing
-		setCardinality(core.getCardinality() != null ? core.getCardinality() : org.apache.chemistry.opencmis.commons.enums.Cardinality.SINGLE);
+		setCardinality((core != null && core.getCardinality() != null) ? core.getCardinality() : org.apache.chemistry.opencmis.commons.enums.Cardinality.SINGLE);
 		setUpdatability(detail.getUpdatability());
 		setRequired(detail.isRequired());
 		setQueryable(detail.isQueryable());

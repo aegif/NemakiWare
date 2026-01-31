@@ -588,6 +588,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 				break;
 			case DECIMAL:
 				constraintDecimalPropertyValue(propertyDefinition, pd, objectId);
+				break; // SpotBugs SF_SWITCH_FALLTHROUGH: Add missing break statement
 			case INTEGER:
 				constraintIntegerPropertyValue(propertyDefinition, pd, objectId);
 				break;

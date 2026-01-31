@@ -3181,6 +3181,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 	// CRITICAL CONSISTENCY FIX: Use shared TypeDefinition system for normal path
 	// This ensures both normal and refresh paths return TypeDefinition objects with identical object identity
+	// SpotBugs NP_NULL_ON_SOME_PATH: Add null check before dereferencing typeDefinition
+	if (typeDefinition == null) {
+		log.warn("getTypeDefinition: typeDefinition is null for typeId=" + typeId + ", returning null");
+		return null;
+	}
 	TypeDefinition sharedTypeDefinition = getSharedTypeDefinition(repositoryId, typeDefinition.getId(), typeDefinition);
 	if (log.isDebugEnabled()) {
 		log.debug("TYPE DEFINITION SHARING: Applied getSharedTypeDefinition() to normal path for type " + (typeDefinition != null ? typeDefinition.getId() : "null"));
@@ -4160,7 +4165,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 			// Clear property definition caches for this repository
 			if (subTypeProperties != null) {
-				subTypeProperties.entrySet().removeIf(entry -> entry.getKey().startsWith(repositoryId + ":"));
+				// SpotBugs NP_NULL_ON_SOME_PATH: Add null check for entry key before calling startsWith
+			subTypeProperties.entrySet().removeIf(entry -> entry.getKey() != null && entry.getKey().startsWith(repositoryId + ":"));
 				log.debug("invalidateTypeDefinitionCache: Cleared subtype properties for repository=" + repositoryId);
 			}
 
