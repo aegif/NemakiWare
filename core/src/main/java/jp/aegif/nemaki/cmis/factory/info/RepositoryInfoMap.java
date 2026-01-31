@@ -178,7 +178,6 @@ public class RepositoryInfoMap {
 		Object su1 = data1.get("super.users");
 
 		if(su1 != null){
-			String f2 = propertyManager.readValue(PropertyKey.REPOSITORY_DEFINITION_DEFAULT);
 			YamlManager mgr2 = new YamlManager(f1);
 			Map<String, Object> data2 = (Map<String, Object>)mgr2.loadYml();
 			Object su2 = data2.get("super.users");

@@ -335,7 +335,14 @@ public class RenditionController {
         for (String objectId : objectIds) {
             try {
                 ResponseEntity<Map<String, Object>> result = generateRendition(repositoryId, objectId, force);
+                // SpotBugs: NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE - Add null check for getBody()
                 Map<String, Object> resultBody = result.getBody();
+                if (resultBody == null) {
+                    log.warn("generateRendition returned null body for objectId: " + objectId);
+                    resultBody = new HashMap<>();
+                    resultBody.put("status", "error");
+                    resultBody.put("error", "Response body is null");
+                }
                 resultBody.put("objectId", objectId);
                 results.add(resultBody);
 

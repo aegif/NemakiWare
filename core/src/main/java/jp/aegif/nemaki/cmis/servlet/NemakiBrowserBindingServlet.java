@@ -201,12 +201,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
             }
         }
-        
+
         String queryString = request.getQueryString();
         String requestURI = request.getRequestURI();
-        String contextPath = request.getContextPath();
-        String servletPath = request.getServletPath();
-        
+
         // Get contentType early for debug code
         String contentType = request.getContentType();
 
@@ -3511,7 +3509,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 case "checkIn":
                     String checkinComment = request.getParameter("checkinComment");
                     String major = request.getParameter("major");
-                    Boolean isMajor = (major != null) ? Boolean.parseBoolean(major) : Boolean.FALSE;
+                    Boolean isMajor = (major != null) ? Boolean.valueOf(major) : Boolean.FALSE;
 
                     // Extract properties if any (for checkin comment, etc.)
                     java.util.Map<String, Object> properties = extractPropertiesFromRequest(request);

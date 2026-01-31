@@ -711,7 +711,7 @@ public class CompileServiceImpl implements CompileService {
 
 				// Retrieve the content(using caches)
 				String objectId = change.getId();
-				Content content = new Content();
+				Content content;
 
 				if (cachedContents.containsKey(objectId)) {
 					content = cachedContents.get(objectId);
@@ -1497,7 +1497,7 @@ public class CompileServiceImpl implements CompileService {
 
 		// TCK compliance verified without this property for documents
 
-		Boolean isImmutable = (document.isImmutable() == null) ? false : document.isImmutable();
+		Boolean isImmutable = (document.isImmutable() == null) ? Boolean.FALSE : document.isImmutable();
 		try {
 			addProperty(properties, tdf, PropertyIds.IS_IMMUTABLE, isImmutable);
 		} catch (Exception e) {

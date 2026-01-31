@@ -416,12 +416,14 @@ public class ContentServiceImpl implements ContentService {
 					if (v1 == null) return sc.ascending ? -1 : 1;
 					if (v2 == null) return sc.ascending ? 1 : -1;
 
-					try {
-						@SuppressWarnings("unchecked")
-						int result = ((Comparable<Object>) v1).compareTo(v2);
-						if (result != 0) {
-							return sc.ascending ? result : -result;
-						}
+				try {
+					@SuppressWarnings("unchecked")
+					Comparable<Object> c1 = (Comparable<Object>) v1;
+					Comparable<Object> c2 = (Comparable<Object>) v2;
+					int result = sc.ascending ? c1.compareTo(v2) : c2.compareTo(v1);
+					if (result != 0) {
+						return result;
+					}
 					} catch (ClassCastException e) {
 						log.debug("applySorting: Cannot compare values for property " + sc.propertyId);
 						continue;
@@ -2248,7 +2250,7 @@ public class ContentServiceImpl implements ContentService {
 		List<Aspect> aspects = new ArrayList<Aspect>();
 		PropertyData secondaryTypeIds = properties.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 
-		List<String> ids = new ArrayList<String>();
+		List<String> ids;
 		if (secondaryTypeIds == null) {
 			ids = getSecondaryTypeIds(content);
 		} else {
@@ -3360,7 +3362,7 @@ public class ContentServiceImpl implements ContentService {
 			return Collections.emptyList();
 		}
 
-		List<String> ids = new ArrayList<String>();
+		List<String> ids;
 		if (c.isDocument()) {
 			Document d = (Document) c;
 			ids = d.getRenditionIds();
@@ -3605,10 +3607,10 @@ public class ContentServiceImpl implements ContentService {
 		} else {
 			if (isTopLevel(repositoryId, content) && !inheritedAtTopLevel) {
 				// default to TRUE (top-level folders inherit by default even when inheritedAtTopLevel is false)
-				return (content.isAclInherited() == null) ? true : content.isAclInherited();
+				return (content.isAclInherited() == null) ? Boolean.TRUE : content.isAclInherited();
 			} else {
 				// default to TRUE (normal folders inherit by default)
-				return (content.isAclInherited() == null) ? true : content.isAclInherited();
+				return (content.isAclInherited() == null) ? Boolean.TRUE : content.isAclInherited();
 			}
 		}
 	}
@@ -4000,7 +4002,6 @@ public class ContentServiceImpl implements ContentService {
 		// CMIS spec requires updating change token after any modification
 		if (n instanceof Content) {
 			Content content = (Content) n;
-			String oldChangeToken = content.getChangeToken();
 			String newChangeToken = String.valueOf(System.currentTimeMillis());
 			content.setChangeToken(newChangeToken);
 		}

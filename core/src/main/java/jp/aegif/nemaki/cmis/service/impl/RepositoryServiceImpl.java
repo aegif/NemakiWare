@@ -209,14 +209,11 @@ public class RepositoryServiceImpl implements RepositoryService,
 			String repositoryId, String typeId,
 			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 		
-		log.info("*** RepositoryServiceImpl.getTypeChildren ENTRY: repositoryId=" + repositoryId + 
-				 ", typeId=" + typeId + 
+		log.info("*** RepositoryServiceImpl.getTypeChildren ENTRY: repositoryId=" + repositoryId +
+				 ", typeId=" + typeId +
 				 ", includePropertyDefinitions=" + includePropertyDefinitions +
-				 ", maxItems=" + maxItems + 
+				 ", maxItems=" + maxItems +
 				 ", skipCount=" + skipCount + " ***");
-		
-		// Handle null Boolean conversion to primitive boolean (default to false per CMIS spec)
-		boolean includeProps = (includePropertyDefinitions == null) ? false : includePropertyDefinitions.booleanValue();
 
 		log.info("*** RepositoryServiceImpl.getTypeChildren: Using SHARED instance cache for TypeDefinition object identity preservation ***");
 
@@ -346,10 +343,12 @@ public class RepositoryServiceImpl implements RepositoryService,
 					}
 					
 					// CRITICAL DEBUG: Verify the NemakiPropertyDefinition preserves the correct property ID
-					if (!originalPropertyId.equals(create.getPropertyId())) {
+					// SpotBugs: NP_NULL_ON_SOME_PATH - Add null check for getPropertyId()
+					String createPropertyId = create.getPropertyId();
+					if (originalPropertyId != null && !originalPropertyId.equals(createPropertyId)) {
 						log.error("ERROR: Property ID contamination during NemakiPropertyDefinition creation!");
-						log.error("ERROR: Original ID: " + originalPropertyId + " -> NemakiPropertyDefinition ID: " + create.getPropertyId());
-						
+						log.error("ERROR: Original ID: " + originalPropertyId + " -> NemakiPropertyDefinition ID: " + createPropertyId);
+
 						// CRITICAL FIX: Force correct property ID back into the object
 						create.setPropertyId(originalPropertyId);
 					}
@@ -455,9 +454,20 @@ public class RepositoryServiceImpl implements RepositoryService,
 			if (typeService == null) {
 				log.warn("typeService is null - attempting Spring context lookup");
 				try {
-					org.springframework.web.context.WebApplicationContext context = 
+					// SpotBugs: NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE - Add null checks
+					org.springframework.web.context.WebApplicationContext currentContext =
+						org.springframework.web.context.ContextLoader.getCurrentWebApplicationContext();
+					if (currentContext == null) {
+						throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("Current WebApplicationContext is null");
+					}
+
+					org.springframework.web.context.WebApplicationContext context =
 						org.springframework.web.context.support.WebApplicationContextUtils.getWebApplicationContext(
-							((org.springframework.web.context.WebApplicationContext) org.springframework.web.context.ContextLoader.getCurrentWebApplicationContext()).getServletContext());
+							((org.springframework.web.context.WebApplicationContext) currentContext).getServletContext());
+					if (context == null) {
+						throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("WebApplicationContext is null");
+					}
+
 					typeService = (jp.aegif.nemaki.businesslogic.TypeService) context.getBean("TypeService");
 					log.debug("TypeService retrieved from Spring context: " + (typeService != null ? "SUCCESS" : "FAILED"));
 				} catch (Exception contextException) {
@@ -471,7 +481,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 				log.debug("typeManager.deleteTypeDefinition completed successfully");
 			} catch (Exception deletionException) {
 				log.error("Type deletion failed for typeId: " + typeId, deletionException);
-				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("Type deletion failed: " + deletionException.getMessage(), deletionException);
+				// SpotBugs: NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE - Add null check for getMessage()
+				String errorMessage = (deletionException.getMessage() != null) ? deletionException.getMessage() : "Unknown error";
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("Type deletion failed: " + errorMessage, deletionException);
 			}
 			
 			// CRITICAL FIX: Remove duplicate cache refresh - TypeService handles caching internally

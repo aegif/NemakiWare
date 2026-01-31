@@ -123,7 +123,7 @@ public class Document extends Content {
 	}
 
 	public Boolean isPrivateWorkingCopy() {
-		return (privateWorkingCopy == null) ? false : privateWorkingCopy;
+		return (privateWorkingCopy == null) ? Boolean.FALSE : privateWorkingCopy;
 	}
 
 	public void setPrivateWorkingCopy(Boolean privateWorkingCopy) {
@@ -131,7 +131,7 @@ public class Document extends Content {
 	}
 
 	public Boolean isVersionSeriesCheckedOut() {
-		return (versionSeriesCheckedOut == null) ? false : versionSeriesCheckedOut;
+		return (versionSeriesCheckedOut == null) ? Boolean.FALSE : versionSeriesCheckedOut;
 	}
 
 	public void setVersionSeriesCheckedOut(Boolean versionSeriesCheckedOut) {

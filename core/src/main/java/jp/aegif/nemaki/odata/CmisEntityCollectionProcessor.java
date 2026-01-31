@@ -119,8 +119,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         // Get pagination options
         int top = getTopOption(uriInfo);
         int skip = getSkipOption(uriInfo);
-        boolean count = getCountOption(uriInfo);
-        
+
         // Get filter option
         FilterOption filterOption = uriInfo.getFilterOption();
         String filterClause = null;

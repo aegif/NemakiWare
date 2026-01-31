@@ -177,7 +177,6 @@ public class CmisEntityProcessor implements EntityProcessor {
         try {
             // Deserialize the request body
             InputStream requestInputStream = request.getBody();
-            ODataSerializer deserializer = odata.createSerializer(requestFormat);
             Entity requestEntity = odata.createDeserializer(requestFormat)
                     .entity(requestInputStream, edmEntitySet.getEntityType()).getEntity();
             

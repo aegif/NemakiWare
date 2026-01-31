@@ -76,10 +76,10 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	@Override
 	public void delete(String repositoryId, Class<?> clazz, String nodeId) {
 		if (clazz.equals(User.class)) {
-			User exising = getUser(repositoryId, nodeId);
+			getUser(repositoryId, nodeId);
 			nonCachedPrincipalDaoService.delete(repositoryId, null, nodeId);
 		} else if(clazz.equals(Group.class)){
-			Group exising = getGroup(repositoryId, nodeId);
+			getGroup(repositoryId, nodeId);
 			nonCachedPrincipalDaoService.delete(repositoryId, null, nodeId);
 		}
 	}

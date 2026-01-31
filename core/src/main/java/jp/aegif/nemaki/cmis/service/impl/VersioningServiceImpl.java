@@ -249,7 +249,7 @@ public class VersioningServiceImpl implements VersioningService {
 		}
 
 		// Default to false
-		Boolean _major = (major == null) ? false : major;
+		Boolean _major = (major == null) ? Boolean.FALSE : major;
 		Document document = null;
 		if (_major) {
 			document = contentService

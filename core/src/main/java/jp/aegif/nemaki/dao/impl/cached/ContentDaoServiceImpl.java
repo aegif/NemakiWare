@@ -1410,11 +1410,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		//read document in advance
 		Document doc = null;
-		Document previous = null;
 		if(nb.isDocument()){
 			doc = (Document)getDocument(repositoryId, objectId);
 			try {
-				previous = getPreviousVersion(repositoryId, doc);
+				getPreviousVersion(repositoryId, doc);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
@@ -1476,11 +1475,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		//read document in advance
 		Document doc = null;
-		Document previous = null;
 		if(nb.isDocument()){
 			doc = (Document)getDocument(repositoryId, objectId);
 			try {
-				previous = getPreviousVersion(repositoryId, doc);
+				getPreviousVersion(repositoryId, doc);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}

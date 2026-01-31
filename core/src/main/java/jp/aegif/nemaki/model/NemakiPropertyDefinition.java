@@ -101,6 +101,10 @@ public class NemakiPropertyDefinition extends NodeBase {
 				"Core ID=" + core.getId() + " but Detail.coreNodeId=" + detail.getCoreNodeId());
 		}
 
+		// SpotBugs: NP_NULL_ON_SOME_PATH - Add null check for detail
+		if (detail == null) {
+			throw new IllegalArgumentException("detail cannot be null");
+		}
 
 		setId(detail.getId());
 		setType(NodeType.TYPE_DEFINITION.value());
@@ -116,13 +120,15 @@ public class NemakiPropertyDefinition extends NodeBase {
 		String intendedPropertyId = determineCorrectPropertyId(detail, core);
 
 		// CRITICAL DEBUG: Log what we're about to set as propertyId
+		// SpotBugs: NP_NULL_ON_SOME_PATH - Add null check for core
 		if (log.isDebugEnabled()) {
-			log.debug("Property ID determination - core.propertyId=" + core.getPropertyId() +
+			String corePropertyId = (core != null) ? core.getPropertyId() : "null";
+			log.debug("Property ID determination - core.propertyId=" + corePropertyId +
 				", detail.localName=" + detail.getLocalName() +
 				", detail.displayName=" + detail.getDisplayName());
 		}
 		// CRITICAL: Detect contamination
-		if (core.getPropertyId() != null && core.getPropertyId().startsWith("cmis:") &&
+		if (core != null && core.getPropertyId() != null && core.getPropertyId().startsWith("cmis:") &&
 			detail.getLocalName() != null && detail.getLocalName().startsWith("tck:")) {
 			log.warn("Property contamination detected - Core has CMIS ID: " + core.getPropertyId() +
 				" but Detail has TCK localName: " + detail.getLocalName());

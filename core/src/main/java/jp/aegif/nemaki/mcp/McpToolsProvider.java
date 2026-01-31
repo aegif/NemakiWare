@@ -631,7 +631,7 @@ public class McpToolsProvider {
 
             String docUrl = formatDocumentUrl(repositoryId, objectId);
 
-            sb.append(String.format("%d. [%s](%s)\n",
+            sb.append(String.format("%d. [%s](%s)%n",
                 i + 1,
                 escapeMarkdown(name != null ? name : objectId),
                 docUrl
@@ -682,7 +682,7 @@ public class McpToolsProvider {
             int scorePercent = Math.round(result.getScore() * 100);
 
             // Escape document name to prevent Markdown injection
-            sb.append(String.format("%d. [%s](%s) (類似度: %d%%)\n",
+            sb.append(String.format("%d. [%s](%s) (類似度: %d%%)%n",
                 i + 1,
                 escapeMarkdown(result.getDocumentName()),
                 docUrl,
@@ -712,7 +712,7 @@ public class McpToolsProvider {
             int scorePercent = Math.round(result.getScore() * 100);
 
             // Escape document name to prevent Markdown injection
-            sb.append(String.format("%d. [%s](%s) (類似度: %d%%)\n",
+            sb.append(String.format("%d. [%s](%s) (類似度: %d%%)%n",
                 i + 1,
                 escapeMarkdown(result.getDocumentName()),
                 docUrl,

@@ -277,17 +277,17 @@ public class SearchEngineResource {
             
             org.apache.hc.client5.http.classic.HttpClient httpClient = 
                 org.apache.hc.client5.http.impl.classic.HttpClientBuilder.create().build();
-            org.apache.hc.client5.http.classic.methods.HttpGet httpGet = 
+            org.apache.hc.client5.http.classic.methods.HttpGet httpGet =
                 new org.apache.hc.client5.http.classic.methods.HttpGet(url);
-            
-            String body = httpClient.execute(httpGet, response -> {
+
+            httpClient.execute(httpGet, response -> {
                 int responseStatus = response.getCode();
                 if (org.apache.hc.core5.http.HttpStatus.SC_OK != responseStatus) {
                     throw new RuntimeException("Solr server connection failed with status: " + responseStatus);
                 }
                 return org.apache.hc.core5.http.io.entity.EntityUtils.toString(response.getEntity(), "UTF-8");
             });
-            
+
             OperationResponse response = new OperationResponse();
             response.setSuccess(true);
             response.setMessage("Search index initialization completed");

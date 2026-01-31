@@ -578,7 +578,6 @@ public class CloudantClientWrapper {
 	public DocumentResult update(Map<String, Object> document) {
 		try {
 			String id = (String) document.get("_id");
-			String rev = (String) document.get("_rev");
 
 			// Production-ready debug logging (only when debug is enabled)
 			if (log.isDebugEnabled()) {

@@ -413,11 +413,10 @@ public class ImportExportResource extends ResourceBase {
 
     // ========== ACP Import ==========
 
-    private ImportResult importAcpFormat(String repositoryId, String targetFolderId, 
+    private ImportResult importAcpFormat(String repositoryId, String targetFolderId,
             File zipFile, CallContext callContext) throws Exception {
 
         ImportResult result = new ImportResult();
-        ContentService cs = getContentService();
 
         String packageXmlName = null;
         byte[] xmlData = null;

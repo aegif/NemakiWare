@@ -1765,13 +1765,13 @@ public class TypeResource extends ResourceBase {
 		}
 		
 		// First, create properties
+		// SpotBugs: NP_NULL_ON_SOME_PATH - Add null/empty check before iteration
 		if (coreMaps == null || coreMaps.isEmpty()) {
 			if (log.isDebugEnabled()) {
 				log.debug("No coreMaps found - skipping property creation");
 			}
-		}
-		
-		for (Entry<String, NemakiPropertyDefinitionCore> coreEntry : coreMaps.entrySet()) {
+		} else {
+			for (Entry<String, NemakiPropertyDefinitionCore> coreEntry : coreMaps.entrySet()) {
 			String originalPropertyId = coreEntry.getKey();
 			NemakiPropertyDefinition p = new NemakiPropertyDefinition(coreEntry.getValue(),
 					detailMaps.get(coreEntry.getKey()));
@@ -1808,6 +1808,7 @@ public class TypeResource extends ResourceBase {
 				// createdCoreがnullの場合、DetailのcoreNodeIdを使用
 				log.warn("Could not find core by propertyId, using detail's coreNodeId");
 				coreEntry.getValue().setId(createdDetail.getCoreNodeId());
+			}
 			}
 		}
 

@@ -467,6 +467,8 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                         skipCount = new BigInteger(paramValue);
                     }
                     break;
+                default:
+                    break;
             }
         }
         
@@ -577,6 +579,8 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                     if (paramValue != null && !paramValue.isEmpty()) {
                         maxItems = new BigInteger(paramValue);
                     }
+                    break;
+                default:
                     break;
             }
         }
