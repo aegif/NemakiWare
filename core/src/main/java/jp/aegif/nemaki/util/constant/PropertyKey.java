@@ -286,6 +286,9 @@ public interface PropertyKey {
 
 	//Cache
 	final String CACHE_CONFIG = "cache.config";
+	final String CACHE_CLUSTERING_ENABLED = "cache.clustering.enabled";
+	final String CACHE_CLUSTERING_TERRACOTTA_URL = "cache.clustering.terracotta.url";
+	final String CACHE_CLUSTERING_OFFHEAP_MB = "cache.clustering.offheap.mb";
 
 	//Auth token
 	final String AUTH_TOKEN_EXPIRATION = "auth.token.expiration";

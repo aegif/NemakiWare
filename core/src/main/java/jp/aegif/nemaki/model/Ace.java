@@ -23,9 +23,11 @@ package jp.aegif.nemaki.model;
 
 import org.apache.commons.lang3.ObjectUtils;
 
+import java.io.Serializable;
 import java.util.List;
 
-public class Ace {
+public class Ace implements Serializable {
+	private static final long serialVersionUID = 1L;
 	private String principalId;
 	private List<String> permissions;
 	private boolean direct;

@@ -1,11 +1,14 @@
 package jp.aegif.nemaki.util.cache;
 
+import java.net.URI;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.AttachmentNode;
@@ -28,9 +31,12 @@ import org.ehcache.config.builders.CacheConfigurationBuilder;
 import org.ehcache.config.builders.CacheManagerBuilder;
 import org.ehcache.config.builders.ResourcePoolsBuilder;
 import org.ehcache.config.builders.ExpiryPolicyBuilder;
+import org.ehcache.config.units.MemoryUnit;
 import java.time.Duration;
 
 public class CacheService {
+	private static final Logger log = LoggerFactory.getLogger(CacheService.class);
+
 	private final CacheManager cacheManager;
 	private final Map<String, Boolean> enabled = new HashMap<>();
 	private final String CONFIG_CACHE = "configCache";
@@ -47,17 +53,66 @@ public class CacheService {
 	private final String USERS_CACHE = "usersCache";
 	private final String GROUP_CACHE = "groupCache";
 	private final String GROUPS_CACHE = "groupsCache";
-	
+
 	private final String ACL_CACHE = "aclCache";
 	private final String JOINED_GROUP_CACHE = "joinedGroupCache";
 	private final String PROPERTY_DEFINITION_CACHE = "propertyDefinitionCache";
 
 	private final String repositoryId;
+	private final boolean clusteringEnabled;
+	private final long offheapMb;
 
 	public CacheService(String repositoryId, SpringPropertyManager propertyManager) {
 		this.repositoryId = repositoryId;
 
-		cacheManager = CacheManagerBuilder.newCacheManagerBuilder().build(true);
+		this.clusteringEnabled = Boolean.parseBoolean(
+				propertyManager.readValue(PropertyKey.CACHE_CLUSTERING_ENABLED));
+
+		long configuredOffheap = 0;
+		if (clusteringEnabled) {
+			String offheapStr = propertyManager.readValue(PropertyKey.CACHE_CLUSTERING_OFFHEAP_MB);
+			configuredOffheap = (offheapStr != null && !offheapStr.isEmpty())
+					? Long.parseLong(offheapStr) : 100;
+		}
+		this.offheapMb = configuredOffheap;
+
+		CacheManagerBuilder<?> builder = CacheManagerBuilder.newCacheManagerBuilder();
+
+		if (clusteringEnabled) {
+			try {
+				String terracottaUrl = propertyManager.readValue(
+						PropertyKey.CACHE_CLUSTERING_TERRACOTTA_URL);
+				Class<?> clusteringClass = Class.forName(
+						"org.ehcache.clustered.client.config.builders.ClusteringServiceConfigurationBuilder");
+				java.lang.reflect.Method clusterMethod = clusteringClass.getMethod("cluster", URI.class);
+				Object clusterBuilder = clusterMethod.invoke(null, URI.create(terracottaUrl));
+				java.lang.reflect.Method autoCreateMethod = clusterBuilder.getClass().getMethod(
+						"autoCreate", java.util.function.Function.class);
+				Object serviceConfig = autoCreateMethod.invoke(clusterBuilder,
+						(java.util.function.Function<Object, Object>) s -> s);
+				java.lang.reflect.Method buildMethod = serviceConfig.getClass().getMethod("build");
+				Object builtConfig = buildMethod.invoke(serviceConfig);
+				// Use with() via reflection to avoid compile-time dependency
+				java.lang.reflect.Method withMethod = null;
+				for (java.lang.reflect.Method m : builder.getClass().getMethods()) {
+					if ("with".equals(m.getName()) && m.getParameterCount() == 1) {
+						withMethod = m;
+						break;
+					}
+				}
+				if (withMethod != null) {
+					builder = (CacheManagerBuilder<?>) withMethod.invoke(builder, builtConfig);
+				}
+				log.info("Ehcache clustering enabled: {}", terracottaUrl);
+			} catch (ClassNotFoundException e) {
+				log.error("Ehcache clustering requested but ehcache-clustered JAR not found. "
+						+ "Add ehcache-clustered dependency. Falling back to standalone mode.", e);
+			} catch (Exception e) {
+				log.error("Failed to configure Ehcache clustering. Falling back to standalone mode.", e);
+			}
+		}
+
+		cacheManager = builder.build(true);
 
 		loadConfig(propertyManager);
 	}
@@ -88,12 +143,17 @@ public class CacheService {
 
 			Cache<String, Object> cache = cacheManager.getCache(cacheName, String.class, Object.class);
 			if (cache == null) {
+				long heapSize = config.maxElementsInMemory != null && config.maxElementsInMemory > 0
+						? config.maxElementsInMemory.longValue()
+						: 1000L;
+
+				ResourcePoolsBuilder pools = ResourcePoolsBuilder.heap(heapSize);
+				if (clusteringEnabled && offheapMb > 0) {
+					pools = pools.offheap(offheapMb, MemoryUnit.MB);
+				}
+
 				CacheConfiguration<String, Object> configBuilder = CacheConfigurationBuilder
-						.newCacheConfigurationBuilder(String.class, Object.class,
-								ResourcePoolsBuilder.heap(
-										config.maxElementsInMemory != null && config.maxElementsInMemory > 0
-												? config.maxElementsInMemory.longValue()
-												: 1000L))
+						.newCacheConfigurationBuilder(String.class, Object.class, pools)
 						.withExpiry(buildExpiry(config))
 						.build();
 				cache = cacheManager.createCache(cacheName, configBuilder);
@@ -217,12 +277,12 @@ public class CacheService {
 		String name = repositoryId + "_" + ACL_CACHE;
 		return new NemakiCache<Acl>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
-	
+
 	public NemakiCache<List<String>> getJoinedGroupCache(){
 		String name = repositoryId + "_" + JOINED_GROUP_CACHE;
 		return new NemakiCache<List<String>>(Boolean.TRUE.equals(enabled.get(name)), cacheManager.getCache(name, String.class, Object.class));
 	}
-	
+
 	/**
 	 * Property Definition Cache
 	 */
@@ -241,7 +301,7 @@ public class CacheService {
 		getAclCache().remove(objectId);
 		removeCmisCache(objectId);
 	}
-	
+
 	public void removeCmisAndTreeCache(String objectId) {
 		getTreeCache().remove(objectId);
 		getAclCache().remove(objectId);

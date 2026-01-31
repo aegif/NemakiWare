@@ -623,6 +623,19 @@
 		</dependency>
 
 		<dependency>
+			<groupId>org.ehcache</groupId>
+			<artifactId>ehcache-clustered</artifactId>
+			<version>3.10.8</version>
+			<optional>true</optional>
+			<exclusions>
+				<exclusion>
+					<groupId>org.glassfish.jaxb</groupId>
+					<artifactId>jaxb-runtime</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+
+		<dependency>
 			<groupId>org.dom4j</groupId>
 			<artifactId>dom4j</artifactId>
 			<version>2.2.0</version>

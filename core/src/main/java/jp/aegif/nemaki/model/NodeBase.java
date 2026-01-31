@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.model;
 
+import java.io.Serializable;
 import java.util.GregorianCalendar;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -28,7 +29,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jp.aegif.nemaki.util.constant.NodeType;
 
 @JsonIgnoreProperties(ignoreUnknown=true)
-public class NodeBase{
+public class NodeBase implements Serializable{
+	private static final long serialVersionUID = 1L;
 
 	protected String id;
 	protected String type;

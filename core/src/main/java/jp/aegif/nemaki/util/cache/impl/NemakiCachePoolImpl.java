@@ -1,6 +1,8 @@
 package jp.aegif.nemaki.util.cache.impl;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -66,7 +68,8 @@ public class NemakiCachePoolImpl implements NemakiCachePool{
 
 	@Override
 	public void clearAll() {
-		for(String key : new java.util.ArrayList<>(pool.keySet())){
+		List<String> keys = new ArrayList<>(pool.keySet());
+		for(String key : keys){
 			CacheService old = pool.get(key);
 			if (old != null) {
 				old.close();
