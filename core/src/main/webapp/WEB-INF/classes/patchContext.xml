@@ -105,13 +105,20 @@
 					</property>
 				</bean>
 				<!-- NemakiWare standard types: nemaki:document, secondary types -->
-				<!-- MUST run after StandardCmisViews to ensure base types exist -->
-				<bean class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
-					<property name="patchUtil">
-						<ref bean="patchUtil" />
-					</property>
-				</bean>
-				<!-- MCP Service Account: non-admin account for MCP transport authentication -->
+					<!-- MUST run after StandardCmisViews to ensure base types exist -->
+					<bean class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
+						<property name="patchUtil">
+							<ref bean="patchUtil" />
+						</property>
+					</bean>
+					<!-- Webhookable secondary type: nemaki:webhookable for webhook functionality -->
+					<!-- MUST run after StandardCmisViews to ensure cmis:secondary exists -->
+					<bean class="jp.aegif.nemaki.patch.Patch_WebhookableSecondaryType">
+						<property name="patchUtil">
+							<ref bean="patchUtil" />
+						</property>
+					</bean>
+					<!-- MCP Service Account: non-admin account for MCP transport authentication -->
 				<!-- This account is used for transport-level auth, not for user permissions -->
 				<bean class="jp.aegif.nemaki.patch.Patch_McpServiceAccount">
 					<property name="patchUtil">
@@ -186,6 +193,12 @@
 	</bean>
 
 	<bean id="patch_NemakiwareStandardTypes" class="jp.aegif.nemaki.patch.Patch_NemakiwareStandardTypes">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_WebhookableSecondaryType" class="jp.aegif.nemaki.patch.Patch_WebhookableSecondaryType">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>
