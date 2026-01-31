@@ -244,9 +244,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 						u.setPassowrd(result.getNewHash());
 						contentDaoService.update(repositoryId, u);
 						
-						java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
-						debugWriter.write("SECURITY UPGRADE COMPLETED: User password hash updated to BCrypt\n");
-						debugWriter.close();
+						log.info("SECURITY UPGRADE COMPLETED: User password hash updated to BCrypt for user: " + userId);
 					} catch (Exception e) {
 						if (log.isDebugEnabled()) {
 							log.debug("SECURITY UPGRADE FAILED: " + e.getMessage());

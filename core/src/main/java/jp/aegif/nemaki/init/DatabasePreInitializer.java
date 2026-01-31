@@ -485,7 +485,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                     conn.setDoOutput(true);
                     
                     // Write document
-                    java.io.OutputStreamWriter out = new java.io.OutputStreamWriter(conn.getOutputStream());
+                    java.io.OutputStreamWriter out = new java.io.OutputStreamWriter(conn.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8);
                     out.write(docJson);
                     out.close();
                     
