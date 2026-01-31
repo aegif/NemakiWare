@@ -642,6 +642,287 @@ test.describe.serial('Import/Export Feature', () => {
       expect([200, 400, 401, 403, 500]).toContain(status);
     });
   });
+
+  // ========== REST API: Filesystem Export/Import Execution Tests ==========
+
+  test.describe('REST API - Filesystem Export Execution', () => {
+    const EXPORT_PATH = '/tmp/nemakiware-export/e2e-test';
+
+    test('should export root folder to filesystem successfully', async ({ page }) => {
+      const rootRes = await page.request.get(
+        `${BASE_URL}/core/browser/bedroom/root?cmisselector=object`,
+        { headers: { 'Authorization': AUTH_HEADER } }
+      );
+      const rootData = await rootRes.json();
+      const rootId = rootData.properties['cmis:objectId'].value;
+
+      const exportRes = await page.request.post(
+        `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/export/${rootId}`,
+        {
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          data: { targetPath: EXPORT_PATH, allowOverwrite: true }
+        }
+      );
+      expect(exportRes.ok()).toBeTruthy();
+      const result = await exportRes.json();
+      expect(result.status).toBe('success');
+      expect(result.foldersExported).toBeGreaterThanOrEqual(1);
+      expect(result.documentsExported).toBeGreaterThanOrEqual(1);
+      expect(result.targetPath).toBe(EXPORT_PATH);
+      console.log(`Filesystem export: ${result.foldersExported} folders, ${result.documentsExported} documents`);
+    });
+
+    test('should export a specific subfolder to filesystem', async ({ page }) => {
+      // Find a subfolder (e.g., Sites or first child folder)
+      const rootRes = await page.request.get(
+        `${BASE_URL}/core/browser/bedroom/root?cmisselector=object`,
+        { headers: { 'Authorization': AUTH_HEADER } }
+      );
+      const rootData = await rootRes.json();
+      const rootId = rootData.properties['cmis:objectId'].value;
+
+      const childrenRes = await page.request.get(
+        `${BASE_URL}/core/browser/bedroom/root?objectId=${rootId}&cmisselector=children`,
+        { headers: { 'Authorization': AUTH_HEADER } }
+      );
+      const children = await childrenRes.json();
+      const folders = (children.objects || []).filter(
+        (o: any) => o.object.properties['cmis:baseTypeId'].value === 'cmis:folder'
+      );
+
+      if (folders.length === 0) {
+        test.skip('No subfolders found');
+        return;
+      }
+
+      const folderId = folders[0].object.properties['cmis:objectId'].value;
+      const folderName = folders[0].object.properties['cmis:name'].value;
+      const subExportPath = `/tmp/nemakiware-export/e2e-subfolder`;
+
+      const exportRes = await page.request.post(
+        `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/export/${folderId}`,
+        {
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          data: { targetPath: subExportPath, allowOverwrite: true }
+        }
+      );
+      expect(exportRes.ok()).toBeTruthy();
+      const result = await exportRes.json();
+      expect(result.status).toBe('success');
+      console.log(`Subfolder "${folderName}" export: ${result.foldersExported} folders, ${result.documentsExported} documents`);
+    });
+
+    test('should reject export to path outside allowed roots', async ({ page }) => {
+      const rootRes = await page.request.get(
+        `${BASE_URL}/core/browser/bedroom/root?cmisselector=object`,
+        { headers: { 'Authorization': AUTH_HEADER } }
+      );
+      const rootData = await rootRes.json();
+      const rootId = rootData.properties['cmis:objectId'].value;
+
+      const exportRes = await page.request.post(
+        `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/export/${rootId}`,
+        {
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          data: { targetPath: '/root/not-allowed-path', allowOverwrite: false }
+        }
+      );
+      // Should fail with error about path not in allowed roots
+      const result = await exportRes.json();
+      expect(result.status).toBe('error');
+      expect(result.message).toContain('allowed');
+    });
+
+    test('should reject export for non-existent folder ID', async ({ page }) => {
+      const exportRes = await page.request.post(
+        `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/export/nonexistent-id-99999`,
+        {
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          data: { targetPath: '/tmp/nemakiware-export/e2e-bad', allowOverwrite: true }
+        }
+      );
+      expect([400, 404, 500]).toContain(exportRes.status());
+    });
+  });
+
+  test.describe('REST API - Filesystem Import Execution', () => {
+    const EXPORT_PATH = '/tmp/nemakiware-export/e2e-roundtrip';
+    let importTargetFolderId: string | null = null;
+    let sourceFolderId: string | null = null;
+
+    test.beforeAll(async ({ browser }) => {
+      const ctx = await browser.newContext();
+      const pg = await ctx.newPage();
+
+      // Get root folder
+      const rootRes = await pg.request.get(
+        `${BASE_URL}/core/browser/bedroom/root?cmisselector=object`,
+        { headers: { 'Authorization': AUTH_HEADER } }
+      );
+      const rootData = await rootRes.json();
+      const rootId = rootData.properties['cmis:objectId'].value;
+
+      // Create source folder with test documents
+      const srcName = `fs-import-src-${Date.now()}`;
+      const srcRes = await pg.request.post(
+        `${BASE_URL}/core/browser/bedroom`,
+        {
+          headers: { 'Authorization': AUTH_HEADER },
+          multipart: {
+            cmisaction: 'createFolder',
+            'propertyId[0]': 'cmis:objectTypeId',
+            'propertyValue[0]': 'cmis:folder',
+            'propertyId[1]': 'cmis:name',
+            'propertyValue[1]': srcName,
+            objectId: rootId
+          }
+        }
+      );
+      if (srcRes.ok()) {
+        const d = await srcRes.json();
+        sourceFolderId = d.succinctProperties?.['cmis:objectId'] || d.properties?.['cmis:objectId']?.value;
+
+        // Add test documents
+        for (let i = 1; i <= 3; i++) {
+          await pg.request.post(
+            `${BASE_URL}/core/browser/bedroom`,
+            {
+              headers: { 'Authorization': AUTH_HEADER },
+              multipart: {
+                cmisaction: 'createDocument',
+                'propertyId[0]': 'cmis:objectTypeId',
+                'propertyValue[0]': 'cmis:document',
+                'propertyId[1]': 'cmis:name',
+                'propertyValue[1]': `fs-test-doc-${i}.txt`,
+                objectId: sourceFolderId!,
+                content: {
+                  name: `fs-test-doc-${i}.txt`,
+                  mimeType: 'text/plain',
+                  buffer: Buffer.from(`Filesystem import test document ${i}`)
+                }
+              }
+            }
+          );
+        }
+      }
+
+      // Create target folder for import
+      const tgtName = `fs-import-tgt-${Date.now()}`;
+      const tgtRes = await pg.request.post(
+        `${BASE_URL}/core/browser/bedroom`,
+        {
+          headers: { 'Authorization': AUTH_HEADER },
+          multipart: {
+            cmisaction: 'createFolder',
+            'propertyId[0]': 'cmis:objectTypeId',
+            'propertyValue[0]': 'cmis:folder',
+            'propertyId[1]': 'cmis:name',
+            'propertyValue[1]': tgtName,
+            objectId: rootId
+          }
+        }
+      );
+      if (tgtRes.ok()) {
+        const d = await tgtRes.json();
+        importTargetFolderId = d.succinctProperties?.['cmis:objectId'] || d.properties?.['cmis:objectId']?.value;
+      }
+
+      // Export source folder to filesystem (creates data for import test)
+      if (sourceFolderId) {
+        await pg.request.post(
+          `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/export/${sourceFolderId}`,
+          {
+            headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+            data: { targetPath: EXPORT_PATH, allowOverwrite: true }
+          }
+        );
+      }
+
+      await ctx.close();
+    });
+
+    test('should import from filesystem into a target folder', async ({ page }) => {
+      if (!importTargetFolderId || !sourceFolderId) {
+        test.skip('Test folders not created');
+        return;
+      }
+
+      const importRes = await page.request.post(
+        `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/import/${importTargetFolderId}`,
+        {
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          data: { sourcePath: EXPORT_PATH }
+        }
+      );
+      expect(importRes.ok()).toBeTruthy();
+      const result = await importRes.json();
+      expect(result.status).toBe('success');
+      expect(result.documentsCreated).toBeGreaterThanOrEqual(3);
+      console.log(`Filesystem import: ${result.foldersCreated} folders, ${result.documentsCreated} documents`);
+    });
+
+    test('should verify imported documents exist in target folder', async ({ page }) => {
+      if (!importTargetFolderId) {
+        test.skip('Target folder not created');
+        return;
+      }
+
+      // The import creates a subfolder matching the export source folder name
+      const childrenRes = await page.request.get(
+        `${BASE_URL}/core/browser/bedroom/root?objectId=${importTargetFolderId}&cmisselector=children`,
+        { headers: { 'Authorization': AUTH_HEADER } }
+      );
+      expect(childrenRes.ok()).toBeTruthy();
+      const children = await childrenRes.json();
+      const objects = children.objects || [];
+      // Should have at least the imported content
+      expect(objects.length).toBeGreaterThanOrEqual(1);
+      console.log(`Target folder has ${objects.length} children after filesystem import`);
+    });
+
+    test('should reject import from non-existent filesystem path', async ({ page }) => {
+      if (!importTargetFolderId) {
+        test.skip('Target folder not created');
+        return;
+      }
+
+      const importRes = await page.request.post(
+        `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/import/${importTargetFolderId}`,
+        {
+          headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+          data: { sourcePath: '/tmp/nemakiware-import/no-such-dir-12345' }
+        }
+      );
+      const result = await importRes.json();
+      if (importRes.ok()) {
+        expect(result.status).toBe('error');
+      } else {
+        expect([400, 500]).toContain(importRes.status());
+      }
+    });
+
+    test.afterAll(async ({ browser }) => {
+      const ctx = await browser.newContext();
+      const pg = await ctx.newPage();
+      for (const fid of [sourceFolderId, importTargetFolderId]) {
+        if (fid) {
+          await pg.request.post(
+            `${BASE_URL}/core/browser/bedroom`,
+            {
+              headers: { 'Authorization': AUTH_HEADER },
+              multipart: {
+                cmisaction: 'deleteTree',
+                objectId: fid,
+                allVersions: 'true',
+                continueOnFailure: 'true'
+              }
+            }
+          ).catch(() => {});
+        }
+      }
+      await ctx.close();
+    });
+  });
 });
 
 // ========== Helper: Create minimal ZIP file ==========

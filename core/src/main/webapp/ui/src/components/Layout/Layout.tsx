@@ -223,7 +223,8 @@ import {
   DatabaseOutlined,
   ApiOutlined,
   BarChartOutlined,
-  SwapOutlined
+  SwapOutlined,
+  SendOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -365,6 +366,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           key: '/filesystem-import-export',
           icon: <SwapOutlined />,
           label: t('navigation.filesystemImportExport'),
+        },
+        {
+          key: '/webhooks',
+          icon: <SendOutlined />,
+          label: t('webhookManagement.title'),
         },
       ],
     }] : []),

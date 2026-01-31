@@ -86,6 +86,10 @@ public class SolrUtil implements ApplicationContextAware {
 	// Cached ContentService instance to avoid repeated applicationContext.getBean() calls
 	private volatile ContentService contentServiceCache;
 
+	// Retry configuration for async Solr indexing
+	private static final int SOLR_INDEX_MAX_RETRY = 2;
+	private static final long[] SOLR_INDEX_RETRY_DELAYS_MS = {1000, 3000};
+
 	public SolrUtil() {
 		map = new HashMap<String, String>();
 		map.put(PropertyIds.OBJECT_ID, "object_id");
@@ -253,8 +257,40 @@ public class SolrUtil implements ApplicationContextAware {
 			// Execute Solr indexing asynchronously to avoid blocking CMIS operations
 			CompletableFuture.runAsync(() -> {
 				indexDocumentInternal(repositoryId, content);
+			}).exceptionally(ex -> {
+				log.warn("Solr async indexing failed for {}, scheduling retry: {}", content.getId(), ex.getMessage());
+				scheduleRetry(() -> indexDocumentInternal(repositoryId, content), content.getId(), 1);
+				return null;
 			});
 		}
+	}
+
+	/**
+	 * Schedule a retry for a failed async Solr operation with exponential backoff.
+	 * @param task the operation to retry
+	 * @param docId document ID for logging
+	 * @param attempt current retry attempt (1-based)
+	 */
+	private void scheduleRetry(Runnable task, String docId, int attempt) {
+		if (attempt > SOLR_INDEX_MAX_RETRY) {
+			log.error("Solr indexing permanently failed for document {} after {} retries", docId, SOLR_INDEX_MAX_RETRY);
+			return;
+		}
+		long delay = SOLR_INDEX_RETRY_DELAYS_MS[Math.min(attempt - 1, SOLR_INDEX_RETRY_DELAYS_MS.length - 1)];
+		log.info("Scheduling Solr indexing retry {} for document {} in {}ms", attempt, docId, delay);
+		CompletableFuture.runAsync(() -> {
+			try {
+				Thread.sleep(delay);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return;
+			}
+			task.run();
+		}).exceptionally(ex -> {
+			log.warn("Solr indexing retry {} failed for {}: {}", attempt, docId, ex.getMessage());
+			scheduleRetry(task, docId, attempt + 1);
+			return null;
+		});
 	}
 
 	/**
@@ -717,27 +753,45 @@ public class SolrUtil implements ApplicationContextAware {
 		CompletableFuture.runAsync(() -> {
 			try {
 				SolrClient solrClient = getSolrClient();
-				
+
 				UpdateRequest updateRequest = new UpdateRequest();
 				updateRequest.deleteById(documentId);
 				updateRequest.setCommitWithin(1000);
-				
+
 				// DIRECT FIX: Don't pass core name to avoid URL duplication
 				// getSolrUrl() already returns full URL with core path
 				UpdateResponse response = updateRequest.process(solrClient);
-				
+
 				if (response.getStatus() == 0) {
 					log.debug("Document deleted successfully from Solr: " + documentId + " for repository: " + repositoryId);
 					// Trigger RAG deletion
 					triggerRAGDeletion(repositoryId, documentId);
 				} else {
 					log.warn("Document deletion failed with status: " + response.getStatus() + " for document: " + documentId);
+					throw new RuntimeException("Solr deletion failed with status: " + response.getStatus());
 				}
 
 				solrClient.close();
 			} catch (SolrServerException | IOException e) {
 				log.warn("Solr document deletion failed for document: " + documentId + " in repository: " + repositoryId + ", error: " + e.getMessage());
+				throw new RuntimeException("Solr deletion failed: " + e.getMessage(), e);
 			}
+		}).exceptionally(ex -> {
+			log.warn("Solr async deletion failed for {}, scheduling retry: {}", documentId, ex.getMessage());
+			scheduleRetry(() -> {
+				try {
+					SolrClient solrClient = getSolrClient();
+					UpdateRequest req = new UpdateRequest();
+					req.deleteById(documentId);
+					req.setCommitWithin(1000);
+					req.process(solrClient);
+					solrClient.close();
+					log.info("Solr deletion retry succeeded for document: {}", documentId);
+				} catch (Exception retryEx) {
+					throw new RuntimeException("Solr deletion retry failed: " + retryEx.getMessage(), retryEx);
+				}
+			}, documentId, 1);
+			return null;
 		});
 	}
 

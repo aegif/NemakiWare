@@ -2346,6 +2346,295 @@ webhook.child.event.absolute.max.per.second=50
 
 ---
 
+## 14. 実装ガイドライン
+
+本セクションは実装時の具体的な判断基準と実装ポイントを明記します。
+
+### 14.1 Webhook対象判定の実装ポイント
+
+**判定層の責務分担**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Webhook対象判定フロー                         │
+├─────────────────────────────────────────────────────────────────┤
+│  1. ContentService層: イベント発生を検知                        │
+│  2. WebhookService層: nemaki:webhookable の存在を確認           │
+│  3. WebhookConfigCache層: 該当オブジェクトの設定をキャッシュ検索 │
+│  4. ContentDao層: CouchDBビューでセカンダリタイプをフィルタ     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**ContentDao層での実装**:
+
+```javascript
+// CouchDBビュー定義: webhookable_objects
+function(doc) {
+  if (doc.type === "content" && doc.secondaryIds) {
+    for (var i = 0; i < doc.secondaryIds.length; i++) {
+      if (doc.secondaryIds[i] === "nemaki:webhookable") {
+        emit(doc._id, {
+          objectId: doc.objectId,
+          webhookConfigs: doc["nemaki:webhookConfigs"]
+        });
+      }
+    }
+  }
+}
+```
+
+**WebhookService層での判定**:
+
+```java
+public class WebhookService {
+    
+    /**
+     * オブジェクトがWebhook対象かどうかを判定
+     * @param content 対象コンテンツ
+     * @return nemaki:webhookable が付与されている場合 true
+     */
+    public boolean isWebhookEnabled(Content content) {
+        List<String> secondaryTypeIds = content.getSecondaryIds();
+        if (secondaryTypeIds == null || secondaryTypeIds.isEmpty()) {
+            return false;
+        }
+        return secondaryTypeIds.contains("nemaki:webhookable");
+    }
+    
+    /**
+     * Webhook設定を取得（キャッシュ優先）
+     */
+    public List<WebhookConfig> getWebhookConfigs(String repositoryId, String objectId) {
+        // 1. キャッシュから検索
+        List<WebhookConfig> cached = webhookConfigCache.get(objectId);
+        if (cached != null) {
+            return cached;
+        }
+        
+        // 2. ContentDaoから取得
+        Content content = contentDaoService.getContent(repositoryId, objectId);
+        if (!isWebhookEnabled(content)) {
+            return Collections.emptyList();
+        }
+        
+        // 3. JSON解析してキャッシュに格納
+        String configJson = (String) content.getProperty("nemaki:webhookConfigs");
+        List<WebhookConfig> configs = webhookConfigParser.parse(configJson);
+        webhookConfigCache.put(objectId, configs);
+        return configs;
+    }
+}
+```
+
+### 14.2 deliveryId と attemptId の永続化ルール
+
+**データモデル**: `WebhookDeliveryLog`は「1 attempt = 1 log」モデルを採用
+
+```java
+/**
+ * Webhook配信ログ（1試行 = 1レコード）
+ */
+public class WebhookDeliveryLog {
+    private String id;              // ログID（自動生成）
+    private String deliveryId;      // 配信ID（再送時も同一）
+    private int attemptId;          // 試行番号（1, 2, 3...）
+    private String webhookConfigId; // Webhook設定ID
+    private String objectId;        // 対象オブジェクトID
+    private String eventType;       // イベントタイプ
+    private long timestamp;         // 試行時刻
+    private int statusCode;         // HTTPステータスコード
+    private long responseTimeMs;    // レスポンス時間
+    private String errorMessage;    // エラーメッセージ（失敗時）
+    private boolean success;        // 成功フラグ
+}
+```
+
+**CouchDBビュー定義**:
+
+```javascript
+// ビュー: delivery_logs_by_delivery_id
+// deliveryIdごとに全試行を取得可能
+function(doc) {
+  if (doc.type === "webhook_delivery_log") {
+    emit([doc.deliveryId, doc.attemptId], doc);
+  }
+}
+
+// ビュー: delivery_logs_by_object
+// オブジェクトごとの配信履歴を取得
+function(doc) {
+  if (doc.type === "webhook_delivery_log") {
+    emit([doc.objectId, doc.timestamp], doc);
+  }
+}
+```
+
+**再送時の動作**:
+
+1. 手動再送API呼び出し時、既存の`deliveryId`を維持
+2. `attemptId`をインクリメント（前回の最大値 + 1）
+3. 新しい`WebhookDeliveryLog`レコードを作成
+4. 受信側は`deliveryId`で冪等処理、`attemptId`で最新試行を識別
+
+### 14.3 nemaki:webhookMaxDepth の互換処理
+
+**方針**: ランタイムフォールバック方式を採用（Migration不要）
+
+```java
+public class WebhookConfigCache {
+    
+    /**
+     * maxDepthの取得（優先順位に従う）
+     * 
+     * 優先順位:
+     * 1. webhookConfigs[].maxDepth（各設定の個別値）
+     * 2. nemaki:webhookMaxDepth（オブジェクトレベルの互換プロパティ）
+     * 3. アプリケーション設定のデフォルト値
+     */
+    public int getEffectiveMaxDepth(Content content, WebhookConfig config) {
+        // 1. 設定内のmaxDepthを優先
+        if (config.getMaxDepth() != null) {
+            return config.getMaxDepth();
+        }
+        
+        // 2. 互換プロパティをフォールバック
+        Object legacyMaxDepth = content.getProperty("nemaki:webhookMaxDepth");
+        if (legacyMaxDepth != null) {
+            log.warn("Using deprecated nemaki:webhookMaxDepth for object: " + 
+                     content.getObjectId() + ". Please migrate to webhookConfigs[].maxDepth");
+            return ((Number) legacyMaxDepth).intValue();
+        }
+        
+        // 3. アプリケーション設定のデフォルト値
+        return propertyManager.readValue(PropertyKey.WEBHOOK_DEFAULT_MAX_DEPTH);
+    }
+}
+```
+
+**互換プロパティの扱い**:
+
+- `nemaki:webhookMaxDepth`は**非推奨（deprecated）**として維持
+- 使用時にWARNログを出力し、移行を促す
+- 新規設定では`webhookConfigs[].maxDepth`のみを使用
+- 将来バージョンで削除予定（v2.0以降）
+
+### 14.4 CHILD_*イベントのPhase分離
+
+**Phase 1-3での明示的無効化**:
+
+```java
+public class WebhookEventMatcher {
+    
+    // Phase 1-3で有効なイベントタイプ
+    private static final Set<String> PHASE1_EVENTS = Set.of(
+        "CREATED", "UPDATED", "DELETED", "SECURITY"
+    );
+    
+    private static final Set<String> PHASE2_EVENTS = Set.of(
+        "CREATED", "UPDATED", "DELETED", "SECURITY",
+        "CONTENT_UPDATED", "CHECKED_OUT", "CHECKED_IN", "VERSION_CREATED", "MOVED"
+    );
+    
+    // CHILD_*イベントはPhase 4以降
+    private static final Set<String> CHILD_EVENTS = Set.of(
+        "CHILD_CREATED", "CHILD_UPDATED", "CHILD_DELETED"
+    );
+    
+    /**
+     * イベントタイプが現在のPhaseで有効かどうかを判定
+     */
+    public boolean isEventTypeEnabled(String eventType) {
+        // Feature flagでCHILD_*イベントを制御
+        if (CHILD_EVENTS.contains(eventType)) {
+            return propertyManager.readBoolean(PropertyKey.WEBHOOK_CHILD_EVENTS_ENABLED, false);
+        }
+        return getCurrentPhaseEvents().contains(eventType);
+    }
+}
+```
+
+**設定ファイル（nemakiware.properties）**:
+
+```properties
+# CHILD_*イベントの有効化（Phase 4以降でtrueに設定）
+webhook.child.events.enabled=false
+
+# CHILD_*イベントのレート制限（Phase 4で有効化時に使用）
+webhook.child.events.rate.limit=100
+webhook.child.events.batch.size=50
+webhook.child.events.batch.interval.ms=5000
+```
+
+**Phase 4での有効化手順**:
+
+1. `webhook.child.events.enabled=true`に設定
+2. レート制限パラメータを環境に合わせて調整
+3. 負荷テストを実施
+4. 段階的にロールアウト
+
+### 14.5 UI操作フロー（セカンダリタイプ付与）
+
+**最小導線**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Webhook有効化フロー                           │
+├─────────────────────────────────────────────────────────────────┤
+│  1. フォルダ/ドキュメント詳細画面を開く                         │
+│  2. 「プロパティ」タブを選択                                    │
+│  3. 「セカンダリタイプ」セクションで「追加」ボタンをクリック    │
+│  4. タイプ選択ダイアログで「nemaki:webhookable」を選択          │
+│  5. 「Webhook設定」タブが出現                                   │
+│  6. Webhook設定を追加（URL、イベント、認証等）                  │
+│  7. 「保存」ボタンで設定を保存                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**UIコンポーネント構成**:
+
+```
+DocumentViewer
+├── PropertiesTab
+│   ├── PrimaryProperties
+│   ├── SecondaryTypesSection
+│   │   ├── SecondaryTypeList
+│   │   └── AddSecondaryTypeButton → SecondaryTypeDialog
+│   └── CustomProperties
+├── WebhookTab (nemaki:webhookable付与時のみ表示)
+│   ├── WebhookConfigList
+│   │   └── WebhookConfigCard (各設定)
+│   ├── AddWebhookButton → WebhookConfigDialog
+│   └── TestWebhookButton
+└── DeliveryLogTab (nemaki:webhookable付与時のみ表示)
+    └── DeliveryLogTable
+```
+
+**条件付きタブ表示**:
+
+```typescript
+// DocumentViewer.tsx
+const hasWebhookable = secondaryTypeIds?.includes('nemaki:webhookable');
+
+return (
+  <Tabs>
+    <TabPane tab="プロパティ" key="properties">...</TabPane>
+    <TabPane tab="バージョン" key="versions">...</TabPane>
+    {hasWebhookable && (
+      <>
+        <TabPane tab="Webhook設定" key="webhooks">
+          <WebhookConfigPanel objectId={objectId} />
+        </TabPane>
+        <TabPane tab="配信ログ" key="delivery-logs">
+          <DeliveryLogPanel objectId={objectId} />
+        </TabPane>
+      </>
+    )}
+  </Tabs>
+);
+```
+
+---
+
 ## 付録A: 参考資料
 
 - [CMIS 1.1 Specification](https://docs.oasis-open.org/cmis/CMIS/v1.1/CMIS-v1.1.pdf)

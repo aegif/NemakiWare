@@ -23,6 +23,7 @@ package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.util.spring.SpringContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONObject;
@@ -46,6 +47,25 @@ public class AuthConfigResource extends ResourceBase {
 
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
+	}
+
+	private PropertyManager getPropertyManager() {
+		if (propertyManager != null) {
+			return propertyManager;
+		}
+		// Fallback: Jersey may create its own instance bypassing Spring DI
+		try {
+			PropertyManager pm = SpringContext.getApplicationContext()
+					.getBean("propertyManager", PropertyManager.class);
+			if (pm != null) {
+				log.debug("PropertyManager retrieved from SpringContext fallback");
+				this.propertyManager = pm;
+				return pm;
+			}
+		} catch (Exception e) {
+			log.error("Failed to get PropertyManager from SpringContext: " + e.getMessage(), e);
+		}
+		return null;
 	}
 
 	/**
@@ -86,12 +106,13 @@ public class AuthConfigResource extends ResourceBase {
 	 * Read a boolean property value with a default fallback.
 	 */
 	private boolean readBooleanProperty(String key, boolean defaultValue) {
-		if (propertyManager == null) {
+		PropertyManager pm = getPropertyManager();
+		if (pm == null) {
 			log.warn("PropertyManager is null, returning default value for " + key);
 			return defaultValue;
 		}
 
-		String value = propertyManager.readValue(key);
+		String value = pm.readValue(key);
 		if (value == null || value.trim().isEmpty()) {
 			return defaultValue;
 		}

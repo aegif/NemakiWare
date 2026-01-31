@@ -1584,5 +1584,58 @@
       "warnings": "Warnings",
       "errors": "Errors"
     }
+  },
+  "webhookManagement": {
+    "title": "Webhook Management",
+    "columns": {
+      "deliveryId": "Delivery ID",
+      "objectId": "Object ID",
+      "webhookUrl": "Webhook URL",
+      "eventType": "Event Type",
+      "status": "Status",
+      "statusCode": "Status Code",
+      "attemptCount": "Attempts",
+      "deliveredAt": "Delivered At",
+      "errorDetail": "Error Detail",
+      "actions": "Actions"
+    },
+    "status": {
+      "success": "Success",
+      "failed": "Failed"
+    },
+    "filter": {
+      "status": "Status",
+      "all": "All",
+      "success": "Success only",
+      "failed": "Failed only"
+    },
+    "actions": {
+      "retry": "Retry",
+      "testWebhook": "Test Webhook"
+    },
+    "pagination": {
+      "total": "Total {{total}} items"
+    },
+    "messages": {
+      "loadError": "Failed to load delivery logs",
+      "retryQueued": "Retry queued successfully",
+      "retryError": "Failed to retry delivery",
+      "testError": "Webhook test failed"
+    },
+    "testModal": {
+      "title": "Test Webhook Endpoint",
+      "url": "Webhook URL",
+      "urlRequired": "Please enter a URL",
+      "urlInvalid": "Please enter a valid URL",
+      "secret": "Secret (optional)",
+      "secretPlaceholder": "HMAC signing secret",
+      "send": "Send Test",
+      "sending": "Sending...",
+      "resultSuccess": "Webhook test successful",
+      "resultFailed": "Webhook test failed",
+      "statusCode": "Status Code",
+      "responseTime": "Response Time",
+      "responseBody": "Response Body"
+    }
   }
 }

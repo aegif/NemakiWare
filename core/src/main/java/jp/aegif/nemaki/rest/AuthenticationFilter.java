@@ -45,6 +45,7 @@ import jakarta.servlet.FilterConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -207,6 +208,10 @@ public class AuthenticationFilter implements Filter {
 			// Fallback to standard header name used by UI
 			authToken = request.getHeader("AUTH_TOKEN");
 		}
+		// Also check for HttpOnly cookie (more secure than header for browser clients)
+		if (authToken == null || authToken.isEmpty()) {
+			authToken = getAuthTokenFromCookie(request);
+		}
 		String authTokenApp = request.getHeader(CallContextKey.AUTH_TOKEN_APP);
 		if (authTokenApp == null || authTokenApp.isEmpty()) {
 			authTokenApp = request.getHeader("AUTH_TOKEN_APP");
@@ -233,9 +238,34 @@ public class AuthenticationFilter implements Filter {
 				return false;
 			}
 		} else {
-			// Fall back to Basic auth
+			// Check Authorization header for Basic or Bearer authentication
 			String authHeader = request.getHeader("Authorization");
-			if (authHeader != null && authHeader.startsWith("Basic ")) {
+			if (authHeader != null && authHeader.startsWith("Bearer ")) {
+				// Bearer token authentication (standard OAuth2/JWT format)
+				String token = authHeader.substring("Bearer ".length()).trim();
+				if (token.isEmpty()) {
+					log.warn("Empty Bearer token");
+					return false;
+				}
+
+				log.info("=== AUTH: Bearer token found, validating for repository: " + repositoryId + " ===");
+
+				if (tokenService != null) {
+					String userName = tokenService.validateToken(app, repositoryId, token);
+					if (userName != null) {
+						log.info("=== AUTH: Bearer token validated successfully for user: " + userName + " ===");
+						ctxt.put(CallContext.USERNAME, userName);
+						ctxt.put(CallContextKey.AUTH_TOKEN, token);
+					} else {
+						log.info("=== AUTH: Invalid or expired Bearer token for repository: " + repositoryId + " ===");
+						return false;
+					}
+				} else {
+					log.info("=== AUTH: TokenService not available for Bearer token validation ===");
+					return false;
+				}
+			} else if (authHeader != null && authHeader.startsWith("Basic ")) {
+				// Basic authentication (username:password)
 				try {
 					String base64Credentials = authHeader.substring("Basic ".length()).trim();
 					String credentials = new String(java.util.Base64.getDecoder().decode(base64Credentials));
@@ -415,6 +445,29 @@ public class AuthenticationFilter implements Filter {
 		}
 
 		return enabled;
+	}
+
+	/**
+	 * Extract authentication token from HttpOnly cookie.
+	 * This is the preferred method for browser clients as it's more secure than headers.
+	 * 
+	 * @param request The HTTP request
+	 * @return The auth token from cookie, or null if not found
+	 */
+	private String getAuthTokenFromCookie(HttpServletRequest request) {
+		Cookie[] cookies = request.getCookies();
+		if (cookies != null) {
+			for (Cookie cookie : cookies) {
+				if ("nemaki_auth_token".equals(cookie.getName())) {
+					String value = cookie.getValue();
+					if (value != null && !value.isEmpty()) {
+						log.debug("=== AUTH: Found auth token in HttpOnly cookie ===");
+						return value;
+					}
+				}
+			}
+		}
+		return null;
 	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {

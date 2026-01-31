@@ -326,14 +326,15 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
                 loading={foldersLoading}
                 placeholder={t('filesystemImportExport.import.selectFolder')}
                 showSearch
-                optionFilterProp="children"
-              >
-                {folders.map(folder => (
-                  <Select.Option key={folder.id} value={folder.id}>
-                    <FolderOutlined /> {folder.name}
-                  </Select.Option>
-                ))}
-              </Select>
+                filterOption={(input, option) =>
+                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+                options={folders.map(folder => ({
+                  key: folder.id,
+                  value: folder.id,
+                  label: folder.name,
+                }))}
+              />
             </Form.Item>
             <Form.Item>
               <Space>
@@ -389,14 +390,15 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
                 loading={foldersLoading}
                 placeholder={t('filesystemImportExport.export.selectFolder')}
                 showSearch
-                optionFilterProp="children"
-              >
-                {folders.map(folder => (
-                  <Select.Option key={folder.id} value={folder.id}>
-                    <FolderOutlined /> {folder.name}
-                  </Select.Option>
-                ))}
-              </Select>
+                filterOption={(input, option) =>
+                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+                options={folders.map(folder => ({
+                  key: folder.id,
+                  value: folder.id,
+                  label: folder.name,
+                }))}
+              />
             </Form.Item>
             <Form.Item
               name="targetPath"

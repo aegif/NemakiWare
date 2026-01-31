@@ -1781,6 +1781,24 @@ public class ImportExportResource extends ResourceBase {
         List<Content> children = cs.getChildren(repositoryId, folder.getId());
 
         for (Content child : children) {
+            // Skip children with null name (e.g., system user items without a name field)
+            if (child.getName() == null) {
+                log.debug("Skipping child with null name (id=" + child.getId() + ", type=" + child.getType() + ")");
+                continue;
+            }
+
+            // Skip .system folder (contains internal user/group items, not exportable content)
+            if (child instanceof Folder && ".system".equals(child.getName())) {
+                log.debug("Skipping .system folder during export");
+                continue;
+            }
+
+            // Skip non-folder/non-document items (e.g., cmis:item user/group objects)
+            if (!(child instanceof Folder) && !(child instanceof Document)) {
+                log.debug("Skipping non-folder/non-document item: " + child.getName() + " (type=" + child.getType() + ")");
+                continue;
+            }
+
             java.nio.file.Path childPath = targetDir.resolve(child.getName());
 
             if (child instanceof Folder) {

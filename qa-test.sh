@@ -667,6 +667,214 @@ else
 fi
 
 echo
+
+echo "=== 24. v3.1 AUDIT METRICS TESTS ==="
+
+echo -n "Testing: Audit Metrics Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: Audit Metrics JSON Structure ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics" | python3 -c "import sys,json; d=json.load(sys.stdin); m=d.get('metrics',{}); print('ok' if 'audit.events.total' in m or 'total' in m else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo -n "Testing: Audit Metrics Has Links ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok' if '_links' in d and 'enabled' in d else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo -n "Testing: Audit Prometheus Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics/prometheus")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: Audit Prometheus Format ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics/prometheus" | grep -c "nemakiware_audit_events_total")
+if [[ "$result" -ge "1" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo -n "Testing: Audit Metrics Reset ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -X POST -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics/reset" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok' if 'message' in d else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo
+
+echo "=== 25. v3.1 HEALTH & OPERATIONS TESTS ==="
+
+echo -n "Testing: Health Check Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/health")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: Health Status Field ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -u admin:admin "http://localhost:8080/core/api/v1/cmis/health" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok' if d.get('status') in ['healthy','degraded','unhealthy'] else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo -n "Testing: Stats Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/repo/bedroom/stats")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: Prometheus Metrics Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/repo/bedroom/metrics")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: Jobs Status Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/repo/bedroom/jobs")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: Jobs Pause/Resume Cycle ... "
+total_tests=$((total_tests + 1))
+pause_status=$(curl -s -X POST -u admin:admin "http://localhost:8080/core/api/v1/cmis/repo/bedroom/jobs/pause" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
+resume_status=$(curl -s -X POST -u admin:admin "http://localhost:8080/core/api/v1/cmis/repo/bedroom/jobs/resume" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
+if [[ "$pause_status" == "paused" ]] && [[ "$resume_status" == "running" ]]; then
+    echo -e "${GREEN}PASSED${NC} (pause→$pause_status, resume→$resume_status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (pause=$pause_status, resume=$resume_status)"
+fi
+
+echo
+
+echo "=== 26. v3.1 MCP PROTOCOL TESTS ==="
+
+echo -n "Testing: MCP Info Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8080/core/mcp/info")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: MCP Health Endpoint ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s "http://localhost:8080/core/mcp/health" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok' if d.get('status')=='healthy' else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo -n "Testing: MCP Initialize (JSON-RPC) ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -X POST -H "Content-Type: application/json" -H "Authorization: Basic YWRtaW46YWRtaW4=" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"qa-test","version":"1.0"}}}' "http://localhost:8080/core/mcp/message" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok' if d.get('result',{}).get('serverInfo') else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo -n "Testing: MCP Tools List ... "
+total_tests=$((total_tests + 1))
+result=$(curl -s -X POST -H "Content-Type: application/json" -H "Authorization: Basic YWRtaW46YWRtaW4=" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' "http://localhost:8080/core/mcp/message" | python3 -c "import sys,json; d=json.load(sys.stdin); tools=d.get('result',{}).get('tools',[]); print('ok' if len(tools)>0 else 'fail')" 2>/dev/null)
+if [[ "$result" == "ok" ]]; then
+    echo -e "${GREEN}PASSED${NC}"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+echo
+
+echo "=== 27. v3.1 RAG GRACEFUL DEGRADATION TESTS ==="
+
+echo -n "Testing: RAG Health Endpoint ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/repositories/bedroom/rag/health")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: RAG Enabled Check ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/repositories/bedroom/search-engine/rag/enabled")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo -n "Testing: RAG Status Check ... "
+total_tests=$((total_tests + 1))
+status=$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin "http://localhost:8080/core/api/v1/cmis/repositories/bedroom/search-engine/rag/status")
+if [[ "$status" == "200" ]]; then
+    echo -e "${GREEN}PASSED${NC} (HTTP $status)"
+    success_count=$((success_count + 1))
+else
+    echo -e "${RED}FAILED${NC} (HTTP $status)"
+fi
+
+echo
+
 echo "=== TEST SUMMARY ==="
 echo "Tests passed: $success_count / $total_tests"
 echo "Success rate: $(( success_count * 100 / total_tests ))%"

@@ -28,7 +28,9 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.ws.rs.core.Context;
 
 import java.io.ByteArrayInputStream;
@@ -50,6 +52,12 @@ public class AuthTokenResource extends ResourceBase{
 	
 	@Context 
 	private HttpServletRequest request;
+	
+	@Context
+	private HttpServletResponse response;
+	
+	// Cookie name for HttpOnly auth token
+	public static final String AUTH_TOKEN_COOKIE_NAME = "nemaki_auth_token";
 	
 	@GET
 	@Path("/{userName}")
@@ -133,6 +141,59 @@ public class AuthTokenResource extends ResourceBase{
 		return result.toString();
 	}
 	
+	/**
+	 * Logout endpoint - clears the HttpOnly auth cookie and invalidates the token.
+	 * 
+	 * This endpoint should be called when the user logs out to ensure:
+	 * 1. The HttpOnly cookie is cleared (browser will delete it)
+	 * 2. The server-side token is invalidated via TokenService.invalidateToken()
+	 * 
+	 * @param repositoryId The repository ID
+	 * @param userName The username
+	 * @return JSON response indicating success/failure
+	 */
+	@POST
+	@Path("/{userName}/logout")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String logout(@PathParam("repositoryId") String repositoryId,
+	                    @PathParam("userName") String userName) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		logger.info("=== AuthTokenResource.logout() called for user: {} in repository: {} ===",
+		           userName, repositoryId);
+
+		// Clear the HttpOnly cookie
+		clearAuthTokenCookie();
+
+		// Invalidate the token on server side
+		// This ensures the token cannot be reused even if it hasn't expired yet
+		try {
+			TokenService tokenService = getTokenService();
+			if (tokenService != null) {
+				String app = ""; // Default app for React UI
+				tokenService.invalidateToken(app, repositoryId, userName);
+				logger.info("Token invalidated for user: {} in repository: {}", userName, repositoryId);
+			} else {
+				logger.warn("TokenService not available, token not invalidated for user: {}", userName);
+			}
+		} catch (Exception e) {
+			// Log but don't fail the logout - cookie is already cleared
+			logger.warn("Failed to invalidate token for user: {}, error: {}", userName, e.getMessage());
+		}
+
+		JSONObject obj = new JSONObject();
+		obj.put("repositoryId", repositoryId);
+		obj.put("userName", userName);
+		obj.put("message", "Logged out successfully");
+		result.put("value", obj);
+
+		logger.info("=== Logout successful for user: {} ===", userName);
+
+		return makeResult(status, result, errMsg).toString();
+	}
+
 	@POST
 	@Path("/{userName}/login")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -173,6 +234,10 @@ public class AuthTokenResource extends ResourceBase{
 			// Only generate token after successful authentication
 			String app = ""; // Default app for React UI
 			Token token = tokenService.setToken(app, repositoryId, userName);
+
+			// Set HttpOnly cookie for secure token storage
+			// This prevents XSS attacks from accessing the token via JavaScript
+			setAuthTokenCookie(token.getToken(), repositoryId);
 
 			JSONObject obj = new JSONObject();
 			obj.put("app", app);
@@ -242,6 +307,9 @@ public class AuthTokenResource extends ResourceBase{
 
 			String app = "";
 			Token token = tokenService.setToken(app, repositoryId, userName);
+
+			// Set HttpOnly cookie for secure token storage (same as login)
+			setAuthTokenCookie(token.getToken(), repositoryId);
 
 			JSONObject obj = new JSONObject();
 			obj.put("app", app);
@@ -313,6 +381,9 @@ public class AuthTokenResource extends ResourceBase{
 
 			String app = "";
 			Token token = tokenService.setToken(app, repositoryId, userName);
+
+			// Set HttpOnly cookie for secure token storage (same as login)
+			setAuthTokenCookie(token.getToken(), repositoryId);
 
 			JSONObject obj = new JSONObject();
 			obj.put("app", app);
@@ -574,6 +645,85 @@ public class AuthTokenResource extends ResourceBase{
 
 	public void setTokenService(TokenService tokenService) {
 		this.tokenService = tokenService;
+	}
+
+	/**
+	 * Set HttpOnly cookie with authentication token.
+	 * 
+	 * Security features:
+	 * - HttpOnly: Prevents JavaScript access (XSS protection)
+	 * - Secure: Only sent over HTTPS (when not localhost)
+	 * - SameSite=Strict: CSRF protection
+	 * - Path=/core: Scoped to application context
+	 * 
+	 * @param token The authentication token
+	 * @param repositoryId The repository ID (for logging)
+	 */
+	private void setAuthTokenCookie(String token, String repositoryId) {
+		if (response == null) {
+			logger.warn("HttpServletResponse not available, cannot set auth cookie");
+			return;
+		}
+
+		// Build cookie string manually to include SameSite attribute
+		// This avoids using setHeader which could overwrite other Set-Cookie headers
+		StringBuilder cookieBuilder = new StringBuilder();
+		cookieBuilder.append(AUTH_TOKEN_COOKIE_NAME).append("=").append(token);
+		cookieBuilder.append("; Path=/core");
+		cookieBuilder.append("; Max-Age=").append(24 * 60 * 60); // 24 hours
+		cookieBuilder.append("; HttpOnly");
+
+		// Set Secure flag for HTTPS connections (skip for localhost development)
+		String serverName = request != null ? request.getServerName() : "";
+		boolean isSecure = request != null && request.isSecure();
+		if (isSecure || (!serverName.equals("localhost") && !serverName.equals("127.0.0.1"))) {
+			cookieBuilder.append("; Secure");
+		}
+
+		// SameSite=Strict for CSRF protection
+		cookieBuilder.append("; SameSite=Strict");
+
+		// Use addHeader to avoid overwriting other Set-Cookie headers
+		response.addHeader("Set-Cookie", cookieBuilder.toString());
+
+		logger.debug("Auth token cookie set for repository: {}", repositoryId);
+	}
+
+	/**
+	 * Clear the authentication cookie on logout.
+	 * Sets the cookie with empty value and immediate expiration.
+	 * 
+	 * Uses the same format as setAuthTokenCookie() to ensure the cookie
+	 * is properly deleted (must match Path, SameSite, etc. attributes).
+	 */
+	private void clearAuthTokenCookie() {
+		if (response == null) {
+			logger.warn("HttpServletResponse not available, cannot clear auth cookie");
+			return;
+		}
+
+		// Build cookie string manually to include SameSite attribute
+		// Must match the attributes used when setting the cookie for proper deletion
+		StringBuilder cookieBuilder = new StringBuilder();
+		cookieBuilder.append(AUTH_TOKEN_COOKIE_NAME).append("=");
+		cookieBuilder.append("; Path=/core");
+		cookieBuilder.append("; Max-Age=0"); // Immediate expiration
+		cookieBuilder.append("; HttpOnly");
+
+		// Set Secure flag for HTTPS connections (skip for localhost development)
+		String serverName = request != null ? request.getServerName() : "";
+		boolean isSecure = request != null && request.isSecure();
+		if (isSecure || (!serverName.equals("localhost") && !serverName.equals("127.0.0.1"))) {
+			cookieBuilder.append("; Secure");
+		}
+
+		// SameSite must match the original cookie for proper deletion
+		cookieBuilder.append("; SameSite=Strict");
+
+		// Use addHeader to avoid overwriting other Set-Cookie headers
+		response.addHeader("Set-Cookie", cookieBuilder.toString());
+
+		logger.debug("Auth token cookie cleared");
 	}
 	
 	/**
