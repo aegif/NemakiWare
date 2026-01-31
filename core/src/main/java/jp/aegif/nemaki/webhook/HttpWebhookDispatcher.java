@@ -45,9 +45,8 @@ import jp.aegif.nemaki.businesslogic.impl.WebhookServiceImpl.WebhookDispatcher;
  * 
  * Security notes:
  * - SSRF protection blocks localhost, private networks, and cloud metadata endpoints
- * - DNS resolution is performed once at validation time; DNS rebinding attacks may bypass
- *   this protection if the DNS response changes between validation and connection.
- *   For higher security requirements, consider using an allowlist of permitted domains.
+ * - DNS resolution is performed once at validation time and the resolved IP is reused
+ *   for the actual connection, preventing DNS rebinding attacks.
  */
 public class HttpWebhookDispatcher implements WebhookDispatcher {
     
@@ -98,22 +97,31 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
                 return;
             }
             
-            // SSRF protection: validate hostname is not blocked
-            if (!isUrlSafe(targetUrl)) {
+            // SSRF protection: resolve and validate hostname
+            // Returns the resolved IP address to prevent DNS rebinding attacks
+            InetAddress resolvedAddress = resolveAndValidateUrl(targetUrl);
+            if (resolvedAddress == null) {
                 log.warn("Webhook dispatch skipped: URL blocked for security reasons - " + url);
                 return;
             }
             
-            connection = (HttpURLConnection) targetUrl.openConnection();
+            // Build URL using resolved IP to prevent DNS rebinding
+            int port = targetUrl.getPort() != -1 ? targetUrl.getPort() : targetUrl.getDefaultPort();
+            URL resolvedUrl = new URL(protocol, resolvedAddress.getHostAddress(), port,
+                    targetUrl.getFile());
+            
+            connection = (HttpURLConnection) resolvedUrl.openConnection();
             connection.setRequestMethod("POST");
             connection.setDoOutput(true);
             connection.setConnectTimeout(connectTimeout);
             connection.setReadTimeout(readTimeout);
             
             // SSRF protection: Disable automatic redirect following
-            // This prevents attackers from using 302/307 redirects to bypass URL validation
-            // and reach internal endpoints after the initial URL passes isUrlSafe() check
             connection.setInstanceFollowRedirects(false);
+            
+            // Set Host header to original hostname (required for virtual hosting)
+            connection.setRequestProperty("Host", targetUrl.getHost() +
+                    (targetUrl.getPort() != -1 ? ":" + targetUrl.getPort() : ""));
             
             // Set default headers
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
@@ -208,17 +216,17 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
     }
     
     /**
-     * Check if URL is safe to access (SSRF protection).
-     * Blocks requests to localhost, private networks, cloud metadata endpoints,
-     * multicast addresses, and IPv6 ULA (fc00::/7).
+     * Resolve and validate URL for SSRF protection.
+     * Returns the first safe resolved InetAddress, or null if the URL is blocked.
      * 
-     * Uses getAllByName() to check ALL resolved IP addresses, not just the first one.
-     * This prevents bypass via multiple A/AAAA records where some are safe and some are not.
+     * The returned address should be used for the actual connection to prevent
+     * DNS rebinding attacks (where DNS resolves to a different IP between validation
+     * and connection time).
      */
-    private boolean isUrlSafe(URL url) {
+    InetAddress resolveAndValidateUrl(URL url) {
         String host = url.getHost();
         if (host == null || host.isEmpty()) {
-            return false;
+            return null;
         }
         
         String hostLower = host.toLowerCase();
@@ -226,7 +234,7 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
         // Check against blocked hostnames
         if (BLOCKED_HOSTNAMES.contains(hostLower)) {
             log.debug("SSRF protection: blocked hostname " + host);
-            return false;
+            return null;
         }
         
         // Resolve hostname and check ALL resolved IP addresses
@@ -235,18 +243,17 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             
             for (InetAddress address : addresses) {
                 if (!isAddressSafe(address, host)) {
-                    return false;
+                    return null;
                 }
             }
             
+            // Return the first address for connection use
+            return addresses.length > 0 ? addresses[0] : null;
+            
         } catch (UnknownHostException e) {
-            // If we can't resolve the hostname, reject it for security
-            // This is a conservative approach - unresolvable hosts are blocked
             log.warn("SSRF protection: could not resolve hostname " + host + ", blocking for security");
-            return false;
+            return null;
         }
-        
-        return true;
     }
     
     /**

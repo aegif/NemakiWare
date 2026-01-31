@@ -45,19 +45,23 @@ import org.junit.Test;
 public class HttpWebhookDispatcherTest {
     
     private HttpWebhookDispatcher dispatcher;
-    private Method isUrlSafeMethod;
     private Method isAddressSafeMethod;
-    
+
     @Before
     public void setUp() throws Exception {
         dispatcher = new HttpWebhookDispatcher();
-        
+
         // Use reflection to access private methods for testing
-        isUrlSafeMethod = HttpWebhookDispatcher.class.getDeclaredMethod("isUrlSafe", URL.class);
-        isUrlSafeMethod.setAccessible(true);
-        
         isAddressSafeMethod = HttpWebhookDispatcher.class.getDeclaredMethod("isAddressSafe", InetAddress.class, String.class);
         isAddressSafeMethod.setAccessible(true);
+    }
+
+    /**
+     * Helper: check if URL is safe using the package-private resolveAndValidateUrl method.
+     * Returns true if a safe address was resolved, false otherwise.
+     */
+    private boolean isUrlSafe(URL url) {
+        return dispatcher.resolveAndValidateUrl(url) != null;
     }
     
     // ========================================
@@ -67,28 +71,28 @@ public class HttpWebhookDispatcherTest {
     @Test
     public void testBlocksLocalhost() throws Exception {
         URL url = new URL("http://localhost/webhook");
-        boolean result = (boolean) isUrlSafeMethod.invoke(dispatcher, url);
+        boolean result = isUrlSafe(url);
         assertFalse("localhost should be blocked", result);
     }
     
     @Test
     public void testBlocksLocalhostUppercase() throws Exception {
         URL url = new URL("http://LOCALHOST/webhook");
-        boolean result = (boolean) isUrlSafeMethod.invoke(dispatcher, url);
+        boolean result = isUrlSafe(url);
         assertFalse("LOCALHOST (uppercase) should be blocked", result);
     }
     
     @Test
     public void testBlocks127001() throws Exception {
         URL url = new URL("http://127.0.0.1/webhook");
-        boolean result = (boolean) isUrlSafeMethod.invoke(dispatcher, url);
+        boolean result = isUrlSafe(url);
         assertFalse("127.0.0.1 should be blocked", result);
     }
     
     @Test
     public void testBlocks0000() throws Exception {
         URL url = new URL("http://0.0.0.0/webhook");
-        boolean result = (boolean) isUrlSafeMethod.invoke(dispatcher, url);
+        boolean result = isUrlSafe(url);
         assertFalse("0.0.0.0 should be blocked", result);
     }
     
@@ -96,7 +100,7 @@ public class HttpWebhookDispatcherTest {
     public void testBlocksIPv6Loopback() throws Exception {
         // Note: URL with IPv6 requires brackets
         URL url = new URL("http://[::1]/webhook");
-        boolean result = (boolean) isUrlSafeMethod.invoke(dispatcher, url);
+        boolean result = isUrlSafe(url);
         assertFalse("::1 (IPv6 loopback) should be blocked", result);
     }
     
@@ -107,21 +111,21 @@ public class HttpWebhookDispatcherTest {
     @Test
     public void testBlocksAwsMetadataEndpoint() throws Exception {
         URL url = new URL("http://169.254.169.254/latest/meta-data/");
-        boolean result = (boolean) isUrlSafeMethod.invoke(dispatcher, url);
+        boolean result = isUrlSafe(url);
         assertFalse("AWS metadata endpoint should be blocked", result);
     }
     
     @Test
     public void testBlocksGcpMetadataInternal() throws Exception {
         URL url = new URL("http://metadata.google.internal/computeMetadata/v1/");
-        boolean result = (boolean) isUrlSafeMethod.invoke(dispatcher, url);
+        boolean result = isUrlSafe(url);
         assertFalse("GCP metadata.google.internal should be blocked", result);
     }
     
     @Test
     public void testBlocksGcpMetadataCom() throws Exception {
         URL url = new URL("http://metadata.google.com/computeMetadata/v1/");
-        boolean result = (boolean) isUrlSafeMethod.invoke(dispatcher, url);
+        boolean result = isUrlSafe(url);
         assertFalse("metadata.google.com should be blocked", result);
     }
     
@@ -285,7 +289,7 @@ public class HttpWebhookDispatcherTest {
     public void testBlocksNullHost() throws Exception {
         // Create a URL with empty host (edge case)
         URL url = new URL("http:///webhook");
-        boolean result = (boolean) isUrlSafeMethod.invoke(dispatcher, url);
+        boolean result = isUrlSafe(url);
         assertFalse("URL with empty host should be blocked", result);
     }
     

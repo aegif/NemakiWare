@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.rss;
 
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Calendar;
 import java.util.List;
@@ -169,7 +170,14 @@ public class RssTokenService {
         if (rssTokenDaoService != null) {
             return rssTokenDaoService.getByUserId(repositoryId, userId);
         }
-        return List.of();
+        // Fallback to in-memory cache lookup by userId
+        List<RssToken> result = new ArrayList<>();
+        for (RssToken token : tokenCache.values()) {
+            if (userId.equals(token.getUserId())) {
+                result.add(token);
+            }
+        }
+        return result;
     }
     
     /**

@@ -118,6 +118,18 @@
 	<!-- No-op Webhook Dispatcher for testing/development -->
 	<bean id="noopWebhookDispatcher" class="jp.aegif.nemaki.webhook.NoopWebhookDispatcher" />
 
+	<!-- RSS Feed Services -->
+	<bean id="rssFeedGenerator" class="jp.aegif.nemaki.rss.RssFeedGenerator" />
+	<bean id="rssFeedService" class="jp.aegif.nemaki.rss.RssFeedService">
+		<property name="contentService">
+			<ref bean="ContentService" />
+		</property>
+		<property name="contentDaoService">
+			<ref bean="ContentDaoService" />
+		</property>
+	</bean>
+	<bean id="rssTokenService" class="jp.aegif.nemaki.rss.RssTokenService" />
+
 	<bean id="PrincipalService" class="org.springframework.aop.framework.ProxyFactoryBean">
 		<property name="proxyInterfaces">
 			<list>
