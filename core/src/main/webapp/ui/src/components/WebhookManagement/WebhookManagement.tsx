@@ -51,7 +51,6 @@ import {
   SendOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
-  ClockCircleOutlined,
   ExperimentOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -121,7 +120,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       );
 
       if (response.status === 401 || response.status === 403) {
-        handleAuthError();
+        handleAuthError(null);
         return;
       }
 
@@ -151,7 +150,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       );
 
       if (response.status === 401 || response.status === 403) {
-        handleAuthError();
+        handleAuthError(null);
         return;
       }
 
@@ -187,7 +186,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       );
 
       if (response.status === 401 || response.status === 403) {
-        handleAuthError();
+        handleAuthError(null);
         return;
       }
 

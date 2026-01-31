@@ -16,11 +16,9 @@ import {
   Alert,
   Tabs,
   Form,
-  Spin,
   Descriptions,
   Typography,
   Select,
-  Progress,
   Checkbox
 } from 'antd';
 import {
@@ -80,7 +78,7 @@ interface ImportExportResult {
 
 export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ repositoryId }) => {
   const { t } = useTranslation();
-  const { authToken, handleAuthError } = useAuth();
+  const { handleAuthError } = useAuth();
   const [loading, setLoading] = useState(false);
   const [folders, setFolders] = useState<CMISObject[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(false);
@@ -98,7 +96,7 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
       const rootFolder = await cmisService.getRootFolder(repositoryId);
       if (rootFolder) {
         const children = await cmisService.getChildren(repositoryId, rootFolder.id);
-        const folderList = children.filter(child => child.baseTypeId === 'cmis:folder');
+        const folderList = children.filter(child => child.baseType === 'cmis:folder');
         setFolders([rootFolder, ...folderList]);
       }
     } catch (error: unknown) {
