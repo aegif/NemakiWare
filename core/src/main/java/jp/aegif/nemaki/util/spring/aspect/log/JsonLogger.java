@@ -491,8 +491,9 @@ public class JsonLogger {
 				//merge input
 				Map<String, ValueConfig> globalInput  = globalConfig.getInput();
 				if(globalInput != null){
-					for(String key : globalInput.keySet()){
-						ValueConfig globalEachInput = globalInput.get(key);
+					for(Map.Entry<String, ValueConfig> entry : globalInput.entrySet()){
+						String key = entry.getKey();
+						ValueConfig globalEachInput = entry.getValue();
 						ValueConfig thisEachInput = input.get(key);
 						if(thisEachInput == null){
 							input.put(key, globalEachInput);
@@ -552,11 +553,12 @@ public class JsonLogger {
 					}
 					if(other.getProperties() != null){
 						Map<String, Boolean> globalProperties = other.getProperties();
-						for(String key : globalProperties.keySet()){
+						for(Map.Entry<String, Boolean> entry : globalProperties.entrySet()){
+							String key = entry.getKey();
 							if(this.getProperties().get(key) == null){
-								this.getProperties().put(key, globalProperties.get(key));
+								this.getProperties().put(key, entry.getValue());
 							}
-							
+
 						}
 					}
 				}

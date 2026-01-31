@@ -384,7 +384,7 @@ private ContentService getContentServiceSafe() {
 				if (lastName != null) map.put("nemaki:lastName", lastName);
 				if (email != null) map.put("nemaki:email", email);
 				List<Property> properties = new ArrayList<>();
-				for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+				for(Map.Entry<String, Object> entry : map.entrySet()) properties.add(new Property(entry.getKey(), entry.getValue()));
 				user.setSubTypeProperties(properties);
 
 				setFirstSignature(httpRequest, user);
@@ -475,7 +475,7 @@ private ContentService getContentServiceSafe() {
 					if (lastName != null) map.put("nemaki:lastName", lastName);
 					if (email != null) map.put("nemaki:email", email);
 					List<Property> properties = new ArrayList<>();
-					for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+					for(Map.Entry<String, Object> entry : map.entrySet()) properties.add(new Property(entry.getKey(), entry.getValue()));
 					user.setSubTypeProperties(properties);
 
 					setFirstSignature(httpRequest, user);
@@ -563,9 +563,9 @@ private ContentService getContentServiceSafe() {
 						map.put("nemaki:lastName", lastName);
 					if (email != null)
 						map.put("nemaki:email", email);
-						
+
 					List<Property> properties = new ArrayList<>();
-					for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+					for(Map.Entry<String, Object> entry : map.entrySet()) properties.add(new Property(entry.getKey(), entry.getValue()));
 					user.setSubTypeProperties(properties);
 
 					// Update password if provided
@@ -872,7 +872,7 @@ private ContentService getContentServiceSafe() {
 				}
 			}
 			List<Property> properties = new ArrayList<>();
-			for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+			for(Map.Entry<String, Object> entry : map.entrySet()) properties.add(new Property(entry.getKey(), entry.getValue()));
 			user.setSubTypeProperties(properties);
 
 

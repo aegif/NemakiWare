@@ -202,10 +202,10 @@ public class UserController {
             if (firstName != null) props.put("nemaki:firstName", firstName);
             if (lastName != null) props.put("nemaki:lastName", lastName);
             if (email != null) props.put("nemaki:email", email);
-            
+
             List<Property> properties = new ArrayList<>();
-            for (String key : props.keySet()) {
-                properties.add(new Property(key, props.get(key)));
+            for (Map.Entry<String, Object> entry : props.entrySet()) {
+                properties.add(new Property(entry.getKey(), entry.getValue()));
             }
             user.setSubTypeProperties(properties);
             
@@ -271,10 +271,10 @@ public class UserController {
             if (firstName != null) propMap.put("nemaki:firstName", firstName);
             if (lastName != null) propMap.put("nemaki:lastName", lastName);
             if (email != null) propMap.put("nemaki:email", email);
-            
+
             List<Property> properties = new ArrayList<>();
-            for (String key : propMap.keySet()) {
-                properties.add(new Property(key, propMap.get(key)));
+            for (Map.Entry<String, Object> entry : propMap.entrySet()) {
+                properties.add(new Property(entry.getKey(), entry.getValue()));
             }
             user.setSubTypeProperties(properties);
             

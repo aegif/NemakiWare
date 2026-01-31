@@ -302,35 +302,39 @@ public class BulkCheckInResource extends ResourceBase {
 				PropertiesImpl properties = new PropertiesImpl();
 
 				String docName = null;
-				for(Object key : propJson.keySet() ) {
+				for(Object obj : propJson.entrySet() ) {
 					// Note: cmis:createDate handling - currently processed as custom JAL date properties
+					@SuppressWarnings("unchecked")
+					Map.Entry<Object, Object> entry = (Map.Entry<Object, Object>) obj;
+					Object key = entry.getKey();
+					Object value = entry.getValue();
 					String keyStr = (String)key;
 					if (keyStr.startsWith("jal") && keyStr.endsWith("Date")) {
-						long v = (Long)propJson.get(key);
+						long v = (Long)value;
 						GregorianCalendar cal = new GregorianCalendar();
 						cal.setTime(new Date(v));
 						properties.addProperty(new PropertyDateTimeImpl(keyStr, cal));
 					}
 					else if ( keyStr.equals("cmis:objectTypeId")) {
-						String v = (String)propJson.get(key);
+						String v = (String)value;
 						properties.addProperty(new PropertyIdImpl(keyStr, v));
 					}
 					else if (keyStr.equals("checkInComment")) {
-						checkInComment = (String)propJson.get(key);
+						checkInComment = (String)value;
 					}
 					else if (keyStr.equals("isMajor")) {
-						isMajor = (Boolean)propJson.get(key);
+						isMajor = (Boolean)value;
 						if (log.isDebugEnabled()) {
 							log.debug("isMajor --> " + isMajor);
 						}
 					}
 					else {
-						String v = (String)propJson.get(key);
+						String v = (String)value;
 						properties.addProperty(new PropertyStringImpl(keyStr, v));
 					}
 
 					if ( keyStr.equals("cmis:name")) {
-						docName = (String)propJson.get(key);
+						docName = (String)value;
 					}
 				}
 

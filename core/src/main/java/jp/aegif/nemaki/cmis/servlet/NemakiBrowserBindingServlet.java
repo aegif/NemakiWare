@@ -403,11 +403,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 // Extract parameters for debugging if needed
                 try {
                     java.util.Map<String, String[]> params = finalRequest.getParameterMap();
-                    
+
                     // Check for secondary type properties specifically for debugging
-                    for (String paramName : params.keySet()) {
+                    for (Map.Entry<String, String[]> entry : params.entrySet()) {
+                        String paramName = entry.getKey();
                         if (paramName.startsWith("propertyId") || paramName.startsWith("propertyValue")) {
-                            log.debug("Property parameter: " + paramName + " = " + java.util.Arrays.toString(params.get(paramName)));
+                            log.debug("Property parameter: " + paramName + " = " + java.util.Arrays.toString(entry.getValue()));
                         }
                         if (paramName.contains("secondaryObjectType") || paramName.contains("SecondaryType")) {
                             log.debug("Secondary type parameter: " + paramName + " = " + java.util.Arrays.toString(params.get(paramName)));
@@ -2713,11 +2714,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         try {
             // DEBUG: Show all parameters received
-            
+
             java.util.Map<String, String[]> paramMap = request.getParameterMap();
-            for (String paramName : paramMap.keySet()) {
-                String[] values = paramMap.get(paramName);
-                
+            for (Map.Entry<String, String[]> entry : paramMap.entrySet()) {
+                String paramName = entry.getKey();
+                String[] values = entry.getValue();
+
             }
             
             // Extract parent folder ID - Browser Binding uses 'objectId' parameter for parent folder
@@ -3824,15 +3826,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     private java.util.Map<String, Object> extractPropertiesFromRequest(HttpServletRequest request) {
         java.util.Map<String, Object> properties = new java.util.HashMap<>();
         java.util.Map<String, String[]> paramMap = request.getParameterMap();
-        
+
         // Find all propertyId parameters and match them with propertyValue parameters
-        for (String paramName : paramMap.keySet()) {
+        for (Map.Entry<String, String[]> entry : paramMap.entrySet()) {
+            String paramName = entry.getKey();
             if (paramName.startsWith("propertyId[") && paramName.endsWith("]")) {
                 // Extract index from propertyId[N]
                 String indexStr = paramName.substring("propertyId[".length(), paramName.length() - 1);
                 String singleValueParamName = "propertyValue[" + indexStr + "]";
-                
-                String[] idValues = paramMap.get(paramName);
+
+                String[] idValues = entry.getValue();
                 String[] propValues = paramMap.get(singleValueParamName);
                 
                 if (idValues != null && idValues.length > 0) {
@@ -3847,11 +3850,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         // Multi-value properties are sent as propertyValue[0][0], propertyValue[0][1], etc.
                         java.util.List<String> multiValues = new java.util.ArrayList<>();
                         String multiValuePrefix = "propertyValue[" + indexStr + "][";
-                        
+
                         // Collect all multi-value entries for this property
-                        for (String mvParamName : paramMap.keySet()) {
+                        for (Map.Entry<String, String[]> mvEntry : paramMap.entrySet()) {
+                            String mvParamName = mvEntry.getKey();
                             if (mvParamName.startsWith(multiValuePrefix) && mvParamName.endsWith("]")) {
-                                String[] mvValues = paramMap.get(mvParamName);
+                                String[] mvValues = mvEntry.getValue();
                                 if (mvValues != null && mvValues.length > 0) {
                                     multiValues.add(mvValues[0]);
                                 }

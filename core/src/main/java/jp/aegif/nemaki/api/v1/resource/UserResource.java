@@ -332,10 +332,10 @@ public class UserResource {
             if (request.getFirstName() != null) propMap.put("nemaki:firstName", request.getFirstName());
             if (request.getLastName() != null) propMap.put("nemaki:lastName", request.getLastName());
             if (request.getEmail() != null) propMap.put("nemaki:email", request.getEmail());
-            
+
             List<Property> properties = new ArrayList<>();
-            for (String key : propMap.keySet()) {
-                properties.add(new Property(key, propMap.get(key)));
+            for (Map.Entry<String, Object> entry : propMap.entrySet()) {
+                properties.add(new Property(entry.getKey(), entry.getValue()));
             }
             user.setSubTypeProperties(properties);
             
@@ -414,10 +414,10 @@ public class UserResource {
             if (request.getFirstName() != null) propMap.put("nemaki:firstName", request.getFirstName());
             if (request.getLastName() != null) propMap.put("nemaki:lastName", request.getLastName());
             if (request.getEmail() != null) propMap.put("nemaki:email", request.getEmail());
-            
+
             List<Property> properties = new ArrayList<>();
-            for (String key : propMap.keySet()) {
-                properties.add(new Property(key, propMap.get(key)));
+            for (Map.Entry<String, Object> entry : propMap.entrySet()) {
+                properties.add(new Property(entry.getKey(), entry.getValue()));
             }
             user.setSubTypeProperties(properties);
             

@@ -182,8 +182,11 @@ public class WebhookConfigParser {
         
         if (value instanceof JSONObject) {
             JSONObject headersObj = (JSONObject) value;
-            for (Object headerKey : headersObj.keySet()) {
-                Object headerValue = headersObj.get(headerKey);
+            for (Object obj : headersObj.entrySet()) {
+                @SuppressWarnings("unchecked")
+                Map.Entry<Object, Object> entry = (Map.Entry<Object, Object>) obj;
+                Object headerKey = entry.getKey();
+                Object headerValue = entry.getValue();
                 if (headerKey != null && headerValue != null) {
                     result.put(headerKey.toString(), headerValue.toString());
                 }

@@ -232,8 +232,9 @@ public class TypeManagerImpl implements TypeManager {
 				
 				if (log.isDebugEnabled()) {
 					log.debug("FINAL TYPES STATE: " + TYPES.keySet() + " with sizes:");
-					for (String repo : TYPES.keySet()) {
-						Map<String, TypeDefinitionContainer> repoTypes = TYPES.get(repo);
+					for (Map.Entry<String, Map<String, TypeDefinitionContainer>> entry : TYPES.entrySet()) {
+						String repo = entry.getKey();
+						Map<String, TypeDefinitionContainer> repoTypes = entry.getValue();
 						log.debug("  " + repo + ": " + (repoTypes != null ? repoTypes.size() : 0) + " types");
 					}
 				}
@@ -384,8 +385,9 @@ public class TypeManagerImpl implements TypeManager {
 		// Debug: Log final state
 		if (log.isDebugEnabled()) {
 			log.debug("generate() COMPLETE - TYPES keys: " + TYPES.keySet());
-			for (String repo : TYPES.keySet()) {
-				Map<String, TypeDefinitionContainer> repoTypes = TYPES.get(repo);
+			for (Map.Entry<String, Map<String, TypeDefinitionContainer>> entry : TYPES.entrySet()) {
+				String repo = entry.getKey();
+				Map<String, TypeDefinitionContainer> repoTypes = entry.getValue();
 				log.debug("Repository " + repo + " has " + (repoTypes != null ? repoTypes.size() : 0) + " types");
 				if (repoTypes != null && repoTypes.size() > 0) {
 					log.debug("First few type IDs in " + repo + ": " + 
@@ -624,14 +626,15 @@ public class TypeManagerImpl implements TypeManager {
 			log.info("Cleared SHARED_TYPE_DEFINITIONS and SHARED_PROPERTY_DEFINITIONS caches to ensure consistency after refresh");
 
 			log.info("Starting cache regeneration...");
-			
+
 			generate();
-			
+
 			log.info("Cache regeneration complete");
-			
+
 			// Log final cache state
-			for (String repositoryId : TYPES.keySet()) {
-				Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+			for (Map.Entry<String, Map<String, TypeDefinitionContainer>> entry : TYPES.entrySet()) {
+				String repositoryId = entry.getKey();
+				Map<String, TypeDefinitionContainer> types = entry.getValue();
 				log.debug("NEMAKI TYPE DEBUG: Repository " + repositoryId + " now has " + types.size() + " types in cache");
 				log.debug("NEMAKI TYPE DEBUG: Type IDs after refresh: " + types.keySet());
 			}
@@ -2859,8 +2862,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	public List<TypeDefinitionContainer> getRootTypes(String repositoryId) {
 		ensureInitialized();
 		List<TypeDefinitionContainer> rootTypes = new ArrayList<TypeDefinitionContainer>();
-		for (String key : basetypes.keySet()) {
-			rootTypes.add(basetypes.get(key));
+		for (Map.Entry<String, TypeDefinitionContainer> entry : basetypes.entrySet()) {
+			rootTypes.add(entry.getValue());
 		}
 		return rootTypes;
 	}
@@ -3311,23 +3314,24 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (typeId == null) {
 			// CRITICAL DEBUG: Base types path
 			log.info("*** getTypesChildren: Processing base types (typeId=null) ***");
-			
+
 			// CRITICAL FIX: Simplified and corrected base types paging logic
 			int currentIndex = 0;
 			int returnedCount = 0;
-			for (String key : basetypes.keySet()) {
+			for (Map.Entry<String, TypeDefinitionContainer> entry : basetypes.entrySet()) {
+				String key = entry.getKey();
 				// Skip items before the skip count
 				if (currentIndex < skip) {
 					currentIndex++;
 					continue;
 				}
-				
+
 				// Stop if we've returned enough items
 				if (returnedCount >= max) {
 					break;
 				}
-				
-				TypeDefinitionContainer type = basetypes.get(key);
+
+				TypeDefinitionContainer type = entry.getValue();
 				TypeDefinition typeDef = type.getTypeDefinition();
 				
 				// CRITICAL DEBUG: Property definition processing for base types
