@@ -296,15 +296,16 @@ public class WebhookEventMatcherTest {
     }
     
     @Test
-    public void testFindMatchingConfigsWithFutureEventType() {
-        // CHILD_CREATED is a future event type (Phase 3+), not supported in Phase 1
+    public void testFindMatchingConfigsWithChildEventType() {
+        // CHILD_CREATED is a supported event type (Phase 4)
         List<WebhookConfig> configs = Arrays.asList(
             createConfig("webhook-1", true, Arrays.asList("CHILD_CREATED"))
         );
-        
+
         List<WebhookConfig> matches = matcher.findMatchingConfigs(configs, "CHILD_CREATED");
-        
-        assertTrue("Should return empty list for future event types not yet supported", matches.isEmpty());
+
+        assertEquals("Should match CHILD_CREATED event type", 1, matches.size());
+        assertEquals("webhook-1", matches.get(0).getId());
     }
     
     // ========================================

@@ -183,6 +183,12 @@ public class RssTokenService {
         if (rssTokenDaoService != null) {
             return rssTokenDaoService.getById(repositoryId, tokenId);
         }
+        // Fallback to in-memory cache lookup by ID
+        for (RssToken token : tokenCache.values()) {
+            if (tokenId.equals(token.getId())) {
+                return token;
+            }
+        }
         return null;
     }
     

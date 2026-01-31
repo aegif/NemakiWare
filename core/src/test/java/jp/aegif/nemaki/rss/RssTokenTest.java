@@ -21,7 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rss;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.Assert.*;
 
 import java.util.Arrays;
 import java.util.Calendar;
@@ -29,12 +29,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
-class RssTokenTest {
+public class RssTokenTest {
     
     @Test
-    void testTokenBuilder() {
+    public void testTokenBuilder() {
         Calendar now = Calendar.getInstance();
         Calendar expires = Calendar.getInstance();
         expires.add(Calendar.DAY_OF_MONTH, 30);
@@ -71,7 +71,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testIsExpired_NotExpired() {
+    public void testIsExpired_NotExpired() {
         Calendar expires = Calendar.getInstance();
         expires.add(Calendar.DAY_OF_MONTH, 30);
         
@@ -83,7 +83,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testIsExpired_Expired() {
+    public void testIsExpired_Expired() {
         Calendar expires = Calendar.getInstance();
         expires.add(Calendar.DAY_OF_MONTH, -1);
         
@@ -95,7 +95,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testIsExpired_NullExpiry() {
+    public void testIsExpired_NullExpiry() {
         RssToken token = new RssToken.Builder()
             .build();
         
@@ -103,7 +103,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testIsValid_ValidToken() {
+    public void testIsValid_ValidToken() {
         Calendar expires = Calendar.getInstance();
         expires.add(Calendar.DAY_OF_MONTH, 30);
         
@@ -116,7 +116,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testIsValid_DisabledToken() {
+    public void testIsValid_DisabledToken() {
         Calendar expires = Calendar.getInstance();
         expires.add(Calendar.DAY_OF_MONTH, 30);
         
@@ -129,7 +129,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testIsValid_ExpiredToken() {
+    public void testIsValid_ExpiredToken() {
         Calendar expires = Calendar.getInstance();
         expires.add(Calendar.DAY_OF_MONTH, -1);
         
@@ -142,7 +142,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testHasAccessToFolder() {
+    public void testHasAccessToFolder() {
         List<String> folderIds = Arrays.asList("folder1", "folder2", "folder3");
         
         RssToken token = new RssToken.Builder()
@@ -156,7 +156,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testHasAccessToFolder_NullFolderIds() {
+    public void testHasAccessToFolder_NullFolderIds() {
         RssToken token = new RssToken.Builder()
             .build();
         
@@ -164,7 +164,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testHasAccessToDocument() {
+    public void testHasAccessToDocument() {
         List<String> documentIds = Arrays.asList("doc1", "doc2");
         
         RssToken token = new RssToken.Builder()
@@ -177,7 +177,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testHasAccessToDocument_NullDocumentIds() {
+    public void testHasAccessToDocument_NullDocumentIds() {
         RssToken token = new RssToken.Builder()
             .build();
         
@@ -185,7 +185,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testIncludesEvent() {
+    public void testIncludesEvent() {
         Set<String> events = new HashSet<>(Arrays.asList("CREATED", "UPDATED"));
         
         RssToken token = new RssToken.Builder()
@@ -198,7 +198,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testIncludesEvent_NullEvents() {
+    public void testIncludesEvent_NullEvents() {
         RssToken token = new RssToken.Builder()
             .build();
         
@@ -208,7 +208,7 @@ class RssTokenTest {
     }
     
     @Test
-    void testIncludesEvent_EmptyEvents() {
+    public void testIncludesEvent_EmptyEvents() {
         RssToken token = new RssToken.Builder()
             .events(new HashSet<>())
             .build();

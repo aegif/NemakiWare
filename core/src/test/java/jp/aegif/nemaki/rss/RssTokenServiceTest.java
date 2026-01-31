@@ -21,7 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rss;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.Assert.*;
 
 import java.util.Arrays;
 import java.util.Calendar;
@@ -29,22 +29,22 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.Before;
+import org.junit.Test;
 
-class RssTokenServiceTest {
+public class RssTokenServiceTest {
     
     private RssTokenService tokenService;
     
-    @BeforeEach
-    void setUp() {
+    @Before
+    public void setUp() {
         tokenService = new RssTokenService();
         tokenService.setDefaultExpiryDays(30);
         tokenService.setMaxExpiryDays(365);
     }
     
     @Test
-    void testGenerateToken_Basic() {
+    public void testGenerateToken_Basic() {
         String repositoryId = "repo1";
         String userId = "user1";
         String name = "Test Token";
@@ -72,7 +72,7 @@ class RssTokenServiceTest {
     }
     
     @Test
-    void testGenerateToken_WithCustomExpiry() {
+    public void testGenerateToken_WithCustomExpiry() {
         String repositoryId = "repo1";
         String userId = "user1";
         String name = "Test Token";
@@ -91,7 +91,7 @@ class RssTokenServiceTest {
     }
     
     @Test
-    void testGenerateToken_ExpiryExceedsMax() {
+    public void testGenerateToken_ExpiryExceedsMax() {
         String repositoryId = "repo1";
         String userId = "user1";
         String name = "Test Token";
@@ -110,7 +110,7 @@ class RssTokenServiceTest {
     }
     
     @Test
-    void testValidateToken_Valid() {
+    public void testValidateToken_Valid() {
         RssToken generatedToken = tokenService.generateToken(
             "repo1", "user1", "Test Token", null, null, null, null);
         
@@ -122,28 +122,28 @@ class RssTokenServiceTest {
     }
     
     @Test
-    void testValidateToken_NullToken() {
+    public void testValidateToken_NullToken() {
         RssToken validatedToken = tokenService.validateToken(null);
         
         assertNull(validatedToken);
     }
     
     @Test
-    void testValidateToken_EmptyToken() {
+    public void testValidateToken_EmptyToken() {
         RssToken validatedToken = tokenService.validateToken("");
         
         assertNull(validatedToken);
     }
     
     @Test
-    void testValidateToken_InvalidToken() {
+    public void testValidateToken_InvalidToken() {
         RssToken validatedToken = tokenService.validateToken("invalid-token-value");
         
         assertNull(validatedToken);
     }
     
     @Test
-    void testDisableToken() {
+    public void testDisableToken() {
         RssToken generatedToken = tokenService.generateToken(
             "repo1", "user1", "Test Token", null, null, null, null);
         
@@ -158,13 +158,13 @@ class RssTokenServiceTest {
     }
     
     @Test
-    void testDisableToken_NotFound() {
+    public void testDisableToken_NotFound() {
         boolean disabled = tokenService.disableToken("repo1", "non-existent-token-id");
         assertFalse(disabled);
     }
     
     @Test
-    void testDeleteToken() {
+    public void testDeleteToken() {
         RssToken generatedToken = tokenService.generateToken(
             "repo1", "user1", "Test Token", null, null, null, null);
         
@@ -179,13 +179,13 @@ class RssTokenServiceTest {
     }
     
     @Test
-    void testDeleteToken_NotFound() {
+    public void testDeleteToken_NotFound() {
         boolean deleted = tokenService.deleteToken("repo1", "non-existent-token-id");
         assertFalse(deleted);
     }
     
     @Test
-    void testRefreshToken() {
+    public void testRefreshToken() {
         RssToken generatedToken = tokenService.generateToken(
             "repo1", "user1", "Test Token", null, null, null, 7);
         
@@ -198,13 +198,13 @@ class RssTokenServiceTest {
     }
     
     @Test
-    void testRefreshToken_NotFound() {
+    public void testRefreshToken_NotFound() {
         RssToken refreshedToken = tokenService.refreshToken("repo1", "non-existent-token-id", 30);
         assertNull(refreshedToken);
     }
     
     @Test
-    void testTokenUniqueness() {
+    public void testTokenUniqueness() {
         RssToken token1 = tokenService.generateToken(
             "repo1", "user1", "Token 1", null, null, null, null);
         RssToken token2 = tokenService.generateToken(
@@ -215,7 +215,7 @@ class RssTokenServiceTest {
     }
     
     @Test
-    void testClearExpiredTokens() {
+    public void testClearExpiredTokens() {
         tokenService.clearExpiredTokens();
     }
 }

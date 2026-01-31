@@ -21,27 +21,27 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rss;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.Assert.*;
 
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.Before;
+import org.junit.Test;
 
-class RssFeedGeneratorTest {
+public class RssFeedGeneratorTest {
     
     private RssFeedGenerator generator;
     
-    @BeforeEach
-    void setUp() {
+    @Before
+    public void setUp() {
         generator = new RssFeedGenerator();
         generator.setBaseUrl("http://localhost:8080/nemakiware");
     }
     
     @Test
-    void testGenerateRss_EmptyItems() {
+    public void testGenerateRss_EmptyItems() {
         List<RssFeedItem> items = new ArrayList<>();
         
         String rss = generator.generateRss("Test Feed", "Test Description", "http://example.com", items);
@@ -57,7 +57,7 @@ class RssFeedGeneratorTest {
     }
     
     @Test
-    void testGenerateRss_WithItems() {
+    public void testGenerateRss_WithItems() {
         List<RssFeedItem> items = new ArrayList<>();
         
         Calendar pubDate = Calendar.getInstance();
@@ -90,7 +90,7 @@ class RssFeedGeneratorTest {
     }
     
     @Test
-    void testGenerateAtom_EmptyItems() {
+    public void testGenerateAtom_EmptyItems() {
         List<RssFeedItem> items = new ArrayList<>();
         
         String atom = generator.generateAtom("Test Feed", "Test Subtitle", "urn:test:feed:1", items);
@@ -105,7 +105,7 @@ class RssFeedGeneratorTest {
     }
     
     @Test
-    void testGenerateAtom_WithItems() {
+    public void testGenerateAtom_WithItems() {
         List<RssFeedItem> items = new ArrayList<>();
         
         Calendar pubDate = Calendar.getInstance();
@@ -138,7 +138,7 @@ class RssFeedGeneratorTest {
     }
     
     @Test
-    void testGenerateRss_MultipleItems() {
+    public void testGenerateRss_MultipleItems() {
         List<RssFeedItem> items = new ArrayList<>();
         
         Calendar pubDate = Calendar.getInstance();
@@ -162,7 +162,7 @@ class RssFeedGeneratorTest {
     }
     
     @Test
-    void testGenerateRss_ItemWithoutOptionalFields() {
+    public void testGenerateRss_ItemWithoutOptionalFields() {
         List<RssFeedItem> items = new ArrayList<>();
         
         RssFeedItem item = new RssFeedItem.Builder()
