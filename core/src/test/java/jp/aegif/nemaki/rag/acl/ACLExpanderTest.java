@@ -165,6 +165,7 @@ public class ACLExpanderTest {
         when(principalService.getUserById(REPO_ID, "group1")).thenReturn(null);
         
         Group group1 = mock(Group.class);
+        when(group1.getGroupId()).thenReturn("group1");
         when(group1.getUsers()).thenReturn(Arrays.asList("user1", "user2"));
         when(principalService.getGroupById(REPO_ID, "group1")).thenReturn(group1);
         
@@ -190,12 +191,14 @@ public class ACLExpanderTest {
         when(principalService.getUserById(REPO_ID, "parentGroup")).thenReturn(null);
         
         Group parentGroup = mock(Group.class);
+        when(parentGroup.getGroupId()).thenReturn("parentGroup");
         when(parentGroup.getUsers()).thenReturn(Arrays.asList("childGroup", "user1"));
         when(principalService.getGroupById(REPO_ID, "parentGroup")).thenReturn(parentGroup);
-        
+
         when(principalService.getUserById(REPO_ID, "childGroup")).thenReturn(null);
-        
+
         Group childGroup = mock(Group.class);
+        when(childGroup.getGroupId()).thenReturn("childGroup");
         when(childGroup.getUsers()).thenReturn(Arrays.asList("user2"));
         when(principalService.getGroupById(REPO_ID, "childGroup")).thenReturn(childGroup);
         
