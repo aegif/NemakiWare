@@ -314,14 +314,12 @@ public class ObjectServiceImpl implements ObjectService {
 
 			// Try to read first few bytes to verify stream contains data
 			if (is.markSupported()) {
-				is.mark(100);
-				byte[] testBuffer = new byte[50];
-				int testBytesRead = is.read(testBuffer);
-				if (testBytesRead > 0) {
-					String preview = new String(testBuffer, 0, testBytesRead, "UTF-8");
-				}
+				is.mark(1);
+				int testBytesRead = is.read(new byte[1]);
 				is.reset();
-			} else {
+				if (log.isDebugEnabled()) {
+					log.debug("InputStream data check: " + (testBytesRead > 0 ? "has data" : "empty"));
+				}
 			}
 		} catch (Exception debugEx) {
 			if (log.isDebugEnabled()) {

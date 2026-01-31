@@ -222,10 +222,8 @@ private ContentService getContentServiceSafe() {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response list(@PathParam("repositoryId") String repositoryId) {
 		log.debug("UserItemResource.list() called for repository: " + repositoryId);
-		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray listJSON = new JSONArray();
-		JSONArray errMsg = new JSONArray();
 
 		// Get ContentService from Spring context
 		ContentService contentService = getContentService();
