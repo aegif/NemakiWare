@@ -162,6 +162,9 @@ public class ObjectServiceImpl implements ObjectService {
 				}
 			}
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+			if (content == null) {
+				return null;
+			}
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
 					content);
 			log.info(MessageFormat.format("ObjcetService#getObject permissionDenied check success: Repo={0}, Id={1}", repositoryId, objectId));

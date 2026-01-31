@@ -263,6 +263,10 @@ public class CompileServiceImpl implements CompileService {
 			Map<String, String> propertyAliases, Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includeAcl) {
 
+		if (fullObjectData == null) {
+			return null;
+		}
+
 		// Debug logging for BaseTypeId checking
 		if (log.isDebugEnabled()) {
 			log.debug("filterObjectData called: includeAllowableActions=" + includeAllowableActions +

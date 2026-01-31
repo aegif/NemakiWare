@@ -1773,6 +1773,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			ensureInitialized();
 			types = TYPES.get(repositoryId);
 		}
+		if (types == null) {
+			types = java.util.Collections.emptyMap();
+			log.warn("buildDocumentTypeDefinitionFromDB: types map is null for repository " + repositoryId + ", using empty map");
+		}
 
 		DocumentTypeDefinitionImpl type = new DocumentTypeDefinitionImpl();
 
@@ -1842,7 +1846,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			ensureInitialized();
 			types = TYPES.get(repositoryId);
 		}
-		
+		if (types == null) {
+			types = java.util.Collections.emptyMap();
+			log.warn("buildFolderTypeDefinitionFromDB: types map is null for repository " + repositoryId + ", using empty map");
+		}
+
 		FolderTypeDefinitionImpl type = new FolderTypeDefinitionImpl();
 		FolderTypeDefinitionImpl parentType = (FolderTypeDefinitionImpl) types
 				.get(nemakiType.getParentId()).getTypeDefinition();
@@ -1874,7 +1882,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			ensureInitialized();
 			types = TYPES.get(repositoryId);
 		}
-		
+		if (types == null) {
+			types = java.util.Collections.emptyMap();
+			log.warn("buildRelationshipTypeDefinitionFromDB: types map is null for repository " + repositoryId + ", using empty map");
+		}
+
 		RelationshipTypeDefinitionImpl type = new RelationshipTypeDefinitionImpl();
 		RelationshipTypeDefinitionImpl parentType = (RelationshipTypeDefinitionImpl) types
 				.get(nemakiType.getParentId()).getTypeDefinition();
@@ -1910,7 +1922,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			ensureInitialized();
 			types = TYPES.get(repositoryId);
 		}
-		
+		if (types == null) {
+			types = java.util.Collections.emptyMap();
+			log.warn("buildPolicyTypeDefinitionFromDB: types map is null for repository " + repositoryId + ", using empty map");
+		}
+
 		PolicyTypeDefinitionImpl type = new PolicyTypeDefinitionImpl();
 		PolicyTypeDefinitionImpl parentType = (PolicyTypeDefinitionImpl) types
 				.get(nemakiType.getParentId()).getTypeDefinition();
@@ -1942,7 +1958,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			ensureInitialized();
 			types = TYPES.get(repositoryId);
 		}
-		
+		if (types == null) {
+			types = java.util.Collections.emptyMap();
+			log.warn("buildItemTypeDefinitionFromDB: types map is null for repository " + repositoryId + ", using empty map");
+		}
+
 		ItemTypeDefinitionImpl type = new ItemTypeDefinitionImpl();
 		ItemTypeDefinitionImpl parentType = (ItemTypeDefinitionImpl) types.get(
 				nemakiType.getParentId()).getTypeDefinition();
