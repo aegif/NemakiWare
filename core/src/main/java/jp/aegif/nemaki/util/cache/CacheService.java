@@ -82,6 +82,10 @@ public class CacheService {
 			try {
 				String terracottaUrl = propertyManager.readValue(
 						PropertyKey.CACHE_CLUSTERING_TERRACOTTA_URL);
+				if (terracottaUrl == null || terracottaUrl.trim().isEmpty()) {
+					throw new IllegalArgumentException(
+							"cache.clustering.terracotta.url is required when cache.clustering.enabled=true");
+				}
 				Class<?> clusteringClass = Class.forName(
 						"org.ehcache.clustered.client.config.builders.ClusteringServiceConfigurationBuilder");
 				java.lang.reflect.Method clusterMethod = clusteringClass.getMethod("cluster", URI.class);
