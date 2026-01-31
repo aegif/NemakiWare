@@ -52,8 +52,9 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
@@ -69,12 +70,8 @@ import java.util.logging.Logger;
 public class ItemResource {
     
     private static final Logger logger = Logger.getLogger(ItemResource.class.getName());
-    private static final SimpleDateFormat ISO_DATE_FORMAT;
-    
-    static {
-        ISO_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        ISO_DATE_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
-    }
+    private static final DateTimeFormatter ISO_DATE_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
     
     @Autowired
     private ObjectService objectService;
@@ -419,17 +416,17 @@ public class ItemResource {
     private String getDateProperty(Properties props, String propertyId) {
         PropertyData<?> prop = props.getProperties().get(propertyId);
         if (prop != null && prop.getFirstValue() instanceof GregorianCalendar) {
-            return ISO_DATE_FORMAT.format(((GregorianCalendar) prop.getFirstValue()).getTime());
+            return ISO_DATE_FORMAT.format(((GregorianCalendar) prop.getFirstValue()).toInstant());
         }
         return null;
     }
-    
+
     private PropertyValue mapToPropertyValue(PropertyData<?> prop) {
-        Object value = prop.getValues() != null && prop.getValues().size() > 1 
-                ? prop.getValues() 
+        Object value = prop.getValues() != null && prop.getValues().size() > 1
+                ? prop.getValues()
                 : prop.getFirstValue();
         if (value instanceof GregorianCalendar) {
-            value = ISO_DATE_FORMAT.format(((GregorianCalendar) value).getTime());
+            value = ISO_DATE_FORMAT.format(((GregorianCalendar) value).toInstant());
         }
         String type = inferPropertyType(prop);
         return new PropertyValue(value, type);
@@ -577,10 +574,11 @@ public class ItemResource {
     private GregorianCalendar convertToCalendar(Object value) {
         if (value instanceof GregorianCalendar) return (GregorianCalendar) value;
         try {
-            GregorianCalendar cal = new GregorianCalendar();
-            cal.setTime(ISO_DATE_FORMAT.parse(value.toString()));
+            Instant instant = Instant.from(ISO_DATE_FORMAT.parse(value.toString()));
+            GregorianCalendar cal = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
+            cal.setTimeInMillis(instant.toEpochMilli());
             return cal;
-        } catch (ParseException e) {
+        } catch (Exception e) {
             throw ApiException.invalidArgument("Invalid date format: " + value);
         }
     }
