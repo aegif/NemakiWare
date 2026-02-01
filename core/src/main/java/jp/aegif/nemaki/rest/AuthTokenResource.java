@@ -398,7 +398,8 @@ public class AuthTokenResource extends ResourceBase{
 				return makeResult(false, result, errMsg).toString();
 			}
 
-			boolean isMicrosoft = userinfoEndpoint.contains("graph.microsoft.com");
+			boolean isMicrosoft = userinfoEndpoint.contains("graph.microsoft.com")
+					|| userinfoEndpoint.contains("login.microsoftonline.com");
 			String userName = extractUserNameFromOIDCUserInfo(verifiedUserInfo, isMicrosoft);
 			if (StringUtils.isBlank(userName)) {
 				addErrMsg(errMsg, "userName", "couldNotExtract");
@@ -790,17 +791,18 @@ public class AuthTokenResource extends ResourceBase{
 		m.put("www.googleapis.com", java.util.List.of("/oauth2/"));
 		m.put("openidconnect.googleapis.com", java.util.List.of("/"));
 		m.put("graph.microsoft.com", java.util.List.of("/oidc/userinfo", "/v1.0/me"));
+		m.put("login.microsoftonline.com", java.util.List.of("/common/openid/userinfo", "/common/v2.0/"));
 		ALLOWED_USERINFO_HOSTS = java.util.Collections.unmodifiableMap(m);
 	}
 
 	/**
 	 * Validates a UserInfo endpoint URL against the allowlist using URI parsing.
 	 * Rejects URLs with: userinfo (user:pass@), non-443 ports, non-HTTPS scheme,
-	 * or hosts/paths not in the allowlist.
+	 * encoded path traversal (%2f, %2e), or hosts/paths not in the allowlist.
 	 */
 	private boolean isAllowedUserInfoEndpoint(String url) {
 		try {
-			java.net.URI uri = new java.net.URI(url);
+			java.net.URI uri = new java.net.URI(url).normalize();
 
 			// Reject userinfo component (e.g. https://graph.microsoft.com@evil.com/...)
 			if (uri.getUserInfo() != null) {
@@ -830,6 +832,18 @@ public class AuthTokenResource extends ResourceBase{
 				return false;
 			}
 
+			// Use rawPath to detect encoded path traversal (%2f, %2e, %5c)
+			String rawPath = uri.getRawPath();
+			if (rawPath == null) {
+				rawPath = "/";
+			}
+			String rawPathLower = rawPath.toLowerCase(java.util.Locale.ROOT);
+			if (rawPathLower.contains("%2f") || rawPathLower.contains("%2e")
+					|| rawPathLower.contains("%5c") || rawPathLower.contains("\\")) {
+				return false;
+			}
+
+			// Use decoded path (from normalize()) for allowlist comparison
 			String path = uri.getPath();
 			if (path == null) {
 				path = "/";
