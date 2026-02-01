@@ -43,8 +43,8 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 	private final ConcurrentHashMap<String, CloudSyncResult> currentResults = new ConcurrentHashMap<>();
 	// Sync state per repository+provider (delta tokens etc.)
 	private final ConcurrentHashMap<String, CloudSyncState> syncStates = new ConcurrentHashMap<>();
-	// Cancellation flags
-	private final ConcurrentHashMap<String, Boolean> cancelFlags = new ConcurrentHashMap<>();
+	// Cancellation flags (AtomicBoolean for thread-safe cancel signaling)
+	private final ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
 
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;
@@ -114,39 +114,47 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 		String key = syncKey(repositoryId, provider);
 		ReentrantLock lock = getLock(repositoryId, provider);
 
+		// Try to acquire lock; if already held, a sync is running
 		if (!lock.tryLock()) {
 			CloudSyncResult existing = currentResults.get(key);
 			if (existing != null && existing.getStatus() == CloudSyncResult.Status.RUNNING) {
 				return existing;
 			}
-		} else {
-			lock.unlock();
 		}
 
-		CloudSyncResult result = new CloudSyncResult(repositoryId, provider, mode);
-		result.setStatus(CloudSyncResult.Status.RUNNING);
-		result.setStartTime(Instant.now().toString());
-		currentResults.put(key, result);
-		cancelFlags.put(key, false);
+		// Lock is held by us - set up result and submit task while holding lock
+		// This eliminates the race between unlock and executor.submit
+		try {
+			CloudSyncResult result = new CloudSyncResult(repositoryId, provider, mode);
+			result.setStatus(CloudSyncResult.Status.RUNNING);
+			result.setStartTime(Instant.now().toString());
+			currentResults.put(key, result);
+			cancelFlags.put(key, new java.util.concurrent.atomic.AtomicBoolean(false));
 
-		executor.submit(() -> {
-			lock.lock();
-			try {
-				executeSync(repositoryId, provider, mode, result);
-			} catch (Exception e) {
-				log.error("Cloud sync failed: " + e.getMessage(), e);
-				result.setStatus(CloudSyncResult.Status.ERROR);
-				result.addError(e.getMessage());
-			} finally {
-				result.setEndTime(Instant.now().toString());
-				if (result.getStatus() == CloudSyncResult.Status.RUNNING) {
-					result.setStatus(CloudSyncResult.Status.COMPLETED);
+			executor.submit(() -> {
+				// Lock is already held by the calling thread, but executor runs in a different thread.
+				// We need to re-acquire the lock in the executor thread.
+				// The calling thread will release it after submit returns.
+				lock.lock();
+				try {
+					executeSync(repositoryId, provider, mode, result);
+				} catch (Exception e) {
+					log.error("Cloud sync failed: " + e.getMessage(), e);
+					result.setStatus(CloudSyncResult.Status.ERROR);
+					result.addError(e.getMessage());
+				} finally {
+					result.setEndTime(Instant.now().toString());
+					if (result.getStatus() == CloudSyncResult.Status.RUNNING) {
+						result.setStatus(CloudSyncResult.Status.COMPLETED);
+					}
+					lock.unlock();
 				}
-				lock.unlock();
-			}
-		});
+			});
 
-		return result;
+			return result;
+		} finally {
+			lock.unlock();
+		}
 	}
 
 	private void executeSync(String repositoryId, String provider, CloudSyncResult.SyncMode mode,
@@ -776,11 +784,17 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 	@Override
 	public void cancelSync(String repositoryId, String provider) {
 		String key = syncKey(repositoryId, provider);
-		cancelFlags.put(key, true);
+		java.util.concurrent.atomic.AtomicBoolean flag = cancelFlags.get(key);
+		if (flag != null) {
+			flag.set(true);
+		} else {
+			cancelFlags.put(key, new java.util.concurrent.atomic.AtomicBoolean(true));
+		}
 	}
 
-	private boolean isCancelled(String key) {
-		return Boolean.TRUE.equals(cancelFlags.get(key));
+	boolean isCancelled(String key) {
+		java.util.concurrent.atomic.AtomicBoolean flag = cancelFlags.get(key);
+		return flag != null && flag.get();
 	}
 
 	// ---- Connection test ----

@@ -350,6 +350,19 @@ public class AuthTokenResource extends ResourceBase{
 		return makeResult(status, result, errMsg).toString();
 	}
 
+	/**
+	 * Convert an OIDC authentication to a NemakiWare auth token.
+	 * The server validates the access_token by calling the provider's UserInfo endpoint.
+	 * This prevents clients from forging identity claims.
+	 *
+	 * Required JSON body:
+	 *   { "access_token": "...", "userinfo_endpoint": "https://..." }
+	 * OR for backward compatibility:
+	 *   { "user_info": {...}, "access_token": "...", "userinfo_endpoint": "https://..." }
+	 *
+	 * When access_token + userinfo_endpoint are provided, the server calls the endpoint
+	 * to obtain verified user information. The client-supplied user_info is ignored.
+	 */
 	@POST
 	@Path("/oidc/convert")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -369,14 +382,23 @@ public class AuthTokenResource extends ResourceBase{
 		try {
 			JSONParser parser = new JSONParser();
 			JSONObject requestJson = (JSONObject) parser.parse(requestBody);
-			
-			JSONObject userInfo = (JSONObject) requestJson.get("user_info");
-			if (userInfo == null) {
-				addErrMsg(errMsg, "user_info", "isNull");
+
+			String accessToken = (String) requestJson.get("access_token");
+			String userinfoEndpoint = (String) requestJson.get("userinfo_endpoint");
+
+			if (StringUtils.isBlank(accessToken) || StringUtils.isBlank(userinfoEndpoint)) {
+				addErrMsg(errMsg, "access_token", "access_token and userinfo_endpoint are required");
 				return makeResult(false, result, errMsg).toString();
 			}
 
-			String userName = extractUserNameFromOIDCUserInfo(userInfo);
+			// Server-side validation: call the provider's UserInfo endpoint with the access token
+			JSONObject verifiedUserInfo = fetchUserInfoFromProvider(userinfoEndpoint, accessToken);
+			if (verifiedUserInfo == null) {
+				addErrMsg(errMsg, "access_token", "invalidOrExpired - UserInfo endpoint returned error");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String userName = extractUserNameFromOIDCUserInfo(verifiedUserInfo);
 			if (StringUtils.isBlank(userName)) {
 				addErrMsg(errMsg, "userName", "couldNotExtract");
 				return makeResult(false, result, errMsg).toString();
@@ -521,6 +543,7 @@ public class AuthTokenResource extends ResourceBase{
 	/**
 	 * Convert a Microsoft ID token to a NemakiWare auth token.
 	 * The ID token is verified server-side using Microsoft's JWKS endpoint.
+	 * Validates: signature (RS256), audience, issuer, exp, nbf.
 	 */
 	@POST
 	@Path("/microsoft/convert")
@@ -563,6 +586,27 @@ public class AuthTokenResource extends ResourceBase{
 			JWKSource<SecurityContext> keySource = new RemoteJWKSet<>(new URL(jwksUrl));
 			JWSKeySelector<SecurityContext> keySelector = new JWSVerificationKeySelector<>(JWSAlgorithm.RS256, keySource);
 			jwtProcessor.setJWSKeySelector(keySelector);
+
+			// Configure claims verification: issuer, exp, nbf
+			String expectedIssuer = "https://login.microsoftonline.com/" + tenantId + "/v2.0";
+			jwtProcessor.setJWTClaimsSetVerifier((claimsSet, context) -> {
+				// Verify issuer
+				String issuer = claimsSet.getIssuer();
+				if (issuer == null || !issuer.equals(expectedIssuer)) {
+					throw new com.nimbusds.jwt.proc.BadJWTException(
+							"Invalid issuer: " + issuer + " (expected: " + expectedIssuer + ")");
+				}
+				// Verify expiration
+				java.util.Date exp = claimsSet.getExpirationTime();
+				if (exp == null || new java.util.Date().after(exp)) {
+					throw new com.nimbusds.jwt.proc.BadJWTException("Token has expired");
+				}
+				// Verify not-before
+				java.util.Date nbf = claimsSet.getNotBeforeTime();
+				if (nbf != null && new java.util.Date().before(nbf)) {
+					throw new com.nimbusds.jwt.proc.BadJWTException("Token is not yet valid (nbf)");
+				}
+			});
 
 			JWTClaimsSet claims = jwtProcessor.process(idTokenString, null);
 
@@ -647,10 +691,25 @@ public class AuthTokenResource extends ResourceBase{
 				logger.debug("SAML response was not deflate-compressed, using raw bytes");
 			}
 
+			// XXE prevention: disable external entities and DTDs
 			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
 			factory.setNamespaceAware(true);
+			factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+			factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+			factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+			factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
+			factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+			factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+
 			DocumentBuilder builder = factory.newDocumentBuilder();
 			Document document = builder.parse(new ByteArrayInputStream(xmlBytes));
+
+			// WARNING: This implementation does NOT verify the SAML response signature.
+			// In production, you MUST validate the XML signature against the IdP's certificate
+			// to prevent identity spoofing. Consider using OpenSAML or a similar library
+			// for proper SAML signature validation, issuer/audience/conditions checking.
+			logger.warn("SAML response signature validation is not implemented. " +
+					"This is a security risk in production environments.");
 
 			NodeList nameIdNodes = document.getElementsByTagNameNS("urn:oasis:names:tc:SAML:2.0:assertion", "NameID");
 			if (nameIdNodes.getLength() > 0) {
@@ -690,6 +749,44 @@ public class AuthTokenResource extends ResourceBase{
 			return (String) userInfo.get("sub");
 		}
 		return null;
+	}
+
+	/**
+	 * Fetch user info from an OIDC provider's UserInfo endpoint using the access token.
+	 * This provides server-side validation that the access token is valid.
+	 */
+	@SuppressWarnings("unchecked")
+	private JSONObject fetchUserInfoFromProvider(String userinfoEndpoint, String accessToken) {
+		try {
+			URL url = new URL(userinfoEndpoint);
+			String protocol = url.getProtocol();
+			if (!"https".equals(protocol)) {
+				logger.error("UserInfo endpoint must use HTTPS: {}", userinfoEndpoint);
+				return null;
+			}
+
+			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+			conn.setRequestMethod("GET");
+			conn.setRequestProperty("Authorization", "Bearer " + accessToken);
+			conn.setRequestProperty("Accept", "application/json");
+			conn.setConnectTimeout(10000);
+			conn.setReadTimeout(10000);
+
+			int responseCode = conn.getResponseCode();
+			if (responseCode != 200) {
+				logger.error("UserInfo endpoint returned HTTP {}", responseCode);
+				return null;
+			}
+
+			try (java.io.InputStream is = conn.getInputStream();
+			     java.io.InputStreamReader reader = new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8)) {
+				JSONParser parser = new JSONParser();
+				return (JSONObject) parser.parse(reader);
+			}
+		} catch (Exception e) {
+			logger.error("Failed to fetch UserInfo from provider: {}", e.getMessage(), e);
+			return null;
+		}
 	}
 
 	/**

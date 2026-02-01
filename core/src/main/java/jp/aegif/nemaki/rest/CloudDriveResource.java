@@ -35,6 +35,40 @@ public class CloudDriveResource extends ResourceBase {
 
 	private CloudDriveService cloudDriveService;
 	private ContentService contentService;
+	private jp.aegif.nemaki.util.PropertyManager propertyManager;
+
+	public void setPropertyManager(jp.aegif.nemaki.util.PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
+	}
+
+	private jp.aegif.nemaki.util.PropertyManager getPropertyManager() {
+		if (propertyManager != null) {
+			return propertyManager;
+		}
+		try {
+			return SpringContext.getApplicationContext()
+					.getBean("propertyManager", jp.aegif.nemaki.util.PropertyManager.class);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
+	private boolean isCloudDriveEnabled(String provider) {
+		jp.aegif.nemaki.util.PropertyManager pm = getPropertyManager();
+		if (pm == null) return false;
+		String propKey;
+		switch (provider) {
+			case "google":
+				propKey = jp.aegif.nemaki.util.constant.PropertyKey.CLOUD_DRIVE_GOOGLE_ENABLED;
+				break;
+			case "microsoft":
+				propKey = jp.aegif.nemaki.util.constant.PropertyKey.CLOUD_DRIVE_MICROSOFT_ENABLED;
+				break;
+			default:
+				return false;
+		}
+		return "true".equalsIgnoreCase(pm.readValue(propKey));
+	}
 
 	public void setCloudDriveService(CloudDriveService cloudDriveService) {
 		this.cloudDriveService = cloudDriveService;
@@ -108,6 +142,11 @@ public class CloudDriveResource extends ResourceBase {
 				result = makeResult(false, result, errMsg);
 				return result.toJSONString();
 			}
+			if (!isCloudDriveEnabled(provider)) {
+				addErrMsg(errMsg, "provider", "Cloud drive is not enabled for provider: " + provider);
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
 
 			CloudDriveService service = getCloudDriveService();
 			if (service == null) {
@@ -177,6 +216,11 @@ public class CloudDriveResource extends ResourceBase {
 				result = makeResult(false, result, errMsg);
 				return result.toJSONString();
 			}
+			if (!isCloudDriveEnabled(provider)) {
+				addErrMsg(errMsg, "provider", "Cloud drive is not enabled for provider: " + provider);
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
 
 			CloudDriveService service = getCloudDriveService();
 			if (service == null) {
@@ -185,19 +229,15 @@ public class CloudDriveResource extends ResourceBase {
 				return result.toJSONString();
 			}
 
-			// Pull content from cloud using the cloudFileId
-			CloudDriveServiceImpl impl = (CloudDriveServiceImpl) service;
-			InputStream cloudContent = impl.pullFromCloudByFileId(provider, cloudFileId, accessToken);
+			// Pull content from cloud using the interface method (no downcast)
+			InputStream cloudContent = service.pullFromCloudByFileId(provider, cloudFileId, accessToken);
 
-			// Read content into byte array for size info
-			byte[] contentBytes = cloudContent.readAllBytes();
-			cloudContent.close();
-
-			// Use CMIS ObjectService to set the content stream
+			// Stream content directly without loading entire file into memory
 			org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl newStream =
 				new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl();
-			newStream.setStream(new java.io.ByteArrayInputStream(contentBytes));
-			newStream.setLength(java.math.BigInteger.valueOf(contentBytes.length));
+			newStream.setStream(cloudContent);
+			// Length unknown for streaming; set to -1
+			newStream.setLength(java.math.BigInteger.valueOf(-1));
 
 			// Get the object service via Spring context
 			jp.aegif.nemaki.cmis.service.ObjectService objectService =
@@ -207,7 +247,10 @@ public class CloudDriveResource extends ResourceBase {
 			org.apache.chemistry.opencmis.commons.spi.Holder<String> objectIdHolder =
 				new org.apache.chemistry.opencmis.commons.spi.Holder<>(objectId);
 
-			objectService.setContentStream(null, repositoryId, objectIdHolder, true, newStream, null, null);
+			// Use SystemCallContext for authorized internal operation (not null)
+			jp.aegif.nemaki.cmis.factory.SystemCallContext callContext =
+				new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId);
+			objectService.setContentStream(callContext, repositoryId, objectIdHolder, true, newStream, null, null);
 
 			result.put("objectId", objectIdHolder.getValue());
 			result.put("pulled", true);

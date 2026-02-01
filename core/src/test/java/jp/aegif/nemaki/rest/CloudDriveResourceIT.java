@@ -14,6 +14,11 @@ import static org.hamcrest.Matchers.*;
  * Integration tests for CloudDriveResource REST endpoints.
  * Requires a running NemakiWare instance.
  *
+ * The actual API is:
+ *   GET  /rest/repo/{repositoryId}/cloud-drive/url/{objectId}
+ *   POST /rest/repo/{repositoryId}/cloud-drive/push/{objectId}
+ *   POST /rest/repo/{repositoryId}/cloud-drive/pull/{objectId}
+ *
  * Run with: mvn test -Dtest=CloudDriveResourceIT -Dnemaki.test.baseUrl=http://localhost:8080/core
  */
 public class CloudDriveResourceIT {
@@ -41,34 +46,67 @@ public class CloudDriveResourceIT {
 	}
 
 	@Test
-	public void testGetCloudFileUrl_Google() {
+	public void testGetCloudFileUrl_NonExistentObject_ReturnsError() {
+		// API is GET /url/{objectId} - using a non-existent objectId should return error
 		given()
 				.spec(adminSpec)
 		.when()
-				.get(cloudDrivePath() + "/url?provider=google&fileId=testfile123")
+				.get(cloudDrivePath() + "/url/nonexistent-object-id")
 		.then()
 				.statusCode(200)
-				.body("url", containsString("drive.google.com"));
+				.body("status", is("error"));
 	}
 
 	@Test
-	public void testGetCloudFileUrl_Microsoft() {
+	public void testPushToCloud_MissingProvider_ReturnsError() {
 		given()
 				.spec(adminSpec)
+				.contentType(ContentType.JSON)
+				.body("{\"accessToken\": \"test-token\"}")
 		.when()
-				.get(cloudDrivePath() + "/url?provider=microsoft&fileId=testfile456")
+				.post(cloudDrivePath() + "/push/test-object-id")
 		.then()
 				.statusCode(200)
-				.body("url", containsString("onedrive.live.com"));
+				.body("status", is("error"));
 	}
 
 	@Test
-	public void testGetCloudFileUrl_UnknownProvider() {
+	public void testPushToCloud_MissingAccessToken_ReturnsError() {
 		given()
 				.spec(adminSpec)
+				.contentType(ContentType.JSON)
+				.body("{\"provider\": \"google\"}")
 		.when()
-				.get(cloudDrivePath() + "/url?provider=dropbox&fileId=testfile")
+				.post(cloudDrivePath() + "/push/test-object-id")
 		.then()
-				.statusCode(anyOf(is(200), is(400), is(404)));
+				.statusCode(200)
+				.body("status", is("error"));
+	}
+
+	@Test
+	public void testPullFromCloud_MissingCloudFileId_ReturnsError() {
+		given()
+				.spec(adminSpec)
+				.contentType(ContentType.JSON)
+				.body("{\"provider\": \"google\", \"accessToken\": \"test-token\"}")
+		.when()
+				.post(cloudDrivePath() + "/pull/test-object-id")
+		.then()
+				.statusCode(200)
+				.body("status", is("error"));
+	}
+
+	@Test
+	public void testPullFromCloud_DisabledProvider_ReturnsError() {
+		// If cloud.drive.google.enabled is not set to true, should return error
+		given()
+				.spec(adminSpec)
+				.contentType(ContentType.JSON)
+				.body("{\"provider\": \"google\", \"accessToken\": \"test-token\", \"cloudFileId\": \"file123\"}")
+		.when()
+				.post(cloudDrivePath() + "/pull/test-object-id")
+		.then()
+				.statusCode(200)
+				.body("status", is("error"));
 	}
 }

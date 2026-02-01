@@ -49,4 +49,14 @@ public interface CloudDriveService {
 	 * @param accessToken OAuth2 access token
 	 */
 	void deleteFromCloud(String provider, String cloudFileId, String accessToken);
+
+	/**
+	 * Pull file content from cloud storage using the cloud file ID directly.
+	 *
+	 * @param provider Cloud provider ("google" or "microsoft")
+	 * @param cloudFileId The file ID in the cloud provider
+	 * @param accessToken OAuth access token for the cloud provider
+	 * @return InputStream of the file content
+	 */
+	InputStream pullFromCloudByFileId(String provider, String cloudFileId, String accessToken);
 }

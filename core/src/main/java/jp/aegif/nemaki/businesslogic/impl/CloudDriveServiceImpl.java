@@ -38,8 +38,11 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 	public String pushToCloud(String repositoryId, String objectId, String provider, String accessToken) {
 		log.info("pushToCloud: provider=" + provider + ", objectId=" + objectId);
 
+		// Use SystemCallContext for authorized internal operation (not null)
+		jp.aegif.nemaki.cmis.factory.SystemCallContext callContext =
+			new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId);
 		ContentStream contentStream = objectService.getContentStream(
-			null, repositoryId, objectId, null, null, null);
+			callContext, repositoryId, objectId, null, null, null);
 		if (contentStream == null || contentStream.getStream() == null) {
 			throw new RuntimeException("Document has no content stream: " + objectId);
 		}
@@ -63,6 +66,7 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 	/**
 	 * Pull file content from cloud by cloud file ID.
 	 */
+	@Override
 	public InputStream pullFromCloudByFileId(String provider, String cloudFileId, String accessToken) {
 		switch (provider) {
 			case "google":
@@ -76,6 +80,9 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 
 	@Override
 	public String getCloudFileUrl(String provider, String cloudFileId) {
+		if (cloudFileId == null || cloudFileId.isEmpty()) {
+			return null;
+		}
 		switch (provider) {
 			case "google":
 				return "https://drive.google.com/file/d/" + cloudFileId + "/edit";

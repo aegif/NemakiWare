@@ -41,9 +41,14 @@ public class CloudDriveServiceImplTest {
 
 	@Test
 	public void testGetCloudFileUrl_NullFileId() {
-		// Should still construct URL (no null check in implementation)
 		String url = service.getCloudFileUrl("google", null);
-		assertEquals("https://drive.google.com/file/d/null/edit", url);
+		assertNull("Null fileId should return null", url);
+	}
+
+	@Test
+	public void testGetCloudFileUrl_EmptyFileId() {
+		String url = service.getCloudFileUrl("google", "");
+		assertNull("Empty fileId should return null", url);
 	}
 
 	@Test(expected = RuntimeException.class)
