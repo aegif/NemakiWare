@@ -182,4 +182,70 @@ public class CloudDirectorySyncServiceImplTest {
 		boolean cancelled = (boolean) isCancelled.invoke(service, key);
 		assertTrue(cancelled);
 	}
+
+	@Test
+	public void testStartSync_DuplicateCall_ReusesRunningResult() {
+		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google");
+
+		CloudSyncResult first = service.startDeltaSync(TEST_REPO, "google");
+		CloudSyncResult second = service.startDeltaSync(TEST_REPO, "google");
+
+		// Second call should return the same RUNNING result (not create a new one)
+		assertSame("Duplicate startSync should return the existing RUNNING result", first, second);
+		assertEquals(CloudSyncResult.Status.RUNNING, second.getStatus());
+	}
+
+	@Test
+	public void testStartSync_DifferentKeys_RunInParallel() {
+		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google,microsoft");
+
+		CloudSyncResult google = service.startDeltaSync(TEST_REPO, "google");
+		CloudSyncResult microsoft = service.startDeltaSync(TEST_REPO, "microsoft");
+
+		// Different keys should produce independent results
+		assertNotSame("Different keys should have independent results", google, microsoft);
+		assertEquals(CloudSyncResult.Status.RUNNING, google.getStatus());
+		assertEquals(CloudSyncResult.Status.RUNNING, microsoft.getStatus());
+		assertEquals("google", google.getProvider());
+		assertEquals("microsoft", microsoft.getProvider());
+	}
+
+	@Test
+	public void testStartSync_ConcurrentSameKey_OnlyOneRuns() throws Exception {
+		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google");
+
+		int threadCount = 4;
+		CountDownLatch startLatch = new CountDownLatch(1);
+		CountDownLatch doneLatch = new CountDownLatch(threadCount);
+		AtomicInteger distinctResults = new AtomicInteger(0);
+		CloudSyncResult[] results = new CloudSyncResult[threadCount];
+
+		for (int i = 0; i < threadCount; i++) {
+			final int idx = i;
+			new Thread(() -> {
+				try {
+					startLatch.await();
+					results[idx] = service.startDeltaSync(TEST_REPO, "google");
+				} catch (Exception e) {
+					// ignore
+				} finally {
+					doneLatch.countDown();
+				}
+			}).start();
+		}
+
+		startLatch.countDown(); // release all threads
+		assertTrue("Threads should complete within 5s", doneLatch.await(5, TimeUnit.SECONDS));
+
+		// All threads should get the same result object
+		for (int i = 1; i < threadCount; i++) {
+			assertSame("All concurrent callers should get the same result", results[0], results[i]);
+		}
+	}
 }

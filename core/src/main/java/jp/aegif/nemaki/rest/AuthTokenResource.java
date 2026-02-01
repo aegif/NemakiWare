@@ -801,6 +801,9 @@ public class AuthTokenResource extends ResourceBase{
 	 * encoded path traversal (%2f, %2e), or hosts/paths not in the allowlist.
 	 */
 	private boolean isAllowedUserInfoEndpoint(String url) {
+		if (url == null || url.isEmpty()) {
+			return false;
+		}
 		try {
 			java.net.URI uri = new java.net.URI(url).normalize();
 
