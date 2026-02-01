@@ -36,8 +36,15 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 	// Lazily initialized thread pool (needs PropertyManager from Spring DI)
 	private volatile ExecutorService executor;
 
-	// Per-key locks for startSync (one lock per repo:provider pair)
-	private final ConcurrentHashMap<String, Object> syncKeyLocks = new ConcurrentHashMap<>();
+	// Striped locks for startSync (fixed-size array, key hashed to stripe index)
+	private static final int LOCK_STRIPES = 8;
+	private final Object[] syncLockStripes;
+	{
+		syncLockStripes = new Object[LOCK_STRIPES];
+		for (int i = 0; i < LOCK_STRIPES; i++) {
+			syncLockStripes[i] = new Object();
+		}
+	}
 	// Current sync results per repository+provider
 	private final ConcurrentHashMap<String, CloudSyncResult> currentResults = new ConcurrentHashMap<>();
 	// Sync state per repository+provider (delta tokens etc.)
@@ -51,38 +58,40 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
+		initExecutor();
 	}
 
-	private ExecutorService getExecutor() {
-		ExecutorService ex = executor;
-		if (ex == null) {
-			synchronized (this) {
-				ex = executor;
-				if (ex == null) {
-					int poolSize = DEFAULT_THREAD_POOL_SIZE;
-					if (propertyManager != null) {
-						String val = propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_THREAD_POOL_SIZE);
-						if (val != null) {
-							try {
-								int parsed = Integer.parseInt(val.trim());
-								if (parsed > 0) {
-									poolSize = parsed;
-								}
-							} catch (NumberFormatException e) {
-								// use default
-							}
-						}
+	private synchronized void initExecutor() {
+		if (executor != null) {
+			return;
+		}
+		int poolSize = DEFAULT_THREAD_POOL_SIZE;
+		if (propertyManager != null) {
+			String val = propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_THREAD_POOL_SIZE);
+			if (val != null) {
+				try {
+					int parsed = Integer.parseInt(val.trim());
+					if (parsed > 0) {
+						poolSize = parsed;
 					}
-					executor = Executors.newFixedThreadPool(poolSize, r -> {
-						Thread t = new Thread(r, "CloudDirectorySync");
-						t.setDaemon(true);
-						return t;
-					});
-					ex = executor;
+				} catch (NumberFormatException e) {
+					// use default
 				}
 			}
 		}
-		return ex;
+		executor = Executors.newFixedThreadPool(poolSize, r -> {
+			Thread t = new Thread(r, "CloudDirectorySync");
+			t.setDaemon(true);
+			return t;
+		});
+		log.info("CloudDirectorySync executor initialized with pool size: " + poolSize);
+	}
+
+	private ExecutorService getExecutor() {
+		if (executor == null) {
+			initExecutor();
+		}
+		return executor;
 	}
 
 	private String syncKey(String repositoryId, String provider) {
@@ -90,7 +99,7 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 	}
 
 	private Object getKeyLock(String key) {
-		return syncKeyLocks.computeIfAbsent(key, k -> new Object());
+		return syncLockStripes[Math.floorMod(key.hashCode(), LOCK_STRIPES)];
 	}
 
 	private int getWindowSize() {

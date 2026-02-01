@@ -398,7 +398,8 @@ public class AuthTokenResource extends ResourceBase{
 				return makeResult(false, result, errMsg).toString();
 			}
 
-			String userName = extractUserNameFromOIDCUserInfo(verifiedUserInfo);
+			boolean isMicrosoft = userinfoEndpoint.contains("graph.microsoft.com");
+			String userName = extractUserNameFromOIDCUserInfo(verifiedUserInfo, isMicrosoft);
 			if (StringUtils.isBlank(userName)) {
 				addErrMsg(errMsg, "userName", "couldNotExtract");
 				return makeResult(false, result, errMsg).toString();
@@ -744,20 +745,33 @@ public class AuthTokenResource extends ResourceBase{
 		}
 	}
 
-	private String extractUserNameFromOIDCUserInfo(JSONObject userInfo) {
-		// Standard OIDC claims
+	/**
+	 * Extract username from OIDC UserInfo response.
+	 * Priority order differs by provider:
+	 * - Microsoft: userPrincipalName → mail → preferred_username → email → sub
+	 *   (MS Graph /v1.0/me returns userPrincipalName as primary identifier; mail can be null)
+	 * - Other (Google etc.): preferred_username → email → sub
+	 */
+	private String extractUserNameFromOIDCUserInfo(JSONObject userInfo, boolean isMicrosoft) {
+		if (isMicrosoft) {
+			// Microsoft: userPrincipalName is the canonical identifier
+			if (userInfo.containsKey("userPrincipalName")) {
+				String upn = (String) userInfo.get("userPrincipalName");
+				if (upn != null && !upn.isEmpty()) return upn;
+			}
+			if (userInfo.containsKey("mail")) {
+				String mail = (String) userInfo.get("mail");
+				if (mail != null && !mail.isEmpty()) return mail;
+			}
+		}
+		// Standard OIDC claims (used by Google and as fallback for Microsoft)
 		if (userInfo.containsKey("preferred_username")) {
-			return (String) userInfo.get("preferred_username");
+			String pu = (String) userInfo.get("preferred_username");
+			if (pu != null && !pu.isEmpty()) return pu;
 		}
 		if (userInfo.containsKey("email")) {
-			return (String) userInfo.get("email");
-		}
-		// Microsoft Graph /v1.0/me specific fields
-		if (userInfo.containsKey("userPrincipalName")) {
-			return (String) userInfo.get("userPrincipalName");
-		}
-		if (userInfo.containsKey("mail")) {
-			return (String) userInfo.get("mail");
+			String email = (String) userInfo.get("email");
+			if (email != null && !email.isEmpty()) return email;
 		}
 		// Fallback to sub (opaque ID)
 		if (userInfo.containsKey("sub")) {
@@ -766,21 +780,70 @@ public class AuthTokenResource extends ResourceBase{
 		return null;
 	}
 
-	// Allowed OIDC UserInfo endpoint host+path prefixes (SSRF prevention)
-	private static final java.util.List<String> ALLOWED_USERINFO_PREFIXES = java.util.List.of(
-		"https://www.googleapis.com/oauth2/",         // Google OAuth2
-		"https://openidconnect.googleapis.com/",       // Google OIDC
-		"https://graph.microsoft.com/oidc/userinfo",   // Microsoft OIDC
-		"https://graph.microsoft.com/v1.0/me"          // Microsoft Graph
-	);
+	/**
+	 * Allowed OIDC UserInfo endpoints: host → allowed path prefixes.
+	 * Validation uses URI parsing (not string prefix) to prevent userinfo/port SSRF bypasses.
+	 */
+	private static final java.util.Map<String, java.util.List<String>> ALLOWED_USERINFO_HOSTS;
+	static {
+		java.util.Map<String, java.util.List<String>> m = new java.util.HashMap<>();
+		m.put("www.googleapis.com", java.util.List.of("/oauth2/"));
+		m.put("openidconnect.googleapis.com", java.util.List.of("/"));
+		m.put("graph.microsoft.com", java.util.List.of("/oidc/userinfo", "/v1.0/me"));
+		ALLOWED_USERINFO_HOSTS = java.util.Collections.unmodifiableMap(m);
+	}
 
-	private boolean isAllowedUserInfoEndpoint(String normalizedUrl) {
-		for (String prefix : ALLOWED_USERINFO_PREFIXES) {
-			if (normalizedUrl.startsWith(prefix)) {
-				return true;
+	/**
+	 * Validates a UserInfo endpoint URL against the allowlist using URI parsing.
+	 * Rejects URLs with: userinfo (user:pass@), non-443 ports, non-HTTPS scheme,
+	 * or hosts/paths not in the allowlist.
+	 */
+	private boolean isAllowedUserInfoEndpoint(String url) {
+		try {
+			java.net.URI uri = new java.net.URI(url);
+
+			// Reject userinfo component (e.g. https://graph.microsoft.com@evil.com/...)
+			if (uri.getUserInfo() != null) {
+				return false;
 			}
+
+			// Must be https
+			String scheme = uri.getScheme();
+			if (scheme == null || !"https".equals(scheme.toLowerCase(java.util.Locale.ROOT))) {
+				return false;
+			}
+
+			// Reject explicit non-standard port
+			int port = uri.getPort();
+			if (port != -1 && port != 443) {
+				return false;
+			}
+
+			String host = uri.getHost();
+			if (host == null) {
+				return false;
+			}
+			host = host.toLowerCase(java.util.Locale.ROOT);
+
+			java.util.List<String> allowedPaths = ALLOWED_USERINFO_HOSTS.get(host);
+			if (allowedPaths == null) {
+				return false;
+			}
+
+			String path = uri.getPath();
+			if (path == null) {
+				path = "/";
+			}
+
+			for (String allowedPath : allowedPaths) {
+				if (path.startsWith(allowedPath)) {
+					return true;
+				}
+			}
+			return false;
+		} catch (java.net.URISyntaxException e) {
+			return false;
 		}
-		return false;
 	}
 
 	/**
@@ -792,16 +855,17 @@ public class AuthTokenResource extends ResourceBase{
 	 */
 	@SuppressWarnings("unchecked")
 	private JSONObject fetchUserInfoFromProvider(String userinfoEndpoint, String accessToken) {
-		if (userinfoEndpoint == null || userinfoEndpoint.isEmpty()) {
+		if (userinfoEndpoint == null || userinfoEndpoint.trim().isEmpty()) {
 			return null;
 		}
 
-		// Normalize: remove trailing slash
-		String normalized = userinfoEndpoint.endsWith("/")
-			? userinfoEndpoint.substring(0, userinfoEndpoint.length() - 1)
-			: userinfoEndpoint;
+		// Normalize: trim whitespace, remove trailing slash
+		String normalized = userinfoEndpoint.trim();
+		if (normalized.endsWith("/")) {
+			normalized = normalized.substring(0, normalized.length() - 1);
+		}
 
-		// SSRF prevention: validate against allowed host+path prefixes
+		// SSRF prevention: validate against allowed hosts/paths via URI parsing
 		if (!isAllowedUserInfoEndpoint(normalized)) {
 			logger.error("UserInfo endpoint not allowed: {}", userinfoEndpoint);
 			return null;
