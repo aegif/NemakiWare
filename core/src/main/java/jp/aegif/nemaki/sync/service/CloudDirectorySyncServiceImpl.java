@@ -14,7 +14,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.locks.ReentrantLock;
+
 
 /**
  * Cloud directory sync implementation for Google Workspace and Microsoft Entra ID.
@@ -31,14 +31,13 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 	private PrincipalService principalService;
 	private PropertyManager propertyManager;
 
-	// Fixed-size thread pool: max 2 concurrent syncs (one per provider)
-	private final ExecutorService executor = Executors.newFixedThreadPool(2, r -> {
-		Thread t = new Thread(r, "CloudDirectorySync");
-		t.setDaemon(true);
-		return t;
-	});
+	private static final int DEFAULT_THREAD_POOL_SIZE = 2;
 
-	// Sync state is guarded by synchronized startSync method
+	// Lazily initialized thread pool (needs PropertyManager from Spring DI)
+	private volatile ExecutorService executor;
+
+	// Per-key locks for startSync (one lock per repo:provider pair)
+	private final ConcurrentHashMap<String, Object> syncKeyLocks = new ConcurrentHashMap<>();
 	// Current sync results per repository+provider
 	private final ConcurrentHashMap<String, CloudSyncResult> currentResults = new ConcurrentHashMap<>();
 	// Sync state per repository+provider (delta tokens etc.)
@@ -54,11 +53,45 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 		this.propertyManager = propertyManager;
 	}
 
+	private ExecutorService getExecutor() {
+		ExecutorService ex = executor;
+		if (ex == null) {
+			synchronized (this) {
+				ex = executor;
+				if (ex == null) {
+					int poolSize = DEFAULT_THREAD_POOL_SIZE;
+					if (propertyManager != null) {
+						String val = propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_THREAD_POOL_SIZE);
+						if (val != null) {
+							try {
+								int parsed = Integer.parseInt(val.trim());
+								if (parsed > 0) {
+									poolSize = parsed;
+								}
+							} catch (NumberFormatException e) {
+								// use default
+							}
+						}
+					}
+					executor = Executors.newFixedThreadPool(poolSize, r -> {
+						Thread t = new Thread(r, "CloudDirectorySync");
+						t.setDaemon(true);
+						return t;
+					});
+					ex = executor;
+				}
+			}
+		}
+		return ex;
+	}
+
 	private String syncKey(String repositoryId, String provider) {
 		return repositoryId + ":" + provider;
 	}
 
-	// Lock removed: synchronized startSync + fixed thread pool provides safe concurrency
+	private Object getKeyLock(String key) {
+		return syncKeyLocks.computeIfAbsent(key, k -> new Object());
+	}
 
 	private int getWindowSize() {
 		String val = propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_WINDOW_SIZE);
@@ -108,37 +141,40 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 		return startSync(repositoryId, provider, CloudSyncResult.SyncMode.FULL);
 	}
 
-	private synchronized CloudSyncResult startSync(String repositoryId, String provider, CloudSyncResult.SyncMode mode) {
+	private CloudSyncResult startSync(String repositoryId, String provider, CloudSyncResult.SyncMode mode) {
 		String key = syncKey(repositoryId, provider);
 
-		// Check if already running (synchronized method prevents race)
-		CloudSyncResult existing = currentResults.get(key);
-		if (existing != null && existing.getStatus() == CloudSyncResult.Status.RUNNING) {
-			return existing;
-		}
-
-		CloudSyncResult result = new CloudSyncResult(repositoryId, provider, mode);
-		result.setStatus(CloudSyncResult.Status.RUNNING);
-		result.setStartTime(Instant.now().toString());
-		currentResults.put(key, result);
-		cancelFlags.put(key, new java.util.concurrent.atomic.AtomicBoolean(false));
-
-		executor.submit(() -> {
-			try {
-				executeSync(repositoryId, provider, mode, result);
-			} catch (Exception e) {
-				log.error("Cloud sync failed: " + e.getMessage(), e);
-				result.setStatus(CloudSyncResult.Status.ERROR);
-				result.addError(e.getMessage());
-			} finally {
-				result.setEndTime(Instant.now().toString());
-				if (result.getStatus() == CloudSyncResult.Status.RUNNING) {
-					result.setStatus(CloudSyncResult.Status.COMPLETED);
-				}
+		// Per-key synchronization: different repo/provider pairs can run in parallel
+		synchronized (getKeyLock(key)) {
+			// Check if already running
+			CloudSyncResult existing = currentResults.get(key);
+			if (existing != null && existing.getStatus() == CloudSyncResult.Status.RUNNING) {
+				return existing;
 			}
-		});
 
-		return result;
+			CloudSyncResult result = new CloudSyncResult(repositoryId, provider, mode);
+			result.setStatus(CloudSyncResult.Status.RUNNING);
+			result.setStartTime(Instant.now().toString());
+			currentResults.put(key, result);
+			cancelFlags.put(key, new java.util.concurrent.atomic.AtomicBoolean(false));
+
+			getExecutor().submit(() -> {
+				try {
+					executeSync(repositoryId, provider, mode, result);
+				} catch (Exception e) {
+					log.error("Cloud sync failed: " + e.getMessage(), e);
+					result.setStatus(CloudSyncResult.Status.ERROR);
+					result.addError(e.getMessage());
+				} finally {
+					result.setEndTime(Instant.now().toString());
+					if (result.getStatus() == CloudSyncResult.Status.RUNNING) {
+						result.setStatus(CloudSyncResult.Status.COMPLETED);
+					}
+				}
+			});
+
+			return result;
+		}
 	}
 
 	private void executeSync(String repositoryId, String provider, CloudSyncResult.SyncMode mode,

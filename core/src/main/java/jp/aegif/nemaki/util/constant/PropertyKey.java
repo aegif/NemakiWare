@@ -380,4 +380,5 @@ public interface PropertyKey {
 	final String CLOUD_DIRECTORY_SYNC_MICROSOFT_CLIENT_SECRET = "cloud.directory.sync.microsoft.clientSecret";
 	final String CLOUD_DIRECTORY_SYNC_WINDOW_SIZE = "cloud.directory.sync.window.size";
 	final String CLOUD_DIRECTORY_SYNC_GOOGLE_ADMIN_EMAIL = "cloud.directory.sync.google.adminEmail";
+	final String CLOUD_DIRECTORY_SYNC_THREAD_POOL_SIZE = "cloud.directory.sync.threadPoolSize";
 }

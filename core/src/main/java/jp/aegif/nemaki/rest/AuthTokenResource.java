@@ -745,41 +745,74 @@ public class AuthTokenResource extends ResourceBase{
 	}
 
 	private String extractUserNameFromOIDCUserInfo(JSONObject userInfo) {
+		// Standard OIDC claims
 		if (userInfo.containsKey("preferred_username")) {
 			return (String) userInfo.get("preferred_username");
 		}
 		if (userInfo.containsKey("email")) {
 			return (String) userInfo.get("email");
 		}
+		// Microsoft Graph /v1.0/me specific fields
+		if (userInfo.containsKey("userPrincipalName")) {
+			return (String) userInfo.get("userPrincipalName");
+		}
+		if (userInfo.containsKey("mail")) {
+			return (String) userInfo.get("mail");
+		}
+		// Fallback to sub (opaque ID)
 		if (userInfo.containsKey("sub")) {
 			return (String) userInfo.get("sub");
 		}
 		return null;
 	}
 
+	// Allowed OIDC UserInfo endpoint host+path prefixes (SSRF prevention)
+	private static final java.util.List<String> ALLOWED_USERINFO_PREFIXES = java.util.List.of(
+		"https://www.googleapis.com/oauth2/",         // Google OAuth2
+		"https://openidconnect.googleapis.com/",       // Google OIDC
+		"https://graph.microsoft.com/oidc/userinfo",   // Microsoft OIDC
+		"https://graph.microsoft.com/v1.0/me"          // Microsoft Graph
+	);
+
+	private boolean isAllowedUserInfoEndpoint(String normalizedUrl) {
+		for (String prefix : ALLOWED_USERINFO_PREFIXES) {
+			if (normalizedUrl.startsWith(prefix)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/**
 	 * Fetch user info from an OIDC provider's UserInfo endpoint using the access token.
 	 * This provides server-side validation that the access token is valid.
 	 *
-	 * SSRF prevention: Only whitelisted OIDC provider endpoints are allowed.
+	 * SSRF prevention: Only known OIDC provider hosts and path prefixes are allowed.
+	 * URI is normalized (trailing slash removed) before validation.
 	 */
 	@SuppressWarnings("unchecked")
 	private JSONObject fetchUserInfoFromProvider(String userinfoEndpoint, String accessToken) {
-		// Whitelist of allowed UserInfo endpoints (SSRF prevention)
-		java.util.Set<String> allowedEndpoints = java.util.Set.of(
-			"https://www.googleapis.com/oauth2/v3/userinfo",
-			"https://openidconnect.googleapis.com/v1/userinfo",
-			"https://graph.microsoft.com/oidc/userinfo",
-			"https://graph.microsoft.com/v1.0/me"
-		);
+		if (userinfoEndpoint == null || userinfoEndpoint.isEmpty()) {
+			return null;
+		}
 
-		if (!allowedEndpoints.contains(userinfoEndpoint)) {
-			logger.error("UserInfo endpoint not in whitelist: {}", userinfoEndpoint);
+		// Normalize: remove trailing slash
+		String normalized = userinfoEndpoint.endsWith("/")
+			? userinfoEndpoint.substring(0, userinfoEndpoint.length() - 1)
+			: userinfoEndpoint;
+
+		// SSRF prevention: validate against allowed host+path prefixes
+		if (!isAllowedUserInfoEndpoint(normalized)) {
+			logger.error("UserInfo endpoint not allowed: {}", userinfoEndpoint);
 			return null;
 		}
 
 		try {
-			URL url = new URL(userinfoEndpoint);
+			URL url = new URL(normalized);
+			if (!"https".equals(url.getProtocol())) {
+				logger.error("UserInfo endpoint must use HTTPS: {}", normalized);
+				return null;
+			}
 
 			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
 			conn.setRequestMethod("GET");
