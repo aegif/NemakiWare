@@ -182,8 +182,8 @@ export interface AuthToken {
   token: string;
   repositoryId: string;
   username: string;
-  /** Authentication method used: 'basic' for username/password, 'oidc' for OpenID Connect, 'saml' for SAML 2.0 */
-  authMethod?: 'basic' | 'oidc' | 'saml';
+  /** Authentication method used */
+  authMethod?: 'basic' | 'oidc' | 'saml' | 'google' | 'microsoft';
 }
 
 export class AuthService {

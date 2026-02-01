@@ -822,6 +822,34 @@
         <property name="repositoryInfoMap" ref="repositoryInfoMap" />
     </bean>
 
+    <!-- Cloud Directory Sync Service -->
+    <bean id="cloudDirectorySyncService" class="jp.aegif.nemaki.sync.service.CloudDirectorySyncServiceImpl">
+        <property name="principalService" ref="PrincipalService" />
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
+    <!-- Cloud Directory Sync Scheduler -->
+    <bean id="cloudDirectorySyncScheduler" class="jp.aegif.nemaki.sync.scheduler.CloudDirectorySyncScheduler"
+          init-method="init" destroy-method="destroy">
+        <property name="cloudDirectorySyncService" ref="cloudDirectorySyncService" />
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
+    <!-- Cloud Directory Sync REST API -->
+    <bean id="cloudDirectorySyncResource" class="jp.aegif.nemaki.rest.CloudDirectorySyncResource">
+        <property name="cloudDirectorySyncService" ref="cloudDirectorySyncService" />
+    </bean>
+
+    <!-- Cloud Drive Service -->
+    <bean id="cloudDriveService" class="jp.aegif.nemaki.businesslogic.impl.CloudDriveServiceImpl">
+        <property name="objectService" ref="objectService" />
+    </bean>
+
+    <bean id="cloudDriveResource" class="jp.aegif.nemaki.rest.CloudDriveResource">
+        <property name="cloudDriveService" ref="cloudDriveService" />
+        <property name="contentService" ref="ContentService" />
+    </bean>
+
     <!-- API v1 Component Scanning -->
     <!-- Enable component scanning for OpenAPI v1 resources and filters -->
     <!-- This allows @Autowired dependencies to be injected via Jersey-Spring bridge -->

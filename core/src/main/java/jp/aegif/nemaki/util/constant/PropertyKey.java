@@ -354,4 +354,30 @@ public interface PropertyKey {
 	// Audit logging - configurable limits
 	final String AUDIT_REQUEST_PATH_MAX_LENGTH = "audit.request.path.max.length";  // Default: 2000
 	final String AUDIT_ASYNC_QUEUE_SIZE = "audit.async.queue.size";  // Default: 512 (logback config)
+
+	//Cloud Authentication (Google / Microsoft direct OIDC)
+	final String CLOUD_AUTH_GOOGLE_ENABLED = "cloud.auth.google.enabled";
+	final String CLOUD_AUTH_GOOGLE_CLIENT_ID = "cloud.auth.google.clientId";
+	final String CLOUD_AUTH_GOOGLE_CLIENT_SECRET = "cloud.auth.google.clientSecret";
+	final String CLOUD_AUTH_MICROSOFT_ENABLED = "cloud.auth.microsoft.enabled";
+	final String CLOUD_AUTH_MICROSOFT_CLIENT_ID = "cloud.auth.microsoft.clientId";
+	final String CLOUD_AUTH_MICROSOFT_TENANT_ID = "cloud.auth.microsoft.tenantId";
+	final String CLOUD_AUTH_MICROSOFT_CLIENT_SECRET = "cloud.auth.microsoft.clientSecret";
+
+	//Cloud Drive Integration
+	final String CLOUD_DRIVE_GOOGLE_ENABLED = "cloud.drive.google.enabled";
+	final String CLOUD_DRIVE_MICROSOFT_ENABLED = "cloud.drive.microsoft.enabled";
+	final String CLOUD_DRIVE_ENCRYPTION_KEY = "cloud.drive.encryption.key";
+
+	//Cloud Directory Sync
+	final String CLOUD_DIRECTORY_SYNC_ENABLED = "cloud.directory.sync.enabled";
+	final String CLOUD_DIRECTORY_SYNC_PROVIDERS = "cloud.directory.sync.providers";
+	final String CLOUD_DIRECTORY_SYNC_CRON = "cloud.directory.sync.cron";
+	final String CLOUD_DIRECTORY_SYNC_GOOGLE_SERVICE_ACCOUNT_KEY = "cloud.directory.sync.google.serviceAccountKey";
+	final String CLOUD_DIRECTORY_SYNC_GOOGLE_DOMAIN = "cloud.directory.sync.google.domain";
+	final String CLOUD_DIRECTORY_SYNC_MICROSOFT_TENANT_ID = "cloud.directory.sync.microsoft.tenantId";
+	final String CLOUD_DIRECTORY_SYNC_MICROSOFT_CLIENT_ID = "cloud.directory.sync.microsoft.clientId";
+	final String CLOUD_DIRECTORY_SYNC_MICROSOFT_CLIENT_SECRET = "cloud.directory.sync.microsoft.clientSecret";
+	final String CLOUD_DIRECTORY_SYNC_WINDOW_SIZE = "cloud.directory.sync.window.size";
+	final String CLOUD_DIRECTORY_SYNC_GOOGLE_ADMIN_EMAIL = "cloud.directory.sync.google.adminEmail";
 }

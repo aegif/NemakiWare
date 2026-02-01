@@ -118,6 +118,12 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Cloud Drive Metadata secondary type for Google Drive / OneDrive integration -->
+				<bean class="jp.aegif.nemaki.patch.Patch_CloudDriveMetadataSecondaryType">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -186,6 +192,12 @@
 	</bean>
 
 	<bean id="patch_WebhookDeliveryLogViews" class="jp.aegif.nemaki.patch.Patch_WebhookDeliveryLogViews">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_CloudDriveMetadataSecondaryType" class="jp.aegif.nemaki.patch.Patch_CloudDriveMetadataSecondaryType">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

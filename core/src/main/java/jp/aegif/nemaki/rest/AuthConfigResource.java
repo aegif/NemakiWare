@@ -87,19 +87,54 @@ public class AuthConfigResource extends ResourceBase {
 
 			result.put("oidcEnabled", oidcEnabled);
 			result.put("samlEnabled", samlEnabled);
+
+			// Cloud authentication providers (Google / Microsoft direct OIDC)
+			boolean googleEnabled = readBooleanProperty(PropertyKey.CLOUD_AUTH_GOOGLE_ENABLED, false);
+			boolean microsoftEnabled = readBooleanProperty(PropertyKey.CLOUD_AUTH_MICROSOFT_ENABLED, false);
+
+			result.put("googleEnabled", googleEnabled);
+			result.put("microsoftEnabled", microsoftEnabled);
+
+			// Return client IDs (never secrets) so UI can initiate OAuth flows
+			if (googleEnabled) {
+				result.put("googleClientId", readStringProperty(PropertyKey.CLOUD_AUTH_GOOGLE_CLIENT_ID, ""));
+			}
+			if (microsoftEnabled) {
+				result.put("microsoftClientId", readStringProperty(PropertyKey.CLOUD_AUTH_MICROSOFT_CLIENT_ID, ""));
+				result.put("microsoftTenantId", readStringProperty(PropertyKey.CLOUD_AUTH_MICROSOFT_TENANT_ID, "common"));
+			}
+
 			result.put("status", "success");
 
-			log.debug("Auth config requested: OIDC=" + oidcEnabled + ", SAML=" + samlEnabled);
+			log.debug("Auth config requested: OIDC=" + oidcEnabled + ", SAML=" + samlEnabled
+					+ ", Google=" + googleEnabled + ", Microsoft=" + microsoftEnabled);
 		} catch (Exception e) {
 			log.error("Failed to read auth config: " + e.getMessage(), e);
 			// Return safe defaults on error (buttons hidden)
 			result.put("oidcEnabled", false);
 			result.put("samlEnabled", false);
+			result.put("googleEnabled", false);
+			result.put("microsoftEnabled", false);
 			result.put("status", "error");
 			result.put("message", "Failed to read configuration");
 		}
 
 		return result.toJSONString();
+	}
+
+	/**
+	 * Read a string property value with a default fallback.
+	 */
+	private String readStringProperty(String key, String defaultValue) {
+		PropertyManager pm = getPropertyManager();
+		if (pm == null) {
+			return defaultValue;
+		}
+		String value = pm.readValue(key);
+		if (value == null || value.trim().isEmpty()) {
+			return defaultValue;
+		}
+		return value.trim();
 	}
 
 	/**

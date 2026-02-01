@@ -263,7 +263,10 @@ import {
   DeleteOutlined,
   SwapOutlined,
   WarningOutlined,
-  InfoCircleOutlined
+  InfoCircleOutlined,
+  GoogleOutlined,
+  WindowsOutlined,
+  CloudUploadOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -277,6 +280,8 @@ import { SecondaryTypeSelector } from '../SecondaryTypeSelector/SecondaryTypeSel
 import { TypeMigrationModal } from '../TypeMigrationModal/TypeMigrationModal';
 import { canPreview } from '../../utils/previewUtils';
 import { useAuth } from '../../contexts/AuthContext';
+import { fetchCloudAuthConfig, CloudAuthConfig } from '../../services/cloud-auth';
+import { pushToCloud, getGoogleDriveAccessToken, getOneDriveAccessToken } from '../../services/cloud-drive';
 import { getSafeArrayValue, getSafeStringValue, getSafeBooleanValue } from '../../utils/cmisPropertyUtils';
 import { useSearchParams } from 'react-router-dom';
 
@@ -306,6 +311,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
   const [relationshipDetailModalVisible, setRelationshipDetailModalVisible] = useState(false);
   const [selectedRelationship, setSelectedRelationship] = useState<Relationship | null>(null);
   const [relationshipEditMode, setRelationshipEditMode] = useState(false);
+  const [cloudAuthConfig, setCloudAuthConfig] = useState<CloudAuthConfig | null>(null);
+  const [cloudPushLoading, setCloudPushLoading] = useState(false);
   const [relationshipTypeDefinition, setRelationshipTypeDefinition] = useState<TypeDefinition | null>(null);
   // RAG Similar Documents state
   const [ragEnabled, setRagEnabled] = useState(false);
@@ -328,6 +335,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     return () => {
       console.log('[DocumentViewer] Component UNMOUNTED');
     };
+  }, []);
+
+  // Load cloud auth config
+  useEffect(() => {
+    fetchCloudAuthConfig().then(setCloudAuthConfig).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -540,6 +552,33 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       message.error(t('documentViewer.messages.checkoutError'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCloudPush = async (provider: 'google' | 'microsoft') => {
+    if (!object || !cloudAuthConfig) return;
+    try {
+      setCloudPushLoading(true);
+      let accessToken: string;
+      if (provider === 'google') {
+        accessToken = await getGoogleDriveAccessToken(cloudAuthConfig.googleClientId!);
+      } else {
+        accessToken = await getOneDriveAccessToken(
+          cloudAuthConfig.microsoftClientId!,
+          cloudAuthConfig.microsoftTenantId!
+        );
+      }
+      const result = await pushToCloud(repositoryId, object.id, provider, accessToken);
+      message.success(t('documentViewer.messages.cloudPushSuccess'));
+      // Open cloud file in new tab
+      if (result.cloudFileUrl) {
+        window.open(result.cloudFileUrl, '_blank');
+      }
+    } catch (error) {
+      console.error('Cloud push failed:', error);
+      message.error(t('documentViewer.messages.cloudPushError'));
+    } finally {
+      setCloudPushLoading(false);
     }
   };
 
@@ -1167,6 +1206,24 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       {t('common.cancel')}
                     </Button>
                   </Popconfirm>
+                  {cloudAuthConfig?.googleEnabled && (
+                    <Button
+                      icon={<GoogleOutlined />}
+                      loading={cloudPushLoading}
+                      onClick={() => handleCloudPush('google')}
+                    >
+                      {t('documentViewer.editInGoogleDrive')}
+                    </Button>
+                  )}
+                  {cloudAuthConfig?.microsoftEnabled && (
+                    <Button
+                      icon={<WindowsOutlined />}
+                      loading={cloudPushLoading}
+                      onClick={() => handleCloudPush('microsoft')}
+                    >
+                      {t('documentViewer.editInOneDrive')}
+                    </Button>
+                  )}
                 </Space>
               )}
 

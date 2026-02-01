@@ -207,7 +207,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, Card, Alert, Select, Divider } from 'antd';
-import { UserOutlined, LockOutlined, DatabaseOutlined, LoginOutlined } from '@ant-design/icons';
+import { UserOutlined, LockOutlined, DatabaseOutlined, LoginOutlined, GoogleOutlined, WindowsOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { AuthService, AuthToken } from '../../services/auth';
 import { CMISService } from '../../services/cmis';
@@ -216,6 +216,7 @@ import { getOIDCConfig, isOIDCEnabled } from '../../config/oidc';
 import { SAMLService } from '../../services/saml';
 import { getSAMLConfig, isSAMLEnabled } from '../../config/saml';
 import { DEFAULT_REPOSITORY_ID } from '../../config/app';
+import { CloudAuthConfig, fetchCloudAuthConfig, signInWithGoogle, signInWithMicrosoft } from '../../services/cloud-auth';
 
 interface LoginProps {
   onLogin: (auth: AuthToken) => void;
@@ -242,17 +243,22 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [oidcService, setOidcService] = useState<OIDCService | null>(null);
   const [samlService, setSamlService] = useState<SAMLService | null>(null);
 
+  // Cloud authentication (Google / Microsoft direct OIDC)
+  const [cloudAuthConfig, setCloudAuthConfig] = useState<CloudAuthConfig | null>(null);
+
   // Load SSO configuration from backend
   useEffect(() => {
     const loadSsoConfig = async () => {
       try {
-        const [oidcResult, samlResult] = await Promise.all([
+        const [oidcResult, samlResult, cloudConfig] = await Promise.all([
           isOIDCEnabled(),
-          isSAMLEnabled()
+          isSAMLEnabled(),
+          fetchCloudAuthConfig()
         ]);
 
         setOidcEnabled(oidcResult);
         setSamlEnabled(samlResult);
+        setCloudAuthConfig(cloudConfig);
 
         // Initialize SSO services based on configuration
         if (oidcResult) {
@@ -488,10 +494,61 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    if (!cloudAuthConfig?.googleEnabled || !cloudAuthConfig.googleClientId) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const repositoryId = repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID;
+      const auth = await signInWithGoogle(cloudAuthConfig.googleClientId, repositoryId);
+      authService.saveAuth(auth);
+      performCleanup();
+      onLogin(auth);
+      setTimeout(performCleanup, 100);
+    } catch (error) {
+      console.error('Google login error:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setError(t('login.messages.googleFailed', { error: errorMessage }));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMicrosoftLogin = async () => {
+    if (!cloudAuthConfig?.microsoftEnabled || !cloudAuthConfig.microsoftClientId) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const repositoryId = repositories.length > 0 ? repositories[0] : DEFAULT_REPOSITORY_ID;
+      const auth = await signInWithMicrosoft(
+        cloudAuthConfig.microsoftClientId,
+        cloudAuthConfig.microsoftTenantId || 'common',
+        repositoryId
+      );
+      authService.saveAuth(auth);
+      performCleanup();
+      onLogin(auth);
+      setTimeout(performCleanup, 100);
+    } catch (error) {
+      console.error('Microsoft login error:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setError(t('login.messages.microsoftFailed', { error: errorMessage }));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const hasAnySsoMethod = oidcEnabled || samlEnabled
+    || cloudAuthConfig?.googleEnabled || cloudAuthConfig?.microsoftEnabled;
+
   return (
-    <div style={{ 
-      display: 'flex', 
-      justifyContent: 'center', 
+    <div style={{
+      display: 'flex',
+      justifyContent: 'center',
       alignItems: 'center', 
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)'
@@ -577,9 +634,35 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </Button>
           </Form.Item>
 
-          {ssoConfigLoaded && (oidcEnabled || samlEnabled) && (
+          {ssoConfigLoaded && hasAnySsoMethod && (
             <>
               <Divider>{t('login.or')}</Divider>
+              {cloudAuthConfig?.googleEnabled && (
+                <Form.Item>
+                  <Button
+                    type="default"
+                    icon={<GoogleOutlined />}
+                    onClick={handleGoogleLogin}
+                    loading={loading}
+                    style={{ width: '100%', height: 40, marginBottom: 8 }}
+                  >
+                    {t('login.googleLogin')}
+                  </Button>
+                </Form.Item>
+              )}
+              {cloudAuthConfig?.microsoftEnabled && (
+                <Form.Item>
+                  <Button
+                    type="default"
+                    icon={<WindowsOutlined />}
+                    onClick={handleMicrosoftLogin}
+                    loading={loading}
+                    style={{ width: '100%', height: 40, marginBottom: 8 }}
+                  >
+                    {t('login.microsoftLogin')}
+                  </Button>
+                </Form.Item>
+              )}
               {oidcEnabled && (
                 <Form.Item>
                   <Button

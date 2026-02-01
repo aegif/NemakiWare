@@ -215,6 +215,7 @@ import { AuditDashboard } from './components/AuditDashboard/AuditDashboard';
 import { ApiDocs } from './components/ApiDocs/ApiDocs';
 import { FilesystemImportExport } from './components/FilesystemImportExport/FilesystemImportExport';
 import { WebhookManagement } from './components/WebhookManagement/WebhookManagement';
+import { CloudDirectorySync } from './components/CloudDirectorySync/CloudDirectorySync';
 import { Login } from './components/Login/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute/ProtectedRoute';
@@ -298,6 +299,13 @@ function AppContent() {
             <ProtectedRoute>
               <AdminRoute>
                 <SolrMaintenance repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/cloud-directory-sync" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <CloudDirectorySync repositoryId={authToken.repositoryId} />
               </AdminRoute>
             </ProtectedRoute>
           } />

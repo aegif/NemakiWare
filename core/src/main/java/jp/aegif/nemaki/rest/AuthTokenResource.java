@@ -35,6 +35,7 @@ import jakarta.ws.rs.core.Context;
 
 import java.io.ByteArrayInputStream;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.UUID;
 import java.util.zip.Inflater;
 import javax.xml.parsers.DocumentBuilder;
@@ -42,6 +43,22 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
+
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
+
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.jwk.source.RemoteJWKSet;
+import com.nimbusds.jose.proc.JWSKeySelector;
+import com.nimbusds.jose.proc.JWSVerificationKeySelector;
+import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.proc.ConfigurableJWTProcessor;
+import com.nimbusds.jwt.proc.DefaultJWTProcessor;
+import java.net.URL;
 
 @Path("/repo/{repositoryId}/authtoken/")
 public class AuthTokenResource extends ResourceBase{
@@ -402,6 +419,206 @@ public class AuthTokenResource extends ResourceBase{
 		} catch (Exception e) {
 			logger.error("OIDC token conversion failed", e);
 			addErrMsg(errMsg, "oidc", "conversionFailed");
+		}
+
+		return makeResult(status, result, errMsg).toString();
+	}
+
+	/**
+	 * Convert a Google ID token to a NemakiWare auth token.
+	 * The ID token is verified server-side using Google's public keys.
+	 */
+	@POST
+	@Path("/google/convert")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	public String convertGoogleToken(@PathParam("repositoryId") String repositoryId, String requestBody) {
+		boolean status = false;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		logger.info("=== Google token conversion requested for repository: {} ===", repositoryId);
+
+		if (StringUtils.isBlank(repositoryId)) {
+			addErrMsg(errMsg, "repositoryId", "isNull");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		try {
+			JSONParser parser = new JSONParser();
+			JSONObject requestJson = (JSONObject) parser.parse(requestBody);
+
+			String idTokenString = (String) requestJson.get("id_token");
+			if (StringUtils.isBlank(idTokenString)) {
+				addErrMsg(errMsg, "id_token", "isNull");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Get Google client ID from configuration
+			PropertyManager pm = getPropertyManager();
+			String clientId = pm != null ? pm.readValue(PropertyKey.CLOUD_AUTH_GOOGLE_CLIENT_ID) : null;
+			if (StringUtils.isBlank(clientId)) {
+				addErrMsg(errMsg, "google", "notConfigured");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Verify ID token using Google's library
+			GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
+					new NetHttpTransport(), GsonFactory.getDefaultInstance())
+				.setAudience(Collections.singletonList(clientId))
+				.build();
+
+			GoogleIdToken idToken = verifier.verify(idTokenString);
+			if (idToken == null) {
+				addErrMsg(errMsg, "id_token", "invalidOrExpired");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			GoogleIdToken.Payload payload = idToken.getPayload();
+			String email = payload.getEmail();
+			String userName = email != null ? email : payload.getSubject();
+
+			logger.info("Google authentication successful for user: {}", userName);
+
+			UserItem userItem = getOrCreateUser(repositoryId, userName);
+			if (userItem == null) {
+				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			TokenService tokenService = getTokenService();
+			if (tokenService == null) {
+				addErrMsg(errMsg, "tokenService", "notAvailable");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String app = "";
+			Token token = tokenService.setToken(app, repositoryId, userName);
+			setAuthTokenCookie(token.getToken(), repositoryId);
+
+			JSONObject obj = new JSONObject();
+			obj.put("app", app);
+			obj.put("repositoryId", repositoryId);
+			obj.put("userName", userName);
+			obj.put("token", token.getToken());
+			obj.put("expiration", token.getExpiration());
+			result.put("value", obj);
+
+			status = true;
+			logger.info("=== Google token conversion successful for user: {} ===", userName);
+
+		} catch (ParseException e) {
+			logger.error("Failed to parse Google request body", e);
+			addErrMsg(errMsg, "requestBody", "invalidJson");
+		} catch (Exception e) {
+			logger.error("Google token conversion failed", e);
+			addErrMsg(errMsg, "google", "conversionFailed");
+		}
+
+		return makeResult(status, result, errMsg).toString();
+	}
+
+	/**
+	 * Convert a Microsoft ID token to a NemakiWare auth token.
+	 * The ID token is verified server-side using Microsoft's JWKS endpoint.
+	 */
+	@POST
+	@Path("/microsoft/convert")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	public String convertMicrosoftToken(@PathParam("repositoryId") String repositoryId, String requestBody) {
+		boolean status = false;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		logger.info("=== Microsoft token conversion requested for repository: {} ===", repositoryId);
+
+		if (StringUtils.isBlank(repositoryId)) {
+			addErrMsg(errMsg, "repositoryId", "isNull");
+			return makeResult(false, result, errMsg).toString();
+		}
+
+		try {
+			JSONParser parser = new JSONParser();
+			JSONObject requestJson = (JSONObject) parser.parse(requestBody);
+
+			String idTokenString = (String) requestJson.get("id_token");
+			if (StringUtils.isBlank(idTokenString)) {
+				addErrMsg(errMsg, "id_token", "isNull");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Get Microsoft configuration
+			PropertyManager pm = getPropertyManager();
+			String clientId = pm != null ? pm.readValue(PropertyKey.CLOUD_AUTH_MICROSOFT_CLIENT_ID) : null;
+			String tenantId = pm != null ? pm.readValue(PropertyKey.CLOUD_AUTH_MICROSOFT_TENANT_ID) : "common";
+			if (StringUtils.isBlank(clientId)) {
+				addErrMsg(errMsg, "microsoft", "notConfigured");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Verify ID token using Microsoft's JWKS endpoint via nimbus-jose-jwt
+			String jwksUrl = "https://login.microsoftonline.com/" + tenantId + "/discovery/v2.0/keys";
+			ConfigurableJWTProcessor<SecurityContext> jwtProcessor = new DefaultJWTProcessor<>();
+			JWKSource<SecurityContext> keySource = new RemoteJWKSet<>(new URL(jwksUrl));
+			JWSKeySelector<SecurityContext> keySelector = new JWSVerificationKeySelector<>(JWSAlgorithm.RS256, keySource);
+			jwtProcessor.setJWSKeySelector(keySelector);
+
+			JWTClaimsSet claims = jwtProcessor.process(idTokenString, null);
+
+			// Verify audience
+			if (!claims.getAudience().contains(clientId)) {
+				addErrMsg(errMsg, "id_token", "audienceMismatch");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			// Extract user identifier
+			String preferredUsername = claims.getStringClaim("preferred_username");
+			String email = claims.getStringClaim("email");
+			String oid = claims.getStringClaim("oid");
+			String userName = preferredUsername != null ? preferredUsername :
+			                  email != null ? email : oid;
+
+			if (StringUtils.isBlank(userName)) {
+				addErrMsg(errMsg, "userName", "couldNotExtract");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			logger.info("Microsoft authentication successful for user: {}", userName);
+
+			UserItem userItem = getOrCreateUser(repositoryId, userName);
+			if (userItem == null) {
+				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			TokenService tokenService = getTokenService();
+			if (tokenService == null) {
+				addErrMsg(errMsg, "tokenService", "notAvailable");
+				return makeResult(false, result, errMsg).toString();
+			}
+
+			String app = "";
+			Token token = tokenService.setToken(app, repositoryId, userName);
+			setAuthTokenCookie(token.getToken(), repositoryId);
+
+			JSONObject obj = new JSONObject();
+			obj.put("app", app);
+			obj.put("repositoryId", repositoryId);
+			obj.put("userName", userName);
+			obj.put("token", token.getToken());
+			obj.put("expiration", token.getExpiration());
+			result.put("value", obj);
+
+			status = true;
+			logger.info("=== Microsoft token conversion successful for user: {} ===", userName);
+
+		} catch (ParseException e) {
+			logger.error("Failed to parse Microsoft request body", e);
+			addErrMsg(errMsg, "requestBody", "invalidJson");
+		} catch (Exception e) {
+			logger.error("Microsoft token conversion failed", e);
+			addErrMsg(errMsg, "microsoft", "conversionFailed");
 		}
 
 		return makeResult(status, result, errMsg).toString();

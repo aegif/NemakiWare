@@ -224,7 +224,8 @@ import {
   ApiOutlined,
   BarChartOutlined,
   SwapOutlined,
-  SendOutlined
+  SendOutlined,
+  CloudOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -371,6 +372,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           key: '/webhooks',
           icon: <SendOutlined />,
           label: t('webhookManagement.title'),
+        },
+        {
+          key: '/cloud-directory-sync',
+          icon: <CloudOutlined />,
+          label: t('cloudSync.title'),
         },
       ],
     }] : []),

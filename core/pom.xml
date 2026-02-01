@@ -863,6 +863,51 @@
 			<artifactId>hibernate-validator</artifactId>
 			<version>8.0.1.Final</version>
 		</dependency>
+
+		<!-- Cloud Authentication: Google ID token verification -->
+		<dependency>
+			<groupId>com.google.auth</groupId>
+			<artifactId>google-auth-library-oauth2-http</artifactId>
+			<version>1.23.0</version>
+		</dependency>
+		<dependency>
+			<groupId>com.google.api-client</groupId>
+			<artifactId>google-api-client</artifactId>
+			<version>2.6.0</version>
+		</dependency>
+
+		<!-- Cloud Authentication: Microsoft / generic JWKS token verification -->
+		<dependency>
+			<groupId>com.nimbusds</groupId>
+			<artifactId>nimbus-jose-jwt</artifactId>
+			<version>9.37.3</version>
+		</dependency>
+
+		<!-- Google Drive API -->
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-drive</artifactId>
+			<version>v3-rev20240521-2.0.0</version>
+		</dependency>
+
+		<!-- Google Admin Directory API (for directory sync) -->
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-admin-directory</artifactId>
+			<version>directory_v1-rev20240509-2.0.0</version>
+		</dependency>
+
+		<!-- Microsoft Graph SDK (for OneDrive + directory sync) -->
+		<dependency>
+			<groupId>com.microsoft.graph</groupId>
+			<artifactId>microsoft-graph</artifactId>
+			<version>6.5.0</version>
+		</dependency>
+		<dependency>
+			<groupId>com.azure</groupId>
+			<artifactId>azure-identity</artifactId>
+			<version>1.12.1</version>
+		</dependency>
 	</dependencies>
 
 	<build>
