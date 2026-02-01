@@ -171,7 +171,6 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 
 	private String pushToOneDrive(ContentStream contentStream, String accessToken) {
 		try {
-			byte[] content = contentStream.getStream().readAllBytes();
 			String fileName = contentStream.getFileName();
 
 			java.net.http.HttpClient httpClient = java.net.http.HttpClient.newHttpClient();
@@ -179,7 +178,7 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 				.uri(java.net.URI.create("https://graph.microsoft.com/v1.0/me/drive/root:/" + fileName + ":/content"))
 				.header("Authorization", "Bearer " + accessToken)
 				.header("Content-Type", contentStream.getMimeType())
-				.PUT(java.net.http.HttpRequest.BodyPublishers.ofByteArray(content))
+				.PUT(java.net.http.HttpRequest.BodyPublishers.ofInputStream(contentStream::getStream))
 				.build();
 
 			java.net.http.HttpResponse<String> response = httpClient.send(request,

@@ -31,14 +31,14 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 	private PrincipalService principalService;
 	private PropertyManager propertyManager;
 
-	private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
+	// Fixed-size thread pool: max 2 concurrent syncs (one per provider)
+	private final ExecutorService executor = Executors.newFixedThreadPool(2, r -> {
 		Thread t = new Thread(r, "CloudDirectorySync");
 		t.setDaemon(true);
 		return t;
 	});
 
-	// Per-repository locks to prevent concurrent syncs
-	private final ConcurrentHashMap<String, ReentrantLock> syncLocks = new ConcurrentHashMap<>();
+	// Sync state is guarded by synchronized startSync method
 	// Current sync results per repository+provider
 	private final ConcurrentHashMap<String, CloudSyncResult> currentResults = new ConcurrentHashMap<>();
 	// Sync state per repository+provider (delta tokens etc.)
@@ -58,9 +58,7 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 		return repositoryId + ":" + provider;
 	}
 
-	private ReentrantLock getLock(String repositoryId, String provider) {
-		return syncLocks.computeIfAbsent(syncKey(repositoryId, provider), k -> new ReentrantLock());
-	}
+	// Lock removed: synchronized startSync + fixed thread pool provides safe concurrency
 
 	private int getWindowSize() {
 		String val = propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_WINDOW_SIZE);
@@ -110,51 +108,37 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 		return startSync(repositoryId, provider, CloudSyncResult.SyncMode.FULL);
 	}
 
-	private CloudSyncResult startSync(String repositoryId, String provider, CloudSyncResult.SyncMode mode) {
+	private synchronized CloudSyncResult startSync(String repositoryId, String provider, CloudSyncResult.SyncMode mode) {
 		String key = syncKey(repositoryId, provider);
-		ReentrantLock lock = getLock(repositoryId, provider);
 
-		// Try to acquire lock; if already held, a sync is running
-		if (!lock.tryLock()) {
-			CloudSyncResult existing = currentResults.get(key);
-			if (existing != null && existing.getStatus() == CloudSyncResult.Status.RUNNING) {
-				return existing;
-			}
+		// Check if already running (synchronized method prevents race)
+		CloudSyncResult existing = currentResults.get(key);
+		if (existing != null && existing.getStatus() == CloudSyncResult.Status.RUNNING) {
+			return existing;
 		}
 
-		// Lock is held by us - set up result and submit task while holding lock
-		// This eliminates the race between unlock and executor.submit
-		try {
-			CloudSyncResult result = new CloudSyncResult(repositoryId, provider, mode);
-			result.setStatus(CloudSyncResult.Status.RUNNING);
-			result.setStartTime(Instant.now().toString());
-			currentResults.put(key, result);
-			cancelFlags.put(key, new java.util.concurrent.atomic.AtomicBoolean(false));
+		CloudSyncResult result = new CloudSyncResult(repositoryId, provider, mode);
+		result.setStatus(CloudSyncResult.Status.RUNNING);
+		result.setStartTime(Instant.now().toString());
+		currentResults.put(key, result);
+		cancelFlags.put(key, new java.util.concurrent.atomic.AtomicBoolean(false));
 
-			executor.submit(() -> {
-				// Lock is already held by the calling thread, but executor runs in a different thread.
-				// We need to re-acquire the lock in the executor thread.
-				// The calling thread will release it after submit returns.
-				lock.lock();
-				try {
-					executeSync(repositoryId, provider, mode, result);
-				} catch (Exception e) {
-					log.error("Cloud sync failed: " + e.getMessage(), e);
-					result.setStatus(CloudSyncResult.Status.ERROR);
-					result.addError(e.getMessage());
-				} finally {
-					result.setEndTime(Instant.now().toString());
-					if (result.getStatus() == CloudSyncResult.Status.RUNNING) {
-						result.setStatus(CloudSyncResult.Status.COMPLETED);
-					}
-					lock.unlock();
+		executor.submit(() -> {
+			try {
+				executeSync(repositoryId, provider, mode, result);
+			} catch (Exception e) {
+				log.error("Cloud sync failed: " + e.getMessage(), e);
+				result.setStatus(CloudSyncResult.Status.ERROR);
+				result.addError(e.getMessage());
+			} finally {
+				result.setEndTime(Instant.now().toString());
+				if (result.getStatus() == CloudSyncResult.Status.RUNNING) {
+					result.setStatus(CloudSyncResult.Status.COMPLETED);
 				}
-			});
+			}
+		});
 
-			return result;
-		} finally {
-			lock.unlock();
-		}
+		return result;
 	}
 
 	private void executeSync(String repositoryId, String provider, CloudSyncResult.SyncMode mode,

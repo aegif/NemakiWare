@@ -574,9 +574,15 @@ public class AuthTokenResource extends ResourceBase{
 			// Get Microsoft configuration
 			PropertyManager pm = getPropertyManager();
 			String clientId = pm != null ? pm.readValue(PropertyKey.CLOUD_AUTH_MICROSOFT_CLIENT_ID) : null;
-			String tenantId = pm != null ? pm.readValue(PropertyKey.CLOUD_AUTH_MICROSOFT_TENANT_ID) : "common";
+			String tenantId = pm != null ? pm.readValue(PropertyKey.CLOUD_AUTH_MICROSOFT_TENANT_ID) : null;
 			if (StringUtils.isBlank(clientId)) {
 				addErrMsg(errMsg, "microsoft", "notConfigured");
+				return makeResult(false, result, errMsg).toString();
+			}
+			// Require specific tenant ID for issuer validation security.
+			// "common" or "organizations" disable issuer pinning and are not supported.
+			if (StringUtils.isBlank(tenantId) || "common".equals(tenantId) || "organizations".equals(tenantId)) {
+				addErrMsg(errMsg, "microsoft", "tenantId must be a specific tenant UUID, not 'common' or 'organizations'");
 				return makeResult(false, result, errMsg).toString();
 			}
 
@@ -754,16 +760,26 @@ public class AuthTokenResource extends ResourceBase{
 	/**
 	 * Fetch user info from an OIDC provider's UserInfo endpoint using the access token.
 	 * This provides server-side validation that the access token is valid.
+	 *
+	 * SSRF prevention: Only whitelisted OIDC provider endpoints are allowed.
 	 */
 	@SuppressWarnings("unchecked")
 	private JSONObject fetchUserInfoFromProvider(String userinfoEndpoint, String accessToken) {
+		// Whitelist of allowed UserInfo endpoints (SSRF prevention)
+		java.util.Set<String> allowedEndpoints = java.util.Set.of(
+			"https://www.googleapis.com/oauth2/v3/userinfo",
+			"https://openidconnect.googleapis.com/v1/userinfo",
+			"https://graph.microsoft.com/oidc/userinfo",
+			"https://graph.microsoft.com/v1.0/me"
+		);
+
+		if (!allowedEndpoints.contains(userinfoEndpoint)) {
+			logger.error("UserInfo endpoint not in whitelist: {}", userinfoEndpoint);
+			return null;
+		}
+
 		try {
 			URL url = new URL(userinfoEndpoint);
-			String protocol = url.getProtocol();
-			if (!"https".equals(protocol)) {
-				logger.error("UserInfo endpoint must use HTTPS: {}", userinfoEndpoint);
-				return null;
-			}
 
 			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
 			conn.setRequestMethod("GET");
