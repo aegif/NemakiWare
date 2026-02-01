@@ -248,4 +248,94 @@ public class CloudDirectorySyncServiceImplTest {
 			assertSame("All concurrent callers should get the same result", results[0], results[i]);
 		}
 	}
+
+	// ---- syncUserGroups ----
+
+	@Test
+	public void testSyncUserGroups_UnknownProvider_ReturnsEmptyList() {
+		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google,microsoft");
+
+		java.util.List<String> groups = service.syncUserGroups(TEST_REPO, "dropbox", "ext-user", "user@example.com");
+		assertNotNull(groups);
+		assertTrue("Unknown provider should return empty list", groups.isEmpty());
+	}
+
+	@Test
+	public void testSyncUserGroups_ProviderDisabled_ReturnsEmptyList() {
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("false");
+
+		java.util.List<String> groups = service.syncUserGroups(TEST_REPO, "google", "ext-user", "user@example.com");
+		assertNotNull(groups);
+		assertTrue("Disabled provider should return empty list", groups.isEmpty());
+	}
+
+	@Test
+	public void testSyncUserGroups_ProviderNotInList_ReturnsEmptyList() {
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("microsoft");
+
+		java.util.List<String> groups = service.syncUserGroups(TEST_REPO, "google", "ext-user", "user@example.com");
+		assertNotNull(groups);
+		assertTrue("Provider not in list should return empty list", groups.isEmpty());
+	}
+
+	// ---- testConnection ----
+
+	@Test
+	public void testTestConnection_UnknownProvider_ReturnsFalse() {
+		boolean connected = service.testConnection("dropbox");
+		assertFalse("Unknown provider should return false", connected);
+	}
+
+	@Test
+	public void testTestConnection_Google_NoCreds_ReturnsFalse() {
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_GOOGLE_SERVICE_ACCOUNT_KEY))
+				.thenReturn(null);
+		boolean connected = service.testConnection("google");
+		assertFalse("Google without creds should return false", connected);
+	}
+
+	@Test
+	public void testTestConnection_Microsoft_NoCreds_ReturnsFalse() {
+		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
+		boolean connected = service.testConnection("microsoft");
+		assertFalse("Microsoft without creds should return false", connected);
+	}
+
+	// ---- startSync state transition: COMPLETED → new start ----
+
+	@Test
+	public void testStartSync_AfterCompletion_CreatesNewResult() throws Exception {
+		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google");
+
+		// First start
+		CloudSyncResult first = service.startDeltaSync(TEST_REPO, "google");
+		assertEquals(CloudSyncResult.Status.RUNNING, first.getStatus());
+
+		// Simulate completion (executor runs async, but we can force status)
+		first.setStatus(CloudSyncResult.Status.COMPLETED);
+
+		// Second start after completion should create a new result
+		CloudSyncResult second = service.startDeltaSync(TEST_REPO, "google");
+		assertNotSame("After completion, a new result should be created", first, second);
+		assertEquals(CloudSyncResult.Status.RUNNING, second.getStatus());
+	}
+
+	@Test
+	public void testStartSync_AfterError_CreatesNewResult() throws Exception {
+		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google");
+
+		CloudSyncResult first = service.startDeltaSync(TEST_REPO, "google");
+		first.setStatus(CloudSyncResult.Status.ERROR);
+
+		CloudSyncResult second = service.startDeltaSync(TEST_REPO, "google");
+		assertNotSame("After error, a new result should be created", first, second);
+		assertEquals(CloudSyncResult.Status.RUNNING, second.getStatus());
+	}
 }

@@ -77,4 +77,38 @@ public class CloudDriveServiceImplTest {
 		// Implementation catches exceptions in try-catch, so no exception propagates
 		service.deleteFromCloud("dropbox", "file1", "token");
 	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void testPullFromCloudByFileId_UnknownProvider() {
+		service.pullFromCloudByFileId("dropbox", "file1", "token");
+	}
+
+	@Test(expected = UnsupportedOperationException.class)
+	public void testPullFromCloud_Microsoft_ThrowsUnsupported() {
+		service.pullFromCloud("bedroom", "doc1", "microsoft", "token");
+	}
+
+	@Test
+	public void testGetCloudFileUrl_Google_SpecialCharsInFileId() {
+		String url = service.getCloudFileUrl("google", "abc-123_XYZ");
+		assertEquals("https://drive.google.com/file/d/abc-123_XYZ/edit", url);
+	}
+
+	@Test
+	public void testGetCloudFileUrl_Microsoft_SpecialCharsInFileId() {
+		String url = service.getCloudFileUrl("microsoft", "abc-123!XYZ");
+		assertEquals("https://onedrive.live.com/edit?id=abc-123!XYZ", url);
+	}
+
+	@Test
+	public void testDeleteFromCloud_Google_NoException() {
+		// Google delete calls Google Drive API; with null credentials it will fail
+		// but the try-catch should swallow the exception
+		service.deleteFromCloud("google", "file1", "invalid-token");
+	}
+
+	@Test
+	public void testDeleteFromCloud_Microsoft_NoException() {
+		service.deleteFromCloud("microsoft", "file1", "invalid-token");
+	}
 }
