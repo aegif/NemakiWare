@@ -207,7 +207,9 @@ curl -u admin:password http://localhost:5984/_all_dbs
 
 ## 現在のバージョン
 
-**3.0.0-RC1** (2025-12-28)
+**3.1.0** (2026-02-01)
+- クラウド統合 (Google Workspace / Microsoft Entra ID ディレクトリ同期、Cloud Drive連携)
+- OIDC認証 (Google / Microsoft)
 - 多言語対応 (日本語/英語)
 - セキュリティ脆弱性全解消
 - タイプ管理機能強化

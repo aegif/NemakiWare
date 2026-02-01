@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>jp.aegif.nemaki.common</groupId>
 	<artifactId>nemakiware-common</artifactId>
-	<version>3.0.0</version>
+	<version>3.1.0</version>
 	<packaging>jar</packaging>
 	<name>common</name>
 	<description>Nemakiware Common Library</description>
