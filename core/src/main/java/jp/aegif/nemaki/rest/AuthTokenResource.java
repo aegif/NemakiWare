@@ -853,8 +853,16 @@ public class AuthTokenResource extends ResourceBase{
 			}
 
 			for (String allowedPath : allowedPaths) {
-				if (path.startsWith(allowedPath)) {
-					return true;
+				if (allowedPath.endsWith("/")) {
+					// Directory-style prefix match (e.g. "/oauth2/" matches "/oauth2/v3/userinfo")
+					if (path.startsWith(allowedPath)) {
+						return true;
+					}
+				} else {
+					// Exact path match (e.g. "/oidc/userinfo" does NOT match "/oidc/userinfos")
+					if (path.equals(allowedPath)) {
+						return true;
+					}
 				}
 			}
 			return false;

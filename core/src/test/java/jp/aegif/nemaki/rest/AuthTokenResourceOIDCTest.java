@@ -274,13 +274,8 @@ public class AuthTokenResourceOIDCTest {
 
 	@Test
 	public void testRejected_MicrosoftGraph_OidcUserInfoSuffix() throws Exception {
-		// /oidc/userinfos should NOT match /oidc/userinfo (exact path, not prefix)
-		// Depends on implementation: if /oidc/userinfo is an exact allowed path,
-		// /oidc/userinfos starts with /oidc/userinfo so it passes prefix check
-		// This documents current behavior
-		boolean result = isAllowed("https://graph.microsoft.com/oidc/userinfos");
-		// prefix match means this is allowed — document this behavior
-		assertTrue("Path prefix match allows /oidc/userinfos", result);
+		// /oidc/userinfo is exact-match (no trailing /), so /oidc/userinfos must be rejected
+		assertFalse("Exact path match should reject /oidc/userinfos", isAllowed("https://graph.microsoft.com/oidc/userinfos"));
 	}
 
 	@Test
@@ -290,8 +285,13 @@ public class AuthTokenResourceOIDCTest {
 
 	@Test
 	public void testRejected_MicrosoftGraph_V10Admin() throws Exception {
-		// /v1.0/admin does not start with /v1.0/me
 		assertFalse(isAllowed("https://graph.microsoft.com/v1.0/admin"));
+	}
+
+	@Test
+	public void testRejected_MicrosoftGraph_V10MeSubPath() throws Exception {
+		// /v1.0/me is exact-match, so /v1.0/me/photo must be rejected
+		assertFalse("Exact path should reject sub-paths", isAllowed("https://graph.microsoft.com/v1.0/me/photo"));
 	}
 
 	@Test
