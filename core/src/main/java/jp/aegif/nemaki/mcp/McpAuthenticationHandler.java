@@ -504,8 +504,9 @@ public class McpAuthenticationHandler {
         }
 
         // Login completed - create session and return
-        // Note: We don't remove the request here anymore to allow re-login with different account
-        // The request will be removed when it expires (cleanup) or when a new request is initiated
+        // SECURITY: Remove the request immediately to prevent replay attacks
+        // User must initiate a new cloud login request for subsequent logins
+        pendingCloudLogins.remove(requestId);
 
         String sessionToken = generateSessionToken();
         McpSession session = new McpSession(
@@ -514,10 +515,6 @@ public class McpAuthenticationHandler {
             Instant.now().plusSeconds(sessionTtlSeconds)
         );
         sessionTokens.put(sessionToken, session);
-
-        // Reset the completed flag so user can re-login with a different account
-        // The user ID will be updated when completeCloudLogin is called again
-        request.resetForRelogin();
 
         log.info("MCP cloud login successful for user '{}' in repository '{}'",
             request.getUserId(), request.getRepositoryId());
@@ -540,9 +537,14 @@ public class McpAuthenticationHandler {
      * @return true if the login was completed, false if the code was invalid
      */
     public boolean completeCloudLogin(String requestId, String loginCode, String userId) {
-        // SECURITY: Require requestId to narrow down the search and prevent brute-force
+        // SECURITY: Require both requestId and loginCode
         if (requestId == null || requestId.isEmpty()) {
             log.warn("Cloud login completion failed: requestId is required");
+            return false;
+        }
+
+        if (loginCode == null || loginCode.isEmpty()) {
+            log.warn("Cloud login completion failed: loginCode is required");
             return false;
         }
 
@@ -578,29 +580,6 @@ public class McpAuthenticationHandler {
         request.incrementFailedAttempts();
         log.warn("Cloud login completion failed: invalid code for requestId={} (attempts: {})",
                 requestId, request.getFailedAttempts());
-        return false;
-    }
-
-    /**
-     * Legacy method for backward compatibility.
-     * @deprecated Use {@link #completeCloudLogin(String, String, String)} with requestId instead.
-     */
-    @Deprecated
-    public boolean completeCloudLogin(String loginCode, String userId) {
-        // SECURITY: This method is deprecated and will be removed.
-        // For now, search all pending requests (less secure)
-        for (Map.Entry<String, CloudLoginRequest> entry : pendingCloudLogins.entrySet()) {
-            CloudLoginRequest request = entry.getValue();
-            if (!request.isExpired() && !request.isFailedTooManyTimes() &&
-                    java.security.MessageDigest.isEqual(
-                        request.getLoginCode().getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                        loginCode.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
-                request.complete(userId);
-                log.info("Cloud login completed for requestId={}, user={}", entry.getKey(), userId);
-                return true;
-            }
-        }
-        log.warn("Invalid or expired cloud login attempt");
         return false;
     }
 
@@ -693,15 +672,6 @@ public class McpAuthenticationHandler {
         void complete(String userId) {
             this.userId = userId;
             this.completed = true;
-        }
-
-        /**
-         * Reset the completed state to allow re-login with a different account.
-         * Called after the session token is returned to MCP client.
-         */
-        void resetForRelogin() {
-            this.completed = false;
-            // Keep userId for logging purposes, it will be overwritten on next complete()
         }
 
         /**
